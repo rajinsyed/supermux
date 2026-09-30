@@ -11,8 +11,9 @@ import SupermuxKit
 ///
 /// Methods (params in braces; `window_id` defaults to the preferred window):
 /// - `inspect {workspace_id}` — mirror target, run state, local-path actions.
-/// - `new_workspace_menu {window_id?}` — the `+` menu's device rows.
-/// - `new_workspace_menu_invoke {machine, window_id?, timeout_seconds?}` — clicks a row.
+/// - `new_workspace_menu {window_id?}` — the `+` menu's "New Workspace on ▸" rows.
+/// - `new_workspace_menu_invoke {machine, window_id?, timeout_seconds?}` — clicks the
+///   row whose `row_id` is `machine` (a Mac's machine id, or `this_mac`).
 /// - `new_workspace_shortcut {window_id?, timeout_seconds?}` — ⌘N's action.
 /// - `run_toggle {workspace_id, via: "shortcut"|"presets_bar"}` — ⌘G / Run.
 /// - `preset_launch {workspace_id, name, command}` — a presets-bar chip.
@@ -96,40 +97,59 @@ enum SupermuxMirrorSocketCommands {
     private static func row(_ item: NSMenuItem) -> [String: Any] {
         let machine = (item.representedObject as? SupermuxNewWorkspaceDeviceMenuTarget.Request)?.machine.rawValue
         return [
+            "row_id": rowID(item) ?? NSNull(),
             "machine": machine ?? NSNull(),
             "title": item.title,
             "is_enabled": item.isEnabled,
+            "is_checked": item.state == .on,
             "badge": item.badge?.stringValue ?? NSNull(),
         ]
     }
 
+    /// A row's id: the identifier after the menu's prefix (a Mac's machine id).
+    private static func rowID(_ item: NSMenuItem) -> String? {
+        let prefix = SupermuxNewWorkspaceDeviceMenu.itemIdentifierPrefix
+        guard let raw = item.identifier?.rawValue, raw.hasPrefix(prefix) else { return nil }
+        return String(raw.dropFirst(prefix.count))
+    }
+
+    /// Clicks the row whose `row_id` is `machine`. A Mac's row waits for the
+    /// new mirror; any other row (This Mac) for a new local workspace.
     private static func invokeMenuRow(_ params: [String: Any]) async throws -> [String: Any] {
         let machine = try string(params, "machine")
         let manager = try tabManager(params)
-        guard let item = try menuRows(params).first(where: {
-            ($0.representedObject as? SupermuxNewWorkspaceDeviceMenuTarget.Request)?.machine.rawValue == machine
-        }) else {
+        guard let item = try menuRows(params).first(where: { rowID($0) == machine }) else {
             throw InvalidParams(message: "no New Workspace on ▸ row for \(machine)")
         }
         guard item.isEnabled, let action = item.action else {
             return ["invoked": false, "reason": "row is disabled"]
         }
-        return try await awaitingNewMirror(in: manager, timeout: timeout(params)) {
+        let isMacRow = item.representedObject is SupermuxNewWorkspaceDeviceMenuTarget.Request
+        return try await awaitingNewWorkspace(isMacRow ? .mirror : .local, in: manager, timeout: timeout(params)) {
             NSApp.sendAction(action, to: item.target, from: item)
         }
     }
 
     private static func newWorkspaceShortcut(_ params: [String: Any]) async throws -> [String: Any] {
         let manager = try tabManager(params)
-        return try await awaitingNewMirror(in: manager, timeout: timeout(params)) {
+        return try await awaitingNewWorkspace(.mirror, in: manager, timeout: timeout(params)) {
             AppDelegate.shared?.performNewWorkspaceAction(tabManager: manager, debugSource: "supermux.socket.newWorkspace") ?? false
         }
     }
 
-    /// Runs `trigger`, then waits for a new mirror in `manager`'s window while
-    /// sampling every workspace title there (so a provisional "Cloud VM" row
-    /// would be caught).
-    private static func awaitingNewMirror(
+    /// What a New Workspace entry point is expected to create.
+    private enum NewWorkspaceKind {
+        /// A mirror of a workspace created on another Mac.
+        case mirror
+        /// A workspace on this Mac.
+        case local
+    }
+
+    /// Runs `trigger`, then waits for a new workspace of `kind` in `manager`'s
+    /// window while sampling every workspace title there (so a provisional
+    /// "Cloud VM" row would be caught).
+    private static func awaitingNewWorkspace(
+        _ kind: NewWorkspaceKind,
         in manager: TabManager,
         timeout: Duration,
         trigger: () -> Bool
@@ -142,11 +162,18 @@ enum SupermuxMirrorSocketCommands {
         let deadline = clock.now + timeout
         while clock.now < deadline {
             titles.append(contentsOf: manager.tabs.filter { !before.contains($0.id) }.map(\.title))
-            if let created = manager.tabs.first(where: { !before.contains($0.id) && index.isDeviceMirror($0) }),
-               index.ref(forLocal: created) != nil, !created.panels.isEmpty {
+            let created = manager.tabs.first { tab in
+                guard !before.contains(tab.id), !tab.panels.isEmpty else { return false }
+                switch kind {
+                case .mirror: return index.isDeviceMirror(tab) && index.ref(forLocal: tab) != nil
+                case .local: return !index.isDeviceMirror(tab)
+                }
+            }
+            if let created {
                 var payload = SupermuxDevicesSocketPayloads(devices: SupermuxComposition.devices, index: index)
                     .localWorkspace(created)
                 payload["invoked"] = invoked
+                payload["is_device_mirror"] = index.isDeviceMirror(created)
                 payload["remote_workspace_id"] = index.ref(forLocal: created)?.workspaceID ?? NSNull()
                 payload["observed_titles"] = Array(Set(titles)).sorted()
                 return payload
