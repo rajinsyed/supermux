@@ -17,7 +17,10 @@ import SupermuxKit
 ///   that device's mirrors (else the preferred main window; never a new
 ///   window), then placed in the remote's order among its siblings;
 /// - closes are local only, never prompt and never close anything remotely
-///   (``SupermuxDeviceMirrorCloser/closeForCoordinator(_:)``).
+///   (``SupermuxDeviceMirrorCloser/closeForCoordinator(_:)``); a duplicate's
+///   close first hands the binding to the mirror that survives (the one
+///   selected in its window, else one the user opened or restored rather
+///   than auto-mirror's background copy).
 ///
 /// Nothing runs until the startup session restore finished, so restored
 /// placeholder mirrors (bound by `stableId`, or still holding pending restored
@@ -50,6 +53,9 @@ final class SupermuxDeviceMirrorCoordinator {
     private var openTask: Task<Void, Never>?
     private var inFlight: Set<SupermuxRemoteWorkspaceRef> = []
     private var retryAfter: [SupermuxRemoteWorkspaceRef: Date] = [:]
+    /// Local mirrors auto-mirror opened in this session: background copies,
+    /// which lose a duplicate tie to a mirror the user opened or restored.
+    private var autoOpened: Set<UUID> = []
     private var didPruneBindings = false
     private var lastAutoMirror: Bool?
     private(set) var lastPlan = SupermuxMirrorReconciler.Plan()
@@ -180,6 +186,12 @@ final class SupermuxDeviceMirrorCoordinator {
         lastAutoMirror = settings.autoMirror
         let plan = reconciler.plan(makeInput())
         lastPlan = plan
+        // Before the closes: the survivor must hold the binding when the
+        // bound copy goes (its close unbinds only its own stable id).
+        for rebind in plan.rebinds {
+            guard let workspace = Workspace.liveWorkspace(id: rebind.localWorkspaceID) else { continue }
+            index.handOver(rebind.ref, to: workspace)
+        }
         for close in plan.closes {
             guard let workspace = Workspace.liveWorkspace(id: close.localWorkspaceID) else { continue }
             #if DEBUG
@@ -223,12 +235,16 @@ final class SupermuxDeviceMirrorCoordinator {
                 }
             )
         }
-        let mirrors = index.mirrors().map { mirror in
+        let liveMirrors = index.mirrors()
+        autoOpened.formIntersection(liveMirrors.map(\.workspace.id))
+        let mirrors = liveMirrors.map { mirror in
             SupermuxMirrorReconciler.Mirror(
                 ref: mirror.ref,
                 localWorkspaceID: mirror.workspace.id,
                 isBound: mirror.isBound,
-                isProjected: catalog.projectionMachines(forWorkspace: mirror.workspace.id).contains(mirror.ref.machine)
+                isProjected: catalog.projectionMachines(forWorkspace: mirror.workspace.id).contains(mirror.ref.machine),
+                isSelected: mirror.workspace.owningTabManager?.selectedTabId == mirror.workspace.id,
+                isAutoOpened: autoOpened.contains(mirror.workspace.id)
             )
         }
         return SupermuxMirrorReconciler.Input(
@@ -271,7 +287,10 @@ final class SupermuxDeviceMirrorCoordinator {
                 if debugFailingOpens.remove(ref) != nil { throw SupermuxDeviceError.nothingToMirror(ref.description) }
                 #endif
                 let opened = try await opener.openMirror(of: ref, in: tabManager, focus: false)
-                if !opened.reused { placeAmongSiblings(opened.workspace, ref: ref) }
+                if !opened.reused {
+                    autoOpened.insert(opened.workspace.id)
+                    placeAmongSiblings(opened.workspace, ref: ref)
+                }
                 #if DEBUG
                 cmuxDebugLog("supermux.autoMirror open \(ref) local=\(opened.workspace.id) reused=\(opened.reused)")
                 #endif
