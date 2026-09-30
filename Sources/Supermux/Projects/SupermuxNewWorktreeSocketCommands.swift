@@ -13,7 +13,8 @@ import SupermuxKit
 /// Methods (suffix after `supermux.devices.new_worktree.`):
 /// `open {project_id, preferred_device?, window_id?}` → session state,
 /// `select {session_id, entry_id}`, `load {session_id}`,
-/// `submit {session_id, prompt?, workspace_name?, branch_name?, base_branch?, command?, await_open?}`,
+/// `fill {session_id, prompt?, workspace_name?, branch_name?, base_branch?, command?}`,
+/// `submit {session_id, <fill fields>, await_open?, stop_link_after_seconds?}`,
 /// `state {session_id}`, `close {session_id}`, `last_device {project_id}`,
 /// `set_agent_commands {commands, selected?}` (returns the previous list, for restoring).
 @MainActor
@@ -54,6 +55,10 @@ enum SupermuxNewWorktreeSocketCommands {
             return state(session)
         case "state":
             return state(try session(params))
+        case "fill":
+            let session = try session(params)
+            fill(session.model, params)
+            return state(session)
         case "submit":
             return try await submit(params, payloads: payloads)
         case "close":
@@ -109,11 +114,8 @@ enum SupermuxNewWorktreeSocketCommands {
         return payload
     }
 
-    /// Fills the fields, presses Create / Start Claude, waits for the flow,
-    /// and (for another Mac) for the mirror the flow opens.
-    private static func submit(_ params: [String: Any], payloads: SupermuxDevicesSocketPayloads) async throws -> [String: Any] {
-        let session = try session(params)
-        let model = session.model
+    /// Types into the sheet's fields (the ones given), as the user would.
+    private static func fill(_ model: SupermuxNewWorktreeSheetModel, _ params: [String: Any]) {
         if let prompt = params["prompt"] as? String { model.prompt = prompt }
         if let name = params["workspace_name"] as? String { model.workspaceName = name }
         if let branch = params["branch_name"] as? String { model.branchInput = branch }
@@ -122,9 +124,23 @@ enum SupermuxNewWorktreeSocketCommands {
             model.baseBranchWasEdited = true
         }
         if let command = params["command"] as? String { model.selectCommand(command) }
+    }
+
+    /// Fills the fields, presses Create / Start Claude, waits for the flow,
+    /// and (for another Mac) for the mirror the flow opens.
+    /// `stop_link_after_seconds` holds that Mac's link down that long after
+    /// the request went out (the point of no return), like a network drop.
+    private static func submit(_ params: [String: Any], payloads: SupermuxDevicesSocketPayloads) async throws -> [String: Any] {
+        let session = try session(params)
+        let model = session.model
+        fill(model, params)
         var finished = false
         guard let task = model.submit(onFinished: { finished = true }) else {
             throw invalid("Create is disabled for the selected Mac (can_create is false)")
+        }
+        if let seconds = (params["stop_link_after_seconds"] as? NSNumber)?.doubleValue,
+           let remote = model.target as? SupermuxRemoteWorktreeCreationTarget {
+            stopLink(of: remote.machine, afterSending: model, seconds: seconds)
         }
         await task.value
         var payload = state(session)
@@ -155,6 +171,19 @@ enum SupermuxNewWorktreeSocketCommands {
     }
 
     // MARK: - Pieces
+
+    /// Stops `machine`'s link `seconds` after the flow passed its point of no
+    /// return (the request to that Mac is out by then).
+    private static func stopLink(of machine: SurfaceMachineID, afterSending model: SupermuxNewWorktreeSheetModel, seconds: Double) {
+        Task { @MainActor in
+            let deadline = ContinuousClock.now + .seconds(60)
+            while model.phase != .runningGit, ContinuousClock.now < deadline {
+                try? await Task.sleep(for: .milliseconds(20))
+            }
+            try? await Task.sleep(for: .milliseconds(Int(seconds * 1000)))
+            SupermuxComposition.devices.provider(for: machine)?.link.stop()
+        }
+    }
 
     /// This Mac's target, opening a created worktree in the given window.
     private static func localTarget(for project: SupermuxProject, in tabManager: TabManager) -> any SupermuxWorktreeCreationTarget {
