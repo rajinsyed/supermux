@@ -46,7 +46,9 @@ import Testing
 /// 24. Picks a different survivor when the mirrors come in another order.
 /// 25. Drops a duplicate while its device is not authoritative, or while an
 ///     open of that ref is in flight.
-/// 26. Keeps duplicates when auto-mirror is off (a duplicate is never wanted).
+/// 26. Closes a duplicate while auto-mirror is off: without auto-mirror only
+///     explicit opens (e.g. `cmux vm workspace open`) make mirrors, so a second
+///     one was asked for.
 struct SupermuxMirrorReconcilerTests {
     private typealias Reconciler = SupermuxMirrorReconciler
     private let machine = "device:5E1F10B0-0000-4000-8000-000000000001@dev"
@@ -307,14 +309,13 @@ struct SupermuxMirrorReconcilerTests {
         #expect(busy.closes.isEmpty)
     }
 
-    @Test func closesDuplicatesEvenWithAutoMirrorOff() {
+    @Test func leavesDuplicatesAloneWithAutoMirrorOff() {
         var reconciler = Reconciler()
-        let copy = UUID()
-        let mirrors = [mirror("A", bound: true), mirror("A", local: copy, bound: false)]
+        let mirrors = [mirror("A", bound: true), mirror("A", bound: false)]
         let devices = [device([remote("A")])]
         _ = reconciler.plan(input(autoMirror: false, devices: devices, mirrors: mirrors, at: 0))
-        let confirmed = reconciler.plan(input(autoMirror: false, devices: devices, mirrors: mirrors, at: 1.2))
-        #expect(confirmed.closes.map(\.localWorkspaceID) == [copy])
+        let later = reconciler.plan(input(autoMirror: false, devices: devices, mirrors: mirrors, at: 5))
+        #expect(later.closes.isEmpty, "with auto-mirror off every mirror was opened on purpose")
     }
 
     // MARK: - Scheduling
