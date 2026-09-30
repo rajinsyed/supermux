@@ -10,7 +10,8 @@ import Foundation
 /// Cancel is the safe default: Return and Esc both answer it, as in
 /// ``SupermuxDeviceMirrorClosePrompt``, so no key press ends a program on
 /// another Mac. In DEBUG builds `supermux.devices.terminal_close.answer`
-/// pre-answers it without showing anything.
+/// pre-answers it without showing anything, or (`show`) shows it and answers
+/// Cancel a few seconds later.
 @MainActor
 enum SupermuxDeviceTerminalClosePrompt {
     /// A second prompt while one is up answers Cancel instead of stacking.
@@ -32,9 +33,12 @@ enum SupermuxDeviceTerminalClosePrompt {
             locale: .current, deviceName
         )
         #if DEBUG
-        if let answer = SupermuxDeviceTerminalCloseDebug.answer {
-            SupermuxDeviceTerminalCloseDebug.asked.append(["title": title, "message": message, "device": deviceName])
-            return answer == .close
+        let debugAnswer = SupermuxDeviceTerminalCloseDebug.answer
+        if let debugAnswer {
+            SupermuxDeviceTerminalCloseDebug.asked.append(
+                ["title": title, "message": message, "device": deviceName, "shown": debugAnswer == .show]
+            )
+            if debugAnswer != .show { return debugAnswer == .close }
         }
         #endif
         guard !isPresenting else { return false }
@@ -57,6 +61,21 @@ enum SupermuxDeviceTerminalClosePrompt {
             return nil
         }
         defer { if let escape { NSEvent.removeMonitor(escape) } }
+        #if DEBUG
+        if debugAnswer == .show { pressLater(cancel) }
+        #endif
         return alert.runCmuxModal(presentingWindow: window) == .alertFirstButtonReturn
     }
+    #if DEBUG
+
+    /// The DEBUG `show` answer: the real prompt, answered Cancel after
+    /// ``SupermuxDeviceTerminalCloseDebug/shownSeconds`` by a run-loop timer,
+    /// which also fires inside a modal session.
+    private static func pressLater(_ button: NSButton) {
+        let timer = Timer(timeInterval: SupermuxDeviceTerminalCloseDebug.shownSeconds, repeats: false) { _ in
+            MainActor.assumeIsolated { button.performClick(nil) }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+    }
+    #endif
 }

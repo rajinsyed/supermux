@@ -10,11 +10,14 @@ import Foundation
 ///   workspace (`panel_id`, `remote_surface_id`, `has_session`, `attached`,
 ///   `connecting`, `overlay_title`) and the workspace's failure card
 ///   (`title`, `message`, `recovery`) or null.
-/// - `terminal_close.answer {answer?: "close" | "cancel" | "clear"}`: sets (or,
-///   with `clear`, removes) the answer the "Close “X” on <Mac>?" prompt takes
-///   without showing itself, so no modal blocks a run. Setting an answer also
-///   empties the log of asked prompts; every call returns the current answer
-///   and that log (`asked: [{title, message, device}]`).
+/// - `terminal_close.answer {answer?: "close" | "cancel" | "show" | "clear"}`:
+///   sets (or, with `clear`, removes) the answer the "Close “X” on <Mac>?"
+///   prompt takes without showing itself, so no modal blocks a run. `show`
+///   shows the real prompt instead and presses its Cancel after
+///   ``SupermuxDeviceTerminalCloseDebug/shownSeconds``, so a run can check
+///   that the app keeps answering while the prompt is up. Setting an answer
+///   also empties the log of asked prompts; every call returns the current
+///   answer and that log (`asked: [{title, message, device, shown}]`).
 /// - `terminal_close.needs_confirm {workspace_id, surface_id}`: whether this Mac
 ///   would ask before closing that terminal of its own (`panelNeedsConfirmClose`).
 @MainActor
@@ -73,7 +76,7 @@ enum SupermuxDeviceTerminalCloseSocketCommands {
             SupermuxDeviceTerminalCloseDebug.answer = nil
         case let raw?:
             guard let answer = SupermuxDeviceTerminalCloseDebug.Answer(rawValue: raw) else {
-                throw HookError(message: "answer must be close, cancel or clear")
+                throw HookError(message: "answer must be close, cancel, show or clear")
             }
             SupermuxDeviceTerminalCloseDebug.answer = answer
             SupermuxDeviceTerminalCloseDebug.asked = []
@@ -112,7 +115,12 @@ enum SupermuxDeviceTerminalCloseDebug {
     enum Answer: String {
         case close
         case cancel
+        /// Show the real prompt; Cancel is pressed after ``shownSeconds``.
+        case show
     }
+
+    /// How long a `show` prompt stays up before Cancel is pressed.
+    static let shownSeconds: TimeInterval = 4
 
     static var answer: Answer?
     static var asked: [[String: Any]] = []
