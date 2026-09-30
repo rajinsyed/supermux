@@ -30,6 +30,8 @@ import SupermuxKit
 ///   (``SupermuxMirrorAppearanceSocket``; DEBUG builds only).
 /// - `tab_bar_new_tab`, `tab_context_action` — where a new tab lands
 ///   (``SupermuxTabOrderSocketCommands``, DEBUG builds only).
+/// - `files {workspace_id, action: state|expand|open|materialize|search|local_rows|local_git_status|unmount, …}`
+///   (``SupermuxMirrorFilesSocket``).
 @MainActor
 enum SupermuxMirrorSocketCommands {
     static let methodPrefix = "mirror."
@@ -77,6 +79,8 @@ enum SupermuxMirrorSocketCommands {
         case let sub where SupermuxTabOrderSocketCommands.methods.contains(sub):
             return try SupermuxTabOrderSocketCommands.handle(sub, params: params)
         #endif
+        case "files":
+            return try await SupermuxMirrorFilesSocket.handle(params, workspace: try mirrorWorkspace(params))
         default:
             throw InvalidParams(message: "unknown mirror method \(method)")
         }

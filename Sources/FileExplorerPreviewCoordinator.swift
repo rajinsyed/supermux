@@ -136,6 +136,9 @@ struct FileExplorerPreviewCoordinator {
         alert.alertStyle = .warning
         alert.messageText = String(localized: "fileExplorer.preview.failedTitle", defaultValue: "Unable to open remote file")
         alert.informativeText = (error as? FileExplorerError)?.localizedDescription
+            // SUPERMUX:begin mirror-file-preview-error
+            ?? SupermuxDeviceFileError.previewAlertText(for: error)
+            // SUPERMUX:end mirror-file-preview-error
             ?? String(localized: "fileExplorer.preview.genericFailure", defaultValue: "The remote file could not be downloaded. Reconnect and try again.")
         alert.addButton(withTitle: String(localized: "fileExplorer.preview.ok", defaultValue: "OK"))
         _ = alert.runCmuxModal(presentingWindow: window)

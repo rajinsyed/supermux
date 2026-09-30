@@ -46,6 +46,11 @@ public enum SupermuxMobileCapability: String, CaseIterable, Codable, Sendable, E
     /// tab goes right of that terminal ("New Terminal to the Right" in another
     /// Mac's device mirror).
     case terminalPlacementV1 = "supermux.terminal_placement.v1"
+    /// Read-only file browsing for another Mac's Files panel is served:
+    /// `files.list {show_hidden}` (with the host's `home`), chunked
+    /// `files.read`, `files.search` and `files.git_status`, all confined to
+    /// the workspace's folder.
+    case filesReadV1 = "supermux.files_read.v1"
 
     /// Every capability, in declaration order (derived from `CaseIterable`).
     public static let all: [SupermuxMobileCapability] = SupermuxMobileCapability.allCases

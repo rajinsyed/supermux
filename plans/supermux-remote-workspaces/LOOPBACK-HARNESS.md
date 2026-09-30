@@ -306,6 +306,38 @@ own actions, and resets the preference at start and end.
 
 ```bash
 CMUX_TAG=<tag> python3 tests/supermux/loopback_terminal_sizing_policy_e2e.py --app-path "<App path>"
+## Mirror Files panel E2E
+
+`tests/supermux/loopback_mirror_files_e2e.py` checks that a device mirror's Files panel shows the
+other Mac's folder. It drives the DEBUG `supermux.devices.mirror.files {workspace_id, action}` driver
+(`Sources/Supermux/Mirrors/SupermuxMirrorFilesSocket.swift`), which keeps a Files store per workspace
+and syncs it exactly like the right sidebar (`showHiddenFiles`, `syncWorkspaceRoot`), so the resolver,
+provider, follow-the-folder observation and live refresh are the real ones. Actions: `state`,
+`expand`, `open` (the double-click path, after a download probe so a failure never raises the modal
+alert), `materialize`, `search`, `menu` / `operation` (the context menu's file operations),
+`local_rows` / `local_git_status` (what THIS Mac's panel shows for the same folder) and `unmount`.
+
+On a scratch git repo (dotfiles, a nested match, an image, a 9 MiB file, a symlink to `/etc` and a
+sibling `outside/` folder) it checks: the Loopback Mac advertises `supermux.files_read.v1`; the
+mirror's panel is the device provider at the source's folder and lists exactly what the local panel
+lists there (hidden files, order); `src/` expands the same; the symlink out cannot be expanded (an
+error naming the Mac); the git colors equal the local panel's; README.md opens a read-only preview in
+the mirror with the file's exact bytes and reopening reuses it; the 9 MiB file is refused (8 MB);
+Find returns the one nested hit and a query like `--version` is only a pattern; raw `files.*`
+confinement probes (`..`, the symlink, a directory read, a wrong `expected_root`, renaming
+`.git/HEAD`) are refused while chunked reads, `.git/HEAD` reads, hidden listing (with `home`), the
+phone's dotfile-free listing, git status and search answer; `cd src` / `cd ..` in the source
+terminal re-roots the panel; a new file appears with no action (`--refresh-timeout`, default 6 s);
+the menu offers New File / New Folder / Rename / Duplicate / Move to Trash and each changes the
+disk; with the link held down the panel names the Mac and says it is not connected (no rows), and
+the redial brings the rows back; with `--app-path`, a relaunch with
+`CMUX_DEBUG_SUPPRESS_MOBILE_CAPS=supermux.files_read.v1` shows "Update Supermux on Loopback Mac to
+browse its files here." Move to Trash moves the scratch files to this Mac's Trash.
+
+```bash
+CMUX_E2E_SUITES="loopback_mirror_files_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
+CMUX_TAG=<tag> python3 tests/supermux/loopback_mirror_files_e2e.py --scratch /tmp/<tag>/files \
+  --app-path "<App path>" --projects-file /tmp/<tag>/projects.json
 ```
 
 Every suite at once: `CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh` (launches, runs and

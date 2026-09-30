@@ -599511,23 +599511,6 @@
         }
       }
     },
-    "supermux.mirror.files.onMac" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "They are on %@."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ファイルは%@にあります。"
-          }
-        }
-      }
-    },
     "supermux.mirror.newWorkspace.connecting" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -617093,6 +617076,142 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "この Mac のすべてのターミナルに適用されます。"
+          }
+        }
+      }
+    },
+    "supermux.mirror.files.error.folderChanged" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The folder on %@ changed."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@のフォルダが変わりました。"
+          }
+        }
+      }
+    },
+    "supermux.mirror.files.error.missing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No longer exists on %@."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@上にもう存在しません。"
+          }
+        }
+      }
+    },
+    "supermux.mirror.files.error.outsideFolder" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Outside this workspace's folder on %@."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@上のこのワークスペースのフォルダの外にあります。"
+          }
+        }
+      }
+    },
+    "supermux.mirror.files.error.ripgrep" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search needs ripgrep (rg) on %@."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "検索するには%@にripgrep (rg)が必要です。"
+          }
+        }
+      }
+    },
+    "supermux.mirror.files.error.tooLarge" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Previews of files on %@ are limited to 8 MB."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@上のファイルのプレビューは8 MBまでです。"
+          }
+        }
+      }
+    },
+    "supermux.mirror.files.loading" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loading files from %@…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@からファイルを読み込んでいます…"
+          }
+        }
+      }
+    },
+    "supermux.mirror.files.noFolder" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ has not reported this workspace's folder yet."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@はまだこのワークスペースのフォルダを報告していません。"
+          }
+        }
+      }
+    },
+    "supermux.mirror.files.updateMac" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Update Supermux on %@ to browse its files here."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ここでファイルを表示するには、%@のSupermuxをアップデートしてください。"
           }
         }
       }
