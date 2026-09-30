@@ -17,9 +17,11 @@ SCRATCH="/tmp/${TAG}-e2e"
 SOCKET="/tmp/cmux-debug-${TAG}.sock"
 REPORTS="$SCRATCH/reports"
 
+# Waits for the process to exit, not just the socket: relaunching a still-exiting
+# app makes `open` drop the --env overrides or fail with -600 on a loaded Mac.
 quit_app() {
   osascript -e "tell application id \"$BUNDLE_ID\" to quit" >/dev/null 2>&1 || true
-  for _ in $(seq 1 50); do [[ -S "$SOCKET" ]] || return 0; sleep 0.2; done
+  for _ in $(seq 1 150); do pgrep -f "$APP/Contents/MacOS/" >/dev/null || return 0; sleep 0.2; done
 }
 
 launch_app() {
