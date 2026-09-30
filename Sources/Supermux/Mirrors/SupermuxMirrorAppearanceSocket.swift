@@ -1,6 +1,7 @@
 #if DEBUG
 import AppKit
 import CmuxAppKitSupportUI
+import CmuxCloudTui
 import CmuxFoundation
 import CmuxTerminal
 import Foundation
@@ -72,19 +73,33 @@ enum SupermuxMirrorAppearanceSocket {
     /// The device-mirror session that feeds this pane, if it is one.
     private static func mirrorState(_ surfaceID: UUID) -> [String: Any] {
         let devices = SupermuxComposition.devices
-        let session = devices.devices.lazy
-            .compactMap { devices.provider(for: $0.machine)?.sessions[surfaceID] }
-            .first
-        guard let session else {
+        var found: DeviceTerminalMirrorSession?
+        for device in devices.devices where found == nil {
+            found = devices.provider(for: device.machine)?.sessions[surfaceID]
+        }
+        guard let session = found else {
             return ["mirror_phase": NSNull(), "applied_remote_colors": NSNull(), "last_replay_color_osc": NSNull(), "replays": NSNull()]
         }
+        let colors = session.supermuxColors
+        let lastReplayColorOSC: Any = colors.replays > 0 ? colors.lastReplayCarriedColorOSC : NSNull()
         return [
             "mirror_phase": String(describing: session.phase),
-            // Replays carry no colors of their own until the viewer-colors fix.
-            "applied_remote_colors": NSNull(),
-            "last_replay_color_osc": NSNull(),
-            "replays": NSNull(),
+            "applied_remote_colors": sparse(colors.applied),
+            "last_replay_color_osc": lastReplayColorOSC,
+            "replays": colors.replays,
         ]
+    }
+
+    /// `{fg?, bg?, cursor?, palette?: {"<index>": "#rrggbb"}}`, only the entries a program set.
+    private static func sparse(_ colors: CloudTuiRemoteColors) -> [String: Any] {
+        var payload: [String: Any] = [:]
+        if let foreground = colors.foreground { payload["fg"] = foreground }
+        if let background = colors.background { payload["bg"] = background }
+        if let cursor = colors.cursor { payload["cursor"] = cursor }
+        if !colors.palette.isEmpty {
+            payload["palette"] = Dictionary(uniqueKeysWithValues: colors.palette.map { (String($0.key), $0.value) })
+        }
+        return payload
     }
 }
 #endif
