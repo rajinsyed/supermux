@@ -3545,6 +3545,7 @@
 		50BE000100000000000000C1 /* SupermuxSidebarBranchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000C2 /* SupermuxSidebarBranchTests.swift */; };
 		50BE000100000000000000B9 /* SupermuxSidebarFontScaleStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000B8 /* SupermuxSidebarFontScaleStore.swift */; };
 		50BE000100000000000000A7 /* SupermuxTabManagerOpener.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000A6 /* SupermuxTabManagerOpener.swift */; };
+		50BE00170300000000000002 /* SupermuxTabOrderSocketCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00170300000000000001 /* SupermuxTabOrderSocketCommands.swift */; };
 		50BE00160000000000000004 /* SupermuxTerminalSizingVisibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00160000000000000003 /* SupermuxTerminalSizingVisibility.swift */; };
 		50BE00060000000000000006 /* SupermuxUnifiedProjectsModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00060000000000000005 /* SupermuxUnifiedProjectsModel.swift */; };
 		50BE00010000000000000100 /* SupermuxUsageAnalyticsMenuButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000FF /* SupermuxUsageAnalyticsMenuButton.swift */; };
@@ -7958,6 +7959,7 @@
 		50BE000100000000000000C2 /* SupermuxSidebarBranchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxSidebarBranchTests.swift; sourceTree = "<group>"; };
 		50BE000100000000000000B8 /* SupermuxSidebarFontScaleStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxSidebarFontScaleStore.swift; sourceTree = "<group>"; };
 		50BE000100000000000000A6 /* SupermuxTabManagerOpener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxTabManagerOpener.swift; sourceTree = "<group>"; };
+		50BE00170300000000000001 /* SupermuxTabOrderSocketCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mirrors/SupermuxTabOrderSocketCommands.swift; sourceTree = "<group>"; };
 		50BE00160000000000000003 /* SupermuxTerminalSizingVisibility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxTerminalSizingVisibility.swift; sourceTree = "<group>"; };
 		50BE00060000000000000005 /* SupermuxUnifiedProjectsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Projects/SupermuxUnifiedProjectsModel.swift; sourceTree = "<group>"; };
 		50BE000100000000000000FF /* SupermuxUsageAnalyticsMenuButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxUsageAnalyticsMenuButton.swift; sourceTree = "<group>"; };
@@ -9259,6 +9261,7 @@
 				50BE00140000000000000003 /* SupermuxNewWorkspaceButtonHelp.swift */,
 				50BE000A000000000000001D /* SupermuxMirrorFileExplorerRoot.swift */,
 				50BE000A000000000000001F /* SupermuxMirrorSocketCommands.swift */,
+				50BE00170300000000000001 /* SupermuxTabOrderSocketCommands.swift */,
 				50BE000A0000000000000021 /* SupermuxMirrorLocalPathActions.swift */,
 				50BE000A0000000000000023 /* SupermuxMirrorChangesSocket.swift */,
 				50BE000A0000000000000025 /* SupermuxMobileHost+RunWorkspace.swift */,
@@ -16303,6 +16306,7 @@
 				50BE000100000000000000B5 /* SupermuxRunSupport.swift in Sources */,
 				50BE000100000000000000B9 /* SupermuxSidebarFontScaleStore.swift in Sources */,
 				50BE000100000000000000A7 /* SupermuxTabManagerOpener.swift in Sources */,
+				50BE00170300000000000002 /* SupermuxTabOrderSocketCommands.swift in Sources */,
 				50BE00160000000000000004 /* SupermuxTerminalSizingVisibility.swift in Sources */,
 				50BE00060000000000000006 /* SupermuxUnifiedProjectsModel.swift in Sources */,
 				50BE00010000000000000100 /* SupermuxUsageAnalyticsMenuButton.swift in Sources */,
