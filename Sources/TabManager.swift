@@ -1972,6 +1972,10 @@ class TabManager: ObservableObject {
         guard let workspace else {
             return nil
         }
+        // SUPERMUX:begin device-mirror-no-cwd-inherit
+        // A device mirror's directory is a path on the other Mac: never inherit it.
+        if SupermuxDeviceWorkspaceIndex.isDeviceMirror(workspace) { return nil }
+        // SUPERMUX:end device-mirror-no-cwd-inherit
         // Use cached directory state only; avoiding live focus traversal keeps workspace
         // creation resilient when Bonsplit is in the middle of a rapid Cmd+N churn.
         if let currentDirectory = normalizedWorkingDirectory(workspace.currentDirectory) {
