@@ -10,8 +10,10 @@ import SupermuxMobileCore
 /// written to `supermux-projects.json`).
 ///
 /// For each device whose host serves `supermux.projects.v1` it keeps
-/// `projects.list`, `run.state`, and — lazily, once a row needs them —
-/// `worktrees.list` per project. It refreshes on the matching `supermux.*`
+/// `projects.list` (projects and terminal presets), `run.state`, and — lazily,
+/// once a row needs them — `worktrees.list` per project. It is the single
+/// source of each Mac's Supermux state: the sidebar and the device-mirror
+/// behaviors (⌘G / Run, presets bar) all read it, so each Mac is polled once. It refreshes on the matching `supermux.*`
 /// topics, on every link (re)connect, and on a slow safety-net timer. The last
 /// project list of each Mac is cached on disk
 /// (``SupermuxRemoteProjectsCache``), so an offline Mac's projects still
@@ -140,6 +142,29 @@ final class SupermuxRemoteProjectsModel {
         }
     }
 
+    /// Refetches only one Mac's `run.state` (after a mirror's Run / Stop).
+    func refreshRuns(_ machine: SurfaceMachineID) async {
+        guard device(machine)?.isOnline == true, let runs = try? await fetchRuns(on: machine) else { return }
+        update(machine) { $0.runs = runs }
+    }
+
+    /// Folds a `run.start` / `run.stop` result in before the host's poke lands.
+    func apply(run: SupermuxRunStateDTO, on machine: SurfaceMachineID) {
+        update(machine) { entry in
+            entry.runs.removeAll { $0.projectId.caseInsensitiveCompare(run.projectId) == .orderedSame }
+            entry.runs.append(run)
+        }
+    }
+
+    private func fetchRuns(on machine: SurfaceMachineID) async throws -> [SupermuxRunStateDTO] {
+        try await facade.request(
+            SupermuxMobileMethod.runState.rawValue,
+            on: machine,
+            resultKey: "runs",
+            as: [SupermuxRunStateDTO].self
+        )
+    }
+
     // MARK: - Events
 
     private func handle(_ event: SupermuxDeviceEvent) {
@@ -221,24 +246,20 @@ final class SupermuxRemoteProjectsModel {
             return
         }
         do {
-            let projects = try await facade.request(
+            let listing = try await facade.request(
                 SupermuxMobileMethod.projectsList.rawValue,
                 on: machine,
-                resultKey: "projects",
-                as: [SupermuxProjectDTO].self
+                as: ProjectsListing.self
             )
+            let projects = listing.projects
             var runs: [SupermuxRunStateDTO] = []
             if capabilities.contains(SupermuxMobileCapability.runV1.rawValue) {
-                runs = (try? await facade.request(
-                    SupermuxMobileMethod.runState.rawValue,
-                    on: machine,
-                    resultKey: "runs",
-                    as: [SupermuxRunStateDTO].self
-                )) ?? []
+                runs = (try? await fetchRuns(on: machine)) ?? []
             }
             let listed = Set(projects.compactMap { UUID(uuidString: $0.id) })
             update(machine) { entry in
                 entry.projects = projects
+                entry.presets = listing.presets ?? []
                 entry.runs = runs
                 entry.isFromCache = false
                 entry.lastError = nil
@@ -285,6 +306,13 @@ final class SupermuxRemoteProjectsModel {
         Task.detached(priority: .utility) {
             try? cache.save(entry, forMachine: machine.rawValue)
         }
+    }
+
+    /// The `projects.list` result: projects plus the Mac's terminal presets
+    /// (absent on hosts that predate them).
+    private struct ProjectsListing: Decodable {
+        let projects: [SupermuxProjectDTO]
+        let presets: [SupermuxTerminalPresetDTO]?
     }
 
     private func update(_ machine: SurfaceMachineID, _ mutate: (inout SupermuxDeviceProjects) -> Void) {

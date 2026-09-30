@@ -8,18 +8,17 @@ extension SupermuxComposition {
     /// Local workspace -> the remote workspace it mirrors.
     static let mirrorResolver = SupermuxMirrorResolver(devices: devices, index: deviceWorkspaceIndex)
 
-    /// Each owning Mac's projects, presets and run state, as mirrors need them.
-    static let mirrorRemoteState = SupermuxMirrorRemoteState(devices: devices)
-
-    /// ⌘G / Run inside a mirror runs on the owning Mac.
+    /// ⌘G / Run inside a mirror runs on the owning Mac (run state from
+    /// ``remoteProjects``, the one per-Mac state).
     static let mirrorRuns = SupermuxMirrorRunController(
         resolver: mirrorResolver,
-        remoteState: mirrorRemoteState,
+        remoteProjects: remoteProjects,
         devices: devices
     )
 
-    /// Presets-bar chips inside a mirror launch on the owning Mac.
-    static let mirrorPresets = SupermuxMirrorPresetLauncher(remoteState: mirrorRemoteState, devices: devices)
+    /// Presets-bar chips inside a mirror launch on the owning Mac (its presets
+    /// from ``remoteProjects``).
+    static let mirrorPresets = SupermuxMirrorPresetLauncher(remoteProjects: remoteProjects, devices: devices)
 
     /// Remote project actions (`action.run`).
     static var mirrorProjectActions: SupermuxMirrorProjectActions {

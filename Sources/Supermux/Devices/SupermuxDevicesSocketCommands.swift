@@ -77,6 +77,9 @@ enum SupermuxDevicesSocketCommands {
             case let name where SupermuxDeviceNotificationSocketCommands.handles(name):
                 result = try await SupermuxDeviceNotificationSocketCommands.handle(String(name), params)
             #endif
+            case let name where SupermuxRemoteMacsSocketCommands.methods.contains(name):
+                // Settings "Remote Macs" card and the flat-row device chip.
+                result = try SupermuxRemoteMacsSocketCommands.handle(name, params: params)
             case let name where SupermuxProjectsSocketCommands.handles(String(name)):
                 // Projects across Macs (plans/supermux-remote-workspaces/PROJECTS-API.md).
                 result = try await SupermuxProjectsSocketCommands.handle(String(name), params: params)
@@ -110,6 +113,8 @@ enum SupermuxDevicesSocketCommands {
         } catch let error as InvalidParams {
             return .err(code: "invalid_params", message: error.message, data: nil)
         } catch let error as SupermuxMirrorSocketCommands.InvalidParams {
+            return .err(code: "invalid_params", message: error.message, data: nil)
+        } catch let error as SupermuxRemoteMacsSocketCommands.InvalidParams {
             return .err(code: "invalid_params", message: error.message, data: nil)
         } catch let error as SupermuxDeviceError {
             return .err(code: error.code, message: error.localizedDescription, data: nil)

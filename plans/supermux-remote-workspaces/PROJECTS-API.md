@@ -82,21 +82,27 @@ never the remote Mac's own UUID (the loopback device's ids equal local ids; so c
 
 ## `SupermuxRemoteProjectsModel` (app target, `@Observable`)
 
+The single per-Mac Supermux state: the sidebar AND the device-mirror behaviors (⌘G / Run via
+`SupermuxMirrorRunController`, presets bar via `SupermuxMirrorPresetLauncher`) read it, so each Mac
+is polled once (workstream X folded W's former `SupermuxMirrorRemoteState` into it).
+
 ```swift
 private(set) var devices: [SupermuxDeviceProjects]   // device order; offline ones keep cached projects
 private(set) var icons: [String: NSImage]            // key: projectKey(machine:projectID:)
 func device(_ machine: SurfaceMachineID) -> SupermuxDeviceProjects?
 func icon(machine:projectID:) -> NSImage?
-func refresh(_ machine) async                         // projects.list + run.state + icons + wanted worktrees; coalesced
+func refresh(_ machine) async                         // projects.list (projects + presets) + run.state + icons + wanted worktrees; coalesced
 func refreshAll()
+func refreshRuns(_ machine) async                     // run.state only (after a mirror's Run / Stop)
+func apply(run: SupermuxRunStateDTO, on machine)      // fold a run.start/stop result in before the poke lands
 func ensureWorktrees(on machine, projectID:)          // lazy first load (rows call it on expand)
 func refreshWorktrees(on machine, projectID:) async   // worktrees.list {include_branches: false}
 
 struct SupermuxDeviceProjects {                       // ids are that Mac's ids
-    machine, name, isOnline, isLoopback, projects: [SupermuxProjectDTO], isFromCache,
-    supportsProjects: Bool?, runs: [SupermuxRunStateDTO], worktreesByProjectID: [UUID: [SupermuxWorktreeDTO]], lastError
+    machine, name, isOnline, isLoopback, projects: [SupermuxProjectDTO], presets: [SupermuxTerminalPresetDTO],
+    isFromCache, supportsProjects: Bool?, runs: [SupermuxRunStateDTO], worktreesByProjectID: [UUID: [SupermuxWorktreeDTO]], lastError
     var device: SupermuxProjectDevice
-    func project(id:), isRunning(projectID:), isRunning(remoteWorkspaceID:)
+    func project(id:), isRunning(projectID:), isRunning(remoteWorkspaceID:), isRunning(projectID: String, remoteWorkspaceID:)
 }
 ```
 
@@ -183,7 +189,9 @@ most every 10 min otherwise), for each connected, non-loopback device serving pr
 - Remote-only rows: device chip, run indicator, dimmed + "offline" tooltip while the Mac is offline;
   tap = Open on <Mac>; menu: New Worktree… (the device-aware sheet, P2), Worktrees ▸, Actions ▸, Set Up on <Mac>…
   (incl. This Mac), Remove from Projects on <Mac>….
-- Flat rows (touchpoint #561): device mirrors always show `SupermuxFlatRowDeviceChip`.
+- Flat rows (touchpoint #561): device mirrors always show `SupermuxFlatRowDeviceChip`. The chip
+  looks its Mac up in the device facade by name (`SupermuxDeviceChipState.resolve`, SupermuxKit) and
+  dims while that Mac is offline or connecting; an unknown name is never dimmed.
 
 ## Socket introspection (`supermux.devices.*`, served by `SupermuxProjectsSocketCommands`)
 

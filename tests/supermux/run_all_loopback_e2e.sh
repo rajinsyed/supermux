@@ -54,7 +54,7 @@ suite_args() {
 }
 
 # The auto-mirror suite runs last: it quits and relaunches the app for its restart check.
-SUITES=(loopback_device_smoke loopback_projects_e2e loopback_new_worktree_picker_e2e loopback_workspace_behaviors_e2e loopback_notifications_e2e loopback_auto_mirror_e2e)
+SUITES=(loopback_device_smoke loopback_projects_e2e loopback_new_worktree_picker_e2e loopback_workspace_behaviors_e2e loopback_notifications_e2e loopback_tab_sync_e2e loopback_remote_macs_settings_e2e loopback_auto_mirror_e2e)
 
 status=0
 for name in "${SUITES[@]}"; do
