@@ -139,10 +139,14 @@ final class SupermuxTerminalSizingDefaults {
         applyEverywhere()
     }
 
+    /// Re-choosing the current preference stores it and applies nothing, as
+    /// upstream's `setMode`: the tab menu's Priority and Fixed mostly open the
+    /// panel, and re-applying would take back terminals other Macs claimed.
     private func choose(_ next: SupermuxTerminalSizingPreference) {
+        let changed = next != preference
         preference = next
         if let data = try? JSONEncoder().encode(next) { defaults.set(data, forKey: Self.defaultsKey) }
-        applyEverywhere()
+        if changed { applyEverywhere() }
     }
 
     /// Local terminals first, then device mirrors: in the loopback a source
