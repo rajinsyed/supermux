@@ -8572,6 +8572,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         )
     }
 
+    // SUPERMUX:begin device-new-workspace-this-mac
+    /// "New Workspace on ▸ This Mac": the local New Workspace, even while the
+    /// selected workspace routes a plain New Workspace to another Mac or a VM.
+    @discardableResult
+    func supermuxPerformLocalNewWorkspaceAction(tabManager: TabManager) -> Bool {
+        performNewWorkspaceCreationAction(initialSurface: .terminal, preferredTabManager: tabManager, event: nil, debugSource: "supermux.newWorkspace.thisMac")
+    }
+    // SUPERMUX:end device-new-workspace-this-mac
+
     /// Empty-area double-click in the sidebar. A configured
     /// `ui.newWorkspace.action` applies here exactly as it does for the `+`
     /// button and File > New Workspace; without one, a plain workspace lands

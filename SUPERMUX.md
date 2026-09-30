@@ -253,12 +253,17 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   Workspace menu, and ⌘N inside a mirror. The new workspace's mirror opens and is selected in the
   clicking window; the owning Mac opens the workspace in the background (`select: false`), so its
   window never switches under whoever is using it. A link that drops after the create went out says
-  the outcome is unknown and to check that Mac's worktrees, instead of inviting a duplicate.
+  the outcome is unknown and to check that Mac's worktrees, instead of inviting a duplicate. The
+  submenu starts with This Mac (a local workspace even while a mirror is selected) and checks the Mac
+  a plain + / ⌘N would use; the + tooltip names the other Mac while + creates there.
 - **Inside a mirror**, ⌘G/Run, presets, project actions and the Changes panel act on the owning Mac
-  over `mobile.supermux.*`; Finder/editor/file-explorer actions that need a local path are disabled
-  with an "On <Mac>" hint.
+  over `mobile.supermux.*` (Generate & Commit follows that Mac's own AI-key rule); Finder/editor/
+  file-explorer actions and the full diff view, which need a local path, are disabled with an
+  "On <Mac>" hint.
 - **Notifications:** the owning Mac pushes to the phone (the viewer never forwards `.deviceMac`
-  rows, so no duplicates); read state flows both ways; an unattended Mac (away/locked) never
+  rows, so no duplicates); the phone badges the total over every pairable Mac build; read state
+  flows both ways, and mirrored notifications (read state and Mark as Unread included) survive a
+  relaunch of the viewer; an unattended Mac (away/locked) never
   swallows a notification as "already visible"; Macs share the direct-APNs setup and phone tokens
   with each other (setting, default on; the key only travels to a same-account Mac over the
   authenticated link and never overwrites a different key).

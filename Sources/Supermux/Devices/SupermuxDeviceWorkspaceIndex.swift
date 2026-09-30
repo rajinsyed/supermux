@@ -118,6 +118,14 @@ final class SupermuxDeviceWorkspaceIndex {
         devices.scheduleRefresh()
     }
 
+    /// Hands `ref`'s binding to `workspace`, a mirror that already shows it
+    /// (the duplicate that survives), keeping the remote customization last
+    /// applied so its local color, description and pin hold.
+    func handOver(_ ref: SupermuxRemoteWorkspaceRef, to workspace: Workspace) {
+        bindings.handOver(ref, toStableID: workspace.stableId, workspaceID: workspace.id)
+        devices.scheduleRefresh()
+    }
+
     /// Forgets the binding of a local workspace (call when a mirror closes).
     func unbind(_ workspace: Workspace) {
         bindings.unbind(stableID: workspace.stableId)

@@ -9,23 +9,24 @@ import Foundation
 /// Only a row that turned read SINCE the previous feed counts. A row the host
 /// already reported read stays read there forever, and applying it on every
 /// feed would silently undo the user's Mark as Unread on the local copy (which
-/// is local only) the next time that Mac's feed changes.
+/// is local only) the next time that Mac's feed changes. The previous feed's
+/// read rows are persisted (``SupermuxNotificationReadBaseline``), so a
+/// relaunch does not undo it either; reads made there while this Mac was away
+/// still apply.
 ///
 /// No echo: marking the local copy read makes the hub acknowledge the row, and
 /// the sync skips rows the host already reports read
 /// (`CloudNotificationSyncReducer.recordRead`), so nothing goes back.
 @MainActor
 enum SupermuxDeviceNotificationReadMirror {
-    /// Read row ids each machine's previous feed reported, by machine id.
-    private static var readRowIDsByMachine: [String: Set<String>] = [:]
-
     /// Runs after each accepted feed (`device-notification-parity` fence).
     static func mirrorHostReads(of provider: DeviceSurfaceProvider) {
         guard let store = AppDelegate.shared?.notificationStore else { return }
         let machineID = provider.machine.rawValue
-        let readRowIDs = readRowIDs(in: provider.notificationFeed.rows)
-        let newlyRead = readRowIDs.subtracting(readRowIDsByMachine[machineID] ?? [])
-        readRowIDsByMachine[machineID] = readRowIDs
+        let newlyRead = SupermuxComposition.notificationReadBaseline.newlyRead(
+            readRowIDs(in: provider.notificationFeed.rows),
+            on: machineID
+        )
         let ids = localRecordsToMarkRead(
             machineID: machineID,
             readRowIDs: newlyRead,

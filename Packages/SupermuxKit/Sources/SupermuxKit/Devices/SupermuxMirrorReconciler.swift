@@ -24,18 +24,21 @@ public import Foundation
 ///   auto-mirror on (otherwise nothing would reopen it).
 /// - **Duplicate**: when several local mirrors show one remote workspace (a
 ///   reopened closed window or workspace next to the mirror auto-mirror opened
-///   to replace it), one survives — a projected one first, then the bound one
-///   (the mirror every entry point resolves the ref to), then the lowest local
-///   id — and the others close the same confirmed way. Only with auto-mirror
-///   on (off, every mirror was opened on purpose) and never while an open of
-///   the ref is in flight.
+///   to replace it), the one the user keeps survives: a projected one first
+///   (an unprojected survivor would close as an orphan too, leaving nothing),
+///   then the one selected in its window, then one the user opened, reopened
+///   or restored over a copy auto-mirror opened in this session, then the
+///   bound one, then the lowest local id. The others close the same confirmed
+///   way, and an unbound survivor is rebound (``Plan/rebinds``) so every entry
+///   point resolves the ref to it. Only with auto-mirror on (off, every mirror
+///   was opened on purpose) and never while an open of the ref is in flight.
 /// - **Hidden** refs whose remote workspace is confirmed gone are unhidden, so
 ///   the hidden set never outgrows the live remote workspaces.
 ///
 /// ```swift
 /// var reconciler = SupermuxMirrorReconciler()
 /// let plan = reconciler.plan(input)
-/// // execute plan.closes, plan.opens; call again after plan.followUpAfter
+/// // execute plan.rebinds, plan.closes, plan.opens; call again after plan.followUpAfter
 /// ```
 public struct SupermuxMirrorReconciler: Sendable {
     /// One workspace on a device, as its synced record reports it.
@@ -74,12 +77,26 @@ public struct SupermuxMirrorReconciler: Sendable {
         public let isBound: Bool
         /// It has a live or pending-restore projection on the ref's device.
         public let isProjected: Bool
+        /// It is the selected workspace of its window (the user is looking at it).
+        public let isSelected: Bool
+        /// Auto-mirror opened it in this session: a background copy, not one
+        /// the user opened, reopened or restored.
+        public let isAutoOpened: Bool
 
-        public init(ref: SupermuxRemoteWorkspaceRef, localWorkspaceID: UUID, isBound: Bool, isProjected: Bool) {
+        public init(
+            ref: SupermuxRemoteWorkspaceRef,
+            localWorkspaceID: UUID,
+            isBound: Bool,
+            isProjected: Bool,
+            isSelected: Bool = false,
+            isAutoOpened: Bool = false
+        ) {
             self.ref = ref
             self.localWorkspaceID = localWorkspaceID
             self.isBound = isBound
             self.isProjected = isProjected
+            self.isSelected = isSelected
+            self.isAutoOpened = isAutoOpened
         }
     }
 
@@ -133,10 +150,24 @@ public struct SupermuxMirrorReconciler: Sendable {
         }
     }
 
+    /// A duplicate that survives without the binding: bind it to `ref` before
+    /// the closes run, so the ref keeps resolving to a live mirror.
+    public struct Rebind: Equatable, Sendable {
+        public let localWorkspaceID: UUID
+        public let ref: SupermuxRemoteWorkspaceRef
+
+        public init(localWorkspaceID: UUID, ref: SupermuxRemoteWorkspaceRef) {
+            self.localWorkspaceID = localWorkspaceID
+            self.ref = ref
+        }
+    }
+
     /// What one pass decided.
     public struct Plan: Equatable, Sendable {
         public var opens: [SupermuxRemoteWorkspaceRef] = []
         public var closes: [Close] = []
+        /// Surviving duplicates to bind (only once a copy's close is confirmed).
+        public var rebinds: [Rebind] = []
         /// Hidden refs whose remote workspace is gone.
         public var unhide: [SupermuxRemoteWorkspaceRef] = []
         /// Run another pass after this many seconds to confirm a pending suspicion.
@@ -177,11 +208,13 @@ public struct SupermuxMirrorReconciler: Sendable {
 
         for mirror in input.mirrors {
             guard let device = devicesByID[mirror.ref.machineID], device.isAuthoritative else { continue }
-            if let survivor = survivors[mirror.ref], survivor != mirror.localWorkspaceID {
+            if let survivor = survivors[mirror.ref], survivor.localWorkspaceID != mirror.localWorkspaceID {
                 guard !input.busy.contains(mirror.ref) else { continue }
                 let key = SuspicionKey(ref: mirror.ref, kind: .duplicate(mirror.localWorkspaceID))
                 if observe(key, now: input.now, into: &seen) {
                     plan.closes.append(Close(localWorkspaceID: mirror.localWorkspaceID, ref: mirror.ref, reason: .duplicate))
+                    let rebind = Rebind(localWorkspaceID: survivor.localWorkspaceID, ref: mirror.ref)
+                    if !survivor.isBound, !plan.rebinds.contains(rebind) { plan.rebinds.append(rebind) }
                 }
                 continue
             }
@@ -235,16 +268,20 @@ public struct SupermuxMirrorReconciler: Sendable {
     }
 
     /// For every ref shown by more than one mirror, the one mirror to keep:
-    /// projected first, then bound, then the lowest local id (stable across
-    /// passes, so a duplicate's suspicion can confirm).
-    private static func duplicateSurvivors(_ mirrors: [Mirror]) -> [SupermuxRemoteWorkspaceRef: UUID] {
+    /// projected, then selected, then not auto-opened this session, then
+    /// bound, then the lowest local id (a total order, so the same survivor
+    /// comes out whatever the input order and a duplicate's suspicion can
+    /// confirm).
+    private static func duplicateSurvivors(_ mirrors: [Mirror]) -> [SupermuxRemoteWorkspaceRef: Mirror] {
         Dictionary(grouping: mirrors, by: \.ref).compactMapValues { group in
             guard group.count > 1 else { return nil }
             return group.min { lhs, rhs in
                 if lhs.isProjected != rhs.isProjected { return lhs.isProjected }
+                if lhs.isSelected != rhs.isSelected { return lhs.isSelected }
+                if lhs.isAutoOpened != rhs.isAutoOpened { return !lhs.isAutoOpened }
                 if lhs.isBound != rhs.isBound { return lhs.isBound }
                 return lhs.localWorkspaceID.uuidString < rhs.localWorkspaceID.uuidString
-            }?.localWorkspaceID
+            }
         }
     }
 

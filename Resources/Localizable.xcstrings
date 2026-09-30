@@ -597441,13 +597441,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "On %@"
+            "value" : "Presets and Run open on %@"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ 上"
+            "value" : "プリセットと実行は%@で開きます"
           }
         }
       }
@@ -597900,13 +597900,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Every workspace on your other Macs appears here under its project and stays in sync."
+            "value" : "Every workspace on your other Macs appears in the sidebar under its project and stays in sync."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ほかのMacのすべてのワークスペースがプロジェクトの下に表示され、同期され続けます。"
+            "value" : "ほかのMacのすべてのワークスペースがサイドバーのプロジェクトの下に表示され、同期され続けます。"
           }
         }
       }
@@ -598002,13 +598002,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Needed to show your other Macs' workspaces here."
+            "value" : "Needed to show your other Macs' workspaces in the sidebar."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ほかのMacのワークスペースをここに表示するために必要です。"
+            "value" : "ほかのMacのワークスペースをサイドバーに表示するために必要です。"
           }
         }
       }
@@ -598434,6 +598434,74 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ で閉じる…"
+          }
+        }
+      }
+    },
+    "supermux.mirror.changes.openDiff.onMac" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diff view unavailable: the repository is on %@."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "差分ビューは使用できません。リポジトリは%@にあります。"
+          }
+        }
+      }
+    },
+    "supermux.mirror.newWorkspace.plusHelp" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New Workspace on %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ に新規ワークスペースを作成"
+          }
+        }
+      }
+    },
+    "supermux.mirror.newWorkspace.thisMac" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This Mac"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この Mac"
+          }
+        }
+      }
+    },
+    "supermux.settings.remoteMacs.access.change" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Change in Devices…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "デバイスで変更…"
           }
         }
       }

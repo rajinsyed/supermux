@@ -28,4 +28,9 @@ struct SupermuxMirrorTarget: Equatable, Sendable {
 
     /// The device machine.
     var machine: SurfaceMachineID { ref.machine }
+
+    /// The presets bar's Mac icon tooltip (and accessibility label).
+    var presetsBarHostLabel: String {
+        String(localized: "supermux.mirror.presetsBar.onMac", defaultValue: "Presets and Run open on \(deviceName)")
+    }
 }

@@ -688,9 +688,7 @@ struct SupermuxPresetsBarMount: View {
                 guard let workspace else { return }
                 _ = SupermuxComposition.runCoordinator.toggleRun(workspace: workspace)
             },
-            hostLabel: mirror.map {
-                String(localized: "supermux.mirror.presetsBar.onMac", defaultValue: "On \($0.deviceName)")
-            }
+            hostLabel: mirror?.presetsBarHostLabel
         )
         // The bar deliberately does not observe the workspace, so a closed run
         // surface would leave the Stop button stale: reconcile from the panel

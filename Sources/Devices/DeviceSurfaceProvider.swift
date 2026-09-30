@@ -214,6 +214,9 @@ final class DeviceSurfaceProvider: SurfaceProvider {
                             return
                         }
                         self.catalog.replaceProjection(projection, withPanel: created.panelID, in: created.workspaceID, remotePlacement: nil)
+                        // SUPERMUX:begin device-restored-pane-notifications
+                        SupermuxRestoredMirrorNotifications.carry(fromPanel: projection.panelID, toPanel: created.panelID, inWorkspace: projection.workspaceID)
+                        // SUPERMUX:end device-restored-pane-notifications
                         SurfacePaneFactory.close(panelID: projection.panelID, in: projection.workspaceID)
                     } catch {
                         // The next authoritative catalog update retries an unavailable pane.

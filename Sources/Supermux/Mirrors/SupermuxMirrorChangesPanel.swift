@@ -4,10 +4,10 @@ import SwiftUI
 
 /// The Changes panel for a selected device mirror: the same package panel,
 /// fed by a model whose git runs on the owning Mac, under an "On <Mac>"
-/// strip. Local-only affordances are withheld: the full diff viewer and the
-/// PR viewer resolve a repository on THIS Mac's disk, which the mirror's
-/// repository is not. File-row diffs still open (the patch text comes from
-/// the owning Mac).
+/// strip. Local-only affordances are withheld: the full diff viewer (shown
+/// dimmed, its help naming the Mac) and the PR viewer resolve a repository on
+/// THIS Mac's disk, which the mirror's repository is not. File-row diffs
+/// still open (the patch text comes from the owning Mac).
 struct SupermuxMirrorChangesPanel: View {
     let model: SupermuxChangesModel
     let target: SupermuxMirrorTarget
@@ -34,6 +34,7 @@ struct SupermuxMirrorChangesPanel: View {
                 commitAcceleratorShortcut: commitAcceleratorShortcut,
                 commitShortcutHint: commitShortcutHint,
                 onOpenDiff: nil,
+                openDiffUnavailableHelp: Self.openDiffUnavailableHelp(for: target),
                 pullRequests: nil,
                 knownPullRequest: nil,
                 onOpenFileDiff: { [weak tabManager] patch in
@@ -45,5 +46,13 @@ struct SupermuxMirrorChangesPanel: View {
                 }
             )
         }
+    }
+
+    /// The dimmed "Open diff view" button's help: why it is unavailable.
+    static func openDiffUnavailableHelp(for target: SupermuxMirrorTarget) -> String {
+        String(
+            localized: "supermux.mirror.changes.openDiff.onMac",
+            defaultValue: "Diff view unavailable: the repository is on \(target.deviceName)."
+        )
     }
 }

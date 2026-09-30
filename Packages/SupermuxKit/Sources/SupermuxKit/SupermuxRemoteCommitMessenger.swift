@@ -2,9 +2,10 @@
 /// the workspace writes the message (`changes.generate_commit_message`) from
 /// its own diff with its own AI key — no diff or key crosses the link.
 ///
-/// Offered until that Mac answers `ai_unavailable`; the `forDiff` argument
-/// (the remote backend's status fingerprint) only feeds the model's
-/// staleness guard and is not sent.
+/// Offered exactly when that Mac's own panel would offer it (its status
+/// reports `ai_commit_configured`; a Mac too old to report it until it answers
+/// `ai_unavailable`). The `forDiff` argument (the remote backend's status
+/// fingerprint) only feeds the model's staleness guard and is not sent.
 public struct SupermuxRemoteCommitMessenger: SupermuxAICommitMessaging {
     private let backend: SupermuxRemoteChangesBackend
 
@@ -15,7 +16,7 @@ public struct SupermuxRemoteCommitMessenger: SupermuxAICommitMessaging {
     }
 
     public func isConfigured() async -> Bool {
-        await !backend.isAIUnavailable
+        await backend.isAICommitConfigured
     }
 
     public func generateMessage(forDiff diff: String) async -> String? {
