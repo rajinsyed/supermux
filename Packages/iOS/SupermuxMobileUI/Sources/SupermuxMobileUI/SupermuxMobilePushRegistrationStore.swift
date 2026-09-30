@@ -42,39 +42,57 @@ public struct SupermuxMobilePushRegistrationStore {
     /// This loop is inert unless the host advertises `supermux.phone_push.v1`
     /// and the signed app is the fixed-identity Supermux installation.
     ///
+    /// The phone runs one loop per connected Mac, so a Mac that is never the
+    /// foreground (the remote MacBook running the agents) can still push. Each
+    /// Mac's last registered token is remembered under its own key: rotating
+    /// the token on one Mac must not erase another Mac's record of the old
+    /// token, or that Mac would never be told to drop it.
+    ///
     /// - Parameters:
     ///   - client: The paired Mac's phone-push registration seam.
     ///   - capabilities: The connected host's capability snapshot.
+    ///   - pairingID: The Mac pairing this loop registers with; `nil` uses the
+    ///     single-Mac key from before per-Mac registration.
     public func run(
         client: any SupermuxPhonePushRegistering,
-        capabilities: SupermuxMobileCapabilities
+        capabilities: SupermuxMobileCapabilities,
+        pairingID: String? = nil
     ) async {
         guard capabilities.supportsPhonePush,
               currentBundleID == Self.bundleID else { return }
 
+        let registeredKey = Self.registeredKey(pairingID: pairingID)
         let changes = notificationCenter
             .notifications(named: UserDefaults.didChangeNotification)
             .makeAsyncIterator()
         var lastSent: Snapshot?
-        await synchronizeUntilCurrent(client: client, lastSent: &lastSent)
+        await synchronizeUntilCurrent(client: client, registeredKey: registeredKey, lastSent: &lastSent)
         while !Task.isCancelled, await changes.next() != nil {
-            await synchronizeUntilCurrent(client: client, lastSent: &lastSent)
+            await synchronizeUntilCurrent(client: client, registeredKey: registeredKey, lastSent: &lastSent)
         }
+    }
+
+    /// Where one Mac's last registered token lives. A Mac first registered
+    /// before per-Mac keys inherits the single-Mac value on its first read.
+    private static func registeredKey(pairingID: String?) -> String {
+        guard let pairingID, !pairingID.isEmpty else { return registeredDeviceTokenKey }
+        return "\(registeredDeviceTokenKey).\(pairingID)"
     }
 
     private func synchronizeUntilCurrent(
         client: any SupermuxPhonePushRegistering,
+        registeredKey: String,
         lastSent: inout Snapshot?
     ) async {
         while !Task.isCancelled,
-              let snapshot = snapshot(),
+              let snapshot = snapshot(registeredKey: registeredKey),
               snapshot != lastSent {
             do {
                 _ = try await client.registerPhonePush(snapshot.request)
                 if snapshot.enabled {
-                    defaults.set(snapshot.token, forKey: Self.registeredDeviceTokenKey)
+                    defaults.set(snapshot.token, forKey: registeredKey)
                 } else {
-                    defaults.removeObject(forKey: Self.registeredDeviceTokenKey)
+                    defaults.removeObject(forKey: registeredKey)
                 }
                 lastSent = Snapshot(
                     deviceID: snapshot.deviceID,
@@ -89,11 +107,12 @@ public struct SupermuxMobilePushRegistrationStore {
         }
     }
 
-    private func snapshot() -> Snapshot? {
+    private func snapshot(registeredKey: String) -> Snapshot? {
         guard let token = defaults.string(forKey: Self.deviceTokenKey),
               Self.isValidToken(token) else { return nil }
         let enabled = defaults.object(forKey: Self.pushEnabledKey) as? Bool ?? true
-        let registeredToken = defaults.string(forKey: Self.registeredDeviceTokenKey)
+        let registeredToken = defaults.string(forKey: registeredKey)
+            ?? defaults.string(forKey: Self.registeredDeviceTokenKey)
         return Snapshot(
             deviceID: deviceID(),
             token: token.lowercased(),

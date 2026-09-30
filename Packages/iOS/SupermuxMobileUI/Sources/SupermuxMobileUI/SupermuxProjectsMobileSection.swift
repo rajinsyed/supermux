@@ -76,15 +76,34 @@ public struct SupermuxProjectsMobileSection: View {
             SupermuxProjectsEmptyState(editing: actions.editing)
                 .listRowInsets(SupermuxProjectsMobileSection.rowInsets)
                 .listRowSeparator(.hidden)
+        } else if section.showsMacHeaders {
+            // More than one Mac has projects: each Mac's rows sit under its
+            // own header, offering only what that Mac supports.
+            ForEach(section.displayedGroups) { group in
+                SupermuxProjectsMacHeaderRow(header: group.header)
+                    .listRowInsets(SupermuxProjectsMobileSection.rowInsets)
+                    .listRowSeparator(.hidden)
+                projectRows(group.rows, showsWorktreeCreation: group.showsWorktreeCreation)
+            }
         } else {
-            ForEach(section.rows) { row in
+            projectRows(section.rows, showsWorktreeCreation: section.showsWorktreeCreation)
+        }
+    }
+
+    /// One Mac's project rows with their nested rows.
+    private func projectRows(
+        _ rows: [SupermuxProjectRowSnapshot],
+        showsWorktreeCreation: Bool
+    ) -> some View {
+        Group {
+            ForEach(rows) { row in
                 SupermuxProjectMobileRow(
                     row: row,
                     iconPNGData: actions.iconPNGData,
                     toggleExpanded: actions.toggleProjectExpanded,
                     openWorkspace: actions.openProjectWorkspace,
                     openDetail: actions.openProjectDetail,
-                    newWorktree: section.showsWorktreeCreation
+                    newWorktree: showsWorktreeCreation
                         ? actions.requestNewWorktree
                         : nil
                 )
@@ -106,7 +125,7 @@ public struct SupermuxProjectsMobileSection: View {
                             Image(systemName: "info.circle")
                         }
                     }
-                    if section.showsWorktreeCreation {
+                    if showsWorktreeCreation {
                         Button {
                             actions.requestNewWorktree(row.id)
                         } label: {
@@ -129,7 +148,7 @@ public struct SupermuxProjectsMobileSection: View {
                 SupermuxProjectNestedRows(
                     row: row,
                     actions: actions,
-                    showsNewWorktree: section.showsWorktreeCreation
+                    showsNewWorktree: showsWorktreeCreation
                 )
             }
         }

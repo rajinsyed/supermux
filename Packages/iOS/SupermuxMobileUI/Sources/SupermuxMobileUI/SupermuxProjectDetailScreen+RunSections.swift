@@ -40,7 +40,7 @@ extension SupermuxProjectDetailScreen {
                 }
                 Spacer(minLength: 4)
                 SupermuxProjectRunControl(
-                    projectID: row.id,
+                    projectID: row.projectID,
                     run: run,
                     runCommands: row.runCommands,
                     startRun: runActions.startRun,
@@ -216,9 +216,9 @@ extension SupermuxProjectDetailScreen {
         guard let runActions else { return }
         Task {
             do {
-                let response = try await runActions.launchPreset(preset.id, row.id)
+                let response = try await runActions.launchPreset(preset.id, row.projectID)
                 if let workspaceID = response.workspaceId {
-                    selectWorkspace(workspaceID)
+                    openMac(workspaceID)
                 }
             } catch {
                 presetErrorMessage = error.localizedDescription
@@ -233,7 +233,7 @@ extension SupermuxProjectDetailScreen {
         guard let runActions else { return }
         Task {
             do {
-                let outcome = try await runActions.runAction(row.id, action.id)
+                let outcome = try await runActions.runAction(row.projectID, action.id)
                 if outcome.opensURLLocally {
                     guard let urlString = outcome.url, let url = URL(string: urlString) else {
                         actionErrorMessage = String(

@@ -1,4 +1,5 @@
 public import CmuxMobileShellModel
+import SupermuxMobileKit
 
 extension [MobileWorkspacePreview] {
     /// The flat-list side of the §6 augmentation: which workspace rows stay
@@ -17,10 +18,16 @@ extension [MobileWorkspacePreview] {
     /// or any workspace while `projects.list` has not yet loaded) stays in the
     /// flat list rather than vanishing with no way to reach it.
     ///
-    /// - Parameter shownProjectIDs: The project ids currently rendered in the
-    ///   Projects section. Empty disables folding entirely (the shell passes
-    ///   empty while the section is hidden, unloaded, or searching/filtering),
-    ///   so no workspace ever becomes unreachable or unsearchable.
+    /// Keyed by (Mac, project): the shown ids are the section's ROW ids
+    /// (``SupermuxProjectKey/rawValue``), so a workspace folds only under its
+    /// OWN Mac's project, even if another Mac reuses the project id. A bare
+    /// project id (single legacy session) still matches by project alone.
+    ///
+    /// - Parameter shownProjectIDs: The project row ids currently rendered in
+    ///   the Projects section. Empty disables folding entirely (the shell
+    ///   passes empty while the section is hidden, unloaded, or
+    ///   searching/filtering), so no workspace ever becomes unreachable or
+    ///   unsearchable.
     /// - Returns: The rows minus the ungrouped workspaces owned by a shown
     ///   project.
     public func supermuxFlatRows(hidingProjectIDs shownProjectIDs: Set<String>) -> [MobileWorkspacePreview] {
@@ -29,7 +36,14 @@ extension [MobileWorkspacePreview] {
             guard let projectID = workspace.supermuxProjectID, workspace.groupID == nil else {
                 return true
             }
-            return !shownProjectIDs.contains(projectID)
+            let key = SupermuxProjectKey(
+                pairingID: SupermuxMacSeam.pairingID(
+                    macDeviceID: workspace.macDeviceID,
+                    instanceTag: workspace.macInstanceTag
+                ),
+                projectID: projectID
+            )
+            return !shownProjectIDs.contains(key.rawValue) && !shownProjectIDs.contains(projectID)
         }
     }
 }
