@@ -2508,6 +2508,7 @@ final class TerminalNotificationStore: ObservableObject {
                 SupermuxBannerProjectDecorator.decorate(
                     content,
                     project: supermuxProject,
+                    origin: notificationOrigin,
                     tabName: supermuxTabName
                 )
             }
