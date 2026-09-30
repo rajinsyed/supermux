@@ -284,6 +284,8 @@ forces without asking; an idle tab closes without asking; and a tab closed while
 
 ```bash
 CMUX_TAG=<tag> python3 tests/supermux/loopback_mirror_tab_close_e2e.py [--claude]
+```
+
 ## Terminal size policy E2E
 
 `tests/supermux/loopback_terminal_sizing_policy_e2e.py` (touchpoints #665–#670) checks that a
@@ -306,6 +308,8 @@ own actions, and resets the preference at start and end.
 
 ```bash
 CMUX_TAG=<tag> python3 tests/supermux/loopback_terminal_sizing_policy_e2e.py --app-path "<App path>"
+```
+
 ## Mirror Files panel E2E
 
 `tests/supermux/loopback_mirror_files_e2e.py` checks that a device mirror's Files panel shows the
