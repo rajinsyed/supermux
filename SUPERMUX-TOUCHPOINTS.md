@@ -12,7 +12,7 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **512**. Number **351** is unused (the notifications
+- Numbering: the highest number in use is **514**. Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 82, 83, 89, 106, 121, 142, 213, 214,
   220, 229, 237, 250, 251, 252–258, 335, 470, 473–481, 483, 484, and 487** are unused; all are
@@ -506,6 +506,8 @@ Rules for adding a touchpoint:
 | 510 | `Sources/AppDelegate+NewWorkspaceContextMenu.swift` | `claude-harness-builtin-action` | Upstream's exhaustive `isBuiltInActionAvailableInNewWorkspaceMenu` switch (the new-workspace context menu's availability gate, mirroring the command palette) gains a fenced `.newClaudeHarness` arm returning `true` — always available, like the palette command (#436). Added at the 2026-09-30 upstream merge, when upstream introduced this file |
 | 511 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/MobilePinnedNavigationBar.swift` | `ios27-sdk-no-toolbar-minimize` | **Local-toolchain workaround.** Changes upstream's `#if compiler(>=6.4)` in `mobilePinnedNavigationBar()` to `#if compiler(>=6.4) && SUPERMUX_IOS27_TOOLBAR_MINIMIZE` (the flag is never defined), so the UIKit `PinnedNavigationBarApplier` stand-in is always used. Xcode 27.0 (27A266a, Swift 6.4) ships an iOS 27 SDK without `toolbarMinimizeBehavior(_:for:)`, so upstream's gate fails to compile here; upstream CI (Xcode 26, Swift < 6.4) never compiles that branch. RETIRE when the SDK exposes `toolbarMinimizeBehavior` or upstream fixes the gate: delete the fence and take upstream's line |
 | 512 | `cmuxTests/DockPortalReconcileTests.swift` | `claude-harness-dock-admission-test` | Fork test `harnessSurfaceCannotMoveIntoDock` (fork commit 4224cc3a8ae) inside upstream's Dock test suite: a workspace-owned Claude harness surface is rejected by both `canMoveSurfaceIntoDock` and `moveSurfaceIntoDock` and stays with its workspace (regression coverage for #461). Was unfenced until the 2026-09-30 upstream merge, which also adapted it to upstream's Optional `workspace.dockSplit` (`workspace.requiredDockSplitForTesting`, matching the sibling tests) |
+| 513 | `Sources/CmuxFeatureFlagOverrideCapability.swift` | `supermux-release-cloud-override` | Adds `isSupermuxRelease` (`bundleIdentifier == "com.supermux.app"`) and ORs it into `allowsCloudOverride`, so the fork's release identity gets the `.localFirst` override policy for `cloud-machines-enabled-release` that upstream grants only Nightly and Debug. Upstream's rollout does not include Supermux accounts, and Mac-to-Mac My Devices (`DevicesFeature`) is gated on the same Cloud flag |
+| 514 | `Sources/FeatureFlags.swift` | `supermux-release-cloud-override` | In `CmuxFeatureFlags.init`, seeds the Cloud override to `true` once for the Supermux release identity (only when no override value is stored, so a later explicit choice in the Feature Flags window sticks). The Beta Features Cloud Machines toggle is still required. Server-side entitlements are unchanged: Cloud VM creation may still be refused; My Devices is the intended use |
 
 ## How to re-apply
 
@@ -4489,3 +4491,14 @@ never reaches it. Re-apply: append `&& SUPERMUX_IOS27_TOOLBAR_MINIMIZE` to that 
 fence (the flag is deliberately never defined, so the UIKit `PinnedNavigationBarApplier` path always
 runs). This is a temporary toolchain workaround: once the SDK exposes `toolbarMinimizeBehavior(_:for:)`
 (or upstream changes the gate), delete the fence, take upstream's line, and retire #511.
+
+### 513–514. Supermux release Cloud override — `supermux-release-cloud-override`
+
+Why: upstream gates Cloud Machines — and with it Mac-to-Mac **My Devices** — on the PostHog flag
+`cloud-machines-enabled-release`, and only lets Nightly/Debug identities override it locally. The
+Supermux release app (`com.supermux.app`) is not in that rollout, so the Cloud tab never appeared.
+Re-apply: (a) in `CmuxFeatureFlagOverrideCapability`, add the `isSupermuxRelease` stored property
+and prefix `allowsCloudOverride` with `isSupermuxRelease ||`; (b) in `CmuxFeatureFlags.init`, just
+before the `if let remoteFlagLoader` branch, write `true` to
+`overrideDefaultsKey(for: cloudMachinesFlag.key)` when `isSupermuxRelease` and no value is stored.
+Retire both if upstream ever ships the flag on for everyone.
