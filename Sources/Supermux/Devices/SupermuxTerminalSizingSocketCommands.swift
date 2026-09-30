@@ -26,9 +26,10 @@ enum SupermuxTerminalSizingSocketCommands {
     static func handle(_ name: String, params: [String: Any]) throws -> [String: Any] {
         switch name.dropFirst(methodPrefix.count) {
         case "state":
-            return ["preference": NSNull(), "stored": NSNull(), "mirrors": NSNull()]
+            return state()
         case "reset":
-            return ["reset": false]
+            SupermuxTerminalSizingDefaults.shared.reset()
+            return ["reset": true, "preference": preferencePayload()]
         case "select_mode":
             return try selectMode(params)
         case "set_priority":
@@ -36,6 +37,36 @@ enum SupermuxTerminalSizingSocketCommands {
         default:
             throw SupermuxMirrorSocketCommands.InvalidParams(message: "unknown terminal_sizing method \(name)")
         }
+    }
+
+    // MARK: - Preference and claims
+
+    private static func state() -> [String: Any] {
+        let defaults = SupermuxTerminalSizingDefaults.shared
+        let mirrors = SupermuxTerminalSizingVisibility.shared.trackedMirrorSessions()
+            .sorted { $0.key.uuidString < $1.key.uuidString }
+            .map { entry -> [String: Any] in
+                let session = entry.value
+                return [
+                    "surface_id": entry.key.uuidString,
+                    "remote_surface_id": session.remoteSurfaceID.uuidString,
+                    "hidden": session.supermuxHidden,
+                    "attached": session.phase == .attached,
+                    "self_key": session.viewer.map { SupermuxTerminalSizingDefaults.selfKey(of: $0) as Any } ?? NSNull(),
+                    "claimed": session.supermuxSizingClaim.claimed,
+                    "pushed": session.supermuxSizingClaim.pushed,
+                ]
+            }
+        return ["preference": preferencePayload(), "stored": defaults.isStored, "mirrors": mirrors]
+    }
+
+    private static func preferencePayload() -> [String: Any] {
+        let preference = SupermuxTerminalSizingDefaults.shared.preference
+        return [
+            "mode": preference.mode.rawValue,
+            "priority": preference.priority,
+            "fixed": preference.fixed.map { ["cols": $0.cols, "rows": $0.rows] as Any } ?? NSNull(),
+        ]
     }
 
     // MARK: - Panel actions
