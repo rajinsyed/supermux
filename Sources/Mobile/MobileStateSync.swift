@@ -163,6 +163,9 @@ final class MobileStateSyncHost {
                 )
             }
             for workspace in tabs where seenWorkspaceIDs.insert(workspace.id).inserted {
+                // SUPERMUX:begin device-mirror-export-filter (a mirror of another Mac's workspace is never re-exported)
+                if SupermuxDeviceWorkspaceIndex.isDeviceMirror(workspace) { continue }
+                // SUPERMUX:end device-mirror-export-filter
                 liveWorkspaceIDs.insert(workspace.id)
                 liveWorkspaceObjectIDs[workspace.id] = ObjectIdentifier(workspace)
                 workspaceRows.append(
