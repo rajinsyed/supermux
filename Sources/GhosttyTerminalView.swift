@@ -11368,6 +11368,10 @@ final class GhosttySurfaceScrollView: NSView {
 
     /// Keeps the shared-backdrop cutout view present only while a pane-local fill needs it.
     private func synchronizeSharedBackdropCutout(visible: Bool) {
+        // SUPERMUX:begin backdrop-cutout-after-first-frame
+        // Built detached or before the first frame, the cutout blanks the pane once shown (touchpoint #538).
+        if visible, sharedBackdropCutoutView == nil, window == nil || surfaceView.terminalSurface?.hasPresentedFrame != true { return }
+        // SUPERMUX:end backdrop-cutout-after-first-frame
         if visible {
             let cutoutView = sharedBackdropCutoutView ?? makeSharedBackdropCutoutView()
             _ = setFrameIfNeeded(cutoutView, to: bounds)
