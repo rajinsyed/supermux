@@ -211,6 +211,112 @@ import Testing
         #expect(navigated.ids == ["mac-book/ws-on-book"])
     }
 
+    // MARK: Which reconnect closes the sheet
+
+    /// Only the Mac the sheet creates on holds stores: another Mac merely
+    /// offered in the picker re-resolves when picked, so its reconnect (lid
+    /// closed, network change) must not throw away the user's typed prompt.
+    @Test func aReconnectOfAMacOnlyOfferedInThePickerKeepsTheSheet() async throws {
+        let (model, running) = try await sameRepositoryModel()
+        var sessions = running
+        defer { sessions.forEach { $0.cancel() } }
+        await model.requestNewWorktree(model.snapshot.rows[0].id)?.value
+        #expect(model.newWorktreePresentation != nil)
+
+        sessions[1] = try await reconnect(macBook, on: model, replacing: sessions[1])
+
+        #expect(model.newWorktreePresentation != nil)
+    }
+
+    /// Once the picker retargeted the create, that Mac's stores are the live
+    /// ones: its reconnect must close the sheet.
+    @Test func aReconnectOfTheMacTheSheetRetargetedToClosesIt() async throws {
+        let (model, running) = try await sameRepositoryModel()
+        var sessions = running
+        defer { sessions.forEach { $0.cancel() } }
+        await model.requestNewWorktree(model.snapshot.rows[0].id)?.value
+        let bookOption = try #require(model.newWorktreePresentation?.options.last)
+        _ = try await model.prepareNewWorktreeTarget(bookOption)
+
+        sessions[1] = try await reconnect(macBook, on: model, replacing: sessions[1])
+
+        #expect(model.newWorktreePresentation == nil)
+    }
+
+    /// After a retarget the row's own Mac holds nothing the create uses, so
+    /// its reconnect leaves the sheet alone.
+    @Test func afterARetargetTheRowsOwnMacReconnectingKeepsTheSheet() async throws {
+        let (model, running) = try await sameRepositoryModel()
+        var sessions = running
+        defer { sessions.forEach { $0.cancel() } }
+        await model.requestNewWorktree(model.snapshot.rows[0].id)?.value
+        let bookOption = try #require(model.newWorktreePresentation?.options.last)
+        _ = try await model.prepareNewWorktreeTarget(bookOption)
+
+        sessions[0] = try await reconnect(studio, on: model, replacing: sessions[0])
+
+        #expect(model.newWorktreePresentation != nil)
+    }
+
+    /// A retarget still fetching branches when its Mac reconnects must fail
+    /// in the picker, not hand the sheet stores bound to the dead client.
+    @Test func aRetargetWhoseMacReconnectsMidFetchFails() async throws {
+        let bookClient = FakeSupermuxMacClient()
+        let (model, running) = try await sameRepositoryModel(bookClient: bookClient)
+        var sessions = running
+        defer { sessions.forEach { $0.cancel() } }
+        await model.requestNewWorktree(model.snapshot.rows[0].id)?.value
+        let bookOption = try #require(model.newWorktreePresentation?.options.last)
+        bookClient.worktreesListShouldHoldBranchFetches = true
+        let retarget = Task { try await model.prepareNewWorktreeTarget(bookOption) }
+        try await wait.until {
+            bookClient.recordedWireCalls.contains { $0.params["include_branches"] as? Bool == true }
+        }
+
+        sessions[1] = try await reconnect(macBook, on: model, replacing: sessions[1])
+        bookClient.resumeAllWorktreesList()
+
+        await #expect(throws: SupermuxMacUnavailableError.self) { try await retarget.value }
+    }
+
+    /// Studio and the MacBook, both with the same repository, sessions running.
+    private func sameRepositoryModel(
+        bookClient: FakeSupermuxMacClient = FakeSupermuxMacClient()
+    ) async throws -> (SupermuxProjectsSectionModel, [Task<Void, Never>]) {
+        let studioClient = FakeSupermuxMacClient()
+        studioClient.listResponse = SupermuxProjectsListResponse(projects: [project("a-1", origin: "git@github.com:me/supermux.git")])
+        bookClient.listResponse = SupermuxProjectsListResponse(projects: [project("b-1", origin: "https://github.com/me/supermux.git")])
+        return try await runningModel(studioClient: studioClient, bookClient: bookClient)
+    }
+
+    /// Replaces one Mac's connection (a new client identity), the way a
+    /// reconnect reaches the section, and waits until the new session loaded.
+    private func reconnect(
+        _ mac: SupermuxMacInfo,
+        on model: SupermuxProjectsSectionModel,
+        replacing old: Task<Void, Never>
+    ) async throws -> Task<Void, Never> {
+        let generation = try #require(model.session(forPairingID: mac.pairingID)?.generation)
+        old.cancel()
+        let client = FakeSupermuxMacClient()
+        client.listResponse = SupermuxProjectsListResponse(
+            projects: model.session(forPairingID: mac.pairingID)?.store?.projects ?? []
+        )
+        let replacement = Task {
+            await model.runSession(
+                mac: mac,
+                client: client,
+                hostCapabilities: [
+                    SupermuxMobileCapability.projectsV1.rawValue,
+                    SupermuxMobileCapability.worktreesV1.rawValue,
+                ],
+                connectionID: UUID().uuidString
+            )
+        }
+        try await wait.until { model.session(forPairingID: mac.pairingID)?.generation != generation }
+        return replacement
+    }
+
     private final class NavigationRecorder {
         var ids: [String] = []
     }
