@@ -70,6 +70,28 @@ struct SupermuxRemoteProjectCommands {
         in tabManager: TabManager,
         focus: Bool = true
     ) async throws -> SupermuxDeviceWorkspaceOpener.Opened {
+        let ref = try await requestWorktreeCreate(location, request: request)
+        return try await opener.openWhenAvailable(ref, in: tabManager, focus: focus)
+    }
+
+    /// `agent.start` there (long deadline), then open and select its mirror
+    /// here: the prompt-first sibling of ``createWorktree(_:request:in:focus:)``.
+    func startAgent(
+        _ location: SupermuxProjectLocation,
+        request: SupermuxAgentLaunchRequest,
+        in tabManager: TabManager,
+        focus: Bool = true
+    ) async throws -> SupermuxDeviceWorkspaceOpener.Opened {
+        let ref = try await requestAgentStart(location, request: request)
+        return try await opener.openWhenAvailable(ref, in: tabManager, focus: focus)
+    }
+
+    /// The RPC half of ``createWorktree(_:request:in:focus:)``: the workspace
+    /// the other Mac opened in the new worktree.
+    func requestWorktreeCreate(
+        _ location: SupermuxProjectLocation,
+        request: SupermuxRemoteWorktreeRequest
+    ) async throws -> SupermuxRemoteWorkspaceRef {
         let machine = try Self.machine(of: location)
         var params: [String: Any] = ["project_id": location.projectID.uuidString, "open": true]
         if let name = Self.nonEmpty(request.workspaceName) { params["workspace_name"] = name }
@@ -82,7 +104,34 @@ struct SupermuxRemoteProjectCommands {
             timeout: SupermuxDevices.longOperationTimeout
         )
         Task { await remoteProjects.refreshWorktrees(on: machine, projectID: location.projectID) }
-        return try await openReturnedWorkspace(result, on: machine, in: tabManager, focus: focus)
+        return try Self.workspaceRef(in: result, on: machine)
+    }
+
+    /// The RPC half of ``startAgent(_:request:in:focus:)``: `agent.start`
+    /// with `request` (whose `projectId` is that Mac's id) and the workspace
+    /// it opened there. A blank command lets that Mac use its selected one.
+    func requestAgentStart(
+        _ location: SupermuxProjectLocation,
+        request: SupermuxAgentLaunchRequest
+    ) async throws -> SupermuxRemoteWorkspaceRef {
+        let machine = try Self.machine(of: location)
+        var params: [String: Any] = ["project_id": location.projectID.uuidString, "prompt": request.prompt]
+        let optional: [(String, String?)] = [
+            ("command", request.command), ("model", request.model), ("effort", request.effort),
+            ("base_branch", request.baseBranch), ("workspace_name", request.workspaceName),
+            ("branch_name", request.branchName),
+        ]
+        for (key, value) in optional {
+            if let value = value.flatMap(Self.nonEmpty) { params[key] = value }
+        }
+        let result = try await devices.request(
+            .agentStart,
+            params: params,
+            on: machine,
+            timeout: SupermuxDevices.longOperationTimeout
+        )
+        Task { await remoteProjects.refreshWorktrees(on: machine, projectID: location.projectID) }
+        return try Self.workspaceRef(in: result, on: machine)
     }
 
     // MARK: - Other operations
@@ -187,11 +236,16 @@ struct SupermuxRemoteProjectCommands {
         in tabManager: TabManager,
         focus: Bool = true
     ) async throws -> SupermuxDeviceWorkspaceOpener.Opened {
+        let ref = try Self.workspaceRef(in: result, on: machine)
+        return try await opener.openWhenAvailable(ref, in: tabManager, focus: focus)
+    }
+
+    /// The `workspace_id` a host RPC returned, as a ref on `machine`.
+    private static func workspaceRef(in result: [String: Any], on machine: SurfaceMachineID) throws -> SupermuxRemoteWorkspaceRef {
         guard let workspaceID = result["workspace_id"] as? String, !workspaceID.isEmpty else {
             throw SupermuxDeviceError.malformedResponse("workspace_id")
         }
-        let ref = SupermuxRemoteWorkspaceRef(machine: machine, workspaceID: workspaceID)
-        return try await opener.openWhenAvailable(ref, in: tabManager, focus: focus)
+        return SupermuxRemoteWorkspaceRef(machine: machine, workspaceID: workspaceID)
     }
 
     static func machine(of location: SupermuxProjectLocation) throws -> SurfaceMachineID {

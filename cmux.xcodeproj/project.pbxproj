@@ -3424,6 +3424,7 @@
 		50BE00050000000000000004 /* SupermuxMobileWorkspaceStatusFields.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00050000000000000003 /* SupermuxMobileWorkspaceStatusFields.swift */; };
 		50BE000A000000000000001C /* SupermuxNewWorkspaceDeviceMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000A000000000000001B /* SupermuxNewWorkspaceDeviceMenu.swift */; };
 		50BE000100000000000000D1 /* SupermuxNewWorkspaceHomeDirectoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000D2 /* SupermuxNewWorkspaceHomeDirectoryTests.swift */; };
+		50BE000B0000000000000004 /* SupermuxNewWorktreeSocketCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000B0000000000000003 /* SupermuxNewWorktreeSocketCommands.swift */; };
 		50BE00010000000000000106 /* SupermuxNotificationProjectBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00010000000000000105 /* SupermuxNotificationProjectBridge.swift */; };
 		50BE00010000000000000111 /* SupermuxNotificationRowBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00010000000000000110 /* SupermuxNotificationRowBody.swift */; };
 		50BE00010000000000000102 /* SupermuxPanelAgentEvidence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00010000000000000101 /* SupermuxPanelAgentEvidence.swift */; };
@@ -3439,6 +3440,7 @@
 		50BE00060000000000000004 /* SupermuxRemoteProjectsModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00060000000000000003 /* SupermuxRemoteProjectsModel.swift */; };
 		50BE00060000000000000010 /* SupermuxRemoteProjectsPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE0006000000000000000F /* SupermuxRemoteProjectsPresenter.swift */; };
 		50BE00040000000000000010 /* SupermuxRemoteWorkspaceRef+Surface.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE0004000000000000000F /* SupermuxRemoteWorkspaceRef+Surface.swift */; };
+		50BE000B0000000000000002 /* SupermuxRemoteWorktreeCreationTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000B0000000000000001 /* SupermuxRemoteWorktreeCreationTarget.swift */; };
 		50BE000100000000000000FA /* SupermuxRowMenuVisibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000F9 /* SupermuxRowMenuVisibility.swift */; };
 		50BE000100000000000000B5 /* SupermuxRunSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000B4 /* SupermuxRunSupport.swift */; };
 		50BE000100000000000000F8 /* SupermuxSidebarAgentStatusRowsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000F7 /* SupermuxSidebarAgentStatusRowsTests.swift */; };
@@ -7705,6 +7707,7 @@
 		50BE00050000000000000003 /* SupermuxMobileWorkspaceStatusFields.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxMobileWorkspaceStatusFields.swift; sourceTree = "<group>"; };
 		50BE000A000000000000001B /* SupermuxNewWorkspaceDeviceMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mirrors/SupermuxNewWorkspaceDeviceMenu.swift; sourceTree = "<group>"; };
 		50BE000100000000000000D2 /* SupermuxNewWorkspaceHomeDirectoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxNewWorkspaceHomeDirectoryTests.swift; sourceTree = "<group>"; };
+		50BE000B0000000000000003 /* SupermuxNewWorktreeSocketCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Projects/SupermuxNewWorktreeSocketCommands.swift; sourceTree = "<group>"; };
 		50BE00010000000000000105 /* SupermuxNotificationProjectBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxNotificationProjectBridge.swift; sourceTree = "<group>"; };
 		50BE00010000000000000110 /* SupermuxNotificationRowBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxNotificationRowBody.swift; sourceTree = "<group>"; };
 		50BE00010000000000000101 /* SupermuxPanelAgentEvidence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxPanelAgentEvidence.swift; sourceTree = "<group>"; };
@@ -7720,6 +7723,7 @@
 		50BE00060000000000000003 /* SupermuxRemoteProjectsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Projects/SupermuxRemoteProjectsModel.swift; sourceTree = "<group>"; };
 		50BE0006000000000000000F /* SupermuxRemoteProjectsPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Projects/SupermuxRemoteProjectsPresenter.swift; sourceTree = "<group>"; };
 		50BE0004000000000000000F /* SupermuxRemoteWorkspaceRef+Surface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Devices/SupermuxRemoteWorkspaceRef+Surface.swift"; sourceTree = "<group>"; };
+		50BE000B0000000000000001 /* SupermuxRemoteWorktreeCreationTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Projects/SupermuxRemoteWorktreeCreationTarget.swift; sourceTree = "<group>"; };
 		50BE000100000000000000F9 /* SupermuxRowMenuVisibility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxRowMenuVisibility.swift; sourceTree = "<group>"; };
 		50BE000100000000000000B4 /* SupermuxRunSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxRunSupport.swift; sourceTree = "<group>"; };
 		50BE000100000000000000F7 /* SupermuxSidebarAgentStatusRowsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxSidebarAgentStatusRowsTests.swift; sourceTree = "<group>"; };
@@ -8995,6 +8999,8 @@
 				50BE00060000000000000007 /* SupermuxMirrorOwnership.swift */,
 				50BE00060000000000000009 /* SupermuxMirrorRowSnapshot.swift */,
 				50BE0006000000000000000B /* SupermuxRemoteProjectCommands.swift */,
+				50BE000B0000000000000003 /* SupermuxNewWorktreeSocketCommands.swift */,
+				50BE000B0000000000000001 /* SupermuxRemoteWorktreeCreationTarget.swift */,
 				50BE0006000000000000000D /* SupermuxRemoteProjectActionsFactory.swift */,
 				50BE0006000000000000000F /* SupermuxRemoteProjectsPresenter.swift */,
 				50BE00060000000000000011 /* SupermuxMobileHost+ProjectSetup.swift */,
@@ -15812,6 +15818,7 @@
 				50BE000200000000000000C6 /* SupermuxMobileWorkspaceListAugmenter.swift in Sources */,
 				50BE00050000000000000004 /* SupermuxMobileWorkspaceStatusFields.swift in Sources */,
 				50BE000A000000000000001C /* SupermuxNewWorkspaceDeviceMenu.swift in Sources */,
+				50BE000B0000000000000004 /* SupermuxNewWorktreeSocketCommands.swift in Sources */,
 				50BE00010000000000000106 /* SupermuxNotificationProjectBridge.swift in Sources */,
 				50BE00010000000000000111 /* SupermuxNotificationRowBody.swift in Sources */,
 				50BE00010000000000000102 /* SupermuxPanelAgentEvidence.swift in Sources */,
@@ -15827,6 +15834,7 @@
 				50BE00060000000000000004 /* SupermuxRemoteProjectsModel.swift in Sources */,
 				50BE00060000000000000010 /* SupermuxRemoteProjectsPresenter.swift in Sources */,
 				50BE00040000000000000010 /* SupermuxRemoteWorkspaceRef+Surface.swift in Sources */,
+				50BE000B0000000000000002 /* SupermuxRemoteWorktreeCreationTarget.swift in Sources */,
 				50BE000100000000000000FA /* SupermuxRowMenuVisibility.swift in Sources */,
 				50BE000100000000000000B5 /* SupermuxRunSupport.swift in Sources */,
 				50BE000100000000000000B9 /* SupermuxSidebarFontScaleStore.swift in Sources */,
