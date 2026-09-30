@@ -17,7 +17,10 @@ device, and auto-mirror opens one local mirror workspace per source. Checks:
                                    the binding; auto-mirror's background copy is the one that closes
   c3b. duplicate_keeps_selected    when the auto-opened mirror is the one selected in its window, it
                                    survives and the other copy closes
-  d. hide_and_unhide               "Hide Here" (socket close_mirror hide) is never reopened;
+  c4. close_during_open            a source closed while auto-mirror is opening its mirror (its ref
+                                   busy) leaves no local workspace behind: the failed open closes the
+                                   half-created mirror instead of leaving an unbound, empty workspace
+  d. hide_and_unhide              "Hide Here" (socket close_mirror hide) is never reopened;
                                    a programmatic workspace.close of a mirror hides too;
                                    supermux.devices.unhide brings the mirror back
   e. close_on_mac                  "Close on <Mac>" (socket close_mirror close_on_mac) closes the
@@ -405,6 +408,47 @@ class AutoMirrorE2E:
         self.sock.call("workspace.select", {"workspace_id": mirror.get("workspace_id")})
         duplicate = self.open_duplicate(source, mirror)
         return self.expect_survivor(source, survivor=str(mirror.get("workspace_id")), closed=duplicate)
+
+    RACE_ROUNDS = 6
+
+    def wait_busy(self, source: str, seconds: float = 3) -> bool:
+        """Polls without sleeping (an open lasts a few hundred ms) until
+        auto-mirror is opening a mirror of `source`."""
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            state = (self.sock.call("supermux.devices.list", {}) or {}).get("auto_mirror_state") or {}
+            if any(up(ref.get("remote_workspace_id")) == up(source) for ref in state.get("busy") or []):
+                return True
+        return False
+
+    def check_close_during_open(self) -> Dict[str, Any]:
+        """Closes each new source the moment auto-mirror starts opening its
+        mirror (the ref turns busy), so the open fails midway. Nothing may
+        stay behind: no mirror, and no unbound half-created workspace."""
+        before = self.local_ids()
+        busy_hits = 0
+        for index in range(self.RACE_ROUNDS):
+            result = self.sock.call("workspace.create", {"title": f"auto-mirror-race{index}-{self.nonce}", "focus": False}) or {}
+            source = str(result.get("workspace_id") or "")
+            if not source:
+                raise Failure(f"workspace.create returned no id: {result}")
+            self.created.append(source)
+            busy_hits += 1 if self.wait_busy(source) else 0
+            self.close_workspace(source)
+
+        def leftovers() -> Dict[str, Any]:
+            rows = self.bindings().get("local_workspaces") or []
+            return {w["workspace_id"]: (w.get("title"), w.get("is_device_mirror")) for w in rows if up(w.get("workspace_id")) not in before}
+
+        try:
+            wait_for("the closed sources to leave no local workspace", lambda: not leftovers(), self.timeout)
+            hold("no local workspace left behind", lambda: not leftovers(), 3)
+        except Failure as error:
+            stuck = leftovers()
+            for workspace_id in stuck:
+                self.close_workspace(workspace_id)
+            raise Failure(f"{error}; left behind: {stuck}") from None
+        return {"rounds": self.RACE_ROUNDS, "closed_while_opening": busy_hits}
 
     def check_hide_unhide(self) -> Dict[str, Any]:
         source = self.create_source("hide")
@@ -840,6 +884,7 @@ class AutoMirrorE2E:
                 ("c2_orphan_is_closed", self.check_orphan),
                 ("c3_duplicate_keeps_users_mirror", self.check_duplicate),
                 ("c3b_duplicate_keeps_selected", self.check_duplicate_keeps_selected),
+                ("c4_close_during_open_leaves_nothing", self.check_close_during_open),
                 ("d_hide_and_unhide", self.check_hide_unhide),
                 ("e_close_on_mac_closes_source", self.check_close_on_mac),
                 ("f_agent_activity", self.check_agent_activity),
