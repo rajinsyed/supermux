@@ -19,7 +19,7 @@ SupermuxComposition.remoteProjects          // SupermuxRemoteProjectsModel (per-
 SupermuxComposition.unifiedProjects         // SupermuxUnifiedProjectsModel (.list, .mirrorOwners, .hasRemoteOnlyProjects)
 SupermuxComposition.projectSync             // SupermuxProjectSyncCoordinator
 SupermuxComposition.projectSetupService     // SupermuxProjectSetupService (probe + git clone; nonisolated)
-SupermuxComposition.projectSyncSuppression  // SupermuxProjectSyncSuppression (roots a user removed)
+SupermuxComposition.projectSyncSuppression  // SupermuxProjectSyncSuppression (roots a user removed; actor, shared file)
 SupermuxRemoteProjectCommands.shared        // the one path for remote project actions (below)
 ```
 
@@ -170,8 +170,12 @@ most every 10 min otherwise), for each connected, non-loopback device serving pr
   + `SupermuxMobileProjectPatch`.
 - Never clones, never deletes. `SupermuxProjectsModel.onRemoveProject` records every user removal
   (desktop, phone or another Mac's `project.delete`) in `SupermuxProjectSyncSuppression`; `probe`
-  reports it as `is_suppressed`, so neither side re-adds that root. Re-adding the folder by hand
-  clears it.
+  reports it as `is_suppressed`, so neither side re-adds that root. The roots live in
+  `supermux-project-sync-suppressed.json` next to the projects document (same cross-build flock), so
+  a removal made in any build on this Mac holds in all of them; a project that vanishes from the
+  shared projects file (another build removed it) is suppressed too. Only a registration on this Mac
+  (`SupermuxProjectsModel.onAddProject`: desktop, phone, another Mac's `project.create`/`clone`)
+  clears it — never a project another build re-added to the shared file.
 
 ## Sidebar (Mac)
 
@@ -204,8 +208,9 @@ CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.projects_presentat
 CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.project_sync '{}'            # run a sync pass now → report
 ```
 
-All take an optional `window_id`. E2E: `CMUX_TAG=<tag> python3 tests/supermux/loopback_projects_e2e.py`
-(launch the build with `SUPERMUX_DEBUG_LOOPBACK_DEVICE=1` and a scratch `SUPERMUX_PROJECTS_FILE`).
+All take an optional `window_id`. E2E: `CMUX_TAG=<tag> python3 tests/supermux/loopback_projects_e2e.py
+--projects-file <scratch projects.json>` (launch the build with `SUPERMUX_DEBUG_LOOPBACK_DEVICE=1` and
+`SUPERMUX_PROJECTS_FILE` set to that file; the suite edits it as another build would).
 
 ## New Worktree on any Mac (P2)
 

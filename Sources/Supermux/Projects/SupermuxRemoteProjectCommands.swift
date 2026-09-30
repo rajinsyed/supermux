@@ -173,14 +173,17 @@ struct SupermuxRemoteProjectCommands {
         await remoteProjects.refresh(machine)
     }
 
-    /// Registers an existing folder as a project on `destination`.
+    /// Registers an existing folder as a project on `destination`. For another
+    /// Mac the path goes as typed: `~` and `..` mean that Mac's home and
+    /// folders, so its `project.create` resolves and checks it (as
+    /// ``cloneRepository(_:remoteURL:path:)`` already does).
     @discardableResult
     func addExistingFolder(_ destination: SupermuxProjectSetupDestination, path: String) async throws -> String {
-        guard let root = SupermuxProjectSetupService.standardizedRoot(path) else {
-            throw SupermuxProjectSetupError.invalidPath
-        }
         switch destination {
         case .thisMac:
+            guard let root = SupermuxProjectSetupService.standardizedRoot(path) else {
+                throw SupermuxProjectSetupError.invalidPath
+            }
             let probe = await setupService.probe(rootPath: root, isSuppressed: false)
             guard probe.exists, probe.isDirectory else {
                 throw SupermuxDeviceError.hostRejected(code: "invalid_params", message: String(
@@ -191,8 +194,10 @@ struct SupermuxRemoteProjectCommands {
             await projectsModel.loadIfNeeded()
             return await projectsModel.addProject(rootPath: root).id.uuidString
         case .device(let device):
+            let typed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !typed.isEmpty else { throw SupermuxProjectSetupError.invalidPath }
             let machine = SurfaceMachineID(rawValue: device.machineID)
-            let result = try await devices.request(.projectCreate, params: ["root_path": root], on: machine)
+            let result = try await devices.request(.projectCreate, params: ["root_path": typed], on: machine)
             await remoteProjects.refresh(machine)
             return (result["project"] as? [String: Any])?["id"] as? String ?? ""
         }

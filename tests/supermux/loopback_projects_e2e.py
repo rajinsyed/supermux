@@ -39,9 +39,16 @@ Steps:
      refused with destination_exists.
  11. removed_root_is_suppressed: after project.delete, probe reports the root
      as suppressed, so project sync never re-adds it.
- 12. project_sync_skips_loopback: a sync pass never treats the loopback
+ 12. readd_by_other_build_keeps_suppression: another build that never saw the
+     removal (this script, writing the shared projects file under its lock)
+     registers the root again; folding that in here must not lift the
+     suppression.
+ 13. suppression_shared_with_other_builds: removals are recorded next to the
+     shared projects file, where every build reads them: this app's removal is
+     listed there, and a removal another build recorded there is honored.
+ 14. project_sync_skips_loopback: a sync pass never treats the loopback
      device (which shares this app's list) as another Mac.
- 13. sidebar_screenshot: captures the window (nested mirror + device chip) to
+ 15. sidebar_screenshot: captures the window (nested mirror + device chip) to
      tests/supermux/artifacts/loopback_projects_e2e-<tag>.png.
 
 Prints a JSON report, writes it to tests/supermux/artifacts/, exits non-zero on
@@ -49,12 +56,14 @@ any failed check. Stdlib only (the screenshot shells out to swiftc and
 screencapture).
 
 Usage:
-  CMUX_TAG=<tag> python3 tests/supermux/loopback_projects_e2e.py [--keep] [--scratch /tmp/<tag>]
+  CMUX_TAG=<tag> python3 tests/supermux/loopback_projects_e2e.py \
+      --projects-file <the app's SUPERMUX_PROJECTS_FILE> [--keep] [--scratch /tmp/<tag>]
 """
 
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import os
 import shutil
@@ -79,6 +88,8 @@ from loopback_device_smoke import (  # noqa: E402
 )
 
 FAKE_ORIGIN = "git@github.com:supermux-e2e/loopback-app.git"
+# Roots a user removed, shared by every build next to the projects file.
+SUPPRESSION_FILE_NAME = "supermux-project-sync-suppressed.json"
 FAKE_IDENTITY = "github.com/supermux-e2e/loopback-app"
 
 WINDOW_ID_SWIFT = r"""
@@ -106,10 +117,29 @@ def git(*args: str, cwd: Optional[Path] = None) -> str:
     return result.stdout.strip()
 
 
+def update_shared_json(path: Path, mutate: Callable[[Dict[str, Any]], None]) -> None:
+    """Edits a JSON document the way another build does: under the exclusive
+    flock on its `<file>.lock` sidecar, re-read, mutate, atomic replace."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(f"{path}.lock", "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            document = json.loads(path.read_text()) if path.exists() else {}
+            mutate(document)
+            staged = path.with_name(f".{path.name}.{uuid.uuid4().hex}")
+            staged.write_text(json.dumps(document, indent=2))
+            os.replace(staged, path)
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
+
+
 class ProjectsE2E:
-    def __init__(self, client: SocketClient, tag: str, scratch: Path, timeout_s: float, keep: bool) -> None:
+    def __init__(
+        self, client: SocketClient, tag: str, scratch: Path, projects_file: Path, timeout_s: float, keep: bool
+    ) -> None:
         self.client = client
         self.tag = tag
+        self.projects_file = projects_file
         self.timeout_s = timeout_s
         self.keep = keep
         self.nonce = uuid.uuid4().hex[:8]
@@ -122,6 +152,8 @@ class ProjectsE2E:
         self.machine: Optional[str] = None
         self.project_id: Optional[str] = None
         self.clone_project_id: Optional[str] = None
+        self.readded_project_id: Optional[str] = None
+        self.suppressed_root: Optional[str] = None
         self.worktree_path: Optional[str] = None
         self.opened_workspaces: List[str] = []
 
@@ -375,7 +407,50 @@ class ProjectsE2E:
             return probe if probe.get("is_suppressed") else None
 
         probe = wait_for("the removed root to be suppressed", suppressed, self.timeout_s, interval_s=1.0)
+        self.suppressed_root = probe.get("root_path")
         return {"probe": probe}
+
+    def check_readd_keeps_suppression(self) -> Dict[str, Any]:
+        root = self.suppressed_root
+        document = json.loads(self.projects_file.read_text())
+        if not any(norm(p.get("id")) == norm(self.project_id) for p in document.get("projects") or []):
+            raise SmokeFailure(f"{self.projects_file} is not this app's SUPERMUX_PROJECTS_FILE")
+        record_id = str(uuid.uuid4()).upper()
+        record = {"id": record_id, "name": self.clone.name, "rootPath": root}
+        update_shared_json(self.projects_file, lambda d: d.setdefault("projects", []).append(record))
+        self.readded_project_id = record_id
+        # Any save here re-reads the shared file and folds the other build's project in.
+        self.request(
+            "mobile.supermux.project.update",
+            {"project_id": self.project_id, "patch": {"color_hex": "#3366FF"}},
+        )
+
+        def adopted() -> Optional[Dict[str, Any]]:
+            listed = self.request("mobile.supermux.projects.list", {}).get("projects") or []
+            return next((p for p in listed if norm(p.get("id")) == norm(record_id)), None)
+
+        wait_for("this app to fold in the other build's project", adopted, self.timeout_s)
+        # Sync bookkeeping follows a list change by about a second; watch well past it.
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline:
+            probe = self.request("mobile.supermux.project.probe", {"root_path": root})
+            if not probe.get("is_suppressed"):
+                raise SmokeFailure(f"another build's re-add lifted the removal's suppression: {probe}")
+            time.sleep(0.5)
+        return {"readded_project_id": record_id, "root_path": root}
+
+    def check_suppression_shared(self) -> Dict[str, Any]:
+        path = self.projects_file.parent / SUPPRESSION_FILE_NAME
+        roots = (json.loads(path.read_text()) if path.exists() else {}).get("roots") or []
+        if self.suppressed_root not in roots:
+            raise SmokeFailure(f"{path} does not list this app's removal {self.suppressed_root}: {roots}")
+        elsewhere = self.root / "removed-elsewhere"
+        elsewhere.mkdir(parents=True, exist_ok=True)
+        update_shared_json(path, lambda d: d.setdefault("roots", []).append(str(elsewhere)))
+        probe = self.request("mobile.supermux.project.probe", {"root_path": str(elsewhere)})
+        if not probe.get("is_suppressed"):
+            raise SmokeFailure(f"a removal another build recorded is not honored here: {probe}")
+        return {"suppression_file": str(path), "other_build_root": str(elsewhere)}
 
     def check_sync_skips_loopback(self) -> Dict[str, Any]:
         report = self.client.call("supermux.devices.project_sync", {}, timeout_s=60) or {}
@@ -427,7 +502,7 @@ class ProjectsE2E:
             )
 
     def _delete_projects(self) -> None:
-        for project_id in (self.clone_project_id, self.project_id):
+        for project_id in (self.clone_project_id, self.readded_project_id, self.project_id):
             if project_id:
                 self.request("mobile.supermux.project.delete", {"project_id": project_id})
 
@@ -445,6 +520,8 @@ class ProjectsE2E:
             self.step("probe_reports_repo_identity", self.check_probe)
             self.step("clone_registers_project", self.check_clone)
             self.step("removed_root_is_suppressed", self.check_suppression)
+            self.step("readd_by_other_build_keeps_suppression", self.check_readd_keeps_suppression)
+            self.step("suppression_shared_with_other_builds", self.check_suppression_shared)
             self.step("project_sync_skips_loopback", self.check_sync_skips_loopback)
             self.step("sidebar_screenshot", self.capture_screenshot)
             return True
@@ -462,6 +539,11 @@ def main() -> int:
     parser.add_argument("--tag", default=os.environ.get("CMUX_TAG"), help="tagged build (default: $CMUX_TAG)")
     parser.add_argument("--socket", default=os.environ.get("CMUX_SOCKET_PATH"), help="override the control socket path")
     parser.add_argument("--scratch", help="scratch folder for test repos (default: /tmp/<tag>)")
+    parser.add_argument(
+        "--projects-file",
+        required=True,
+        help="the SUPERMUX_PROJECTS_FILE the app was launched with (edited as another build would)",
+    )
     parser.add_argument("--timeout", type=float, default=30.0, help="seconds to wait for each check")
     parser.add_argument("--keep", action="store_true", help="leave the workspaces, projects and repos in place")
     parser.add_argument("--report", help="report path (default: tests/supermux/artifacts/loopback_projects_e2e-<tag>.json)")
@@ -474,7 +556,9 @@ def main() -> int:
     started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     try:
         with SocketClient(socket_path) as client:
-            e2e = ProjectsE2E(client, args.tag or "", scratch, timeout_s=args.timeout, keep=args.keep)
+            e2e = ProjectsE2E(
+                client, args.tag or "", scratch, Path(args.projects_file), timeout_s=args.timeout, keep=args.keep
+            )
             passed = e2e.run()
             steps, facts = e2e.steps, e2e.facts
     except OSError as error:
