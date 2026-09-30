@@ -64,3 +64,19 @@ struct DeviceLinkRuntime: MobileSyncRuntime {
         return result
     }
 }
+
+// SUPERMUX:begin loopback-device-runtime
+#if DEBUG
+extension DeviceLinkRuntime {
+    /// DEBUG loopback device harness (Sources/Supermux/Devices/SupermuxDeviceLoopbackHarness.swift):
+    /// this runtime with its dialer replaced by an in-process transport. Lives
+    /// in this file because `transportFactory` has a private setter.
+    func supermuxReplacingTransportFactory(_ factory: any CmxByteTransportFactory) -> DeviceLinkRuntime {
+        var result = self
+        result.transportFactory = factory
+        result.independentEventByteStreamProvider = nil
+        return result
+    }
+}
+#endif
+// SUPERMUX:end loopback-device-runtime

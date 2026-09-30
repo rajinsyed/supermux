@@ -3308,6 +3308,12 @@
 		50BE00040000000000000006 /* SupermuxDeviceError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00040000000000000005 /* SupermuxDeviceError.swift */; };
 		50BE00040000000000000004 /* SupermuxDeviceEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00040000000000000003 /* SupermuxDeviceEvent.swift */; };
 		50BE0004000000000000000E /* SupermuxDeviceLinkEvents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE0004000000000000000D /* SupermuxDeviceLinkEvents.swift */; };
+		50BE0008000000000000000C /* SupermuxDeviceLoopbackHarness.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE0008000000000000000B /* SupermuxDeviceLoopbackHarness.swift */; };
+		50BE00080000000000000008 /* SupermuxDeviceLoopbackHostAcceptor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00080000000000000007 /* SupermuxDeviceLoopbackHostAcceptor.swift */; };
+		50BE0008000000000000000A /* SupermuxDeviceLoopbackIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00080000000000000009 /* SupermuxDeviceLoopbackIdentity.swift */; };
+		50BE00080000000000000002 /* SupermuxDeviceLoopbackPipe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00080000000000000001 /* SupermuxDeviceLoopbackPipe.swift */; };
+		50BE00080000000000000004 /* SupermuxDeviceLoopbackTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00080000000000000003 /* SupermuxDeviceLoopbackTransport.swift */; };
+		50BE00080000000000000006 /* SupermuxDeviceLoopbackTransportFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00080000000000000005 /* SupermuxDeviceLoopbackTransportFactory.swift */; };
 		50BE0004000000000000000A /* SupermuxDevices+Events.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00040000000000000009 /* SupermuxDevices+Events.swift */; };
 		50BE0004000000000000000C /* SupermuxDevices+RPC.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE0004000000000000000B /* SupermuxDevices+RPC.swift */; };
 		50BE00040000000000000008 /* SupermuxDevices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00040000000000000007 /* SupermuxDevices.swift */; };
@@ -7527,6 +7533,12 @@
 		50BE00040000000000000005 /* SupermuxDeviceError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceError.swift; sourceTree = "<group>"; };
 		50BE00040000000000000003 /* SupermuxDeviceEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceEvent.swift; sourceTree = "<group>"; };
 		50BE0004000000000000000D /* SupermuxDeviceLinkEvents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceLinkEvents.swift; sourceTree = "<group>"; };
+		50BE0008000000000000000B /* SupermuxDeviceLoopbackHarness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceLoopbackHarness.swift; sourceTree = "<group>"; };
+		50BE00080000000000000007 /* SupermuxDeviceLoopbackHostAcceptor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceLoopbackHostAcceptor.swift; sourceTree = "<group>"; };
+		50BE00080000000000000009 /* SupermuxDeviceLoopbackIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceLoopbackIdentity.swift; sourceTree = "<group>"; };
+		50BE00080000000000000001 /* SupermuxDeviceLoopbackPipe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceLoopbackPipe.swift; sourceTree = "<group>"; };
+		50BE00080000000000000003 /* SupermuxDeviceLoopbackTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceLoopbackTransport.swift; sourceTree = "<group>"; };
+		50BE00080000000000000005 /* SupermuxDeviceLoopbackTransportFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceLoopbackTransportFactory.swift; sourceTree = "<group>"; };
 		50BE00040000000000000009 /* SupermuxDevices+Events.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Devices/SupermuxDevices+Events.swift"; sourceTree = "<group>"; };
 		50BE0004000000000000000B /* SupermuxDevices+RPC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Devices/SupermuxDevices+RPC.swift"; sourceTree = "<group>"; };
 		50BE00040000000000000007 /* SupermuxDevices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDevices.swift; sourceTree = "<group>"; };
@@ -8879,6 +8891,12 @@
 				50BE000100000000000000D7 /* SupermuxWorkspaceSwitcherOverlayController.swift */,
 				50BE000100000000000000D8 /* SupermuxWorkspaceSwitcherController.swift */,
 				50BE000100000000000000D9 /* SupermuxWorkspaceSwitcherController+Items.swift */,
+				50BE00080000000000000001 /* SupermuxDeviceLoopbackPipe.swift */,
+				50BE00080000000000000003 /* SupermuxDeviceLoopbackTransport.swift */,
+				50BE00080000000000000005 /* SupermuxDeviceLoopbackTransportFactory.swift */,
+				50BE00080000000000000007 /* SupermuxDeviceLoopbackHostAcceptor.swift */,
+				50BE00080000000000000009 /* SupermuxDeviceLoopbackIdentity.swift */,
+				50BE0008000000000000000B /* SupermuxDeviceLoopbackHarness.swift */,
 			);
 			name = Supermux;
 			path = Supermux;
@@ -15512,6 +15530,12 @@
 				50BE00040000000000000006 /* SupermuxDeviceError.swift in Sources */,
 				50BE00040000000000000004 /* SupermuxDeviceEvent.swift in Sources */,
 				50BE0004000000000000000E /* SupermuxDeviceLinkEvents.swift in Sources */,
+				50BE0008000000000000000C /* SupermuxDeviceLoopbackHarness.swift in Sources */,
+				50BE00080000000000000008 /* SupermuxDeviceLoopbackHostAcceptor.swift in Sources */,
+				50BE0008000000000000000A /* SupermuxDeviceLoopbackIdentity.swift in Sources */,
+				50BE00080000000000000002 /* SupermuxDeviceLoopbackPipe.swift in Sources */,
+				50BE00080000000000000004 /* SupermuxDeviceLoopbackTransport.swift in Sources */,
+				50BE00080000000000000006 /* SupermuxDeviceLoopbackTransportFactory.swift in Sources */,
 				50BE0004000000000000000A /* SupermuxDevices+Events.swift in Sources */,
 				50BE0004000000000000000C /* SupermuxDevices+RPC.swift in Sources */,
 				50BE00040000000000000008 /* SupermuxDevices.swift in Sources */,

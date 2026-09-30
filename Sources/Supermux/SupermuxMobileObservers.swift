@@ -203,8 +203,14 @@ enum SupermuxMobileHostGlue {
     /// model to snapshot at activation time.
     static let changesWatchRegistry = SupermuxMobileChangesWatchRegistry()
 
-    /// Constructs the fork observers once; later calls are no-ops.
+    /// Constructs the fork observers once; later calls only re-check the
+    /// DEBUG loopback device harness (`SupermuxDeviceLoopbackHarness`).
     static func activateIfNeeded() {
+        #if DEBUG
+        // Runs on every call (not behind the one-shot guard) so the opt-in
+        // harness starts on the first call that finds the auth composition.
+        SupermuxDeviceLoopbackHarness.activateIfRequested()
+        #endif
         guard projectsObserver == nil else { return }
         projectsObserver = SupermuxMobileProjectsObserver(model: SupermuxComposition.projectsModel)
         activityObserver = SupermuxMobileActivityObserver(
