@@ -74,7 +74,7 @@ struct SupermuxFocusedPaneNotificationTests {
 
     @Test("Focus suppression requires an exact pane target")
     func focusSuppressionRequiresExactPaneTarget() {
-        let policy = SupermuxFocusedPaneNotificationPolicy()
+        let policy = SupermuxFocusedPaneNotificationPolicy(userIsPresent: { true })
 
         #expect(policy.targetIsAlreadyVisible(
             surfaceID: UUID(),

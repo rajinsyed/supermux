@@ -16,7 +16,12 @@ extension DeviceSurfaceProvider {
             clientID: DeviceNotificationFeed.clientID,
             store: hub.persistenceStore,
             resolveTarget: { [weak self] row in self?.notificationDeliveryTarget(for: row) },
-            deliver: { [weak self] row, target in self?.deliverNotification(row, to: target) ?? .declined },
+            // SUPERMUX:begin device-notification-parity (upstream: `deliver: { [weak self] row, target in self?.deliverNotification(row, to: target) ?? .declined },`; the fork wrapper calls that same method, then keeps the remote project, acknowledges a row recorded already read on a focused mirror pane, and retries rate-limited rows on a short timer)
+            deliver: { [weak self] row, target in
+                guard let self else { return .declined }
+                return SupermuxDeviceNotificationDelivery.deliver(row, to: target, via: self)
+            },
+            // SUPERMUX:end device-notification-parity
             send: { [weak self] batch in
                 // A vanished provider or a dropped link must not report
                 // success: the batch stays pending for the next connect.
@@ -102,6 +107,10 @@ extension DeviceSurfaceProvider {
             guard !Task.isCancelled, let notificationSync else { return }
             notificationFeed = DeviceNotificationFeed(response: response)
             notificationSync.apply(rows: notificationFeed.rows)
+            // SUPERMUX:begin device-notification-parity
+            // A row the other Mac read, cleared or superseded reads here too.
+            SupermuxDeviceNotificationReadMirror.mirrorHostReads(of: self)
+            // SUPERMUX:end device-notification-parity
             #if DEBUG
             cmuxDebugLog("device.notifications.sync machine=\(machine.rawValue) rows=\(notificationFeed.rows.count) unreadTerminals=\(notificationSync.unreadTerminalIDs.count) pending=\(notificationSync.state.pendingAcks.count)")
             #endif

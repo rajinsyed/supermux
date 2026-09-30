@@ -128,6 +128,12 @@ public enum SupermuxMobileMethod: String, CaseIterable, Codable, Sendable, Equat
 
     /// Registers or removes this phone's APNs token on the paired Mac.
     case phonePushRegister = "mobile.supermux.phone_push.register"
+    /// Reports this Mac's direct-APNs state (credentials present, key and team
+    /// ids, registration count) to another Mac. Never returns secrets.
+    case phonePushStatus = "mobile.supermux.phone_push.status"
+    /// Shares direct-APNs credentials and phone registrations with this Mac.
+    /// Accepted only from an admitted Mac peer, never from a phone.
+    case phonePushShare = "mobile.supermux.phone_push.share"
 
     /// The shared method-name prefix; the Mac router dispatches on it.
     public static let namespacePrefix = "mobile.supermux."
