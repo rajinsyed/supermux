@@ -266,7 +266,7 @@ struct SupermuxProjectsMount: View {
             iconStore: SupermuxComposition.projectIconStore,
             // "Start Claude in a New Worktree" (prompt-first worktree launch).
             agentLaunch: SupermuxComposition.agentLaunch,
-            // Other Macs' copies: remote-only rows, device chips and actions.
+            // Other Macs' copies: remote-only rows, Mac icons and actions.
             remote: SupermuxRemoteProjectsPresenter.presentation(for: tabManager)
         )
         // Subscribe once on appear and re-subscribe only when the set of open
