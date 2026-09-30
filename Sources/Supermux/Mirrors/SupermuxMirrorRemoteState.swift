@@ -49,13 +49,6 @@ final class SupermuxMirrorRemoteState {
         return states[machine]?.presets ?? []
     }
 
-    /// One of the device's projects by its (remote) id.
-    func project(_ projectID: String?, on machine: SurfaceMachineID) -> SupermuxProjectDTO? {
-        follow(machine)
-        guard let projectID else { return nil }
-        return states[machine]?.projects.first { $0.id.caseInsensitiveCompare(projectID) == .orderedSame }
-    }
-
     /// Whether the mirror's own remote workspace runs its project's command.
     func isRunning(_ target: SupermuxMirrorTarget) -> Bool {
         guard let projectID = target.remoteProjectID else { return false }
