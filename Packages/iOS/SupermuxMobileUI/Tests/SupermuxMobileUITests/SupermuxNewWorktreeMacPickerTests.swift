@@ -98,6 +98,72 @@ import Testing
         #expect(options.map(\.pairingID) == [studio.pairingID, macBook.pairingID])
     }
 
+    /// Two checkouts of one origin on the other Mac make the origin ambiguous
+    /// (the Mac-side merge rule refuses it): the copy with the same name and
+    /// path is that Mac's project, whatever order that Mac lists them in.
+    @Test func anAmbiguousOriginPicksTheCheckoutWithTheSameNameAndPath() {
+        let origin = "git@github.com:me/app.git"
+        let options = SupermuxNewWorktreeMacOptions.options(
+            forProjectID: "a-1",
+            onPairingID: studio.pairingID,
+            sources: [
+                Source(mac: studio, supportsWorktrees: true, projects: [
+                    project("a-1", origin: origin, name: "app", rootPath: "/Users/dev/code/app"),
+                ]),
+                Source(mac: macBook, supportsWorktrees: true, projects: [
+                    project("b-review", origin: origin, name: "app-review", rootPath: "/Users/dev/code/app-review"),
+                    project("b-app", origin: origin, name: "app", rootPath: "/Users/dev/code/app"),
+                ]),
+            ]
+        )
+
+        #expect(options.map(\.projectID) == ["a-1", "b-app"])
+    }
+
+    /// With an ambiguous origin and no same-name-and-path copy, the phone
+    /// cannot know which checkout the user means: that Mac is not offered,
+    /// rather than creating under whichever copy it happens to list first.
+    @Test func anAmbiguousOriginWithoutAnExactCopyIsNotOffered() {
+        let origin = "git@github.com:me/app.git"
+        let options = SupermuxNewWorktreeMacOptions.options(
+            forProjectID: "a-1",
+            onPairingID: studio.pairingID,
+            sources: [
+                Source(mac: studio, supportsWorktrees: true, projects: [
+                    project("a-1", origin: origin, name: "app", rootPath: "/Users/dev/code/app"),
+                ]),
+                Source(mac: macBook, supportsWorktrees: true, projects: [
+                    project("b-review", origin: origin, name: "app-review", rootPath: "/Users/dev/code/app-review"),
+                    project("b-main", origin: origin, name: "app-main", rootPath: "/Users/dev/code/app-main"),
+                ]),
+            ]
+        )
+
+        #expect(options.map(\.pairingID) == [studio.pairingID])
+    }
+
+    /// The own Mac holding two checkouts of the origin is just as ambiguous:
+    /// the Mac-side merge rule matches by origin only when it is unique on
+    /// BOTH Macs, so only a same-name-and-path copy may stand in.
+    @Test func anOriginSharedByTwoOwnCheckoutsMatchesOnlyByNameAndPath() {
+        let origin = "git@github.com:me/app.git"
+        let options = SupermuxNewWorktreeMacOptions.options(
+            forProjectID: "a-review",
+            onPairingID: studio.pairingID,
+            sources: [
+                Source(mac: studio, supportsWorktrees: true, projects: [
+                    project("a-app", origin: origin, name: "app", rootPath: "/Users/dev/code/app"),
+                    project("a-review", origin: origin, name: "app-review", rootPath: "/Users/dev/code/app-review"),
+                ]),
+                Source(mac: macBook, supportsWorktrees: true, projects: [
+                    project("b-app", origin: origin, name: "app", rootPath: "/Users/dev/code/app"),
+                ]),
+            ]
+        )
+
+        #expect(options.map(\.pairingID) == [studio.pairingID])
+    }
+
     // MARK: Picking a Mac retargets the create
 
     @Test func theSheetOffersEveryConnectedMacWithTheSameRepository() async throws {
