@@ -63,6 +63,16 @@ sign-in mark, launch logo, `mobile.signIn.title`).
 - **Two iOS notification service extensions are embedded** (upstream's E2EE-decrypting
   `NotificationService` and the fork's avatar-drawing `SupermuxNotificationService`); iOS runs
   only one per app. Open decision — see SUPERMUX-TOUCHPOINTS.md #368–372.
+- **The CLAUDE.md phone dogfood (Release) build fails as written** until the two-extension
+  decision is made: upstream's extension keeps its Release bundle id
+  `dev.cmux.app.beta.NotificationServiceV2`. Stopgap: add
+  `CMUX_NOTIFICATION_SERVICE_BUNDLE_IDENTIFIER=com.supermux.ios.dogfood.NotificationService`
+  (signing may still reject its app-group/keychain entitlements under the personal team).
+- Upstream #13741 removed Mac-side push targeting: the Mac no longer names `com.supermux.ios` as
+  the push target, so phone pushes rely on server fan-out or the fork's direct push path.
+  Confirm a push reaches the Supermux iPhone app when dogfooding.
+- On iOS 17 (new upstream minimum) the Projects sidebar rows don't swipe; every swipe action is
+  still in the row's long-press menu. iOS 18+ is unchanged.
 - iOS scroll: upstream's pixel-precise momentum path and the fork's no-momentum #9762 port
   coexist; the fork path wins whenever the primary screen is known. Needs an on-device feel check.
 - Local toolchain: this machine's Xcode 27 linker breaks the pinned Rust 1.88 (proc-macros fail
