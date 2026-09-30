@@ -4,6 +4,7 @@
 #
 #   ./scripts/reload.sh --tag <tag> --supermux-profile      # build (never sign out in it)
 #   CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh    # launch, run, quit
+#   CMUX_E2E_SUITES="loopback_terminal_input_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
 #
 # Scratch state lives in /tmp/<tag>-e2e (projects file, push state, repos), so
 # the user's real project list and push credentials are never touched.
@@ -64,7 +65,8 @@ suite_args() {
 }
 
 # The mirror-render and auto-mirror suites run last: they quit and relaunch the app for their restart checks.
-SUITES=(loopback_device_smoke loopback_projects_e2e loopback_new_worktree_picker_e2e loopback_workspace_behaviors_e2e loopback_notifications_e2e loopback_tab_sync_e2e loopback_remote_macs_settings_e2e loopback_sidebar_rows_e2e loopback_terminal_input_e2e loopback_mirror_render_e2e loopback_auto_mirror_e2e)
+# CMUX_E2E_SUITES="a b" runs only those suites (same order rules).
+SUITES=(${CMUX_E2E_SUITES:-loopback_device_smoke loopback_projects_e2e loopback_new_worktree_picker_e2e loopback_workspace_behaviors_e2e loopback_notifications_e2e loopback_tab_sync_e2e loopback_remote_macs_settings_e2e loopback_sidebar_rows_e2e loopback_terminal_input_e2e loopback_mirror_render_e2e loopback_auto_mirror_e2e})
 
 status=0
 for name in "${SUITES[@]}"; do

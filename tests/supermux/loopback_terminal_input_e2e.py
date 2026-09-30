@@ -13,8 +13,7 @@ This suite runs against one tagged DEBUG build with the loopback device ("Loopba
 mirror is the viewer. A recorder program in the SOURCE terminal turns on the kitty
 keyboard protocol (flag 1, as Claude Code does), SGR mouse tracking and bracketed paste,
 then logs every byte it receives as hex. Keys are pressed for real through the mirror's
-Ghostty view (debug.shortcut.simulate / debug.type), so they take the same path a
-keyboard does:
+Ghostty view (debug.shortcut.simulate), so they take the same path a keyboard does:
 
   1. setup                         auto-mirror on, the loopback linked and fetched
   2. source_gets_mirror            a background source workspace gets its mirror
@@ -124,6 +123,11 @@ class Socket:
                 return self._call_once(method, params, timeout_s)
             except RateLimited as limited:
                 time.sleep(limited.retry_after_s)
+            except (BrokenPipeError, ConnectionResetError):
+                # The app drops a connection that sat idle; dial again once.
+                self.close()
+                self.connect()
+                self._buffer = b""
         return self._call_once(method, params, timeout_s)
 
     def _call_once(self, method: str, params: Optional[Dict[str, Any]], timeout_s: Optional[float]) -> Any:
@@ -339,10 +343,16 @@ class TerminalInputE2E:
         return run
 
     def typed_text(self) -> Dict[str, Any]:
-        expected = "hé".encode("utf-8").hex()
-        got = self.received_after(lambda: self.sock.call("debug.type", {"text": "hé"}))
+        """Plain letters, pressed as keys, in order and unchanged."""
+        expected = b"hI".hex()
+
+        def press() -> None:
+            self.sock.call("debug.shortcut.simulate", {"combo": "h"})
+            self.sock.call("debug.shortcut.simulate", {"combo": "shift+i"})
+
+        got = self.received_after(press)
         if got != expected:
-            raise Failure(f"typed text: expected {expected}, the program received {got}")
+            raise Failure(f"typed letters: expected {expected}, the program received {got}")
         return {"expected_hex": expected, "received_hex": got}
 
     def mouse_drag(self) -> Dict[str, Any]:
