@@ -20,10 +20,12 @@ public actor SupermuxGitWorktreeService {
     /// Deadline for checkout-weight commands (`worktree add`/`worktree remove`):
     /// they populate or delete a full working tree — LFS smudge filters included —
     /// so the blanket 30s would kill them mid-flight on large repositories.
-    private static let checkoutTimeout: TimeInterval = 600
+    /// Internal: `SupermuxDeviceReplyDeadline` derives another Mac's reply
+    /// deadline for worktree calls from it and ``teardownTimeout``.
+    static let checkoutTimeout: TimeInterval = 600
     /// Upper bound for a worktree teardown script; cleanup that runs longer is
     /// terminated so a hung script can never wedge worktree deletion.
-    private static let teardownTimeout: TimeInterval = 120
+    static let teardownTimeout: TimeInterval = 120
     /// `PATH` for the one `env`-launched git call (the `worktree add`):
     /// `/usr/bin/env` bypasses ``CommandRunner``'s own executable resolution,
     /// so `git` is re-resolved against the inherited `PATH` plus the runner's

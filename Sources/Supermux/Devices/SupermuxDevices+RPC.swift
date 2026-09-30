@@ -1,12 +1,9 @@
 import CmuxSurfaceCatalogModel
 import Foundation
+import SupermuxKit
 import SupermuxMobileCore
 
 extension SupermuxDevices {
-    /// The deadline for long host operations: `worktree.create` (git checkout
-    /// plus setup can take minutes) and `agent.start`.
-    static let longOperationTimeout: Duration = .seconds(600)
-
     /// One JSON-RPC call to the device's mobile host (any method, including
     /// `mobile.supermux.*`; same-account Mac peers get no per-method narrowing).
     ///
@@ -14,9 +11,11 @@ extension SupermuxDevices {
     ///   - method: The wire method, e.g. `mobile.supermux.projects.list`.
     ///   - params: The JSON params object.
     ///   - machine: The device machine.
-    ///   - timeout: The reply deadline; `nil` uses the link's default. A
-    ///     timeout also makes the link reconnect, so pass
-    ///     ``longOperationTimeout`` for long operations.
+    ///   - timeout: An explicit reply deadline, for the DEBUG socket driver
+    ///     only. `nil` (every caller) uses the method's audited deadline,
+    ///     ``SupermuxDeviceReplyDeadline``: a missed deadline makes the whole
+    ///     link reconnect, so long host work gets a deadline that outlasts it
+    ///     and everything else keeps the link's default.
     /// - Returns: The host's result object.
     /// - Throws: ``SupermuxDeviceError``.
     func request(
@@ -34,7 +33,7 @@ extension SupermuxDevices {
             return try await provider.link.request(
                 method,
                 params: params,
-                timeoutNanoseconds: timeout.map(Self.nanoseconds)
+                timeoutNanoseconds: (timeout ?? SupermuxDeviceReplyDeadline.forMethod(method)).map(Self.nanoseconds)
             )
         } catch {
             throw SupermuxDeviceError.from(error, deviceName: name)

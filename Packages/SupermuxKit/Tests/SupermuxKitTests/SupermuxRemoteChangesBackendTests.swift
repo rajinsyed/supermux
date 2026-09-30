@@ -181,17 +181,6 @@ import SupermuxKit
         #expect(transport.calls.filter { $0.method == "mobile.supermux.changes.discard" }.count == before)
     }
 
-    @Test func networkMutationsGetTheLongDeadline() async throws {
-        let transport = FakeRemoteChangesTransport(remoteWorkspaceID: Self.remoteID)
-        let backend = SupermuxRemoteChangesBackend(transport: transport)
-
-        try await backend.push(repoPath: "/r", hasUpstream: false)
-        try await backend.pull(repoPath: "/r")
-        for call in transport.calls {
-            #expect((call.timeout ?? .zero) >= .seconds(130), "\(call.method)")
-        }
-    }
-
     // MARK: - Diff
 
     @Test func fileDiffMapsBinaryTextAndFailure() async {
@@ -397,7 +386,6 @@ final class FakeRemoteChangesTransport: SupermuxRemoteChangesTransport {
     struct Call {
         let method: String
         let params: [String: Any]
-        let timeout: Duration?
         /// Whether the host carried the call out (not refused).
         let accepted: Bool
     }
@@ -436,11 +424,11 @@ final class FakeRemoteChangesTransport: SupermuxRemoteChangesTransport {
         for continuation in continuations { continuation.yield(event) }
     }
 
-    func request(_ method: String, params: [String: Any], timeout: Duration?) async throws -> [String: Any] {
+    func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
         defer { afterReply?(method) }
         let expected = params["expected_root"] as? String
         let refusal = failures[method] ?? (expected != nil && currentRoot != nil && expected != currentRoot ? "stale_root" : nil)
-        calls.append(Call(method: method, params: params, timeout: timeout, accepted: refusal == nil))
+        calls.append(Call(method: method, params: params, accepted: refusal == nil))
         if let refusal { throw Rejected(code: refusal) }
         return replies[method] ?? ["ok": true]
     }

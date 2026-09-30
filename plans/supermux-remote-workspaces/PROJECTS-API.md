@@ -134,7 +134,7 @@ do the RPC, then (when the Mac returned `workspace_id`) `deviceWorkspaceOpener.o
 ```swift
 func openProject(_ location, in:) async throws -> Opened                    // project.open
 func openWorktree(_ worktree, in:) async throws -> Opened                   // worktree.open
-func createWorktree(_ location, request:, in:, focus: = true) async throws -> Opened   // worktree.create {open:true}, longOperationTimeout
+func createWorktree(_ location, request:, in:, focus: = true) async throws -> Opened   // worktree.create {open:true}
 func removeWorktree(_ worktree, deleteBranch:, force:) async throws        // dirty → throws; isDirtyWorktree(_:)
 func runAction(_ location, actionID:) async throws -> URL?                 // open_url → caller opens locally
 func removeProject(_ location) async throws                                // project.delete
@@ -155,7 +155,8 @@ long deadline, same open tail) and the RPC-only halves `requestWorktreeCreate(_:
 | `mobile.supermux.project.clone` | `remote_url`, `root_path` | `{project}` (like `project.create`) after `git clone --quiet -- <url> <root>` (15 min) + `addProject`; the target must not exist or be empty; parents are created · `invalid_params`, `destination_exists`, `clone_failed` |
 
 Both are `.macWide` in `SupermuxMobileAuthorization`, routed in `TerminalController+SupermuxMobile.swift`.
-Callers over a device link should pass `SupermuxRemoteProjectCommands.cloneTimeout` for clone.
+Over a device link, clone gets its long reply deadline from `SupermuxDeviceReplyDeadline` (clone
+timeout plus the git work around it); callers pass none.
 
 ## Project sync (`SupermuxProjectSyncCoordinator`, setting `supermux.devices.syncProjects`, default on)
 
@@ -255,7 +256,7 @@ final class SupermuxRemoteWorktreeCreationTarget   // over the device link, open
   (`agent.options {project_id, command?}`; another Mac's command list is adopted from its answer and
   is not editable here); results for the previous Mac are dropped.
 - **Another Mac's create**: "Creating on <Mac>…" while `worktree.create {open: true}` /
-  `agent.start` runs with `SupermuxDevices.longOperationTimeout` (Cancel disabled — the other Mac
+  `agent.start` runs under its long reply deadline (Cancel disabled — the other Mac
   cannot be stopped); the sheet closes when it returns, then
   `deviceWorkspaceOpener.openWhenAvailable(ref, in: <clicking window>, focus: true)` opens (or reuses
   the auto-mirror's in-flight / existing) mirror and selects it; an open failure shows an alert.
