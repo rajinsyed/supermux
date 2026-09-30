@@ -18,6 +18,13 @@ import Foundation
 /// Session restore does not keep a notification's origin, so a moved copy
 /// whose correlation key names a device gets `.deviceMac` back: the viewer
 /// must never count it as its own (phone badge) or forward it to the phone.
+///
+/// The move goes through the store's own `restoreSessionNotifications` (the
+/// store has no other way to change a notification's pane), so it has that
+/// call's side effects for the mirror workspace: local notifications still
+/// queued for it are dropped and its delivered system banners are withdrawn.
+/// Device rows are delivered synchronously, never queued, and closing the
+/// placeholder used to withdraw those banners anyway.
 @MainActor
 enum SupermuxRestoredMirrorNotifications {
     static func carry(fromPanel placeholder: UUID, toPanel live: UUID, inWorkspace workspaceID: UUID) {
