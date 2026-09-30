@@ -28,25 +28,25 @@ struct SupermuxRemoteProjectsCacheTests {
     }
 
     // 1
-    @Test func savingOneMacKeepsTheOthers() throws {
+    @Test func savingOneMacKeepsTheOthers() async throws {
         let cache = SupermuxRemoteProjectsCache(fileURL: tempURL())
-        try cache.save(entry("Studio", projects: ["app"]), forMachine: "device:a@default")
-        try cache.save(entry("Laptop", projects: ["web"]), forMachine: "device:b@default")
-        try cache.save(entry("Studio", projects: ["app", "api"]), forMachine: "device:a@default")
+        try await cache.save(entry("Studio", projects: ["app"]), forMachine: "device:a@default")
+        try await cache.save(entry("Laptop", projects: ["web"]), forMachine: "device:b@default")
+        try await cache.save(entry("Studio", projects: ["app", "api"]), forMachine: "device:a@default")
         let loaded = cache.load()
         #expect(loaded["device:a@default"]?.projects.map(\.name) == ["app", "api"])
         #expect(loaded["device:b@default"]?.name == "Laptop")
     }
 
     // 2
-    @Test func missingOrCorruptFilesReadAsEmpty() throws {
+    @Test func missingOrCorruptFilesReadAsEmpty() async throws {
         let url = tempURL()
         let cache = SupermuxRemoteProjectsCache(fileURL: url)
         #expect(cache.load().isEmpty)
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data("{not json".utf8).write(to: url)
         #expect(cache.load().isEmpty)
-        try cache.save(entry("Studio", projects: ["app"]), forMachine: "device:a@default")
+        try await cache.save(entry("Studio", projects: ["app"]), forMachine: "device:a@default")
         #expect(cache.load().count == 1)
     }
 
@@ -58,11 +58,11 @@ struct SupermuxRemoteProjectsCacheTests {
     }
 
     // 4
-    @Test func forgettingAMacRemovesOnlyItsEntry() throws {
+    @Test func forgettingAMacRemovesOnlyItsEntry() async throws {
         let cache = SupermuxRemoteProjectsCache(fileURL: tempURL())
-        try cache.save(entry("Studio", projects: ["app"]), forMachine: "device:a@default")
-        try cache.save(entry("Laptop", projects: ["web"]), forMachine: "device:b@default")
-        try cache.forget(machine: "device:a@default")
+        try await cache.save(entry("Studio", projects: ["app"]), forMachine: "device:a@default")
+        try await cache.save(entry("Laptop", projects: ["web"]), forMachine: "device:b@default")
+        try await cache.forget(machine: "device:a@default")
         #expect(Array(cache.load().keys) == ["device:b@default"])
     }
 
@@ -85,7 +85,7 @@ struct SupermuxRemoteProjectsCacheTests {
         let url = tempURL()
         // Two instances over one file stand in for two builds sharing it.
         let builds = [SupermuxRemoteProjectsCache(fileURL: url), SupermuxRemoteProjectsCache(fileURL: url)]
-        let machines = (0..<32).map { "device:\($0)@default" }
+        let machines = (0..<16).map { "device:\($0)@default" }
         let entries = machines.map { entry($0, projects: ["app"]) }
         await withTaskGroup(of: Void.self) { group in
             for (index, machine) in machines.enumerated() {

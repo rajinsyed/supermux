@@ -6,9 +6,11 @@ public import SupermuxMobileCore
 ///
 /// One JSON file keyed by machine wire id (`device:<uuid>@<tag>`), separate
 /// from the local projects document (`supermux-projects.json`), which remote
-/// projects are never written into. Every write re-reads the file and
-/// replaces only its own machine's entry, so builds sharing the file do not
-/// drop each other's entries. A missing or corrupt file reads as empty.
+/// projects are never written into. Every write re-reads the file under the
+/// cross-build file lock (``SupermuxFileLock``) and replaces only its own
+/// machine's entry, so concurrent writers (several Macs refreshed at once, or
+/// builds sharing the file) never drop each other's entries. A missing or
+/// corrupt file reads as empty.
 public struct SupermuxRemoteProjectsCache: Sendable {
     /// One Mac's cached projects.
     public struct Entry: Codable, Sendable, Equatable {
@@ -47,16 +49,27 @@ public struct SupermuxRemoteProjectsCache: Sendable {
     }
 
     /// Replaces one Mac's entry.
-    public func save(_ entry: Entry, forMachine machineID: String) throws {
-        var document = readDocument()
-        document.machines[machineID] = entry
-        try write(document)
+    /// - Throws: A lock or file-system error; the file is then unchanged.
+    public func save(_ entry: Entry, forMachine machineID: String) async throws {
+        try await update { $0[machineID] = entry }
     }
 
     /// Removes one Mac's entry.
-    public func forget(machine machineID: String) throws {
+    /// - Throws: A lock or file-system error; the file is then unchanged.
+    public func forget(machine machineID: String) async throws {
+        try await update { $0.removeValue(forKey: machineID) }
+    }
+
+    /// Applies `mutate` to the freshly read entries under the file lock and
+    /// writes them back when they changed.
+    private func update(_ mutate: (inout [String: Entry]) -> Void) async throws {
+        let lock = SupermuxFileLock(documentURL: fileURL)
+        let held = try await lock.acquire()
+        defer { lock.release(held) }
         var document = readDocument()
-        guard document.machines.removeValue(forKey: machineID) != nil else { return }
+        let before = document.machines
+        mutate(&document.machines)
+        guard document.machines != before else { return }
         try write(document)
     }
 
