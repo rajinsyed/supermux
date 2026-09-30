@@ -34,7 +34,8 @@ DEBUG `supermux.devices.mirror.*` socket drivers):
   8. run_stop_from_mirror_presets_bar — Run/Stop in the mirror stops it (the
      port closes).
   8b. run_second_workspace_from_its_mirror — with the first workspace
-     running, a second workspace of the same project on the other Mac runs
+     running, a second workspace of the same project on the other Mac (a
+     worktree created through the remote New Worktree path) runs
      from its own mirror; that mirror keeps showing its run (the older run
      does not hide it), and its Run / Stop stops only that run.
   9. changes_lists_remote_change — the mirror's Changes model is remote and
@@ -470,18 +471,16 @@ class WorkspaceBehaviorsE2E:
         self.mirror("run_toggle", {"workspace_id": self.mirror_id, "via": "presets_bar"})
         wait_for("the first workspace's run over there", lambda: self.inspect(self.source_id)["run"]["is_running"], self.timeout_s)
 
-        created = self.rpc("workspace.create", {"title": f"rws second {self.nonce}", "cwd": str(self.repo), "focus": False}) or {}
-        second = norm(created.get("workspace_id"))
-        if not second:
-            raise CheckFailure(f"workspace.create returned {created}")
+        # A worktree of the project over there (the sidebar's remote New Worktree path).
+        opened = self.rpc("supermux.devices.remote_worktree_create", {
+            "machine": self.machine, "project_id": self.project_id,
+            "workspace_name": f"rws second {self.nonce}", "branch_name": f"rws-second-{self.nonce}", "focus": False,
+        }, timeout_s=180) or {}
+        second, second_mirror = norm(opened.get("remote_workspace_id")), norm(opened.get("workspace_id"))
+        if not second or not second_mirror or second == second_mirror:
+            raise CheckFailure(f"remote_worktree_create returned {opened}")
+        self.created_local[:0] = [second_mirror]
         self.created_local.append(second)
-        opened = self.rpc("supermux.devices.await_open", {
-            "machine": self.machine, "remote_workspace_id": second, "timeout_seconds": 60, "focus": False,
-        }, timeout_s=70) or {}
-        second_mirror = norm(opened.get("workspace_id"))
-        if not second_mirror or second_mirror == second:
-            raise CheckFailure(f"await_open returned {opened}")
-        self.created_local.insert(0, second_mirror)
         wait_for(
             "the second mirror's remote project",
             lambda: norm((self.inspect(second_mirror).get("target") or {}).get("remote_project_id")) == norm(self.project_id),
