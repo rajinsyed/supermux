@@ -22,6 +22,9 @@ import Testing
 ///     get the remote values), or survives a rebind of the workspace to another ref.
 /// 13. Bindings persisted before it existed no longer load (every mirror loses its identity).
 /// 14. Recording it for an unbound workspace creates a binding out of nothing.
+/// 15. Handing a ref's binding to the duplicate mirror that survives (it already
+///     shows the workspace, with the user's local edits) starts it from first
+///     sight, so the next status projection overwrites those edits.
 @MainActor
 struct SupermuxDeviceBindingStoreTests {
     private let machine = "device:0f7c2c7e-1d51-4d0e-9d7c-2c9b2a4b7e11@default"
@@ -218,5 +221,35 @@ struct SupermuxDeviceBindingStoreTests {
         #expect(store.bindings.isEmpty)
         #expect(store.appliedCustomization(forStableID: stable) == nil)
         #expect(SupermuxDeviceBindingStore(defaults: defaults).bindings.isEmpty)
+    }
+
+    @Test func handingTheBindingToASurvivingDuplicateKeepsTheAppliedCustomization() throws {
+        let defaults = try makeDefaults()
+        let store = SupermuxDeviceBindingStore(defaults: defaults)
+        let remote = ref(UUID().uuidString)
+        let replacement = UUID()
+        store.bind(stableID: replacement, workspaceID: UUID(), to: remote)
+        store.recordAppliedCustomization(customization, forStableID: replacement)
+
+        let survivor = UUID()
+        let survivorWorkspace = UUID()
+        store.handOver(remote, toStableID: survivor, workspaceID: survivorWorkspace)
+        #expect(store.ref(forStableID: survivor) == remote)
+        #expect(store.ref(forWorkspaceID: survivorWorkspace) == remote)
+        #expect(store.ref(forStableID: replacement) == nil, "one remote workspace, one local mirror")
+        #expect(
+            store.appliedCustomization(forStableID: survivor) == customization,
+            "first sight would overwrite the survivor's local edits with the remote values"
+        )
+        #expect(SupermuxDeviceBindingStore(defaults: defaults).appliedCustomization(forStableID: survivor) == customization)
+    }
+
+    @Test func handingOverAnUnboundRefBindsFromFirstSight() throws {
+        let store = SupermuxDeviceBindingStore(defaults: try makeDefaults())
+        let remote = ref(UUID().uuidString)
+        let survivor = UUID()
+        store.handOver(remote, toStableID: survivor, workspaceID: UUID())
+        #expect(store.ref(forStableID: survivor) == remote)
+        #expect(store.appliedCustomization(forStableID: survivor) == nil)
     }
 }

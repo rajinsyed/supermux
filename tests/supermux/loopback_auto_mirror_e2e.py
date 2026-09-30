@@ -12,8 +12,11 @@ device, and auto-mirror opens one local mirror workspace per source. Checks:
   b3. create_on_device             supermux.devices.create_workspace ends with exactly one mirror
   c. closing_source_closes_mirror  closing a source closes its mirror (remote workspace gone)
   c2. orphan_is_closed             a bound mirror without projections (DEBUG bind hook) is closed; one mirror remains
-  c3. duplicate_is_closed          a second local mirror of a mirrored workspace (vm.workspace_open) is closed;
-                                   the bound mirror stays the only one
+  c3. duplicate_keeps_users_mirror a second local mirror of a mirrored workspace that the user opened
+                                   (vm.workspace_open, like a reopened closed window) survives and takes
+                                   the binding; auto-mirror's background copy is the one that closes
+  c3b. duplicate_keeps_selected    when the auto-opened mirror is the one selected in its window, it
+                                   survives and the other copy closes
   d. hide_and_unhide               "Hide Here" (socket close_mirror hide) is never reopened;
                                    a programmatic workspace.close of a mirror hides too;
                                    supermux.devices.unhide brings the mirror back
@@ -360,13 +363,10 @@ class AutoMirrorE2E:
         state = self.sock.call("supermux.devices.list", {}).get("auto_mirror_state") or {}
         return {"source": source, "orphan": orphan, "mirror": remaining.get("workspace_id"), "hidden_untouched": up(source) not in self.hidden(), "coordinator": state.get("reconcile_count")}
 
-    def check_duplicate(self) -> Dict[str, Any]:
-        """A second local mirror of a mirrored remote workspace (what reopening
-        a closed window restores next to auto-mirror's replacement; here the
-        upstream vm.workspace_open, which never reuses) is closed, and the bound
-        mirror stays the only one."""
-        source = self.create_source("duplicate")
-        mirror = self.wait_one_mirror(source)
+    def open_duplicate(self, source: str, mirror: Dict[str, Any]) -> str:
+        """A second local mirror of `source`, opened the way a user reopens one
+        (upstream vm.workspace_open never reuses; like Reopen Closed Window it
+        leaves auto-mirror's copy in place)."""
         opened = self.sock.call(
             "vm.workspace_open", {"id": self.machine, "workspace_id": source, "focus": False}, timeout_s=60
         ) or {}
@@ -374,12 +374,33 @@ class AutoMirrorE2E:
         if not duplicate or up(duplicate) == up(mirror.get("workspace_id")):
             raise Failure(f"vm.workspace_open did not open a second local workspace: {opened}")
         self.created.append(str(duplicate))
-        wait_for("the duplicate mirror to close", lambda: up(duplicate) not in self.local_ids(), self.timeout)
-        hold("the bound mirror stays the only one", lambda: len(self.mirrors_of(source)) == 1, 3)
+        return str(duplicate)
+
+    def expect_survivor(self, source: str, survivor: str, closed: str) -> Dict[str, Any]:
+        wait_for(f"the copy {closed} to close", lambda: up(closed) not in self.local_ids(), self.timeout)
+        hold("one mirror stays", lambda: len(self.mirrors_of(source)) == 1, 3)
         remaining = self.one_mirror(source)
-        if up(remaining.get("workspace_id")) != up(mirror.get("workspace_id")) or not remaining.get("is_bound"):
-            raise Failure(f"expected the bound mirror {mirror.get('workspace_id')} to remain, found {remaining}")
-        return {"source": source, "mirror": remaining.get("workspace_id"), "closed_duplicate": duplicate}
+        if up(remaining.get("workspace_id")) != up(survivor) or not remaining.get("is_bound"):
+            raise Failure(f"expected {survivor} to remain and hold the binding, found {remaining}")
+        return {"source": source, "survivor": remaining.get("workspace_id"), "closed": closed}
+
+    def check_duplicate(self) -> Dict[str, Any]:
+        """Reopening a mirror the user had (a closed window, next to the copy
+        auto-mirror opened to replace it) keeps the user's mirror: the
+        background auto-opened copy closes and the binding moves over."""
+        source = self.create_source("duplicate")
+        mirror = self.wait_one_mirror(source)
+        duplicate = self.open_duplicate(source, mirror)
+        return self.expect_survivor(source, survivor=duplicate, closed=str(mirror.get("workspace_id")))
+
+    def check_duplicate_keeps_selected(self) -> Dict[str, Any]:
+        """The mirror selected in its window survives whichever copy the user
+        opened later."""
+        source = self.create_source("duplicate-selected")
+        mirror = self.wait_one_mirror(source)
+        self.sock.call("workspace.select", {"workspace_id": mirror.get("workspace_id")})
+        duplicate = self.open_duplicate(source, mirror)
+        return self.expect_survivor(source, survivor=str(mirror.get("workspace_id")), closed=duplicate)
 
     def check_hide_unhide(self) -> Dict[str, Any]:
         source = self.create_source("hide")
@@ -752,7 +773,8 @@ class AutoMirrorE2E:
                 ("b3_create_on_device_single_mirror", self.check_create_on_device),
                 ("c_closing_source_closes_mirror", self.check_close_source),
                 ("c2_orphan_is_closed", self.check_orphan),
-                ("c3_duplicate_is_closed", self.check_duplicate),
+                ("c3_duplicate_keeps_users_mirror", self.check_duplicate),
+                ("c3b_duplicate_keeps_selected", self.check_duplicate_keeps_selected),
                 ("d_hide_and_unhide", self.check_hide_unhide),
                 ("e_close_on_mac_closes_source", self.check_close_on_mac),
                 ("f_agent_activity", self.check_agent_activity),
