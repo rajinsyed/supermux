@@ -267,6 +267,16 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   #620), exactly as before mirrors existed (the empty area: last row, root of the list, home /
   Ghostty-default directory), so the `+` menu checks This Mac and the `+` tooltip is upstream's. A
   local workspace never inherits a selected mirror's directory (a path on the other Mac, #577).
+- **Typing in a mirror is typing on that Mac** (#630–#639, capability `supermux.terminal_input.v1`):
+  every key press travels to the owning Mac as a key event and is encoded there by that Mac's own
+  Ghostty (kitty keyboard flags, cursor-key mode), in order with the mirror's paste, mouse and
+  binding bytes, which reach the PTY exactly; the mirror's own answers to terminal queries are
+  dropped. A pending Ghostty key sequence stays local. An older Mac on either side keeps upstream's
+  text path.
+- **Terminal size follows the Mac you look from** (upstream's shared sizing, "Fit everyone"): a pane
+  that is not on screen (a tab never shown on its Mac, a mirror in a background workspace, a hidden
+  or fully covered window) does not count, so a tab opened from a mirror takes the mirror's size at
+  once; a terminal that starts after its grid was decided gets it when it becomes ready.
 - **Inside a mirror**, ⌘G/Run, presets, project actions and the Changes panel act on the owning Mac
   over `mobile.supermux.*` (Generate & Commit follows that Mac's own AI-key rule); Finder/editor/
   file-explorer actions and the full diff view, which need a local path, are disabled with an
