@@ -26,6 +26,19 @@ struct SupermuxDeviceMirrorStatusWriter {
         applyCustomization(status.customization, baseline: customizationBaseline)
     }
 
+    /// Removes what ``apply(_:previous:customizationBaseline:)`` projected
+    /// into a workspace that stopped being a mirror: the remote pills and log
+    /// line, and the progress bar while it still shows the projected value (a
+    /// local `cmux set-progress` since then stays). Color, description and pin
+    /// stay: they are ordinary customization of a local workspace by now.
+    func clear(_ projected: SupermuxDeviceMirrorStatus) {
+        applyStatusEntries([])
+        applyLog(nil)
+        if workspace.progress != nil, workspace.progress == Self.progressState(projected.progress) {
+            workspace.progress = nil
+        }
+    }
+
     // MARK: - Pills
 
     private func applyStatusEntries(_ remote: [WorkspaceSyncRecord.SupermuxStatusEntry]) {
@@ -55,8 +68,12 @@ struct SupermuxDeviceMirrorStatusWriter {
     // MARK: - Progress and log
 
     private func applyProgress(_ remote: WorkspaceSyncRecord.SupermuxProgress?) {
-        let next = remote.map { SidebarProgressState(value: min(max($0.value, 0), 1), label: $0.label) }
+        let next = Self.progressState(remote)
         if workspace.progress != next { workspace.progress = next }
+    }
+
+    private static func progressState(_ remote: WorkspaceSyncRecord.SupermuxProgress?) -> SidebarProgressState? {
+        remote.map { SidebarProgressState(value: min(max($0.value, 0), 1), label: $0.label) }
     }
 
     private func applyLog(_ remote: WorkspaceSyncRecord.SupermuxLog?) {
