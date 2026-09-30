@@ -12,16 +12,13 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **644**. The remote-workspaces work (#517–#599) left
+- Numbering: the highest number in use is **681**. The remote-workspaces work (#517–#599) left
   unassigned gaps it may still grow into: **523–524, 527–529, 539–544, 558–559, 562–569,
   578–579 and 588–589** (never assigned, not retired); #600–#601 came from the 2026-10-01 upstream merge; #620–#622 and
-  #630–#639 are the remote-workspaces feedback round (602–619 and 623–629 unassigned); #640–#644 are
-  its busy-mirror-tab close fix (645–649 unassigned). Number **351** is unused (the notifications
-- Numbering: the highest number in use is **653**. The remote-workspaces work (#517–#599) left
-  unassigned gaps it may still grow into: **523–524, 527–529, 539–544, 558–559, 562–569,
-  578–579 and 588–589** (never assigned, not retired); #600–#601 came from the 2026-10-01 upstream merge; #620–#622 and
-  #630–#639 are the remote-workspaces feedback round (602–619 and 623–629 unassigned); #650–#653
-  make device mirrors use this Mac's terminal appearance (640–649 left to that round's other items). Number **351** is unused (the notifications
+  #630–#639 are the remote-workspaces feedback round (602–619 and 623–629 unassigned). The second
+  feedback round uses #640–#644 (busy mirror tab close), #650–#653 (mirror appearance), #660–#664
+  (new tabs append), #665–#670 (terminal size preference) and #675–#681 (a mirror's Files panel);
+  645–649, 654–659, 671–674 are unassigned. Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 82, 83, 89, 106, 121, 142, 213, 214,
   220, 229, 237, 250, 251, 252–258, 335, 470, 473–481, 483, 484, and 487** are unused; all are
