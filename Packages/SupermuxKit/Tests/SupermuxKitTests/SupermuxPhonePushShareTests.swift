@@ -24,6 +24,9 @@ import Testing
 /// 13. Registrations: an unknown device is not added; a device already registered here loses
 ///     its own (possibly newer) token; a known token is duplicated; invalid entries (wrong
 ///     bundle, bad token, bad device id) are kept; the list grows without bound.
+/// 13b. A phone rotated its token: a relayed registration that is NEWER than this Mac's entry
+///     for the same phone is ignored (this Mac keeps pushing to a dead token), or an OLDER
+///     relayed one replaces this Mac's newer entry. Direct registrations are not timestamped.
 ///
 /// Service files (``SupermuxPhonePushService`` share extension):
 /// 14. An installed key or config is readable by others (not 0600), or its directory is not 0700.
@@ -245,6 +248,42 @@ import Testing
         let result = SupermuxPhonePushShareMerger.mergeRegistrations(existing: existing, incoming: incoming)
         #expect(result.added == 1)
         #expect(result.merged.map(\.deviceToken) == [token("aa"), token("cc")])
+    }
+
+    @Test func aNewerRelayedTokenReplacesAnOlderOneForTheSamePhone() {
+        let device = "00000000-0000-0000-0000-00000000000a"
+        var existing = registration(device: device, token: token("aa"))
+        existing.registeredAt = 1_000
+        var newer = registration(device: device, token: token("bb"))
+        newer.registeredAt = 2_000
+        var older = registration(device: device, token: token("cc"))
+        older.registeredAt = 500
+
+        let replaced = SupermuxPhonePushShareMerger.mergeRegistrations(existing: [existing], incoming: [newer])
+        #expect(replaced.merged.map(\.deviceToken) == [token("bb")])
+        #expect(replaced.added == 1)
+
+        let kept = SupermuxPhonePushShareMerger.mergeRegistrations(existing: [existing], incoming: [older])
+        #expect(kept.merged.map(\.deviceToken) == [token("aa")])
+        #expect(kept.added == 0)
+    }
+
+    @Test func directRegistrationsAreTimestamped() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let service = SupermuxPhonePushService(
+            baseDirectory: directory,
+            now: { Date(timeIntervalSince1970: 1_800_000_000) }
+        )
+        _ = try await service.register(
+            deviceID: "00000000-0000-0000-0000-000000000001",
+            deviceToken: token("ab"),
+            bundleID: Self.bundleID,
+            environment: .production,
+            enabled: true
+        )
+        let stored = await service.shareSnapshot().registrations
+        #expect(stored.first?.registeredAt == 1_800_000_000)
     }
 
     @Test func mergedRegistrationsAreCapped() {
