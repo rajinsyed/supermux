@@ -375,12 +375,37 @@ class TerminalInputE2E:
         time.sleep(settle_s)
         return self.received_hex()[len(before):]
 
-    def key_check(self, combo: str, expected: str) -> Callable[[], Dict[str, Any]]:
+    def source_focused(self) -> None:
+        self.sock.call("workspace.select", {"workspace_id": self.source_id})
+        self.sock.call("surface.focus", {"workspace_id": self.source_id, "surface_id": self.source_surface})
+        self.sock.call("debug.app.activate", {})
+
+        def focused() -> bool:
+            result = self.sock.call("debug.terminal.is_focused", {"surface_id": self.source_surface}) or {}
+            if not result.get("focused"):
+                self.sock.call("surface.focus", {"workspace_id": self.source_id, "surface_id": self.source_surface})
+            return bool(result.get("focused"))
+
+        wait_for("the source terminal to take keyboard focus", focused, self.timeout)
+        time.sleep(0.5)
+
+    def key_check(self, combo: str, kitty: str) -> Callable[[], Dict[str, Any]]:
+        """The key pressed in the mirror reaches the program exactly as the
+        same key pressed in the source terminal on its own Mac. That is the
+        kitty encoding (`kitty`) unless this Mac's config binds the key
+        (e.g. Claude Code's `keybind = shift+enter=text:\\x1b\\r`), in which
+        case both send the binding's text."""
         def run() -> Dict[str, Any]:
-            got = self.received_after(lambda: self.sock.call("debug.shortcut.simulate", {"combo": combo}))
-            if got != expected:
-                raise Failure(f"{combo}: expected {expected}, the program received {got}")
-            return {"combo": combo, "expected_hex": expected, "received_hex": got}
+            press = lambda: self.sock.call("debug.shortcut.simulate", {"combo": combo})
+            self.source_focused()
+            local = self.received_after(press)
+            self.mirror_focused()
+            got = self.received_after(press)
+            if got != local:
+                raise Failure(f"{combo}: pressed in the source terminal the program received {local}, pressed in the mirror {got}")
+            if local != kitty:
+                return {"combo": combo, "received_hex": got, "local_hex": local, "kitty_hex": kitty, "bound_on_this_mac": True}
+            return {"combo": combo, "received_hex": got, "local_hex": local, "kitty_hex": kitty}
         return run
 
     def typed_text(self) -> Dict[str, Any]:

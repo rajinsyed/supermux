@@ -91,10 +91,11 @@ def git(*args: str, cwd: Path) -> None:
 
 
 def is_amber(pixel: bytes) -> bool:
-    """The spinner's amber (Tailwind amber-500): pixels at least about half
-    covered by it, on the dark or the light sidebar."""
+    """The spinner's amber (Tailwind amber-500): pixels at least about a third
+    covered by it, on the dark or the light sidebar. A 1x display (a headless
+    Mac's virtual screen) draws the 6pt ring mostly as partly covered pixels."""
     red, green, blue = pixel[0], pixel[1], pixel[2]
-    return red >= 120 and red - blue >= 80 and 0.45 * red <= green <= 0.8 * red
+    return red >= 90 and red - blue >= 60 and 0.45 * red <= green <= 0.8 * red
 
 
 def amber_marks(path: str, left_pt: float, width_pt: float, window_width_pt: float) -> Tuple[List[Dict[str, Any]], float]:
