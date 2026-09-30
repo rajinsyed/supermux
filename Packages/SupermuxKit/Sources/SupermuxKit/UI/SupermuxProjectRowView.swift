@@ -268,9 +268,12 @@ public struct SupermuxProjectRowView: View {
             projectRow
             // Live workspaces for this project are always nested under it
             // (piggycode-style); selecting one focuses it, and they can be
-            // dragged to reorder within this project.
-            let siblingIds = Set(openWorkspaces.map(\.id))
+            // dragged to reorder within this project — among this Mac's rows,
+            // or among one Mac's mirrors (the host keeps those groups apart).
+            let siblingIdsByMac = Dictionary(grouping: openWorkspaces, by: { $0.device?.machineID ?? "" })
+                .mapValues { Set($0.map(\.id)) }
             ForEach(openWorkspaces) { workspace in
+                let siblingIds = siblingIdsByMac[workspace.device?.machineID ?? ""] ?? []
                 SupermuxOpenWorkspaceRowView(
                     workspace: workspace,
                     select: { actions.selectWorkspace(workspace.id) },

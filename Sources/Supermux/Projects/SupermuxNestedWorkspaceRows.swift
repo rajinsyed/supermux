@@ -33,7 +33,7 @@ enum SupermuxNestedWorkspaceRows {
         // Nested mirrors render remote record fields (branch, activity, PR);
         // follow the device revision only while any mirror nests here.
         let _ = ownership.owners.isEmpty ? 0 : SupermuxComposition.devices.revision
-        return tabManager.tabs.map { workspace -> SupermuxOpenWorkspace in
+        let rows = tabManager.tabs.map { workspace -> SupermuxOpenWorkspace in
             let isSelected = workspace.id == tabManager.selectedTabId
             // Full snapshots (branch/PR/activity, each walking the bonsplit
             // pane tree) only for project-nested rows; the section consumes
@@ -64,5 +64,12 @@ enum SupermuxNestedWorkspaceRows {
                 unreadCount: unreadCount(workspace.id)
             )
         }
+        // Inside a project: this Mac's workspaces first (tab order), then each
+        // Mac's mirrors as one group (device order; auto-mirror keeps each
+        // group in that Mac's own order). Rows outside projects keep their place.
+        return SupermuxNestedWorkspaceOrder.sorted(
+            rows,
+            deviceOrder: SupermuxComposition.devices.devices.map(\.machine.rawValue)
+        )
     }
 }
