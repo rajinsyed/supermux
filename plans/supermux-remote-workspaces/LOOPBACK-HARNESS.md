@@ -127,10 +127,14 @@ restore: quit the app, relaunch it with the opt-in, and the mirror reconnects.
 `tests/supermux/loopback_notifications_e2e.py` (workstream Mb, touchpoints #545–#553) checks that
 notifications behave between Macs as they do locally: the mirror copy keeps the remote project,
 the viewer never forwards `.deviceMac` records to the phone (and leaves them out of the phone
-badge), reads travel both ways, a focused mirror pane acknowledges the host, an away host keeps a
-focused pane's notification unread, a burst over the admission budget is fully delivered, and
-`mobile.supermux.phone_push.status/share` work over the Mac link while `share` refuses non-Mac
-callers. Launch with a scratch direct-APNs directory so the run never touches real credentials:
+badge), reads travel both ways, Mark as Unread on a host-read mirror copy survives the host's
+next feed, a focused mirror pane acknowledges the host, an away host keeps a focused pane's
+notification unread, `notifications.suppressWhenAppFocused` withholds only the banner (panes the
+user is not looking at stay unread on both Macs), a burst over the admission budget is fully
+delivered, and `mobile.supermux.phone_push.status/share` work over the Mac link while `share`
+refuses non-Mac callers. Like the smoke, it pauses auto-mirror for its run so its explicit
+`vm.workspace_open` is the source's only mirror. Launch with a scratch direct-APNs directory so the
+run never touches real credentials:
 
 ```bash
 mkdir -p /tmp/<tag>/push-state
@@ -140,7 +144,8 @@ CMUX_TAG=<tag> python3 tests/supermux/loopback_notifications_e2e.py --push-state
 ```
 
 It drives DEBUG-only socket hooks (`supermux.devices.push_decisions`, `notification_records`,
-`notification_overrides`, `phone_push_debug`, `phone_push_probe`, `phone_push_share_now`; see
+`notification_overrides` (also sets `suppress_when_app_focused`), `notification_mark_unread`,
+`phone_push_debug`, `phone_push_probe`, `phone_push_share_now`; see
 `Sources/Supermux/Devices/SupermuxDeviceNotificationSocketCommands.swift`) and refuses to run the
 share steps unless the app reports the scratch directory.
 
