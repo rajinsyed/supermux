@@ -45,6 +45,10 @@ struct SupermuxOpenWorkspaceRowView: View {
                 }
             }
             Spacer(minLength: 2)
+            // A device mirror names the Mac it runs on (dimmed while offline).
+            if let device = workspace.device {
+                SupermuxDeviceChip(device: device, fontScale: fontScale)
+            }
             if let pullRequest = workspace.pullRequest {
                 SupermuxPullRequestBadge(
                     pullRequest: pullRequest,
