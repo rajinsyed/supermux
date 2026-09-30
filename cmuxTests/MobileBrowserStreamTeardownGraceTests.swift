@@ -68,7 +68,10 @@ struct MobileBrowserStreamTeardownGraceTests {
         #expect(panel.viewportModel.requestedViewport != nil)
 
         panel.removeMobileBrowserStreamSignalHandler(id: Self.handlerID)
-        panel.debugSimulateWebContentProcessTermination()
+        // Upstream defers web-view replacement after a WebContent crash until
+        // explicit recovery; terminate, then recover to drive the replacement.
+        panel.webView.navigationDelegate?.webViewWebContentProcessDidTerminate?(panel.webView)
+        #expect(panel.recoverTerminatedWebContent(reason: "test"))
 
         #expect(panel.mobileBrowserStreamRenderHost == nil)
         #expect(panel.mobileBrowserStreamViewportTeardownTask == nil)
