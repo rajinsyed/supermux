@@ -1524,10 +1524,12 @@ final class TerminalNotificationStore: ObservableObject {
         // Only the exact focused pane holds the workspace in place;
         // `suppressWhenAppFocused` withholds the banner without changing
         // sidebar ordering, matching Feed's delivery decision.
-        let effects = effects.keepingFocusedWorkspaceInPlace(
+        // SUPERMUX:begin focused-pane-notification-suppression
+        // (upstream: `let effects = ...`; `var` so the fork's focused-pane
+        // policy below can refine the same shadow instead of redeclaring it)
+        var effects = effects.keepingFocusedWorkspaceInPlace(
             isFocusedPane: isFocusedSurfaceArrival
         )
-        // SUPERMUX:begin focused-pane-notification-suppression
         // A pane the user is already watching needs history, not attention UI.
         // Shadow the hook-resolved effects once at the admission chokepoint so
         // badges, rings, flashes, native delivery, sound, and workspace reorder
@@ -1539,7 +1541,7 @@ final class TerminalNotificationStore: ObservableObject {
             externalDeliverySuppressed: shouldSuppressExternalDelivery,
             targetWindowIsKey: targetWindowIsKey(forTabId: request.tabId)
         )
-        let effects = focusedPanePolicy.resolvedEffects(
+        effects = focusedPanePolicy.resolvedEffects(
             effects,
             targetIsAlreadyVisible: focusedPaneAlreadyVisible
         )

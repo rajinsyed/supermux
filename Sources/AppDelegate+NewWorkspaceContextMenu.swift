@@ -119,6 +119,10 @@ extension AppDelegate {
             return !MobileRemoteControlPolicy.isDisabled
         case .newWorkspace, .newTerminal, .splitRight, .splitDown:
             return true
+        // SUPERMUX:begin claude-harness-builtin-action
+        case .newClaudeHarness:
+            return true
+        // SUPERMUX:end claude-harness-builtin-action
         }
     }
 

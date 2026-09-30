@@ -157,6 +157,9 @@ extension CmuxSurfaceTabBarBuiltInAction {
         case .splitRight: return .splitRight
         case .splitDown: return .splitDown
         case .newAgentChat, .cloudVM, .mobileConnect, .newSimulator: return nil
+        // SUPERMUX:begin claude-harness-builtin-action
+        case .newClaudeHarness: return .supermuxNewClaudeHarness
+        // SUPERMUX:end claude-harness-builtin-action
         }
     }
 
