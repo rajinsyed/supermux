@@ -87,8 +87,11 @@ struct SupermuxOpenWorkspaceRowView: View {
                     // Kept mounted and faded under the hover close button, so
                     // hover never remounts the render-server spinner.
                     if workspace.activity == .working {
-                        SupermuxAgentActivityIndicator(activity: workspace.activity, size: 6 * fontScale)
-                            .opacity(isHovered ? 0 : 1)
+                        SupermuxAgentActivityIndicator(
+                            activity: workspace.activity,
+                            size: SupermuxAgentActivityIndicator.rowSize * fontScale
+                        )
+                        .opacity(isHovered ? 0 : 1)
                     }
                     if isHovered {
                         Button(action: close) {
