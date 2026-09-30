@@ -16039,14 +16039,14 @@ class TerminalController {
         #if DEBUG
         let sendStart = ProcessInfo.processInfo.systemUptime
         #endif
+        // SUPERMUX:begin device-mirror-input-host (upstream's closure was `{ terminalTarget.sendInputResult(text) }`)
         let sendResult = MobileTerminalByteTee.shared.performMobileInput(
             surfaceID: surfaceId,
             sequence: (params["input_sequence"] as? String).flatMap(UInt64.init)
         ) {
-            // SUPERMUX:begin device-mirror-input-host
             supermuxInput.map { SupermuxDeviceTerminalInput.deliver($0, to: terminalTarget) } ?? terminalTarget.sendInputResult(text)
-            // SUPERMUX:end device-mirror-input-host
         }
+        // SUPERMUX:end device-mirror-input-host
         let acknowledgement = MobileHostTerminalInputApplier.shared.complete(delivery, result: sendResult)
         switch sendResult {
         case .sent:

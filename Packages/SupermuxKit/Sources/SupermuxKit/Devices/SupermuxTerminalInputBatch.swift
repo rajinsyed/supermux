@@ -12,7 +12,9 @@ public struct SupermuxTerminalInputBatch: Equatable, Sendable {
 
     public private(set) var items: [Item] = []
     public let byteLimit: Int
-    private var byteCount = 0
+    /// What the batch counts against its limit: bytes, and per key its text
+    /// length (at least one).
+    public private(set) var byteCount = 0
 
     public init(byteLimit: Int = 256 * 1024) {
         self.byteLimit = byteLimit

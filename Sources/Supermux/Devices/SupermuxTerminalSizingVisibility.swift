@@ -22,6 +22,10 @@ import Foundation
 ///
 /// An override someone set by hand is left alone: the automatic false is
 /// only lifted when it is still the value this class set.
+///
+/// Also: a terminal whose runtime starts after its shared grid was decided
+/// gets that grid when it becomes ready (upstream applies only to a live
+/// surface and never retries).
 @MainActor
 final class SupermuxTerminalSizingVisibility {
     static let shared = SupermuxTerminalSizingVisibility()
@@ -43,6 +47,14 @@ final class SupermuxTerminalSizingVisibility {
         observers.append(center.addObserver(forName: .terminalPortalVisibilityDidChange, object: nil, queue: .main) { [weak self] note in
             let surfaceID = note.userInfo?[GhosttyNotificationKey.surfaceId] as? UUID
             MainActor.assumeIsolated { self?.refresh(surfaceID: surfaceID) }
+        })
+        observers.append(center.addObserver(forName: .terminalSurfaceDidBecomeReady, object: nil, queue: .main) { [weak self] note in
+            let surfaceID = note.userInfo?["surfaceId"] as? UUID
+            MainActor.assumeIsolated {
+                guard let surfaceID else { return }
+                self?.applyDecidedGrid(surfaceID)
+                self?.refresh(surfaceID: surfaceID)
+            }
         })
         for name in [NSWindow.didChangeOcclusionStateNotification, NSApplication.didHideNotification, NSApplication.didUnhideNotification] {
             observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
@@ -84,6 +96,22 @@ final class SupermuxTerminalSizingVisibility {
         Task { @MainActor [weak self] in self?.refresh(surfaceID: surfaceID) }
     }
 
+    /// A terminal whose runtime starts after its shared grid was decided
+    /// (a tab opened from a mirror starts in the background when the mirror
+    /// first attaches) missed the apply, which needs a live surface: apply
+    /// the decided grid now, past the apply governor, which already counted
+    /// that request as done.
+    private func applyDecidedGrid(_ surfaceID: UUID) {
+        let controller = TerminalController.shared
+        guard let host = controller.localSizingHostsBySurfaceID[surfaceID],
+              case let .grid(size) = host.applyTarget else { return }
+        _ = controller.performMobileViewportTarget(
+            surfaceID: surfaceID,
+            target: .cap(columns: size.cols, rows: size.rows),
+            reason: "supermux.sizing.runtimeReady"
+        )
+    }
+
     // MARK: - Updates
 
     private func refresh(surfaceID: UUID?) {
@@ -120,7 +148,13 @@ final class SupermuxTerminalSizingVisibility {
                 hiddenHosts.insert(surfaceID)
             }
         } else if hiddenHosts.remove(surfaceID) != nil, current == false {
-            _ = controller.localSizingSetCountsOverride(surfaceID: surfaceID, participantID: macID, value: nil)
+            // Coming on screen is an explicit return, not a flap: apply at
+            // once rather than after the governor's uncap window.
+            var updated = host
+            let previous = updated.state
+            updated.setCountsOverride(macID, nil)
+            controller.localSizingHostsBySurfaceID[surfaceID] = updated
+            _ = controller.applyLocalSizing(surfaceID: surfaceID, previous: previous, immediate: true, reason: "supermux.sizing.onScreen")
         }
     }
 

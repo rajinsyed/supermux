@@ -7568,7 +7568,9 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
            manualNamedKeyConsumedKeyUps.remove(keyCode) != nil {
             return true
         }
-        if let keyName = terminalSurface?.manualInputKeyName(for: keyEvent) {
+        // SUPERMUX:begin device-mirror-key-sequence (a pending key sequence or key table stays with this Ghostty, which flushes or matches it)
+        if keySequence.isEmpty, keyTables.isEmpty, let keyName = terminalSurface?.manualInputKeyName(for: keyEvent) {
+        // SUPERMUX:end device-mirror-key-sequence
             var bindingFlags = ghostty_binding_flags_e(0)
             if !ghostty_surface_key_is_binding(surface, keyEvent, &bindingFlags) {
                 if terminalSurface?.enqueueManualInputNamedKey(keyName) == true {
