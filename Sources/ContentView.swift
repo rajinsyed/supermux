@@ -11524,6 +11524,11 @@ struct VerticalTabsSidebar: View, Equatable {
     // filler stays one viewport (see SupermuxProjectsSectionHeightPreferenceKey).
     @State private var supermuxProjectsSectionHeight: CGFloat = 0
     // SUPERMUX:end sidebar-projects-empty-area
+    // SUPERMUX:begin sidebar-footer-clearance
+    // Measured height of the footer drawn over the list's bottom; the list is
+    // masked out behind it (SupermuxSidebarFooterClearance).
+    @State private var supermuxSidebarFooterHeight: CGFloat = 0
+    // SUPERMUX:end sidebar-footer-clearance
     @State private var pendingSelectedWorkspaceScrollId: UUID?
     @State private var collapsedExtensionSidebarSectionIds: Set<String> = []
     @State private var extensionSidebarWorktreeCreationInFlightSectionIds: Set<String> = []
@@ -12101,6 +12106,9 @@ struct VerticalTabsSidebar: View, Equatable {
         ZStack(alignment: .bottomLeading) {
             if CmuxExtensionSidebarSelection.resolvesToDefaultSidebar(effectiveProviderId: effectiveExtensionSidebarProviderId) {
                 workspaceScrollArea(renderContext: renderContext)
+                    // SUPERMUX:begin sidebar-footer-clearance
+                    .supermuxClearsSidebarFooter(height: isPresented ? supermuxSidebarFooterHeight : 0)
+                    // SUPERMUX:end sidebar-footer-clearance
             } else {
                 extensionSidebarScrollArea(renderContext: renderContext)
             }
@@ -12112,6 +12120,9 @@ struct VerticalTabsSidebar: View, Equatable {
                     onSendFeedback: onSendFeedback
                 )
                 .frame(maxWidth: .infinity, alignment: .leading)
+                // SUPERMUX:begin sidebar-footer-clearance
+                .supermuxReportsSidebarFooterHeight($supermuxSidebarFooterHeight)
+                // SUPERMUX:end sidebar-footer-clearance
             }
         }
         .accessibilityIdentifier("Sidebar")
