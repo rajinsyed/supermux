@@ -9,7 +9,9 @@ internal import SupermuxMobileCore
 /// and mutations carry `expected_root` — the root the last status reported —
 /// so a remote `cd` can never make a stale panel stage or discard in another
 /// repository (the host answers `stale_root`; the model's follow-up refresh
-/// picks up the new root). Reply deadlines are the device facade's
+/// picks up the new root). Only the panel's refresh follows a `cd`: the status
+/// reads made inside a mutation (Discard All's re-read, the AI flow's change
+/// captures) are pinned to the same root. Reply deadlines are the device facade's
 /// per-method table (``SupermuxDeviceReplyDeadline``), never set here.
 ///
 /// ```swift
@@ -54,9 +56,18 @@ public final class SupermuxRemoteChangesBackend: SupermuxChangesBackend {
 
     // MARK: - Status
 
+    /// The panel's refresh: follows the workspace wherever its shell went.
     public func status(repoPath: String) async -> SupermuxGitStatusSnapshot {
+        await readStatus(pinnedTo: nil)
+    }
+
+    /// One status read. `pinnedTo` (a read inside a mutation) sends
+    /// `expected_root`, so after a remote `cd` the host refuses it and the
+    /// last snapshot stands; the mutation that follows is refused the same
+    /// way instead of acting on the other repository.
+    private func readStatus(pinnedTo repoPath: String?) async -> SupermuxGitStatusSnapshot {
         do {
-            let result = try await call(.changesStatus)
+            let result = try await call(.changesStatus, repoPath: repoPath)
             let dto = try SupermuxWireJSON().decode(SupermuxChangesStatusDTO.self, from: result)
             if let root = dto.root, !root.isEmpty { lastRoot = root }
             let snapshot = SupermuxGitStatusSnapshot(wire: dto)
@@ -93,7 +104,7 @@ public final class SupermuxRemoteChangesBackend: SupermuxChangesBackend {
     /// The host discards only paths it re-validates as current changes, so
     /// "everything" is the fresh status's full list; a clean tree sends nothing.
     public func discardAll(repoPath: String) async throws {
-        let snapshot = await status(repoPath: repoPath)
+        let snapshot = await readStatus(pinnedTo: repoPath)
         let paths = (snapshot.staged + snapshot.unstaged + snapshot.untracked).map(\.path)
         guard !paths.isEmpty else { return }
         try await mutate(.changesDiscard, ["paths": Array(Set(paths)).sorted()], repoPath: repoPath)
@@ -178,9 +189,11 @@ public final class SupermuxRemoteChangesBackend: SupermuxChangesBackend {
 
     /// The remote stand-in for the AI flow's diff capture: the status
     /// fingerprint (the host generates the message from its own diff), so the
-    /// staleness guard still notices files changing during generation.
+    /// staleness guard still notices files changing during generation. Pinned
+    /// like every read inside a mutation: a `cd` during generation must not
+    /// move the stage and commit that follow into another repository.
     public func uncommittedDiff(repoPath: String) async -> String {
-        await status(repoPath: repoPath).changeFingerprint
+        await readStatus(pinnedTo: repoPath).changeFingerprint
     }
 
     public func untrackedContentDigest(repoPath: String) async -> String { "" }
