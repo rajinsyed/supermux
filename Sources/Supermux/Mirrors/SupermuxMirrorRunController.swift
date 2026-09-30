@@ -7,20 +7,21 @@ import SupermuxMobileCore
 /// starts and stops ON THE MAC THAT OWNS THE WORKSPACE, for that Mac's
 /// project (`supermux_project_id` of the remote record), via
 /// `mobile.supermux.run.start` / `run.stop` with the remote workspace id — the
-/// same host path the iPhone uses. The state shown is that Mac's `run.state`.
+/// same host path the iPhone uses. The state shown is that Mac's `run.state`,
+/// as ``SupermuxRemoteProjectsModel`` (the one per-Mac state) holds it.
 ///
 /// ``SupermuxRunCoordinator`` asks this controller first; `nil` answers mean
 /// "not a mirror", and the coordinator's local path runs unchanged.
 @MainActor
 final class SupermuxMirrorRunController {
     private let resolver: SupermuxMirrorResolver
-    private let remoteState: SupermuxMirrorRemoteState
+    private let remoteProjects: SupermuxRemoteProjectsModel
     private let devices: SupermuxDevices
     private var inFlight: Set<SupermuxRemoteWorkspaceRef> = []
 
-    init(resolver: SupermuxMirrorResolver, remoteState: SupermuxMirrorRemoteState, devices: SupermuxDevices) {
+    init(resolver: SupermuxMirrorResolver, remoteProjects: SupermuxRemoteProjectsModel, devices: SupermuxDevices) {
         self.resolver = resolver
-        self.remoteState = remoteState
+        self.remoteProjects = remoteProjects
         self.devices = devices
     }
 
@@ -28,7 +29,13 @@ final class SupermuxMirrorRunController {
     /// Read-only (safe in view bodies).
     func isRunning(workspaceId: UUID) -> Bool? {
         guard let target = resolver.target(forWorkspaceID: workspaceId) else { return nil }
-        return remoteState.isRunning(target)
+        return isRunning(target)
+    }
+
+    private func isRunning(_ target: SupermuxMirrorTarget) -> Bool {
+        guard let projectID = target.remoteProjectID else { return false }
+        return remoteProjects.device(target.machine)?
+            .isRunning(projectID: projectID, remoteWorkspaceID: target.ref.workspaceID) ?? false
     }
 
     /// Toggles the run for a mirror, or returns `nil` for a local workspace.
@@ -47,7 +54,7 @@ final class SupermuxMirrorRunController {
             return explainsMissingProject
         }
         guard inFlight.insert(target.ref).inserted else { return true }
-        let wasRunning = remoteState.isRunning(target)
+        let wasRunning = isRunning(target)
         Task { @MainActor [weak self] in
             guard let self else { return }
             defer { self.inFlight.remove(target.ref) }
@@ -72,9 +79,6 @@ final class SupermuxMirrorRunController {
             on: target.machine
         )
         apply(result, on: target)
-        // The run tab opens in the background over there, which may announce
-        // no layout change; pull the layout so the mirror shows it now.
-        await devices.provider(for: target.machine)?.refresh(force: true)
     }
 
     /// Stops the remote project's run command in the mirrored remote workspace.
@@ -90,8 +94,8 @@ final class SupermuxMirrorRunController {
     private func apply(_ result: [String: Any], on target: SupermuxMirrorTarget) {
         if let object = result["run"] as? [String: Any],
            let run = try? SupermuxWireJSON().decode(SupermuxRunStateDTO.self, from: object) {
-            remoteState.apply(run: run, on: target.machine)
+            remoteProjects.apply(run: run, on: target.machine)
         }
-        Task { @MainActor [remoteState] in await remoteState.refreshRuns(on: target.machine) }
+        Task { @MainActor [remoteProjects] in await remoteProjects.refreshRuns(target.machine) }
     }
 }
