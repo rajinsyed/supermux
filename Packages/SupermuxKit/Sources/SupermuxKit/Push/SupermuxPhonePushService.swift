@@ -440,8 +440,8 @@ public actor SupermuxPhonePushService {
         for notificationID in message.dismissedIDs {
             let candidateIDs = currentIDs + [notificationID]
             let candidate = try encodedDismissPayload(
-                dismissedIDs: candidateIDs,
-                badgeCount: message.badgeCount
+                for: message,
+                dismissedIDs: candidateIDs
             )
             if candidate.count <= Self.maximumPayloadBytes {
                 currentIDs = candidateIDs
@@ -450,14 +450,14 @@ public actor SupermuxPhonePushService {
 
             if !currentIDs.isEmpty {
                 bodies.append(try encodedDismissPayload(
-                    dismissedIDs: currentIDs,
-                    badgeCount: message.badgeCount
+                    for: message,
+                    dismissedIDs: currentIDs
                 ))
                 currentIDs = []
             }
             let single = try encodedDismissPayload(
-                dismissedIDs: [notificationID],
-                badgeCount: message.badgeCount
+                for: message,
+                dismissedIDs: [notificationID]
             )
             if single.count <= Self.maximumPayloadBytes {
                 currentIDs = [notificationID]
@@ -468,8 +468,8 @@ public actor SupermuxPhonePushService {
 
         if !currentIDs.isEmpty || bodies.isEmpty {
             bodies.append(try encodedDismissPayload(
-                dismissedIDs: currentIDs,
-                badgeCount: message.badgeCount
+                for: message,
+                dismissedIDs: currentIDs
             ))
         }
         return bodies
@@ -510,6 +510,13 @@ public actor SupermuxPhonePushService {
             // the re-signed app; without the entitlement iOS ignores the key
             // and delivers at the active level instead of failing the push.
             "interruption-level": "time-sensitive",
+            // Wakes the notification service extension on EVERY push: it turns
+            // this Mac's own `badge` into the total over every Mac
+            // (`SupermuxPhoneBadgeLedger`), and its SupermuxNotificationDecorator
+            // rewrites a push carrying a project into a communication
+            // notification so iOS draws the project avatar. A phone without
+            // the extension ignores the key.
+            "mutable-content": 1,
         ]
         var cmux: [String: Any] = [
             "retargetsToLiveSurfaceOwner": message.retargetsToLiveSurfaceOwner,
@@ -539,13 +546,6 @@ public actor SupermuxPhonePushService {
                 // Stacks a project's banners together in Notification Center,
                 // matching the macOS banner's threadIdentifier.
                 aps["thread-id"] = "supermux.project.\(project.id)"
-                // Wakes the notification service extension, whose
-                // SupermuxNotificationDecorator rewrites this into a
-                // communication notification so iOS draws the project avatar.
-                // Set ONLY alongside a project: without one the extension has
-                // nothing to render and would spend its launch to no effect.
-                // A phone without the extension installed ignores the key.
-                aps["mutable-content"] = 1
             }
             if let tabName = message.tabName, !tabName.isEmpty {
                 cmux["tabName"] = tabName
@@ -554,13 +554,26 @@ public actor SupermuxPhonePushService {
         return try JSONSerialization.data(withJSONObject: ["aps": aps, "cmux": cmux])
     }
 
-    private func encodedDismissPayload(dismissedIDs: [String], badgeCount: Int) throws -> Data {
-        try JSONSerialization.data(withJSONObject: [
+    /// The banner-less dismiss push. `badge` is this Mac's own unread count;
+    /// the empty alert plus `mutable-content` wake the notification service
+    /// extension (it runs only for a push with an alert, and empty strings keep
+    /// this one invisible, as upstream's encrypted dismiss does) so it can
+    /// badge the total over every Mac, keyed by `macDeviceId`.
+    private func encodedDismissPayload(
+        for message: SupermuxPhonePushMessage,
+        dismissedIDs: [String]
+    ) throws -> Data {
+        var cmux: [String: Any] = ["dismissedIds": dismissedIDs]
+        if let macDeviceID = message.macDeviceID { cmux["macDeviceId"] = macDeviceID }
+        if let macInstanceTag = message.macInstanceTag { cmux["macInstanceTag"] = macInstanceTag }
+        return try JSONSerialization.data(withJSONObject: [
             "aps": [
                 "content-available": 1,
-                "badge": max(0, badgeCount),
-            ],
-            "cmux": ["dismissedIds": dismissedIDs],
+                "mutable-content": 1,
+                "alert": ["title": "", "body": ""],
+                "badge": max(0, message.badgeCount),
+            ] as [String: Any],
+            "cmux": cmux,
         ])
     }
 
