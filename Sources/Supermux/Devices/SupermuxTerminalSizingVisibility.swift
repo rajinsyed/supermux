@@ -1,5 +1,6 @@
 import AppKit
 import CmuxTerminal
+import CmuxTerminalSharing
 import CmuxTerminalSizing
 import Foundation
 
