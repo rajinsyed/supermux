@@ -9,6 +9,12 @@ struct CmuxFeatureFlagOverrideCapability: Equatable, Sendable {
     let isDebugBuild: Bool
     let isTaggedDebugArtifact: Bool
     let hasCloudDogfoodMarker: Bool
+    // SUPERMUX:begin supermux-release-cloud-override
+    /// The fork's own release identity. Upstream's `cloud-machines-enabled-release`
+    /// rollout does not include Supermux accounts, so this identity may enable
+    /// Cloud locally (Mac-to-Mac My Devices sits behind the same gate).
+    let isSupermuxRelease: Bool
+    // SUPERMUX:end supermux-release-cloud-override
 
     init(bundle: Bundle = .main) {
         #if DEBUG
@@ -33,9 +39,14 @@ struct CmuxFeatureFlagOverrideCapability: Equatable, Sendable {
         // Debug also requires a debug bundle, so stable/staging identities fail closed.
         let debugID = SocketPathMarkerFiles.defaultBaseDebugBundleIdentifier
         isTaggedDebugArtifact = isDebugBuild && bundleIdentifier?.hasPrefix(debugID + ".") == true
-        allowsCloudOverride = bundleIdentifier == SocketPathMarkerFiles.nightlyBundleIdentifier
+        // SUPERMUX:begin supermux-release-cloud-override
+        isSupermuxRelease = bundleIdentifier == "com.supermux.app"
+        // (upstream: no `isSupermuxRelease ||` term)
+        allowsCloudOverride = isSupermuxRelease
+            || bundleIdentifier == SocketPathMarkerFiles.nightlyBundleIdentifier
             || (isDebugBuild && (bundleIdentifier == debugID
                 || bundleIdentifier?.hasPrefix(debugID + ".") == true))
+        // SUPERMUX:end supermux-release-cloud-override
         enablesCloudDogfood = cloudDogfoodRequested && isDebugBuild
             && bundleIdentifier?.hasPrefix(debugID + ".") == true
     }

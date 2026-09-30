@@ -62,7 +62,7 @@ sign-in mark, launch logo, `mobile.signIn.title`).
   the app runs.
 - **One iOS notification service extension (resolved).** The fork's avatar decoration now runs
   inside upstream's E2EE-decrypting `NotificationService`; the separate
-  `SupermuxNotificationService` target is gone — see SUPERMUX-TOUCHPOINTS.md #368–372, #514.
+  `SupermuxNotificationService` target is gone — see SUPERMUX-TOUCHPOINTS.md #368–372, #516.
 - **The CLAUDE.md phone dogfood (Release) build still fails as written**: its
   `SUPERMUX_NSE_CODE_SIGN_ENTITLEMENTS=Config/cmux.entitlements` now claims upstream's
   `group.dev.cmux.ios`, which the dogfood extension id cannot sign. The fixed-identity release

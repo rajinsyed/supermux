@@ -442,6 +442,14 @@ final class CmuxFeatureFlags {
                 defaults.set(false, forKey: Self.overrideDefaultsKey(for: Self.cloudMachinesFlag.key))
             }
         }
+        // SUPERMUX:begin supermux-release-cloud-override
+        // Seed the Cloud override ON once for the Supermux release identity; an
+        // explicit value the user sets later (Feature Flags window) is kept.
+        let supermuxCloudOverrideKey = Self.overrideDefaultsKey(for: Self.cloudMachinesFlag.key)
+        if overrideCapability.isSupermuxRelease, defaults.object(forKey: supermuxCloudOverrideKey) == nil {
+            defaults.set(true, forKey: supermuxCloudOverrideKey)
+        }
+        // SUPERMUX:end supermux-release-cloud-override
         if let remoteFlagLoader {
             self.remoteFlagLoader = remoteFlagLoader
         } else {
