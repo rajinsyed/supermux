@@ -186,58 +186,19 @@ struct SupermuxProjectsMount: View {
         // Reading tabs/selectedTabId here subscribes this small, eager section
         // to workspace add/remove/select changes (not per-keystroke output), so
         // a project's live workspaces stay nested and in sync underneath it.
-        let projects = SupermuxComposition.projectsModel.projects
-        let associations = SupermuxComposition.workspaceAssociations
-        // This window's memoized project resolution — the same cache instance
-        // the flat-list filter uses, so per-workspace NSString path
-        // normalization runs once per invalidation, not once per consumer.
-        // Its validity preamble reads the store's observable `revision` and
-        // durable directory map on every call (cache hits included), which is
-        // what re-renders this body on association changes now that the raw
-        // `associations.projectId` reads no longer happen here.
-        let resolutionCache = SupermuxMainListFilter.resolutionCache(for: tabManager)
         let pullRequestsEnabled = watchGitStatus && showPullRequests && !hideAllDetails
         // Reading the @Observable snapshot here subscribes the mount to unread
         // publications, so a nested row's badge appears/clears live — the same
         // per-workspace summary source cmux's flat rows read.
         let unreadSnapshot = TerminalNotificationStore.shared.sidebarUnread.snapshot
-        // Device mirrors nest by their remote record's project (never by
-        // local path); reading it here re-renders on ownership changes.
-        let ownership = SupermuxMirrorOwnership.current()
-        // Nested mirrors render remote record fields (branch, activity, PR);
-        // follow the device revision only while any mirror nests here.
-        let _ = ownership.owners.isEmpty ? 0 : SupermuxComposition.devices.revision
-        let openWorkspaces = tabManager.tabs.map { workspace -> SupermuxOpenWorkspace in
-            let isSelected = workspace.id == tabManager.selectedTabId
-            // Full snapshots (branch/PR/activity, each walking the bonsplit
-            // pane tree) only for project-nested rows; the section consumes
-            // just the directory of everything else.
-            guard let projectId = resolutionCache.projectId(
-                forWorkspace: workspace,
-                projects: projects,
-                associations: associations,
-                ownership: ownership
-            ) else {
-                return SupermuxWorkspaceRow.standaloneSnapshot(for: workspace, isSelected: isSelected)
-            }
-            if ownership.isMirror(workspace) {
-                return SupermuxMirrorRowSnapshot.snapshot(
-                    for: workspace,
-                    isSelected: isSelected,
-                    projectId: projectId,
-                    includePullRequest: pullRequestsEnabled,
-                    unreadCount: unreadSnapshot.unreadCount(forWorkspaceId: workspace.id)
-                )
-            }
-            return SupermuxWorkspaceRow.snapshot(
-                for: workspace,
-                isSelected: isSelected,
-                projectId: projectId,
-                isRunning: SupermuxComposition.runCoordinator.isRunning(workspaceId: workspace.id),
-                includePullRequest: pullRequestsEnabled,
-                unreadCount: unreadSnapshot.unreadCount(forWorkspaceId: workspace.id)
-            )
-        }
+        // The same builder `supermux.devices.sidebar_rows` reports. Its reads
+        // (projects, associations, mirror ownership, device revision) happen
+        // during this body, so they keep subscribing the mount.
+        let openWorkspaces = SupermuxNestedWorkspaceRows.rows(
+            for: tabManager,
+            includePullRequest: pullRequestsEnabled,
+            unreadCount: { unreadSnapshot.unreadCount(forWorkspaceId: $0) }
+        )
         SupermuxProjectsSectionView(
             model: SupermuxComposition.projectsModel,
             opener: SupermuxTabManagerOpener(tabManager: tabManager),

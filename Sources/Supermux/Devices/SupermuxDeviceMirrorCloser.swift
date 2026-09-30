@@ -144,7 +144,13 @@ final class SupermuxDeviceMirrorCloser {
     }
 
     private func prompt(_ workspaces: [Workspace], in manager: TabManager) -> Decision {
-        let items = workspaces.compactMap { workspace -> SupermuxDeviceMirrorClosePrompt.Item? in
+        ask(promptItems(for: workspaces), manager)
+    }
+
+    /// The close prompt's rows for `workspaces` (also what the
+    /// `supermux.devices.close_prompt` socket method describes).
+    func promptItems(for workspaces: [Workspace]) -> [SupermuxDeviceMirrorClosePrompt.Item] {
+        workspaces.compactMap { workspace -> SupermuxDeviceMirrorClosePrompt.Item? in
             guard let ref = index.ref(forLocal: workspace) else { return nil }
             let device = devices.device(for: ref.machine)
             return SupermuxDeviceMirrorClosePrompt.Item(
@@ -153,7 +159,6 @@ final class SupermuxDeviceMirrorCloser {
                 isConnected: device?.isConnected ?? false
             )
         }
-        return ask(items, manager)
     }
 
     private func perform(_ decision: Decision, on workspace: Workspace, ref: SupermuxRemoteWorkspaceRef, in manager: TabManager) -> Bool {

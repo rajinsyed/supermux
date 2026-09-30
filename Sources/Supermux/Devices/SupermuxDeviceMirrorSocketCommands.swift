@@ -8,6 +8,8 @@ import SupermuxKit
 ///
 /// - `close_mirror {workspace_id, action: "close_on_mac" | "hide"}` — the two
 ///   prompt answers without a prompt; `close_on_mac` waits for the other Mac.
+/// - `close_prompt {workspace_id}` — the close prompt a user close of that
+///   mirror shows (text, buttons, default and Esc button), without showing it.
 /// - `unhide {machine?, remote_workspace_id?}` — unhide one ref, one device's
 ///   refs, or (no params) every hidden ref; auto-mirror reopens them.
 /// - `hidden {}` — the hidden set.
@@ -18,7 +20,7 @@ import SupermuxKit
 @MainActor
 enum SupermuxDeviceMirrorSocketCommands {
     static let methods: Set<String> = {
-        var methods: Set<String> = ["close_mirror", "unhide", "hidden", "set_auto_mirror", "reconcile"]
+        var methods: Set<String> = ["close_mirror", "close_prompt", "unhide", "hidden", "set_auto_mirror", "reconcile"]
         #if DEBUG
         methods.insert("fail_next_open")
         #endif
@@ -30,6 +32,7 @@ enum SupermuxDeviceMirrorSocketCommands {
             let result: [String: Any]
             switch name {
             case "close_mirror": result = try await closeMirror(params, payloads: payloads)
+            case "close_prompt": result = try closePrompt(params)
             case "unhide": result = unhide(params)
             case "hidden": result = hidden()
             case "set_auto_mirror": result = try setAutoMirror(params)
@@ -49,7 +52,8 @@ enum SupermuxDeviceMirrorSocketCommands {
         }
     }
 
-    private static func closeMirror(_ params: [String: Any], payloads: SupermuxDevicesSocketPayloads) async throws -> [String: Any] {
+    /// The mirror named by `workspace_id`, and the remote workspace it shows.
+    private static func mirror(_ params: [String: Any]) throws -> (Workspace, SupermuxRemoteWorkspaceRef) {
         guard let raw = params["workspace_id"] as? String, let id = UUID(uuidString: raw),
               let workspace = Workspace.liveWorkspace(id: id) else {
             throw invalid("workspace_id does not name an open workspace")
@@ -58,6 +62,18 @@ enum SupermuxDeviceMirrorSocketCommands {
         guard index.isDeviceMirror(workspace), let ref = index.ref(forLocal: workspace) else {
             throw invalid("workspace_id is not a device mirror")
         }
+        return (workspace, ref)
+    }
+
+    private static func closePrompt(_ params: [String: Any]) throws -> [String: Any] {
+        let (workspace, _) = try mirror(params)
+        let items = SupermuxComposition.deviceMirrorCloser.promptItems(for: [workspace])
+        return SupermuxDeviceMirrorClosePrompt.describe(items)
+    }
+
+    private static func closeMirror(_ params: [String: Any], payloads: SupermuxDevicesSocketPayloads) async throws -> [String: Any] {
+        let (workspace, ref) = try mirror(params)
+        let id = workspace.id
         let closer = SupermuxComposition.deviceMirrorCloser
         var payload = payloads.localWorkspace(workspace)
         payload["machine"] = ref.machineID

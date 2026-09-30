@@ -105,6 +105,62 @@ enum SupermuxProjectsSocketPayloads {
         ]
     }
 
+    /// The window's sidebar rows as drawn: the Projects section's nested rows
+    /// per project in display order (the mount's own builder), and the
+    /// directory line of every flat-list row (the flat rows' own snapshot).
+    static func sidebarRows(for tabManager: TabManager) -> [String: Any] {
+        let unread = TerminalNotificationStore.shared.sidebarUnread
+        let rows = SupermuxNestedWorkspaceRows.rows(
+            for: tabManager,
+            includePullRequest: true,
+            unreadCount: { unread.unreadCount(forWorkspaceId: $0) }
+        )
+        var projectOrder: [UUID] = []
+        var rowsByProject: [UUID: [SupermuxOpenWorkspace]] = [:]
+        for row in rows {
+            guard let projectId = row.projectId else { continue }
+            if rowsByProject[projectId] == nil { projectOrder.append(projectId) }
+            rowsByProject[projectId, default: []].append(row)
+        }
+        let settings = SidebarTabItemSettingsSnapshot()
+        let flat = SupermuxMainListFilter.tabsForMainList(tabManager.tabs, tabManager: tabManager)
+        return [
+            "window_id": AppDelegate.shared?.windowId(for: tabManager)?.uuidString ?? NSNull(),
+            "projects": projectOrder.map { id -> [String: Any] in
+                ["project_id": id.uuidString, "rows": (rowsByProject[id] ?? []).map(nestedRow)]
+            },
+            "flat": flat.map { flatRow($0, settings: settings) },
+        ]
+    }
+
+    private static func nestedRow(_ row: SupermuxOpenWorkspace) -> [String: Any] {
+        [
+            "workspace_id": row.id.uuidString,
+            "title": row.title,
+            "device_name": row.device?.name ?? NSNull(),
+            "branch": row.branch ?? NSNull(),
+            "unread_count": row.unreadCount,
+            // `SupermuxOpenWorkspaceRowView` labels the row with its title.
+            "accessibility_label": row.title,
+        ]
+    }
+
+    private static func flatRow(_ workspace: Workspace, settings: SidebarTabItemSettingsSnapshot) -> [String: Any] {
+        let snapshot = SidebarWorkspaceSnapshotFactory(
+            workspace: workspace,
+            settings: settings,
+            showsAgentActivity: true
+        ).makeSnapshot()
+        return [
+            "workspace_id": workspace.id.uuidString,
+            "title": snapshot.title,
+            "is_mirror": SupermuxDeviceWorkspaceIndex.isDeviceMirror(workspace),
+            "device_label": snapshot.deviceWorkspaceLabel ?? NSNull(),
+            "subtitle_candidates": snapshot.compactBranchDirectoryCandidates,
+            "branch_directory_lines": snapshot.branchDirectoryLines.map(\.directoryCandidates),
+        ]
+    }
+
     /// What the window's Projects section is handed about other Macs.
     static func presentation(for tabManager: TabManager) -> [String: Any] {
         let presentation = SupermuxRemoteProjectsPresenter.presentation(for: tabManager)
