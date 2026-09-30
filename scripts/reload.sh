@@ -2322,6 +2322,13 @@ if [[ "$LAUNCH" -eq 1 ]]; then
   if [[ "$PROD_AUTH" -eq 1 ]]; then
     TAG_LAUNCH_ENV+=(CMUX_AUTH_ENVIRONMENT=production)
   fi
+  # SUPERMUX:begin reload-supermux-loopback-env
+  # The DEBUG loopback device harness opt-in survives the clean `env -i` launch
+  # (plans/supermux-remote-workspaces/LOOPBACK-HARNESS.md).
+  if [[ "${SUPERMUX_DEBUG_LOOPBACK_DEVICE:-}" == "1" ]]; then
+    TAG_LAUNCH_ENV+=(SUPERMUX_DEBUG_LOOPBACK_DEVICE=1)
+  fi
+  # SUPERMUX:end reload-supermux-loopback-env
   if [[ -n "$AUTH_CREDENTIALS_FILE" ]]; then
     TAG_LAUNCH_ENV+=(CMUX_AUTH_CREDENTIALS_FILE="$AUTH_CREDENTIALS_FILE")
   fi

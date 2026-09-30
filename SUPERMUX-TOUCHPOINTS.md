@@ -12,7 +12,7 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **516**. Number **351** is unused (the notifications
+- Numbering: the highest number in use is **527**. Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 82, 83, 89, 106, 121, 142, 213, 214,
   220, 229, 237, 250, 251, 252–258, 335, 470, 473–481, 483, 484, and 487** are unused; all are
@@ -510,6 +510,9 @@ Rules for adding a touchpoint:
 | 514 | `Sources/FeatureFlags.swift` | `supermux-release-cloud-override` | In `CmuxFeatureFlags.init`, seeds the Cloud override to `true` once for the Supermux release identity (only when no override value is stored, so a later explicit choice in the Feature Flags window sticks). The Beta Features Cloud Machines toggle is still required. Server-side entitlements are unchanged: Cloud VM creation may still be refused; My Devices is the intended use |
 | 515 | `Sources/GhosttyTerminalView.swift` | `release-clear-selection-seam` | **Release-build compiler-crash workaround.** `sendSyntheticGhosttyMouseRelease` calls `GhosttyRuntimeCInterop.clearSelection(surface)` instead of the header-imported `ghostty_surface_clear_selection`. The ghostty pin now exports that symbol in `ghostty.h` as `(ghostty_surface_t)` (Optional pointer) while `CmuxTerminalCore` still binds it via `@_silgen_name` with a non-optional pointer; with both in the Release SIL link, swift-frontend 6.2.4 aborts with `SILFunction type mismatch for 'ghostty_surface_clear_selection'` (DESERIALIZATION FAILURE) and `scripts/supermux-release.sh` fails |
 | 516 | `ios/NotificationService/NotificationService.swift` | `ios-nse-supermux-decoration` | Upstream's extension is the app's only notification service extension. When a push carries no `encryptedPayloads` (the fork's direct Mac→APNs push, #332), it delivers `SupermuxNotificationDecorator.decorated(content)` (#383) instead of the raw content. Encrypted relay pushes keep upstream's decrypt path untouched, and the expiration handler still delivers the undecorated content |
+| 525 | `Sources/Devices/DeviceLinkRuntime.swift` | `loopback-device-runtime` | **DEBUG-only.** Appends `#if DEBUG extension DeviceLinkRuntime { func supermuxReplacingTransportFactory(_:) }`, which returns a copy of the runtime whose `transportFactory` is the given factory and whose `independentEventByteStreamProvider` is nil. It has to live in this file because `transportFactory` is `private(set)`. The DEBUG loopback device harness (`Sources/Supermux/Devices/SupermuxDeviceLoopbackHarness.swift`) uses it to plug an in-process byte pipe into a real `DeviceLink`, so one tagged build acts as both the viewer Mac and the host Mac (`plans/supermux-remote-workspaces/LOOPBACK-HARNESS.md`). Release builds compile none of it |
+| 526 | `scripts/reload.sh` | `reload-supermux-loopback-env` | In the tagged `--launch` path, right after the `PROD_AUTH` → `CMUX_AUTH_ENVIRONMENT=production` append, forwards `SUPERMUX_DEBUG_LOOPBACK_DEVICE=1` into `TAG_LAUNCH_ENV` when the caller exported it. Without this the loopback harness opt-in cannot reach the app, because the launch runs through `env -i`. `SUPERMUX_DEBUG_LOOPBACK_DEVICE=1 ./scripts/reload.sh --tag <tag> --supermux-profile --launch` then starts the harness |
+| 527 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the six DEBUG loopback-harness files in `Sources/Supermux/Devices/` into the cmux target. Each file gets the usual four entries: `PBXFileReference` with `path = Devices/<name>` inside the `Supermux` group, `PBXBuildFile`, a `Supermux` group child, and a line in the cmux target's Sources phase. The files are `SupermuxDeviceLoopbackPipe`, `…Transport`, `…TransportFactory`, `…HostAcceptor`, `…Identity` and `…Harness` (`.swift`). File refs are `50BE0008000000000000000{1,3,5,7,9,B}` and build files are `…{2,4,6,8,A,C}`, in that order. `grep -c 50BE0008 cmux.xcodeproj/project.pbxproj` prints 24. The code is `#if DEBUG`, so these compile to nothing in Release |
 
 ## How to re-apply
 
@@ -4509,3 +4512,28 @@ crashes swift-frontend in `MandatorySILLinker` with `SILFunction type mismatch`.
 one call through `GhosttyRuntimeCInterop.clearSelection(surface)` like every other call site in the
 file. Retire this row once upstream drops the `@_silgen_name` shim (the header now exports the
 symbol) or stops calling the header function directly — then take upstream's line.
+
+### 525–527. DEBUG loopback device harness — `loopback-device-runtime`, `reload-supermux-loopback-env`
+
+Why: a real Mac-to-Mac link needs two machines running the same bundle id and build tag
+(`IrxMacPeerAuthorization`, worker SQL). The loopback harness makes one tagged DEBUG build both
+Macs. A synthetic "Loopback Mac" `DeviceSurfaceProvider` sits in `SurfaceCatalog.shared`. Its
+`DeviceLink` dials an in-memory byte pipe instead of Iroh, and the other end is admitted into this
+app's own `MobileHostService.acceptTransport` as an `.irohAdmission` Mac peer. That peer gets the
+`device.workspace.*` layout handler, so the whole viewer→host pipeline runs in one process. The
+code is fork-owned (`Sources/Supermux/Devices/SupermuxDeviceLoopback*.swift`, `#if DEBUG`) and is
+started from `SupermuxMobileHostGlue.activateIfNeeded()`. The run instructions are in
+`plans/supermux-remote-workspaces/LOOPBACK-HARNESS.md`.
+Re-apply:
+1. `loopback-device-runtime` (#525): at the end of `Sources/Devices/DeviceLinkRuntime.swift`, add
+   the fenced `#if DEBUG` extension with
+   `func supermuxReplacingTransportFactory(_ factory: any CmxByteTransportFactory) -> DeviceLinkRuntime`.
+   It copies `self`, sets `transportFactory = factory` and `independentEventByteStreamProvider = nil`,
+   and returns the copy. If upstream renames `transportFactory` or makes the runtime a protocol, keep
+   the same helper name and set whatever field the RPC client's `makeTransport` reads.
+2. `reload-supermux-loopback-env` (#526): in `scripts/reload.sh`'s launch block, after
+   `TAG_LAUNCH_ENV+=(CMUX_AUTH_ENVIRONMENT=production)`, append
+   `SUPERMUX_DEBUG_LOOPBACK_DEVICE=1` to `TAG_LAUNCH_ENV` when that variable is `1`.
+3. pbxproj (#527): re-add the four entries per file listed in the #527 row
+   (`python3 scripts/normalize-pbxproj.py && ./scripts/check-pbxproj.sh` afterwards).
+Retire all three if the harness is ever replaced by a real two-Mac CI rig.
