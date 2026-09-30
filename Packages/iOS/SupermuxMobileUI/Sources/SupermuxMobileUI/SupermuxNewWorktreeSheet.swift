@@ -1,4 +1,4 @@
-public import SupermuxMobileCore
+import SupermuxMobileCore
 public import SupermuxMobileKit
 public import SwiftUI
 
