@@ -38,9 +38,10 @@ Steps:
      workspace's terminal echoes the prompt, and its mirror opens selected.
      The command list is restored afterwards.
   9. availability_is_live: with the Loopback Mac selected and fields typed,
-     its link is held down (DEBUG `supermux.devices.link`): the open sheet
-     disables it; after the redial it is selectable again; the typed fields
-     and the selection survive both edges.
+     its link is held down (DEBUG `supermux.devices.link`) while its options
+     load: the open sheet disables it, the dropped load never shows a raw
+     CancellationError, after the redial it is selectable again, and the typed
+     fields and the selection survive both edges.
  10. dropped_link_create_reports_unknown_outcome /
  11. dropped_link_start_claude_reports_unknown_outcome: the link drops while
      the other Mac is still creating (a post-checkout hook slows its
@@ -71,6 +72,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -163,6 +165,14 @@ class PickerE2E:
             rows = (self.client.call("workspace.list", {"window_id": window_id}) or {}).get("workspaces") or []
             selected += [norm(r.get("id")) for r in rows if r.get("selected") or r.get("is_selected")]
         return sorted(selected)
+
+    def load_on_second_connection(self, session: str) -> None:
+        """Runs the sheet's `load` without blocking this connection."""
+        try:
+            with SocketClient(self.client.path, timeout_s=120) as other:
+                other.call(PREFIX + "load", {"session_id": session}, timeout_s=120)
+        except (OSError, SmokeFailure):
+            pass
 
     def set_link(self, action: str) -> None:
         self.client.call("supermux.devices.link", {"machine": self.machine, "action": action})
@@ -439,8 +449,15 @@ class PickerE2E:
             if lost or current.get("selected_entry_id") != self.machine:
                 raise SmokeFailure(f"the link change reset the sheet: {lost}, selected {current.get('selected_entry_id')}")
 
+        # The drop lands while that Mac's options load (a second connection,
+        # as the sheet's own load runs beside the user's typing).
+        loading = threading.Thread(target=self.load_on_second_connection, args=(session,), daemon=True)
+        loading.start()
+        time.sleep(1.0)
         self.set_link("stop")
         try:
+            loading.join(self.timeout_s)
+
             def dropped() -> Optional[Dict[str, Any]]:
                 current = self.call("state", {"session_id": session})
                 row = loopback_row(current)
@@ -450,6 +467,9 @@ class PickerE2E:
 
             down = wait_for("the dropped Mac to be disabled in the open sheet", dropped, self.timeout_s)
             kept(down)
+            raw = [str(down.get(k)) for k in ("branch_load_error", "models_error") if "CancellationError" in str(down.get(k))]
+            if raw:
+                raise SmokeFailure(f"a load the link dropped under shows the raw error: {raw}")
         finally:
             self.set_link("restore")
 
