@@ -67,6 +67,10 @@ enum SupermuxMobileCapabilities {
             // device mirror sends its keys as key events and its other input
             // as exact bytes, so typing there behaves as typing here.
             SupermuxMobileCapability.terminalInputV1.rawValue,
+            // files.list {show_hidden} / files.read / files.search /
+            // files.git_status are served: another Mac's Files panel browses
+            // a workspace's folder here, read-only and root-confined.
+            SupermuxMobileCapability.filesReadV1.rawValue,
         ]
     }
 }
