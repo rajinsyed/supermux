@@ -144,7 +144,8 @@ public actor SupermuxPhonePushService {
                 deviceID: normalizedDeviceID,
                 deviceToken: normalizedToken,
                 bundleID: bundleID,
-                environment: environment
+                environment: environment,
+                registeredAt: now().timeIntervalSince1970
             ))
         }
         try persist(registrations: registrations)
