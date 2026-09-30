@@ -603,6 +603,7 @@ struct DockPortalReconcileTests {
         }
     }
 
+    // SUPERMUX:begin claude-harness-dock-admission-test
     @Test("Claude harness surface stays with workspace owner")
     @MainActor
     func harnessSurfaceCannotMoveIntoDock() async throws {
@@ -646,6 +647,7 @@ struct DockPortalReconcileTests {
             #expect(dock.panel(for: sourceTabId) == nil)
         }
     }
+    // SUPERMUX:end claude-harness-dock-admission-test
 
     @Test("Move Dock surface to workspace reconciles destination")
     @MainActor
