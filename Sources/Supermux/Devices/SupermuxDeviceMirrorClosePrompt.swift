@@ -1,13 +1,17 @@
 import AppKit
 import Foundation
 
-/// The "Close “X”?" prompt for closing device mirrors: **Close on <Mac>**
-/// (destructive), **Hide Here**, **Cancel**. One prompt covers any number of
-/// mirrors (a multi-close asks once). Cancel is the safe default: Return and
-/// Esc both answer it, so no key press closes anything on another Mac. The
-/// text names the Mac once and says what each answer does. When every
-/// involved Mac is offline, closing there is impossible, so that button is
-/// disabled.
+/// The "Close “X”?" prompt for closing device mirrors: **Close on <Mac>**,
+/// **Hide Here**, **Cancel**. One prompt covers any number of mirrors (a
+/// multi-close asks once). Cancel is the safe default: Return and Esc both
+/// answer it, so no key press closes anything on another Mac. The text names
+/// the Mac once and says what each answer does. When every involved Mac is
+/// offline, closing there is impossible, so that button is disabled.
+///
+/// Close on <Mac> is a plain button, not `hasDestructiveAction`: on macOS 27
+/// the destructive red-title style is not drawn while the sheet is key, which
+/// left a blank button-sized gap where Close sat. The message already says it
+/// closes the workspace on that Mac.
 @MainActor
 enum SupermuxDeviceMirrorClosePrompt {
     struct Item {
@@ -46,8 +50,8 @@ enum SupermuxDeviceMirrorClosePrompt {
 
     /// What the prompt for `items` shows, built but never presented (the
     /// `supermux.devices.close_prompt` socket method): its text, and per
-    /// button the role, title, key equivalent, destructive flag and
-    /// enablement, plus which button Esc answers.
+    /// button the role, title, key equivalent, destructive flag, enablement,
+    /// hidden flag and alpha, plus which button Esc answers.
     static func describe(_ items: [Item]) -> [String: Any] {
         let alert = makeAlert(items)
         let roles = Array(zip(buttonRoles, alert.buttons))
@@ -62,6 +66,8 @@ enum SupermuxDeviceMirrorClosePrompt {
                     "key_equivalent": button.keyEquivalent,
                     "destructive": button.hasDestructiveAction,
                     "enabled": button.isEnabled,
+                    "hidden": button.isHidden,
+                    "alpha": Double(button.alphaValue),
                 ]
             },
             "escape_role": roles.first { $0.1 === escape }?.0 ?? NSNull(),
@@ -88,7 +94,6 @@ enum SupermuxDeviceMirrorClosePrompt {
         let close = alert.addButton(withTitle: closeTitle(deviceNames))
         let hide = alert.addButton(withTitle: String(localized: "supermux.devices.close.button.hideHere", defaultValue: "Hide Here"))
         let cancel = alert.addButton(withTitle: String(localized: "common.cancel", defaultValue: "Cancel"))
-        close.hasDestructiveAction = true
         close.isEnabled = anyConnected
         close.keyEquivalent = ""
         hide.keyEquivalent = ""

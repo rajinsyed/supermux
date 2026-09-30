@@ -60,8 +60,9 @@ anything.** It is the contract that keeps the fork mergeable with upstream cmux.
    user's other Macs appears in the LEFT sidebar automatically, as a real local "mirror" workspace
    (terminals, tabs and splits stream from the owning Mac), nested under its project or loose in the
    list with a small Mac icon before its branch. Projects merge across Macs by git origin; the New
-   Worktree sheet has a **device picker**; "New Workspace on ▸ <Mac>" creates project-less
-   workspaces remotely. Activity
+   Worktree sheet has a **device picker**; "New Workspace on ▸ <Mac>" (the `+` menu, the sidebar's
+   empty-area menu) creates project-less workspaces remotely, while a plain New Workspace always stays
+   on this Mac. Activity
    spinners, status pills, progress, logs, branch/PR, unread and notification banners mirror the
    owning Mac; closing a mirror asks "Close on <Mac>" vs "Hide Here". The phone gets pushes from the
    Mac that runs the agent, so the main Mac can be closed. Details: "Remote Macs (devices)" below and
@@ -90,7 +91,7 @@ building a parallel system.
 | Remote Macs in the left sidebar (auto-mirror, close/hide, restart-stable bindings) | ✅ loopback-E2E | `Sources/Supermux/Devices/` (`SupermuxDevices` facade, `SupermuxDeviceWorkspaceIndex`, `SupermuxDeviceWorkspaceOpener`, `SupermuxDeviceMirrorCoordinator` + `SupermuxMirrorReconciler`), loop guard #518/#519, close hook #530 |
 | Status parity on mirrors (activity, pills, progress, log, branch/PR, color/description/pin) | ✅ loopback-E2E | `SupermuxDeviceStatusProjector`, additive `supermux_status_entries/progress/log` record fields (#535/#536), flat-row fences #532/#533 |
 | Projects across Macs (merge by git origin, remote-only rows, project sync, Set Up on <Mac>) | ✅ loopback-E2E | `Sources/Supermux/Projects/`, `SupermuxUnifiedProjects`, host RPCs `project.probe`/`project.clone`, `plans/supermux-remote-workspaces/PROJECTS-API.md` |
-| New Worktree device picker + New Workspace on ▸ <Mac> | ✅ loopback-E2E | `SupermuxNewWorktreeSheetModel` over `SupermuxWorktreeCreationTarget` (local / remote), #570/#571 |
+| New Worktree device picker + New Workspace on ▸ <Mac> | ✅ loopback-E2E | `SupermuxNewWorktreeSheetModel` over `SupermuxWorktreeCreationTarget` (local / remote), #570/#571, #620–#622 (plain New Workspace stays local; the empty area's menu; another Mac's home folder) |
 | Mirror workspace behaviors (⌘G run, presets, Changes panel, file tools) | ✅ loopback-E2E | `Sources/Supermux/Mirrors/`, `SupermuxChangesBackend` (local / remote over `changes.*`), #572 |
 | Background tab sync (tabs added/closed/reordered on the owning Mac reach mirrors) | ✅ loopback-E2E | `SupermuxDeviceLayoutChangeObserver`, #595 |
 | Notification/push parity (no duplicate pushes, shared read state, presence-aware host, push setup shared between Macs) | ✅ loopback-E2E | #545–#550, `SupermuxDeviceNotification*`, `phone_push.status/share` |
@@ -239,7 +240,9 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   re-exported by this Mac's mobile host (the loop guard; the phone talks to every Mac directly).
 - **Closing a mirror** asks **Close on <Mac>** (closes the real workspace there) or **Hide Here**
   (keeps it running there; "Show Hidden Remote Workspaces" brings it back). Cancel is the prompt's
-  Return/Esc default and Close on <Mac> is marked destructive; mirror rows' menus offer Hide Here
+  Return/Esc default; Close on <Mac> is a plain button (macOS 27 does not draw the destructive red
+  title while the sheet is key, which left a blank gap) and the text says it closes the workspace on
+  that Mac; mirror rows' menus offer Hide Here
   and Close on <Mac>… directly. Closing a single mirrored tab closes that terminal on the owning
   Mac, like a local tab.
 - **Sidebar rows:** inside a project, this Mac's workspaces come first, then each Mac's mirrors;
@@ -250,16 +253,20 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   identical name + path. Project sync (setting) registers a Mac's projects on the other Mac when the
   same repo already exists at the same path; it never clones or deletes. "Set Up on <Mac>…" adds an
   existing folder or clones there.
-- **Creating remotely:** the New Worktree sheet's device picker (the last Mac the user chose for a
-  worktree is preselected in every project, link states live while the sheet is open), "New
-  Workspace on ▸ <Mac>" in every New Workspace menu, and ⌘N inside a mirror. The new workspace's
-  mirror opens and is selected in the
-  clicking window; the owning Mac opens the workspace in the background (`select: false`), so its
-  window never switches under whoever is using it. A link that drops after the create went out says
-  the outcome is unknown and to check that Mac's worktrees, instead of inviting a duplicate. The
-  submenu starts with This Mac (a local workspace even while a mirror is selected) and checks the Mac
-  a plain + / ⌘N would use; the + tooltip names the other Mac while + creates there. A local
-  workspace never inherits a selected mirror's directory (a path on the other Mac, #577).
+- **Creating remotely** is always an explicit choice: the New Worktree sheet's device picker (the
+  last Mac the user chose for a worktree is preselected in every project, link states live while the
+  sheet is open) and "New Workspace on ▸ <Mac>" in every New Workspace menu and in the sidebar empty
+  area's context menu (#622). A workspace created there without a directory starts in that Mac's home
+  folder, not in whatever that Mac has selected (#621). The new workspace's mirror opens and is
+  selected in the clicking window; the owning Mac opens the workspace in the background
+  (`select: false`), so its window never switches under whoever is using it. A link that drops after
+  the create went out says the outcome is unknown and to check that Mac's worktrees, instead of
+  inviting a duplicate. The submenu starts with This Mac.
+- **A selected mirror is context, not a target:** a plain `+`, ⌘N, File > New Workspace and a
+  double-click on the sidebar's empty area create on THIS Mac even while a mirror is selected (#571,
+  #620), exactly as before mirrors existed (the empty area: last row, root of the list, home /
+  Ghostty-default directory), so the `+` menu checks This Mac and the `+` tooltip is upstream's. A
+  local workspace never inherits a selected mirror's directory (a path on the other Mac, #577).
 - **Inside a mirror**, ⌘G/Run, presets, project actions and the Changes panel act on the owning Mac
   over `mobile.supermux.*` (Generate & Commit follows that Mac's own AI-key rule); Finder/editor/
   file-explorer actions and the full diff view, which need a local path, are disabled with an

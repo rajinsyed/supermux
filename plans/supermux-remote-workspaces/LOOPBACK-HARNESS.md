@@ -129,9 +129,9 @@ restore: quit the app, relaunch it with the opt-in, and the mirror reconnects.
   (no name capsule) before its branch, `set_status` / `set_progress` (Claude's lifecycle-less "Idle"
   pill included) show on no nested row (local or mirror), the working spinner of a nested local row
   and of its mirror is the 6·scale one (measured in a window screenshot), a flat mirror's directory
-  line omits the Mac name and carries its icon, and the prompt is safe (destructive Close on <Mac>,
-  Cancel as the Return/Esc default, the Mac named once, the worktree outcome and Hide Here
-  explained). Hover behavior and the footer are checked visually.
+  line omits the Mac name and carries its icon, and the prompt is safe (a plain, enabled, visible
+  Close on <Mac>, Cancel as the Return/Esc default, the Mac named once, the worktree outcome and Hide
+  Here explained). Hover behavior and the footer are checked visually.
 
 ## Mirror rendering E2E
 

@@ -61,9 +61,10 @@ the main Mac is closed), and the same on iOS.
    project exists; default = the last device the user chose for a worktree (one choice for every
    project; This Mac, else the first Mac that can create, when that device lacks the project or is
    offline, and a create on that fallback does not replace the choice). Remote create runs on the
-   remote (`worktree.create{open:true}` / `agent.start`), then
-   the local mirror appears and is selected.
-   "New Workspace on ▸ <Mac>" for global (project-less) workspaces.
+   remote (`worktree.create{open:true}` / `agent.start`), then the local mirror appears and is
+   selected. "New Workspace on ▸ <Mac>" (the `+` menu and the sidebar empty area's context menu) for
+   global (project-less) workspaces, which start in that Mac's home folder. A plain New Workspace
+   (`+`, ⌘N, an empty-area double-click) always creates on this Mac, even with a mirror selected.
 7. **Status parity on mirrors** from the remote record: activity (working / needs input / ready) via
    the fork `SupermuxWorkspaceActivityResolver` overlay; branch/PR in nested rows; additive
    `supermux_status_entries` / `supermux_progress` / `supermux_log` fields so `cmux set-status`,

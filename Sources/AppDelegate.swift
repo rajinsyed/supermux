@@ -8613,8 +8613,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let manager = context?.tabManager ?? preferredTabManager
         if let manager, let machine = manager.selectedWorkspace?.deviceMachineForNewWorkspace {
             // SUPERMUX:begin device-new-workspace-opener
+            // A Mac the fork mirrors: + / ⌘N still create on this Mac; another
+            // Mac is the explicit "New Workspace on ▸ <Mac>" choice.
             if SupermuxComposition.deviceNewWorkspace.handles(machine) {
-                return SupermuxComposition.deviceNewWorkspace.start(on: machine, in: manager)
+                return performNewWorkspaceCreationAction(
+                    initialSurface: .terminal,
+                    preferredTabManager: manager,
+                    event: event,
+                    placementOverride: placementOverride,
+                    debugSource: debugSource
+                )
             }
             // SUPERMUX:end device-new-workspace-opener
             return deviceWorkspaceCreationCoordinator?.start(on: machine, in: manager) ?? false
@@ -8637,10 +8645,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     // SUPERMUX:begin device-new-workspace-this-mac
     /// "New Workspace on ▸ This Mac": the local New Workspace, even while the
-    /// selected workspace routes a plain New Workspace to another Mac or a VM.
+    /// selected workspace routes a plain New Workspace to a Cloud VM or
+    /// another Mac. `placementOverride: .end` places it after every row (the
+    /// sidebar empty area's menu).
     @discardableResult
-    func supermuxPerformLocalNewWorkspaceAction(tabManager: TabManager) -> Bool {
-        performNewWorkspaceCreationAction(initialSurface: .terminal, preferredTabManager: tabManager, event: nil, debugSource: "supermux.newWorkspace.thisMac")
+    func supermuxPerformLocalNewWorkspaceAction(tabManager: TabManager, placementOverride: WorkspacePlacement? = nil) -> Bool {
+        performNewWorkspaceCreationAction(
+            initialSurface: .terminal,
+            preferredTabManager: tabManager,
+            event: nil,
+            placementOverride: placementOverride,
+            debugSource: "supermux.newWorkspace.thisMac"
+        )
     }
     // SUPERMUX:end device-new-workspace-this-mac
 
@@ -8676,8 +8692,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     /// Whether a sidebar empty-area creation targets a remote-tmux mirror or a
     /// remote Mac, whose new workspaces are placed by the remote side.
     private func sidebarEmptyAreaUsesRemoteNewWorkspaceRouting(tabManager: TabManager) -> Bool {
-        tabManager.selectedTab?.isRemoteTmuxMirror == true
+        // SUPERMUX:begin sidebar-empty-area-local
+        // A selected device mirror is context, not a target: the double-click
+        // keeps creating a local workspace at the end of the list. (Upstream's
+        // body is the bare `||` expression below; `return` added for the guard.)
+        if SupermuxNewWorkspaceTarget.isForkDeviceWorkspace(tabManager.selectedWorkspace) { return false }
+        return tabManager.selectedTab?.isRemoteTmuxMirror == true
             || tabManager.selectedWorkspace?.deviceMachineForNewWorkspace != nil
+        // SUPERMUX:end sidebar-empty-area-local
     }
 
     /// Whether the window owning `tabManager` has a `ui.newWorkspace.action`.

@@ -174,7 +174,8 @@ func openWhenAvailable(_ ref:, in tabManager:, focus:, timeout: Duration = .seco
   (auto-mirror should pass `false`; explicit user opens `true`). Browsers in the remote workspace are
   refused by upstream's `materialize` and simply skipped.
 - `createWorkspace` sends `workspace.create {focus:false, title?, working_directory?}` fork-side (the host
-  validates the directory), re-syncs, then opens through upstream's
+  validates the directory; without one it sends `supermux_root_directory: true` and a fork host starts the
+  workspace in its home folder, #621, instead of inheriting whatever it has selected), re-syncs, then opens through upstream's
   `CloudTreeNodeActions.createWorkspaceAndOpenLocally(… existingWorkspace:, existingTerminal:, host:
   CloudWorkspaceCreationHost(manager:))`. Passing the already-created workspace means the reservation's
   provisional **"Cloud VM" title is replaced in the same main-actor turn** and never renders. (Upstream's own
@@ -293,9 +294,9 @@ SupermuxDeviceMirrorsGlue.unhide(machineID:ref:)   // unhide + reconcile
 - **Scheduling**: passes coalesce to the earliest pending deadline, so a failed open's 10 s backoff never
   delays the 200 ms triggers (status, new or closed remote workspaces); every pass re-arms a pass for the
   earliest backoff expiry.
-- **User closes** of a mirror prompt "Close “X”?" (Close on <Mac>, destructive / Hide Here / Cancel, the
-  Return and Esc default; the message names the Mac once, says the files, worktree and branch stay, and
-  explains Hide Here; one prompt per multi-close). The sidebar rows' menus also offer Hide Here (no
+- **User closes** of a mirror prompt "Close “X”?" (Close on <Mac> / Hide Here / Cancel, the Return and Esc
+  default; Close is a plain button, since macOS 27 does not draw the destructive red title while the sheet
+  is key; the message names the Mac once, says the files, worktree and branch stay, and explains Hide Here; one prompt per multi-close). The sidebar rows' menus also offer Hide Here (no
   prompt) and Close on <Mac>… (this prompt). Programmatic closes (`closeWorkspace(recordHistory: true)`: socket, AppleScript) hide.
   Every close unbinds. Window close, quit and restore never hide or close remotely. Route any new user
   close UI through `TabManager.closeWorkspaceWithConfirmation` (or the batch variant) to get the prompt.
@@ -317,7 +318,7 @@ SupermuxDeviceMirrorsGlue.unhide(machineID:ref:)   // unhide + reconcile
 - **Layout sync** skips remote non-terminal panels (browser/markdown) instead of stalling (#531).
 - **Socket** (`supermux.devices.*`): `close_mirror {workspace_id, action: close_on_mac|hide}`,
   `close_prompt {workspace_id}` (the prompt a user close would show, never shown: `message_text`,
-  `informative_text`, `buttons [{role, title, key_equivalent, destructive, enabled}]`, `escape_role`),
+  `informative_text`, `buttons [{role, title, key_equivalent, destructive, enabled, hidden, alpha}]`, `escape_role`),
   `unhide {machine?, remote_workspace_id?}`, `hidden {}`, `set_auto_mirror {enabled}`, `reconcile {}`,
   `fail_next_open {machine, remote_workspace_id}` (DEBUG: the next auto-mirror open of that ref fails);
   `list` gains `auto_mirror_state`; `bindings` gains `hidden` and a per-mirror `status` object.
