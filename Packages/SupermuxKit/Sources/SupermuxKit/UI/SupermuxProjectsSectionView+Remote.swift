@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The Projects section's other-Mac parts: remote-only project rows (after
 /// the local projects), lazy loading of device worktrees on expansion, and the
-/// remote New Worktree / "Set Up on <Mac>…" sheets.
+/// "Set Up on <Mac>…" sheet.
 extension SupermuxProjectsSectionView {
     /// Remote-only projects, each with the mirrors it owns nested under it.
     @ViewBuilder
@@ -15,14 +15,7 @@ extension SupermuxProjectsSectionView {
                 isExpanded: expandedRemoteProjectIds.contains(row.id),
                 actions: remote.actions,
                 toggleExpanded: { toggleRemoteExpanded(row) },
-                newWorktree: {
-                    remoteNewWorktreeTarget = SupermuxRemoteNewWorktreeTarget(
-                        location: row.location,
-                        projectName: row.project.name,
-                        avatar: row.avatar,
-                        icon: row.icon
-                    )
-                },
+                newWorktree: { presentNewWorktree(forRemote: row) },
                 setUp: { destination in
                     projectSetupTarget = SupermuxProjectSetupTarget(
                         projectName: row.project.name,
@@ -68,16 +61,11 @@ extension SupermuxProjectsSectionView {
         )
     }
 
-    /// Hosts the remote sheets on their own view, so they never compete with
-    /// the section's own `.sheet` modifiers.
+    /// Hosts the setup sheet on its own view, so it never competes with the
+    /// section's own `.sheet` modifiers.
     var remoteSheetsAnchor: some View {
         let actions = remote.actions
         return Color.clear
-            .sheet(item: $remoteNewWorktreeTarget) { target in
-                SupermuxRemoteNewWorktreeSheet(target: target) { request in
-                    try await actions.createWorktree(target.location, request)
-                }
-            }
             .sheet(item: $projectSetupTarget) { target in
                 SupermuxProjectSetupSheet(
                     target: target,
