@@ -286,11 +286,13 @@ final class SupermuxRemoteWorktreeCreationTarget   // over the device link, open
   selection or the typed input. The sheet reloads when the selected Mac becomes reachable
   (`loadKey`); a reload keeps the user's model / effort picks. A load the link drops under reads
   as that Mac being unreachable (`not_connected` sentence), never as the raw `CancellationError`.
-- **Default**: the row menu's Mac, else the last Mac a worktree was created on in any project (one
-  global choice, recorded only after a successful create) when it can create this project now, else
-  the first Mac that can create (This Mac first when it has a copy), else the first copy (an
-  offline-only project still opens and explains why). A remembered Mac that lacks the project, is
-  offline or still connecting is skipped, not forgotten.
+- **Default**: the row menu's Mac, else the remembered Mac (one global choice for every project)
+  when it can create this project now, else the first Mac that can create (This Mac first when it
+  has a copy), else the first copy (an offline-only project still opens and explains why). A
+  successful create records its Mac only when the user chose it (picked a row in the sheet, or the
+  row menu's "New Worktree on ▸ <Mac>"), or when nothing is remembered yet; a failed create never
+  does. A remembered Mac that lacks the project, is offline or still connecting is skipped, not
+  forgotten: a create on the row the sheet fell back to leaves it remembered.
 - **Switching Mac** keeps the prompt, workspace name and branch, resets the starting branch to that
   Mac's default, reloads its branches (`worktrees.list {include_branches: true}`) and Claude options
   (`agent.options {project_id, command?}`; another Mac's command list is adopted from its answer and

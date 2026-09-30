@@ -44,7 +44,10 @@ struct SupermuxNewWorktreeSheetModelTests {
         var destinations: [SupermuxProjectSetupDestination] = []
     }
 
-    private func makeFixture(lastUsed: String? = nil) throws -> Fixture {
+    /// - Parameters:
+    ///   - lastUsed: The remembered Mac.
+    ///   - preferred: The Mac asked for from "New Worktree on ▸ <Mac>".
+    private func makeFixture(lastUsed: String? = nil, preferred: String? = nil) throws -> Fixture {
         let suite = "SupermuxNewWorktreeSheetModelTests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defaults.removePersistentDomain(forName: suite)
@@ -77,14 +80,16 @@ struct SupermuxNewWorktreeSheetModelTests {
         remote.commandList = SupermuxAgentCommandList(commands: [], selected: "")
         remote.remoteCommands = SupermuxAgentCommandList(commands: ["ccx"], selected: "ccx")
         let setUps = SetUpRecorder()
+        let initial = SupermuxWorktreeDevicePlanner.defaultEntryID(
+            in: entries,
+            preferredDeviceKey: preferred,
+            lastUsedDeviceKey: store.deviceKey()
+        )
         let model = SupermuxNewWorktreeSheetModel(
             projectID: unifiedID,
             entries: entries,
-            initialEntryID: SupermuxWorktreeDevicePlanner.defaultEntryID(
-                in: entries,
-                preferredDeviceKey: nil,
-                lastUsedDeviceKey: store.deviceKey()
-            ),
+            initialEntryID: initial,
+            initialEntryIsChoice: initial != nil && initial == preferred,
             makeTarget: { location in location.isThisMac ? local : (location.machineID == "device:aaaa@default" ? remote : nil) },
             lastDevices: store,
             onSetUp: { setUps.destinations.append($0) }
@@ -248,6 +253,15 @@ struct SupermuxNewWorktreeSheetModelTests {
         await finish(model.submit {})
         #expect(fixture.local.createdRequests.count == 1)
         #expect(fixture.store.deviceKey() == SupermuxWorktreeDeviceEntry.thisMacKey)
+    }
+
+    @Test func aMacAskedForFromTheRowMenuIsRemembered() async throws {
+        // This Mac is remembered; "New Worktree on ▸ Studio" opens on Studio.
+        let fixture = try makeFixture(lastUsed: SupermuxWorktreeDeviceEntry.thisMacKey, preferred: "device:aaaa@default")
+        #expect(fixture.model.selectedEntryID == "device:aaaa@default")
+        await finish(fixture.model.submit {})
+        #expect(fixture.remote.createdRequests.count == 1)
+        #expect(fixture.store.deviceKey() == "device:aaaa@default")
     }
 
     @Test func withNothingRememberedTheFirstCreateIsRemembered() async throws {
