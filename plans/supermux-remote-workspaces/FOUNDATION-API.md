@@ -220,6 +220,8 @@ CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.open '{"machine":"
 CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.create_workspace '{"machine":"device:…","title":"t","cwd":"/path/on/that/mac"}'
 CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.await_open '{"machine":"device:…","remote_workspace_id":"<id>","timeout_seconds":60}'
 CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.request '{"machine":"device:…","method":"mobile.supermux.projects.list","params":{}}'   # DEBUG builds only
+CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.bind '{"workspace_id":"<local>","machine":"device:…","remote_workspace_id":"<id>"}'   # DEBUG only
+CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.unbind '{"workspace_id":"<local>"}'   # DEBUG only
 ```
 
 Params: `window_id` (optional, a main window UUID) picks the target window for `open`,
@@ -243,6 +245,8 @@ Result shapes:
 - `open` / `create_workspace` / `await_open` → `{workspace_id, stable_id, title, window_id, is_selected,
   machine, remote_workspace_id, reused}`
 - `request` → `{result: <host result object>}`
+- `bind` / `unbind` (DEBUG) → the local workspace payload plus `is_device_mirror` — test hooks for the
+  export filter and restart-stable bindings without a second Mac
 - Errors: `{ok:false, error:{code, message}}` with `invalid_params`, `unknown_device`, `not_connected`,
   `timeout`, `nothing_to_mirror`, `window_unavailable`, `malformed_response`, the host's own code, or
   `method_not_found`.
