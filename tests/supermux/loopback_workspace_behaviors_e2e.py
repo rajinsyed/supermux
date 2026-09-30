@@ -1027,7 +1027,7 @@ class WorkspaceBehaviorsE2E:
                 pass
         for workspace_id in self.created_local:
             try:
-                self.rpc("workspace.close", {"workspace_id": workspace_id})
+                self.rpc("workspace.close", {"workspace_id": workspace_id, "force": True})
             except CheckFailure as error:
                 self.facts.setdefault("cleanup_errors", []).append(str(error))
         for method, params in (

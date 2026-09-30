@@ -296,7 +296,7 @@ class TabSyncE2E:
         terminal = self.facts.get("socket_tab")
         if not terminal or up(terminal) not in self.mirror_projections().values():
             raise Failure("precondition: the mirror never showed the socket-created tab, so a close proves nothing")
-        self.sock.call("surface.close", {"workspace_id": self.source_id, "surface_id": terminal})
+        self.sock.call("surface.close", {"workspace_id": self.source_id, "surface_id": terminal, "force": True})
 
         def dropped() -> bool:
             if up(terminal) in self.ordered_surfaces(self.source_id):
@@ -346,7 +346,7 @@ class TabSyncE2E:
             if not workspace_id:
                 continue
             try:
-                self.sock.call("workspace.close", {"workspace_id": workspace_id})
+                self.sock.call("workspace.close", {"workspace_id": workspace_id, "force": True})
             except Failure as error:
                 if "not_found" not in str(error):
                     self.facts.setdefault("cleanup_errors", []).append(str(error))

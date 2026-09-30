@@ -515,7 +515,7 @@ class ProjectsE2E:
             return
         for workspace_id in self.opened_workspaces:
             try:
-                self.client.call("workspace.close", {"workspace_id": workspace_id})
+                self.client.call("workspace.close", {"workspace_id": workspace_id, "force": True})
             except SmokeFailure as error:
                 self.facts.setdefault("cleanup_errors", []).append(str(error))
         for action in (self._remove_worktree, self._delete_projects):

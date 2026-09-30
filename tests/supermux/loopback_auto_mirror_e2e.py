@@ -239,7 +239,7 @@ class AutoMirrorE2E:
         return wait_for(f"exactly one mirror of {source_id}", lambda: self.one_mirror(source_id), self.timeout)
 
     def close_workspace(self, workspace_id: str) -> None:
-        self.sock.call("workspace.close", {"workspace_id": workspace_id})
+        self.sock.call("workspace.close", {"workspace_id": workspace_id, "force": True})
 
     def step(self, name: str, action: Callable[[], Optional[Dict[str, Any]]]) -> bool:
         started = time.monotonic()

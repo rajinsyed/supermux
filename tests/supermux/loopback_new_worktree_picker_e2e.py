@@ -773,7 +773,7 @@ class PickerE2E:
             window_id = window.get("id") or window.get("window_id")
             rows = (self.client.call("workspace.list", {"window_id": window_id}) or {}).get("workspaces") or []
             if any(norm(r.get("id")) == norm(workspace_id) for r in rows):
-                self.client.call("workspace.close", {"workspace_id": workspace_id})
+                self.client.call("workspace.close", {"workspace_id": workspace_id, "force": True})
                 return
 
     def remote_worktrees_safe(self, project_id: Optional[str] = None) -> List[Dict[str, Any]]:

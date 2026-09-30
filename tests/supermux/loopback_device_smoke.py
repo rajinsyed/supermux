@@ -400,7 +400,7 @@ class LoopbackSmoke:
             if not workspace_id:
                 continue
             try:
-                self.client.call("workspace.close", {"workspace_id": workspace_id})
+                self.client.call("workspace.close", {"workspace_id": workspace_id, "force": True})
             except SmokeFailure as error:
                 self.facts.setdefault("cleanup_errors", []).append(str(error))
 
