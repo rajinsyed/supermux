@@ -26,8 +26,9 @@ public import Foundation
 ///   reopened closed window or workspace next to the mirror auto-mirror opened
 ///   to replace it), one survives — a projected one first, then the bound one
 ///   (the mirror every entry point resolves the ref to), then the lowest local
-///   id — and the others close the same confirmed way. Runs with auto-mirror
-///   off too, but not while an open of the ref is in flight.
+///   id — and the others close the same confirmed way. Only with auto-mirror
+///   on (off, every mirror was opened on purpose) and never while an open of
+///   the ref is in flight.
 /// - **Hidden** refs whose remote workspace is confirmed gone are unhidden, so
 ///   the hidden set never outgrows the live remote workspaces.
 ///
@@ -172,7 +173,7 @@ public struct SupermuxMirrorReconciler: Sendable {
         let devicesByID = Dictionary(input.devices.map { ($0.machineID, $0) }, uniquingKeysWith: { first, _ in first })
         let remoteByRef = Self.remoteWorkspacesByRef(input.devices)
         let mirroredRefs = Set(input.mirrors.map(\.ref))
-        let survivors = Self.duplicateSurvivors(input.mirrors)
+        let survivors = input.autoMirror ? Self.duplicateSurvivors(input.mirrors) : [:]
 
         for mirror in input.mirrors {
             guard let device = devicesByID[mirror.ref.machineID], device.isAuthoritative else { continue }
