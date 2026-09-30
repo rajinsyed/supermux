@@ -94,7 +94,7 @@ final class SupermuxMirrorRunController {
     private func apply(_ result: [String: Any], on target: SupermuxMirrorTarget) {
         if let object = result["run"] as? [String: Any],
            let run = try? SupermuxWireJSON().decode(SupermuxRunStateDTO.self, from: object) {
-            remoteProjects.apply(run: run, on: target.machine)
+            remoteProjects.apply(run: run, on: target.machine, remoteWorkspaceID: target.ref.workspaceID)
         }
         Task { @MainActor [remoteProjects] in await remoteProjects.refreshRuns(target.machine) }
     }
