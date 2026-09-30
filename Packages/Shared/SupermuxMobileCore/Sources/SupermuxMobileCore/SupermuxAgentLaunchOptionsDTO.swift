@@ -35,6 +35,10 @@ public struct SupermuxAgentLaunchOptionsDTO: Codable, Sendable, Equatable {
     /// Whether that Mac has an AI Gateway key, so blank names are AI-named
     /// there (additive; `nil` from a host that predates the field).
     public var aiNamingConfigured: Bool?
+    /// The quoting dialect of that Mac's shell (`posix` or `fish`), so another
+    /// Mac's New Worktree sheet can preview the exact launch line (additive;
+    /// `nil` from a host that predates the field).
+    public var shellFlavor: String?
 
     /// Creates the options payload.
     public init(
@@ -45,7 +49,8 @@ public struct SupermuxAgentLaunchOptionsDTO: Codable, Sendable, Equatable {
         modelsError: String? = nil,
         lastModel: String? = nil,
         lastEffort: String? = nil,
-        aiNamingConfigured: Bool? = nil
+        aiNamingConfigured: Bool? = nil,
+        shellFlavor: String? = nil
     ) {
         self.commands = commands
         self.selectedCommand = selectedCommand
@@ -55,6 +60,7 @@ public struct SupermuxAgentLaunchOptionsDTO: Codable, Sendable, Equatable {
         self.lastModel = lastModel
         self.lastEffort = lastEffort
         self.aiNamingConfigured = aiNamingConfigured
+        self.shellFlavor = shellFlavor
     }
 
     public init(from decoder: any Decoder) throws {
@@ -68,6 +74,7 @@ public struct SupermuxAgentLaunchOptionsDTO: Codable, Sendable, Equatable {
         lastModel = try container.decodeIfPresent(String.self, forKey: .lastModel)
         lastEffort = try container.decodeIfPresent(String.self, forKey: .lastEffort)
         aiNamingConfigured = try? container.decodeIfPresent(Bool.self, forKey: .aiNamingConfigured)
+        shellFlavor = try? container.decodeIfPresent(String.self, forKey: .shellFlavor)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -79,5 +86,6 @@ public struct SupermuxAgentLaunchOptionsDTO: Codable, Sendable, Equatable {
         case lastModel = "last_model"
         case lastEffort = "last_effort"
         case aiNamingConfigured = "ai_naming_configured"
+        case shellFlavor = "shell_flavor"
     }
 }

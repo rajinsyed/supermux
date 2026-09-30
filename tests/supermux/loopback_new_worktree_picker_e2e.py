@@ -22,7 +22,7 @@ Steps:
      shows.
   4. remote_branches_load: selecting the Loopback Mac makes it the target and
      loads its branches (worktrees.list include_branches) and Claude commands
-     (agent.options).
+     (agent.options), whose shell dialect lets its launch line be previewed.
   5. remote_error_is_localized: a create with an unknown starting branch fails
      with the other Mac's sentence (no raw code), the sheet is editable again,
      and nothing is remembered.
@@ -310,8 +310,11 @@ class PickerE2E:
             raise SmokeFailure(f"base branch {state.get('base_branch')!r}, want main")
         if not state.get("commands"):
             raise SmokeFailure(f"no Claude commands from agent.options: {state}")
-        if state.get("preview_line") is not None:
-            raise SmokeFailure("a remote target must not preview a local shell line")
+        # The other Mac names its shell's dialect in agent.options, so its
+        # launch line is previewed from the same code (loopback: this shell).
+        preview = str(state.get("preview_line") or "")
+        if not preview.startswith(str(state.get("command"))):
+            raise SmokeFailure(f"the other Mac's launch line is not previewed: {preview!r}")
         return {"branches": branches, "commands": state.get("commands"), "command": state.get("command"),
                 "ai_naming_configured": state.get("ai_naming_configured")}
 
@@ -388,6 +391,10 @@ class PickerE2E:
             timeout_s=300,
         )
         facts = self.check_mirror_selected(result)
+        preview = str(result.get("preview_line") or "")
+        if not preview.startswith("echo") or marker not in preview:
+            raise SmokeFailure(f"the other Mac's launch line is not previewed with the prompt: {preview!r}")
+        facts["preview_line"] = preview
         source_id = facts["remote_workspace_id"]  # loopback: the remote workspace is local too
 
         def echoed() -> Optional[str]:

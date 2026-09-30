@@ -42,7 +42,9 @@ extension TerminalController {
             lastEffort: last.effort,
             // Lets another Mac's New Worktree sheet say whether blank names
             // are AI-named here (the key itself never leaves this Mac).
-            aiNamingConfigured: await environment.launcher.isAINamingConfigured()
+            aiNamingConfigured: await environment.launcher.isAINamingConfigured(),
+            // Lets it preview the exact line this Mac's shell will run.
+            shellFlavor: environment.launcher.shell.wireName
         )
         do {
             return .ok(try SupermuxWireJSON().dictionary(from: payload))
