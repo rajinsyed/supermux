@@ -12,7 +12,9 @@ import SupermuxMobileCore
 /// For each device whose host serves `supermux.projects.v1` it keeps
 /// `projects.list` (projects and terminal presets), `run.state`, and
 /// `worktrees.list` for every listed project (so a project row knows whether
-/// it has a worktree to reveal without being expanded). It is the single
+/// it has a worktree to reveal without being expanded). The worktree lists
+/// load in a sweep beside each refresh, a few at a time, so a slow sweep never
+/// holds up the next project list or run state. It is the single
 /// source of each Mac's Supermux state: the sidebar and the device-mirror
 /// behaviors (⌘G / Run, presets bar) all read it, so each Mac is polled once. It refreshes on the matching `supermux.*`
 /// topics, on every link (re)connect, and on a slow safety-net timer. The last
@@ -35,6 +37,8 @@ final class SupermuxRemoteProjectsModel {
 
     /// How often every connected Mac is refreshed even without events.
     static let safetyNetInterval: Duration = .seconds(120)
+    /// How many `worktrees.list` calls one Mac's sweep keeps in flight.
+    static let worktreeSweepWidth = 4
 
     @ObservationIgnored let facade: SupermuxDevices
     @ObservationIgnored private let cache: SupermuxRemoteProjectsCache
@@ -46,8 +50,8 @@ final class SupermuxRemoteProjectsModel {
     /// project each Mac listed at its last refresh (and any a row or socket
     /// asked for since).
     @ObservationIgnored private var wantedWorktrees: Set<String> = []
-    @ObservationIgnored private var refreshing: Set<SurfaceMachineID> = []
-    @ObservationIgnored private var refreshAgain: Set<SurfaceMachineID> = []
+    @ObservationIgnored private let refreshes = SupermuxPerMachinePasses()
+    @ObservationIgnored private let worktreeSweeps = SupermuxPerMachinePasses()
     @ObservationIgnored private var tasks: [Task<Void, Never>] = []
 
     init(facade: SupermuxDevices, cache: SupermuxRemoteProjectsCache) {
@@ -106,18 +110,11 @@ final class SupermuxRemoteProjectsModel {
         }
     }
 
-    /// Refetches one Mac's projects, run states, icons and every listed
-    /// project's worktree list. Concurrent calls coalesce into one extra pass.
+    /// Refetches one Mac's projects, run states and icons, and starts a sweep
+    /// of every listed project's worktree list (not awaited). Concurrent calls
+    /// coalesce into one extra pass.
     func refresh(_ machine: SurfaceMachineID) async {
-        guard refreshing.insert(machine).inserted else {
-            refreshAgain.insert(machine)
-            return
-        }
-        repeat {
-            refreshAgain.remove(machine)
-            await performRefresh(machine)
-        } while refreshAgain.contains(machine)
-        refreshing.remove(machine)
+        await refreshes.run(machine) { await performRefresh(machine) }
     }
 
     /// Loads a project's worktrees if no refresh has yet (every refresh
@@ -129,22 +126,24 @@ final class SupermuxRemoteProjectsModel {
         Task { await refreshWorktrees(on: machine, projectID: projectID) }
     }
 
-    /// Refetches one project's worktrees (`include_branches: false`).
+    /// Refetches one project's worktrees (`include_branches: false`). A list
+    /// the Mac cannot give (a folder that is not a git repo, a transient git
+    /// failure, a dropped link) keeps the previous one: it is not a failure of
+    /// that Mac's refresh, so its `lastError` is left alone.
     func refreshWorktrees(on machine: SurfaceMachineID, projectID: UUID) async {
-        wantedWorktrees.insert(Self.projectKey(machine: machine, projectID: projectID))
-        guard device(machine)?.isOnline == true else { return }
-        do {
-            let worktrees = try await facade.request(
-                SupermuxMobileMethod.worktreesList.rawValue,
-                params: ["project_id": projectID.uuidString, "include_branches": false],
-                on: machine,
-                resultKey: "worktrees",
-                as: [SupermuxWorktreeDTO].self
-            )
-            update(machine) { $0.worktreesByProjectID[projectID] = worktrees }
-        } catch {
-            update(machine) { $0.lastError = error.localizedDescription }
-        }
+        let key = Self.projectKey(machine: machine, projectID: projectID)
+        wantedWorktrees.insert(key)
+        guard device(machine)?.isOnline == true,
+              let worktrees = try? await facade.request(
+                  SupermuxMobileMethod.worktreesList.rawValue,
+                  params: ["project_id": projectID.uuidString, "include_branches": false],
+                  on: machine,
+                  resultKey: "worktrees",
+                  as: [SupermuxWorktreeDTO].self
+              ),
+              wantedWorktrees.contains(key) // the Mac may have stopped listing it meanwhile
+        else { return }
+        update(machine) { $0.worktreesByProjectID[projectID] = worktrees }
     }
 
     /// Refetches only one Mac's `run.state` (after a mirror's Run / Stop).
@@ -185,11 +184,27 @@ final class SupermuxRemoteProjectsModel {
         }
     }
 
+    /// Refetches every wanted worktree list of one Mac. Calls during a sweep
+    /// coalesce into one more sweep after it, so a burst of topics or
+    /// refreshes never runs several sweeps of the same Mac at once.
     private func refreshWantedWorktrees(on machine: SurfaceMachineID) async {
-        let prefix = "\(machine.rawValue)|"
-        for key in wantedWorktrees where key.hasPrefix(prefix) {
-            guard let projectID = UUID(uuidString: String(key.dropFirst(prefix.count))) else { continue }
-            await refreshWorktrees(on: machine, projectID: projectID)
+        await worktreeSweeps.run(machine) {
+            let prefix = "\(machine.rawValue)|"
+            let projectIDs = wantedWorktrees.compactMap { key in
+                key.hasPrefix(prefix) ? UUID(uuidString: String(key.dropFirst(prefix.count))) : nil
+            }
+            await fetchWorktrees(of: projectIDs, on: machine)
+        }
+    }
+
+    /// Fetches these projects' worktree lists, at most
+    /// ``worktreeSweepWidth`` at once (each is a `git worktree list` there).
+    private func fetchWorktrees(of projectIDs: [UUID], on machine: SurfaceMachineID) async {
+        await withTaskGroup(of: Void.self) { group in
+            for (index, projectID) in projectIDs.enumerated() {
+                if index >= Self.worktreeSweepWidth { _ = await group.next() }
+                group.addTask { [weak self] in await self?.refreshWorktrees(on: machine, projectID: projectID) }
+            }
         }
     }
 
@@ -259,7 +274,8 @@ final class SupermuxRemoteProjectsModel {
                 runs = (try? await fetchRuns(on: machine)) ?? .none
             }
             let listed = Set(projects.compactMap { UUID(uuidString: $0.id) })
-            wantWorktrees(of: listed, on: machine)
+            let servesWorktrees = capabilities.contains(SupermuxMobileCapability.worktreesV1.rawValue)
+            wantWorktrees(of: servesWorktrees ? listed : [], on: machine)
             update(machine) { entry in
                 entry.projects = projects
                 entry.presets = listing.presets ?? []
@@ -269,8 +285,8 @@ final class SupermuxRemoteProjectsModel {
                 entry.worktreesByProjectID = entry.worktreesByProjectID.filter { listed.contains($0.key) }
             }
             if !device.isLoopback { saveCache(machine: machine, name: device.displayName, projects: projects) }
+            Task { await refreshWantedWorktrees(on: machine) }
             await refreshIcons(on: machine, projects: projects)
-            await refreshWantedWorktrees(on: machine)
         } catch {
             update(machine) { $0.lastError = error.localizedDescription }
         }
@@ -333,5 +349,25 @@ final class SupermuxRemoteProjectsModel {
         var entry = devices[index]
         mutate(&entry)
         if entry != devices[index] { devices[index] = entry }
+    }
+}
+
+/// One pass at a time per Mac: a call while that Mac's pass runs returns at
+/// once and queues one more pass after it (however many calls came in).
+@MainActor
+private final class SupermuxPerMachinePasses {
+    private var running: Set<SurfaceMachineID> = []
+    private var again: Set<SurfaceMachineID> = []
+
+    func run(_ machine: SurfaceMachineID, _ pass: () async -> Void) async {
+        guard running.insert(machine).inserted else {
+            again.insert(machine)
+            return
+        }
+        repeat {
+            again.remove(machine)
+            await pass()
+        } while again.contains(machine)
+        running.remove(machine)
     }
 }
