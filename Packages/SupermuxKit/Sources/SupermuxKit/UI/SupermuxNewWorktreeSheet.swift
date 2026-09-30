@@ -146,8 +146,8 @@ public struct SupermuxNewWorktreeSheet: View {
             focusedField = sheet.showsPromptEditor ? .prompt : .workspace
         }
         // Loads the selected Mac's branches and Claude options, again after
-        // every device switch.
-        .task(id: sheet.selectedEntryID) { await sheet.load() }
+        // every device switch and when that Mac (re)connects.
+        .task(id: sheet.loadKey) { await sheet.load() }
         .onChange(of: sheet.configuredDefaultBranch) { _, _ in
             sheet.configuredDefaultBranchChanged()
         }

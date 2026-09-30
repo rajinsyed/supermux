@@ -72,6 +72,11 @@ public struct SupermuxWorktreeDeviceEntry: Identifiable, Hashable, Sendable {
     /// Whether a worktree can be created there now.
     public var canCreate: Bool { location != nil && availability == .online }
 
+    /// The same row with that Mac's current link state.
+    public func with(availability: SupermuxWorktreeDeviceAvailability) -> SupermuxWorktreeDeviceEntry {
+        SupermuxWorktreeDeviceEntry(deviceKey: deviceKey, name: name, availability: availability, action: action)
+    }
+
     /// The device key of a project copy.
     public static func deviceKey(of location: SupermuxProjectLocation) -> String {
         location.machineID ?? thisMacKey
