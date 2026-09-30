@@ -27,7 +27,10 @@ public enum SupermuxMobileFileBrowserError: Error, Equatable, Sendable {
 ///
 /// Listing mirrors the desktop file explorer's defaults: dotfiles are hidden
 /// (`FileExplorerStore.showHiddenFiles` defaults to `false`) and entries sort
-/// directories-first, then case-insensitively by name.
+/// directories-first, then case-insensitively by name. Another Mac's Files
+/// panel asks for `showHidden` (its desktop panel always shows hidden files),
+/// which lists every entry — `.git` included — and lets reads browse git
+/// internals; mutations never touch them.
 public struct SupermuxMobileFileBrowser: Sendable {
     /// The canonical (symlink-resolved) absolute root path. All request
     /// paths resolve relative to this and must stay inside it.
@@ -51,10 +54,12 @@ public struct SupermuxMobileFileBrowser: Sendable {
     // MARK: - files.list
 
     /// Lists the children of the directory at root-relative `path`
-    /// (`nil`/empty = the root itself), dotfiles excluded, directories first
-    /// then case-insensitive by name (the desktop file-explorer order).
-    public func list(path: String?) throws -> [SupermuxFileEntryDTO] {
-        let directory = try resolveExisting(path ?? "", allowRoot: true)
+    /// (`nil`/empty = the root itself), directories first then
+    /// case-insensitive by name (the desktop file-explorer order). Dotfiles
+    /// are excluded unless `showHidden`, which also allows listing inside
+    /// `.git` (read-only, as the desktop panel with hidden files shown).
+    public func list(path: String?, showHidden: Bool = false) throws -> [SupermuxFileEntryDTO] {
+        let directory = try resolveExisting(path ?? "", allowRoot: true, allowGitInternals: showHidden)
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: directory.path, isDirectory: &isDirectory),
               isDirectory.boolValue else {
@@ -62,7 +67,7 @@ public struct SupermuxMobileFileBrowser: Sendable {
         }
         let names = try FileManager.default.contentsOfDirectory(atPath: directory.path)
         return names
-            .filter { !$0.hasPrefix(".") }
+            .filter { showHidden || !$0.hasPrefix(".") }
             .compactMap { entry(named: $0, in: directory) }
             .sorted { a, b in
                 if (a.isDir ?? false) != (b.isDir ?? false) { return a.isDir ?? false }
@@ -70,16 +75,17 @@ public struct SupermuxMobileFileBrowser: Sendable {
             }
     }
 
-    /// The `files.list` result payload: `{path, entries}` with snake_case
-    /// ``SupermuxFileEntryDTO`` objects (`path` echoes the normalized
-    /// root-relative directory, `""` for the root).
-    public func listPayload(path: String?) throws -> [String: Any] {
-        let directory = try resolveExisting(path ?? "", allowRoot: true)
-        let wire = SupermuxWireJSON()
-        return [
-            "path": relativePath(of: directory),
-            "entries": try list(path: path).map { try wire.dictionary(from: $0) },
-        ]
+    /// The `files.list` result payload: ``SupermuxFileListDTO`` — `{path,
+    /// entries, home}` with snake_case ``SupermuxFileEntryDTO`` objects
+    /// (`path` echoes the normalized root-relative directory, `""` for the
+    /// root; `home` is this Mac's home folder).
+    public func listPayload(path: String?, showHidden: Bool = false) throws -> [String: Any] {
+        let directory = try resolveExisting(path ?? "", allowRoot: true, allowGitInternals: showHidden)
+        return try SupermuxWireJSON().dictionary(from: SupermuxFileListDTO(
+            path: relativePath(of: directory),
+            entries: try list(path: path, showHidden: showHidden),
+            home: NSHomeDirectory()
+        ))
     }
 
     // MARK: - files.create
@@ -151,16 +157,19 @@ public struct SupermuxMobileFileBrowser: Sendable {
     /// resolves inside the root (operations act on the entry, like the
     /// desktop explorer), while any resolution escaping the root — via `..`
     /// or a symlink — is rejected before it can be operated on.
-    private func resolveExisting(_ relativePath: String, allowRoot: Bool) throws -> URL {
+    ///
+    /// `allowGitInternals` is for the read-only calls of a panel that shows
+    /// hidden files (listing and reading); every mutation leaves it `false`.
+    func resolveExisting(_ relativePath: String, allowRoot: Bool, allowGitInternals: Bool = false) throws -> URL {
         let standardized = standardizedAbsolutePath(for: relativePath)
         guard standardized == rootPath
                 || SupermuxFileSystemOperations.pathIsAncestor(rootPath, of: standardized) else {
             throw SupermuxMobileFileBrowserError.pathOutsideRoot(path: relativePath)
         }
         // Never resolve a path that names or descends into a repository's
-        // `.git` internals: the listing hides dotfiles so `.git` is
-        // UI-unreachable, and trashing/renaming it corrupts the repo.
-        if Self.namesGitInternals(standardized, underRoot: rootPath) {
+        // `.git` internals for a mutation: the phone's listing hides dotfiles
+        // so `.git` is UI-unreachable, and trashing/renaming it corrupts the repo.
+        if !allowGitInternals, Self.namesGitInternals(standardized, underRoot: rootPath) {
             throw SupermuxMobileFileBrowserError.invalidPath(path: relativePath)
         }
         if standardized == rootPath {
@@ -196,7 +205,7 @@ public struct SupermuxMobileFileBrowser: Sendable {
         // Re-apply the `.git` guard AFTER resolution: an interior symlink
         // (`metadata -> .git`) or a final symlink into `.git` has no textual
         // `.git` component, but its resolved target is still git internals.
-        if Self.namesGitInternals(resolvedParent, underRoot: rootPath)
+        if !allowGitInternals, Self.namesGitInternals(resolvedParent, underRoot: rootPath)
             || Self.namesGitInternals(canonical, underRoot: rootPath) {
             throw SupermuxMobileFileBrowserError.invalidPath(path: relativePath)
         }
@@ -254,7 +263,7 @@ public struct SupermuxMobileFileBrowser: Sendable {
 
     /// The root-relative representation of an inside-the-root URL (`""` for
     /// the root itself).
-    private func relativePath(of url: URL) -> String {
+    func relativePath(of url: URL) -> String {
         let path = (url.path as NSString).standardizingPath
         guard path != rootPath else { return "" }
         let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
