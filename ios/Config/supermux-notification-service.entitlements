@@ -2,21 +2,30 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- The notification service extension's ONLY entitlement, and the only one
-	     it may ever carry.
+	<!-- Entitlements for the app's notification service extension (upstream's
+	     NotificationService target, which also runs the fork's avatar
+	     decoration). Exactly two capabilities, and no others.
 
-	     It exists so the extension can read project icon PNGs the app mirrored
-	     into the shared container (SupermuxSharedProjectIconStore). Without it
-	     the extension has no way to reach a real project logo at all: it cannot
-	     open the app's RPC session, and APNs caps a push at 4096 bytes — an
-	     order of magnitude under a real icon — so the bytes cannot ride the
-	     payload either. Absent this, banners fall back to a generated
-	     gradient-and-initial chip.
+	     keychain-access-groups: the host app's keychain group. Upstream's
+	     decryption reads the phone-push key material, active account, and
+	     pinned Mac keys from it; without it an encrypted relay push is
+	     suppressed. Same value as upstream's Config/NotificationService.entitlements.
+
+	     application-groups: lets the extension read project icon PNGs the app
+	     mirrored into the shared container (SupermuxSharedProjectIconStore).
+	     The extension cannot open the app's RPC session, and APNs caps a push
+	     at 4096 bytes — an order of magnitude under a real icon — so this is
+	     the only route to a real project logo. Absent it, banners fall back to
+	     a generated gradient-and-initial chip. Must be group.com.supermux.ios,
+	     never upstream's group.dev.cmux.ios, which the Supermux App IDs lack.
 
 	     Deliberately NOT the app's entitlements file: that one claims
 	     aps-environment and Communication Notifications, which the extension's
-	     own App ID does not carry, and signing would fail. Keep this file to
-	     the app group alone. -->
+	     own App ID does not carry, and signing would fail. -->
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)$(CMUX_HOST_BUNDLE_IDENTIFIER)</string>
+	</array>
 	<key>com.apple.security.application-groups</key>
 	<array>
 		<string>group.com.supermux.ios</string>

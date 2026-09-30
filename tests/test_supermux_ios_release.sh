@@ -42,7 +42,7 @@ if [[ -e "$app/stale-product" ]]; then
   echo 'stale iOS product reached xcodebuild' >&2
   exit 70
 fi
-nse="$app/PlugIns/SupermuxNotificationService.appex"
+nse="$app/PlugIns/NotificationService.appex"
 mkdir -p "$nse"
 printf 'binary\n' > "$app/cmux"
 chmod +x "$app/cmux"
@@ -299,7 +299,7 @@ grep -F -- 'devicectl device info details --device test-phone' "$TMP_DIR/xcrun.l
 grep -F -- 'devicectl device install app --device test-phone ' "$TMP_DIR/xcrun.log" >/dev/null
 grep -F -- 'devicectl device process launch --terminate-existing --device test-phone com.supermux.ios' "$TMP_DIR/xcrun.log" >/dev/null
 grep -F -- '--force --sign Apple Distribution' "$TMP_DIR/codesign.log" >/dev/null
-grep -F -- 'SupermuxNotificationService.appex' "$TMP_DIR/codesign.log" >/dev/null
+grep -F -- 'NotificationService.appex' "$TMP_DIR/codesign.log" >/dev/null
 grep -F -- '--verify --deep --strict --verbose=2 ' "$TMP_DIR/codesign.log" >/dev/null
 grep -F -- '==> Verified app + notification-extension signatures, production APNs, Time Sensitive, and Communication Notifications for team ABCD123456' "$OUTPUT_FILE" >/dev/null
 grep -F -- '==> Installed Supermux (com.supermux.ios)' "$OUTPUT_FILE" >/dev/null

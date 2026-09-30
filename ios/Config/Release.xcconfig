@@ -19,6 +19,12 @@ PRODUCT_BUNDLE_IDENTIFIER = $(CMUX_APP_BUNDLE_IDENTIFIER)
 // Distribution scripts override both host and extension identifiers for other lanes.
 CMUX_HOST_BUNDLE_IDENTIFIER = $(CMUX_APP_BUNDLE_IDENTIFIER)
 CMUX_NOTIFICATION_SERVICE_BUNDLE_IDENTIFIER = dev.cmux.app.beta.NotificationServiceV2
+// SUPERMUX:begin ios-nse-supermux-decoration
+// Local fork Release builds keep the extension a child of the Supermux app id
+// (see Shared.xcconfig). Upstream's TestFlight lanes still pass their own id on
+// the xcodebuild command line, which wins over this.
+CMUX_NOTIFICATION_SERVICE_BUNDLE_IDENTIFIER = $(SUPERMUX_NSE_BUNDLE_ID)
+// SUPERMUX:end ios-nse-supermux-decoration
 DEVELOPMENT_TEAM = 7WLXT3NR37
 
 // Release/TestFlight/App Store artifacts always use production authorities.

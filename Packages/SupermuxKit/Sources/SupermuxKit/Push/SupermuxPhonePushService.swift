@@ -546,7 +546,8 @@ public actor SupermuxPhonePushService {
                 // Stacks a project's banners together in Notification Center,
                 // matching the macOS banner's threadIdentifier.
                 aps["thread-id"] = "supermux.project.\(project.id)"
-                // Wakes SupermuxNotificationService, which rewrites this into a
+                // Wakes the notification service extension, whose
+                // SupermuxNotificationDecorator rewrites this into a
                 // communication notification so iOS draws the project avatar.
                 // Set ONLY alongside a project: without one the extension has
                 // nothing to render and would spend its launch to no effect.

@@ -23,7 +23,9 @@ final class NotificationService: UNNotificationServiceExtension {
         deliveredContent = content
         guard let cmux = request.content.userInfo["cmux"] as? [String: Any],
               let raw = cmux["encryptedPayloads"] as? [[String: Any]] else {
-            finish(content)
+            // SUPERMUX:begin ios-nse-supermux-decoration
+            finish(SupermuxNotificationDecorator.decorated(content))
+            // SUPERMUX:end ios-nse-supermux-decoration
             return
         }
         suppressOnExpiration = true
