@@ -37,6 +37,12 @@ folder (the loopback's files are on this disk too):
  12. root_follows_remote_cd          `cd src` in the source terminal re-roots the mirror's panel,
                                      `cd ..` brings it back
  13. live_refresh                    a file created in the folder appears with no action
+ 13b. file_operations_on_the_other_mac
+                                     the panel's context menu offers New File, New Folder,
+                                     Rename, Duplicate and Move to Trash for a row (New File and
+                                     New Folder for the empty area), and each runs on the other
+                                     Mac's disk and the panel lists the result (git internals
+                                     stay refused)
  14. link_drop_is_honest             with the link down the panel names the Mac and says it is not
                                      connected, with no rows; the redial brings the rows back
  15. older_host_fallback             (with --app-path) relaunched with the capability suppressed,
@@ -567,6 +573,53 @@ class MirrorFilesE2E:
         wait_for(f"{name} to appear in the mirror's panel", listed, self.args.refresh_timeout, interval_s=0.25)
         return {"seconds_to_appear": round(time.monotonic() - started, 2)}
 
+    def file_operations_on_the_other_mac(self) -> Dict[str, Any]:
+        self.require("mirror_id")
+        state = self.device_state()
+        base = str(state["root_path"]).rstrip("/")
+        expected = ["supermuxNewFile:", "supermuxNewFolder:", "supermuxRename:", "supermuxDuplicate:", "supermuxMoveToTrash:"]
+        row_menu = self.files("menu", path=self.row(state, "src")["path"]).get("items")
+        root_menu = self.files("menu").get("items")
+        problems = []
+        if row_menu != expected:
+            problems.append(f"row menu {row_menu} != {expected}")
+        if root_menu != expected[:2]:
+            problems.append(f"empty-area menu {root_menu} != {expected[:2]}")
+
+        def run(op: str, name: str, **params: Any) -> Dict[str, Any]:
+            result = self.files("operation", op=op, path=f"{base}/{name}", **params)
+            if not result.get("ok"):
+                problems.append(f"{op} {name}: {result}")
+            return result
+
+        def rows_include(name: str, present: bool = True) -> Callable[[], bool]:
+            return lambda: (name in [n for n, _ in shape(self.device_state()["rows"])]) == present
+
+        made, folder = f"made-{self.nonce}.txt", f"dir-{self.nonce}"
+        renamed, copy = f"renamed-{self.nonce}.txt", f"renamed-{self.nonce} copy.txt"
+        run("new_file", made)
+        run("new_folder", folder)
+        if not (self.root / made).is_file() or not (self.root / folder).is_dir():
+            problems.append("New File / New Folder did not create on the other Mac's disk")
+        else:
+            wait_for(f"{made} in the panel", rows_include(made), self.timeout)
+        run("rename", made, name=renamed)
+        run("duplicate", renamed)
+        if (self.root / made).exists() or not (self.root / renamed).is_file() or not (self.root / copy).is_file():
+            problems.append(f"Rename / Duplicate: {sorted(p.name for p in self.root.iterdir())}")
+        for name in (copy, renamed, folder):
+            run("trash", name)
+        if any((self.root / name).exists() for name in (copy, renamed, folder)):
+            problems.append("Move to Trash left entries on the other Mac's disk")
+        else:
+            wait_for(f"{renamed} to leave the panel", rows_include(renamed, present=False), self.timeout)
+        refused = self.files("operation", op="rename", path=f"{base}/.git/HEAD", name="HEAD2")
+        if refused.get("ok") or not (self.root / ".git" / "HEAD").exists():
+            problems.append(f"renaming .git/HEAD was not refused: {refused}")
+        if problems:
+            raise Failure("; ".join(problems))
+        return {"row_menu": row_menu, "root_menu": root_menu, "git_internals": refused.get("error")}
+
     def link_drop_is_honest(self) -> Dict[str, Any]:
         self.require("mirror_id", "machine")
         self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "stop"})
@@ -691,6 +744,7 @@ class MirrorFilesE2E:
             ("confinement_probes", self.confinement_probes),
             ("root_follows_remote_cd", self.root_follows_remote_cd),
             ("live_refresh", self.live_refresh),
+            ("file_operations_on_the_other_mac", self.file_operations_on_the_other_mac),
             ("link_drop_is_honest", self.link_drop_is_honest),
             ("older_host_fallback", self.older_host_fallback),
         ]:

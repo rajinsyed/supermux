@@ -1,3 +1,4 @@
+import AppKit
 import Bonsplit
 import CryptoKit
 import Foundation
@@ -20,6 +21,12 @@ import Foundation
 /// - `search {query}` — the Find tool's controller with the store's scope.
 /// - `local_rows {path}` / `local_git_status {path}` — what THIS Mac's own
 ///   Files panel shows for a folder (the loopback's files are on this disk too).
+/// - `menu {path?}` — the file-operation items the panel's context menu offers
+///   for the row at `path` (or the empty area), as their action selectors.
+/// - `operation {op, path, name?}` — what a confirmed New File / New Folder /
+///   Rename / Duplicate / Move to Trash runs for a device folder (`op`:
+///   `new_file`, `new_folder`, `rename`, `duplicate`, `trash`), then the
+///   panel's refresh; `{ok, path?}` or `{ok: false, error}`.
 /// - `unmount` — drops the driver's store (its observation and refresh go with it).
 @MainActor
 enum SupermuxMirrorFilesSocket {
@@ -58,12 +65,20 @@ enum SupermuxMirrorFilesSocket {
             let path = try SupermuxMirrorSocketCommands.string(params, "path")
             let status = await Task.detached { GitStatusProvider().fetchStatus(directory: path) }.value
             return ["git_status": relativeStatus(status, root: path)]
+        case "menu":
+            let store = mount(workspace)
+            await settle(store, timeout: timeout)
+            return ["items": menuItems(params["path"] as? String, store: store)]
+        case "operation":
+            let store = mount(workspace)
+            await settle(store, timeout: timeout)
+            return await operation(params, store: store)
         case "unmount":
             stores[workspace.id]?.applyWorkspaceRoot(.none)
             return ["unmounted": stores.removeValue(forKey: workspace.id) != nil]
         default:
             throw SupermuxMirrorSocketCommands.InvalidParams(
-                message: "action must be state, expand, open, materialize, search, local_rows, local_git_status or unmount"
+                message: "action must be state, expand, open, materialize, search, local_rows, local_git_status, menu, operation or unmount"
             )
         }
         #else
@@ -282,6 +297,51 @@ enum SupermuxMirrorFilesSocket {
         defer { store.applyWorkspaceRoot(.none) }
         await settle(store, timeout: timeout)
         return ["root_path": store.rootPath, "rows": store.rootNodes.map { row($0, root: store.rootPath) }]
+    }
+
+    // MARK: - File operations
+
+    /// The panel's file-operation menu items for a row (or the empty area),
+    /// built by the same code the context menu runs.
+    private static func menuItems(_ path: String?, store: FileExplorerStore) -> [String] {
+        let coordinator = FileExplorerPanelView.Coordinator(store: store, state: FileExplorerState(), onOpenFilePreview: { _ in })
+        let menu = NSMenu()
+        if let path, let node = findNode(path, in: store.rootNodes) {
+            menu.addSupermuxFileOperationItems(coordinator: coordinator, clickedNode: node)
+        } else {
+            menu.addSupermuxRootFileOperationItems(coordinator: coordinator)
+        }
+        return menu.items.filter { !$0.isSeparatorItem }.compactMap { $0.action.map(NSStringFromSelector) }
+    }
+
+    /// Runs one operation through the panel's remote provider, then refreshes
+    /// the panel the way a confirmed menu operation does.
+    private static func operation(_ params: [String: Any], store: FileExplorerStore) async -> [String: Any] {
+        guard let provider = store.provider as? SupermuxDeviceFileExplorerProvider,
+              let path = params["path"] as? String else {
+            return ["ok": false, "error": "the panel is not on a device folder"]
+        }
+        let name = params["name"] as? String ?? ""
+        var result: [String: Any]
+        do {
+            let changed: String?
+            switch params["op"] as? String ?? "" {
+            case "new_file": changed = try await provider.create(at: path, folder: false)
+            case "new_folder": changed = try await provider.create(at: path, folder: true)
+            case "rename": changed = try await provider.rename(path, to: name)
+            case "duplicate": changed = try await provider.duplicate(path)
+            case "trash":
+                try await provider.trash([path])
+                changed = nil
+            default: return ["ok": false, "error": "op must be new_file, new_folder, rename, duplicate or trash"]
+            }
+            result = ["ok": true, "path": changed ?? NSNull()]
+        } catch {
+            result = ["ok": false, "error": error.localizedDescription]
+        }
+        store.reload()
+        store.refreshGitStatus()
+        return result
     }
 
     private static func timeoutDuration(_ params: [String: Any]) -> Duration {
