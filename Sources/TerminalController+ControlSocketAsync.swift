@@ -122,6 +122,15 @@ extension TerminalController {
                 isV2: true,
                 params: authorizedRequest.params
             ) {
+                // SUPERMUX:begin supermux-devices-socket (fork `supermux.devices.*` methods; router in Sources/Supermux/Devices/SupermuxDevicesSocketCommands.swift)
+                if SupermuxDevicesSocketCommands.handles(authorizedRequest.method) {
+                    let result = await SupermuxDevicesSocketCommands.handle(
+                        method: authorizedRequest.method,
+                        params: authorizedRequest.params
+                    )
+                    return Self.v2Encoder.response(id: authorizedRequest.id, result)
+                }
+                // SUPERMUX:end supermux-devices-socket
                 // Native browser keys stay on the asynchronous MainActor
                 // path: WebKit/AppKit require main-actor delivery, while
                 // the socket worker remains suspendable during readiness.
