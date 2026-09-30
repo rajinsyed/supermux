@@ -429,7 +429,7 @@ extension MobileShellComposite {
         // would vanish while a failed sibling keeps its revoked binding.
         if deletion.cleaned {
             // SUPERMUX:begin supermux-phone-badge-total (a forgotten Mac's unread count leaves the phone badge)
-            supermuxForgetPhoneBadge(macDeviceID: computer.macDeviceID)
+            supermuxForgetPhoneBadge(macDeviceID: computer.macDeviceID, instanceTag: computer.instanceTag)
             // SUPERMUX:end supermux-phone-badge-total
             rememberForgottenMacRecovery(
                 for: computer,
