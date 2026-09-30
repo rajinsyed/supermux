@@ -19,6 +19,12 @@ import Testing
 /// 6. A call the host answers from memory gets a long deadline, so a dead link
 ///    is noticed late.
 /// 7. A method that is not a `mobile.supermux.*` call gets a fork deadline.
+/// 8. A mirror's Files panel duplicates a multi-GB folder or trashes many
+///    items over the link with the 20 s default, so a long copy drops every
+///    mirror of that Mac while the copy keeps running there.
+/// 9. Any other `files.*` call (a listing that stats a huge folder on a slow
+///    volume, a read from a stalled disk) gets less than the host's own bound
+///    on it, which is how long the host may take before it answers.
 struct SupermuxDeviceReplyDeadlineTests {
     /// DeviceLinkRuntime's default reply deadline.
     private static let linkDefault: Duration = .seconds(20)
@@ -76,6 +82,20 @@ struct SupermuxDeviceReplyDeadlineTests {
         #expect(outlasts("project.probe", hostSeconds: Self.git))
         // A cold Claude catalog probe (15 s) through the login shell.
         #expect(outlasts("agent.options", hostSeconds: 60))
+    }
+
+    @Test func duplicateAndTrashOutlastTheHostCopyBound() {
+        for method in ["files.duplicate", "files.trash"] {
+            #expect(outlasts(method, hostSeconds: SupermuxMobileFileBrowser.copyTimeout), "\(method)")
+        }
+    }
+
+    @Test func everyOtherFileCallOutlastsTheHostBoundOnIt() {
+        for method in ["files.list", "files.read", "files.create", "files.rename", "files.search"] {
+            #expect(outlasts(method, hostSeconds: SupermuxMobileFileBrowser.operationTimeout), "\(method)")
+        }
+        // git_status waits for git within the call's own bound.
+        #expect(outlasts("files.git_status", hostSeconds: SupermuxMobileFileBrowser.gitStatusTimeout))
     }
 
     @Test func callsTheHostAnswersFromMemoryKeepTheLinkDefault() {
