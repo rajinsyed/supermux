@@ -14,9 +14,9 @@ import Testing
 /// 3. A row that turned read since the previous feed is not reported, or one
 ///    reported earlier is reported again.
 /// 4. One Mac's baseline answers for another Mac.
-/// 5. The stored baseline grows without bound, per Mac or across Macs.
+/// 5. The stored baseline grows without bound, per Mac or across Macs (a Mac
+///    no longer paired ages out as the least recently changed).
 /// 6. Corrupt stored data wedges the store instead of starting over.
-/// 7. Forgetting a Mac leaves its baseline behind.
 @MainActor
 struct SupermuxNotificationReadBaselineTests {
     private let macA = "device:0F7C2C7E-1D51-4D0E-9D7C-2C9B2A4B7E11@default"
@@ -82,16 +82,5 @@ struct SupermuxNotificationReadBaselineTests {
         let baseline = SupermuxNotificationReadBaseline(defaults: defaults)
         #expect(baseline.newlyRead(["r1"], on: macA) == ["r1"])
         #expect(SupermuxNotificationReadBaseline(defaults: defaults).newlyRead(["r1"], on: macA).isEmpty)
-    }
-
-    @Test func forgettingAMacDropsItsBaseline() throws {
-        let defaults = try makeDefaults()
-        let baseline = SupermuxNotificationReadBaseline(defaults: defaults)
-        _ = baseline.newlyRead(["r1"], on: macA)
-        _ = baseline.newlyRead(["r9"], on: macB)
-        baseline.forget(macA)
-        let relaunched = SupermuxNotificationReadBaseline(defaults: defaults)
-        #expect(relaunched.newlyRead(["r1"], on: macA) == ["r1"])
-        #expect(relaunched.newlyRead(["r9"], on: macB).isEmpty)
     }
 }
