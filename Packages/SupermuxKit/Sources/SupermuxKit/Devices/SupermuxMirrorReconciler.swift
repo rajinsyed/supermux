@@ -109,6 +109,8 @@ public struct SupermuxMirrorReconciler: Sendable {
         case remoteGone
         /// It lost its projections while the remote workspace still exists.
         case orphaned
+        /// Another local mirror shows the same remote workspace and is kept.
+        case duplicate
     }
 
     /// One local mirror to close (locally only, never on its Mac).
