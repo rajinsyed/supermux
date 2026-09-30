@@ -8,7 +8,7 @@ public import SupermuxMobileCore
 public struct SupermuxProjectRemoteExtras {
     /// The unified project (this Mac's copy plus the device copies).
     public let project: SupermuxUnifiedProject
-    /// Unopened worktrees of the device copies (loaded lazily).
+    /// Unopened worktrees of the device copies (loaded on every refresh).
     public let worktrees: [SupermuxRemoteWorktree]
     /// Connected Macs that lack a copy ("Set Up on <Mac>…").
     public let setUpTargets: [SupermuxProjectSetupDestination]
@@ -43,7 +43,7 @@ public struct SupermuxRemoteProjectRow: Identifiable {
     public let actions: [SupermuxProjectActionDTO]
     /// Whether that Mac reports the project's run command as running.
     public let isRunning: Bool
-    /// That copy's unopened worktrees (loaded lazily).
+    /// That copy's unopened worktrees (loaded on every refresh).
     public let worktrees: [SupermuxRemoteWorktree]
     /// Connected Macs (and this Mac) lacking a copy ("Set Up on <Mac>…").
     public let setUpTargets: [SupermuxProjectSetupDestination]
@@ -89,7 +89,8 @@ public struct SupermuxRemoteProjectsPresentation {
     /// Worktree picker's dots follow a Mac that connects or drops while the
     /// sheet is open).
     public var deviceAvailability: @MainActor () -> [String: SupermuxWorktreeDeviceAvailability]
-    /// Where the New Worktree sheet remembers the last Mac per project.
+    /// Where the New Worktree sheet remembers the last Mac the user chose for
+    /// a worktree (one choice for every project).
     public var lastWorktreeDevices: SupermuxWorktreeLastDeviceStore
 
     /// Creates a presentation.

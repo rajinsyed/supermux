@@ -16,7 +16,8 @@ Steps:
      supermux.worktrees.v1 and supermux.agent_launch.v1.
   2. project_registered: a scratch git repo (main + a second branch, fake
      origin) is registered and the unified list has it on This Mac and the
-     loopback device.
+     loopback device. The remembered Mac (one global UserDefaults key) is
+     cleared first and restored at the end (DEBUG `last_device {set}`).
   3. picker_lists_this_mac_and_loopback: the sheet's rows for the project are
      This Mac first, then the Loopback Mac, both able to create, and the picker
      shows.
@@ -25,14 +26,22 @@ Steps:
      (agent.options), whose shell dialect lets its launch line be previewed.
   5. remote_error_is_localized: a create with an unknown starting branch fails
      with the other Mac's sentence (no raw code), the sheet is editable again,
-     and nothing is remembered.
+     and nothing is remembered (the remembered Mac stays This Mac).
   6. plain_create_selects_mirror: Create on the Loopback Mac runs
      worktree.create over the device; the returned workspace's mirror opens,
      is bound to it, and is the selected workspace of the window, with no
      second mirror from the auto-mirror coordinator; the worktree is listed on
      the device.
-  7. last_device_persisted: the project's last device is the Loopback Mac, and a
-     new sheet preselects it.
+  7. last_device_persisted: the remembered Mac is the Loopback Mac, and a new
+     sheet preselects it.
+ 7b. last_device_is_global: a second project (its own origin, on both Macs)
+     preselects the Loopback Mac too: one choice serves every project.
+ 7c. global_device_offline_falls_back_to_this_mac: with the remembered Mac's
+     link held down, that second project's new sheet preselects This Mac.
+ 7d. fallback_create_keeps_remembered_mac: with that link held down again,
+     Create on the row the second project's sheet fell back to (This Mac, no
+     row picked) succeeds and leaves the remembered Mac the Loopback Mac: only
+     a Mac the user chose replaces it.
   8. prompt_start_runs_agent_start: with a harmless Claude command ("echo")
      configured, Start Claude on the Loopback Mac runs agent.start; its
      workspace's terminal echoes the prompt, and its mirror opens selected.
@@ -120,6 +129,11 @@ class PickerE2E:
         self.sessions: List[str] = []
         self.created: List[Dict[str, Any]] = []  # {mirror, remote}
         self.previous_commands: Optional[Dict[str, Any]] = None
+        # The remembered Mac before this run (restored in cleanup), once captured.
+        self.previous_last_device: Optional[Dict[str, Any]] = None
+        self.other_project_id: Optional[str] = None
+        # Projects this run created, with their main checkout (deleted in cleanup).
+        self.registered: Dict[str, str] = {}
 
     # -- helpers -------------------------------------------------------------
 
@@ -153,8 +167,22 @@ class PickerE2E:
         if not record["ok"]:
             raise SmokeFailure(f"{name}: {record['error']}")
 
-    def remote_worktrees(self) -> List[Dict[str, Any]]:
-        listed = self.request("mobile.supermux.worktrees.list", {"project_id": self.project_id})
+    def last_device(self, **params: Any) -> Dict[str, Any]:
+        """The remembered Mac (`set` replaces it and returns the previous one).
+        `project_id` is ignored by the global store; older builds keyed it per
+        project, so it is still sent."""
+        return self.call("last_device", {"project_id": self.unified_id, **params})
+
+    def probe_sheet(self, project_id: str) -> Dict[str, Any]:
+        """A New Worktree sheet opened for `project_id` and closed again, so
+        the steps' own session (`self.sessions[-1]`) stays the latest."""
+        state = self.call("open", {"project_id": project_id})
+        self.call("close", {"session_id": state["session_id"]})
+        return state
+
+    def remote_worktrees(self, project_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """The Loopback Mac's worktrees of a project (default: the first one)."""
+        listed = self.request("mobile.supermux.worktrees.list", {"project_id": project_id or self.project_id})
         return listed.get("worktrees") or []
 
     def selected_workspaces(self) -> List[str]:
@@ -191,9 +219,10 @@ class PickerE2E:
         hook.chmod(0o755)
         return hook
 
-    def adopt_orphan(self, branch: str) -> Optional[Dict[str, Any]]:
-        """The worktree a dropped create made anyway, queued for cleanup."""
-        worktree = next((w for w in self.remote_worktrees() if w.get("branch") == branch), None)
+    def adopt_orphan(self, branch: str, project_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """The worktree a create made (a dropped one, or one on This Mac that
+        returns no workspace ids), its workspace and auto-mirror queued for cleanup."""
+        worktree = next((w for w in self.remote_worktrees(project_id) if w.get("branch") == branch), None)
         remote_id = (worktree or {}).get("workspace_id")
         if remote_id:
             def mirrors() -> Optional[List[Dict[str, Any]]]:
@@ -267,31 +296,48 @@ class PickerE2E:
         self.window_id = key.get("id") or key.get("window_id")
         return {"machine": self.machine, "device_name": device.get("name"), "window_id": self.window_id}
 
-    def register_project(self) -> Dict[str, Any]:
-        self.repo.mkdir(parents=True)
-        git("init", "-q", "-b", "main", cwd=self.repo)
-        git("config", "user.email", "e2e@example.com", cwd=self.repo)
-        git("config", "user.name", "Supermux E2E", cwd=self.repo)
-        (self.repo / "README.md").write_text(f"picker e2e {self.nonce}\n")
-        git("add", "README.md", cwd=self.repo)
-        git("commit", "-q", "-m", "init", cwd=self.repo)
-        git("branch", f"feature-{self.nonce}", cwd=self.repo)
-        git("remote", "add", "origin", FAKE_ORIGIN, cwd=self.repo)
-        project = self.request("mobile.supermux.project.create", {"root_path": str(self.repo)}).get("project") or {}
-        self.project_id = project.get("id")
-        if not self.project_id:
+    def create_project(self, repo: Path, origin: str, identity: str) -> Dict[str, Any]:
+        """A scratch repo (main + a second branch) registered through the
+        device; returns its ids once the unified list has it on both Macs."""
+        repo.mkdir(parents=True)
+        git("init", "-q", "-b", "main", cwd=repo)
+        git("config", "user.email", "e2e@example.com", cwd=repo)
+        git("config", "user.name", "Supermux E2E", cwd=repo)
+        (repo / "README.md").write_text(f"picker e2e {self.nonce}\n")
+        git("add", "README.md", cwd=repo)
+        git("commit", "-q", "-m", "init", cwd=repo)
+        git("branch", f"feature-{self.nonce}", cwd=repo)
+        git("remote", "add", "origin", origin, cwd=repo)
+        project = self.request("mobile.supermux.project.create", {"root_path": str(repo)}).get("project") or {}
+        if not project.get("id"):
             raise SmokeFailure(f"project.create returned no project: {project}")
+        self.registered[project["id"]] = str(repo)
 
         def merged() -> Optional[Dict[str, Any]]:
             unified = self.client.call("supermux.devices.unified_projects", {}) or {}
             for candidate in unified.get("projects") or []:
-                if candidate.get("git_remote_identity") == FAKE_IDENTITY and len(candidate.get("locations") or []) == 2:
+                if candidate.get("git_remote_identity") == identity and len(candidate.get("locations") or []) == 2:
                     return candidate
             return None
 
-        unified = wait_for("the project on This Mac and the loopback device", merged, self.timeout_s)
-        self.unified_id = unified["id"]
-        return {"project_id": self.project_id, "unified_id": self.unified_id}
+        unified = wait_for(f"{repo.name} on This Mac and the loopback device", merged, self.timeout_s)
+        return {"project_id": project["id"], "unified_id": unified["id"]}
+
+    def register_project(self) -> Dict[str, Any]:
+        created = self.create_project(self.repo, FAKE_ORIGIN, FAKE_IDENTITY)
+        self.project_id, self.unified_id = created["project_id"], created["unified_id"]
+        # Start with nothing remembered; cleanup puts the previous Mac back.
+        self.previous_last_device = self.last_device(set=None)
+        return {**created, "previous_last_device": self.previous_last_device.get("previous")}
+
+    def ensure_other_project(self) -> str:
+        """A second project on both Macs, with its own origin so it never
+        merges with the first."""
+        if self.other_project_id is None:
+            origin = f"git@github.com:supermux-e2e/picker-app-b-{self.nonce}.git"
+            identity = f"github.com/supermux-e2e/picker-app-b-{self.nonce}"
+            self.other_project_id = self.create_project(self.root / "repo-b", origin, identity)["project_id"]
+        return self.other_project_id
 
     def check_rows(self) -> Dict[str, Any]:
         state = self.open_session()
@@ -337,7 +383,10 @@ class PickerE2E:
 
     def check_remote_error(self) -> Dict[str, Any]:
         session = self.sessions[-1]
-        before = self.call("last_device", {"project_id": self.unified_id}).get("device_key")
+        # Remember This Mac, so a failed create on the Loopback Mac that was
+        # remembered anyway shows up as a change.
+        self.last_device(set=THIS_MAC)
+        before = self.last_device().get("device_key")
         result = self.call(
             "submit",
             {"session_id": session, "workspace_name": f"bad-{self.nonce}", "branch_name": f"bad-{self.nonce}",
@@ -349,7 +398,7 @@ class PickerE2E:
             raise SmokeFailure(f"an unknown base branch did not fail: {result}")
         if "invalid_params" in message or result.get("phase") != "idle" or not result.get("can_create"):
             raise SmokeFailure(f"failure left the sheet unusable or shows a raw code: {result}")
-        after = self.call("last_device", {"project_id": self.unified_id}).get("device_key")
+        after = self.last_device().get("device_key")
         if after != before:
             raise SmokeFailure(f"a failed create was remembered: {before} -> {after}")
         return {"error_message": message}
@@ -377,13 +426,97 @@ class PickerE2E:
         return facts
 
     def check_last_device(self) -> Dict[str, Any]:
-        stored = self.call("last_device", {"project_id": self.unified_id}).get("device_key")
+        stored = self.last_device().get("device_key")
         if stored != self.machine:
             raise SmokeFailure(f"last device {stored!r}, want {self.machine}")
         state = self.open_session()
         if state.get("selected_entry_id") != self.machine:
             raise SmokeFailure(f"a new sheet preselected {state.get('selected_entry_id')}, want the last device")
         return {"last_device": stored, "new_sheet_default": state.get("selected_entry_id")}
+
+    def check_last_device_is_global(self) -> Dict[str, Any]:
+        """The Mac the first project's worktree was just created on is the
+        default for another project too. The sheet is checked first, so a
+        build that remembers per project fails on what the user sees."""
+        state = self.probe_sheet(self.ensure_other_project())
+        entries = state.get("entries") or []
+        if len(entries) < 2 or entries[1].get("device_key") != self.machine or not entries[1].get("can_create"):
+            raise SmokeFailure(f"the second project's rows lack a creatable Loopback Mac: {entries}")
+        if state.get("selected_entry_id") != self.machine:
+            raise SmokeFailure(
+                f"the second project's new sheet preselected {state.get('selected_entry_id')}, "
+                f"want the Mac remembered from the first project ({self.machine})"
+            )
+        stored = self.call("last_device", {}).get("device_key")
+        if stored != self.machine:
+            raise SmokeFailure(f"the remembered Mac (no project given) is {stored!r}, want {self.machine}")
+        return {"last_device": stored, "other_project_id": self.other_project_id,
+                "other_sheet_default": state.get("selected_entry_id")}
+
+    def check_global_device_offline_fallback(self) -> Dict[str, Any]:
+        """The remembered Mac cannot take a create while its link is down:
+        the second project's sheet falls back to This Mac."""
+        other = self.ensure_other_project()
+        self.last_device(set=self.machine)
+        self.set_link("stop")
+        try:
+            def offline_sheet() -> Optional[Dict[str, Any]]:
+                state = self.probe_sheet(other)
+                row = next((e for e in state.get("entries") or [] if e.get("device_key") == self.machine), None)
+                return state if row is not None and not row.get("can_create") else None
+
+            state = wait_for("the second project's sheet to list the Loopback Mac as unavailable", offline_sheet, self.timeout_s)
+        finally:
+            self.set_link("restore")
+            self.wait_link_connected()
+        if state.get("selected_entry_id") != THIS_MAC:
+            raise SmokeFailure(f"with the remembered Mac offline the sheet preselected {state.get('selected_entry_id')}, want {THIS_MAC}")
+        loopback = next(e for e in state.get("entries") or [] if e.get("device_key") == self.machine)
+        return {"selected_entry_id": state.get("selected_entry_id"),
+                "offline_row": {k: loopback.get(k) for k in ("device_key", "availability", "can_create")}}
+
+    def check_fallback_create_keeps_remembered_mac(self) -> Dict[str, Any]:
+        """Create on the Mac the sheet fell back to is not a choice: with the
+        remembered Mac's link down, the second project's sheet preselects This
+        Mac, Create there (no row picked) finishes, and the remembered Mac is
+        still the Loopback Mac."""
+        other = self.ensure_other_project()
+        self.last_device(set=self.machine)
+        branch = f"fallback-{self.nonce}"
+        session: Optional[str] = None
+        self.set_link("stop")
+        try:
+            def offline_sheet() -> Optional[Dict[str, Any]]:
+                state = self.call("open", {"project_id": other})
+                row = next((e for e in state.get("entries") or [] if e.get("device_key") == self.machine), None)
+                if row is not None and not row.get("can_create"):
+                    return state
+                self.call("close", {"session_id": state["session_id"]})
+                return None
+
+            state = wait_for("the second project's sheet to list the Loopback Mac as unavailable", offline_sheet, self.timeout_s)
+            session = state["session_id"]
+            if state.get("selected_entry_id") != THIS_MAC:
+                raise SmokeFailure(f"with the remembered Mac offline the sheet preselected {state.get('selected_entry_id')}, want {THIS_MAC}")
+            result = self.call(
+                "submit",
+                {"session_id": session, "workspace_name": f"fallback {self.nonce}", "branch_name": branch},
+                timeout_s=240,
+            )
+            if not result.get("finished"):
+                raise SmokeFailure(f"Create on This Mac did not finish: {result}")
+        finally:
+            self.set_link("restore")
+            if session:
+                self.call("close", {"session_id": session})
+            self.wait_link_connected()
+            created = self.adopt_orphan(branch, project_id=other)
+        stored = self.last_device().get("device_key")
+        if stored != self.machine:
+            raise SmokeFailure(
+                f"a create on the Mac the sheet fell back to replaced the remembered Mac: {stored!r}, want {self.machine}"
+            )
+        return {"default_row": THIS_MAC, "worktree_path": (created or {}).get("path"), "last_device": stored}
 
     def ensure_echo_command(self) -> None:
         """Offers a harmless "echo" Claude command (restored in cleanup), so no
@@ -602,6 +735,8 @@ class PickerE2E:
                 "commands": self.previous_commands.get("previous"),
                 "selected": self.previous_commands.get("previous_selected"),
             }))
+        if self.previous_last_device is not None:
+            attempt(lambda: self.last_device(set=self.previous_last_device.get("previous")))
         for session in self.sessions:
             attempt(lambda session=session: self.call("close", {"session_id": session}))
         if not self.keep:
@@ -616,15 +751,17 @@ class PickerE2E:
                         attempt(lambda w=created[key]: self.close_workspace_if_open(w))
                 attempt(lambda c=created: self.client.call(
                     "supermux.devices.unhide", {"machine": self.machine, "remote_workspace_id": c["remote"]}))
-            if self.project_id and self.machine:
-                for worktree in self.remote_worktrees_safe():
-                    if worktree.get("path") != str(self.repo):
-                        attempt(lambda w=worktree: self.request(
-                            "mobile.supermux.worktree.remove",
-                            {"project_id": self.project_id, "worktree_path": w["path"], "force": True, "delete_branch": True},
-                            timeout_s=120,
-                        ))
-                attempt(lambda: self.request("mobile.supermux.project.delete", {"project_id": self.project_id}))
+            if self.machine:
+                for project_id, checkout in self.registered.items():
+                    for worktree in self.remote_worktrees_safe(project_id):
+                        if worktree.get("path") != checkout:
+                            attempt(lambda p=project_id, w=worktree: self.request(
+                                "mobile.supermux.worktree.remove",
+                                {"project_id": p, "worktree_path": w["path"], "force": True, "delete_branch": True},
+                                timeout_s=120,
+                            ))
+            for project_id in self.registered:
+                attempt(lambda p=project_id: self.request("mobile.supermux.project.delete", {"project_id": p}))
             shutil.rmtree(self.root, ignore_errors=True)
         if errors:
             self.facts["cleanup_errors"] = errors
@@ -639,9 +776,9 @@ class PickerE2E:
                 self.client.call("workspace.close", {"workspace_id": workspace_id})
                 return
 
-    def remote_worktrees_safe(self) -> List[Dict[str, Any]]:
+    def remote_worktrees_safe(self, project_id: Optional[str] = None) -> List[Dict[str, Any]]:
         try:
-            return self.remote_worktrees()
+            return self.remote_worktrees(project_id)
         except SmokeFailure:
             return []
 
@@ -654,6 +791,9 @@ class PickerE2E:
             ("remote_error_is_localized", self.check_remote_error),
             ("plain_create_selects_mirror", self.check_plain_create),
             ("last_device_persisted", self.check_last_device),
+            ("last_device_is_global", self.check_last_device_is_global),
+            ("global_device_offline_falls_back_to_this_mac", self.check_global_device_offline_fallback),
+            ("fallback_create_keeps_remembered_mac", self.check_fallback_create_keeps_remembered_mac),
             ("prompt_start_runs_agent_start", self.check_prompt_start),
             ("availability_is_live", self.check_live_availability),
             ("dropped_link_create_reports_unknown_outcome", lambda: self.check_dropped_link(prompt=False)),
