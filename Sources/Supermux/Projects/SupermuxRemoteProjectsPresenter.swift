@@ -56,7 +56,23 @@ enum SupermuxRemoteProjectsPresenter {
         return SupermuxRemoteProjectsPresentation(
             rows: rows,
             extrasByLocalProjectID: extras,
-            actions: SupermuxRemoteProjectActionsFactory.actions(for: tabManager)
+            actions: SupermuxRemoteProjectActionsFactory.actions(for: tabManager),
+            deviceAvailability: deviceAvailability()
+        )
+    }
+
+    /// Each device's link state for the New Worktree picker's dots.
+    static func deviceAvailability() -> [String: SupermuxWorktreeDeviceAvailability] {
+        Dictionary(
+            SupermuxComposition.devices.devices.map { device in
+                let availability: SupermuxWorktreeDeviceAvailability = switch device.linkState {
+                case .connected: .online
+                case .connecting: .connecting
+                case .offline: .offline
+                }
+                return (device.machine.rawValue, availability)
+            },
+            uniquingKeysWith: { first, _ in first }
         )
     }
 

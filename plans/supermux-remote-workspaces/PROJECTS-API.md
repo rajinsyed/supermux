@@ -136,12 +136,10 @@ func addExistingFolder(_ destination, path:) async throws -> String        // pr
 func cloneRepository(_ destination, remoteURL:, path:) async throws -> String   // project.clone / local clone + addProject
 ```
 
-**P2 (device picker in the New Worktree sheet):** list the candidate Macs with
-`unifiedProjects.list.project(forLocalProject:)?.locations` (online ones), and create remotely with
-`SupermuxRemoteProjectCommands.shared.createWorktree(location, request:, in: tabManager)` — that is
-what the minimal remote sheet (`SupermuxRemoteNewWorktreeSheet`, shown for remote-only projects)
-calls today. Replace the sheet, keep the command. For `agent.start`, add a sibling command with the
-same `openReturnedWorkspace` tail.
+Also `startAgent(_ location, request: SupermuxAgentLaunchRequest, in:, focus:)` (`agent.start`,
+long deadline, same open tail) and the RPC-only halves `requestWorktreeCreate(_:request:)` /
+`requestAgentStart(_:request:)` → `SupermuxRemoteWorkspaceRef`, which the New Worktree sheet uses
+(see "New Worktree on any Mac" below).
 
 ## Host RPCs (capability `supermux.project_setup.v1`)
 
@@ -183,7 +181,7 @@ most every 10 min otherwise), for each connected, non-loopback device serving pr
   load), "Open on ▸" when several Macs have it, remote worktrees in "Worktrees ▸", "Set Up on <Mac>…".
   Edit/Reveal/Move stay local-only.
 - Remote-only rows: device chip, run indicator, dimmed + "offline" tooltip while the Mac is offline;
-  tap = Open on <Mac>; menu: New Worktree… (minimal sheet), Worktrees ▸, Actions ▸, Set Up on <Mac>…
+  tap = Open on <Mac>; menu: New Worktree… (the device-aware sheet, P2), Worktrees ▸, Actions ▸, Set Up on <Mac>…
   (incl. This Mac), Remove from Projects on <Mac>….
 - Flat rows (touchpoint #561): device mirrors always show `SupermuxFlatRowDeviceChip`.
 
@@ -200,6 +198,73 @@ CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.project_sync '{}' 
 
 All take an optional `window_id`. E2E: `CMUX_TAG=<tag> python3 tests/supermux/loopback_projects_e2e.py`
 (launch the build with `SUPERMUX_DEBUG_LOOPBACK_DEVICE=1` and a scratch `SUPERMUX_PROJECTS_FILE`).
+
+## New Worktree on any Mac (P2)
+
+One sheet, `SupermuxNewWorktreeSheet`, for every entry point: a local row's hover ＋ and "New
+Worktree…", "New Worktree on ▸ <Mac>" (local rows whose project is on several Macs), and a
+remote-only row's "New Worktree…". P1's minimal `SupermuxRemoteNewWorktreeSheet` is gone.
+
+```swift
+// SupermuxKit
+@MainActor protocol SupermuxWorktreeCreationTarget: AnyObject, Sendable {   // one Mac's copy
+    var projectID: UUID { get }               // THAT Mac's project id
+    var remoteDeviceName: String? { get }     // nil = This Mac
+    var configuredDefaultBranch: String? { get }
+    func loadBranches() async throws -> [String]
+    func isAINamingConfigured() async -> Bool
+    func isAIBranchNamingConfigured() async -> Bool
+    func suggestBranchName(forWorkspaceName:) async -> String?
+    func createWorktree(branchName:baseBranch:workspaceName:) async throws   // delivers + opens
+    var supportsAgentLaunch: Bool { get }; var canEditAgentCommands: Bool { get }
+    var initialAgentCommands: SupermuxAgentCommandList { get }
+    func setAgentCommands(_:) -> SupermuxAgentCommandList; func rememberAgentCommand(_:)
+    func agentOptions(for command: String, forceRefresh: Bool) async -> SupermuxAgentLaunchOptionsDTO
+    func shellLinePreview(command:model:effort:prompt:) -> String?          // nil for another Mac
+    func startAgent(_ request: SupermuxAgentLaunchRequest, willCreateWorktree:) async throws
+}
+final class SupermuxLocalWorktreeCreationTarget     // This Mac: exactly the pre-P2 calls
+@Observable final class SupermuxNewWorktreeSheetModel   // entries, selectEntry(id:), load(), submit(onFinished:)
+struct SupermuxWorktreeDeviceEntry { id, deviceKey ("this-mac" | machine id), name, availability, action: .create(location) | .setUp(destination), canCreate }
+enum SupermuxWorktreeDevicePlanner { entries(for:availability:setUpTargets:), showsPicker(_:), defaultEntryID(in:preferredDeviceKey:lastUsedDeviceKey:) }
+struct SupermuxWorktreeLastDeviceStore                  // UserDefaults `supermux.newWorktree.lastDevice.v1`
+enum SupermuxRemoteWorktreeFailure { message(code:hostMessage:deviceName:) }
+extension SupermuxRemoteProjectsPresentation { newWorktreeContext(forLocal:), newWorktreeContext(forRemote:), newWorktreeSheetModel(context:preferredDeviceKey:localTarget:onSetUp:) }
+// SupermuxRemoteProjectActions.makeWorktreeTarget (replaces createWorktree); presentation gains deviceAvailability + lastWorktreeDevices
+// app target
+final class SupermuxRemoteWorktreeCreationTarget   // over the device link, opens the mirror after a create
+```
+
+- **Picker rows**: This Mac first (when it has a copy), the other Macs in location order with a
+  link-state dot (connecting / offline rows listed but disabled, with a hint), then "Set Up on…"
+  rows for connected Macs lacking the project (`extras.setUpTargets` / `row.setUpTargets`; hands
+  off to P1's setup sheet). Hidden when there is one row in total.
+- **Default**: the row menu's Mac, else the last Mac a worktree was created on for this unified
+  project (recorded only after a successful create), else the first Mac that can create, else the
+  first copy (an offline-only project still opens and explains why).
+- **Switching Mac** keeps the prompt, workspace name and branch, resets the starting branch to that
+  Mac's default, reloads its branches (`worktrees.list {include_branches: true}`) and Claude options
+  (`agent.options {project_id, command?}`; another Mac's command list is adopted from its answer and
+  is not editable here); results for the previous Mac are dropped.
+- **Another Mac's create**: "Creating on <Mac>…" while `worktree.create {open: true}` /
+  `agent.start` runs with `SupermuxDevices.longOperationTimeout` (Cancel disabled — the other Mac
+  cannot be stopped); the sheet closes when it returns, then
+  `deviceWorkspaceOpener.openWhenAvailable(ref, in: <clicking window>, focus: true)` opens (or reuses
+  the auto-mirror's in-flight / existing) mirror and selects it; an open failure shows an alert.
+  Errors become sentences naming the Mac (`SupermuxRemoteWorktreeFailure`). A blank branch is
+  AI-named by `worktree.suggest_branch` only when that Mac already reported
+  `ai_naming_configured == true` (additive `agent.options` field); otherwise the other Mac names it
+  inside `worktree.create`. The shell line is not previewed for another Mac.
+
+DEBUG socket drivers (`supermux.devices.new_worktree.*`, same model as the sheet):
+`open {project_id, preferred_device?, window_id?}` → `{session_id, unified_project_id, entries,
+selected_entry_id, shows_picker, target, branches, base_branch, commands, command, …}`,
+`select {session_id, entry_id}`, `load {session_id}`, `state {session_id}`,
+`submit {session_id, prompt?, workspace_name?, branch_name?, base_branch?, command?, await_open?}` →
+state + `{finished, machine, remote_workspace_id, mirror}`, `close {session_id}`,
+`last_device {project_id}`, `set_agent_commands {commands?, selected?}` → `{previous, previous_selected, …}`.
+E2E: `CMUX_TAG=<tag> python3 tests/supermux/loopback_new_worktree_picker_e2e.py` (also in
+`tests/supermux/run_all_loopback_e2e.sh`).
 
 ## Not covered / known limits
 

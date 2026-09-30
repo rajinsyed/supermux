@@ -32,6 +32,9 @@ public struct SupermuxAgentLaunchOptionsDTO: Codable, Sendable, Equatable {
     public var lastModel: String?
     /// The effort last used with the selected command, when recorded.
     public var lastEffort: String?
+    /// Whether that Mac has an AI Gateway key, so blank names are AI-named
+    /// there (additive; `nil` from a host that predates the field).
+    public var aiNamingConfigured: Bool?
 
     /// Creates the options payload.
     public init(
@@ -41,7 +44,8 @@ public struct SupermuxAgentLaunchOptionsDTO: Codable, Sendable, Equatable {
         modelsSource: ModelsSource,
         modelsError: String? = nil,
         lastModel: String? = nil,
-        lastEffort: String? = nil
+        lastEffort: String? = nil,
+        aiNamingConfigured: Bool? = nil
     ) {
         self.commands = commands
         self.selectedCommand = selectedCommand
@@ -50,6 +54,7 @@ public struct SupermuxAgentLaunchOptionsDTO: Codable, Sendable, Equatable {
         self.modelsError = modelsError
         self.lastModel = lastModel
         self.lastEffort = lastEffort
+        self.aiNamingConfigured = aiNamingConfigured
     }
 
     public init(from decoder: any Decoder) throws {
@@ -62,6 +67,7 @@ public struct SupermuxAgentLaunchOptionsDTO: Codable, Sendable, Equatable {
         modelsError = try container.decodeIfPresent(String.self, forKey: .modelsError)
         lastModel = try container.decodeIfPresent(String.self, forKey: .lastModel)
         lastEffort = try container.decodeIfPresent(String.self, forKey: .lastEffort)
+        aiNamingConfigured = try? container.decodeIfPresent(Bool.self, forKey: .aiNamingConfigured)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -72,5 +78,6 @@ public struct SupermuxAgentLaunchOptionsDTO: Codable, Sendable, Equatable {
         case modelsError = "models_error"
         case lastModel = "last_model"
         case lastEffort = "last_effort"
+        case aiNamingConfigured = "ai_naming_configured"
     }
 }

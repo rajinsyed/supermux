@@ -6,40 +6,48 @@ import SupermuxMobileCore
 extension SupermuxNewWorktreeSheet {
     var chipRow: some View {
         HStack(spacing: 6) {
-            if hasPrompt {
+            if sheet.hasPrompt {
                 commandChip
                 modelChip
-                if !effortLevels.isEmpty {
-                    effortChip(levels: effortLevels, defaultLevel: selectedModelDescriptor?.defaultEffortLevel)
+                if !sheet.effortLevels.isEmpty {
+                    effortChip(levels: sheet.effortLevels, defaultLevel: sheet.selectedModelDescriptor?.defaultEffortLevel)
                 }
             }
             baseBranchChip
             Spacer(minLength: 0)
         }
-        .disabled(phase != .idle)
+        .disabled(sheet.phase != .idle)
     }
 
     // MARK: Command
 
     private var commandChip: some View {
         Menu {
-            ForEach(commands, id: \.self) { candidate in
+            ForEach(sheet.commands, id: \.self) { candidate in
                 Button {
-                    command = candidate
+                    sheet.selectCommand(candidate)
                 } label: {
-                    if candidate == command {
+                    if candidate == sheet.command {
                         Label(candidate, systemImage: "checkmark")
                     } else {
                         Text(candidate)
                     }
                 }
             }
-            Divider()
-            Button(String(localized: "supermux.agent.commands.edit", defaultValue: "Edit Commands…")) {
-                showsCommandEditor = true
+            // Another Mac's command list is edited in that Mac's sheet.
+            if sheet.canEditCommands {
+                Divider()
+                Button(String(localized: "supermux.agent.commands.edit", defaultValue: "Edit Commands…")) {
+                    showsCommandEditor = true
+                }
             }
         } label: {
-            SupermuxAgentChipLabel(systemImage: "terminal", text: command, monospaced: true)
+            SupermuxAgentChipLabel(
+                systemImage: "terminal",
+                text: sheet.command,
+                monospaced: true,
+                isLoading: sheet.command.isEmpty && sheet.modelsLoading
+            )
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
@@ -48,8 +56,8 @@ extension SupermuxNewWorktreeSheet {
             defaultValue: "The shell command that starts Claude (an alias like “cc” works)."
         ))
         .popover(isPresented: $showsCommandEditor, arrowEdge: .bottom) {
-            SupermuxAgentCommandEditor(commands: commands) { edited in
-                saveCommands(edited)
+            SupermuxAgentCommandEditor(commands: sheet.commands) { edited in
+                sheet.saveCommands(edited)
             }
         }
     }
@@ -59,22 +67,22 @@ extension SupermuxNewWorktreeSheet {
     private var modelChip: some View {
         Menu {
             Button {
-                selectedModel = nil
+                sheet.selectedModel = nil
             } label: {
-                if selectedModel == nil {
+                if sheet.selectedModel == nil {
                     Label(defaultModelTitle, systemImage: "checkmark")
                 } else {
                     Text(defaultModelTitle)
                 }
             }
-            let selectable = models.selectableModels
+            let selectable = sheet.models.selectableModels
             if !selectable.isEmpty {
                 Divider()
                 ForEach(selectable) { descriptor in
                     Button {
-                        selectedModel = descriptor.value
+                        sheet.selectedModel = descriptor.value
                     } label: {
-                        if descriptor.value == selectedModel {
+                        if descriptor.value == sheet.selectedModel {
                             Label(descriptor.displayName, systemImage: "checkmark")
                         } else {
                             Text(descriptor.displayName)
@@ -84,20 +92,20 @@ extension SupermuxNewWorktreeSheet {
             }
             Divider()
             Button(String(localized: "supermux.agent.models.refresh", defaultValue: "Refresh Models")) {
-                Task { await loadModels(for: command, forceRefresh: true) }
+                Task { await sheet.loadModels(for: sheet.command, forceRefresh: true) }
             }
-            .disabled(modelsLoading)
+            .disabled(sheet.modelsLoading)
         } label: {
             SupermuxAgentChipLabel(
                 systemImage: "cpu",
-                text: selectedModelDescriptor?.displayName ?? defaultModelTitle,
-                isLoading: modelsLoading,
-                isWarning: modelsError != nil
+                text: sheet.selectedModelDescriptor?.displayName ?? defaultModelTitle,
+                isLoading: sheet.modelsLoading,
+                isWarning: sheet.modelsError != nil
             )
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
-        .help(modelsError ?? String(
+        .help(sheet.modelsError ?? String(
             localized: "supermux.agent.models.help",
             defaultValue: "Models the selected command offers."
         ))
@@ -106,7 +114,7 @@ extension SupermuxNewWorktreeSheet {
     /// The default row's title: Claude Code's own name for its default entry
     /// when the catalog has one, else a generic label.
     private var defaultModelTitle: String {
-        models.defaultEntry?.displayName
+        sheet.models.defaultEntry?.displayName
             ?? String(localized: "supermux.agent.model.default", defaultValue: "Default model")
     }
 
@@ -115,9 +123,9 @@ extension SupermuxNewWorktreeSheet {
     private func effortChip(levels: [String], defaultLevel: String?) -> some View {
         Menu {
             Button {
-                selectedEffort = nil
+                sheet.selectedEffort = nil
             } label: {
-                if selectedEffort == nil {
+                if sheet.selectedEffort == nil {
                     Label(defaultEffortTitle(defaultLevel), systemImage: "checkmark")
                 } else {
                     Text(defaultEffortTitle(defaultLevel))
@@ -126,9 +134,9 @@ extension SupermuxNewWorktreeSheet {
             Divider()
             ForEach(levels, id: \.self) { level in
                 Button {
-                    selectedEffort = level
+                    sheet.selectedEffort = level
                 } label: {
-                    if level == selectedEffort {
+                    if level == sheet.selectedEffort {
                         Label(SupermuxAgentEffortLabel.title(for: level), systemImage: "checkmark")
                     } else {
                         Text(SupermuxAgentEffortLabel.title(for: level))
@@ -138,7 +146,7 @@ extension SupermuxNewWorktreeSheet {
         } label: {
             SupermuxAgentChipLabel(
                 systemImage: "gauge.with.dots.needle.67percent",
-                text: selectedEffort.map(SupermuxAgentEffortLabel.title(for:))
+                text: sheet.selectedEffort.map(SupermuxAgentEffortLabel.title(for:))
                     ?? String(localized: "supermux.agent.effort.default", defaultValue: "Auto effort")
             )
         }
@@ -160,24 +168,24 @@ extension SupermuxNewWorktreeSheet {
     private var baseBranchChip: some View {
         Menu {
             Button {
-                baseBranch = ""
-                baseBranchWasEdited = true
+                sheet.baseBranch = ""
+                sheet.baseBranchWasEdited = true
             } label: {
                 let head = String(localized: "supermux.newWorktree.base.default", defaultValue: "Repository HEAD")
-                if baseBranch.isEmpty {
+                if sheet.baseBranch.isEmpty {
                     Label(head, systemImage: "checkmark")
                 } else {
                     Text(head)
                 }
             }
-            if !baseBranchOptions.isEmpty {
+            if !sheet.baseBranchOptions.isEmpty {
                 Divider()
-                ForEach(baseBranchOptions, id: \.self) { branch in
+                ForEach(sheet.baseBranchOptions, id: \.self) { branch in
                     Button {
-                        baseBranch = branch
-                        baseBranchWasEdited = true
+                        sheet.baseBranch = branch
+                        sheet.baseBranchWasEdited = true
                     } label: {
-                        if branch == baseBranch {
+                        if branch == sheet.baseBranch {
                             Label(branch, systemImage: "checkmark")
                         } else {
                             Text(branch)
@@ -188,11 +196,11 @@ extension SupermuxNewWorktreeSheet {
         } label: {
             SupermuxAgentChipLabel(
                 systemImage: "arrow.triangle.branch",
-                text: baseBranch.isEmpty
+                text: sheet.baseBranch.isEmpty
                     ? String(localized: "supermux.agent.base.head", defaultValue: "HEAD")
-                    : baseBranch,
+                    : sheet.baseBranch,
                 monospaced: true,
-                isLoading: !branchesLoaded
+                isLoading: !sheet.branchesLoaded
             )
         }
         .menuStyle(.button)

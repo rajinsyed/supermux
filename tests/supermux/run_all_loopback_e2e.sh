@@ -37,22 +37,24 @@ quit_app
 rm -rf "$SCRATCH"
 mkdir -p "$SCRATCH/push-state" "$REPORTS"
 chmod 700 "$SCRATCH/push-state"
-# The auto-mirror suite's branch check needs an existing repo on a known branch.
+# The auto-mirror suite's branch check opens a workspace in this repository, so it must exist.
 git init -q -b main "$SCRATCH/auto-mirror-repo"
-git -C "$SCRATCH/auto-mirror-repo" -c user.name=e2e -c user.email=e2e@example.invalid commit -q --allow-empty -m init
+git -C "$SCRATCH/auto-mirror-repo" -c user.email=e2e@example.com -c user.name="Supermux E2E" \
+  commit -q --allow-empty -m init
 cd "$ROOT"
 
 # One line per suite: name, then its extra arguments (one per line in the case).
 suite_args() {
   case "$1" in
     loopback_projects_e2e) printf '%s\n' --scratch "$SCRATCH/projects" ;;
+    loopback_new_worktree_picker_e2e) printf '%s\n' --scratch "$SCRATCH/picker" ;;
     loopback_notifications_e2e) printf '%s\n' --push-state-dir "$SCRATCH/push-state" --work-dir "$SCRATCH/notifications" ;;
     loopback_auto_mirror_e2e) printf '%s\n' --app-path "$APP" --projects-file "$SCRATCH/projects.json" --git-repo "$SCRATCH/auto-mirror-repo" ;;
   esac
 }
 
 # The auto-mirror suite runs last: it quits and relaunches the app for its restart check.
-SUITES=(loopback_device_smoke loopback_projects_e2e loopback_workspace_behaviors_e2e loopback_notifications_e2e loopback_auto_mirror_e2e)
+SUITES=(loopback_device_smoke loopback_projects_e2e loopback_new_worktree_picker_e2e loopback_workspace_behaviors_e2e loopback_notifications_e2e loopback_auto_mirror_e2e)
 
 status=0
 for name in "${SUITES[@]}"; do

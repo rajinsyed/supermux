@@ -190,6 +190,8 @@ public struct SupermuxProjectRowView: View {
     let remoteExtras: SupermuxProjectRemoteExtras?
     let remoteActions: SupermuxRemoteProjectActions
     let setUp: (SupermuxProjectSetupDestination) -> Void
+    /// Opens the New Worktree sheet preset to one Mac (a device key).
+    let newWorktreeOn: (String) -> Void
 
     /// Sidebar font scale (cmux's `sidebar-font-size`); `1` at the default size.
     /// Multiplies the row's text and avatar so projects track the same setting
@@ -232,11 +234,13 @@ public struct SupermuxProjectRowView: View {
         draggingWorkspaceId: Binding<UUID?> = .constant(nil),
         remoteExtras: SupermuxProjectRemoteExtras? = nil,
         remoteActions: SupermuxRemoteProjectActions = .inert,
-        setUp: @escaping (SupermuxProjectSetupDestination) -> Void = { _ in }
+        setUp: @escaping (SupermuxProjectSetupDestination) -> Void = { _ in },
+        newWorktreeOn: @escaping (String) -> Void = { _ in }
     ) {
         self.remoteExtras = remoteExtras
         self.remoteActions = remoteActions
         self.setUp = setUp
+        self.newWorktreeOn = newWorktreeOn
         self.project = project
         self.detectedIcon = detectedIcon
         self.worktrees = worktrees
@@ -381,6 +385,7 @@ public struct SupermuxProjectRowView: View {
         Button(String(localized: "supermux.project.openLocal", defaultValue: "Open Local Workspace"), action: actions.openLocal)
         openOnMenu
         Button(String(localized: "supermux.project.newWorktree", defaultValue: "New Worktree…"), action: actions.newWorktree)
+        newWorktreeOnMenu
         if !worktrees.isEmpty || !(remoteExtras?.worktrees.isEmpty ?? true) {
             Menu(String(localized: "supermux.project.worktreesMenu", defaultValue: "Worktrees")) {
                 ForEach(worktrees) { worktree in

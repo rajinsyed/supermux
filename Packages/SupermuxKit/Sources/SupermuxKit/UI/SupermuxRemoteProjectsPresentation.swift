@@ -85,16 +85,24 @@ public struct SupermuxRemoteProjectsPresentation {
     public var extrasByLocalProjectID: [UUID: SupermuxProjectRemoteExtras]
     /// The host's remote callbacks.
     public var actions: SupermuxRemoteProjectActions
+    /// Each known Mac's link state by machine id (the New Worktree picker's dots).
+    public var deviceAvailability: [String: SupermuxWorktreeDeviceAvailability]
+    /// Where the New Worktree sheet remembers the last Mac per project.
+    public var lastWorktreeDevices: SupermuxWorktreeLastDeviceStore
 
     /// Creates a presentation.
     public init(
         rows: [SupermuxRemoteProjectRow],
         extrasByLocalProjectID: [UUID: SupermuxProjectRemoteExtras],
-        actions: SupermuxRemoteProjectActions
+        actions: SupermuxRemoteProjectActions,
+        deviceAvailability: [String: SupermuxWorktreeDeviceAvailability] = [:],
+        lastWorktreeDevices: SupermuxWorktreeLastDeviceStore = SupermuxWorktreeLastDeviceStore()
     ) {
         self.rows = rows
         self.extrasByLocalProjectID = extrasByLocalProjectID
         self.actions = actions
+        self.deviceAvailability = deviceAvailability
+        self.lastWorktreeDevices = lastWorktreeDevices
     }
 
     /// No other Macs.
