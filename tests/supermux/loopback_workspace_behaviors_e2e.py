@@ -40,6 +40,9 @@ DEBUG `supermux.devices.mirror.*` socket drivers):
      does not hide it), and its Run / Stop stops only that run.
   9. changes_lists_remote_change — the mirror's Changes model is remote and
      lists README.md (modified) and NOTES.txt (untracked).
+  9b. changes_commit_button_matches_local — for the same repository state the
+     mirror's commit button (AI mode, enabled, title) equals this Mac's own
+     panel's, and its Open diff view says the repository is on the other Mac.
  10. changes_stage_unstage_round_trip — stage then unstage README.md from the
      mirror's model; the scratch repo's real index follows each step.
  11. changes_file_diff_is_remote — the file-row diff of README.md comes back
@@ -527,6 +530,24 @@ class WorkspaceBehaviorsE2E:
             raise CheckFailure(f"model directory {model.get('directory')} != {self.repo}")
         return {"model": model}
 
+    def changes_commit_button_matches_local(self) -> Dict[str, Any]:
+        """The mirror's commit button follows this Mac's own rules for the same
+        repository state: Generate & Commit only when the owning Mac can write
+        the message, as the local panel decides from its own key."""
+        result = self.changes("status", compare_local=True)
+        mirror, local = result["model"], result.get("local_model") or {}
+        keys = ("ai_commit_configured", "is_ai_commit_mode", "can_commit", "commit_button_title")
+        differ = {key: {"mirror": mirror.get(key), "local": local.get(key)} for key in keys if mirror.get(key) != local.get(key)}
+        if not local or differ:
+            raise CheckFailure(f"the mirror's commit button differs from this Mac's panel: {differ or result}")
+        hint = self.inspect(self.mirror_id).get("changes_open_diff_hint")
+        if "Loopback Mac" not in str(hint):
+            raise CheckFailure(f"the mirror's Open diff view does not name the other Mac: {hint!r}")
+        source_hint = self.inspect(self.source_id).get("changes_open_diff_hint")
+        if source_hint:
+            raise CheckFailure(f"the local workspace's Open diff view is marked remote: {source_hint!r}")
+        return {**{key: mirror.get(key) for key in keys}, "open_diff_hint": hint}
+
     def changes_stage_round_trip(self) -> Dict[str, Any]:
         staged = self.changes("stage", path="README.md")["model"]
         if "README.md" not in {f["path"] for f in staged.get("staged") or []}:
@@ -860,6 +881,7 @@ class WorkspaceBehaviorsE2E:
             self.step("run_stop_from_mirror_presets_bar", self.run_stop)
             self.step("run_second_workspace_from_its_mirror", self.run_second_workspace_from_its_mirror)
             self.step("changes_lists_remote_change", self.changes_lists_remote_change)
+            self.step("changes_commit_button_matches_local", self.changes_commit_button_matches_local)
             self.step("changes_stage_unstage_round_trip", self.changes_stage_round_trip)
             self.step("changes_file_diff_is_remote", self.changes_file_diff)
             self.step("changes_slow_fetch_keeps_link", self.changes_slow_fetch_keeps_link)
