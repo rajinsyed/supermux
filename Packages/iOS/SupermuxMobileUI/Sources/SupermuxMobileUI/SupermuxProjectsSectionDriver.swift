@@ -24,6 +24,8 @@ extension View {
     ///   - model: The section model the fence's `@State` owns.
     ///   - seams: One seam per live Mac pairing, foreground first.
     ///   - workspaces: The shell's current workspace previews.
+    ///   - selectedWorkspaceID: The shell's selected workspace row, so a
+    ///     choice made outside the Projects section drops a parked navigation.
     ///   - selectWorkspace: Opens a workspace row by its row id.
     ///   - resolveWorkspace: The shell's Mac-local id → row id resolver
     ///     (`store.workspaceID(matchingRemoteWorkspaceID:macDeviceID:instanceTag:)`).
@@ -34,6 +36,7 @@ extension View {
         model: SupermuxProjectsSectionModel,
         seams: [SupermuxMacSeam],
         workspaces: [MobileWorkspacePreview] = [],
+        selectedWorkspaceID: MobileWorkspacePreview.ID? = nil,
         selectWorkspace: @escaping @MainActor (MobileWorkspacePreview.ID) -> Void = { _ in },
         resolveWorkspace: SupermuxWorkspaceResolver? = nil,
         closeWorkspace: (@MainActor (MobileWorkspacePreview.ID) -> Void)? = nil
@@ -78,6 +81,9 @@ extension View {
         // list refresh: retry any navigation parked waiting for it.
         .onChange(of: workspaces.map(\.id)) { _, _ in
             model.workspaceListDidChange()
+        }
+        .onChange(of: selectedWorkspaceID) { _, selected in
+            model.shellSelectionDidChange(to: selected?.rawValue)
         }
         // Detail-route destination, New Worktree sheet and error alerts: on
         // the stable wrapper above the `List`, never inside a lazy row.
