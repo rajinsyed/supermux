@@ -1,4 +1,7 @@
 import CMUXMobileCore
+// SUPERMUX:begin device-mirror-viewer-colors
+import CmuxCloudTui
+// SUPERMUX:end device-mirror-viewer-colors
 import CmuxMobileRPC
 import CmuxTerminal
 import CmuxTerminalSharing
@@ -79,6 +82,11 @@ final class DeviceTerminalMirrorSession {
     /// coming back on screen must clear it (now, or with the next replay).
     private var supermuxHostHoldsHiddenCounts = false
     // SUPERMUX:end device-mirror-hidden-counts
+    // SUPERMUX:begin device-mirror-viewer-colors
+    /// The other Mac's program-authored colors this surface holds; replays
+    /// carry no color state of their own (SupermuxDeviceMirrorColors).
+    private(set) var supermuxColors = SupermuxDeviceMirrorColorState()
+    // SUPERMUX:end device-mirror-viewer-colors
 
     convenience init(link: DeviceLink, remoteWorkspaceID: String, remoteSurfaceID: UUID) {
         self.init(
@@ -347,7 +355,9 @@ final class DeviceTerminalMirrorSession {
             viewportTransitionRetries = 0
             receiveReplaySizing(response)
             if let columns = replay.columns, let rows = replay.rows { pin(columns: columns, rows: rows) }
-            surface?.processRemoteOutput(replay.bytes)
+            // SUPERMUX:begin device-mirror-viewer-colors (the replay, then the authored-color delta)
+            surface?.processRemoteOutput(supermuxColors.bytes(applying: replay.bytes, colors: replay.colors, to: surface?.id))
+            // SUPERMUX:end device-mirror-viewer-colors
             expectedSequence = replay.sequence
             phase = .attached
             // SUPERMUX:begin device-mirror-hidden-counts (a show or hide during the replay round trip)
@@ -393,6 +403,11 @@ final class DeviceTerminalMirrorSession {
         let columns: Int?
         let rows: Int?
         let sequence: UInt64?
+        // SUPERMUX:begin device-mirror-viewer-colors
+        /// Program-authored colors beside a render-grid replay; nil for a
+        /// legacy replay, whose leading RIS resets every color.
+        var colors: CloudTuiRemoteColors?
+        // SUPERMUX:end device-mirror-viewer-colors
     }
 
     #if compiler(>=6.2)
@@ -408,10 +423,13 @@ final class DeviceTerminalMirrorSession {
         if let raw = response["render_grid"] {
             let frame = try MobileTerminalRenderGridFrame.decodeJSONObject(raw)
             return Replay(
-                bytes: MobileTerminalRenderGridReplay(frame).patchBytes(),
+                // SUPERMUX:begin device-mirror-viewer-colors (this Mac's theme; only authored colors cross)
+                bytes: SupermuxDeviceMirrorColors.themePortableBytes(frame),
                 columns: frame.columns > 0 ? frame.columns : nil,
                 rows: frame.rows > 0 ? frame.rows : nil,
-                sequence: sequence
+                sequence: sequence,
+                colors: SupermuxDeviceMirrorColors.authored(in: frame)
+                // SUPERMUX:end device-mirror-viewer-colors
             )
         } else {
             let columns = (response["columns"] as? NSNumber)?.intValue
