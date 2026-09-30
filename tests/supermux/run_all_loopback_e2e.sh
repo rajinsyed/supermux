@@ -43,13 +43,14 @@ cd "$ROOT"
 suite_args() {
   case "$1" in
     loopback_projects_e2e) printf '%s\n' --scratch "$SCRATCH/projects" ;;
+    loopback_new_worktree_picker_e2e) printf '%s\n' --scratch "$SCRATCH/picker" ;;
     loopback_notifications_e2e) printf '%s\n' --push-state-dir "$SCRATCH/push-state" --work-dir "$SCRATCH/notifications" ;;
     loopback_auto_mirror_e2e) printf '%s\n' --app-path "$APP" --projects-file "$SCRATCH/projects.json" --git-repo "$SCRATCH/auto-mirror-repo" ;;
   esac
 }
 
 # The auto-mirror suite runs last: it quits and relaunches the app for its restart check.
-SUITES=(loopback_device_smoke loopback_projects_e2e loopback_workspace_behaviors_e2e loopback_notifications_e2e loopback_auto_mirror_e2e)
+SUITES=(loopback_device_smoke loopback_projects_e2e loopback_new_worktree_picker_e2e loopback_workspace_behaviors_e2e loopback_notifications_e2e loopback_auto_mirror_e2e)
 
 status=0
 for name in "${SUITES[@]}"; do

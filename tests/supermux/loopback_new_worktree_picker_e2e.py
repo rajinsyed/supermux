@@ -28,8 +28,9 @@ Steps:
      and nothing is remembered.
   6. plain_create_selects_mirror: Create on the Loopback Mac runs
      worktree.create over the device; the returned workspace's mirror opens,
-     is bound to it, and is the selected workspace of the window; the worktree
-     is listed on the device.
+     is bound to it, and is the selected workspace of the window, with no
+     second mirror from the auto-mirror coordinator; the worktree is listed on
+     the device.
   7. last_device_persisted: the project's last device is the Loopback Mac, and a
      new sheet preselects it.
   8. prompt_start_runs_agent_start: with a harmless Claude command ("echo")
@@ -136,13 +137,6 @@ class PickerE2E:
         listed = self.request("mobile.supermux.worktrees.list", {"project_id": self.project_id})
         return listed.get("worktrees") or []
 
-    def selected_workspace(self) -> Optional[str]:
-        listed = self.client.call("workspace.list", {"window_id": self.window_id}) or {}
-        for workspace in listed.get("workspaces") or []:
-            if workspace.get("selected") or workspace.get("is_selected"):
-                return workspace.get("id") or workspace.get("workspace_id")
-        return None
-
     def check_mirror_selected(self, result: Dict[str, Any]) -> Dict[str, Any]:
         mirror = result.get("mirror") or {}
         remote_id = result.get("remote_workspace_id")
@@ -165,10 +159,13 @@ class PickerE2E:
             return None
 
         row = wait_for("the new mirror to be bound and selected", selected, self.timeout_s)
-        time.sleep(1.5)  # nothing may steal the selection right after
-        still = selected()
-        if not still:
+        time.sleep(2.0)  # let auto-mirror run: nothing may steal the selection or open a second mirror
+        if not selected():
             raise SmokeFailure("the mirror lost the selection right after opening")
+        bindings = self.client.call("supermux.devices.bindings", {}) or {}
+        copies = [m for m in bindings.get("mirrors") or [] if norm(m.get("remote_workspace_id")) == norm(remote_id)]
+        if len(copies) != 1:
+            raise SmokeFailure(f"{len(copies)} mirrors of one remote workspace (auto-mirror raced the open): {copies}")
         return {"mirror_workspace_id": mirror["workspace_id"], "remote_workspace_id": remote_id,
                 "mirror_title": row.get("title"), "reused_in_flight_or_existing": mirror.get("reused")}
 

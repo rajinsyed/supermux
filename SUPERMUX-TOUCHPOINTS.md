@@ -549,6 +549,7 @@ Rules for adding a touchpoint:
 | 584 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceDetailView+SupermuxMacSeam.swift` | `supermux-mobile-workspace-mac-seam` | Whole new file. `WorkspaceDetailView.supermuxWorkspaceSeam`: `store.supermuxConnectionSeam(forMacDeviceID: workspace.macDeviceID, instanceTag: workspace.macInstanceTag)` (#581), so the workspace tools, title-menu entries and pane actions talk to the Mac that owns the workspace — before (and without) `openWorkspace`'s asynchronous foreground switch |
 | 585 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceDetailView.swift` | `supermux-mobile-workspace-tools, ios-workspace-toolbar-persistent-actions` | Four reads inside existing fences swap `store.supermuxConnectionSeam` for `supermuxWorkspaceSeam` (#584): the #108 `.supermuxWorkspaceTools(connection:)` argument, and the #228 `SupermuxWorkspaceToolsMenuEntries(hostCapabilities:)`, `workspaceTitleToolEntriesFingerprint` and `isEnabled` capability reads |
 | 586 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceDetailView+SupermuxPaneActions.swift` | `ios-pane-actions` | `supermuxPaneActions` builds `SupermuxWorkspacePaneActions(connection: supermuxWorkspaceSeam)` (#584) instead of the foreground seam, so Close Pane / New Simulator target the workspace's own Mac |
+| 590 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Device picker in the New Worktree sheet (workstream P2, `plans/supermux-remote-workspaces/PROJECTS-API.md` § New Worktree on any Mac): wires the 2 files under `Sources/Supermux/Projects/` (`Projects/…` paths inside the Supermux group) into the cmux target — `SupermuxRemoteWorktreeCreationTarget`, `SupermuxNewWorktreeSocketCommands` (`.swift`), in that order. File refs are `50BE000B0000000000000001` / `…03`, build files `…02` / `…04`; `grep -c 50BE000B cmux.xcodeproj/project.pbxproj` prints 8. #591–#594 are reserved for P2 and unused (everything else is fork-owned) |
 
 ## How to re-apply
 
@@ -4782,3 +4783,25 @@ Verify: `swift test` in `Packages/iOS/SupermuxMobileUI` (the multi-Mac suites ar
 `SupermuxNewWorktreeMacPickerTests`), then an iOS simulator build of `cmux-ios`, then a two-Mac
 check on a real phone (projects of both Macs listed under Mac headers; New Worktree offers the
 second Mac for the same repository; the created workspace opens).
+### 590. New Worktree on any Mac (workstream P2) — pbxproj only
+
+Why: the Mac New Worktree sheet creates on This Mac or on another Mac that has the project (device
+picker, last Mac remembered per project), and every entry point (hover ＋, context menu,
+"New Worktree on ▸ <Mac>", remote-only rows) opens that one sheet. All logic is fork-owned: the
+sheet, its model and the `SupermuxWorktreeCreationTarget` seam live in `Packages/SupermuxKit`
+(`UI/SupermuxNewWorktreeSheet*.swift`, `UI/SupermuxNewWorktreeSheetModel*.swift`,
+`Agent/Supermux{WorktreeCreationTarget,LocalWorktreeCreationTarget}.swift`,
+`Devices/SupermuxWorktree{DeviceEntry,DevicePlanner,LastDeviceStore}.swift`,
+`Devices/SupermuxRemoteWorktreeFailure.swift`); the remote target and the DEBUG socket drivers live
+in `Sources/Supermux/Projects/`. The socket route is in the fork-owned
+`SupermuxDevicesSocketCommands`. The additive `ai_naming_configured` field on
+`mobile.supermux.agent.options` is in the fork-owned wire contract (`SupermuxAgentLaunchOptionsDTO`)
+and host handler (`SupermuxMobileHost+Agent.swift`). Re-apply:
+
+- **#590** re-add the four entries per file listed in the #590 row with the `50BE000B…` ids
+  (`Projects/<name>` paths in the Supermux group), then
+  `python3 scripts/normalize-pbxproj.py cmux.xcodeproj/project.pbxproj && ./scripts/check-pbxproj.sh`.
+
+Verify: `swift test --filter "SupermuxWorktreeDevicePlannerTests|SupermuxWorktreeLastDeviceStoreTests|SupermuxRemoteWorktreeFailureTests|SupermuxNewWorktreeSheetModelTests|SupermuxNewWorktreeSheetTests"`
+in `Packages/SupermuxKit`, then `CMUX_TAG=<tag> python3 tests/supermux/loopback_new_worktree_picker_e2e.py`
+against a tagged build launched with `SUPERMUX_DEBUG_LOOPBACK_DEVICE=1` (see the script's docstring).
