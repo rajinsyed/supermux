@@ -16,7 +16,9 @@ import SupermuxKit
 /// `local_projects {}` (this Mac's `projects.list` host payload + origin map),
 /// and (DEBUG builds only) `request {machine, method, params?, timeout_seconds?}`,
 /// `bind {workspace_id, machine, remote_workspace_id}` and `unbind {workspace_id}` (test hooks for the
-/// export filter and restart-stable bindings without a second Mac).
+/// export filter and restart-stable bindings without a second Mac). The device-mirror methods
+/// (`close_mirror`, `unhide`, `hidden`, `set_auto_mirror`, `reconcile`) are handled by
+/// ``SupermuxDeviceMirrorSocketCommands``.
 @MainActor
 enum SupermuxDevicesSocketCommands {
     nonisolated static let methodPrefix = "supermux.devices."
