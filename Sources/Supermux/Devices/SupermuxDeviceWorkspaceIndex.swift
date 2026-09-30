@@ -130,6 +130,18 @@ final class SupermuxDeviceWorkspaceIndex {
         devices.scheduleRefresh()
     }
 
+    /// The remote color/description/pin last applied to a bound mirror
+    /// (persisted with its binding, so it survives a restart).
+    func appliedCustomization(for workspace: Workspace) -> SupermuxMirrorCustomization? {
+        bindings.appliedCustomization(forStableID: workspace.stableId)
+    }
+
+    /// Remembers the remote customization just applied to a bound mirror
+    /// (ignored for an unbound one).
+    func recordAppliedCustomization(_ customization: SupermuxMirrorCustomization, for workspace: Workspace) {
+        bindings.recordAppliedCustomization(customization, forStableID: workspace.stableId)
+    }
+
     /// Drops bindings of workspaces that no longer exist. Call only after the
     /// session restore has finished.
     func pruneBindings() {

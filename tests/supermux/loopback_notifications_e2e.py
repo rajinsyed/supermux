@@ -525,6 +525,10 @@ class NotificationsE2E(LoopbackSmoke):
             return run_action
 
         try:
+            # Like the smoke it extends, the suite opens its own mirror with
+            # vm.workspace_open; with auto-mirror on that mirror would be a
+            # duplicate of the auto-opened one and be closed.
+            self.pause_auto_mirror()
             for name, action in steps:
                 try:
                     self.step(name, guarded(action))
@@ -539,6 +543,7 @@ class NotificationsE2E(LoopbackSmoke):
             return False
         finally:
             self.cleanup()
+            self.restore_auto_mirror()
 
 
 def mint_p256_key() -> str:

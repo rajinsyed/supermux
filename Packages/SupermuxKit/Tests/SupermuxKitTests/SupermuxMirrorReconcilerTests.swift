@@ -34,6 +34,21 @@ import Testing
 ///
 /// Scheduling
 /// 19. Reports no follow-up while a suspicion waits for confirmation (it would never confirm).
+///
+/// Duplicates (two local mirrors of one remote workspace, e.g. a reopened
+/// closed window next to the mirror auto-mirror opened to replace it)
+/// 20. Leaves both mirrors open forever (neither is gone nor an orphan).
+/// 21. Closes a duplicate on a single observation (a transient overlap).
+/// 22. Closes the bound, projected mirror and keeps an unbound copy (every
+///     entry point resolves the ref to its bound mirror).
+/// 23. Keeps an unprojected bound mirror over a projected copy, so the orphan
+///     rule then closes the survivor too and nothing shows the workspace.
+/// 24. Picks a different survivor when the mirrors come in another order.
+/// 25. Drops a duplicate while its device is not authoritative, or while an
+///     open of that ref is in flight.
+/// 26. Closes a duplicate while auto-mirror is off: without auto-mirror only
+///     explicit opens (e.g. `cmux vm workspace open`) make mirrors, so a second
+///     one was asked for.
 struct SupermuxMirrorReconcilerTests {
     private typealias Reconciler = SupermuxMirrorReconciler
     private let machine = "device:5E1F10B0-0000-4000-8000-000000000001@dev"
@@ -240,6 +255,67 @@ struct SupermuxMirrorReconcilerTests {
         _ = reconciler.plan(input(devices: devices, hidden: hidden, at: 4))
         let confirmed = reconciler.plan(input(devices: devices, hidden: hidden, at: 5.5))
         #expect(confirmed.unhide == [ref("gone")])
+    }
+
+    // MARK: - Duplicates
+
+    @Test func closesAnUnboundCopyOfABoundMirrorOnlyOnceConfirmed() {
+        var reconciler = Reconciler()
+        let restored = UUID()
+        let mirrors = [mirror("A", local: restored, bound: false), mirror("A", bound: true)]
+        let devices = [device([remote("A")])]
+        let first = reconciler.plan(input(devices: devices, mirrors: mirrors, at: 0))
+        #expect(first.closes.isEmpty, "a single observation must not close a duplicate")
+        #expect(first.followUpAfter != nil)
+        let confirmed = reconciler.plan(input(devices: devices, mirrors: mirrors, at: 1.2))
+        #expect(confirmed.closes == [Reconciler.Close(localWorkspaceID: restored, ref: ref("A"), reason: .duplicate)])
+        #expect(confirmed.opens.isEmpty)
+    }
+
+    @Test func keepsAProjectedCopyOverAnUnprojectedBoundMirror() {
+        var reconciler = Reconciler()
+        let orphan = UUID()
+        let mirrors = [mirror("A", local: orphan, bound: true, projected: false), mirror("A", bound: false, projected: true)]
+        let devices = [device([remote("A")])]
+        _ = reconciler.plan(input(devices: devices, mirrors: mirrors, at: 0))
+        let confirmed = reconciler.plan(input(devices: devices, mirrors: mirrors, at: 1.2))
+        #expect(confirmed.closes.map(\.localWorkspaceID) == [orphan], "only the unprojected mirror closes")
+    }
+
+    @Test func picksTheSameSurvivorWhateverTheMirrorOrder() throws {
+        var reconciler = Reconciler()
+        let low = try #require(UUID(uuidString: "00000000-0000-4000-8000-000000000001"))
+        let high = try #require(UUID(uuidString: "FFFFFFFF-0000-4000-8000-000000000001"))
+        let lowMirror = mirror("A", local: low, bound: false)
+        let highMirror = mirror("A", local: high, bound: false)
+        let devices = [device([remote("A")])]
+        _ = reconciler.plan(input(devices: devices, mirrors: [lowMirror, highMirror], at: 0))
+        let confirmed = reconciler.plan(input(devices: devices, mirrors: [highMirror, lowMirror], at: 1.2))
+        #expect(confirmed.closes.map(\.localWorkspaceID) == [high])
+    }
+
+    @Test func leavesDuplicatesAloneWhileTheDeviceIsNotAuthoritativeOrTheRefIsBusy() {
+        var reconciler = Reconciler()
+        let mirrors = [mirror("A", bound: false), mirror("A", bound: true), mirror("B", bound: false), mirror("B", bound: true)]
+        let offline = [device([remote("A"), remote("B")], authoritative: false)]
+        _ = reconciler.plan(input(devices: offline, mirrors: mirrors, at: 0))
+        let stillOffline = reconciler.plan(input(devices: offline, mirrors: mirrors, at: 5))
+        #expect(stillOffline.closes.isEmpty)
+        var busyReconciler = Reconciler()
+        let online = [device([remote("B")])]
+        let bMirrors = Array(mirrors.suffix(2))
+        _ = busyReconciler.plan(input(devices: online, mirrors: bMirrors, busy: [ref("B")], at: 0))
+        let busy = busyReconciler.plan(input(devices: online, mirrors: bMirrors, busy: [ref("B")], at: 5))
+        #expect(busy.closes.isEmpty)
+    }
+
+    @Test func leavesDuplicatesAloneWithAutoMirrorOff() {
+        var reconciler = Reconciler()
+        let mirrors = [mirror("A", bound: true), mirror("A", bound: false)]
+        let devices = [device([remote("A")])]
+        _ = reconciler.plan(input(autoMirror: false, devices: devices, mirrors: mirrors, at: 0))
+        let later = reconciler.plan(input(autoMirror: false, devices: devices, mirrors: mirrors, at: 5))
+        #expect(later.closes.isEmpty, "with auto-mirror off every mirror was opened on purpose")
     }
 
     // MARK: - Scheduling

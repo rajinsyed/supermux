@@ -34,4 +34,17 @@ extension SupermuxDevicesSocketPayloads {
             "has_overlay": SupermuxComposition.deviceStatusProjector.status(forLocal: workspace.id) != nil,
         ]
     }
+
+    /// What the mirror status projection left in ANY local workspace: its
+    /// remote pill keys, remote log line and progress bar. A workspace that
+    /// stopped being a mirror must carry none of them.
+    func projectedRemoteStatus(_ workspace: Workspace) -> [String: Any] {
+        let prefix = SupermuxDeviceStatusProjector.remoteStatusKeyPrefix
+        let remoteLog = workspace.logEntries.last { $0.source == SupermuxDeviceStatusProjector.remoteLogSource }
+        return [
+            "status_keys": workspace.statusEntries.keys.filter { $0.hasPrefix(prefix) }.sorted(),
+            "log": remoteLog?.message ?? NSNull(),
+            "progress": workspace.progress.map { ["value": $0.value, "label": $0.label ?? NSNull()] as [String: Any] } ?? NSNull(),
+        ]
+    }
 }
