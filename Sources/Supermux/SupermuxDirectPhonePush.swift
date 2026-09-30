@@ -82,9 +82,14 @@ struct SupermuxDirectPhonePush {
         Task { await service.forward(message) }
     }
 
+    /// Sends the banner-less dismiss push. It names this Mac so the phone's
+    /// notification service extension can file `badgeCount` (this Mac's own
+    /// unread count) under it and badge the total over every Mac.
     func forwardDismissed(ids: [String], badgeCount: Int) {
         let message = SupermuxPhonePushMessage(
             kind: .dismiss,
+            macDeviceID: MobileHostIdentity.deviceID(),
+            macInstanceTag: MobileHostIdentity.instanceTag(),
             dismissedIDs: ids,
             badgeCount: badgeCount
         )
