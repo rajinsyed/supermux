@@ -264,6 +264,10 @@ enum FileExplorerWorkspaceRoot: Equatable {
         unavailableDetail: String?,
         target: CloudFileExplorerTarget?
     )
+    // SUPERMUX:begin mirror-file-explorer-device
+    /// A device mirror's folder on the owning Mac (Sources/Supermux/Mirrors/).
+    case supermuxDevice(SupermuxMirrorFileRoot)
+    // SUPERMUX:end mirror-file-explorer-device
 }
 
 // MARK: - Local Provider
@@ -889,6 +893,10 @@ final class FileExplorerStore: ObservableObject {
                 isAvailable: isAvailable,
                 unavailableDetail: unavailableDetail, target: target
             )
+        // SUPERMUX:begin mirror-file-explorer-device
+        case .supermuxDevice(let root):
+            applySupermuxDeviceWorkspaceRoot(root)
+        // SUPERMUX:end mirror-file-explorer-device
         }
     }
     func setWorkspaceRootIdentity(_ identity: UUID?) {
@@ -946,6 +954,17 @@ final class FileExplorerStore: ObservableObject {
         gitStatusGeneration &+= 1
         let generation = gitStatusGeneration, path = rootPath
         let context = resourceContextID, source = gitStatusProvider
+        // SUPERMUX:begin mirror-file-explorer-device
+        // A device mirror's colors come from the owning Mac's own git status.
+        if let device = provider as? SupermuxDeviceFileExplorerProvider, !path.isEmpty {
+            Task { [weak self] in
+                let status = await device.gitStatus()
+                guard let self, self.gitStatusGeneration == generation, self.resourceContextID == context else { return }
+                self.gitStatusByPath = status
+            }
+            return
+        }
+        // SUPERMUX:end mirror-file-explorer-device
         guard !path.isEmpty, provider?.isAvailable == true,
               provider is LocalFileExplorerProvider || provider is SSHFileExplorerProvider else {
             gitStatusByPath = [:]
