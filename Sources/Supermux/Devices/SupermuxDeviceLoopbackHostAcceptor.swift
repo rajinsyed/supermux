@@ -14,12 +14,12 @@ import Foundation
 /// no directory admission and no "Make this Mac discoverable" gate. The
 /// harness is DEBUG-only and explicitly opted into, and managed policy
 /// (`MobileRemoteControlPolicy.isDisabled`) still refuses every connection.
+/// A connection lives until either end closes; the harness itself lives as
+/// long as the app.
 @MainActor
 final class SupermuxDeviceLoopbackHostAcceptor {
     private let peer: CmxIrohAdmittedPeer
     private let layouts: DeviceWorkspaceLayoutHost
-    private var isAccepting = true
-    private var connections: [UUID: Task<Void, Never>] = [:]
 
     init(identity: SupermuxDeviceLoopbackIdentity) throws {
         peer = try identity.admittedPeer()
@@ -46,43 +46,27 @@ final class SupermuxDeviceLoopbackHostAcceptor {
         )
     }
 
-    var activeConnectionCount: Int { connections.count }
-
     /// Called from the transport factory, off the main actor, once per dial.
     nonisolated func accept(_ transport: any CmxByteTransport) {
         Task { @MainActor in self.admit(transport) }
     }
 
-    /// Stops admitting and ends every live loopback connection; the link sees
-    /// its transport close and reconnects only if the harness starts again.
-    func stop() {
-        isAccepting = false
-        for task in connections.values { task.cancel() }
-        connections.removeAll()
-    }
-
     private func admit(_ transport: any CmxByteTransport) {
-        guard isAccepting else {
-            Task { await transport.close() }
-            return
-        }
-        let id = UUID()
         let peer = self.peer
         let layouts = self.layouts
-        connections[id] = Task { [weak self] in
+        cmuxDebugLog("supermux.loopback host admitted connection")
+        Task {
             let exit = await MobileHostService.acceptTransport(
                 transport,
                 authorization: .irohAdmission(peer),
                 hostDeviceID: SupermuxDeviceLoopbackIdentity.deviceID,
                 firstFrameTimeoutNanoseconds: 0,
                 peerRequestHandler: { request in await layouts.handle(request) },
-                isCurrent: { [weak self] in await self?.isAccepting == true }
+                isCurrent: { true }
             )
             await transport.close()
             cmuxDebugLog("supermux.loopback host connection ended: \(String(describing: exit.lifecycle))")
-            self?.connections[id] = nil
         }
-        cmuxDebugLog("supermux.loopback host admitted connection \(id.uuidString.prefix(8))")
     }
 }
 #endif

@@ -31,7 +31,6 @@ final class SupermuxDeviceLoopbackHarness {
     let identity: SupermuxDeviceLoopbackIdentity
     let provider: DeviceSurfaceProvider
     private let record: DeviceDirectoryRecord
-    private let acceptor: SupermuxDeviceLoopbackHostAcceptor
     private let catalog: SurfaceCatalog
 
     /// Whether this launch opted in (environment first, then the default).
@@ -85,6 +84,7 @@ final class SupermuxDeviceLoopbackHarness {
             identity: AuthenticatedSessionIdentity(generation: 0, accountID: SupermuxDeviceLoopbackIdentity.bindingID),
             teamID: nil
         )
+        // The dialer owns the acceptor: link → runtime → factory → acceptor.
         let runtime = DeviceLinkRuntime(
             tokens: tokens,
             routeSelector: DeviceRouteSelector(allowsIroh: true, allowsLegacyTailscale: false)
@@ -94,22 +94,16 @@ final class SupermuxDeviceLoopbackHarness {
         let link = DeviceLink(record: record, runtime: runtime, authorization: LoopbackAuthorization())
         self.identity = identity
         self.record = record
-        self.acceptor = acceptor
         self.catalog = catalog
         provider = DeviceSurfaceProvider(record: record, link: link, catalog: catalog)
     }
 
     /// Registers the provider like the Devices registry does for a new row,
-    /// then hands it the record, which makes the link dial.
+    /// then hands it the record, which makes the link dial. The harness then
+    /// lives as long as the app; there is no stop path to keep in sync.
     func start() {
         catalog.register(provider)
         provider.update(record: record)
-    }
-
-    func stop() {
-        provider.stop()
-        catalog.unregister(machine: identity.machine)
-        acceptor.stop()
     }
 }
 
