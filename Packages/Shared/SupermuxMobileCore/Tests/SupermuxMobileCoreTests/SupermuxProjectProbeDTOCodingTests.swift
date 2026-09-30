@@ -35,7 +35,7 @@ import Testing
         #expect(probe.rootPath == "/x")
         #expect(!probe.exists)
         #expect(probe.gitRemoteURL == nil)
-        #expect(probe.isSuppressed == false)
+        #expect(probe.isSuppressed != true, "absent means not suppressed")
         #expect(probe.gitRemoteIdentity == nil)
     }
 

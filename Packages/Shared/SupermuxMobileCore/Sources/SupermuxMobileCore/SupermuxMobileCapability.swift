@@ -33,6 +33,8 @@ public enum SupermuxMobileCapability: String, CaseIterable, Codable, Sendable, E
     case usageV1 = "supermux.usage.v1"
     /// Prompt-first worktree creation (`agent.options` / `agent.start`) is served.
     case agentLaunchV1 = "supermux.agent_launch.v1"
+    /// Cross-Mac project setup (`project.probe` / `project.clone`) is served.
+    case projectSetupV1 = "supermux.project_setup.v1"
 
     /// Every capability, in declaration order (derived from `CaseIterable`).
     public static let all: [SupermuxMobileCapability] = SupermuxMobileCapability.allCases
