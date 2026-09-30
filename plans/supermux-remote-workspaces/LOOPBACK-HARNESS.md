@@ -133,6 +133,24 @@ restore: quit the app, relaunch it with the opt-in, and the mirror reconnects.
   Close on <Mac>, Cancel as the Return/Esc default, the Mac named once, the worktree outcome and Hide
   Here explained). Hover behavior and the footer are checked visually.
 
+## New tab order E2E
+
+`tests/supermux/loopback_new_tab_order_e2e.py` checks where a new terminal tab lands, on the
+owning side and in the mirror (read as source ids through `surface.catalog`), for every entry
+point: `surface.create` and `mobile.terminal.create` in a background source; in its mirror, Cmd+T
+from the last and the first tab, the tab bar `+` (`supermux.devices.mirror.tab_bar_new_tab`, the
+exact `requestNewTab` call), `surface.create` on the mirror, and "New Terminal to the Right" from
+the tab menu (`supermux.devices.mirror.tab_context_action`, action `newTerminalToRight`) and from
+`tab.action new_terminal_right`; and in a focused local workspace, Cmd+T and `+` from its first tab
+and "New Terminal to the Right". Plain new tabs must append, "to the right" must land right of its
+tab, and both sides must still agree 1.5 s later. The source never selects a tab, so its pane stays
+on its first tab, the headless-Mac state that put every new tab second (touchpoints #660–#664). Each
+step records the before/after orders, the owning pane's selected tab and the latency.
+
+```bash
+CMUX_E2E_SUITES="loopback_new_tab_order_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
+```
+
 ## Mirror rendering E2E
 
 `tests/supermux/loopback_mirror_render_e2e.py` checks what the user sees, not the buffer: it selects
