@@ -120,11 +120,14 @@ final class SupermuxDeviceMirrorCoordinator {
     /// Whether an open is queued or running.
     var isOpening: Bool { openTask != nil || !openQueue.isEmpty }
 
-    /// Refs whose open is queued, in flight, or backing off.
+    /// Refs whose open is queued, in flight (here or from any other opener
+    /// caller), backing off, or whose remote close is in flight.
     var busyRefs: Set<SupermuxRemoteWorkspaceRef> {
         let now = Date()
         let backingOff = retryAfter.filter { $0.value > now }.keys
-        return inFlight.union(openQueue).union(backingOff).union(closer.pendingRemoteCloses)
+        return inFlight.union(openQueue).union(backingOff)
+            .union(opener.openingRefs)
+            .union(closer.pendingRemoteCloses)
     }
 
     private func handle(_ note: Notification) {
@@ -223,6 +226,7 @@ final class SupermuxDeviceMirrorCoordinator {
         while !openQueue.isEmpty {
             let ref = openQueue.removeFirst()
             guard settings.autoMirror, !hidden.contains(ref), index.localWorkspace(showing: ref) == nil,
+                  !opener.openingRefs.contains(ref),
                   let record = devices.record(for: ref), !record.terminals.isEmpty else { continue }
             guard let tabManager = SupermuxDeviceMirrorWindowPicker(index: index).tabManager(forDevice: ref.machine) else {
                 // No main window yet: try again once one registers.
