@@ -23,20 +23,27 @@ remote workspaces, so a SOURCE workspace (host side) and its local MIRROR
      never forwarded (relay not attempted, direct `skip_device_mirror`), and
      the phone badge (and host `notification.reconcile`) exclude it.
   5. host_read_marks_mirror_read: reading the source record reads the mirror copy.
-  6. mirror_read_marks_host_read: reading the mirror copy reads the source record.
-  7. focused_mirror_arrival_acks_host: with the mirror pane focused for a
+  6. mark_unread_survives_host_feed: Mark as Unread on that (host-read) mirror
+     copy survives the next host feed update; only a NEW host read reads it.
+  7. mirror_read_marks_host_read: reading the mirror copy reads the source record.
+  8. focused_mirror_arrival_acks_host: with the mirror pane focused for a
      present user, a new source notification is recorded read on the mirror
      and acknowledged, so the source record turns read.
-  8. unattended_host_keeps_unread: the SOURCE pane focused but the user away:
+  9. unattended_host_keeps_unread: the SOURCE pane focused but the user away:
      the notification stays unread (and the direct lane is not skipped as
      focused); present: it is recorded read (`skip_focused_pane`).
-  9. burst_rows_all_delivered: 7 notifications on 7 source terminals at once (over
+ 10. app_focused_setting_keeps_background_unread: with upstream's
+     `notifications.suppressWhenAppFocused` on and cmux frontmost for a present
+     user, a notification for panes in workspaces the user is NOT looking at
+     stays unread on both the source and the mirror (the setting withholds only
+     the banner), and the source is not skipped as the focused pane.
+ 11. burst_rows_all_delivered: 7 notifications on 7 source terminals at once (over
      the 5-row admission burst) all reach the mirror without another feed event.
- 10. phone_push_status_over_link: `mobile.supermux.phone_push.status` over the
+ 12. phone_push_status_over_link: `mobile.supermux.phone_push.status` over the
      Mac link is sane and carries no key material.
- 11. share_refused_for_non_mac_callers: `phone_push.share` is refused for an
+ 13. share_refused_for_non_mac_callers: `phone_push.share` is refused for an
      iOS peer, the Stack-bearer path and an in-process caller.
- 12. share_over_mac_link: over the Mac link, a share installs a key where none
+ 14. share_over_mac_link: over the Mac link, a share installs a key where none
      exists (0600 files, 0700 dir), refuses a different key without touching
      the file, merges registrations, and the link-connect coordinator reports
      the peer up to date. Scratch files are removed afterwards.
@@ -156,8 +163,36 @@ class NotificationsE2E(LoopbackSmoke):
         decisions = self.hook("push_decisions").get("decisions") or []
         return next((d for d in reversed(decisions) if norm(d.get("notification_id")) == norm(notification_id)), None)
 
-    def overrides(self, **values: str) -> Dict[str, Any]:
+    def overrides(self, **values: Any) -> Dict[str, Any]:
         return self.hook("notification_overrides", values)
+
+    def look_away_from_source_and_mirror(self) -> List[str]:
+        """Selects, in every window holding the source or its mirror, a
+        workspace that is neither, so neither pane is in view. Returns the
+        workspaces it selected."""
+        busy = {norm(self.source_workspace_id), norm(self.mirror_workspace_id)}
+        selected: List[str] = []
+        for window in (self.client.call("window.list", {}) or {}).get("windows") or []:
+            window_id = window.get("id")
+            rows = (self.client.call("workspace.list", {"window_id": window_id}) or {}).get("workspaces") or []
+            ids = [str(row.get("id") or "") for row in rows]
+            if not any(norm(workspace_id) in busy for workspace_id in ids):
+                continue
+            other = next((w for w in ids if w and norm(w) not in busy), None)
+            if other is None:
+                created = self.client.call(
+                    "workspace.create",
+                    {"title": f"notify-e2e-other-{self.nonce}", "focus": False, "window_id": window_id},
+                ) or {}
+                other = str(created.get("workspace_id") or "")
+                if not other:
+                    raise SmokeFailure(f"workspace.create returned no workspace_id: {created}")
+                self.facts.setdefault("other_workspaces_created", []).append(other)
+            self.client.call("workspace.select", {"workspace_id": other})
+            selected.append(other)
+        if not selected:
+            raise SmokeFailure("found no window holding the source or the mirror")
+        return selected
 
     def app_focus(self, state: str) -> None:
         self.client.call("app.focus_override.set", {"state": state})
@@ -298,6 +333,27 @@ class NotificationsE2E(LoopbackSmoke):
             raise SmokeFailure(f"source record flipped back: {source}")
         return {"mirror_copy_is_read": copy.get("is_read"), "source_is_read": source.get("is_read")}
 
+    def check_mark_unread_survives_host_feed(self) -> Dict[str, Any]:
+        title = self.facts["arrive_title"]
+        copy = self.record_titled(title, self.mirror_workspace_id or "")
+        if not copy or not copy.get("is_read"):
+            raise SmokeFailure(f"expected the host-read mirror copy to be read first: {copy}")
+        marked = self.hook("notification_mark_unread", {"id": copy["id"]})
+        if marked.get("is_read") is not False:
+            raise SmokeFailure(f"Mark as Unread did not take: {marked}")
+        # Any new host notification changes the host feed; its mirror copy
+        # proves the viewer refetched (and re-ran the host-read mirror).
+        next_title = f"e2e-after-unread-{self.nonce}"
+        self.notify_socket(self.facts["source_surface_id"], next_title, "the host feed changes")
+        self.mirror_copy(next_title)
+        time.sleep(1.5)
+        copy = self.record_titled(title, self.mirror_workspace_id or "")
+        if not copy or copy.get("is_read"):
+            raise SmokeFailure("the next host feed update undid Mark as Unread on the mirror copy")
+        source = self.record_titled(title, self.source_workspace_id or "")
+        self.client.call("notification.mark_read", {"id": copy["id"]})
+        return {"mirror_copy_is_read": copy.get("is_read"), "source_is_read": (source or {}).get("is_read")}
+
     def check_mirror_read_marks_host_read(self) -> Dict[str, Any]:
         title = f"e2e-viewer-read-{self.nonce}"
         self.notify_socket(self.facts["source_surface_id"], title, "viewer read")
@@ -351,6 +407,40 @@ class NotificationsE2E(LoopbackSmoke):
         finally:
             self.reset_overrides()
             self.client.call("notification.mark_read", {"workspace_id": self.source_workspace_id})
+
+    def check_app_focused_setting_keeps_background_unread(self) -> Dict[str, Any]:
+        stored_before = self.overrides().get("suppress_when_app_focused_stored")
+        selected = self.look_away_from_source_and_mirror()
+        self.app_focus("active")
+        try:
+            settings = self.overrides(presence="present", window_key="key", suppress_when_app_focused=True)
+            if settings.get("suppress_when_app_focused") is not True:
+                raise SmokeFailure(f"could not turn on suppressWhenAppFocused: {settings}")
+            title = f"e2e-app-focused-{self.nonce}"
+            self.notify_socket(self.facts["source_surface_id"], title, "a pane nobody is looking at")
+            source = self.source_record(title)
+            copy = self.mirror_copy(title)
+            decision = wait_for("the source decision", lambda: self.decision_for(source["id"]), self.timeout_s)
+            time.sleep(1.5)
+            source = self.record_titled(title, self.source_workspace_id or "") or {}
+            copy = self.record_titled(title, self.mirror_workspace_id or "") or {}
+            if source.get("is_read"):
+                raise SmokeFailure("suppressWhenAppFocused recorded a background pane's notification read")
+            if copy.get("is_read"):
+                raise SmokeFailure("suppressWhenAppFocused recorded a background mirror pane's copy read")
+            if decision.get("direct") == "skip_focused_pane":
+                raise SmokeFailure("the direct lane skipped a background pane as the focused pane")
+            return {
+                "selected_workspaces": selected,
+                "source_is_read": source.get("is_read"),
+                "mirror_copy_is_read": copy.get("is_read"),
+                "direct": decision.get("direct"),
+            }
+        finally:
+            self.overrides(suppress_when_app_focused="live" if stored_before is None else bool(stored_before))
+            self.reset_overrides()
+            for workspace_id in (self.source_workspace_id, self.mirror_workspace_id):
+                self.client.call("notification.mark_read", {"workspace_id": workspace_id})
 
     def check_burst_rows_all_delivered(self) -> Dict[str, Any]:
         surfaces = [self.facts["source_surface_id"]]
@@ -490,6 +580,11 @@ class NotificationsE2E(LoopbackSmoke):
         if self.keep:
             return
         super().cleanup()
+        for workspace_id in self.facts.get("other_workspaces_created") or []:
+            try:
+                self.client.call("workspace.close", {"workspace_id": workspace_id})
+            except SmokeFailure as error:
+                self.facts.setdefault("cleanup_errors", []).append(str(error))
         if self.project_id:
             try:
                 self.link_request("mobile.supermux.project.delete", {"project_id": self.project_id})
@@ -506,9 +601,11 @@ class NotificationsE2E(LoopbackSmoke):
             ("notification_reaches_mirror", self.check_notification_reaches_mirror),
             ("viewer_skips_phone", self.check_viewer_skips_phone),
             ("host_read_marks_mirror_read", self.check_host_read_marks_mirror_read),
+            ("mark_unread_survives_host_feed", self.check_mark_unread_survives_host_feed),
             ("mirror_read_marks_host_read", self.check_mirror_read_marks_host_read),
             ("focused_mirror_arrival_acks_host", self.check_focused_mirror_arrival_acks_host),
             ("unattended_host_keeps_unread", self.check_unattended_host_keeps_unread),
+            ("app_focused_setting_keeps_background_unread", self.check_app_focused_setting_keeps_background_unread),
             ("burst_rows_all_delivered", self.check_burst_rows_all_delivered),
             ("phone_push_status_over_link", self.check_phone_push_status_over_link),
             ("share_refused_for_non_mac_callers", self.check_share_refused_for_non_mac_callers),
