@@ -19,6 +19,11 @@ private actor APNsRequestRecorder {
     }
 }
 
+/// Lets a transport closure call back into the service it was built for.
+private final class ServiceBox: @unchecked Sendable {
+    var service: SupermuxPhonePushService?
+}
+
 @Suite(.serialized) struct SupermuxPhonePushServiceTests {
     @Test func visibleNotificationUsesSandboxTopicAndCmuxDeepLinkPayload() async throws {
         let directory = try temporaryDirectory()
@@ -93,6 +98,52 @@ private actor APNsRequestRecorder {
         #expect(cmux["notificationId"] as? String == "notification-1")
     }
 
+    /// Each Mac's badge counts only its own unread notifications, so the
+    /// phone's notification service extension must see every push to keep the
+    /// per-Mac counts and badge their total: a push it never sees applies one
+    /// Mac's count as the whole badge.
+    @Test func everyVisiblePushWakesTheExtensionWithItsMac() async throws {
+        for hideContent in [false, true] {
+            let payload = try await firstPayload(for: SupermuxPhonePushMessage(
+                kind: .notify,
+                title: "Claude Code",
+                body: "Task finished",
+                macDeviceID: "mac-1",
+                macInstanceTag: "default",
+                notificationID: "notification-1",
+                badgeCount: 2,
+                hideContent: hideContent
+            ))
+            let aps = try #require(payload["aps"] as? [String: Any])
+            let cmux = try #require(payload["cmux"] as? [String: Any])
+            #expect(aps["mutable-content"] as? Int == 1)
+            #expect(aps["badge"] as? Int == 2)
+            #expect(cmux["macDeviceId"] as? String == "mac-1")
+        }
+    }
+
+    @Test func dismissPushWakesTheExtensionWithItsMacAndStaysInvisible() async throws {
+        let payload = try await firstPayload(for: SupermuxPhonePushMessage(
+            kind: .dismiss,
+            macDeviceID: "mac-1",
+            macInstanceTag: "default",
+            dismissedIDs: ["notification-1"],
+            badgeCount: 1
+        ))
+        let aps = try #require(payload["aps"] as? [String: Any])
+        let cmux = try #require(payload["cmux"] as? [String: Any])
+        #expect(aps["content-available"] as? Int == 1)
+        #expect(aps["mutable-content"] as? Int == 1)
+        // An extension runs only for a push with an alert; empty strings keep
+        // this one invisible (upstream's encrypted dismiss does the same).
+        #expect(aps["alert"] as? [String: String] == ["title": "", "body": ""])
+        #expect(aps["sound"] == nil)
+        #expect(aps["badge"] as? Int == 1)
+        #expect(cmux["dismissedIds"] as? [String] == ["notification-1"])
+        #expect(cmux["macDeviceId"] as? String == "mac-1")
+        #expect(cmux["macInstanceTag"] as? String == "default")
+    }
+
     @Test func providerRejectsAnyBundleOutsideTheFixedSupermuxTopic() async throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -153,6 +204,54 @@ private actor APNsRequestRecorder {
         await service.forward(message)
 
         #expect(await recorder.snapshot().count == 1)
+    }
+
+    /// A share or a phone registration can land while `forward` waits on APNs
+    /// (actor reentrancy). Pruning the stale token that APNs rejected must not
+    /// write back the list read before the sends, or the new token is lost and
+    /// this Mac stops reaching the phone.
+    @Test func pruningAfterTheSendsKeepsATokenRegisteredMeanwhile() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try writeCredentials(to: directory)
+        let staleToken = String(repeating: "ef", count: 32)
+        let rotatedToken = String(repeating: "cd", count: 32)
+        let serviceBox = ServiceBox()
+        let service = SupermuxPhonePushService(
+            baseDirectory: directory,
+            transport: { request in
+                // While APNs "answers" for the stale token, the rotated token
+                // is registered on the same actor (a share or `register`).
+                _ = try await serviceBox.service?.register(
+                    deviceID: "00000000-0000-0000-0000-000000000009",
+                    deviceToken: rotatedToken,
+                    bundleID: SupermuxPhonePushService.supportedBundleID,
+                    environment: .sandbox,
+                    enabled: true
+                )
+                guard let url = request.url,
+                      let response = HTTPURLResponse(
+                          url: url,
+                          statusCode: 410,
+                          httpVersion: "HTTP/2",
+                          headerFields: nil
+                      ) else { throw PhonePushTestError.invalidResponse }
+                return (Data(#"{"reason":"Unregistered"}"#.utf8), response)
+            }
+        )
+        serviceBox.service = service
+        _ = try await service.register(
+            deviceID: "00000000-0000-0000-0000-000000000008",
+            deviceToken: staleToken,
+            bundleID: SupermuxPhonePushService.supportedBundleID,
+            environment: .sandbox,
+            enabled: true
+        )
+
+        await service.forward(SupermuxPhonePushMessage(kind: .dismiss, dismissedIDs: ["id"], badgeCount: 0))
+
+        let tokens = await service.loadRegistrations().map(\.deviceToken)
+        #expect(tokens == [rotatedToken])
     }
 
     @Test func tokenRotationReplacesALegacyRegistrationForTheSameDevice() async throws {
@@ -289,6 +388,38 @@ private actor APNsRequestRecorder {
             deliveredIDs.append(contentsOf: try #require(cmux["dismissedIds"] as? [String]))
         }
         #expect(deliveredIDs == dismissedIDs)
+    }
+
+    /// The decoded JSON body of the first APNs request `message` produces.
+    private func firstPayload(for message: SupermuxPhonePushMessage) async throws -> [String: Any] {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try writeCredentials(to: directory)
+        let recorder = APNsRequestRecorder()
+        let service = SupermuxPhonePushService(
+            baseDirectory: directory,
+            transport: { request in
+                await recorder.record(request)
+                guard let url = request.url,
+                      let response = HTTPURLResponse(
+                          url: url,
+                          statusCode: 200,
+                          httpVersion: "HTTP/2",
+                          headerFields: nil
+                      ) else { throw PhonePushTestError.invalidResponse }
+                return (Data(), response)
+            }
+        )
+        _ = try await service.register(
+            deviceID: "00000000-0000-0000-0000-000000000005",
+            deviceToken: String(repeating: "ab", count: 32),
+            bundleID: SupermuxPhonePushService.supportedBundleID,
+            environment: .sandbox,
+            enabled: true
+        )
+        await service.forward(message)
+        let body = try #require(await recorder.snapshot().first?.httpBody)
+        return try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
     }
 
     private func temporaryDirectory() throws -> URL {

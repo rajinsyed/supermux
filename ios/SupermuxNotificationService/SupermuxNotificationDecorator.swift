@@ -32,10 +32,19 @@ import UserNotifications
 /// throwing `updating(from:)` returns the content unchanged. A push must never
 /// be lost to a decoration problem, and the caller's expiration handler still
 /// delivers the undecorated content if this runs out of time.
+///
+/// **The badge is every Mac's total.** Each Mac pushes its OWN unread count as
+/// `aps.badge` (a notification mirrored from another Mac is that Mac's to
+/// badge), so before anything else this records the pushing Mac's count in
+/// ``SupermuxPhoneBadgeLedger`` and delivers the sum over every Mac. It runs
+/// on every direct push, dismissals included, and edits `content` in place, so
+/// the expiration handler's undecorated delivery carries the total too.
 enum SupermuxNotificationDecorator {
     /// The communication-notification form of `content`, or `content` itself
-    /// when it carries no Supermux project or cannot be decorated.
+    /// when it carries no Supermux project or cannot be decorated. Either way
+    /// its badge is the total over every Mac.
     static func decorated(_ content: UNMutableNotificationContent) -> UNNotificationContent {
+        applyBadgeTotal(to: content)
         guard let project = PushProject(userInfo: content.userInfo) else { return content }
 
         // The alert title is the agent ("Claude Code"), which is what should
@@ -111,6 +120,17 @@ enum SupermuxNotificationDecorator {
 
     private static func cmuxPayload(in userInfo: [AnyHashable: Any]) -> NSDictionary? {
         userInfo["cmux"] as? NSDictionary
+    }
+
+    /// Replaces the pushing Mac's own count with the badge over every Mac.
+    /// Left alone without a count, a Mac id or the shared app group (a build
+    /// signed without it badges one Mac's count, as before).
+    private static func applyBadgeTotal(to content: UNMutableNotificationContent) {
+        guard let count = content.badge?.intValue,
+              let cmux = content.userInfo["cmux"] as? [String: Any],
+              let macDeviceID = cmux["macDeviceId"] as? String,
+              let ledger = SupermuxPhoneBadgeLedger.shared() else { return }
+        content.badge = NSNumber(value: ledger.total(recording: count, forMacDeviceID: macDeviceID))
     }
 }
 

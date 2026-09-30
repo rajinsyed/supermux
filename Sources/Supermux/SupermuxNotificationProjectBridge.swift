@@ -1,4 +1,5 @@
 import AppKit
+import CmuxSurfaceCatalogModel
 import Foundation
 import SupermuxKit
 import SupermuxMobileCore
@@ -68,26 +69,50 @@ enum SupermuxNotificationProjectBridge {
     static func projectIcons(
         for notifications: [TerminalNotification]
     ) -> [String: NSImage] {
-        projectIcons(
-            for: notifications,
-            imageForProject: { SupermuxComposition.projectIconStore.image(for: $0) }
-        )
+        projectIcons(for: notifications, imageForSource: iconImage(for:))
     }
 
     /// Testable variant with an injected icon lookup.
     static func projectIcons(
         for notifications: [TerminalNotification],
-        imageForProject: (UUID) -> NSImage?
+        imageForSource: (SupermuxNotificationIconSource) -> NSImage?
     ) -> [String: NSImage] {
         var icons: [String: NSImage] = [:]
         for notification in notifications {
             guard let project = notification.project,
                   icons[project.id] == nil,
-                  let uuid = UUID(uuidString: project.id),
-                  let image = imageForProject(uuid)
+                  let source = iconSource(for: project, origin: notification.origin),
+                  let image = imageForSource(source)
             else { continue }
             icons[project.id] = image
         }
         return icons
+    }
+
+    /// Where a notification's project icon is looked up: a record mirrored
+    /// from another Mac carries that Mac's project id, which only that Mac's
+    /// fetched icons know (``SupermuxNotificationIconSource``).
+    static func iconSource(
+        for project: SupermuxNotificationProject,
+        origin: TerminalNotificationOrigin
+    ) -> SupermuxNotificationIconSource? {
+        let mirroredFromMachineID: String?
+        switch origin {
+        case .deviceMac(let machineID): mirroredFromMachineID = machineID
+        case .local, .sshRelay, .cloudVM: mirroredFromMachineID = nil
+        }
+        return SupermuxNotificationIconSource(projectID: project.id, mirroredFromMachineID: mirroredFromMachineID)
+    }
+
+    /// The icon already in memory for `source`: this Mac's icon store, or
+    /// the other Mac's icons fetched by the remote-projects model. Never
+    /// probes the filesystem or the network.
+    static func iconImage(for source: SupermuxNotificationIconSource) -> NSImage? {
+        switch source {
+        case .local(let projectID):
+            return SupermuxComposition.projectIconStore.image(for: projectID)
+        case .remote(let machineID, let projectID):
+            return SupermuxComposition.remoteProjects.icon(machine: SurfaceMachineID(rawValue: machineID), projectID: projectID)
+        }
     }
 }

@@ -2,6 +2,7 @@
 import CMUXMobileCore
 import CmuxCloud
 import CmuxIrohTransport
+import CmuxSettings
 import CmuxSurfaceCatalogModel
 import Foundation
 import SupermuxKit
@@ -15,9 +16,13 @@ import SupermuxMobileCore
 ///   local unread count and the phone-facing badge.
 /// - `notification_records {}`: local records with origin, read state,
 ///   correlation key and project (what `notification.list` leaves out).
-/// - `notification_overrides {presence?, window_key?}`: `"present"`/`"away"`
-///   and `"key"`/`"not_key"` overrides for the focused-pane policy; `"live"`
-///   clears one.
+/// - `notification_overrides {presence?, window_key?, suppress_when_app_focused?}`:
+///   `"present"`/`"away"` and `"key"`/`"not_key"` overrides for the
+///   focused-pane policy (`"live"` clears one), and upstream's
+///   `notifications.suppressWhenAppFocused` setting (`true`/`false`, `"live"`
+///   removes the stored value). Reports each current value.
+/// - `notification_mark_unread {id}`: Mark as Unread on one record, through the
+///   same user-action path as the notification row's menu item.
 /// - `phone_push_debug {}`: the direct lane's directory, its status, the share
 ///   coordinator's attempts and pending notification retries.
 /// - `phone_push_probe {caller, method, params?}`: runs `phone_push.status` /
@@ -28,7 +33,7 @@ import SupermuxMobileCore
 enum SupermuxDeviceNotificationSocketCommands {
     private static let methods: Set<String> = [
         "push_decisions", "notification_records", "notification_overrides",
-        "phone_push_debug", "phone_push_probe", "phone_push_share_now",
+        "notification_mark_unread", "phone_push_debug", "phone_push_probe", "phone_push_share_now",
     ]
 
     struct HookError: LocalizedError {
@@ -50,6 +55,8 @@ enum SupermuxDeviceNotificationSocketCommands {
             return badgeCounts().merging(["records": records()]) { $1 }
         case "notification_overrides":
             return try overrides(params)
+        case "notification_mark_unread":
+            return try markUnread(params)
         case "phone_push_debug":
             return await phonePushDebug()
         case "phone_push_probe":
@@ -112,11 +119,33 @@ enum SupermuxDeviceNotificationSocketCommands {
             default: throw HookError(message: "window_key must be key, not_key or live")
             }
         }
+        let suppressKey = NotificationsCatalogSection().suppressWhenAppFocused.userDefaultsKey
+        switch params["suppress_when_app_focused"] {
+        case nil: break
+        case let value as Bool: UserDefaults.standard.set(value, forKey: suppressKey)
+        case let value as String where value == "live": UserDefaults.standard.removeObject(forKey: suppressKey)
+        default: throw HookError(message: "suppress_when_app_focused must be true, false or live")
+        }
         return [
             "presence_source": SupermuxMacPresence.source(),
             "user_is_present": SupermuxMacPresence.isUserPresent(),
             "window_key_override": SupermuxFocusedPaneNotificationPolicy.debugTargetWindowIsKey.map { $0 as Any } ?? NSNull(),
+            "suppress_when_app_focused": TerminalNotificationStore.isSuppressWhenAppFocusedEnabled(),
+            "suppress_when_app_focused_stored": UserDefaults.standard.object(forKey: suppressKey) ?? NSNull(),
         ]
+    }
+
+    private static func markUnread(_ params: [String: Any]) throws -> [String: Any] {
+        guard let store = AppDelegate.shared?.notificationStore,
+              let id = (params["id"] as? String).flatMap(UUID.init(uuidString:)),
+              let notification = store.notifications.first(where: { $0.id == id }) else {
+            throw HookError(message: "id must name a notification record")
+        }
+        if notification.isRead {
+            store.toggleReadFromUserAction(notification)
+        }
+        let isRead = store.notifications.first { $0.id == id }?.isRead ?? false
+        return ["id": id.uuidString, "is_read": isRead]
     }
 
     private static func phonePushDebug() async -> [String: Any] {

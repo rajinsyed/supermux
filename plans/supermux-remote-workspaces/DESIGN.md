@@ -65,7 +65,10 @@ the main Mac is closed), and the same on iOS.
    `set-progress` and `log` pills from the remote render on the mirror row. Host pokes sync on those
    changes and on branch/PR changes.
 8. **Phone push comes from the Mac that runs the agent.** The viewer Mac never forwards `.deviceMac`
-   notifications to the phone (and excludes them from the phone badge). The remote Mac pushes itself:
+   notifications to the phone (and excludes them from its phone badge: every Mac pushes and reports
+   only its OWN unread count, and the phone badges the total, keeping the latest count per Mac in
+   the app group — `SupermuxPhoneBadgeLedger`, written by the notification service extension on
+   every direct push and by the app from the foreground Mac's live count). The remote Mac pushes itself:
    the iPhone registers its APNs token with every connected Mac; the direct payload gains
    `macInstanceTag` so taps route; host focus-suppression becomes presence-aware (idle/locked Mac
    still pushes); Macs can share push credentials + known phone tokens with each other over the

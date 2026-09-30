@@ -3,11 +3,18 @@ import Foundation
 /// Resolves whether a notification target is the pane already visible to the user.
 ///
 /// "Visible" needs all of: an exact pane target, that pane focused in the
-/// frontmost cmux window (`externalDeliverySuppressed`), its window key, and
-/// someone actually at this Mac (``SupermuxMacPresence``). The presence rule
-/// keeps an unattended Mac from recording an agent's notification as already
-/// read (and skipping the phone push) just because its pane happens to be
-/// focused on a locked or idle screen.
+/// frontmost cmux window (`exactPaneFocused`, the store's
+/// `isFocusedSurfaceArrival`), its window key, and someone actually at this
+/// Mac (``SupermuxMacPresence``). The presence rule keeps an unattended Mac
+/// from recording an agent's notification as already read (and skipping the
+/// phone push) just because its pane happens to be focused on a locked or idle
+/// screen.
+///
+/// Never feed it the store's external-delivery gate: with upstream's
+/// `notifications.suppressWhenAppFocused` on, that gate is merely "cmux is
+/// frontmost", which would record every pane's notification read (and, for a
+/// mirror pane, acknowledge it to the other Mac). That setting withholds only
+/// the banner.
 @MainActor
 struct SupermuxFocusedPaneNotificationPolicy {
     #if DEBUG
@@ -26,12 +33,17 @@ struct SupermuxFocusedPaneNotificationPolicy {
 
     /// Returns whether the exact pane target is already visible and focused
     /// by a user who is at this Mac.
+    /// - Parameters:
+    ///   - surfaceID: The notification's pane, or `nil` for a workspace target.
+    ///   - exactPaneFocused: That pane is the focused surface of the selected
+    ///     workspace while cmux is frontmost (`isFocusedSurfaceArrival`).
+    ///   - targetWindowIsKey: Whether the target's window is key.
     func targetIsAlreadyVisible(
         surfaceID: UUID?,
-        externalDeliverySuppressed: Bool,
+        exactPaneFocused: Bool,
         targetWindowIsKey: Bool = true
     ) -> Bool {
-        guard surfaceID != nil, externalDeliverySuppressed, Self.windowIsKey(targetWindowIsKey) else {
+        guard surfaceID != nil, exactPaneFocused, Self.windowIsKey(targetWindowIsKey) else {
             return false
         }
         // Evaluated last: presence reads system state, so only a focused-pane
