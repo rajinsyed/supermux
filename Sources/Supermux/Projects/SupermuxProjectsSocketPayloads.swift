@@ -112,7 +112,7 @@ enum SupermuxProjectsSocketPayloads {
         let unread = TerminalNotificationStore.shared.sidebarUnread
         let rows = SupermuxNestedWorkspaceRows.rows(
             for: tabManager,
-            details: .current(),
+            includePullRequest: true,
             unreadCount: { unread.unreadCount(forWorkspaceId: $0) }
         )
         var projectOrder: [UUID] = []
@@ -126,6 +126,8 @@ enum SupermuxProjectsSocketPayloads {
         let flat = SupermuxMainListFilter.tabsForMainList(tabManager.tabs, tabManager: tabManager)
         return [
             "window_id": AppDelegate.shared?.windowId(for: tabManager)?.uuidString ?? NSNull(),
+            // The sidebar font scale both row kinds draw at (`supermuxSidebarFontScale`).
+            "font_scale": SidebarTabItemFontScale.scale(for: GhosttyConfig.load().sidebarFontSize),
             "projects": projectOrder.map { id -> [String: Any] in
                 ["project_id": id.uuidString, "rows": (rowsByProject[id] ?? []).map(nestedRow)]
             },
@@ -142,11 +144,48 @@ enum SupermuxProjectsSocketPayloads {
             "unread_count": row.unreadCount,
             // What `SupermuxOpenWorkspaceRowView` labels the row with.
             "accessibility_label": row.accessibilityLabel,
-            "status_pills": row.statusPills.map { pill -> [String: Any] in
-                ["key": pill.key, "text": pill.text, "icon": pill.icon ?? NSNull(), "color": pill.colorHex ?? NSNull()]
-            },
-            "progress": row.progress.map { ["value": $0.value, "label": $0.label ?? NSNull()] as [String: Any] } ?? NSNull(),
+            "activity": row.activity.rawValue,
+            // The Mac icon `SupermuxOpenWorkspaceRowView` draws, and where.
+            "device_icon": row.device.map(deviceIcon(for:)) ?? NSNull(),
+            "device_icon_placement": row.deviceIconPlacement.map(placementName) ?? NSNull(),
         ]
+    }
+
+    private static func placementName(_ placement: SupermuxDeviceIconPlacement) -> String {
+        switch placement {
+        case .beforeBranch: return "before_branch"
+        case .beforeTitle: return "before_title"
+        }
+    }
+
+    /// What a row draws for the Mac it lives on: the small Mac + cloud icon
+    /// (`SupermuxRemoteMacIcon`, no name capsule), its tooltip naming the Mac.
+    static func deviceIcon(name: String, state: SupermuxDeviceChipState) -> [String: Any] {
+        [
+            "style": "icon",
+            "symbol": SupermuxRemoteMacIcon.symbol,
+            "badge_symbol": SupermuxRemoteMacIcon.badgeSymbol,
+            "help": SupermuxRemoteMacIcon.helpText(name: name, state: state),
+            "dimmed": state.isDimmed,
+        ]
+    }
+
+    private static func deviceIcon(for device: SupermuxProjectDevice) -> [String: Any] {
+        deviceIcon(name: device.name, state: SupermuxRemoteMacIcon.state(of: device))
+    }
+
+    private static func flatDeviceIcon(label: String) -> [String: Any] {
+        let name = SupermuxFlatRowDeviceChip.macName(fromDeviceWorkspaceLabel: label)
+        return deviceIcon(name: name, state: SupermuxFlatRowDeviceChip.state(ofMacNamed: name, devices: SupermuxComposition.devices.devices))
+    }
+
+    /// Where a flat mirror row draws its Mac icon: first on its
+    /// branch/directory line, or before the title when it draws none.
+    static func flatDeviceIconPlacement(
+        _ snapshot: SidebarWorkspaceSnapshotBuilder.Snapshot,
+        settings: SidebarTabItemSettingsSnapshot
+    ) -> String {
+        SupermuxFlatRowDeviceChip.drawsOnBranchLine(snapshot, settings: settings) ? "branch_line" : "title_line"
     }
 
     private static func flatRow(_ workspace: Workspace, settings: SidebarTabItemSettingsSnapshot) -> [String: Any] {
@@ -162,6 +201,12 @@ enum SupermuxProjectsSocketPayloads {
             "device_label": snapshot.deviceWorkspaceLabel ?? NSNull(),
             "subtitle_candidates": snapshot.compactBranchDirectoryCandidates,
             "branch_directory_lines": snapshot.branchDirectoryLines.map(\.directoryCandidates),
+            "activity": snapshot.supermuxActivity.rawValue,
+            // The Mac icon `SupermuxFlatRowDeviceChip` draws, and where.
+            "device_icon": snapshot.deviceWorkspaceLabel.map(flatDeviceIcon(label:)) ?? NSNull(),
+            "device_icon_placement": snapshot.deviceWorkspaceLabel.map { _ in
+                flatDeviceIconPlacement(snapshot, settings: settings)
+            } ?? NSNull(),
         ]
     }
 

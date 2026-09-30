@@ -17,11 +17,21 @@ showing it. Checks:
                                          grouped, even when a mirror is moved to the top
   4. nested_mirror_label_names_mac       a nested mirror's accessibility label says which
                                          Mac it is on; a local row's label is its title
-  5. nested_rows_show_status             `set_status` / `set_progress` on a local workspace
-                                         show on its nested row and on its mirror's
-  6. flat_mirror_subtitle_omits_mac      a flat mirror's directory line does not repeat the
-                                         Mac name (its chip already names it)
-  7. close_prompt_is_safe                "Close on <Mac>" is destructive and not the Return
+  5. nested_mirror_icon_before_branch    a nested mirror marks its Mac with the small Mac +
+                                         cloud icon (no name chip) right before its branch,
+                                         its tooltip "On <Mac>"; a local row draws none
+  6. nested_rows_show_no_status          `set_status` / `set_progress` on a local workspace,
+                                         including Claude's lifecycle-less "Idle" pill, show
+                                         on neither its nested row nor its mirror's (as on
+                                         main); both rows still report their activity
+  7. working_spinner_stays_small         with the source's agent working, the amber spinner
+                                         of its nested row and of its mirror's is the 6·scale
+                                         one (pixel-measured in a window screenshot, kept
+                                         next to the report)
+  8. flat_mirror_subtitle_omits_mac      a flat mirror's directory line does not repeat the
+                                         Mac name (its icon's tooltip names it), and its Mac
+                                         icon sits on that line
+  9. close_prompt_is_safe                "Close on <Mac>" is destructive and not the Return
                                          default; Cancel is; the Mac name appears at most
                                          once in the text and once in the button; the text
                                          says the worktree stays and explains Hide Here
@@ -45,7 +55,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from loopback_auto_mirror_e2e import (  # noqa: E402
@@ -57,12 +67,61 @@ from loopback_auto_mirror_e2e import (  # noqa: E402
     up,
     wait_for,
 )
+from loopback_mirror_render_e2e import decode_png  # noqa: E402
+
+# The glyph that marks a row living on another Mac (with a small cloud badge).
+MAC_ICON_SYMBOL = "laptopcomputer"
+ACTIVITIES = {"idle", "working", "needsInput", "ready"}
+# The working spinner's braille dots at the rows' 6·scale size are at most 4pt
+# wide and 6.5pt tall; at the oversized 10·scale they were 6pt wide or 10.5pt
+# tall in every frame. Limits sit between (times the sidebar font scale).
+SPINNER_MAX_WIDTH_PT = 5.0
+SPINNER_MAX_HEIGHT_PT = 8.5
+# How far left of the terminal pane the spinners are searched for: the
+# sidebar's trailing edge, where every row draws its spinner (clear of the
+# project avatars on the left).
+SPINNER_BAND_PT = 70
 
 
 def git(*args: str, cwd: Path) -> None:
     result = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, timeout=60)
     if result.returncode != 0:
         raise Failure(f"git {' '.join(args)}: {result.stderr.strip()}")
+
+
+def is_amber(pixel: bytes) -> bool:
+    """The spinner's amber (Tailwind amber-500): pixels at least about half
+    covered by it, on the dark or the light sidebar."""
+    red, green, blue = pixel[0], pixel[1], pixel[2]
+    return red >= 120 and red - blue >= 80 and 0.45 * red <= green <= 0.8 * red
+
+
+def amber_marks(path: str, left_pt: float, width_pt: float, window_width_pt: float) -> Tuple[List[Dict[str, Any]], float]:
+    """Amber marks in a full-height strip of a window screenshot (points from
+    the window's left edge), one per sidebar row: amber pixels closer than 6pt
+    vertically belong to the same mark. Sizes in points; also returns the
+    screenshot's pixels per point."""
+    png_width, png_height, bpp, rows = decode_png(path)
+    scale = png_width / window_width_pt
+    left, right = max(0, int(left_pt * scale)), min(png_width, int((left_pt + width_pt) * scale))
+    marks: List[Dict[str, int]] = []
+    for y in range(png_height):
+        row = rows[y]
+        for x in range(left, right):
+            if not is_amber(row[x * bpp:x * bpp + 3]):
+                continue
+            if marks and y - marks[-1]["bottom"] <= 6 * scale:
+                mark = marks[-1]
+                mark["bottom"], mark["pixels"] = y, mark["pixels"] + 1
+                mark["left"], mark["right"] = min(mark["left"], x), max(mark["right"], x)
+            else:
+                marks.append({"top": y, "bottom": y, "left": x, "right": x, "pixels": 1})
+    return [{
+        "y_pt": round(mark["top"] / scale, 1),
+        "width_pt": round((mark["right"] - mark["left"] + 1) / scale, 2),
+        "height_pt": round((mark["bottom"] - mark["top"] + 1) / scale, 2),
+        "pixels": mark["pixels"],
+    } for mark in marks], scale
 
 
 class SidebarRowsE2E:
@@ -116,6 +175,37 @@ class SidebarRowsE2E:
 
     def row(self, workspace_id: str) -> Optional[Dict[str, Any]]:
         return next((r for r in self.project_rows() if up(r.get("workspace_id")) == up(workspace_id)), None)
+
+    def terminal(self, workspace_id: str) -> str:
+        surfaces = (self.sock.call("surface.list", {"workspace_id": workspace_id}) or {}).get("surfaces") or []
+        terminals = [s["id"] for s in surfaces if s.get("type") == "terminal"]
+        return str(terminals[0]) if terminals else ""
+
+    def mirror_status(self, source_id: str) -> Dict[str, Any]:
+        rows = (self.sock.call("supermux.devices.bindings", {}) or {}).get("mirrors") or []
+        found = [m for m in rows if m.get("machine") == self.machine and up(m.get("remote_workspace_id")) == up(source_id)]
+        return (found[0].get("status") or {}) if found else {}
+
+    def sidebar_spinners(self) -> Dict[str, Any]:
+        """Screenshots the window and measures the amber marks along the
+        sidebar's trailing edge (just left of the leftmost terminal pane)."""
+        panes = [t for t in (self.sock.call("debug.terminals", {}) or {}).get("terminals") or []
+                 if t.get("hosted_view_in_window") and (t.get("hosted_view_frame_in_window") or {}).get("width", 0) > 1]
+        if not panes:
+            raise Failure("no terminal pane in the window to find the sidebar's edge by")
+        edge = min(p["hosted_view_frame_in_window"]["x"] for p in panes)
+        window = panes[0].get("window_frame") or {}
+        if edge < SPINNER_BAND_PT or not window.get("width") or not window.get("height"):
+            raise Failure(f"the sidebar is hidden or too narrow (pane x={edge}, window={window})")
+        shot = self.sock.call("debug.window.screenshot", {"label": "sidebar-rows-spinner"}) or {}
+        path = str(shot.get("path") or "")
+        if not path:
+            raise Failure(f"debug.window.screenshot returned no path: {shot}")
+        marks, scale = amber_marks(path, edge - SPINNER_BAND_PT, SPINNER_BAND_PT - 1, window["width"])
+        kept = Path(self.args.report_path).with_suffix("").as_posix() + "-spinner.png"
+        Path(kept).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(path, kept)
+        return {"marks": marks, "screenshot": kept, "pixel_scale": round(scale, 2), "sidebar_edge_pt": edge}
 
     # -- steps ----------------------------------------------------------------
 
@@ -214,27 +304,97 @@ class SidebarRowsE2E:
             raise Failure(f"the local row's label {local.get('accessibility_label')!r} is not its title {local.get('title')!r}")
         return {"mirror_label": label, "local_label": local.get("accessibility_label")}
 
-    def nested_rows_show_status(self) -> Dict[str, Any]:
+    def nested_mirror_icon_before_branch(self) -> Dict[str, Any]:
         source = self.locals[0]
+
+        def mirror_with_branch() -> Optional[Dict[str, Any]]:
+            row = self.row(self.mirrors[source]) or {}
+            return row if row.get("branch") else None
+
+        mirror = wait_for("the nested mirror's branch", mirror_with_branch, self.timeout)
+        local = self.row(source) or {}
+        icon = mirror.get("device_icon") or {}
+        expected = {"style": "icon", "symbol": MAC_ICON_SYMBOL, "help": f"On {self.mac_name}"}
+        problems = [f"icon {key}={icon.get(key)!r}, not {value!r}" for key, value in expected.items() if icon.get(key) != value]
+        if mirror.get("device_icon_placement") != "before_branch":
+            problems.append(f"the icon sits {mirror.get('device_icon_placement')!r}, not 'before_branch'")
+        if local.get("device_icon") is not None or local.get("device_icon_placement") is not None:
+            problems.append(f"the local row draws a Mac icon: {local.get('device_icon')} {local.get('device_icon_placement')}")
+        if problems:
+            raise Failure("; ".join(problems) + f" — mirror row: {mirror}")
+        return {"icon": icon, "placement": mirror.get("device_icon_placement"), "branch": mirror.get("branch")}
+
+    def nested_rows_show_no_status(self) -> Dict[str, Any]:
+        source = self.locals[0]
+        panel = wait_for("the source terminal", lambda: self.terminal(source), self.timeout)
         text = f"hello-{self.nonce}"
-        self.sock.v1(f"set_status e2e_rows_pill {text} --icon=star.fill --tab={source}")
-        self.sock.v1(f"set_progress 0.4 --label=building --tab={source}")
+        v1 = self.sock.v1
+        # What leaked an "Idle" line under the branch: Claude's SessionStart
+        # pill after /clear, with no lifecycle, owned by a live agent PID (this
+        # test's own); plus a custom pill and a progress bar.
+        v1(f"set_agent_pid claude_code {os.getpid()} --tab={source} --panel={panel}")
+        v1(f"set_status claude_code Idle --icon=pause.circle.fill --color=#8E8E93 --tab={source} --panel={panel}")
+        v1(f"set_status e2e_rows_pill {text} --icon=star.fill --tab={source}")
+        v1(f"set_progress 0.4 --label=building --tab={source}")
+        try:
+            def reached() -> Optional[Dict[str, Any]]:
+                status = self.mirror_status(source)
+                entries = status.get("status_entries") or []
+                progress = status.get("progress") or {}
+                if any(e.get("key") == "e2e_rows_pill" for e in entries) and abs((progress.get("value") or 0) - 0.4) < 1e-6:
+                    return {"entries": entries, "progress": progress}
+                raise Failure(f"mirror status entries={entries} progress={progress or None}")
 
-        def shown(workspace_id: str) -> Callable[[], Optional[Dict[str, Any]]]:
-            def probe() -> Optional[Dict[str, Any]]:
-                row = self.row(workspace_id) or {}
-                pills = [p.get("text") for p in row.get("status_pills") or []]
-                progress = row.get("progress") or {}
-                if text in pills and abs((progress.get("value") or 0) - 0.4) < 1e-6 and progress.get("label") == "building":
-                    return {"pills": pills, "progress": progress}
-                raise Failure(f"row {workspace_id}: pills={pills} progress={progress or None}")
-            return probe
+            # The mirror has the data, so a row that draws pills would show them.
+            status = wait_for("the pills and progress to reach the mirror", reached, self.timeout)
+            rows = {"local": self.row(source) or {}, "mirror": self.row(self.mirrors[source]) or {}}
+        finally:
+            v1(f"clear_agent_pid claude_code --tab={source} --panel={panel} --clear-status")
+            v1(f"clear_status e2e_rows_pill --tab={source}")
+            v1(f"clear_progress --tab={source}")
+        problems: List[str] = []
+        for kind, row in rows.items():
+            pills = [p.get("text") for p in row.get("status_pills") or []]
+            if pills or row.get("progress") is not None:
+                problems.append(f"the {kind} nested row draws pills {pills} and progress {row.get('progress')}")
+            if row.get("activity") not in ACTIVITIES:
+                problems.append(f"the {kind} nested row reports no activity ({row.get('activity')!r})")
+        if problems:
+            raise Failure("; ".join(problems))
+        idle_sent = any(e.get("key") == "claude_code" and e.get("value") == "Idle" for e in status["entries"])
+        return {"mirror_status": status, "idle_pill_reached_mirror": idle_sent,
+                "activity": {kind: row.get("activity") for kind, row in rows.items()}}
 
-        local = wait_for("the pill and progress on the local nested row", shown(source), self.timeout)
-        mirror = wait_for("the pill and progress on the mirror's nested row", shown(self.mirrors[source]), self.timeout)
-        self.sock.v1(f"clear_status e2e_rows_pill --tab={source}")
-        self.sock.v1(f"clear_progress --tab={source}")
-        return {"local": local, "mirror": mirror}
+    def working_spinner_stays_small(self) -> Dict[str, Any]:
+        source = self.locals[0]
+        mirror = self.mirrors[source]
+        panel = wait_for("the source terminal", lambda: self.terminal(source), self.timeout)
+        self.sock.v1(f"set_agent_lifecycle claude_code running --tab={source} --panel={panel}")
+        try:
+            def working() -> Optional[Dict[str, Any]]:
+                states = {"local": (self.row(source) or {}).get("activity"), "mirror": (self.row(mirror) or {}).get("activity")}
+                if set(states.values()) != {"working"}:
+                    raise Failure(f"row activity {states}")
+                return states
+
+            wait_for("the local and mirror nested rows to be working", working, self.timeout)
+
+            def two_spinners() -> Optional[Dict[str, Any]]:
+                found = self.sidebar_spinners()
+                if len(found["marks"]) < 2:
+                    raise Failure(f"{len(found['marks'])} amber marks along the sidebar's edge: {found}")
+                return found
+
+            found = wait_for("the two rows' spinners in a window screenshot", two_spinners, self.timeout, interval_s=1.0)
+        finally:
+            self.sock.v1(f"set_agent_lifecycle claude_code idle --tab={source} --panel={panel}")
+        font_scale = float(self.rows().get("font_scale") or 1)
+        max_width, max_height = SPINNER_MAX_WIDTH_PT * font_scale, SPINNER_MAX_HEIGHT_PT * font_scale
+        big = [m for m in found["marks"] if m["width_pt"] > max_width or m["height_pt"] > max_height]
+        if big:
+            raise Failure(f"spinners bigger than the 6·scale one (at most {max_width}pt wide and {max_height}pt tall): "
+                          f"{big}; screenshot {found['screenshot']}")
+        return {**found, "font_scale": font_scale}
 
     def flat_mirror_subtitle_omits_mac(self) -> Dict[str, Any]:
         folder = self.root / "flat-dir"
@@ -255,12 +415,17 @@ class SidebarRowsE2E:
             lines = (flat.get("subtitle_candidates") or []) + [c for line in flat.get("branch_directory_lines") or [] for c in line]
             if not any(str(folder.name) in line for line in lines):
                 raise Failure(f"no directory line yet: {lines}")
-            return {"lines": lines, "device_label": flat.get("device_label")}
+            return {"lines": lines, "device_label": flat.get("device_label"),
+                    "device_icon": flat.get("device_icon"), "device_icon_placement": flat.get("device_icon_placement")}
 
         found = wait_for("the mirror's directory line", subtitle, self.timeout)
         repeated = [line for line in found["lines"] if self.mac_name and self.mac_name in line]
         if repeated:
             raise Failure(f"the directory line repeats the Mac name: {repeated}")
+        icon = found.get("device_icon") or {}
+        if icon.get("style") != "icon" or icon.get("symbol") != MAC_ICON_SYMBOL or found.get("device_icon_placement") != "branch_line":
+            raise Failure(f"the flat mirror's Mac icon is {icon} at {found.get('device_icon_placement')!r}, "
+                          f"not a {MAC_ICON_SYMBOL} icon on its directory line")
         return found
 
     def close_prompt_is_safe(self) -> Dict[str, Any]:
@@ -317,7 +482,9 @@ class SidebarRowsE2E:
             for name, check in [
                 ("nested_rows_local_first", self.nested_rows_local_first),
                 ("nested_mirror_label_names_mac", self.nested_mirror_label_names_mac),
-                ("nested_rows_show_status", self.nested_rows_show_status),
+                ("nested_mirror_icon_before_branch", self.nested_mirror_icon_before_branch),
+                ("nested_rows_show_no_status", self.nested_rows_show_no_status),
+                ("working_spinner_stays_small", self.working_spinner_stays_small),
                 ("flat_mirror_subtitle_omits_mac", self.flat_mirror_subtitle_omits_mac),
                 ("close_prompt_is_safe", self.close_prompt_is_safe),
             ]:
@@ -338,6 +505,7 @@ def main() -> int:
     if not args.tag and not args.socket:
         parser.error("set CMUX_TAG (or pass --tag / --socket)")
     args.scratch = args.scratch or f"/tmp/{args.tag or 'socket'}-rows"
+    args.report_path = args.report or str(ARTIFACTS_DIR / f"loopback_sidebar_rows_e2e-{args.tag or 'socket'}.json")
     path = args.socket or socket_path_for_tag(args.tag)
     started = datetime.now(timezone.utc).isoformat(timespec="seconds")
     sock = Socket(path)
@@ -360,7 +528,7 @@ def main() -> int:
         "steps": steps,
         "facts": facts,
     }
-    report_path = Path(args.report) if args.report else ARTIFACTS_DIR / f"loopback_sidebar_rows_e2e-{args.tag or 'socket'}.json"
+    report_path = Path(args.report_path)
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(report, indent=2))

@@ -59,8 +59,9 @@ anything.** It is the contract that keeps the fork mergeable with upstream cmux.
 9. **Remote Macs as first-class workspaces (Superset-style).** Every workspace on every one of the
    user's other Macs appears in the LEFT sidebar automatically, as a real local "mirror" workspace
    (terminals, tabs and splits stream from the owning Mac), nested under its project or loose in the
-   list with a device chip. Projects merge across Macs by git origin; the New Worktree sheet has a
-   **device picker**; "New Workspace on ▸ <Mac>" creates project-less workspaces remotely. Activity
+   list with a small Mac icon before its branch. Projects merge across Macs by git origin; the New
+   Worktree sheet has a **device picker**; "New Workspace on ▸ <Mac>" creates project-less
+   workspaces remotely. Activity
    spinners, status pills, progress, logs, branch/PR, unread and notification banners mirror the
    owning Mac; closing a mirror asks "Close on <Mac>" vs "Hide Here". The phone gets pushes from the
    Mac that runs the agent, so the main Mac can be closed. Details: "Remote Macs (devices)" below and
@@ -242,8 +243,9 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   and Close on <Mac>… directly. Closing a single mirrored tab closes that terminal on the owning
   Mac, like a local tab.
 - **Sidebar rows:** inside a project, this Mac's workspaces come first, then each Mac's mirrors;
-  every mirror row (nested or flat) carries its Mac's chip on the right, lined up; nested rows show
-  the same `cmux set-status` pills and progress as flat rows.
+  every mirror row (nested or flat) marks its Mac with a small Mac + cloud icon right before its
+  branch name (the Mac's name in its tooltip); nested rows show no `cmux set-status` pills or
+  progress (the working spinner is their status), flat rows do.
 - **Projects** merge across Macs by normalized git origin (`SupermuxGitRemoteIdentity`), else by
   identical name + path. Project sync (setting) registers a Mac's projects on the other Mac when the
   same repo already exists at the same path; it never clones or deletes. "Set Up on <Mac>…" adds an
@@ -504,7 +506,7 @@ Constraints inherited from upstream that supermux code MUST follow:
   exercises the whole viewer + host pipeline in one process, but not iroh admission, real network
   loss, two filesystems, or pushes from the remote Mac. Mirrors pin the remote terminal's grid
   size (upstream never resizes the owning Mac's terminal), remote browser/markdown panels are not
-  mirrored, and the Mac name on the flat-row chip comes from upstream's "Workspace on %@" label.
+  mirrored, and the Mac name in the flat-row icon's tooltip comes from upstream's "Workspace on %@" label.
 
 ### Open decisions from the 0.64.21 (v0.65) upstream merge
 

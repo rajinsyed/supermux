@@ -119,16 +119,19 @@ restore: quit the app, relaunch it with the opt-in, and the mirror reconnects.
   was never selected, so no geometry path could have carried the change.
 - `tests/supermux/loopback_remote_macs_settings_e2e.py` drives the Settings "Remote Macs" card's own
   actions over `supermux.devices.remote_macs_settings_set`: auto-mirror off then on (live), Hide Here
-  + Show Hidden Workspaces, the other toggles, and the flat-row chip's state for the Loopback Mac.
+  + Show Hidden Workspaces, the other toggles, and the flat-row Mac icon for the Loopback Mac (its
+  state, tooltip, and placement on the branch line).
   `--screenshot` also opens Settings on Automation and captures the window.
 - `tests/supermux/loopback_sidebar_rows_e2e.py` reads the sidebar rows as drawn
   (`supermux.devices.sidebar_rows`) and the mirror close prompt without showing it
   (`supermux.devices.close_prompt`): nested rows list this Mac's workspaces before each Mac's
-  mirrors, a nested mirror's accessibility label names its Mac, `set_status` / `set_progress` show on
-  nested rows (local and mirror), a flat mirror's directory line omits the Mac name, and the prompt
-  is safe (destructive Close on <Mac>, Cancel as the Return/Esc default, the Mac named once, the
-  worktree outcome and Hide Here explained). Layout (chip placement and alignment, spinner size,
-  the footer) is checked visually.
+  mirrors, a nested mirror's accessibility label names its Mac, a nested mirror draws the Mac icon
+  (no name capsule) before its branch, `set_status` / `set_progress` (Claude's lifecycle-less "Idle"
+  pill included) show on no nested row (local or mirror), the working spinner of a nested local row
+  and of its mirror is the 6·scale one (measured in a window screenshot), a flat mirror's directory
+  line omits the Mac name and carries its icon, and the prompt is safe (destructive Close on <Mac>,
+  Cancel as the Return/Esc default, the Mac named once, the worktree outcome and Hide Here
+  explained). Hover behavior and the footer are checked visually.
 
 ## Mirror rendering E2E
 

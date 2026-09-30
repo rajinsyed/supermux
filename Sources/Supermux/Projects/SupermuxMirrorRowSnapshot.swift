@@ -15,9 +15,7 @@ enum SupermuxMirrorRowSnapshot {
         isSelected: Bool,
         projectId: UUID,
         includePullRequest: Bool,
-        unreadCount: Int,
-        showsStatus: Bool = false,
-        showsProgress: Bool = false
+        unreadCount: Int
     ) -> SupermuxOpenWorkspace {
         let base = SupermuxWorkspaceRow.snapshot(
             for: workspace,
@@ -25,9 +23,7 @@ enum SupermuxMirrorRowSnapshot {
             projectId: projectId,
             isRunning: false,
             includePullRequest: includePullRequest,
-            unreadCount: unreadCount,
-            showsStatus: showsStatus,
-            showsProgress: showsProgress
+            unreadCount: unreadCount
         )
         let index = SupermuxComposition.deviceWorkspaceIndex
         guard let ref = index.ref(forLocal: workspace) else { return base }
@@ -51,11 +47,7 @@ enum SupermuxMirrorRowSnapshot {
                 machineID: ref.machineID,
                 name: device?.displayName ?? remote?.name ?? ref.machineID,
                 isOnline: device?.isConnected ?? false
-            ),
-            // The pills and progress the status projection wrote into the
-            // mirror are its Mac's (the flat mirror row shows the same).
-            statusPills: base.statusPills,
-            progress: base.progress
+            )
         )
     }
 
