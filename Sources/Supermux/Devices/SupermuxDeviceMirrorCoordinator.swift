@@ -141,11 +141,17 @@ final class SupermuxDeviceMirrorCoordinator {
 
     private func reconcile() {
         guard isReady() else {
+            #if DEBUG
+            if reconcileCount == 0 { cmuxDebugLog("supermux.autoMirror waiting for session restore") }
+            #endif
             scheduleReconcile(after: .milliseconds(500))
             return
         }
         if !didPruneBindings {
             didPruneBindings = true
+            #if DEBUG
+            cmuxDebugLog("supermux.autoMirror ready; pruning bindings (stored=\(index.storedBindings.count))")
+            #endif
             index.pruneBindings()
         }
         reconcileCount += 1
@@ -154,6 +160,9 @@ final class SupermuxDeviceMirrorCoordinator {
         lastPlan = plan
         for close in plan.closes {
             guard let workspace = Workspace.liveWorkspace(id: close.localWorkspaceID) else { continue }
+            #if DEBUG
+            cmuxDebugLog("supermux.autoMirror close \(close.ref) local=\(close.localWorkspaceID) reason=\(close.reason.rawValue)")
+            #endif
             closer.closeForCoordinator(workspace)
         }
         if !plan.unhide.isEmpty { hidden.remove(plan.unhide) }
@@ -224,9 +233,15 @@ final class SupermuxDeviceMirrorCoordinator {
             do {
                 let opened = try await opener.openMirror(of: ref, in: tabManager, focus: false)
                 if !opened.reused { placeAmongSiblings(opened.workspace, ref: ref) }
+                #if DEBUG
+                cmuxDebugLog("supermux.autoMirror open \(ref) local=\(opened.workspace.id) reused=\(opened.reused)")
+                #endif
                 retryAfter[ref] = nil
                 lastOpenError = nil
             } catch {
+                #if DEBUG
+                cmuxDebugLog("supermux.autoMirror open failed \(ref): \(error.localizedDescription)")
+                #endif
                 retryAfter[ref] = Date().addingTimeInterval(Self.openRetryDelay)
                 lastOpenError = "\(ref): \(error.localizedDescription)"
                 scheduleReconcile(after: .seconds(Self.openRetryDelay + 0.5))
