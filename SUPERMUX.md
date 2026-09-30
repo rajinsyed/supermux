@@ -284,6 +284,11 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   theme colors, so a mirror pane shares the window's (translucent) backdrop exactly like a local
   pane; only colors a program on the other Mac set itself (OSC 4/10/11/12) are mirrored, and its
   reset gives the backdrop back.
+- **New tabs append, on both Macs** (#660–#664): every new tab goes to the end of its tab strip
+  (workspaces and the Dock; upstream inserted after the selected tab, which a Mac hosting a mirrored
+  workspace never moves off its first tab, so tabs opened from a mirror landed second). "New
+  Terminal to the Right" in a mirror lands right of its tab there and on the owning Mac (capability
+  `supermux.terminal_placement.v1`; an older owning Mac appends it).
 - **Inside a mirror**, ⌘G/Run, presets, project actions and the Changes panel act on the owning Mac
   over `mobile.supermux.*` (Generate & Commit follows that Mac's own AI-key rule); Finder/editor/
   file-explorer actions and the full diff view, which need a local path, are disabled with an

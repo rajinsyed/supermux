@@ -28,6 +28,8 @@ import SupermuxKit
 /// - `changes {workspace_id, action: status|stage|unstage|diff|fetch, path?, staged?, open_viewer?}`.
 /// - `terminal_background {surface_id}` — how a terminal paints its background
 ///   (``SupermuxMirrorAppearanceSocket``; DEBUG builds only).
+/// - `tab_bar_new_tab`, `tab_context_action` — where a new tab lands
+///   (``SupermuxTabOrderSocketCommands``, DEBUG builds only).
 @MainActor
 enum SupermuxMirrorSocketCommands {
     static let methodPrefix = "mirror."
@@ -72,6 +74,8 @@ enum SupermuxMirrorSocketCommands {
         #if DEBUG
         case "terminal_background":
             return try SupermuxMirrorAppearanceSocket.terminalBackground(params)
+        case let sub where SupermuxTabOrderSocketCommands.methods.contains(sub):
+            return try SupermuxTabOrderSocketCommands.handle(sub, params: params)
         #endif
         default:
             throw InvalidParams(message: "unknown mirror method \(method)")

@@ -4197,7 +4197,11 @@ final class Workspace: Identifiable, ObservableObject, FilePreviewTabMetadataHos
             allowCrossPaneTabMove: true,
             autoCloseEmptyPanes: true,
             contentViewLifecycle: .keepAllAlive,
-            newTabPosition: .current,
+            // SUPERMUX:begin new-tab-at-end
+            // New tabs always append (upstream: `.current`, after the selected tab,
+            // which a Mac hosting a mirrored workspace never moves off its first tab).
+            newTabPosition: .end,
+            // SUPERMUX:end new-tab-at-end
             tabBarVisibility: Self.tabBarVisibility(defaults: closeTabWarningDefaults),
             appearance: appearance
         )
@@ -13071,6 +13075,12 @@ final class Workspace: Identifiable, ObservableObject, FilePreviewTabMetadataHos
     }
 
     private func createTerminalToRight(of anchorTabId: TabID, inPane paneId: PaneID) {
+        // SUPERMUX:begin mirror-terminal-to-right
+        // A device mirror's tab: its Mac creates the terminal right of it there too.
+        if SupermuxMirrorTerminalPlacement.createTerminalToRight(of: anchorTabId, inPane: paneId, in: self, focus: true) != nil {
+            return
+        }
+        // SUPERMUX:end mirror-terminal-to-right
         let sourcePanelId = panelIdFromSurfaceId(anchorTabId)
         guard let newPanel = newTerminalSurface(
             inPane: paneId,

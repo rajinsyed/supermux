@@ -67,6 +67,9 @@ enum SupermuxMobileCapabilities {
             // device mirror sends its keys as key events and its other input
             // as exact bytes, so typing there behaves as typing here.
             SupermuxMobileCapability.terminalInputV1.rawValue,
+            // device.workspace.terminal.create takes `after_surface_id`: another
+            // Mac's "New Terminal to the Right" lands right of its tab here too.
+            SupermuxMobileCapability.terminalPlacementV1.rawValue,
         ]
     }
 }
