@@ -73,10 +73,15 @@ final class SupermuxFileDiffOpener {
             // ref format reports only `surface_ref`).
             "diff", "-", "--json", "--id-format", "uuids",
             "--title", patch.title,
-            "--cwd", patch.repoPath,
             "--workspace", workspaceId.uuidString,
             "--focus", "false",
         ]
+        // A device mirror's repository is on another Mac: `--cwd` would make
+        // the CLI resolve it on this Mac's disk and refuse (or pick an
+        // unrelated local repository at the same path).
+        if !patch.isRemote {
+            arguments += ["--cwd", patch.repoPath]
+        }
         if let sourceSurface {
             arguments += ["--surface", sourceSurface.uuidString]
         }
