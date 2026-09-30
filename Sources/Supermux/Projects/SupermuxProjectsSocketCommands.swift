@@ -1,6 +1,7 @@
 import CmuxSurfaceCatalogModel
 import Foundation
 import SupermuxKit
+import SupermuxMobileCore
 
 /// Projects-across-Macs methods under the `supermux.devices.*` socket prefix
 /// (dispatched from ``SupermuxDevicesSocketCommands``'s fallback, so no new
@@ -11,12 +12,13 @@ import SupermuxKit
 /// `unified_projects {window_id?}`, `remote_projects {refresh?}`,
 /// `remote_worktrees {machine, project_id}`,
 /// `remote_worktree_create {machine, project_id, workspace_name?, branch_name?, base_branch?, focus?, window_id?}`,
+/// `remote_action_run {machine, project_id, action_id, window_id?}` (the row's Actions menu),
 /// `project_sync {}`, `projects_presentation {window_id?}`.
 @MainActor
 enum SupermuxProjectsSocketCommands {
     private static let methods: Set<String> = [
         "unified_projects", "remote_projects", "remote_worktrees",
-        "remote_worktree_create", "project_sync", "projects_presentation",
+        "remote_worktree_create", "remote_action_run", "project_sync", "projects_presentation",
     ]
 
     /// Whether `name` (the part after `supermux.devices.`) is served here.
@@ -58,6 +60,8 @@ enum SupermuxProjectsSocketCommands {
             return ["worktrees": list.map(SupermuxProjectsSocketPayloads.worktree)]
         case "remote_worktree_create":
             return try await remoteWorktreeCreate(params)
+        case "remote_action_run":
+            return try await remoteActionRun(params)
         case "project_sync":
             let report = await SupermuxComposition.projectSync.syncNow()
             return SupermuxProjectsSocketPayloads.syncReport(report)
@@ -71,16 +75,7 @@ enum SupermuxProjectsSocketCommands {
     /// The sidebar's remote New Worktree path: `worktree.create {open:true}`
     /// on the device, then the mirror opens here.
     private static func remoteWorktreeCreate(_ params: [String: Any]) async throws -> [String: Any] {
-        let machine = try machine(params)
-        let projectID = try uuid(params, "project_id")
-        guard let device = SupermuxComposition.remoteProjects.device(machine) else {
-            throw SupermuxDeviceError.unknownDevice(machine.rawValue)
-        }
-        let location = SupermuxProjectLocation(
-            place: .device(device.device),
-            projectID: projectID,
-            rootPath: device.project(id: projectID)?.rootPath ?? ""
-        )
+        let (location, _) = try remoteProject(params)
         let request = SupermuxRemoteWorktreeRequest(
             workspaceName: params["workspace_name"] as? String ?? "",
             branchName: params["branch_name"] as? String ?? "",
@@ -102,6 +97,33 @@ enum SupermuxProjectsSocketCommands {
             "reused": opened.reused,
             "owner_project_id": SupermuxComposition.unifiedProjects.mirrorOwners[opened.workspace.id]?.uuidString ?? NSNull(),
         ]
+    }
+
+    /// A remote project row's Actions menu item.
+    private static func remoteActionRun(_ params: [String: Any]) async throws -> [String: Any] {
+        let (location, project) = try remoteProject(params)
+        let actionID = try uuid(params, "action_id")
+        guard let action = project?.actions?.first(where: { UUID(uuidString: $0.id) == actionID }) else {
+            throw invalid("action_id does not name an action of that project")
+        }
+        let url = try await SupermuxRemoteProjectCommands.shared.runAction(location, actionID: action.id)
+        return ["outcome": url == nil ? "command" : "open_url", "url": url?.absoluteString ?? NSNull()]
+    }
+
+    /// The device project named by `machine` + `project_id`, as a row's location.
+    private static func remoteProject(_ params: [String: Any]) throws -> (SupermuxProjectLocation, SupermuxProjectDTO?) {
+        let machine = try machine(params)
+        let projectID = try uuid(params, "project_id")
+        guard let device = SupermuxComposition.remoteProjects.device(machine) else {
+            throw SupermuxDeviceError.unknownDevice(machine.rawValue)
+        }
+        let project = device.project(id: projectID)
+        let location = SupermuxProjectLocation(
+            place: .device(device.device),
+            projectID: projectID,
+            rootPath: project?.rootPath ?? ""
+        )
+        return (location, project)
     }
 
     // MARK: - Params

@@ -46,6 +46,7 @@ enum SupermuxProjectsSocketPayloads {
                     "root_path": project.rootPath,
                     "git_remote_url": project.gitRemoteURL ?? NSNull(),
                     "git_remote_identity": project.gitRemoteIdentity ?? NSNull(),
+                    "action_ids": project.actions?.map(\.id) ?? [],
                 ]
             },
             "runs": device.runs.map { run -> [String: Any] in
