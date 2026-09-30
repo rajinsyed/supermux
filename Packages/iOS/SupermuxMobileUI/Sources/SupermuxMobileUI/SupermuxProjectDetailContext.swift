@@ -35,12 +35,14 @@ extension SupermuxProjectsSectionModel {
         guard let row = detailRow else { return nil }
         let session = sessions[row.pairingID]
         let group = snapshot.group(forRowID: row.id)
-        let mac = session?.mac
+        let mac = session?.mac ?? SupermuxMacInfo(pairingID: row.pairingID)
         return SupermuxProjectDetailContext(
             row: row,
-            iconPNGData: actions.iconPNGData,
+            iconPNGData: { [weak self] projectID in
+                await self?.iconPNGData(forProjectID: projectID) ?? nil
+            },
             selectWorkspace: { [weak self] workspaceID in
-                self?.navigateToWorkspace(workspaceID)
+                self?.selectWorkspaceRow(workspaceID)
             },
             openMacWorkspace: { [weak self] remoteWorkspaceID in
                 self?.navigateToMacWorkspace(remoteWorkspaceID, on: mac)

@@ -84,6 +84,14 @@ extension SupermuxProjectsSectionModel {
         selectWorkspaceAction(workspaceID)
     }
 
+    /// Selects a workspace the user tapped directly (by ROW id). A newer
+    /// explicit choice drops any navigation still parked for a slow create.
+    /// - Parameter workspaceID: The workspace's row id.
+    func selectWorkspaceRow(_ workspaceID: String) {
+        navigator.cancelPending()
+        navigateToWorkspace(workspaceID)
+    }
+
     /// Navigates to a workspace a Mac answered with (its Mac-local id): the
     /// id is resolved against THAT Mac's rows, waiting for a freshly created
     /// workspace's row to arrive.

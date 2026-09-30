@@ -1,4 +1,3 @@
-public import CmuxMobileRPC
 public import CmuxMobileShellModel
 public import SupermuxMobileKit
 public import SwiftUI
@@ -83,42 +82,6 @@ extension View {
         // Detail-route destination, New Worktree sheet and error alerts: on
         // the stable wrapper above the `List`, never inside a lazy row.
         .modifier(SupermuxProjectsSectionNavigation(model: model))
-    }
-
-    /// Drives the section from a single connection (the pre-multi-Mac API):
-    /// the one Mac is treated as an unidentified foreground Mac.
-    /// - Parameters:
-    ///   - model: The section model the fence's `@State` owns.
-    ///   - connection: The live RPC client + host-capability snapshot, or
-    ///     `nil` while disconnected (section hides).
-    ///   - workspaces: The shell's current workspace previews.
-    ///   - selectWorkspace: Opens a workspace row by its row id.
-    ///   - closeWorkspace: Closes a workspace row, or `nil` when unsupported.
-    @MainActor
-    public func supermuxProjectsSectionDriver(
-        model: SupermuxProjectsSectionModel,
-        connection: (rpcClient: MobileCoreRPCClient, hostCapabilities: Set<String>)?,
-        workspaces: [MobileWorkspacePreview] = [],
-        selectWorkspace: @escaping @MainActor (MobileWorkspacePreview.ID) -> Void = { _ in },
-        closeWorkspace: (@MainActor (MobileWorkspacePreview.ID) -> Void)? = nil
-    ) -> some View {
-        supermuxProjectsSectionDriver(
-            model: model,
-            seams: connection.map { connection in
-                [SupermuxMacSeam(
-                    macDeviceID: nil,
-                    instanceTag: nil,
-                    displayName: "",
-                    client: connection.rpcClient,
-                    hostCapabilities: connection.hostCapabilities,
-                    status: .connected,
-                    isForeground: true
-                )]
-            } ?? [],
-            workspaces: workspaces,
-            selectWorkspace: selectWorkspace,
-            closeWorkspace: closeWorkspace
-        )
     }
 }
 
