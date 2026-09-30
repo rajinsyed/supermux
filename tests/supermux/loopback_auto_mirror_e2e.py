@@ -12,6 +12,8 @@ device, and auto-mirror opens one local mirror workspace per source. Checks:
   b3. create_on_device             supermux.devices.create_workspace ends with exactly one mirror
   c. closing_source_closes_mirror  closing a source closes its mirror (remote workspace gone)
   c2. orphan_is_closed             a bound mirror without projections (DEBUG bind hook) is closed; one mirror remains
+  c3. duplicate_is_closed          a second local mirror of a mirrored workspace (vm.workspace_open) is closed;
+                                   the bound mirror stays the only one
   d. hide_and_unhide               "Hide Here" (socket close_mirror hide) is never reopened;
                                    a programmatic workspace.close of a mirror hides too;
                                    supermux.devices.unhide brings the mirror back
@@ -23,8 +25,15 @@ device, and auto-mirror opens one local mirror workspace per source. Checks:
                                    show on the mirror, and clearing them clears the mirror
   g2. color_description_pin        the source's custom color, description and pin follow onto the mirror
   i. layout_with_browser           a source holding a browser panel still syncs its terminals' layout
+  j. failed_open_keeps_status_live an auto-mirror open that fails (DEBUG fail_next_open) backs off only
+                                   its own ref: another mirror's pill still follows within seconds, and
+                                   the failed ref gets its mirror once the backoff expires
+  k. former_mirror_is_cleaned      an unbound mirror that gets a local pane stops being a mirror and
+                                   loses the remote pills, log line and progress written into it
   h. restart_dedupe                (with --app-path) quit + relaunch: still exactly one mirror per
-                                   source, no duplicates, no orphaned bindings
+                                   source, no duplicates, no orphaned bindings; a local color /
+                                   description / pin edit on a mirror survives the relaunch, and a
+                                   later remote change still reaches the mirror
 
 Writes a JSON report (default tests/supermux/artifacts/loopback_auto_mirror_e2e-<tag>.json) and
 exits non-zero on any failure. Stdlib only.
@@ -351,6 +360,27 @@ class AutoMirrorE2E:
         state = self.sock.call("supermux.devices.list", {}).get("auto_mirror_state") or {}
         return {"source": source, "orphan": orphan, "mirror": remaining.get("workspace_id"), "hidden_untouched": up(source) not in self.hidden(), "coordinator": state.get("reconcile_count")}
 
+    def check_duplicate(self) -> Dict[str, Any]:
+        """A second local mirror of a mirrored remote workspace (what reopening
+        a closed window restores next to auto-mirror's replacement; here the
+        upstream vm.workspace_open, which never reuses) is closed, and the bound
+        mirror stays the only one."""
+        source = self.create_source("duplicate")
+        mirror = self.wait_one_mirror(source)
+        opened = self.sock.call(
+            "vm.workspace_open", {"id": self.machine, "workspace_id": source, "focus": False}, timeout_s=60
+        ) or {}
+        duplicate = opened.get("workspace_id")
+        if not duplicate or up(duplicate) == up(mirror.get("workspace_id")):
+            raise Failure(f"vm.workspace_open did not open a second local workspace: {opened}")
+        self.created.append(str(duplicate))
+        wait_for("the duplicate mirror to close", lambda: up(duplicate) not in self.local_ids(), self.timeout)
+        hold("the bound mirror stays the only one", lambda: len(self.mirrors_of(source)) == 1, 3)
+        remaining = self.one_mirror(source)
+        if up(remaining.get("workspace_id")) != up(mirror.get("workspace_id")) or not remaining.get("is_bound"):
+            raise Failure(f"expected the bound mirror {mirror.get('workspace_id')} to remain, found {remaining}")
+        return {"source": source, "mirror": remaining.get("workspace_id"), "closed_duplicate": duplicate}
+
     def check_hide_unhide(self) -> Dict[str, Any]:
         source = self.create_source("hide")
         mirror = self.wait_one_mirror(source)
@@ -502,11 +532,147 @@ class AutoMirrorE2E:
         wait_for("the mirror to project the new terminal next to a remote browser", projected, self.timeout)
         return {"source": source, "mirror": mirror_id, "new_terminal": new_terminal}
 
+    def check_failed_open_keeps_status_live(self) -> Dict[str, Any]:
+        """A failed auto-mirror open backs off only its own ref. Another
+        mirror's status keeps following within the usual sync latency (not
+        after the ~10 s retry), and the failed ref still gets its mirror once
+        its backoff expires."""
+        watched = self.status_source()
+        self.sock.call("supermux.devices.set_auto_mirror", {"enabled": False})
+        try:
+            failing = self.create_source("failopen")
+            self.sock.call("supermux.devices.fail_next_open", {"machine": self.machine, "remote_workspace_id": failing})
+        finally:
+            self.sock.call("supermux.devices.set_auto_mirror", {"enabled": True})
+
+        def failed() -> Optional[Dict[str, Any]]:
+            state = (self.sock.call("supermux.devices.list", {}) or {}).get("auto_mirror_state") or {}
+            return state if up(failing) in up(state.get("last_open_error")) else None
+
+        wait_for("the injected open failure", failed, self.timeout, interval_s=0.2)
+        failed_at = time.monotonic()
+        value = f"live-{self.nonce}"
+        self.sock.v1(f"set_status e2e_backoff {value} --tab={watched}")
+
+        def pill() -> bool:
+            entries = self.mirror_status(watched).get("status_entries") or []
+            return any(e.get("key") == "e2e_backoff" and e.get("value") == value for e in entries)
+
+        try:
+            wait_for("another mirror's pill during the failed ref's backoff", pill, self.args.status_latency, interval_s=0.2)
+            latency = round(time.monotonic() - failed_at, 2)
+        finally:
+            self.sock.v1(f"clear_status e2e_backoff --tab={watched}")
+        mirror = wait_for("the failed ref's mirror after its backoff", lambda: self.one_mirror(failing), self.timeout)
+        return {
+            "failing_source": failing,
+            "status_latency_seconds": latency,
+            "retried_mirror": mirror.get("workspace_id"),
+            "retried_after_seconds": round(time.monotonic() - failed_at, 2),
+        }
+
+    def check_former_mirror_is_cleaned(self) -> Dict[str, Any]:
+        """An unbound mirror (the upstream vm.workspace_open, auto-mirror off)
+        that gets a local pane is a local workspace from then on: the remote
+        pills, log line and progress the status projection wrote into it are
+        removed (and so never re-exported as its own)."""
+        v1 = self.sock.v1
+        self.sock.call("supermux.devices.set_auto_mirror", {"enabled": False})
+        mirror_id: Optional[str] = None
+        source = ""
+        try:
+            source = self.create_source("former")
+            wait_for("the source terminal", lambda: (self.terminal_ids(source) or [None])[0], self.timeout)
+            opened = self.sock.call(
+                "vm.workspace_open", {"id": self.machine, "workspace_id": source, "focus": False}, timeout_s=60
+            ) or {}
+            mirror_id = opened.get("workspace_id")
+            if not mirror_id:
+                raise Failure(f"vm.workspace_open opened nothing: {opened}")
+            v1(f"set_status e2e_former kept-{self.nonce} --tab={source}")
+            v1(f"set_progress 0.25 --label=former --tab={source}")
+            v1(f"log --tab={source} -- former log {self.nonce}")
+
+            def projected() -> Optional[Dict[str, Any]]:
+                status = self.projected_remote_status(mirror_id)
+                keys = status.get("status_keys") or []
+                done = "supermux.remote.e2e_former" in keys and status.get("progress") and status.get("log")
+                return status if done else None
+
+            before = wait_for("the remote status on the unbound mirror", projected, self.timeout)
+            terminal = wait_for("the mirror terminal", lambda: (self.terminal_ids(mirror_id) or [None])[0], self.timeout)
+            self.sock.call("browser.open_split", {"workspace_id": mirror_id, "surface_id": terminal, "url": "about:blank"})
+            wait_for("the workspace to stop being a mirror", lambda: not self.is_device_mirror(mirror_id), self.timeout)
+
+            def cleaned() -> Optional[Dict[str, Any]]:
+                status = self.projected_remote_status(mirror_id)
+                empty = not status.get("status_keys") and status.get("log") is None and status.get("progress") is None
+                return {"after": status} if empty else None
+
+            after = wait_for("the remote status to leave the former mirror", cleaned, self.timeout)
+            return {"source": source, "former_mirror": mirror_id, "before": before, **after}
+        finally:
+            if mirror_id and up(mirror_id) in self.local_ids():
+                self.close_workspace(mirror_id)
+            if source:
+                v1(f"clear_status e2e_former --tab={source}")
+                v1(f"clear_progress --tab={source}")
+                v1(f"clear_log --tab={source}")
+            self.sock.call("supermux.devices.set_auto_mirror", {"enabled": True})
+
+    def local_workspace(self, workspace_id: str) -> Dict[str, Any]:
+        for workspace in self.bindings().get("local_workspaces") or []:
+            if up(workspace.get("workspace_id")) == up(workspace_id):
+                return workspace
+        raise Failure(f"no local workspace {workspace_id}")
+
+    def projected_remote_status(self, workspace_id: str) -> Dict[str, Any]:
+        return self.local_workspace(workspace_id).get("projected_remote_status") or {}
+
+    def is_device_mirror(self, workspace_id: str) -> bool:
+        return bool(self.local_workspace(workspace_id).get("is_device_mirror"))
+
     # -- restart --------------------------------------------------------------
+
+    LOCAL_EDIT_COLOR = "#FF9500"
+
+    def make_local_edits(self) -> Dict[str, Any]:
+        """Recolors, describes and pins one mirror locally (its source has none
+        of these), after the projection's first sight, so only a restart could
+        wrongly overwrite them."""
+        source = self.create_source("localedit")
+        mirror_id = self.wait_one_mirror(source)["workspace_id"]
+        wait_for("the mirror's first status projection", lambda: self.mirror_status(source).get("has_overlay"), self.timeout)
+        description = f"local edit {self.nonce}"
+        edits = (("set_color", {"color": self.LOCAL_EDIT_COLOR}), ("set_description", {"description": description}), ("pin", {}))
+        for name, extra in edits:
+            self.sock.call("workspace.action", {"workspace_id": mirror_id, "action": name, **extra})
+        wanted = {"custom_color": self.LOCAL_EDIT_COLOR, "description": description, "is_pinned": True}
+        wait_for("the local edits on the mirror", lambda: self.has_local_edits(source, wanted), self.timeout)
+        hold("the local edits within the session", lambda: self.has_local_edits(source, wanted), 2)
+        return {"source": source, "mirror": mirror_id, "wanted": wanted}
+
+    def has_local_edits(self, source: str, wanted: Dict[str, Any]) -> bool:
+        status = self.mirror_status(source)
+        return (
+            str(status.get("custom_color") or "").upper() == wanted["custom_color"]
+            and status.get("description") == wanted["description"]
+            and status.get("is_pinned") is wanted["is_pinned"]
+        )
+
+    def check_local_edits_survived(self, edits: Dict[str, Any]) -> Dict[str, Any]:
+        source = edits["source"]
+        wait_for("the relaunched mirror's first status projection", lambda: self.mirror_status(source).get("has_overlay"), self.timeout)
+        hold("the mirror's local edits after the relaunch",lambda: self.has_local_edits(source, edits["wanted"]), 4)
+        remote = f"remote after restart {self.nonce}"
+        self.sock.call("workspace.action", {"workspace_id": source, "action": "set_description", "description": remote})
+        self.mirror_field(source, "description", lambda v: v == remote, "to follow a remote change after the relaunch")
+        return {"kept": edits["wanted"], "remote_change_followed": remote}
 
     def check_restart(self) -> Dict[str, Any]:
         app = self.args.app_path
         bundle_id = plistlib.loads((Path(app) / "Contents" / "Info.plist").read_bytes())["CFBundleIdentifier"]
+        edits = self.make_local_edits()
         before = self.snapshot_pairs()
         self.sock.close()
         subprocess.run(["osascript", "-e", f'tell application id "{bundle_id}" to quit'], check=False, capture_output=True)
@@ -532,12 +698,14 @@ class AutoMirrorE2E:
         if dupes:
             raise Failure(f"duplicate mirrors after restore: {dupes}")
         after_pairs = self.snapshot_pairs()
+        local_edits = self.check_local_edits_survived(edits)
         return {
             "bundle_id": bundle_id,
             "sources_before": len(before),
             "sources_after": len(after_pairs),
             "same_mirror_workspaces": sum(1 for k, v in before.items() if after_pairs.get(k) == v),
             "state": after,
+            "local_edits": local_edits,
         }
 
     def snapshot_pairs(self) -> Dict[str, str]:
@@ -580,12 +748,15 @@ class AutoMirrorE2E:
                 ("b3_create_on_device_single_mirror", self.check_create_on_device),
                 ("c_closing_source_closes_mirror", self.check_close_source),
                 ("c2_orphan_is_closed", self.check_orphan),
+                ("c3_duplicate_is_closed", self.check_duplicate),
                 ("d_hide_and_unhide", self.check_hide_unhide),
                 ("e_close_on_mac_closes_source", self.check_close_on_mac),
                 ("f_agent_activity", self.check_agent_activity),
                 ("g_status_progress_log_branch", self.check_status_progress_log),
                 ("g2_color_description_pin", self.check_customization),
                 ("i_layout_with_browser", self.check_layout_with_browser),
+                ("j_failed_open_keeps_status_live", self.check_failed_open_keeps_status_live),
+                ("k_former_mirror_is_cleaned", self.check_former_mirror_is_cleaned),
             ]
             for name, check in checks:
                 ok = self.step(name, check) and ok
@@ -602,6 +773,10 @@ def main() -> int:
     parser.add_argument("--tag", default=os.environ.get("CMUX_TAG"))
     parser.add_argument("--socket", default=os.environ.get("CMUX_SOCKET_PATH"))
     parser.add_argument("--timeout", type=float, default=45.0, help="seconds per wait")
+    parser.add_argument(
+        "--status-latency", type=float, default=4.0,
+        help="seconds a mirror's status may lag its source while another ref backs off (the retry is ~10 s)",
+    )
     parser.add_argument("--app-path", help="the tagged .app to quit and relaunch for the restart check")
     parser.add_argument("--projects-file", help="SUPERMUX_PROJECTS_FILE for the relaunch (a scratch projects file)")
     parser.add_argument("--git-repo", help="a scratch git repo for the branch check (e.g. /tmp/<tag>/repo)")
