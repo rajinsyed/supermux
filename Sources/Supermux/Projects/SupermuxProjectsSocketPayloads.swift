@@ -251,7 +251,7 @@ enum SupermuxProjectsSocketPayloads {
     /// The window's nested workspace rows by owning project (the mount's own builder).
     private static func nestedWorkspacesByProject(for tabManager: TabManager) -> [UUID: [SupermuxOpenWorkspace]] {
         var result: [UUID: [SupermuxOpenWorkspace]] = [:]
-        for row in SupermuxNestedWorkspaceRows.rows(for: tabManager, details: .current(), unreadCount: { _ in 0 }) {
+        for row in SupermuxNestedWorkspaceRows.rows(for: tabManager, includePullRequest: false, unreadCount: { _ in 0 }) {
             guard let projectId = row.projectId else { continue }
             result[projectId, default: []].append(row)
         }
