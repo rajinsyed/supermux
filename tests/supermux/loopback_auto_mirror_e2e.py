@@ -36,7 +36,9 @@ device, and auto-mirror opens one local mirror workspace per source. Checks:
   h. restart_dedupe                (with --app-path) quit + relaunch: still exactly one mirror per
                                    source, no duplicates, no orphaned bindings; a local color /
                                    description / pin edit on a mirror survives the relaunch, and a
-                                   later remote change still reaches the mirror
+                                   later remote change still reaches the mirror; a mirrored
+                                   notification the user marked unread (read on its Mac) stays
+                                   unread through the other Mac's first feeds after the relaunch
 
 Writes a JSON report (default tests/supermux/artifacts/loopback_auto_mirror_e2e-<tag>.json) and
 exits non-zero on any failure. Stdlib only.
@@ -694,10 +696,50 @@ class AutoMirrorE2E:
         self.mirror_field(source, "description", lambda v: v == remote, "to follow a remote change after the relaunch")
         return {"kept": edits["wanted"], "remote_change_followed": remote}
 
+    def notification_record(self, title: str, workspace_id: str, read: Optional[bool] = None) -> Optional[Dict[str, Any]]:
+        records = (self.sock.call("supermux.devices.notification_records", {}) or {}).get("records") or []
+        for record in records:
+            if record.get("title") == title and up(record.get("workspace_id")) == up(workspace_id):
+                if read is None or bool(record.get("is_read")) == read:
+                    return record
+        return None
+
+    def notify_source(self, source: str, title: str) -> None:
+        surface = self.terminal_ids(source)[0]
+        self.sock.call("notification.create_for_surface", {
+            "workspace_id": source, "surface_id": surface, "title": title, "body": "unread across a relaunch",
+        })
+
+    def mark_mirror_copy_unread(self) -> Dict[str, Any]:
+        """A source notification read on the source (so the other Mac's feed
+        row is read), whose mirror copy the user then marks unread."""
+        source = self.create_source("unread")
+        mirror_id = str(self.wait_one_mirror(source)["workspace_id"])
+        title = f"unread-across-relaunch-{self.nonce}"
+        self.notify_source(source, title)
+        original = wait_for("the source notification", lambda: self.notification_record(title, source), self.timeout)
+        wait_for("its mirror copy", lambda: self.notification_record(title, mirror_id), self.timeout)
+        self.sock.call("notification.mark_read", {"id": original["id"]})
+        copy = wait_for("the mirror copy to follow the host read", lambda: self.notification_record(title, mirror_id, read=True), self.timeout)
+        marked = self.sock.call("supermux.devices.notification_mark_unread", {"id": copy["id"]}) or {}
+        if marked.get("is_read") is not False:
+            raise Failure(f"Mark as Unread did not take: {marked}")
+        return {"source": source, "mirror": mirror_id, "title": title}
+
+    def check_unread_copy_survived(self, unread: Dict[str, Any]) -> Dict[str, Any]:
+        """The other Mac's first feeds after the relaunch (one forced by a new
+        notification) leave the user's Mark as Unread alone."""
+        after = f"after-relaunch-{self.nonce}"
+        self.notify_source(unread["source"], after)
+        wait_for("a new notification's mirror copy", lambda: self.notification_record(after, unread["mirror"]), self.timeout)
+        hold("the unread mirror copy", lambda: self.notification_record(unread["title"], unread["mirror"], read=False), 3)
+        return {"copy_still_unread": True}
+
     def check_restart(self) -> Dict[str, Any]:
         app = self.args.app_path
         bundle_id = plistlib.loads((Path(app) / "Contents" / "Info.plist").read_bytes())["CFBundleIdentifier"]
         edits = self.make_local_edits()
+        unread = self.mark_mirror_copy_unread()
         before = self.snapshot_pairs()
         self.sock.close()
         subprocess.run(["osascript", "-e", f'tell application id "{bundle_id}" to quit'], check=False, capture_output=True)
@@ -724,6 +766,7 @@ class AutoMirrorE2E:
             raise Failure(f"duplicate mirrors after restore: {dupes}")
         after_pairs = self.snapshot_pairs()
         local_edits = self.check_local_edits_survived(edits)
+        unread_copy = self.check_unread_copy_survived(unread)
         return {
             "bundle_id": bundle_id,
             "sources_before": len(before),
@@ -731,6 +774,7 @@ class AutoMirrorE2E:
             "same_mirror_workspaces": sum(1 for k, v in before.items() if after_pairs.get(k) == v),
             "state": after,
             "local_edits": local_edits,
+            "unread_copy": unread_copy,
         }
 
     def snapshot_pairs(self) -> Dict[str, str]:
