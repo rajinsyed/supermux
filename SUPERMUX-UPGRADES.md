@@ -14,6 +14,88 @@ Add a section here as the last step of every upstream merge.
 
 ---
 
+## cmux main @ `91b991496d` → main @ `64a1765fcc` (2026-09-30)
+
+Merged ~2,700 first-parent upstream commits (upstream main 2026-08-23 → 2026-09-30). 141 files
+conflicted; 18 fork touchpoints were retired because upstream now ships the same fix, 13 were
+added (mostly where upstream moved code the fork hooks into).
+
+### Upstream changes you will notice (Mac)
+
+- **Settings:** one section at a time, one fixed subtitle per row, an Accent Color setting (fork
+  chrome now reads it), base keymap presets, native Ghostty option rows, Warn Before Closing
+  Workspace, "Don't ask again" on close confirmations, `terminal.confirmUnsafePaste`,
+  `notifications.suppressWhenAppFocused`, `app.tabBarVisibility`, `app.equalizeSplitsOnCreate`,
+  `app.defaultWorkspacePath`, and an opt-in **Subtle Selection Highlight** (see watch-outs).
+- **Right sidebar:** tabs can be reordered and hidden, and `⌃1–9` follows the visible order.
+  Upstream's new **Cloud** tab sits beside the fork's **Changes** tab.
+- **Terminal:** Ghostty config hot-reload with an error card, a chat view for a pane's
+  Claude/Codex session, Paste Last Screenshot, Reveal in Finder, prompt markers, Focus Last,
+  a pane swap picker, New Pane (Auto Layout), overlay scrollers, a password-echo indicator.
+- **Agents:** agents waiting on background work get their own status, agent-recovery
+  workspaces, auto-resume after an update installs, OpenCode v2 plugin, cross-provider token
+  usage, "Needs input" clears when a Claude permission is answered in the terminal.
+- **Updates now install automatically at a quiet moment** and resume agents afterwards.
+- New default shortcut **⌃⌘N** (upstream). The fork's ⌃⌘Z split-zoom rebind is unchanged.
+
+### Upstream changes you will notice (iOS)
+
+- New launch screen (shows the Supermux logo), redesigned notification rows (workspace as
+  headline), native UIKit surface picker menu, per-workspace "reopen last tab", phone-served
+  demo/SSH workspaces, upstream's own unread count, and iOS 17 as the minimum OS.
+- The phone-local browser no longer has an × button; close it from **Close Pane** in the
+  workspace title menu (the fork's shared close-confirmation path).
+
+### What stays the same (fork features)
+
+Projects sidebar (Mac + iOS), Changes panel and PR viewer, Claude harness panes, notification
+project grouping, focused-pane notification suppression, empty-home windows (in memory),
+keep-window-open on last close, browser new-tab link routing, iOS Projects/Changes/Files,
+Mac↔phone selection sync, scroll speed and native-scroll port, local-release pairing storage
+(now re-homed onto upstream's `MobileHostV2Installation`), and Supermux branding (in-app logo,
+sign-in mark, launch logo, `mobile.signIn.title`).
+
+### Watch-outs
+
+- **Empty windows no longer survive a relaunch.** Upstream #14788 drops windows with no
+  workspaces on save/restore (a WindowServer hang fix). An emptied window still stays open while
+  the app runs.
+- **Two iOS notification service extensions are embedded** (upstream's E2EE-decrypting
+  `NotificationService` and the fork's avatar-drawing `SupermuxNotificationService`); iOS runs
+  only one per app. Open decision — see SUPERMUX-TOUCHPOINTS.md #368–372.
+- **The CLAUDE.md phone dogfood (Release) build fails as written** until the two-extension
+  decision is made: upstream's extension keeps its Release bundle id
+  `dev.cmux.app.beta.NotificationServiceV2`. Stopgap: add
+  `CMUX_NOTIFICATION_SERVICE_BUNDLE_IDENTIFIER=com.supermux.ios.dogfood.NotificationService`
+  (signing may still reject its app-group/keychain entitlements under the personal team).
+- Upstream #13741 removed Mac-side push targeting: the Mac no longer names `com.supermux.ios` as
+  the push target, so phone pushes rely on server fan-out or the fork's direct push path.
+  Confirm a push reaches the Supermux iPhone app when dogfooding.
+- On iOS 17 (new upstream minimum) the Projects sidebar rows don't swipe; every swipe action is
+  still in the row's long-press menu. iOS 18+ is unchanged.
+- iOS scroll: upstream's pixel-precise momentum path and the fork's no-momentum #9762 port
+  coexist; the fork path wins whenever the primary screen is known. Needs an on-device feel check.
+- Local toolchain: this machine's Xcode 27 linker breaks the pinned Rust 1.88 (proc-macros fail
+  when `MACOSX_DEPLOYMENT_TARGET` is set; Rust stable works). Upstream CI (Xcode 26) is not
+  affected. Plain `reload.sh --tag` outside cmuxterm-hq needs `CMUX_DEV_BACKEND_MODE=local`.
+- `cmux-tui/` must stay byte-identical to upstream: tagged reloads fetch the published cmux-tui
+  client by exact `cmux-tui/` content, so any fork diff there breaks every reload. The fork's old
+  `cmux-tui/dist` deletion and Zig timing relaxation were reverted for this reason.
+
+### Open decisions surfaced by this merge
+
+1. iOS notification extensions: merge the avatar code into upstream's extension (recommended),
+   drop upstream's, or ship both.
+2. Empty-home windows across relaunch: accept upstream, or add a marked fork exception.
+3. Subtle Selection Highlight vs the fork's faint selection.
+4. Upstream's unread badge vs the fork's inline badge (iOS).
+5. Upstream's "reopen last tab" vs the fork's Mac-authoritative selection sync (iOS).
+6. A `⌃digit` shortcut for the Changes tab.
+7. Default `CMUX_DEV_BACKEND_MODE=local` in the fork.
+8. Retire the fork's drag hover guard (#73–79) now that upstream fixes the same bug.
+
+---
+
 ## cmux main @ `6d37f62a47` → main @ `91b991496d` (2026-08-24)
 
 Merged 2,241 upstream commits across 2,765 files, through upstream main from 2026-08-23.

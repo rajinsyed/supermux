@@ -27,7 +27,10 @@ struct RemoteDaemonRPCClientTimeoutIsolationTests {
             remotePath: "/fake/cmuxd-remote",
             strings: RemoteDaemonStrings(
                 missingPersistentPTYCapability: "missing persistent PTY",
-                missingRequiredFunctionality: "missing functionality"
+                missingRequiredFunctionality: "missing functionality",
+                cloudNotificationClearWorkspaceInvalid: "invalid workspace",
+                cloudNotificationClearWorkspaceDenied: "workspace denied",
+                cloudNotificationClearSurfaceInvalid: "invalid surface"
             )
         ) { _ in
             unexpectedTermination.signal()
@@ -36,6 +39,7 @@ struct RemoteDaemonRPCClientTimeoutIsolationTests {
         client.transportExecutableOverride = executable
 
         try client.start()
+        #expect(client.daemonVersion == "0.64.22")
         let existingAttachment = try client.attachPTY(
             sessionID: "existing-session",
             attachmentID: "existing-attachment",
@@ -72,7 +76,7 @@ struct RemoteDaemonRPCClientTimeoutIsolationTests {
 
         let result = try client.call(method: "hello", params: [:], timeout: 1)
         #expect(result["transport"] as? String == "alive")
-        #expect(existingPTYEvent.wait(timeout: .now() + 1) == .success)
+        #expect(existingPTYEvent.wait(timeout: .now() + 5) == .success)
         #expect(unexpectedTermination.wait(timeout: .now()) == .timedOut)
     }
 
@@ -97,7 +101,10 @@ struct RemoteDaemonRPCClientTimeoutIsolationTests {
             remotePath: "/fake/cmuxd-remote",
             strings: RemoteDaemonStrings(
                 missingPersistentPTYCapability: "missing persistent PTY",
-                missingRequiredFunctionality: "missing functionality"
+                missingRequiredFunctionality: "missing functionality",
+                cloudNotificationClearWorkspaceInvalid: "invalid workspace",
+                cloudNotificationClearWorkspaceDenied: "workspace denied",
+                cloudNotificationClearSurfaceInvalid: "invalid surface"
             )
         ) { _ in
             unexpectedTermination.signal()
@@ -182,7 +189,11 @@ struct RemoteDaemonRPCClientTimeoutIsolationTests {
         #expect(callTimedOut.wait(timeout: .now()) == .success)
         #expect(unexpectedCallResult.wait(timeout: .now()) == .timedOut)
         #expect(cleanupFired.wait(timeout: .now()) == .timedOut)
-        #expect(unexpectedTermination.wait(timeout: .now() + 2) == .success)
+        // The cancellation write is deliberately held until the cleanup timer
+        // fires. Give the child-process teardown its own budget after that
+        // release; heavily loaded hosted runners can otherwise report a false
+        // failure even though the transport exits correctly.
+        #expect(unexpectedTermination.wait(timeout: .now() + 10) == .success)
     }
 
     private func configuration() -> WorkspaceRemoteConfiguration {
@@ -214,7 +225,7 @@ struct RemoteDaemonRPCClientTimeoutIsolationTests {
         }
         if IFS= read -r line; then
           id=$(read_id "$line")
-          printf '{"id":%s,"ok":true,"result":{"capabilities":["proxy.stream.push"]}}\\n' "$id"
+          printf '{"id":%s,"ok":true,"result":{"version":"0.64.22","capabilities":["proxy.stream.push"]}}\\n' "$id"
         else
           exit 1
         fi

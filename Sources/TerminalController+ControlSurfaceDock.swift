@@ -13,7 +13,6 @@ extension TerminalController {
             tabManager: tabManager,
             panelType: panelType,
             unsupportedType: { .dockUnsupportedType(typeRawValue: $0, message: $1) },
-            dockUnavailable: { .dockUnavailable(message: $0) },
             workspaceNotFound: .workspaceNotFound,
             conflictingSelectors: { .dockConflictingRoutingSelectors(message: $0) }
         )
@@ -29,7 +28,6 @@ extension TerminalController {
             tabManager: tabManager,
             panelType: panelType,
             unsupportedType: { .dockUnsupportedType(typeRawValue: $0, message: $1) },
-            dockUnavailable: { .dockUnavailable(message: $0) },
             workspaceNotFound: .workspaceNotFound,
             conflictingSelectors: { .dockConflictingRoutingSelectors(message: $0) }
         )
@@ -40,15 +38,11 @@ extension TerminalController {
         tabManager: TabManager,
         panelType: PanelType,
         unsupportedType: (String, String) -> Resolution,
-        dockUnavailable: (String) -> Resolution,
         workspaceNotFound: Resolution,
         conflictingSelectors: (String) -> Resolution
     ) -> Resolution? {
         guard panelType == .terminal || panelType == .browser else {
             return unsupportedType(panelType.rawValue, dockUnsupportedSurfaceTypeMessage())
-        }
-        guard RightSidebarMode.dock.isAvailable() else {
-            return dockUnavailable(dockUnavailableMessage())
         }
         guard let dockOwnerId = windowDockOwnerIdForCreateRouting(routing, tabManager: tabManager) else {
             return workspaceNotFound
@@ -87,7 +81,7 @@ extension TerminalController {
     }
 
     func dockUnavailableMessage() -> String {
-        String(localized: "dock.error.unavailable", defaultValue: "Dock placement is disabled")
+        String(localized: "dock.error.unavailable", defaultValue: "Dock placement is unavailable")
     }
 
     func dockFocusUnavailableMessage() -> String {
@@ -134,11 +128,15 @@ extension TerminalController {
             workingDirectory: kind == .terminal ? inputs.workingDirectory : nil,
             environment: inputs.startupEnvironment,
             tmuxStartCommand: kind == .terminal ? inputs.tmuxStartCommand : nil,
-            focus: focus,
+            initialInput: kind == .terminal ? inputs.initialInput : nil,
+            focus: false,
             preloadInitialNavigationInBackground: kind == .browser
         )
         guard let newPanelId else {
             return .createFailed
+        }
+        if focus {
+            dock.focusPanelFromDockInteraction(newPanelId, window: nil)
         }
         return .createdDock(
             windowID: dock.workspaceId,
@@ -455,6 +453,16 @@ extension TerminalController {
         }
         if let routedSurfaceID = routing.surfaceID {
             return (routedSurfaceID, false)
+        }
+        if let routedPaneID = routing.paneID {
+            guard let paneID = dock.bonsplitController.allPaneIds.first(where: {
+                $0.id == routedPaneID
+            }),
+            let tabID = dock.bonsplitController.selectedTab(inPane: paneID)?.id,
+            let panel = dock.panel(for: tabID) else {
+                return (nil, false)
+            }
+            return (panel.id, false)
         }
         return (dock.focusedPanelId, false)
     }

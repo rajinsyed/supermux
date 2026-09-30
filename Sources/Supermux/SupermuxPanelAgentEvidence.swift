@@ -1,3 +1,4 @@
+import CmuxFoundation
 import Foundation
 
 /// Panel-scoped liveness evidence for structured coding agents.

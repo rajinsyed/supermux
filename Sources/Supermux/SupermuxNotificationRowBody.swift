@@ -23,6 +23,7 @@ import SwiftUI
 /// and pre-composed strings — so it is safe below a `LazyVStack` boundary and
 /// holds no store reference (the issue-2586 rule).
 struct SupermuxNotificationRowBody: View {
+    @Environment(\.cmuxAccentColor) private var cmuxAccent
     /// The owning project, when the notification has one.
     let project: SupermuxNotificationProject?
     /// The project's decoded icon, resolved above the list boundary.
@@ -54,7 +55,7 @@ struct SupermuxNotificationRowBody: View {
             // bar reads as "this row is unread", while a dot reads as a bullet
             // point and competes with the text it sits beside.
             RoundedRectangle(cornerRadius: 1.5, style: .continuous)
-                .fill(isRead ? Color.clear : cmuxAccentColor())
+                .fill(isRead ? Color.clear : cmuxAccent.color)
                 .frame(width: 3)
                 .frame(maxHeight: .infinity)
 

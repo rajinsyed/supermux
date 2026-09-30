@@ -1,3 +1,4 @@
+import CmuxCloud
 import CMUXMobileCore
 import CmuxSettings
 import Foundation
@@ -50,16 +51,12 @@ struct MobileHostIdentityTests {
             store.selectedPairingURLScheme?.rawValue
                 == "cmux-ios-com.cmux.app"
         )
-        #expect(
-            store.pushTargetNamespace?.bundleIdentifier == "com.cmux.app"
-        )
 
         let internalNamespace = try #require(MobileIOSAppNamespace(
             bundleIdentifier: "dev.cmux.app.internal"
         ))
         #expect(store.select(internalNamespace))
         #expect(store.selectedNamespace == internalNamespace)
-        #expect(store.pushTargetNamespace == internalNamespace)
         #expect(
             store.selectedPairingURLScheme?.rawValue
                 == "cmux-ios-dev.cmux.app.internal"
@@ -85,7 +82,6 @@ struct MobileHostIdentityTests {
             store.selectedPairingURLScheme?.rawValue
                 == "cmux-ios-com.supermux.ios"
         )
-        #expect(store.pushTargetNamespace?.bundleIdentifier == "com.supermux.ios")
     }
     // SUPERMUX:end supermux-release-mobile-identity
 
@@ -108,9 +104,6 @@ struct MobileHostIdentityTests {
         #expect(
             store.selectedPairingURLScheme?.rawValue
                 == "cmux-ios-com.cmux.app"
-        )
-        #expect(
-            store.pushTargetNamespace?.bundleIdentifier == "com.cmux.app"
         )
     }
 
@@ -144,24 +137,15 @@ struct MobileHostIdentityTests {
         )
     }
 
-    @Test func irohRegistrationUsesAuthoritativeAppInstanceTag() {
-        let cases: [([String: String], String)] = [
-            ([:], "com.cmuxterm.app"),
-            ([:], "com.cmuxterm.app.nightly"),
-            ([:], "com.cmuxterm.app.staging"),
-            ([:], "com.cmuxterm.app.debug.future-one"),
-            (["CMUX_TAG": "future-two"], "com.cmuxterm.app.debug.future-two"),
-        ]
-
-        for (environment, bundleIdentifier) in cases {
-            #expect(MobileHostIrohRuntime.currentTag(
-                environment: environment,
-                bundleIdentifier: bundleIdentifier
-            ) == MobileHostIdentity.instanceTag(
-                environment: environment,
-                bundleIdentifier: bundleIdentifier
-            ))
-        }
+    @Test func taggedBuildIdentityUsesBundleScopeWithoutLaunchMetadata() {
+        #expect(MobileHostIdentity.instanceTag(
+            environment: [:],
+            bundleIdentifier: "com.cmuxterm.app.debug.future-one"
+        ) == "future-one")
+        #expect(MobileHostIdentity.instanceTag(
+            environment: [:],
+            bundleIdentifier: "com.cmuxterm.app.debug.future-two"
+        ) == "future-two")
     }
 
     @Test func authenticatedStatusIncludesAuthoritativeInstanceTag() {
@@ -175,16 +159,43 @@ struct MobileHostIdentityTests {
             }
         }
 
-        let payload = MobileHostService.identityStatusPayload(routes: [])
+        let payload = MobileHostService.identityStatusPayload(routes: [], deviceID: "v2-mac-fixture")
         #expect(payload["mac_instance_tag"] as? String == "future-one")
         #expect((payload["mac_client_namespace"] as? String)?.hasPrefix("mac:") == true)
         #expect(!(payload["terminal_theme_revision_epoch"] as? String ?? "").isEmpty)
+        #expect(payload["mac_compatible_mac_tags"] as? [String] != nil)
+    }
+
+    @Test func authenticatedStatusAdvertisesGrantedCompatibleMacTags() throws {
+        let suiteName = "mobile-host-compatible-tags-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        // Reserved release lanes and duplicates never make it into the grant
+        // set; what is stored is exactly what authenticated status advertises.
+        let stored = MobileCompatibleMacTags.set(
+            [" IRPLY ", "hello", "irply", "default", "nightly", "rc", "staging", ""],
+            in: defaults
+        )
+        #expect(stored == ["hello", "irply"])
+        #expect(MobileCompatibleMacTags.tags(in: defaults) == ["hello", "irply"])
+        #expect(MobileCompatibleMacTags.rejectedTags(
+            from: ["default", "hello", "RC"]
+        ) == ["default", "rc"])
+
+        let payload = MobileHostService.identityStatusPayload(
+            routes: [],
+            deviceID: "v2-mac-fixture",
+            phonePushDefaults: defaults
+        )
+        #expect(payload["mac_compatible_mac_tags"] as? [String] == ["hello", "irply"])
     }
 
     @Test func publicStatusOmitsInstanceTag() {
         let payload = MobileHostService.publicStatusPayload(routes: [])
         #expect(payload["mac_instance_tag"] == nil)
         #expect(payload["terminal_theme_revision_epoch"] == nil)
+        #expect(payload["mac_compatible_mac_tags"] == nil)
     }
 
     @Test func authenticatedStatusReportsLivePhoneForwardingGateAndOrigin() throws {
@@ -199,6 +210,7 @@ struct MobileHostIdentityTests {
 
         let payload = MobileHostService.identityStatusPayload(
             routes: [],
+            deviceID: "v2-mac-fixture",
             phonePushDefaults: defaults,
             phonePushAdmission: .suppressedMacActive,
             phonePushQueuePersistenceStatus: .saveFailed,
@@ -239,7 +251,7 @@ struct MobileHostIdentityTests {
             }
         }
 
-        let payload = MobileHostService.identityStatusPayload(routes: [])
+        let payload = MobileHostService.identityStatusPayload(routes: [], deviceID: "v2-mac-fixture")
         let capabilities = try #require(payload["capabilities"] as? [String])
         #expect(!capabilities.contains(
             MobileHostService.phonePushStatusCapability
@@ -267,6 +279,7 @@ struct MobileHostIdentityTests {
 
         let payload = MobileHostService.identityStatusPayload(
             routes: [],
+            deviceID: "v2-mac-fixture",
             phonePushDefaults: defaults,
             phonePushAPIBaseURL: URL(string: "https://cmux.com")!
         )
@@ -531,7 +544,9 @@ struct MobileHostIdentityTests {
         defaults.set(fallbackID, forKey: "mobileHost.deviceID")
 
         #expect(MobileHostIdentity.deviceID(defaults: defaults, sharedIDURL: sharedIDURL) == fallbackID.lowercased())
-        #expect(defaults.string(forKey: "mobileHost.deviceID") == fallbackID.lowercased())
+        // Repair the shared file without rewriting an equivalent defaults ID.
+        // Avoiding that write also avoids reentrant defaults notifications.
+        #expect(defaults.string(forKey: "mobileHost.deviceID") == fallbackID)
         #expect(try String(contentsOf: sharedIDURL, encoding: .utf8) == fallbackID.lowercased())
     }
 
@@ -582,6 +597,7 @@ struct MobileHostIdentityTests {
 
         let authenticatedPayload = MobileHostService.identityStatusPayload(
             routes: [iroh, tailscale, websocket],
+            deviceID: "v2-mac-fixture",
             now: now
         )
         let authenticated = try #require(authenticatedPayload["routes"] as? [[String: Any]])

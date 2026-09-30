@@ -36,6 +36,8 @@ extension ContentView {
         case .claudeHarness:
             return String(localized: "supermux.harness.palette.kind", defaultValue: "Claude")
         // SUPERMUX:end claude-harness-palette-label
+        case .cloudVPNSetup:
+            return String(localized: "cloud.vpn.setup.title", defaultValue: "Cloud VPN")
         }
     }
     func commandPaletteSurfaceKeywords(for panelType: PanelType) -> [String] {
@@ -73,6 +75,8 @@ extension ContentView {
         case .claudeHarness:
             return ["claude", "harness", "anthropic", "chat", "ai", "agent"]
         // SUPERMUX:end claude-harness-palette-keywords
+        case .cloudVPNSetup:
+            return ["cloud", "vpn", "network", "private address"]
         }
     }
 }

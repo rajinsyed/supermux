@@ -62,13 +62,15 @@ final class SupermuxTabManagerOpener: SupermuxWorkspaceOpening {
         // (e.g. `cc` → `claude …`) and keeps the workspace open after the
         // command exits instead of collapsing it. Plain "open" requests carry
         // no command and just get a clean terminal.
-        let workspace = tabManager.addWorkspace(
+        // `addWorkspaceIfActive` returns nil once the window is finalized for
+        // close (the legacy `addWorkspace` traps there and is deprecated).
+        guard let workspace = tabManager.addWorkspaceIfActive(
             title: request.title,
             workingDirectory: directory,
             initialTerminalInput: request.initialCommand.map(SupermuxCommandLaunch.shellInput),
             inheritWorkingDirectory: false,
             select: true
-        )
+        ) else { return nil }
         // Route through cmux's shared rename mutation (trims whitespace; an
         // empty title clears back to the process title) instead of assigning
         // `customTitle` directly.

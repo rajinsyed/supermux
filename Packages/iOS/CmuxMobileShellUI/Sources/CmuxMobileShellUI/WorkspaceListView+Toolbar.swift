@@ -109,6 +109,12 @@ extension WorkspaceListView {
                             if canCreateWorkspace {
                                 newWorkspaceButton.equatable()
                             }
+                            if let sidebarToggleAction {
+                                WorkspaceSidebarToggleButton(
+                                    action: sidebarToggleAction,
+                                    usesSystemToolbarChrome: true
+                                )
+                            }
                         }
                     }
                 }

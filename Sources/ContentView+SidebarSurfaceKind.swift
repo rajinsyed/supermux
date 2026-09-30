@@ -14,7 +14,7 @@ extension VerticalTabsSidebar {
         case .rightSidebarTool:
             return .rightSidebarTool
         case .customSidebar, .simulator, .extensionBrowser, .workspaceTodo, .notifications, .cloudVMLoading,
-             .mobilePairing, .accountSignIn:
+             .mobilePairing, .accountSignIn, .cloudVPNSetup:
             return .unknown
         // SUPERMUX:begin claude-harness-sidebar-kind
         case .claudeHarness:

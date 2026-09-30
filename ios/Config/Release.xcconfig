@@ -5,13 +5,31 @@
 #include "Shared.xcconfig"
 
 // SUPERMUX:begin ios-communication-notifications
-// Set through SUPERMUX_APP_BUNDLE_ID so the notification service extension's
-// id (SUPERMUX_NSE_BUNDLE_ID in Shared.xcconfig) stays derived from it and
-// remains a child of the app's. Assigning PRODUCT_BUNDLE_IDENTIFIER directly
-// here would silently detach the extension from this channel's id.
+// Set through SUPERMUX_APP_BUNDLE_ID so the fork notification service
+// extension's id (SUPERMUX_NSE_BUNDLE_ID in Shared.xcconfig) stays derived from
+// it and remains a child of the app's. Upstream's CMUX_APP_BUNDLE_IDENTIFIER
+// reads it too, so a SUPERMUX_APP_BUNDLE_ID override (the dogfood command)
+// still reaches the app in Release. Assigning either PRODUCT_BUNDLE_IDENTIFIER
+// or CMUX_APP_BUNDLE_IDENTIFIER to a literal here would silently detach it.
 SUPERMUX_APP_BUNDLE_ID = dev.cmux.app.beta
+CMUX_APP_BUNDLE_IDENTIFIER = $(SUPERMUX_APP_BUNDLE_ID)
 // SUPERMUX:end ios-communication-notifications
+PRODUCT_BUNDLE_IDENTIFIER = $(CMUX_APP_BUNDLE_IDENTIFIER)
+// Manual Release archives default to BETA's registered notification extension.
+// Distribution scripts override both host and extension identifiers for other lanes.
+CMUX_HOST_BUNDLE_IDENTIFIER = $(CMUX_APP_BUNDLE_IDENTIFIER)
+CMUX_NOTIFICATION_SERVICE_BUNDLE_IDENTIFIER = dev.cmux.app.beta.NotificationServiceV2
 DEVELOPMENT_TEAM = 7WLXT3NR37
+
+// Release/TestFlight/App Store artifacts always use production authorities.
+// Keep these defaults in the configuration as a second line of defense behind
+// the archive scripts, so a new Release workflow cannot inherit staging from a
+// runner environment or a tagged development build.
+CMUX_IOS_AUTH_ENV = production
+CMUX_API_BASE_URL = https://cmux.com
+CMUX_IROH_BROKER_BASE_URL = https://cmux.com
+CMUX_PRESENCE_BASE_URL = https://presence.cmux.dev
+CMUX_DEV_TAG =
 
 // Shared.xcconfig brands all fork builds as Supermux. The upload scripts still
 // override TestFlight/App Store display names on the xcodebuild command line.
@@ -27,8 +45,5 @@ PRODUCT_DISPLAY_NAME = Supermux$(SUPERMUX_IOS_DISPLAY_SUFFIX)
 
 // TestFlight/App Store builds use production APNs. Debug keeps
 // Config/cmux.entitlements from Shared.xcconfig.
-// SUPERMUX:begin ios-communication-notifications
-// Set through the app-scoped variable (see Shared.xcconfig) so the notification
-// service extension never inherits the app's production entitlements.
-SUPERMUX_APP_CODE_SIGN_ENTITLEMENTS = Config/cmux-release.entitlements
-// SUPERMUX:end ios-communication-notifications
+CMUX_APP_CODE_SIGN_ENTITLEMENTS = Config/cmux-release.entitlements
+CODE_SIGN_ENTITLEMENTS = $(CMUX_APP_CODE_SIGN_ENTITLEMENTS)

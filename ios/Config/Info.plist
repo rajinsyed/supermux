@@ -20,6 +20,12 @@
 	<string>$(CMUX_API_BASE_URL)</string>
 	<key>CMUXIrohBrokerBaseURL</key>
 	<string>$(CMUX_IROH_BROKER_BASE_URL)</string>
+	<key>CMUX_IROH_V2_ENVIRONMENT</key>
+	<string>$(CMUX_IROH_V2_ENVIRONMENT)</string>
+	<key>CMUX_IROH_V2_BASE_URL</key>
+	<string>$(CMUX_IROH_V2_BASE_URL)</string>
+	<key>CMUX_IROH_V2_FORCE_RELAY</key>
+	<string>$(CMUX_IROH_V2_FORCE_RELAY)</string>
 	<key>CMUXDevTag</key>
 	<string>$(CMUX_DEV_TAG)</string>
 	<key>CMUXKeychainAccessGroup</key>
@@ -108,7 +114,15 @@
 		<string>remote-notification</string>
 	</array>
 	<key>UILaunchScreen</key>
-	<dict/>
+	<dict>
+		<!-- HIG "Launching": match the first screen (plain systemBackground
+		     surfaces) and keep it static — a solid adaptive background with the
+		     exact cmux.com app mark used in the App Store banner, no text. -->
+		<key>UIColorName</key>
+		<string>LaunchBackground</string>
+		<key>UIImageName</key>
+		<string>LaunchLogo</string>
+	</dict>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationLandscapeRight</string>

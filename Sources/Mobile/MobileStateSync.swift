@@ -151,13 +151,14 @@ final class MobileStateSyncHost {
                         isPinned: group.isPinned,
                         iconSymbol: controller.mobileWorkspaceGroupEffectiveIconSymbol(
                             group,
-                            anchorCwd: currentDirectoryByWorkspaceID[
-                                group.anchorWorkspaceId
-                            ] ?? nil,
+                            anchorCwd: group.liveAnchorWorkspaceId.flatMap {
+                                currentDirectoryByWorkspaceID[$0]
+                            },
                             configStore: configStore
                         ),
-                        anchorWorkspaceID: group.anchorWorkspaceId.uuidString,
-                        sortIndex: groupRows.count
+                        anchorWorkspaceID: group.liveAnchorWorkspaceId?.uuidString,
+                        sortIndex: groupRows.count,
+                        isEmpty: group.isEmpty
                     )
                 )
             }
@@ -199,12 +200,15 @@ final class MobileStateSyncHost {
                 localFallback: controller.mobileNonEmpty(terminal.directory)
                     ?? controller.mobileNonEmpty(terminal.requestedWorkingDirectory)
             )
+            let agent = workspace.mobileAgentStatus(forPanel: terminal.id)
             return WorkspaceSyncRecord.Terminal(
                 id: terminal.id.uuidString,
                 title: workspace.panelTitle(panelId: terminal.id) ?? terminal.displayTitle,
                 currentDirectory: terminalDirectory,
                 isReady: terminal.surface.surface != nil,
-                isFocused: workspace.isFocusedTerminalInputSurface(terminal.id)
+                isFocused: workspace.isFocusedTerminalInputSurface(terminal.id),
+                agentSource: agent?.source,
+                agentState: agent?.state
             )
         }
         let simulatorEncoder = MobileSimulatorWireEncoder()
@@ -229,6 +233,7 @@ final class MobileStateSyncHost {
         }
         // SUPERMUX:end supermux-mobile-selection-sync
         let latestNotification = notificationStore?.latestNotification(forTabId: workspace.id)
+        let unreadCount = notificationStore?.unreadCount(forTabId: workspace.id) ?? 0
         let preview = cachedPreview(workspaceID: workspace.id, latestNotification: latestNotification)
         let description = MobileWorkspaceMetadataLimits.projection(
             cachedDescriptionProjection(for: workspace),
@@ -270,7 +275,8 @@ final class MobileStateSyncHost {
             preview: preview?.text,
             previewAt: preview?.epochSeconds,
             lastActivityAt: (latestNotification?.createdAt ?? workspace.createdAt).timeIntervalSince1970,
-            hasUnread: notificationStore?.workspaceIsUnread(forTabId: workspace.id) ?? false,
+            hasUnread: unreadCount > 0,
+            unreadCount: unreadCount,
             sortIndex: sortIndex,
             terminals: terminals,
             surfaces: controller.mobileSurfaceDescriptors(in: workspace),
