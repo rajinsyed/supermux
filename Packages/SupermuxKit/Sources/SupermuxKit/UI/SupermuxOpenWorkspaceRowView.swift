@@ -31,7 +31,7 @@ struct SupermuxOpenWorkspaceRowView: View {
     private var titleLine: some View {
         HStack(spacing: 6) {
             // Empty leading placeholder matching the project avatar's width so
-            // the title aligns under the project name (activity moved to the right).
+            // the title aligns under the project name (activity sits on the right).
             Color.clear
                 .frame(width: 20 * fontScale, height: 12 * fontScale)
             VStack(alignment: .leading, spacing: 0) {
@@ -47,11 +47,10 @@ struct SupermuxOpenWorkspaceRowView: View {
                         .truncationMode(.middle)
                 }
             }
+            // Shares the width with the device chip at the same priority, so
+            // the spacer never makes the chip truncate while there is room.
+            .layoutPriority(1)
             Spacer(minLength: 2)
-            // A device mirror names the Mac it runs on (dimmed while offline).
-            if let device = workspace.device {
-                SupermuxDeviceChip(device: device, fontScale: fontScale)
-            }
             if let pullRequest = workspace.pullRequest {
                 SupermuxPullRequestBadge(
                     pullRequest: pullRequest,
@@ -62,20 +61,11 @@ struct SupermuxOpenWorkspaceRowView: View {
             if workspace.isRunning {
                 SupermuxRunIndicator()
             }
-            // Agent activity: only the amber working spinner, rendered as the
-            // rightmost element (after the PR badge and run status) so the
-            // loading signal always sits at the row's right edge. The
-            // needs-input and ready dots are deliberately not shown — one
-            // working indicator per row, nothing when the agent is settled.
-            if workspace.activity == .working {
-                SupermuxAgentActivityIndicator(activity: workspace.activity, size: 6 * fontScale)
-            }
-            // The same numbered unread capsule cmux's flat rows draw, rightmost
-            // like the phone's nested rows, so a workspace shows its unread
-            // count whether it renders flat, nested, or on the phone. 7pt, not
-            // the flat rows' 9pt: the shared style's capsule stands 1.6× its
-            // font, and this row's neighbors are smaller than a flat row's —
-            // an 11pt PR icon and a 6pt activity spinner — so 7pt lands the
+            // The same numbered unread capsule cmux's flat rows draw, so a
+            // workspace shows its unread count whether it renders flat, nested,
+            // or on the phone. 7pt, not the flat rows' 9pt: the shared style's
+            // capsule stands 1.6× its font, and this row's neighbors are
+            // smaller than a flat row's — an 11pt PR icon — so 7pt lands the
             // capsule at 11pt, level with the PR badge instead of over it.
             if workspace.unreadCount > 0 {
                 SupermuxUnreadBadgeView(
@@ -85,15 +75,32 @@ struct SupermuxOpenWorkspaceRowView: View {
                     textColor: .white
                 )
             }
-            if isHovered {
-                Button(action: close) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 8.5 * fontScale, weight: .semibold))
-                        .foregroundStyle(.secondary)
+            // A device mirror names the Mac it runs on (dimmed while offline),
+            // right before the trailing slot, so chips line up down the list.
+            if let device = workspace.device {
+                SupermuxDeviceChip(device: device, fontScale: fontScale)
+            }
+            SupermuxRowTrailingSlot(fontScale: fontScale) {
+                ZStack {
+                    // Agent activity: only the amber working spinner (the
+                    // needs-input and ready dots are deliberately not shown).
+                    // Kept mounted and faded under the hover close button, so
+                    // hover never remounts the render-server spinner.
+                    if workspace.activity == .working {
+                        SupermuxAgentActivityIndicator(activity: workspace.activity, size: 6 * fontScale)
+                            .opacity(isHovered ? 0 : 1)
+                    }
+                    if isHovered {
+                        Button(action: close) {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 8.5 * fontScale, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .help(String(localized: "supermux.workspace.close", defaultValue: "Close Workspace"))
+                        .transition(.opacity.combined(with: .scale(scale: 0.8)))
+                    }
                 }
-                .buttonStyle(.plain)
-                .help(String(localized: "supermux.workspace.close", defaultValue: "Close Workspace"))
-                .transition(.opacity.combined(with: .scale(scale: 0.8)))
             }
         }
     }

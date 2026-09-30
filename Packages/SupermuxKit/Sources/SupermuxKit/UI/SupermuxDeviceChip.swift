@@ -3,7 +3,12 @@ public import SwiftUI
 /// A compact "which Mac" chip (`desktopcomputer` + the Mac's name) for rows
 /// that live on another Mac: device mirrors, remote-only projects and remote
 /// worktrees. Dimmed, with an "Offline" (or "Connecting…") tooltip, while the
-/// Mac is unreachable.
+/// Mac is unreachable. The tooltip always carries the full name.
+///
+/// The chip shows the whole name when the row has room and truncates only
+/// when it does not: it competes for width at layout priority 1, so a row
+/// gives its title the same priority (neither can crowd the other out, and a
+/// spacer never takes width the name needs).
 public struct SupermuxDeviceChip: View {
     private let name: String
     private let state: SupermuxDeviceChipState
@@ -42,9 +47,6 @@ public struct SupermuxDeviceChip: View {
                 .font(.system(size: 9 * fontScale, weight: .medium))
                 .lineLimit(1)
                 .truncationMode(.tail)
-                // Compact: a long Mac name truncates instead of crowding the title.
-                .frame(maxWidth: 64 * fontScale, alignment: .leading)
-                .fixedSize(horizontal: true, vertical: false)
         }
         .foregroundStyle(.secondary)
         .padding(.horizontal, 5 * fontScale)
@@ -54,6 +56,7 @@ public struct SupermuxDeviceChip: View {
         .help(helpText)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(helpText)
+        .layoutPriority(1)
     }
 
     private var helpText: String {

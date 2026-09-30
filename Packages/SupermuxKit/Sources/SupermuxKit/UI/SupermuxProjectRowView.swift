@@ -478,11 +478,15 @@ struct SupermuxWorktreeRowView: View {
                     onOpen: openPullRequest
                 )
             }
-            // Hover-only "open" hint; laid out always so the PR badge stays put.
-            Image(systemName: "arrow.right")
-                .font(.system(size: 8.5 * fontScale, weight: .semibold))
-                .foregroundStyle(.tertiary)
-                .opacity(isHovered ? 1 : 0)
+            // Hover-only "open" hint in the rows' shared trailing slot, laid
+            // out always so the PR badge stays put and lines up with the
+            // open-workspace rows' badges.
+            SupermuxRowTrailingSlot(fontScale: fontScale) {
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 8.5 * fontScale, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+                    .opacity(isHovered ? 1 : 0)
+            }
         }
         // Match the open-workspace row so worktree names align under the project name.
         .padding(.leading, 7)
