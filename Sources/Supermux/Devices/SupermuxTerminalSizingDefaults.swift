@@ -213,6 +213,14 @@ final class SupermuxTerminalSizingDefaults {
         ).priorityKey
     }
 
+    /// The largest viewport this Mac takes from a viewer
+    /// (`device-mirror-viewport-limit`): upstream's 300 x 120 for a phone, and
+    /// the largest fixed grid (500 x 200) for a viewing Mac, whose full-screen
+    /// pane on a big display is larger than 300 x 120 and was letterboxed.
+    static func viewportLimit(deviceKind: TerminalDeviceKind?) -> TerminalGridSize {
+        deviceKind == .mac ? TerminalSizingPolicy.maximumFixedSize : TerminalGridSize(cols: 300, rows: 120)
+    }
+
     // MARK: - Viewer identity
 
     /// This Mac's sizing identity as a viewer of `instance`'s terminals.
