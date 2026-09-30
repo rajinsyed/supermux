@@ -1,0 +1,256 @@
+# Remote Macs foundation (F1): API for the M and P workstreams
+
+Status: implemented on `remote-workspace-sync`. Design: [DESIGN.md](DESIGN.md). Touchpoints
+**#517–#522** in `SUPERMUX-TOUCHPOINTS.md`. Everything below is `@MainActor` unless noted.
+
+Where things live:
+
+| Area | Files |
+|---|---|
+| App-target facade, index, opener, socket | `Sources/Supermux/Devices/*.swift` |
+| Pure, package-tested pieces | `Packages/SupermuxKit/Sources/SupermuxKit/Devices/*.swift` (tests: `Packages/SupermuxKit/Tests/SupermuxKitTests/Supermux{DeviceBindingStore,GitRemoteURLResolver,DevicesSettings,ProjectGitRemotes}Tests.swift`) |
+| Composition (one instance each) | `Sources/Supermux/Devices/SupermuxComposition+Devices.swift` |
+
+## Composition
+
+```swift
+SupermuxComposition.devices               // SupermuxDevices (facade; started on first use)
+SupermuxComposition.deviceWorkspaceIndex  // SupermuxDeviceWorkspaceIndex
+SupermuxComposition.deviceWorkspaceOpener // SupermuxDeviceWorkspaceOpener
+SupermuxComposition.deviceBindings        // SupermuxDeviceBindingStore (UserDefaults, per app domain)
+SupermuxComposition.devicesSettings       // SupermuxDevicesSettings (.autoMirror)
+SupermuxComposition.gitRemoteResolver     // SupermuxGitRemoteURLResolver (actor)
+SupermuxComposition.projectGitRemotes     // SupermuxProjectGitRemotes (@Observable)
+```
+
+`SupermuxDevicesGlue.activateIfNeeded()` runs at launch (from `SupermuxMobileHostGlue.activateIfNeeded()`,
+i.e. the existing `mobile-supermux-observers` touchpoint): it starts the facade and keeps
+`projectGitRemotes` refreshed whenever `SupermuxProjectsModel.projects` changes. Start new device
+coordinators (auto-mirror, status projector) from the same glue.
+
+## `SupermuxDevices` — the facade
+
+A device is any `.device` machine in `SurfaceCatalog.shared` whose provider is a
+`DeviceSurfaceProvider` (real Macs and F2's DEBUG loopback device alike).
+
+```swift
+@MainActor @Observable final class SupermuxDevices {
+    private(set) var devices: [SupermuxDevice]   // loopback last, then by name; reassigned only on change
+    private(set) var revision: UInt64            // bumps ≤1×/runloop turn on ANY SurfaceCatalog change,
+                                                 // link connect/loss, supermux.* event, bind/unbind
+    func device(for machine: SurfaceMachineID) -> SupermuxDevice?
+    func provider(for machine: SurfaceMachineID) -> DeviceSurfaceProvider?
+    func records(on machine: SurfaceMachineID) -> [WorkspaceSyncRecord]   // full records incl. supermux_*
+    func record(for ref: SupermuxRemoteWorkspaceRef) -> WorkspaceSyncRecord? // case-insensitive id match
+    func registerLoopback(_ instance: SurfaceDeviceInstanceID)   // F2: mark the loopback device
+    func unregisterLoopback(_ instance: SurfaceDeviceInstanceID)
+    func scheduleRefresh()
+    // events (SupermuxDevices+Events.swift)
+    func events() -> AsyncStream<SupermuxDeviceEvent>   // one independent stream per call
+    // RPC (SupermuxDevices+RPC.swift)
+    static let longOperationTimeout: Duration            // 600 s
+    func request(_ method: String, params: [String: Any] = [:], on: SurfaceMachineID,
+                 timeout: Duration? = nil) async throws -> [String: Any]
+    func request(_ method: SupermuxMobileMethod, params:, on:, timeout:) async throws -> [String: Any]
+    func request<R: Decodable>(_ method: String, params:, on:, timeout:, resultKey: String? = nil,
+                               as: R.Type) async throws -> R
+    func hostCapabilities(on: SurfaceMachineID) async -> Set<String>?   // mobile.host.status, once per connection
+    func cachedHostCapabilities(on: SurfaceMachineID) -> Set<String>?
+    func supports(_ capability: SupermuxMobileCapability, on: SurfaceMachineID) async -> Bool
+}
+
+struct SupermuxDevice: Identifiable, Hashable, Sendable {
+    let machine: SurfaceMachineID            // device:<uuid>@<tag>
+    let instance: SurfaceDeviceInstanceID
+    let displayName: String
+    let linkState: SupermuxDeviceLinkState   // .connected / .connecting / .offline
+    let linkDetail: String?                  // catalog linkError (why offline/connecting)
+    let hasFetchedRecords: Bool              // connected ∧ post-connect fetch ran ∧ mirror has state
+    let isLoopback: Bool
+    var isConnected: Bool
+}
+
+enum SupermuxDeviceEvent: Sendable {
+    case linkConnected(SurfaceMachineID)     // after the post-connect mobile.sync.fetch → refetch caches
+    case linkLost(SurfaceMachineID)
+    case topic(SurfaceMachineID, SupermuxMobileTopic, payload: Data?)  // supermux.projects/worktrees/changes/run.updated
+    var machine: SurfaceMachineID; var payloadObject: [String: Any]?
+}
+```
+
+Rules for consumers:
+
+- **Never close a mirror because its record is missing unless `hasFetchedRecords` is true.** Before the
+  first post-connect fetch the mirror can hold the previous connection's records (or none).
+  `hasFetchedRecords` becomes true on `linkConnected` (fired after the fetch attempt; a failed fetch still
+  leaves the previous records, which only ever errs toward keeping mirrors).
+- `request` errors are `SupermuxDeviceError` (`unknownDevice`, `notConnected(name)`,
+  `hostRejected(code:message:)`, `malformedResponse`, …; `.code` is a stable string). A request that
+  **times out makes the upstream link reconnect**, so pass `SupermuxDevices.longOperationTimeout` for
+  `mobile.supermux.worktree.create` and `agent.start`. `timeout: nil` uses the link runtime's default.
+- Decodable variant uses the `SupermuxWireJSON` convention (plain `JSONDecoder`, DTO `CodingKeys` carry
+  snake_case). Example:
+  `try await devices.request(SupermuxMobileMethod.projectsList.rawValue, on: m, resultKey: "projects", as: [SupermuxProjectDTO].self)`.
+- Capabilities are cleared on every link edge and refetched lazily on the next `hostCapabilities` call.
+- Remote projects carry `gitRemoteURL` / `gitRemoteIdentity` (see git origin below).
+
+Delivery path (touchpoint #517, `Sources/Devices/DeviceLink.swift` → `SupermuxDeviceLinkEvents`): every
+link subscribes to the four `SupermuxMobileTopic`s; their envelopes, the post-connect signal and the
+link-lost signal land on the facade.
+
+## `SupermuxRemoteWorkspaceRef` (SupermuxKit)
+
+```swift
+public struct SupermuxRemoteWorkspaceRef: Hashable, Codable, Sendable {
+    public let machineID: String     // "device:<uuid>@<tag>"
+    public let workspaceID: String   // canonical: uppercase uuidString for UUIDs, else trimmed
+    public init(machineID: String, workspaceID: String)
+    public static func canonicalWorkspaceID(_ raw: String) -> String
+}
+// app target (SupermuxRemoteWorkspaceRef+Surface.swift)
+init(machine: SurfaceMachineID, workspaceID: String); init(machine:, record: WorkspaceSyncRecord)
+var machine: SurfaceMachineID
+```
+
+Codable keys: `machine_id`, `workspace_id` (decoding canonicalizes).
+
+## `SupermuxDeviceWorkspaceIndex` — local ⇄ remote
+
+```swift
+static func isDeviceMirror(_ workspace: Workspace) -> Bool   // used by the export-filter touchpoints
+func isDeviceMirror(_ workspace: Workspace) -> Bool
+func ref(forLocal workspace: Workspace) -> SupermuxRemoteWorkspaceRef?
+func ref(forLocalWorkspaceID: UUID) -> SupermuxRemoteWorkspaceRef?
+func localWorkspace(showing ref: SupermuxRemoteWorkspaceRef) -> Workspace?   // any main window
+func record(for ref: SupermuxRemoteWorkspaceRef) -> WorkspaceSyncRecord?
+func mirrors() -> [SupermuxDeviceMirror]         // {ref, workspace, isBound}
+func bind(_ workspace: Workspace, to ref: SupermuxRemoteWorkspaceRef)
+func unbind(_ workspace: Workspace)              // M: call when a mirror closes / is hidden
+func unbind(ref: SupermuxRemoteWorkspaceRef)
+func pruneBindings()                              // ONLY after session restore finished
+var storedBindings: [UUID: SupermuxDeviceBindingStore.Binding]
+```
+
+- A workspace **is a device mirror** when the binding store names it (by `Workspace.stableId`), or when
+  every pane projects a device terminal (live projection, or a restored projection still pending the
+  link). A local workspace with one borrowed remote pane is not a mirror. The check is O(1) for local
+  workspaces (it first asks `catalog.projectionMachines(forWorkspace:)`).
+- `ref(forLocal:)`: binding first, else the device workspace most of its panes project (live + pending).
+- `localWorkspace(showing:)`: binding (matched to a live workspace by `stableId`) first, else the local
+  workspace holding most projections of that remote workspace.
+- **Identity across restart.** Session restore keeps both `Workspace.id` and `Workspace.stableId`
+  (`TabManager` restore uses `WorkspaceSessionRestoreIdentity` with the persisted `workspaceId`;
+  `restoreSessionSnapshot` adopts `stableId`); both change only for duplicate reopens. Bindings are keyed
+  by `stableId` with the last `Workspace.id` as fallback. Stored in this app's `UserDefaults` under
+  `supermux.devices.mirrorBindings.v1` (so stable and tagged builds never share it), one remote workspace ↔
+  one local workspace, capped at 512 (oldest evicted).
+
+## `SupermuxDeviceWorkspaceOpener` — the one open/create path
+
+```swift
+struct Opened { let ref: SupermuxRemoteWorkspaceRef; let workspace: Workspace; let reused: Bool }
+
+func openMirror(of ref:, in tabManager: TabManager, focus: Bool,
+                createStarterTerminalIfEmpty: Bool = false) async throws -> Opened
+func createWorkspace(on machine: SurfaceMachineID, title: String?, workingDirectory: String?,
+                     in tabManager: TabManager, focus: Bool) async throws -> Opened
+func awaitRemoteWorkspace(_ ref:, timeout: Duration = .seconds(30),
+                          requireTerminal: Bool = true) async throws -> WorkspaceSyncRecord
+func openWhenAvailable(_ ref:, in tabManager:, focus:, timeout: Duration = .seconds(30)) async throws -> Opened
+```
+
+- `openMirror` returns the existing mirror (any window) when there is one (`reused: true`); concurrent
+  calls for one ref share one open (auto-mirror racing a click cannot duplicate). It runs the canonical
+  sequence `remoteWorkspaceGroup → CloudWorkspaceLayoutTranslator.fetch → projectGroupAsNewLocalWorkspace
+  (window-scoped SurfaceCatalog.NewWorkspaceHost(tabManager:)) → bindCloudWorkspace`, binds the local
+  workspace **at creation** (so the export filter never leaks it), and selects it only when `focus`.
+  A remote workspace with no terminal throws `.nothingToMirror` unless `createStarterTerminalIfEmpty`
+  (auto-mirror should pass `false`; explicit user opens `true`). Browsers in the remote workspace are
+  refused by upstream's `materialize` and simply skipped.
+- `createWorkspace` sends `workspace.create {focus:false, title?, working_directory?}` fork-side (the host
+  validates the directory), re-syncs, then opens through upstream's
+  `CloudTreeNodeActions.createWorkspaceAndOpenLocally(… existingWorkspace:, existingTerminal:, host:
+  CloudWorkspaceCreationHost(manager:))`. Passing the already-created workspace means the reservation's
+  provisional **"Cloud VM" title is replaced in the same main-actor turn** and never renders. (Upstream's own
+  ⌘N-on-a-device path still shows it during the round trip; route UI through this opener instead.)
+- After a remote RPC that returns `workspace_id` (`mobile.supermux.worktree.create {open:true}`,
+  `agent.start`, `project.open`, `worktree.open`): `openWhenAvailable(ref, in:, focus: true)` waits for the
+  record (with a terminal), nudging `mobile.sync.fetch` every 2 s, then opens.
+
+## Settings and defaults
+
+- `SupermuxDevicesSettings(defaults:).autoMirror` — key `supermux.devices.autoMirror`, default **true**.
+- For `com.supermux.app` only, `CmuxFeatureFlags.init` (touchpoint #520) seeds
+  `cloud.beta.machines.enabled`, `devices.discovery.enabled`, `devices.incomingAccess.enabled` to true once
+  (marker `supermux.devices.releaseDefaultsSeeded.v1`), only where no value is stored
+  (`SupermuxDefaultsSeed.applyOnce`). Tagged dev builds are unaffected (their Cloud gates come from
+  upstream's dogfood marker; Devices discovery/incoming stay at their stored values).
+
+## Git origin (cross-device project identity)
+
+- Host: `mobile.supermux.projects.list` and the `project.create/update` results carry the additive
+  `git_remote_url` (`SupermuxProjectDTO.gitRemoteURL`; compare with `.gitRemoteIdentity`, the normalized
+  `host/owner/repo` key). Omitted when the project has no origin (legacy wire shape).
+- Resolution: `SupermuxGitRemoteURLResolver` (actor) runs `git -C <root> config --get remote.origin.url`,
+  caches per standardized root for 10 min (definitive "no origin" cached; transient failures not), coalesces
+  concurrent lookups; `invalidate(root:)` / `invalidateAll()`.
+- Local Mac UI: `SupermuxComposition.projectGitRemotes` (`@Observable`): `urlsByProjectID`,
+  `url(for:)`, `identity(for:)` — match a local project with a remote `SupermuxProjectDTO` by
+  `projectGitRemotes.identity(for: local.id) == remote.gitRemoteIdentity` (fall back to `name` +
+  `rootPath` per DESIGN decision 4).
+
+## Loop guard (touchpoints #518/#519)
+
+`MobileStateSyncHost.buildRows` (state sync v2) and `mobile.workspace.list` skip every workspace for which
+`SupermuxDeviceWorkspaceIndex.isDeviceMirror` is true. The notification feed already drops `.deviceMac`
+rows upstream. Consequence for M: a mirror must be bound (or fully projected) **before** anything else
+could export it — the opener guarantees this; any other path that creates mirrors must call
+`index.bind(_:to:)` immediately.
+
+## Debug/E2E socket (touchpoint #521)
+
+Raw v2 calls through the tagged CLI (socket `/tmp/cmux-debug-<tag>.sock`):
+
+```bash
+CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.list '{}'
+CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.list '{"include_capabilities":true}'
+CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.bindings '{}'
+CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.local_projects '{}'
+CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.open '{"machine":"device:<uuid>@<tag>","remote_workspace_id":"<id>","focus":false}'
+CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.create_workspace '{"machine":"device:…","title":"t","cwd":"/path/on/that/mac"}'
+CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.await_open '{"machine":"device:…","remote_workspace_id":"<id>","timeout_seconds":60}'
+CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.request '{"machine":"device:…","method":"mobile.supermux.projects.list","params":{}}'   # DEBUG builds only
+```
+
+Params: `window_id` (optional, a main window UUID) picks the target window for `open`,
+`create_workspace` and `await_open`; otherwise the preferred main window. `focus` defaults to false.
+`open` also takes `create_starter_terminal`. Timeouts: `await_open.timeout_seconds` 1–600 (default 30),
+`request.timeout_seconds` 1–600.
+
+Result shapes:
+
+- `list` → `{revision, auto_mirror, devices: [{machine, device_id, tag, name, link_state, link_detail,
+  has_fetched_records, is_loopback, capabilities|null, record_count, records: [{id, title, is_selected,
+  current_directory, terminal_count, supermux_project_id, supermux_branch, supermux_activity,
+  supermux_unread_count, mirror_workspace_id|null}]}]}`
+- `bindings` → `{mirrors: [{workspace_id, stable_id, title, window_id, is_selected, machine,
+  remote_workspace_id, is_bound, remote_title}], stored: [{stable_id, workspace_id, machine,
+  remote_workspace_id, bound_at, is_live}], local_workspaces: [{workspace_id, stable_id, title, window_id,
+  is_selected, is_device_mirror}]}`
+- `local_projects` → `{host_payload: <this Mac's exact mobile.supermux.projects.list result, with
+  git_remote_url>, local: [{id, name, root_path, git_remote_url, git_remote_identity}]}` (the latter from
+  `SupermuxComposition.projectGitRemotes`)
+- `open` / `create_workspace` / `await_open` → `{workspace_id, stable_id, title, window_id, is_selected,
+  machine, remote_workspace_id, reused}`
+- `request` → `{result: <host result object>}`
+- Errors: `{ok:false, error:{code, message}}` with `invalid_params`, `unknown_device`, `not_connected`,
+  `timeout`, `nothing_to_mirror`, `window_unavailable`, `malformed_response`, the host's own code, or
+  `method_not_found`.
+
+## Not done here (owned by later workstreams)
+
+- Auto-mirror reconcile loop, close/hide semantics, closing a mirror whose remote workspace vanished (M).
+- Status/activity projection onto mirror rows, notification read mirroring (M).
+- Remote projects model, unified project rows, device picker (P).
+- Calling `index.unbind` when a mirror closes and `pruneBindings()` after restore (M's close hook and
+  post-restore pass).

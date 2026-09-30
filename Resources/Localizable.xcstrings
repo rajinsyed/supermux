@@ -596652,6 +596652,108 @@
           }
         }
       }
+    },
+    "supermux.devices.error.malformed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The other Mac sent an unexpected reply. Update Supermux on both Macs and try again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "もう一方のMacから予期しない応答がありました。両方のMacでSupermuxをアップデートしてから、もう一度お試しください。"
+          }
+        }
+      }
+    },
+    "supermux.devices.error.notConnected" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ is not connected right now."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ は現在接続されていません。"
+          }
+        }
+      }
+    },
+    "supermux.devices.error.nothingToMirror" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This workspace has no terminals to show yet."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このワークスペースには、まだ表示できるターミナルがありません。"
+          }
+        }
+      }
+    },
+    "supermux.devices.error.remoteWorkspaceTimedOut" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The workspace did not appear on the other Mac in time."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "もう一方のMacにワークスペースが時間内に表示されませんでした。"
+          }
+        }
+      }
+    },
+    "supermux.devices.error.unknownDevice" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "That Mac is not available."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "そのMacは利用できません。"
+          }
+        }
+      }
+    },
+    "supermux.devices.error.windowUnavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The window was closed."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ウインドウが閉じられました。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
