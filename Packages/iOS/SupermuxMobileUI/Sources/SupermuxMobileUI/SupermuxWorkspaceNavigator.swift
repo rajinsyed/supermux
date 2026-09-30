@@ -76,6 +76,10 @@ final class SupermuxWorkspaceNavigator {
         select(rowID)
     }
 
+    /// The shell's selection moved to `rowID` through another path.
+    /// - Parameter rowID: The newly selected row id, or `nil` when cleared.
+    func shellSelectionDidChange(to rowID: String?) {}
+
     /// Drops the parked target without navigating or reporting.
     func cancelPending() {
         pendingTarget = nil
