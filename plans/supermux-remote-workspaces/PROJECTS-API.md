@@ -261,7 +261,8 @@ final class SupermuxRemoteWorktreeCreationTarget   // over the device link, open
   is a provider over the observable device list): a Mac that finishes connecting becomes
   selectable, one that drops is disabled (Create too, with its hint), and neither edge touches the
   selection or the typed input. The sheet reloads when the selected Mac becomes reachable
-  (`loadKey`); a reload keeps the user's model / effort picks.
+  (`loadKey`); a reload keeps the user's model / effort picks. A load the link drops under reads
+  as that Mac being unreachable (`not_connected` sentence), never as the raw `CancellationError`.
 - **Default**: the row menu's Mac, else the last Mac a worktree was created on for this unified
   project (recorded only after a successful create), else the first Mac that can create, else the
   first copy (an offline-only project still opens and explains why).
