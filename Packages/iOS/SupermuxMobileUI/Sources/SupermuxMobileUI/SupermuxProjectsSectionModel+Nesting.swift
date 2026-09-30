@@ -3,39 +3,51 @@ import SupermuxMobileCore
 import SupermuxMobileKit
 
 /// The inline-nesting half of ``SupermuxProjectsSectionModel`` (m6-f1): the
-/// mac-sidebar-style per-project disclosure, its phone-local persistence,
-/// the section-owned worktree sessions behind the nested rows, the nested
-/// worktree open flow, and the detail-screen route — split from the main
-/// file to respect the per-file length budget.
+/// per-project disclosure and its phone-local persistence, the detail route,
+/// and the flows that end in "navigate the shell to a workspace". All keyed
+/// by project ROW id, so the same project id on two Macs never collides.
 extension SupermuxProjectsSectionModel {
     /// Whether one project's inline disclosure is open.
-    /// - Parameter projectID: The project's UUID string.
+    /// - Parameter projectID: The project ROW id.
     public func isProjectExpanded(_ projectID: String) -> Bool {
-        expandedProjectIDs.contains(projectID)
+        isExpanded(SupermuxProjectKey(rawValue: projectID))
     }
 
-    /// Toggles one project's inline disclosure, persisting the new state
-    /// phone-locally. Expanding starts the project's section-owned worktree
-    /// session (fetch on expand + `supermux.worktrees.updated` refetches);
-    /// collapsing cancels it — a re-expand fetches fresh, like the mac
-    /// sidebar's expand-refresh.
-    /// - Parameter projectID: The project's UUID string.
+    /// Whether a project's disclosure is open: by its own key, or by a
+    /// legacy plain project id persisted before per-Mac keys.
+    func isExpanded(_ key: SupermuxProjectKey) -> Bool {
+        expandedProjectIDs.contains(key.rawValue) || expandedProjectIDs.contains(key.projectID)
+    }
+
+    /// The Mac-local ids of the projects expanded on one Mac.
+    func expandedProjectIDs(onPairingID pairingID: String) -> Set<String> {
+        Set(expandedProjectIDs.compactMap { rawValue in
+            let key = SupermuxProjectKey(rawValue: rawValue)
+            return key.pairingID.isEmpty || key.pairingID == pairingID ? key.projectID : nil
+        })
+    }
+
+    /// Toggles one project's inline disclosure, persisting it phone-locally.
+    /// Expanding starts the project's worktree session on its own Mac;
+    /// collapsing cancels it.
+    /// - Parameter projectID: The project ROW id.
     public func toggleProjectExpanded(_ projectID: String) {
-        if expandedProjectIDs.contains(projectID) {
-            expandedProjectIDs.remove(projectID)
-            endWorktreeSession(forProjectID: projectID)
+        let key = SupermuxProjectKey(rawValue: projectID)
+        let session = resolve(projectID)?.session
+        if isExpanded(key) {
+            expandedProjectIDs.remove(key.rawValue)
+            expandedProjectIDs.remove(key.projectID)
+            session?.endWorktreeSession(forProjectID: key.projectID)
         } else {
-            expandedProjectIDs.insert(projectID)
-            startWorktreeSession(forProjectID: projectID)
+            expandedProjectIDs.insert(key.rawValue)
+            session?.startWorktreeSession(forProjectID: key.projectID)
         }
         expansionDefaults.set(expandedProjectIDs.sorted(), forKey: Self.expansionDefaultsKey)
     }
 
-    /// Routes to the project DETAIL screen. Shared by the row's info
-    /// accessory and its long-press menu entry (one action path). Captures
-    /// the row's current snapshot as ``detailFallbackRow`` so the pushed
-    /// detail survives a session teardown (see ``detailRow``).
-    /// - Parameter projectID: The project's UUID string.
+    /// Routes to the project DETAIL screen, capturing the row as a fallback
+    /// so the pushed detail survives its Mac's session going away.
+    /// - Parameter projectID: The project ROW id.
     public func openProjectDetail(_ projectID: String) {
         detailFallbackRow = snapshot.rows.first { $0.id == projectID }
         detailProjectID = projectID
@@ -47,215 +59,103 @@ extension SupermuxProjectsSectionModel {
         detailFallbackRow = nil
     }
 
-    /// The freshest row snapshot for the routed detail project, or `nil`
-    /// when nothing is routed. Resolution is by STABLE PROJECT ID against
-    /// the live snapshot, in three tiers:
-    ///
-    /// 1. The live row — the normal case; store refetches keep feeding the
-    ///    pushed detail fresh data.
-    /// 2. `nil` (the localized "no longer available" placeholder) ONLY when
-    ///    a live, fully-loaded projects list no longer contains the id —
-    ///    the project was genuinely deleted mac-side.
-    /// 3. The ``detailFallbackRow`` captured at push time while the section
-    ///    snapshot is hidden or still loading (session torn down by a
-    ///    disconnect, or the post-pop reload hasn't landed yet) — never the
-    ///    placeholder for a merely-paused session.
+    /// The freshest row for the routed detail project: the live row; `nil`
+    /// (the "no longer available" placeholder) only when its Mac's LOADED
+    /// list no longer contains it; otherwise the fallback captured at push.
     public var detailRow: SupermuxProjectRowSnapshot? {
         guard let detailProjectID else { return nil }
         let snapshot = snapshot
-        if let live = snapshot.rows.first(where: { $0.id == detailProjectID }) {
+        if let live = snapshot.groups.lazy.flatMap(\.rows).first(where: { $0.id == detailProjectID }) {
             return live
         }
-        if snapshot.isVisible, snapshot.hasLoaded {
+        let pairingID = SupermuxProjectKey(rawValue: detailProjectID).pairingID
+        if snapshot.groups.contains(where: { $0.id == pairingID && $0.hasLoaded }) {
             return nil
         }
         return detailFallbackRow
     }
 
-    /// Navigates to a workspace through the shell's own closure — the ONE
-    /// workspace-navigation path for the section's affordances. Pops any
-    /// routed project detail first, so the destination binding never holds a
-    /// stale `true` (which would swallow the next detail push).
-    /// - Parameter workspaceID: The workspace's UI row id.
+    /// Selects a workspace by its UI ROW id — the ONE selection path. Pops
+    /// any routed detail first, so the destination binding never holds a
+    /// stale `true`.
+    /// - Parameter workspaceID: The workspace's row id.
     func navigateToWorkspace(_ workspaceID: String) {
         dismissProjectDetail()
         selectWorkspaceAction(workspaceID)
     }
 
-    /// Opens a nested worktree row: an already-open worktree navigates
-    /// straight to its workspace; an unopened one runs the m2-f2
-    /// `worktree.open` → navigate flow through the project's section-owned
-    /// store. Failures surface on ``nestedOpenErrorMessage``. A late answer
-    /// from a session that has since ended (disconnect/reconnect) is
-    /// dropped: it must neither navigate the new shell with a stale
-    /// workspace id nor surface an obsolete error. A late answer from a
-    /// request the user has since superseded — by tapping a different
-    /// worktree row, including the synchronous already-open path, before
-    /// this one answered — is dropped too: it must never yank the app back
-    /// to a target the user has moved on from.
+    /// Navigates to a workspace a Mac answered with (its Mac-local id): the
+    /// id is resolved against THAT Mac's rows, waiting for a freshly created
+    /// workspace's row to arrive.
     /// - Parameters:
-    ///   - projectID: The owning project's UUID string.
+    ///   - remoteWorkspaceID: The Mac-local workspace id.
+    ///   - mac: The Mac that answered, or `nil` when unknown.
+    func navigateToMacWorkspace(_ remoteWorkspaceID: String, on mac: SupermuxMacInfo?) {
+        navigator.open(SupermuxWorkspaceNavigator.Target(
+            remoteWorkspaceID: remoteWorkspaceID,
+            macDeviceID: mac?.macDeviceID,
+            instanceTag: mac?.instanceTag
+        ))
+    }
+
+    /// Opens a nested worktree row: an already-open worktree navigates to its
+    /// workspace; an unopened one runs `worktree.open` on the project's Mac,
+    /// then navigates. A late answer from an ended session, or one the user
+    /// superseded with a newer open, never navigates or surfaces an error.
+    /// - Parameters:
+    ///   - projectID: The owning project's ROW id.
     ///   - worktree: The tapped row's value snapshot.
     public func openNestedWorktree(projectID: String, worktree: SupermuxWorktreeRowSnapshot) {
         nestedOpenRequestToken += 1
         let requestToken = nestedOpenRequestToken
+        let resolved = resolve(projectID)
         if let workspaceID = worktree.workspaceID {
-            navigateToWorkspace(workspaceID)
+            navigateToMacWorkspace(workspaceID, on: resolved?.session.mac)
             return
         }
-        guard let store = worktreeSessions[projectID]?.store else { return }
-        let generation = sessionGeneration
+        guard let resolved, let store = resolved.session.worktreeSessions[resolved.projectID]?.store else { return }
+        let session = resolved.session
+        let generation = session.generation
         Task {
             do {
                 let workspaceID = try await store.openWorktree(path: worktree.path)
-                guard sessionGeneration == generation, nestedOpenRequestToken == requestToken else { return }
+                guard session.generation == generation, nestedOpenRequestToken == requestToken else { return }
                 if let workspaceID {
-                    navigateToWorkspace(workspaceID)
+                    navigateToMacWorkspace(workspaceID, on: session.mac)
                 }
             } catch {
-                guard sessionGeneration == generation, nestedOpenRequestToken == requestToken else { return }
+                guard session.generation == generation, nestedOpenRequestToken == requestToken else { return }
                 nestedOpenErrorMessage = error.localizedDescription
             }
         }
     }
 
-    /// Opens (or focuses) a workspace at the project ROOT and navigates to it
-    /// — the phone's twin of clicking a project row in the Mac sidebar
-    /// (`SupermuxProjectRowActions.openLocal`). Routed through the session's
-    /// projects store, so the Mac records the workspace→project association
-    /// and the new workspace nests under its project on both devices.
-    ///
-    /// Shares ``nestedOpenRequestToken`` with the nested-worktree open flow on
-    /// purpose: both end in "navigate the shell to a workspace", so a slow
-    /// project open must lose to a newer tap on a WORKTREE row just as surely
-    /// as to a newer tap on another project. Failures surface on
-    /// ``nestedOpenErrorMessage`` (UI-03: visible, never silent).
-    ///
-    /// - Parameter projectID: The project's UUID string.
+    /// Opens (or focuses) a workspace at the project ROOT on the project's own
+    /// Mac and navigates to it — the twin of clicking a project row on the
+    /// Mac. Shares the request token with the worktree open flow.
+    /// - Parameter projectID: The project ROW id.
     public func openProjectWorkspace(_ projectID: String) {
         nestedOpenRequestToken += 1
         let requestToken = nestedOpenRequestToken
-        guard let store else { return }
-        let generation = sessionGeneration
+        guard let resolved = resolve(projectID), let store = resolved.session.store else { return }
+        let session = resolved.session
+        let generation = session.generation
         Task {
             do {
-                let workspaceID = try await store.openProject(projectID: projectID)
-                guard sessionGeneration == generation, nestedOpenRequestToken == requestToken else { return }
+                let workspaceID = try await store.openProject(projectID: resolved.projectID)
+                guard session.generation == generation, nestedOpenRequestToken == requestToken else { return }
                 if let workspaceID {
-                    navigateToWorkspace(workspaceID)
+                    navigateToMacWorkspace(workspaceID, on: session.mac)
                 }
             } catch {
-                guard sessionGeneration == generation, nestedOpenRequestToken == requestToken else { return }
+                guard session.generation == generation, nestedOpenRequestToken == requestToken else { return }
                 nestedOpenErrorMessage = error.localizedDescription
             }
         }
     }
 
-    /// Clears a surfaced nested-worktree open failure (alert dismissed).
+    /// Clears a surfaced open/navigation failure (alert dismissed).
     public func dismissNestedOpenError() {
         nestedOpenErrorMessage = nil
-    }
-
-    /// The nested-worktree slice for one EXPANDED project, projected from
-    /// its section-owned worktrees store (a pure read — the store's
-    /// `@Observable` fields re-project the snapshot as fetches land).
-    func nestedWorktrees(forProjectID projectID: String) -> SupermuxProjectNestedWorktrees {
-        guard let store = worktreeSessions[projectID]?.store else { return .unavailable }
-        guard store.hasLoaded else { return .loading }
-        return .loaded(SupermuxWorktreeRowSnapshot.unopenedRows(from: store.worktrees))
-    }
-
-    /// Starts the section-owned worktree session for one expanded project —
-    /// a no-op while disconnected or without `supermux.worktrees.v1` (the
-    /// nested slice stays ``SupermuxProjectNestedWorktrees/unavailable``).
-    func startWorktreeSession(forProjectID projectID: String) {
-        guard worktreeSessions[projectID] == nil,
-              let store = makeWorktreesStore(forProjectID: projectID) else { return }
-        let task = Task { await store.run() }
-        worktreeSessions[projectID] = WorktreeSession(store: store, task: task)
-    }
-
-    func endWorktreeSession(forProjectID projectID: String) {
-        worktreeSessions.removeValue(forKey: projectID)?.task?.cancel()
-    }
-
-    /// Pauses every worktree session's event loop WITHOUT dropping its
-    /// store (m6-f3): while a navigation push covers the list, the loaded
-    /// nested rows keep rendering, but nothing polls — or keeps re-dialling
-    /// a dead connection — in the background. The cancelled loop's handle is
-    /// retained as the session's `predecessor` so a pop-resume can chain
-    /// behind its (cooperative) exit via ``resumeWorktreeSessionLoops()``.
-    func pauseWorktreeSessionLoops() {
-        for (projectID, session) in worktreeSessions where session.task != nil {
-            session.task?.cancel()
-            worktreeSessions[projectID]?.predecessor = session.task
-            worktreeSessions[projectID]?.task = nil
-        }
-    }
-
-    /// Restarts the paused worktree sessions' event loops (each resubscribes
-    /// and refetches — the silent revalidation of the retained nested rows),
-    /// chained behind the cancelled predecessor's exit so one store never
-    /// runs two subscriptions concurrently (cancellation is cooperative —
-    /// the old loop may still be finishing a request). Sessions whose loop
-    /// still runs (a rapid pop beat the pause) are left alone.
-    func resumeWorktreeSessionLoops() {
-        for (projectID, session) in worktreeSessions where session.task == nil {
-            let store = session.store
-            let previous = session.predecessor
-            worktreeSessions[projectID]?.predecessor = nil
-            worktreeSessions[projectID]?.task = Task {
-                await previous?.value
-                guard !Task.isCancelled else { return }
-                await store.run()
-            }
-        }
-    }
-
-    /// Ends orphan worktree sessions whose project is no longer in the
-    /// authoritative list (deleted mac-side): their rows are gone, so they
-    /// could never be collapsed away, and without pruning they would refetch
-    /// on every worktrees event forever. Persisted expansion ids are kept —
-    /// they may belong to ANOTHER paired Mac's projects (ids are per-Mac
-    /// UUIDs), and a stale id costs nothing while unconnected.
-    /// - Parameter projectIDs: The fetched project ids.
-    func pruneWorktreeSessions(keepingProjectIDs projectIDs: [String]) {
-        let known = Set(projectIDs)
-        for projectID in worktreeSessions.keys where !known.contains(projectID) {
-            endWorktreeSession(forProjectID: projectID)
-        }
-    }
-
-    func endAllWorktreeSessions() {
-        for session in worktreeSessions.values {
-            session.task?.cancel()
-        }
-        worktreeSessions.removeAll()
-    }
-
-    /// One-shot worktree-count seeding for projects WITHOUT a live worktree
-    /// session, mirroring the mac's eager `refreshWorktrees` for every
-    /// project at load (its capsule count shows without ever expanding).
-    /// Runs at most once per project per session; expanded projects are
-    /// skipped (their session's own fetch feeds the count). A no-op without
-    /// `supermux.worktrees.v1`. Generation-guarded so a reconnect's fresh
-    /// counts are never overwritten by a stale session's late answers.
-    /// - Parameters:
-    ///   - projectIDs: The authoritative fetched project ids.
-    ///   - generation: The calling session's generation stamp.
-    func seedWorktreeCounts(forProjectIDs projectIDs: [String], generation: Int) {
-        guard let client = sessionClient,
-              sessionCapabilities?.supportsWorktrees == true else { return }
-        for projectID in projectIDs
-        where worktreeSessions[projectID] == nil && !seededWorktreeCountProjectIDs.contains(projectID) {
-            seededWorktreeCountProjectIDs.insert(projectID)
-            Task { [weak self] in
-                guard let response = try? await client.worktreesList(
-                    SupermuxWorktreesListRequest(projectID: projectID)
-                ) else { return }
-                guard let self, self.sessionGeneration == generation else { return }
-                self.recordWorktrees(response.worktrees, forProjectID: projectID)
-            }
-        }
     }
 }
