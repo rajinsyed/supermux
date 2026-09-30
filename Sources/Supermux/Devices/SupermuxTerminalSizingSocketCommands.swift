@@ -77,11 +77,12 @@ enum SupermuxTerminalSizingSocketCommands {
             throw SupermuxMirrorSocketCommands.InvalidParams(message: "mode must be one of latest, smallest, largest, priority, fixed")
         }
         let store = TerminalController.shared.terminalSharing
+        let defaults = SupermuxTerminalSizingDefaults.shared
         let accepted: Bool
         if let cols = (params["fixed_cols"] as? NSNumber)?.intValue, let rows = (params["fixed_rows"] as? NSNumber)?.intValue {
-            accepted = store.setFixedSize(TerminalGridSize(cols: cols, rows: rows), surfaceID: surfaceID)
+            accepted = defaults.userChoseFixedSize(TerminalGridSize(cols: cols, rows: rows), surfaceID: surfaceID, store: store)
         } else {
-            accepted = store.setMode(mode, surfaceID: surfaceID)
+            accepted = defaults.userChoseMode(mode, surfaceID: surfaceID, store: store)
         }
         return payload(surfaceID, accepted: accepted)
     }
@@ -91,7 +92,9 @@ enum SupermuxTerminalSizingSocketCommands {
         guard let keys = params["keys"] as? [String], !keys.isEmpty else {
             throw SupermuxMirrorSocketCommands.InvalidParams(message: "keys must be a non-empty list of priority keys")
         }
-        let accepted = TerminalController.shared.terminalSharing.setPriority(keys, surfaceID: surfaceID)
+        let accepted = SupermuxTerminalSizingDefaults.shared.userChosePriority(
+            keys, surfaceID: surfaceID, store: TerminalController.shared.terminalSharing
+        )
         return payload(surfaceID, accepted: accepted)
     }
 

@@ -3,6 +3,7 @@ import CmuxSurfaceCatalogModel
 import CmuxTerminalSharing
 import CmuxTerminalSizing
 import Foundation
+import SwiftUI
 
 /// How this Mac sizes the terminals it shows: one choice for every terminal.
 ///
@@ -230,5 +231,19 @@ final class SupermuxTerminalSizingDefaults {
         }
         #endif
         return identity
+    }
+}
+
+/// The size panel's note under the mode picker: the mode is this Mac's
+/// choice for every terminal, not this terminal's alone.
+struct SupermuxTerminalSizingScopeNote: View {
+    var body: some View {
+        Text(String(
+            localized: "supermux.terminalSizing.appliesToAll",
+            defaultValue: "Applies to all terminals on this Mac."
+        ))
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
