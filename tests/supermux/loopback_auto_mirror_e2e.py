@@ -656,9 +656,11 @@ class AutoMirrorE2E:
         try:
             source = self.create_source("former")
             wait_for("the source terminal", lambda: (self.terminal_ids(source) or [None])[0], self.timeout)
-            opened = self.sock.call(
+            # The device lists a new workspace on its next record refresh; until
+            # then upstream answers not_found.
+            opened = wait_for("the device to list the source", lambda: self.sock.call(
                 "vm.workspace_open", {"id": self.machine, "workspace_id": source, "focus": False}, timeout_s=60
-            ) or {}
+            ), self.timeout) or {}
             mirror_id = opened.get("workspace_id")
             if not mirror_id:
                 raise Failure(f"vm.workspace_open opened nothing: {opened}")
