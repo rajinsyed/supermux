@@ -25,19 +25,31 @@ struct SupermuxNewWorktreeTarget {
 /// Deliberately NOT part of the section snapshot: it carries live stores and
 /// is consumed only by the stable navigation wrapper above the list.
 struct SupermuxNewWorktreePresentation {
+    /// Tells this sheet apart from a later one for the same row.
+    let id = UUID()
     /// The project row the sheet was requested for.
     let row: SupermuxProjectRowSnapshot
     /// The create target on the row's own Mac.
     let target: SupermuxNewWorktreeTarget
     /// The Macs the sheet's picker offers (own Mac first); one entry hides it.
     let options: [SupermuxNewWorktreeMacOption]
+    /// The Mac the sheet creates on: the row's own Mac until the picker
+    /// retargets it. Only this Mac's connection holds stores the create
+    /// uses; the other offered Macs re-resolve when picked.
+    var activePairingID: String
+
+    /// Creates the presentation, creating on the row's own Mac.
+    init(row: SupermuxProjectRowSnapshot, target: SupermuxNewWorktreeTarget, options: [SupermuxNewWorktreeMacOption]) {
+        self.row = row
+        self.target = target
+        self.options = options
+        self.activePairingID = target.pairingID
+    }
 
     /// The own Mac's worktrees store.
     var store: SupermuxMobileWorktreesStore { target.store }
     /// The own Mac's Claude store, if any.
     var agentStore: SupermuxMobileAgentLaunchStore? { target.agentStore }
-    /// Every Mac this presentation holds stores for.
-    var pairingIDs: Set<String> { Set(options.map(\.pairingID) + [target.pairingID]) }
 }
 
 /// The sidebar's create-worktree flow (m7). Every entry point funnels
@@ -124,7 +136,9 @@ extension SupermuxProjectsSectionModel {
 
     /// Retargets a New Worktree create to another Mac's copy of the project:
     /// fetches that Mac's branches and returns stores bound to ITS client, so
-    /// the create runs there without switching the foreground Mac.
+    /// the create runs there without switching the foreground Mac. The
+    /// presented sidebar sheet then creates on that Mac, so only ITS
+    /// connection ending closes the sheet.
     /// - Parameter option: The picked Mac.
     /// - Returns: The target the sheet creates through.
     func prepareNewWorktreeTarget(_ option: SupermuxNewWorktreeMacOption) async throws -> SupermuxNewWorktreeTarget {
@@ -134,7 +148,16 @@ extension SupermuxProjectsSectionModel {
                 ?? session.makeWorktreesStore(forProjectID: option.projectID) else {
             throw SupermuxMacUnavailableError()
         }
+        let generation = session.generation
+        let presentationID = newWorktreePresentation?.id
         try await store.refreshBranches()
+        // A reconnect while the branches loaded left this store on a dead client.
+        guard sessions[option.pairingID] === session, session.generation == generation else {
+            throw SupermuxMacUnavailableError()
+        }
+        if let presentationID, newWorktreePresentation?.id == presentationID {
+            newWorktreePresentation?.activePairingID = option.pairingID
+        }
         return makeTarget(
             session: session,
             projectID: option.projectID,

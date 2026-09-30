@@ -111,6 +111,49 @@ import Testing
         #expect(harness.selected == ["ws-1"])
     }
 
+    /// The user moved on while a created workspace's row was still on its way:
+    /// they opened another workspace from the flat list, a notification or
+    /// search. When the parked row lands it must not yank them back, and no
+    /// "hasn't appeared" alert may fire over where they went.
+    @Test func aSelectionMadeElsewhereDropsAParkedTarget() async throws {
+        let (navigator, harness) = makeNavigator(timeout: .milliseconds(30))
+
+        navigator.open(macB)
+        navigator.shellSelectionDidChange(to: "row-elsewhere")
+        harness.rows[macB] = "row-b"
+        navigator.retryPending()
+        try await Task.sleep(for: .milliseconds(80))
+
+        #expect(harness.selected.isEmpty)
+        #expect(harness.timedOut.isEmpty)
+    }
+
+    /// The parked row landing can select itself first (the Mac focused the
+    /// workspace it just created): that is the target arriving, not the user
+    /// moving on.
+    @Test func selectingTheParkedTargetsOwnRowKeepsTheNavigation() {
+        let (navigator, harness) = makeNavigator()
+
+        navigator.open(macB)
+        harness.rows[macB] = "row-b"
+        navigator.shellSelectionDidChange(to: "row-b")
+        navigator.retryPending()
+
+        #expect(harness.selected == ["row-b"])
+    }
+
+    /// A cleared selection (the selected workspace closed) is not a choice.
+    @Test func aClearedSelectionKeepsAParkedTarget() {
+        let (navigator, harness) = makeNavigator()
+
+        navigator.open(macB)
+        navigator.shellSelectionDidChange(to: nil)
+        harness.rows[macB] = "row-b"
+        navigator.retryPending()
+
+        #expect(harness.selected == ["row-b"])
+    }
+
     @Test func cancellingDropsAParkedRequestWithoutATimeout() async throws {
         let (navigator, harness) = makeNavigator(timeout: .milliseconds(30))
 

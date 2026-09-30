@@ -158,7 +158,7 @@ public struct SupermuxNewWorktreeSheet: View {
                             Text(String(localized: "supermux.newWorktree.create", defaultValue: "Create", bundle: .module))
                         }
                     }
-                    .disabled(isCreating)
+                    .disabled(isCreating || isRetargeting)
                     .accessibilityIdentifier("SupermuxCreateWorktreeButton")
                 }
             }
@@ -232,7 +232,7 @@ public struct SupermuxNewWorktreeSheet: View {
                             Image(systemName: "wand.and.stars")
                         }
                         .buttonStyle(.borderless)
-                        .disabled(isCreating)
+                        .disabled(isCreating || isRetargeting)
                         .accessibilityLabel(String(
                             localized: "supermux.newWorktree.suggest",
                             defaultValue: "Suggest a branch name",
@@ -287,6 +287,13 @@ public struct SupermuxNewWorktreeSheet: View {
         agentStore != nil && !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    /// A Mac switch is still loading that Mac's branches. The stores bound
+    /// here are still the OLD Mac's while the picker already names the new
+    /// one, so nothing may run on them until the switch lands.
+    private var isRetargeting: Bool {
+        macPicker?.preparingPairingID != nil
+    }
+
     private var workspacePlaceholder: String {
         hasPrompt
             ? String(localized: "supermux.newWorktree.workspace.placeholder.derived", defaultValue: "Workspace name (from prompt)", bundle: .module)
@@ -335,9 +342,9 @@ public struct SupermuxNewWorktreeSheet: View {
     // MARK: - Actions
 
     /// Fills the branch field from the Mac's suggestion. Never overwrites
-    /// while a create is running.
+    /// while a create is running, nor asks the old Mac mid-switch.
     private func suggest() {
-        guard !isSuggesting, !isCreating else { return }
+        guard !isSuggesting, !isCreating, !isRetargeting else { return }
         isSuggesting = true
         errorMessage = nil
         Task {
@@ -358,7 +365,7 @@ public struct SupermuxNewWorktreeSheet: View {
     /// is present — then navigates to the opened workspace and dismisses.
     /// Errors show inline and the form stays editable for another attempt.
     private func create() {
-        guard !isCreating else { return }
+        guard !isCreating, !isRetargeting else { return }
         isCreating = true
         errorMessage = nil
         Task {

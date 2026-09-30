@@ -75,7 +75,12 @@ extension MobileShellComposite {
     }
 
     /// The seam that owns a workspace row: the exact pairing, else the only
-    /// seam on that device; the foreground seam for an unowned row.
+    /// seam on that device when the row's or the seam's tag is missing (a
+    /// legacy untagged pairing); the foreground seam for an unowned row.
+    ///
+    /// Never a sibling build with a different explicit tag: Stable and
+    /// Nightly are separate app instances whose workspace and pane ids mean
+    /// nothing to each other, so an offline build's rows get no seam.
     func supermuxMacSeam(forMacDeviceID macDeviceID: String?, instanceTag: String?) -> SupermuxMacSeam? {
         let seams = buildSupermuxMacSeams()
         guard let macDeviceID, !macDeviceID.isEmpty else {
@@ -83,8 +88,12 @@ extension MobileShellComposite {
         }
         let pairingID = SupermuxMacSeam.pairingID(macDeviceID: macDeviceID, instanceTag: instanceTag)
         if let exact = seams.first(where: { $0.pairingID == pairingID }) { return exact }
-        let device = cmxCanonicalDeviceID(macDeviceID)
-        let sameDevice = seams.filter { $0.macDeviceID.map(cmxCanonicalDeviceID) == device }
+        let rowKey = MacPairingKey(macDeviceID: macDeviceID, instanceTag: instanceTag)
+        let sameDevice = seams.filter { seam in
+            guard let seamDeviceID = seam.macDeviceID, rowKey.isOnDevice(seamDeviceID) else { return false }
+            let seamKey = MacPairingKey(macDeviceID: seamDeviceID, instanceTag: seam.instanceTag)
+            return rowKey.normalizedInstanceTag == nil || seamKey.normalizedInstanceTag == nil
+        }
         return sameDevice.count == 1 ? sameDevice[0] : nil
     }
 

@@ -606,7 +606,7 @@ struct WorkspaceListView: View {
             groupedItems: currentDisplayedGroupedListItems,
             workspacesByID: currentWorkspacesByID
         )
-            .supermuxProjectsSectionDriver(model: supermuxProjects, seams: store?.supermuxConnectionSeams ?? [], workspaces: workspaces, selectWorkspace: { selectWorkspace($0) }, resolveWorkspace: supermuxResolveWorkspace, closeWorkspace: supermuxRequestWorkspaceClose)
+            .supermuxProjectsSectionDriver(model: supermuxProjects, seams: store?.supermuxConnectionSeams ?? [], workspaces: workspaces, selectedWorkspaceID: selectedWorkspaceID, selectWorkspace: { selectWorkspace($0) }, resolveWorkspace: supermuxResolveWorkspace, closeWorkspace: supermuxRequestWorkspaceClose)
             // SUPERMUX:begin supermux-mobile-usage-button (usage session driver on the stable list — the toolbar gauge that renders it is torn down on every push)
             .supermuxUsageDriver(model: supermuxUsage, connection: store?.supermuxConnectionSeam)
             // SUPERMUX:end supermux-mobile-usage-button
@@ -689,7 +689,7 @@ struct WorkspaceListView: View {
         // Let the invisible footer use its 16pt boundary height. Real rows are taller.
         .environment(\.defaultMinListRowHeight, 16)
         // SUPERMUX:begin supermux-mobile-projects-section (session driver: rebuilds the fork stores per (re)connect/capability change; feeds the §6 workspace join + open-workspace navigation)
-        .supermuxProjectsSectionDriver(model: supermuxProjects, seams: store?.supermuxConnectionSeams ?? [], workspaces: workspaces, selectWorkspace: { selectWorkspace($0) }, resolveWorkspace: supermuxResolveWorkspace, closeWorkspace: supermuxRequestWorkspaceClose)
+        .supermuxProjectsSectionDriver(model: supermuxProjects, seams: store?.supermuxConnectionSeams ?? [], workspaces: workspaces, selectedWorkspaceID: selectedWorkspaceID, selectWorkspace: { selectWorkspace($0) }, resolveWorkspace: supermuxResolveWorkspace, closeWorkspace: supermuxRequestWorkspaceClose)
         // SUPERMUX:end supermux-mobile-projects-section
         .workspaceListRefreshable(refresh)
         #endif
