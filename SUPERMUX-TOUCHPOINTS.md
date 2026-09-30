@@ -13,7 +13,7 @@ Rules for adding a touchpoint:
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
 - Numbering: the highest number in use is **599**. The remote-workspaces work (#517–#599) left
-  unassigned gaps it may still grow into: **523–524, 527–529, 538–544, 558–559, 562–569, 574–579,
+  unassigned gaps it may still grow into: **523–524, 527–529, 539–544, 558–559, 562–569, 574–579,
   588–589 and 591–594** (never assigned, not retired). Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 82, 83, 89, 106, 121, 142, 213, 214,
@@ -528,6 +528,7 @@ Rules for adding a touchpoint:
 | 535 | `Packages/Shared/CMUXMobileCore/Sources/CMUXMobileCore/MobileStateSyncRecords.swift` | `supermux-mobile-workspace-fields` | Inside the existing fences (#139/#271): additive `supermux_status_entries` (`[SupermuxStatusEntry{key,value,icon?,color?,priority?}]`), `supermux_progress` (`{value,label?}`) and `supermux_log` (`{message,level?}`) on `WorkspaceSyncRecord` — nested types, stored properties, defaulted init params, lenient decoding (malformed → nil), CodingKeys. Mac-to-Mac mirrors render them; the phone ignores them |
 | 536 | `Sources/Mobile/MobileStateSync.swift` | `supermux-mobile-workspace-fields` | Inside the existing `workspaceRow` fence (#140/#272): fills `supermuxStatusEntries/Progress/Log` from `SupermuxMobileWorkspaceStatusFields` (the host row's pills minus the agent-lifecycle pills its indicator duplicates, progress, latest log; bounded), and falls back to `SupermuxMobileWorkspaceStatusFields.branch/pullRequest` for workspaces no project owns (the augmenter is association-gated; the phone reads branch/PR only on project rows, so its UI is unchanged). Freshness: `SupermuxMobileSidebarStatusObserver` pokes the v2 host on sidebar-metadata changes |
 | 537 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the 15 workstream-Ma files into the cmux target (four entries each: `PBXFileReference` inside the `Supermux` group, `PBXBuildFile`, group child, Sources phase), right after the loopback harness entries. File refs `50BE0005000000000000000{1,3,…}` odd, build files even, in this order: `Devices/SupermuxDeviceMirrorStatus`, `Devices/SupermuxMobileWorkspaceStatusFields`, `SupermuxMobileSidebarStatusObserver`, `Devices/SupermuxDeviceStatusProjector`, `Devices/SupermuxDeviceMirrorStatusWriter`, `Devices/SupermuxDeviceMirrorCoordinator`, `Devices/SupermuxDeviceMirrorWindowPicker`, `Devices/SupermuxDeviceMirrorCloser`, `Devices/SupermuxDeviceMirrorClosePrompt`, `Devices/SupermuxComposition+DeviceMirrors`, `Devices/SupermuxDeviceMirrorSidebar`, `Devices/SupermuxDeviceLayoutSurfaceFilter`, `Devices/SupermuxDeviceMirrorPalette`, `Devices/SupermuxDeviceMirrorSocketCommands`, `Devices/SupermuxDevicesSocketPayloads+MirrorStatus` (`.swift`; paths with `+` quoted). `grep -c 50BE0005 cmux.xcodeproj/project.pbxproj` prints 60 |
+| 538 | `Sources/GhosttyTerminalView.swift` | `backdrop-cutout-after-first-frame` | **Upstream bug fix: terminals that stay blank when shown.** `GhosttySurfaceScrollView.synchronizeSharedBackdropCutout(visible:)` returns before building upstream's Core Image shared-backdrop cutout (the pane-local OSC 11 fill) while the pane is detached (`window == nil`) or its surface has not presented a frame (`TerminalSurface.hasPresentedFrame`). A cutout built then leaves the whole terminal blank once the pane is shown (the buffer holds the text, the window draws only the fill): every auto-mirror opened in the background, every mirror restored at launch (the other Mac's replay carries its OSC 11 colors), and any background local terminal that sets OSC 11. The next fill change builds the cutout as upstream does. Retire when upstream replaces the cutout (open PR #9103, persistent root backdrop) or fixes early creation. E2E: `tests/supermux/loopback_mirror_render_e2e.py` |
 | 545 | `Sources/TerminalNotificationStore.swift` | `device-mac-phone-forward` | Remote Macs, notification parity (workstream Mb; DESIGN.md decision 8: the Mac that runs the agent pushes). Four small fenced sites, all calling `Sources/Supermux/SupermuxPhoneForwardGate.swift`: (1) first line of `emitNotificationsDismissed(ids:)` shadows `ids` with `SupermuxPhoneForwardGate.phoneFacingDismissIDs(ids, in: notifications)` (dismissals of records mirrored from another Mac never reach a phone that never got them from this Mac); (2) in the same method `let unreadCount = indexes.unreadCount` becomes `supermuxPhoneBadgeCount`; (3) `emitUnreadBadgeEventIfChanged` uses `supermuxPhoneBadgeCount`; (4) in `deliverNotificationSideEffects`, upstream's `if shouldAttemptPhone { PhonePushClient.shared.forward(notification, badgeCount: indexes.unreadCount) }` becomes `let supermuxRelayAttempted = shouldAttemptPhone && SupermuxPhoneForwardGate.allowsUpstreamRelay(for: notification)` plus the same forward with `badgeCount: supermuxPhoneBadgeCount`. `supermuxPhoneBadgeCount` (store extension in the gate file) is the unread count minus unread `.deviceMac` records: THIS Mac's share of the phone badge. Every Mac sends only its own share, and the phone badges the total over every Mac (`SupermuxPhoneBadgeLedger`, #554–#557); do not put mirrored records back into this count, or the phone counts them once per Mac. Local banner, sound, sidebar and Dock handling of `.deviceMac` records is untouched |
 | 546 | `Sources/TerminalNotificationStore.swift` | `direct-phone-push` | Changes the body of #332's visible-forward fence: after computing `focusedPaneAlreadyVisible` (the #452 policy with `exactPaneFocused: isFocusedSurfaceArrival`, never `shouldSuppressExternalDelivery`) it calls `SupermuxComposition.directPhonePush.deliver(notification:focusedPaneAlreadyVisible:upstreamRelayAttempted: supermuxRelayAttempted, badgeCount: supermuxPhoneBadgeCount)` instead of `forward` behind `configuration().forwardingEnabled`. `deliver` (fork `SupermuxDirectPhonePush`) skips `.deviceMac` records, applies upstream's `PhonePushClient.currentAdmission()` (enabled plus `onlyWhenAway`, which the direct lane used to ignore), records the DEBUG decision log (`supermux.devices.push_decisions`), and stamps `macInstanceTag` (`MobileHostIdentity.instanceTag()`) into the payload so iPhone tap routing matches rows tagged `default`. The dismiss fence is unchanged (it now receives the #545 phone badge); the fork's `SupermuxDirectPhonePush.forwardDismissed` stamps `macDeviceId`/`macInstanceTag` and `SupermuxPhonePushService` sends every notify push with `mutable-content` and the dismiss push with an empty alert plus `mutable-content`, so the phone's extension sees each one and can total the badge per Mac |
 | 547 | `Sources/TerminalController+MobileNotificationSync.swift` | `device-mac-phone-badge` | In `v2MobileNotificationReconcile`, `"unread_count": store.unreadNotificationCount` becomes `store.supermuxPhoneBadgeCount` (#545): this Mac's own share, which the phone files under this Mac and adds to every other Mac's share (#554–#557) |
@@ -4662,6 +4663,37 @@ Re-apply:
 Verify: `swift test --filter "SupermuxMirrorReconcilerTests|SupermuxHiddenRemoteWorkspacesTests"` in
 `Packages/SupermuxKit`, then a tagged build launched with the loopback device and
 `CMUX_TAG=<tag> python3 tests/supermux/loopback_auto_mirror_e2e.py` (plus `loopback_device_smoke.py`).
+### 538. Blank terminals after an off-screen OSC 11 fill — `backdrop-cutout-after-first-frame`
+
+Found as P1-1 of the Remote Macs visual walkthrough: a device mirror opened in the background
+(auto-mirror, or upstream's own `vm.workspace_open` with `focus: false`) or restored at
+launch never drew, while `read-screen` showed its buffer. It is an upstream bug, not a mirror bug: a
+local background terminal that runs `printf '\033]11;#202830\007'` stays blank the same way. The
+pane-local fill makes `GhosttySurfaceScrollView.setBackgroundColor(_:clearsSharedWindowBackdrop:)`
+add the lazily built Core Image cutout view (`makeSharedBackdropCutoutView`, `layerUsesCoreImageFilters`
++ a custom `compositingFilter`). Added while the pane is detached or before its first frame (the hidden
+bootstrap window, a never-shown or hidden-never-shown pane), that view keeps AppKit from compositing
+the terminal's scroll view (text, cursor, overlays) once the pane is shown; built after the pane has
+shown a frame it does not (upstream issue #8870 is the milder late-creation symptom). Building it
+during the move into the real window, or one main-queue turn later while the pane was still hidden,
+still blanked it; only the presented-frame gate held. Mirrors hit it every time because the owning
+Mac's replay carries its colors.
+
+Re-apply: in `GhosttySurfaceScrollView.synchronizeSharedBackdropCutout(visible:)`
+(`Sources/GhosttyTerminalView.swift`), before `if visible {`, add the fenced early return
+
+```swift
+if visible, sharedBackdropCutoutView == nil, window == nil || surfaceView.terminalSurface?.hasPresentedFrame != true { return }
+```
+
+An existing cutout is kept, and the removal path is untouched. Retire the fence when upstream stops
+building the cutout lazily (open PR #9103 replaces it with a persistent root backdrop) or proves early
+creation safe: run the E2E below without the fence and check it passes.
+
+Verify: a tagged build launched with the loopback device, then
+`CMUX_TAG=<tag> python3 tests/supermux/loopback_mirror_render_e2e.py --app-path "<App path>" --projects-file /tmp/<tag>/projects.json`
+(background mirror, background OSC 11 terminal and restored mirror must each show text in a window
+screenshot; the plain background workspace is the detector's control).
 ### 545–553. Remote Macs: notification and phone-push parity (Mb) — `device-mac-phone-forward`, `device-mac-phone-badge`, `device-notification-parity`, `device-notification-project`
 
 Why: with remote Macs as first-class workspaces, a notification raised on the MacBook that runs an
