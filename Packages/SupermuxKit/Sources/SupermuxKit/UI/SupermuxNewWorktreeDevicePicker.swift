@@ -102,32 +102,24 @@ struct SupermuxNewWorktreeDevicePicker: View {
     /// Where the worktree goes, or why the selected Mac cannot take it.
     private var hint: String? {
         guard let entry = sheet.selectedEntry, !entry.isThisMac else { return nil }
-        switch entry.availability {
-        case .online:
-            return String(
-                localized: "supermux.newWorktree.device.remoteHint",
-                defaultValue: "Created in \(entry.name)’s copy of the project; its workspace opens here."
-            )
-        case .connecting:
-            return String(
-                localized: "supermux.newWorktree.device.connectingHint",
-                defaultValue: "\(entry.name) is still connecting. Try again in a moment."
-            )
-        case .offline:
-            return String(
-                localized: "supermux.newWorktree.device.offlineHint",
-                defaultValue: "\(entry.name) is offline. Worktrees can be created there once it reconnects."
-            )
-        }
+        return unavailableReason(entry) ?? String(
+            localized: "supermux.newWorktree.device.remoteHint",
+            defaultValue: "Created in \(entry.name)’s copy of the project; its workspace opens here."
+        )
     }
 
     private func help(for entry: SupermuxWorktreeDeviceEntry) -> String {
+        unavailableReason(entry) ?? String(
+            localized: "supermux.newWorktree.device.accessibility",
+            defaultValue: "Create on \(entry.name)"
+        )
+    }
+
+    /// Why a Mac cannot take a worktree right now; `nil` when it can.
+    private func unavailableReason(_ entry: SupermuxWorktreeDeviceEntry) -> String? {
         switch entry.availability {
         case .online:
-            return String(
-                localized: "supermux.newWorktree.device.accessibility",
-                defaultValue: "Create on \(entry.name)"
-            )
+            return nil
         case .connecting:
             return String(
                 localized: "supermux.newWorktree.device.connectingHint",
