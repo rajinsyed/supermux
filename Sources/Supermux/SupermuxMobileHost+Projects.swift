@@ -22,6 +22,11 @@ extension TerminalController {
         let projects = model.projects
         let presets = model.presets
         let isSectionCollapsed = model.isSectionCollapsed
+        // Additive `git_remote_url` (cross-Mac repo identity): cached `git
+        // config` lookups on the resolver actor, never on the main actor.
+        let gitRemoteURLs = await SupermuxComposition.gitRemoteResolver.remoteURLs(
+            forRoots: projects.map(\.rootPath)
+        )
         do {
             // has_custom_icon stats candidate icon paths per project; keep
             // that file I/O off the main actor.
@@ -29,7 +34,8 @@ extension TerminalController {
                 try SupermuxMobileProjectsPayloadBuilder().projectsList(
                     projects: projects,
                     presets: presets,
-                    isSectionCollapsed: isSectionCollapsed
+                    isSectionCollapsed: isSectionCollapsed,
+                    gitRemoteURLs: gitRemoteURLs
                 )
             }.value
             return .ok(payload)
@@ -151,9 +157,10 @@ extension TerminalController {
     /// The `{project: SupermuxProjectDTO}` result for one record, built off
     /// the main actor (icon and config probes are file I/O).
     private func supermuxProjectResult(_ project: SupermuxProject) async -> V2CallResult {
+        let gitRemoteURL = await SupermuxComposition.gitRemoteResolver.remoteURL(forRoot: project.rootPath)
         do {
             let payload = try await Task.detached(priority: .userInitiated) {
-                try SupermuxMobileProjectsPayloadBuilder().projectPayload(project: project)
+                try SupermuxMobileProjectsPayloadBuilder().projectPayload(project: project, gitRemoteURL: gitRemoteURL)
             }.value
             return .ok(payload)
         } catch {
