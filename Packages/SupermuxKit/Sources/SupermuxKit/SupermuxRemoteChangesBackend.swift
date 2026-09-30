@@ -40,8 +40,11 @@ public final class SupermuxRemoteChangesBackend: SupermuxChangesBackend {
     private var lastRoot: String?
     private var lastSnapshot: SupermuxGitStatusSnapshot?
     private var history: (readAt: ContinuousClock.Instant, page: HistoryPage)?
-    /// The host said it cannot write commit messages (no AI key there).
-    public private(set) var isAIUnavailable = false
+    /// Whether the owning Mac can write commit messages: what its last status
+    /// reported (`ai_commit_configured`, the same key check its own panel
+    /// makes), so Generate & Commit follows that Mac's rules. A Mac too old to
+    /// report it is offered until it answers `ai_unavailable`.
+    public private(set) var isAICommitConfigured = true
 
     /// Creates the backend.
     /// - Parameters:
@@ -70,6 +73,7 @@ public final class SupermuxRemoteChangesBackend: SupermuxChangesBackend {
             let result = try await call(.changesStatus, repoPath: repoPath)
             let dto = try SupermuxWireJSON().decode(SupermuxChangesStatusDTO.self, from: result)
             if let root = dto.root, !root.isEmpty { lastRoot = root }
+            if let configured = dto.aiCommitConfigured { isAICommitConfigured = configured }
             let snapshot = SupermuxGitStatusSnapshot(wire: dto)
             lastSnapshot = snapshot
             return snapshot
@@ -202,14 +206,14 @@ public final class SupermuxRemoteChangesBackend: SupermuxChangesBackend {
 
     /// Asks the owning Mac to write a commit message for its uncommitted
     /// changes. `nil` on failure; an `ai_unavailable` answer also stops the
-    /// panel offering Generate & Commit for this workspace.
+    /// panel offering Generate & Commit until a status says otherwise.
     public func generateCommitMessage() async -> String? {
         do {
             let result = try await call(.changesGenerateCommitMessage, repoPath: "")
             let message = (result["message"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
             return message?.isEmpty == false ? message : nil
         } catch {
-            if transport.errorCode(error) == "ai_unavailable" { isAIUnavailable = true }
+            if transport.errorCode(error) == "ai_unavailable" { isAICommitConfigured = false }
             return nil
         }
     }

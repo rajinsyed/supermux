@@ -598284,6 +598284,23 @@
           }
         }
       }
+    },
+    "supermux.mirror.changes.openDiff.onMac" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diff view unavailable: the repository is on %@."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "差分ビューは使用できません。リポジトリは%@にあります。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
