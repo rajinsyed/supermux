@@ -172,6 +172,11 @@ struct SupermuxProjectsMount: View {
     @AppStorage(SidebarWorkspaceDetailDefaults.showPullRequestsKey) private var showPullRequests = true
     @AppStorage(SidebarWorkspaceDetailDefaults.watchGitStatusKey) private var watchGitStatus = true
     @AppStorage(SidebarCatalogSection().hideAllDetails.userDefaultsKey) private var hideAllDetails = false
+    // The flat rows' status-pill and progress toggles, which nested rows honor too.
+    @AppStorage(SidebarWorkspaceDetailDefaults.showCustomMetadataKey)
+    private var showCustomMetadata = SidebarWorkspaceDetailDefaults.showCustomMetadata
+    @AppStorage(SidebarWorkspaceDetailDefaults.showProgressKey)
+    private var showProgress = SidebarWorkspaceDetailDefaults.showProgress
 
     // The user-settable badge color (Settings → workspace colors), read live so
     // nested rows recolor with the flat rows. Empty means the default accent.
@@ -186,58 +191,24 @@ struct SupermuxProjectsMount: View {
         // Reading tabs/selectedTabId here subscribes this small, eager section
         // to workspace add/remove/select changes (not per-keystroke output), so
         // a project's live workspaces stay nested and in sync underneath it.
-        let projects = SupermuxComposition.projectsModel.projects
-        let associations = SupermuxComposition.workspaceAssociations
-        // This window's memoized project resolution — the same cache instance
-        // the flat-list filter uses, so per-workspace NSString path
-        // normalization runs once per invalidation, not once per consumer.
-        // Its validity preamble reads the store's observable `revision` and
-        // durable directory map on every call (cache hits included), which is
-        // what re-renders this body on association changes now that the raw
-        // `associations.projectId` reads no longer happen here.
-        let resolutionCache = SupermuxMainListFilter.resolutionCache(for: tabManager)
         let pullRequestsEnabled = watchGitStatus && showPullRequests && !hideAllDetails
+        let details = SupermuxNestedRowDetails(
+            includesPullRequest: pullRequestsEnabled,
+            showsStatus: showCustomMetadata && !hideAllDetails,
+            showsProgress: showProgress && !hideAllDetails
+        )
         // Reading the @Observable snapshot here subscribes the mount to unread
         // publications, so a nested row's badge appears/clears live — the same
         // per-workspace summary source cmux's flat rows read.
         let unreadSnapshot = TerminalNotificationStore.shared.sidebarUnread.snapshot
-        // Device mirrors nest by their remote record's project (never by
-        // local path); reading it here re-renders on ownership changes.
-        let ownership = SupermuxMirrorOwnership.current()
-        // Nested mirrors render remote record fields (branch, activity, PR);
-        // follow the device revision only while any mirror nests here.
-        let _ = ownership.owners.isEmpty ? 0 : SupermuxComposition.devices.revision
-        let openWorkspaces = tabManager.tabs.map { workspace -> SupermuxOpenWorkspace in
-            let isSelected = workspace.id == tabManager.selectedTabId
-            // Full snapshots (branch/PR/activity, each walking the bonsplit
-            // pane tree) only for project-nested rows; the section consumes
-            // just the directory of everything else.
-            guard let projectId = resolutionCache.projectId(
-                forWorkspace: workspace,
-                projects: projects,
-                associations: associations,
-                ownership: ownership
-            ) else {
-                return SupermuxWorkspaceRow.standaloneSnapshot(for: workspace, isSelected: isSelected)
-            }
-            if ownership.isMirror(workspace) {
-                return SupermuxMirrorRowSnapshot.snapshot(
-                    for: workspace,
-                    isSelected: isSelected,
-                    projectId: projectId,
-                    includePullRequest: pullRequestsEnabled,
-                    unreadCount: unreadSnapshot.unreadCount(forWorkspaceId: workspace.id)
-                )
-            }
-            return SupermuxWorkspaceRow.snapshot(
-                for: workspace,
-                isSelected: isSelected,
-                projectId: projectId,
-                isRunning: SupermuxComposition.runCoordinator.isRunning(workspaceId: workspace.id),
-                includePullRequest: pullRequestsEnabled,
-                unreadCount: unreadSnapshot.unreadCount(forWorkspaceId: workspace.id)
-            )
-        }
+        // The same builder `supermux.devices.sidebar_rows` reports. Its reads
+        // (projects, associations, mirror ownership, device revision) happen
+        // during this body, so they keep subscribing the mount.
+        let openWorkspaces = SupermuxNestedWorkspaceRows.rows(
+            for: tabManager,
+            details: details,
+            unreadCount: { unreadSnapshot.unreadCount(forWorkspaceId: $0) }
+        )
         SupermuxProjectsSectionView(
             model: SupermuxComposition.projectsModel,
             opener: SupermuxTabManagerOpener(tabManager: tabManager),
@@ -361,10 +332,10 @@ struct SupermuxProjectsMount: View {
 /// The merge is folded once more across workspaces (`coalesceLatest`, leading
 /// edge synchronous), and every delivery is gated by ``RenderedRowState``: the
 /// token bumps only when a field the Projects section actually renders
-/// changed. Telemetry that only touches unrendered state (logs, progress,
-/// ports, status entries) and lifecycle events that re-assert an unchanged
-/// activity (every agent hook re-reports `running` while working) no longer
-/// rebuild the section.
+/// changed. Telemetry that only touches unrendered state (logs, ports) and
+/// lifecycle events that re-assert an unchanged activity (every agent hook
+/// re-reports `running` while working) no longer rebuild the section; status
+/// pills and progress render on nested rows, so their changes do.
 ///
 /// Rebuilding this merge inside `body` and feeding it to `.onReceive` resubscribed
 /// every render, and on each new subscription the `@Published` inputs behind
@@ -398,10 +369,11 @@ final class SupermuxWorkspaceObservation: ObservableObject {
     private var lastRendered: [RenderedRowState] = []
 
     /// The per-workspace fields ``SupermuxWorkspaceRow`` snapshots actually
-    /// render (title, directory, branch, activity, PR badge). The volatile
-    /// automatic process title is represented by the settle model's
-    /// `changeGeneration` instead of its raw value, so telemetry-triggered
-    /// checks don't see mid-animation title frames as changes.
+    /// render (title, directory, branch, activity, PR badge, status pills,
+    /// progress). The volatile automatic process title is represented by the
+    /// settle model's `changeGeneration` instead of its raw value, so
+    /// telemetry-triggered checks don't see mid-animation title frames as
+    /// changes.
     private struct RenderedRowState: Equatable {
         let id: UUID
         let customTitle: String?
@@ -410,6 +382,8 @@ final class SupermuxWorkspaceObservation: ObservableObject {
         let branch: String?
         let activity: SupermuxWorkspaceActivity
         let pullRequest: SupermuxPullRequest?
+        let statusPills: [SupermuxRowStatusPill]
+        let progress: SupermuxRowProgress?
     }
 
     private static func renderedState(for workspace: Workspace) -> RenderedRowState {
@@ -426,7 +400,9 @@ final class SupermuxWorkspaceObservation: ObservableObject {
             directory: workspace.currentDirectory,
             branch: workspace.supermuxSidebarBranch,
             activity: SupermuxWorkspaceActivityResolver.activity(for: workspace),
-            pullRequest: workspace.supermuxSidebarPullRequest
+            pullRequest: workspace.supermuxSidebarPullRequest,
+            statusPills: SupermuxWorkspaceRow.statusPills(for: workspace),
+            progress: SupermuxWorkspaceRow.progress(for: workspace)
         )
     }
 

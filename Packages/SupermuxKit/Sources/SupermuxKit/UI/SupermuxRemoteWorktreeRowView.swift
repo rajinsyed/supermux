@@ -26,17 +26,22 @@ struct SupermuxRemoteWorktreeRowView: View {
                 .foregroundStyle(isHovered && isOnline ? Color.primary : Color.secondary)
                 .lineLimit(1)
                 .truncationMode(.tail)
+                .layoutPriority(1)
             Spacer(minLength: 2)
-            if let device = worktree.location.device {
-                SupermuxDeviceChip(device: device, fontScale: fontScale)
-            }
             if let pullRequest = worktree.pullRequest {
                 SupermuxPullRequestBadge(pullRequest: pullRequest, fontScale: fontScale, onOpen: openPullRequest)
             }
-            Image(systemName: "arrow.right")
-                .font(.system(size: 8.5 * fontScale, weight: .semibold))
-                .foregroundStyle(.tertiary)
-                .opacity(isHovered && isOnline ? 1 : 0)
+            // The Mac's chip right before the shared trailing slot, where the
+            // open-workspace rows put theirs, so chips line up down the list.
+            if let device = worktree.location.device {
+                SupermuxDeviceChip(device: device, fontScale: fontScale)
+            }
+            SupermuxRowTrailingSlot(fontScale: fontScale) {
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 8.5 * fontScale, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+                    .opacity(isHovered && isOnline ? 1 : 0)
+            }
         }
         .padding(.leading, 7)
         .padding(.trailing, 6)

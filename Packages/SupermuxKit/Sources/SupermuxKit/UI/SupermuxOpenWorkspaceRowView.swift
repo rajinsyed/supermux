@@ -8,6 +8,9 @@ struct SupermuxOpenWorkspaceRowView: View {
     let workspace: SupermuxOpenWorkspace
     let select: () -> Void
     let close: () -> Void
+    /// Hides a device mirror here (it keeps running on its Mac); unused for
+    /// this Mac's own workspaces.
+    var hide: () -> Void = {}
     /// Renames the workspace (sets its custom title) via the host.
     var rename: () -> Void = {}
     /// Starts a drag session, returning the reorder payload.
@@ -25,10 +28,10 @@ struct SupermuxOpenWorkspaceRowView: View {
     @Environment(\.supermuxUnreadBadgeFillColor) private var unreadBadgeFillColor
     @State private var isHovered = false
 
-    var body: some View {
+    private var titleLine: some View {
         HStack(spacing: 6) {
             // Empty leading placeholder matching the project avatar's width so
-            // the title aligns under the project name (activity moved to the right).
+            // the title aligns under the project name (activity sits on the right).
             Color.clear
                 .frame(width: 20 * fontScale, height: 12 * fontScale)
             VStack(alignment: .leading, spacing: 0) {
@@ -44,11 +47,10 @@ struct SupermuxOpenWorkspaceRowView: View {
                         .truncationMode(.middle)
                 }
             }
+            // Shares the width with the device chip at the same priority, so
+            // the spacer never makes the chip truncate while there is room.
+            .layoutPriority(1)
             Spacer(minLength: 2)
-            // A device mirror names the Mac it runs on (dimmed while offline).
-            if let device = workspace.device {
-                SupermuxDeviceChip(device: device, fontScale: fontScale)
-            }
             if let pullRequest = workspace.pullRequest {
                 SupermuxPullRequestBadge(
                     pullRequest: pullRequest,
@@ -59,20 +61,11 @@ struct SupermuxOpenWorkspaceRowView: View {
             if workspace.isRunning {
                 SupermuxRunIndicator()
             }
-            // Agent activity: only the amber working spinner, rendered as the
-            // rightmost element (after the PR badge and run status) so the
-            // loading signal always sits at the row's right edge. The
-            // needs-input and ready dots are deliberately not shown — one
-            // working indicator per row, nothing when the agent is settled.
-            if workspace.activity == .working {
-                SupermuxAgentActivityIndicator(activity: workspace.activity, size: 6 * fontScale)
-            }
-            // The same numbered unread capsule cmux's flat rows draw, rightmost
-            // like the phone's nested rows, so a workspace shows its unread
-            // count whether it renders flat, nested, or on the phone. 7pt, not
-            // the flat rows' 9pt: the shared style's capsule stands 1.6× its
-            // font, and this row's neighbors are smaller than a flat row's —
-            // an 11pt PR icon and a 6pt activity spinner — so 7pt lands the
+            // The same numbered unread capsule cmux's flat rows draw, so a
+            // workspace shows its unread count whether it renders flat, nested,
+            // or on the phone. 7pt, not the flat rows' 9pt: the shared style's
+            // capsule stands 1.6× its font, and this row's neighbors are
+            // smaller than a flat row's — an 11pt PR icon — so 7pt lands the
             // capsule at 11pt, level with the PR badge instead of over it.
             if workspace.unreadCount > 0 {
                 SupermuxUnreadBadgeView(
@@ -82,16 +75,46 @@ struct SupermuxOpenWorkspaceRowView: View {
                     textColor: .white
                 )
             }
-            if isHovered {
-                Button(action: close) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 8.5 * fontScale, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .help(String(localized: "supermux.workspace.close", defaultValue: "Close Workspace"))
-                .transition(.opacity.combined(with: .scale(scale: 0.8)))
+            // A device mirror names the Mac it runs on (dimmed while offline),
+            // right before the trailing slot, so chips line up down the list.
+            if let device = workspace.device {
+                SupermuxDeviceChip(device: device, fontScale: fontScale)
             }
+            SupermuxRowTrailingSlot(fontScale: fontScale) {
+                ZStack {
+                    // Agent activity: only the amber working spinner (the
+                    // needs-input and ready dots are deliberately not shown).
+                    // Kept mounted and faded under the hover close button, so
+                    // hover never remounts the render-server spinner.
+                    if workspace.activity == .working {
+                        SupermuxAgentActivityIndicator(
+                            activity: workspace.activity,
+                            size: SupermuxAgentActivityIndicator.rowSize * fontScale
+                        )
+                        .opacity(isHovered ? 0 : 1)
+                    }
+                    if isHovered {
+                        Button(action: close) {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 8.5 * fontScale, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .help(String(localized: "supermux.workspace.close", defaultValue: "Close Workspace"))
+                        .transition(.opacity.combined(with: .scale(scale: 0.8)))
+                    }
+                }
+            }
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            titleLine
+            // `cmux set-status` pills and `set-progress`, under the title
+            // column like a flat row's (a mirror shows its Mac's).
+            SupermuxRowStatusLines(pills: workspace.statusPills, progress: workspace.progress, fontScale: fontScale)
+                .padding(.leading, 20 * fontScale + 6)
         }
         // 7 + slot(20·s) + 6 == project row's 6 + avatar(20·s) + 7 → title aligns under the project name.
         .padding(.leading, 7)
@@ -109,19 +132,35 @@ struct SupermuxOpenWorkspaceRowView: View {
         .animation(.easeOut(duration: 0.15), value: workspace.isSelected)
         .onHover { isHovered = $0 }
         .onTapGesture(perform: select)
-        .contextMenu {
-            Button(String(localized: "supermux.workspace.select", defaultValue: "Focus Workspace"), action: select)
-            Button(String(localized: "supermux.workspace.rename", defaultValue: "Rename Workspace…"), action: rename)
-            Divider()
-            Button(String(localized: "supermux.workspace.close", defaultValue: "Close Workspace"), role: .destructive, action: close)
-        }
+        .contextMenu { menu }
         .opacity(draggingWorkspaceId == workspace.id ? 0.4 : 1)
         .animation(.easeOut(duration: 0.15), value: draggingWorkspaceId == workspace.id)
         .onDrag(beginDrag)
         .modifier(SupermuxWorkspaceReorderDrop(delegate: dropDelegate))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(workspace.title)
+        .accessibilityLabel(workspace.accessibilityLabel)
         .accessibilityAddTraits(workspace.isSelected ? [.isButton, .isSelected] : .isButton)
+    }
+
+    @ViewBuilder
+    private var menu: some View {
+        Button(String(localized: "supermux.workspace.select", defaultValue: "Focus Workspace"), action: select)
+        Button(String(localized: "supermux.workspace.rename", defaultValue: "Rename Workspace…"), action: rename)
+        Divider()
+        if let device = workspace.device {
+            // A mirror closes the two ways its close prompt offers: hide it
+            // here (it keeps running there), or close it on its Mac (the
+            // prompt confirms).
+            Button(String(localized: "supermux.devices.close.button.hideHere", defaultValue: "Hide Here"), action: hide)
+            Button(
+                String(localized: "supermux.devices.menu.closeOnMac", defaultValue: "Close on \(device.name)…"),
+                role: .destructive,
+                action: close
+            )
+            .disabled(!device.isOnline)
+        } else {
+            Button(String(localized: "supermux.workspace.close", defaultValue: "Close Workspace"), role: .destructive, action: close)
+        }
     }
 }
 

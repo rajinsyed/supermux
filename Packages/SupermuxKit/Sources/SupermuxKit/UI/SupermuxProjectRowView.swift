@@ -268,13 +268,17 @@ public struct SupermuxProjectRowView: View {
             projectRow
             // Live workspaces for this project are always nested under it
             // (piggycode-style); selecting one focuses it, and they can be
-            // dragged to reorder within this project.
-            let siblingIds = Set(openWorkspaces.map(\.id))
+            // dragged to reorder within this project — among this Mac's rows,
+            // or among one Mac's mirrors (the host keeps those groups apart).
+            let siblingIdsByMac = Dictionary(grouping: openWorkspaces, by: { $0.device?.machineID ?? "" })
+                .mapValues { Set($0.map(\.id)) }
             ForEach(openWorkspaces) { workspace in
+                let siblingIds = siblingIdsByMac[workspace.device?.machineID ?? ""] ?? []
                 SupermuxOpenWorkspaceRowView(
                     workspace: workspace,
                     select: { actions.selectWorkspace(workspace.id) },
                     close: { actions.closeWorkspace(workspace.id) },
+                    hide: { remoteActions.hideMirror(workspace.id) },
                     rename: { actions.renameWorkspace(workspace.id) },
                     beginDrag: {
                         draggingWorkspaceId = workspace.id
@@ -474,11 +478,15 @@ struct SupermuxWorktreeRowView: View {
                     onOpen: openPullRequest
                 )
             }
-            // Hover-only "open" hint; laid out always so the PR badge stays put.
-            Image(systemName: "arrow.right")
-                .font(.system(size: 8.5 * fontScale, weight: .semibold))
-                .foregroundStyle(.tertiary)
-                .opacity(isHovered ? 1 : 0)
+            // Hover-only "open" hint in the rows' shared trailing slot, laid
+            // out always so the PR badge stays put and lines up with the
+            // open-workspace rows' badges.
+            SupermuxRowTrailingSlot(fontScale: fontScale) {
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 8.5 * fontScale, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+                    .opacity(isHovered ? 1 : 0)
+            }
         }
         // Match the open-workspace row so worktree names align under the project name.
         .padding(.leading, 7)

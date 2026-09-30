@@ -13,12 +13,15 @@ import SupermuxMobileCore
 /// `remote_worktrees {machine, project_id}`,
 /// `remote_worktree_create {machine, project_id, workspace_name?, branch_name?, base_branch?, focus?, window_id?}`,
 /// `remote_action_run {machine, project_id, action_id, window_id?}` (the row's Actions menu),
-/// `project_sync {}`, `projects_presentation {window_id?}`.
+/// `project_sync {}`, `projects_presentation {window_id?}`,
+/// `sidebar_rows {window_id?}` (the nested rows per project in display order,
+/// and each flat-list row's directory line, as the sidebar draws them).
 @MainActor
 enum SupermuxProjectsSocketCommands {
     private static let methods: Set<String> = [
         "unified_projects", "remote_projects", "remote_worktrees",
         "remote_worktree_create", "remote_action_run", "project_sync", "projects_presentation",
+        "sidebar_rows",
     ]
 
     /// Whether `name` (the part after `supermux.devices.`) is served here.
@@ -67,6 +70,8 @@ enum SupermuxProjectsSocketCommands {
             return SupermuxProjectsSocketPayloads.syncReport(report)
         case "projects_presentation":
             return SupermuxProjectsSocketPayloads.presentation(for: try tabManager(params))
+        case "sidebar_rows":
+            return SupermuxProjectsSocketPayloads.sidebarRows(for: try tabManager(params))
         default:
             throw invalid("unknown method \(name)")
         }
