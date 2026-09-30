@@ -120,4 +120,4 @@ harness registration (DEBUG); iOS per-Mac seam next to #96.
 - Syncing pane geometry across devices beyond upstream's existing layout sync.
 - Remote browser/markdown/simulator panels (upstream refuses to materialize them).
 - Resizing the remote terminal grid to the viewer's pane (upstream pins mirrors to the source grid).
-- Sharing projects by cloning onto a device that lacks them ("Set up on <Mac>") — follow-up.
+- Automatic cloning onto a device that lacks a project. Project sync only registers a repo that already exists at the same path; cloning is the explicit "Set Up on <Mac>…" action ([PROJECTS-API.md](PROJECTS-API.md)).
