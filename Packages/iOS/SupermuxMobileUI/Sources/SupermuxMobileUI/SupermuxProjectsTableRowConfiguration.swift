@@ -76,3 +76,17 @@ public struct SupermuxProjectsTableRowConfiguration {
         layoutIdentity.fingerprint
     }
 }
+
+/// The shell's workspace table (upstream's rebuilt engine) compares
+/// rendered row MODELS, not snapshots, to decide what a live update touches,
+/// so the payload it carries as a row model must be `Equatable`. Equality is
+/// "renders the same": the value snapshot plus seam presence, never closure
+/// identity (which changes on every projection and would repaint each tick).
+extension SupermuxProjectsTableRowConfiguration: Equatable {
+    public static func == (
+        lhs: SupermuxProjectsTableRowConfiguration,
+        rhs: SupermuxProjectsTableRowConfiguration
+    ) -> Bool {
+        !renderChanged(previous: lhs, next: rhs)
+    }
+}

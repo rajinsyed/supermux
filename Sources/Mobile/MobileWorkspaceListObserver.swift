@@ -1,4 +1,5 @@
 import CMUXMobileCore
+import CmuxMobileHost
 import Combine
 import CmuxNotifications
 import CmuxSimulator
@@ -259,9 +260,9 @@ final class MobileWorkspaceListObserver {
         symbols.reserveCapacity(groups.count)
         let controller = TerminalController.shared
         for group in groups {
-            let anchorCwd = currentDirectoryByWorkspaceID[
-                group.anchorWorkspaceId
-            ] ?? nil
+            let anchorCwd = group.liveAnchorWorkspaceId.flatMap {
+                currentDirectoryByWorkspaceID[$0]
+            }
             symbols[group.id] = controller.mobileWorkspaceGroupEffectiveIconSymbol(
                 group,
                 anchorCwd: anchorCwd,
@@ -279,13 +280,15 @@ final class MobileWorkspaceListObserver {
     }
 
     /// A per-workspace signature of the notification-store state the mobile
-    /// payload serializes: the latest-notification preview (its id + timestamp),
-    /// the workspace's unread flag, and its unread count. The hash changes when
-    /// a new notification arrives, the latest one is cleared, the workspace
-    /// flips between read and unread, or only the displayed count moves. A
-    /// workspace with no notification and no unread state is absent from the
-    /// map. Empty when no store is attached (tests, or a build with notifications
-    /// unavailable).
+    /// payload serializes: the latest-notification preview (its id + timestamp)
+    /// and the workspace's unread count and flag. The hash changes when a new
+    /// notification arrives, the latest one is cleared, the workspace flips
+    /// between read and unread (mark-read, manual mark-unread, panel-derived
+    /// or restored indicators), or the unread count moves while staying
+    /// nonzero (dismissing one of several notifications must refresh the
+    /// phone's badge number). A workspace with no notification and no unread
+    /// state is absent from the map. Empty when no store is attached (tests,
+    /// or a build with notifications unavailable).
     static func previewSignatures(
         for tabs: [Workspace],
         unreadSnapshot: SidebarUnreadSnapshot?,
@@ -311,14 +314,13 @@ final class MobileWorkspaceListObserver {
             hasher.combine(summary.latestNotificationId)
             hasher.combine(summary.latestNotificationCreatedAt)
             hasher.combine(isUnread)
+            hasher.combine(summary.unreadCount)
             // SUPERMUX:begin supermux-mobile-workspace-fields (the unread COUNT
             // moves independently of the boolean — see SUPERMUX-TOUCHPOINTS.md)
             // The phone's badge now shows a numeral, so a count-only change is a
-            // visible change. Clearing one of two unread notifications leaves
-            // the latest notification and `isUnread` both untouched while the
-            // count goes 2 → 1; without this the observer suppresses the event
-            // and the phone keeps showing 2 until an unrelated poke or a v2
-            // refetch makes the numeral jump.
+            // visible change. Upstream now combines `summary.unreadCount` above
+            // (#10791); this fence keeps the unit-test count seam and folds the
+            // ordered unread pane ids, which upstream does not serialize.
             hasher.combine(
                 supermuxUnreadCountForWorkspaceID?(workspace.id)
                     ?? summary.unreadCount
@@ -539,7 +541,8 @@ final class MobileWorkspaceListObserver {
             hasher.combine(group.isCollapsed)
             hasher.combine(group.isPinned)
             hasher.combine(groupIconSymbols[group.id] ?? group.iconSymbol)
-            hasher.combine(group.anchorWorkspaceId)
+            hasher.combine(group.liveAnchorWorkspaceId)
+            hasher.combine(group.isEmpty)
         }
         for workspace in tabs {
             hasher.combine(workspace.id)

@@ -5,8 +5,9 @@ public import Foundation
 /// Mirrors the Mac markdown panel's decode order: strict UTF-8 first, then an
 /// ISO-Latin-1 reinterpretation so legacy-encoded files still render as text
 /// instead of failing into an unreadable state.
-// SUPERMUX:begin lint-allow-upstream-debt — lint:allow namespace-enum: upstream's stateless panel-byte decoder.
-public enum MacSurfaceTextDecoder {
+public struct MacSurfaceTextDecoder: Sendable {
+    public init() {}
+
     /// The encoding a decode resolved to.
     public enum Encoding: Equatable, Sendable {
         case utf8
@@ -28,7 +29,7 @@ public enum MacSurfaceTextDecoder {
     ///
     /// ISO-Latin-1 maps every byte to a character, so the fallback always
     /// succeeds and any byte payload decodes to text.
-    public static func decode(_ data: Data) -> DecodedText {
+    public func decode(_ data: Data) -> DecodedText {
         if let utf8 = String(data: data, encoding: .utf8) {
             return DecodedText(text: utf8, encoding: .utf8)
         }
@@ -36,4 +37,3 @@ public enum MacSurfaceTextDecoder {
         return DecodedText(text: latin1, encoding: .isoLatin1)
     }
 }
-// SUPERMUX:end lint-allow-upstream-debt

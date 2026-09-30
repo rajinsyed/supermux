@@ -144,6 +144,7 @@ enum SupermuxComposition {
 /// package-owned projects section.
 struct SupermuxProjectsMount: View {
     @EnvironmentObject private var tabManager: TabManager
+    @Environment(\.cmuxAccentColor) private var cmuxAccent
 
     /// Live sidebar font scale (cmux's `sidebar-font-size`), injected into the
     /// Projects section so project rows and nested workspaces grow/shrink with
@@ -299,7 +300,7 @@ struct SupermuxProjectsMount: View {
         // hex (the default) resolves to cmux's accent, like the flat rows.
         .environment(
             \.supermuxUnreadBadgeFillColor,
-            NSColor(hex: notificationBadgeColorHex).map(Color.init(nsColor:)) ?? cmuxAccentColor()
+            NSColor(hex: notificationBadgeColorHex).map(Color.init(nsColor:)) ?? cmuxAccent.color
         )
         // Publish this section's height so the sidebar shrinks the empty area
         // below the rows by it (else the content overflows and the empty space

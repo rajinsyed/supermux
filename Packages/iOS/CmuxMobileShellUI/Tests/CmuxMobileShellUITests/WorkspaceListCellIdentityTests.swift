@@ -103,7 +103,7 @@ import UIKit
 
         #expect(
             coordinator.lastPayloadApplyRoute
-                == WorkspaceListTableCoordinator.PayloadApplyRoute.tableReload
+                == WorkspaceListTableCoordinator.PayloadApplyRoute.geometryCommitted
         )
     }
 
@@ -146,13 +146,14 @@ import UIKit
                 uniquingKeysWith: { first, _ in first }
             ),
             groupsByID: [:],
-            groupHasUnreadByID: [:],
+            groupUnreadByID: [:],
             filter: .all,
             selectedWorkspaceID: nil,
             navigationStyle: .push,
             wrapWorkspaceTitles: false,
             previewLineLimit: 1,
             unreadIndicatorLeftShift: 0,
+            unreadBadgeDiameter: 16,
             connectionStatus: .connected,
             workspaceChangesCapable: false,
             workspaceChangeChipsByWorkspaceID: [:],

@@ -2,6 +2,7 @@ import AppKit
 import Bonsplit
 import CmuxBrowser
 import CmuxControlSocket
+import CmuxPanes
 import Foundation
 
 /// Pane-domain witnesses keep app-coupled topology resolution in the app while
@@ -101,7 +102,7 @@ extension TerminalController: ControlPaneContext {
             guard focusAndRevealWindowDock(for: dock, fallback: tabManager) else {
                 return .dockUnavailable(message: dockFocusUnavailableMessage())
             }
-            dock.bonsplitController.focusPane(paneId)
+            dock.focusPaneFromDockInteraction(paneId, window: nil)
             return .focused(windowID: dockResultWindowId(for: dock, tabManager: tabManager), workspaceID: dock.workspaceId, paneID: paneId.id)
         }
         guard let ws = resolveWorkspace(routing: routing, tabManager: tabManager) else {
@@ -163,9 +164,6 @@ extension TerminalController: ControlPaneContext {
         let placement = resolveControlPlacement(inputs.placementRaw)
         if case .invalid(let raw) = placement {
             return .invalidPlacement(rawValue: raw)
-        }
-        if case .dock = placement, !RightSidebarMode.dock.isAvailable() {
-            return .dockUnavailable(message: dockUnavailableMessage())
         }
         let url = inputs.urlRaw.flatMap { URL(string: $0) }
         if case .dock = placement, let invalid = validateDockPaneCreateRouting(routing: routing, tabManager: tabManager, panelType: panelType) {
@@ -280,6 +278,7 @@ extension TerminalController: ControlPaneContext {
                     insertFirst: insertFirst,
                     workingDirectory: inputs.workingDirectory,
                     initialCommand: inputs.initialCommand,
+                    initialInput: inputs.initialInput,
                     tmuxStartCommand: inputs.tmuxStartCommand,
                     startupEnvironment: inputs.startupEnvironment,
                     initialDividerPosition: initialDividerPosition
@@ -311,6 +310,7 @@ extension TerminalController: ControlPaneContext {
                 insertFirst: insertFirst,
                 workingDirectory: inputs.workingDirectory,
                 initialCommand: inputs.initialCommand,
+                initialInput: inputs.initialInput,
                 tmuxStartCommand: inputs.tmuxStartCommand,
                 startupEnvironment: inputs.startupEnvironment,
                 initialDividerPosition: initialDividerPosition
@@ -320,6 +320,16 @@ extension TerminalController: ControlPaneContext {
             }
         }
 
+        // Terminal splits check the minimum pane size in
+        // `newTerminalSplitOutcome`; other panel types check it here (#15371).
+        if panelType != .terminal, !ws.isRemoteTmuxMirror,
+           ws.splitSpaceVerdict(
+               splittingPanel: sourcePanelId,
+               orientation: orientation,
+               dividerPosition: initialDividerPosition.map { CGFloat($0) }
+           ) == .noSpace {
+            return .noSpace
+        }
         let newPanelId: UUID?
         let focus = v2FocusAllowed(requested: inputs.requestedFocus)
         if panelType == .browser {
@@ -349,6 +359,7 @@ extension TerminalController: ControlPaneContext {
                 focus: focus,
                 workingDirectory: inputs.workingDirectory,
                 initialCommand: inputs.initialCommand,
+                initialInput: inputs.initialInput,
                 tmuxStartCommand: inputs.tmuxStartCommand,
                 startupEnvironment: inputs.startupEnvironment,
                 initialDividerPosition: initialDividerPosition.map { CGFloat($0) },
@@ -362,6 +373,8 @@ extension TerminalController: ControlPaneContext {
                     workspaceID: ws.id,
                     typeRawValue: panelType.rawValue
                 )
+            case .noSpace:
+                return .noSpace
             case .failed:
                 newPanelId = nil
             }
@@ -369,6 +382,10 @@ extension TerminalController: ControlPaneContext {
 
         guard let newPanelId else {
             return .createFailed
+        }
+        // An explicit divider position wins over equalize-on-create.
+        if initialDividerPosition == nil {
+            ws.equalizeSplitsAfterCreatingSplitIfEnabled(newPanelId: newPanelId)
         }
         let paneUUID = ws.paneId(forPanelId: newPanelId)?.id
         let windowId = v2ResolveWindowId(tabManager: tabManager)

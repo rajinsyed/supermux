@@ -9,50 +9,65 @@ import SupermuxMobileCore
 /// opening, plus the row's precomputed accessibility details. Built once per
 /// item on the projection's background rebuild so row bodies do no string
 /// work during scroll.
+///
+/// The workspace title is the row's headline: agents reuse one generic
+/// notification title ("Claude Code") across every workspace, so the workspace
+/// is what distinguishes rows at a glance. The notification title demotes to
+/// the provenance line and is dropped entirely when it repeats the headline.
 struct NotificationFeedRowPresentation: Equatable, Sendable {
     // SUPERMUX:begin notification-feed-project-row
     /// The owning project, or `nil`. Carried through to the row so it can draw
     /// the avatar; derived here (not in `body`) like every other row value.
     let project: SupermuxNotificationProject?
     /// The project's display name once normalized, or `nil` when it is blank
-    /// or merely restates the workspace name — a workspace named after its repo
-    /// is the common case, and "supermux · supermux" is noise.
+    /// or merely restates the headline or source — a workspace named after its
+    /// repo is the common case, and "supermux · supermux" is noise.
     let projectName: String?
     // SUPERMUX:end notification-feed-project-row
-    let workspaceName: String
-    let workspaceMatchesTitle: Bool
+    /// The workspace title, falling back to the notification title when the
+    /// item carries no workspace, then to the localized unknown label.
+    let headline: String
+    /// The notifying agent or app ("Claude Code"), shown only when it says
+    /// something the headline does not.
+    let sourceName: String?
     let contentPreview: String?
     let computerName: String
     let connectionStatus: MobileMacConnectionStatus
-    /// The spoken details (read state, workspace, preview, computer) minus the
+    /// The spoken details (read state, source, preview, computer) minus the
     /// relative time, which the row formats at render so VoiceOver never reads
     /// a timestamp frozen at whatever moment this model was built.
     let accessibilityDetails: [String]
 
     init(item: MobileNotificationFeedItem) {
-        let normalizedTitle = notificationFeedRowNormalized(item.title) ?? item.title
-        let normalizedWorkspace = notificationFeedRowNormalized(item.workspaceTitle) ?? L10n.string(
+        let normalizedTitle = notificationFeedRowNormalized(item.title)
+        let normalizedWorkspace = notificationFeedRowNormalized(item.workspaceTitle)
+        let normalizedComputer = notificationFeedRowNormalized(item.macDisplayName) ?? item.macDeviceID
+
+        let headline = normalizedWorkspace ?? normalizedTitle ?? L10n.string(
             "mobile.notificationFeed.row.unknownWorkspace",
             defaultValue: "Unknown workspace"
         )
-        let normalizedComputer = notificationFeedRowNormalized(item.macDisplayName) ?? item.macDeviceID
+        self.headline = headline
+        if let normalizedTitle, !notificationFeedRowMatches(normalizedTitle, headline) {
+            sourceName = normalizedTitle
+        } else {
+            sourceName = nil
+        }
         // SUPERMUX:begin notification-feed-project-row
         project = item.project
         let normalizedProject = notificationFeedRowNormalized(item.project?.name)
         projectName = normalizedProject.flatMap { name in
-            notificationFeedRowMatches(name, normalizedWorkspace) ? nil : name
+            notificationFeedRowMatchesAny(name, [headline] + [sourceName].compactMap { $0 }) ? nil : name
         }
         // SUPERMUX:end notification-feed-project-row
-
-        workspaceName = normalizedWorkspace
-        workspaceMatchesTitle = notificationFeedRowMatches(normalizedWorkspace, normalizedTitle)
         computerName = normalizedComputer
         connectionStatus = item.connectionStatus
 
         // SUPERMUX:begin notification-feed-project-row
-        // The project name now renders on its own line, so a body that merely
+        // The project name renders in the provenance line, so a body that merely
         // repeats it is not a useful preview.
         let redundantContent = [normalizedTitle, normalizedWorkspace, normalizedComputer]
+            .compactMap { $0 }
             + [normalizedProject].compactMap { $0 }
         // SUPERMUX:end notification-feed-project-row
         let contentPreview: String?
@@ -71,8 +86,10 @@ struct NotificationFeedRowPresentation: Equatable, Sendable {
 
         accessibilityDetails = notificationFeedRowAccessibilityDetails(
             item: item,
+            // SUPERMUX:begin notification-feed-project-row
             projectName: normalizedProject,
-            workspaceName: normalizedWorkspace,
+            // SUPERMUX:end notification-feed-project-row
+            sourceName: sourceName,
             contentPreview: contentPreview,
             computerStatusText: notificationFeedRowApplyingConnectionStatus(
                 item.connectionStatus,
@@ -84,6 +101,19 @@ struct NotificationFeedRowPresentation: Equatable, Sendable {
     var computerStatusText: String {
         notificationFeedRowApplyingConnectionStatus(connectionStatus, to: computerName)
     }
+
+    func nestedContext(under parent: Self) -> NotificationFeedRowContext {
+        NotificationFeedRowContext(
+            isNested: true,
+            hidesHeadline: notificationFeedRowMatches(headline, parent.headline),
+            // Keep a title-only notification meaningful even without a body.
+            hidesSource: contentPreview != nil && sourceName.map { source in
+                parent.sourceName.map { notificationFeedRowMatches(source, $0) } ?? false
+            } == true,
+            hidesComputer: notificationFeedRowMatches(computerName, parent.computerName)
+                && connectionStatus == parent.connectionStatus
+        )
+    }
 }
 
 private func notificationFeedRowAccessibilityDetails(
@@ -91,7 +121,7 @@ private func notificationFeedRowAccessibilityDetails(
     // SUPERMUX:begin notification-feed-project-row
     projectName: String?,
     // SUPERMUX:end notification-feed-project-row
-    workspaceName: String,
+    sourceName: String?,
     contentPreview: String?,
     computerStatusText: String
 ) -> [String] {
@@ -101,9 +131,10 @@ private func notificationFeedRowAccessibilityDetails(
             : L10n.string("mobile.notificationFeed.unread", defaultValue: "Unread"),
     ]
     // SUPERMUX:begin notification-feed-project-row
-    // Spoken before the workspace: the project is the coarser, more orienting
-    // fact, and the row ignores child accessibility so this is the only place
-    // VoiceOver can learn it.
+    // Spoken right after the read state: the project is the coarser, more
+    // orienting fact (the workspace is already the row's label), and the row
+    // ignores child accessibility so this is the only place VoiceOver can
+    // learn it.
     if let projectName {
         details.append(notificationFeedRowAccessibilityField(
             label: L10n.string("supermux.notificationFeed.row.project", defaultValue: "Project"),
@@ -111,15 +142,17 @@ private func notificationFeedRowAccessibilityDetails(
         ))
     }
     // SUPERMUX:end notification-feed-project-row
-    details.append(notificationFeedRowAccessibilityField(
-        label: L10n.string("mobile.notificationFeed.row.workspace", defaultValue: "Workspace"),
-        value: workspaceName
-    ))
+    if let sourceName {
+        details.append(notificationFeedRowAccessibilityField(
+            label: L10n.string("mobile.notificationFeed.row.source", defaultValue: "From"),
+            value: sourceName
+        ))
+    }
     if let contentPreview {
         details.append(contentPreview)
     }
     details.append(notificationFeedRowAccessibilityField(
-        label: L10n.string("mobile.notificationFeed.row.computer", defaultValue: "Computer"),
+        label: L10n.string("mobile.notificationFeed.row.computer", defaultValue: "Connection"),
         value: computerStatusText
     ))
     return details

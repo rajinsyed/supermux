@@ -60,7 +60,9 @@ import Testing
         #expect(model.presentation.contentPreview == "Tests passed")
     }
 
-    @Test func accessibilitySpeaksTheProjectBeforeTheWorkspace() {
+    @Test func accessibilitySpeaksTheProjectBeforeTheSource() {
+        // The workspace is the row's accessibility label (upstream's headline),
+        // so the project leads the spoken details.
         let model = NotificationFeedRowModel(item: item(
             body: "Choose a builder to continue.",
             project: SupermuxNotificationProject(id: "project-1", name: "supermux")
@@ -68,9 +70,9 @@ import Testing
         #expect(model.presentation.accessibilityDetails == [
             "Unread",
             "Project: supermux",
-            "Workspace: Workspace",
+            "From: Title",
             "Choose a builder to continue.",
-            "Computer: Mac",
+            "Connection: Mac",
         ])
     }
 

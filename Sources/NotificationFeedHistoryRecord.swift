@@ -24,6 +24,8 @@ struct NotificationFeedHistoryRecord: Codable, Equatable, Identifiable, Sendable
     let body: String
     let createdAt: Date
     var isRead: Bool
+    /// Optional so history written before origins existed still decodes (`nil` = local).
+    var origin: TerminalNotificationOrigin?
     // SUPERMUX:begin notification-project-identity
     /// The owning project snapshot, persisted so a restored feed still renders
     /// project avatars. Optional in the Codable shape (see the explicit
@@ -43,6 +45,7 @@ struct NotificationFeedHistoryRecord: Codable, Equatable, Identifiable, Sendable
         body: String,
         createdAt: Date,
         isRead: Bool,
+        origin: TerminalNotificationOrigin? = nil,
         // SUPERMUX:begin notification-project-identity
         project: SupermuxNotificationProject? = nil
         // SUPERMUX:end notification-project-identity
@@ -57,6 +60,7 @@ struct NotificationFeedHistoryRecord: Codable, Equatable, Identifiable, Sendable
         self.body = body
         self.createdAt = createdAt
         self.isRead = isRead
+        self.origin = origin
         // SUPERMUX:begin notification-project-identity
         self.project = project
         // SUPERMUX:end notification-project-identity
@@ -73,6 +77,7 @@ struct NotificationFeedHistoryRecord: Codable, Equatable, Identifiable, Sendable
         body = notification.body
         createdAt = notification.createdAt
         isRead = notification.isRead
+        origin = notification.origin.isRemote ? notification.origin : nil
         // SUPERMUX:begin notification-project-identity
         project = notification.project
         // SUPERMUX:end notification-project-identity
@@ -88,6 +93,7 @@ struct NotificationFeedHistoryRecord: Codable, Equatable, Identifiable, Sendable
     private enum CodingKeys: String, CodingKey {
         case id, tabId, surfaceId, panelId, retargetsToLiveSurfaceOwner
         case title, subtitle, body, createdAt, isRead
+        case origin
         case project
     }
 
@@ -105,6 +111,7 @@ struct NotificationFeedHistoryRecord: Codable, Equatable, Identifiable, Sendable
         body = try container.decode(String.self, forKey: .body)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         isRead = try container.decode(Bool.self, forKey: .isRead)
+        origin = try container.decodeIfPresent(TerminalNotificationOrigin.self, forKey: .origin)
         project = try container.decodeIfPresent(
             SupermuxNotificationProject.self, forKey: .project
         )
@@ -131,6 +138,7 @@ struct NotificationFeedHistoryRecord: Codable, Equatable, Identifiable, Sendable
             body: Self.string(body, limitedToUTF8Bytes: Self.historyBodyByteLimit),
             createdAt: createdAt,
             isRead: isRead,
+            origin: origin,
             // SUPERMUX:begin notification-project-identity
             project: project.map(Self.boundedProject)
             // SUPERMUX:end notification-project-identity

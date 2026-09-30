@@ -1,3 +1,4 @@
+import CmuxSettings
 import Foundation
 // SUPERMUX:begin notification-project-identity
 import SupermuxMobileCore
@@ -15,6 +16,9 @@ struct SessionNotificationSnapshot: Codable, Sendable {
     var correlationKey: String?
     var scrollPosition: TerminalNotificationScrollPosition?
     var clickAction: TerminalNotificationClickAction?
+    /// Agent/alert identity used if a restored notification is redelivered.
+    /// Optional keeps snapshots written before per-agent sounds compatible.
+    var soundContext: NotificationSoundOverrideContext?
     // SUPERMUX:begin notification-project-identity
     var project: SupermuxNotificationProject?
     // SUPERMUX:end notification-project-identity
@@ -31,6 +35,7 @@ struct SessionNotificationSnapshot: Codable, Sendable {
         correlationKey: String? = nil,
         scrollPosition: TerminalNotificationScrollPosition? = nil,
         clickAction: TerminalNotificationClickAction? = nil,
+        soundContext: NotificationSoundOverrideContext? = nil,
         // SUPERMUX:begin notification-project-identity
         project: SupermuxNotificationProject? = nil
         // SUPERMUX:end notification-project-identity
@@ -46,6 +51,7 @@ struct SessionNotificationSnapshot: Codable, Sendable {
         self.correlationKey = correlationKey
         self.scrollPosition = scrollPosition
         self.clickAction = clickAction
+        self.soundContext = soundContext
         // SUPERMUX:begin notification-project-identity
         self.project = project
         // SUPERMUX:end notification-project-identity
@@ -67,6 +73,7 @@ struct SessionNotificationSnapshot: Codable, Sendable {
             correlationKey: notification.correlationKey,
             scrollPosition: persistedScrollPosition,
             clickAction: notification.clickAction,
+            soundContext: notification.soundContext,
             // SUPERMUX:begin notification-project-identity
             project: notification.project
             // SUPERMUX:end notification-project-identity
@@ -92,6 +99,7 @@ struct SessionNotificationSnapshot: Codable, Sendable {
             paneFlash: paneFlash ?? true,
             scrollPosition: restoredScrollPosition,
             clickAction: clickAction,
+            soundContext: soundContext,
             // SUPERMUX:begin notification-project-identity
             project: project
             // SUPERMUX:end notification-project-identity
