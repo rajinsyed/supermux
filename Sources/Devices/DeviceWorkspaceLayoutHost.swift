@@ -91,9 +91,12 @@ final class DeviceWorkspaceLayoutHost {
                 guard let snapshot = snapshot(for: workspaceID) else { return failure("not_found", "Workspace layout unavailable") }
                 return .ok(try payload(snapshot))
             }
+            // SUPERMUX:begin mirror-terminal-to-right
+            // A create also takes `after_surface_id` (upstream: not accepted).
             let allowed: Set<String> = request.method == "device.workspace.layout.apply"
                 ? ["workspace_id", "request_id", "base_revision", "layout"]
-                : ["workspace_id", "request_id", "source_surface_id", "direction"]
+                : ["workspace_id", "request_id", "source_surface_id", "direction", SupermuxMirrorTerminalPlacement.paramKey]
+            // SUPERMUX:end mirror-terminal-to-right
             guard Set(request.params.keys).isSubset(of: allowed),
                   let requestID = request.params["request_id"] as? String, !requestID.isEmpty, requestID.count <= 128 else {
                 return failure("invalid_params", "Expected a bounded request_id and supported parameters")
@@ -133,9 +136,21 @@ final class DeviceWorkspaceLayoutHost {
                 } else {
                     direction = nil
                 }
+                // SUPERMUX:begin mirror-terminal-to-right
+                let supermuxAnchor = SupermuxMirrorTerminalPlacement.hostAnchor(
+                    request.params, surfaceIDs: try current.layout.validatedSurfaceIDs(), direction: direction
+                )
+                guard supermuxAnchor != .invalid else {
+                    return failure("invalid_params", "The tab to place after must be a terminal of this workspace")
+                }
+                // SUPERMUX:end mirror-terminal-to-right
                 guard let terminalID = try createTerminal(workspaceID, surfaceID, direction) else {
                     return failure("unavailable", "Could not create a terminal in this workspace")
                 }
+                // SUPERMUX:begin mirror-terminal-to-right
+                // Right of its tab before the layout below is captured and sent back.
+                SupermuxMirrorTerminalPlacement.place(terminalID, at: supermuxAnchor, inWorkspace: workspaceID)
+                // SUPERMUX:end mirror-terminal-to-right
                 var response: [String: Any] = ["created_terminal_id": terminalID.uuidString, "workspace_id": workspaceID.uuidString]
                 if let accepted = snapshot(for: workspaceID) { response["snapshot"] = try payload(accepted) }
                 result = .ok(response)

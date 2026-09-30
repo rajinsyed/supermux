@@ -13075,6 +13075,12 @@ final class Workspace: Identifiable, ObservableObject, FilePreviewTabMetadataHos
     }
 
     private func createTerminalToRight(of anchorTabId: TabID, inPane paneId: PaneID) {
+        // SUPERMUX:begin mirror-terminal-to-right
+        // A device mirror's tab: its Mac creates the terminal right of it there too.
+        if SupermuxMirrorTerminalPlacement.createTerminalToRight(of: anchorTabId, inPane: paneId, in: self, focus: true) != nil {
+            return
+        }
+        // SUPERMUX:end mirror-terminal-to-right
         let sourcePanelId = panelIdFromSurfaceId(anchorTabId)
         guard let newPanel = newTerminalSurface(
             inPane: paneId,

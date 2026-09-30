@@ -186,6 +186,10 @@ extension Workspace {
         }
         let effectiveCommand = commandOverride ?? (machine.isSSH ? remoteConfiguration.map { SSHTuiConnection(configuration: $0).shellCommand } : nil)
         let request = CloudTerminalCreationRequest(id: requestID, remoteWorkspaceID: source.remoteWorkspaceID, commandOverride: effectiveCommand)
+        // SUPERMUX:begin mirror-terminal-to-right
+        // An explicit tab index asks a device's Mac to put its terminal at the same spot.
+        SupermuxMirrorTerminalPlacement.remember(request, destination: destination, source: source, in: self)
+        // SUPERMUX:end mirror-terminal-to-right
         let reservationDestination: SurfaceDestination = pendingPane.map {
             .tab(workspaceID: id, paneID: $0.id.uuidString, index: nil)
         } ?? destination
