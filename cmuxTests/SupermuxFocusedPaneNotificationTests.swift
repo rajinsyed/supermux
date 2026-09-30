@@ -78,19 +78,19 @@ struct SupermuxFocusedPaneNotificationTests {
 
         #expect(policy.targetIsAlreadyVisible(
             surfaceID: UUID(),
-            externalDeliverySuppressed: true
+            exactPaneFocused: true
         ))
         #expect(!policy.targetIsAlreadyVisible(
             surfaceID: nil,
-            externalDeliverySuppressed: true
+            exactPaneFocused: true
         ))
         #expect(!policy.targetIsAlreadyVisible(
             surfaceID: UUID(),
-            externalDeliverySuppressed: false
+            exactPaneFocused: false
         ))
         #expect(!policy.targetIsAlreadyVisible(
             surfaceID: UUID(),
-            externalDeliverySuppressed: true,
+            exactPaneFocused: true,
             targetWindowIsKey: false
         ))
     }

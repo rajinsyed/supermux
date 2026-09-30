@@ -1543,9 +1543,11 @@ final class TerminalNotificationStore: ObservableObject {
         // all inherit the same decision. Explicit custom-command automation is
         // deliberately preserved by the focused-pane policy.
         let focusedPanePolicy = SupermuxFocusedPaneNotificationPolicy()
+        // The exact focused surface, never `shouldSuppressExternalDelivery`:
+        // with `suppressWhenAppFocused` on that is just "cmux is frontmost".
         let focusedPaneAlreadyVisible = focusedPanePolicy.targetIsAlreadyVisible(
             surfaceID: request.surfaceId,
-            externalDeliverySuppressed: shouldSuppressExternalDelivery,
+            exactPaneFocused: isFocusedSurfaceArrival,
             targetWindowIsKey: targetWindowIsKey(forTabId: request.tabId)
         )
         effects = focusedPanePolicy.resolvedEffects(
@@ -1777,7 +1779,7 @@ final class TerminalNotificationStore: ObservableObject {
         let focusedPaneAlreadyVisible = SupermuxFocusedPaneNotificationPolicy()
             .targetIsAlreadyVisible(
                 surfaceID: notification.surfaceId,
-                externalDeliverySuppressed: shouldSuppressExternalDelivery,
+                exactPaneFocused: isFocusedSurfaceArrival,
                 targetWindowIsKey: targetWindowIsKey(forTabId: notification.tabId)
             )
         SupermuxComposition.directPhonePush.deliver(
