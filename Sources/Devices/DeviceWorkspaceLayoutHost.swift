@@ -25,6 +25,12 @@ final class DeviceWorkspaceLayoutHost {
     private var snapshots: [UUID: DeviceWorkspaceLayoutSnapshot] = [:]
     private var receipts: [String: Receipt] = [:]
     private var receiptOrder: [String] = []
+    // SUPERMUX:begin device-layout-tab-changes
+    private lazy var supermuxTabChanges = SupermuxDeviceLayoutChangeObserver { [weak self] id in
+        guard let self, self.snapshots[id] != nil else { return }
+        _ = self.snapshot(for: id)
+    }
+    // SUPERMUX:end device-layout-tab-changes
 
     init(
         capture: @escaping @MainActor (UUID) -> DeviceWorkspaceLayoutNode?,
@@ -54,9 +60,14 @@ final class DeviceWorkspaceLayoutHost {
     }
 
     func snapshot(for workspaceID: UUID) -> DeviceWorkspaceLayoutSnapshot? {
-        guard let layout = capture(workspaceID), (try? layout.validatedSurfaceIDs()) != nil else {
+        // SUPERMUX:begin device-layout-tab-changes
+        // Observed capture: a background tab add/close/move re-captures too
+        // (upstream: `guard let layout = capture(workspaceID), ...`).
+        guard let layout = supermuxTabChanges.capture(workspaceID, { capture(workspaceID) }),
+              (try? layout.validatedSurfaceIDs()) != nil else {
             return nil
         }
+        // SUPERMUX:end device-layout-tab-changes
         let previous = snapshots[workspaceID]
         let unchanged = previous?.layout.hasSameArrangement(as: layout) == true
         let revision = unchanged ? previous?.revision ?? UUID().uuidString : UUID().uuidString
