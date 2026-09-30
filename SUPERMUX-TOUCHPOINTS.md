@@ -12,7 +12,7 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **512**. Number **351** is unused (the notifications
+- Numbering: the highest number in use is **513**. Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 82, 83, 89, 106, 121, 142, 213, 214,
   220, 229, 237, 250, 251, 252–258, 335, 470, 473–481, 483, 484, and 487** are unused; all are
@@ -506,6 +506,7 @@ Rules for adding a touchpoint:
 | 510 | `Sources/AppDelegate+NewWorkspaceContextMenu.swift` | `claude-harness-builtin-action` | Upstream's exhaustive `isBuiltInActionAvailableInNewWorkspaceMenu` switch (the new-workspace context menu's availability gate, mirroring the command palette) gains a fenced `.newClaudeHarness` arm returning `true` — always available, like the palette command (#436). Added at the 2026-09-30 upstream merge, when upstream introduced this file |
 | 511 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/MobilePinnedNavigationBar.swift` | `ios27-sdk-no-toolbar-minimize` | **Local-toolchain workaround.** Changes upstream's `#if compiler(>=6.4)` in `mobilePinnedNavigationBar()` to `#if compiler(>=6.4) && SUPERMUX_IOS27_TOOLBAR_MINIMIZE` (the flag is never defined), so the UIKit `PinnedNavigationBarApplier` stand-in is always used. Xcode 27.0 (27A266a, Swift 6.4) ships an iOS 27 SDK without `toolbarMinimizeBehavior(_:for:)`, so upstream's gate fails to compile here; upstream CI (Xcode 26, Swift < 6.4) never compiles that branch. RETIRE when the SDK exposes `toolbarMinimizeBehavior` or upstream fixes the gate: delete the fence and take upstream's line |
 | 512 | `cmuxTests/DockPortalReconcileTests.swift` | `claude-harness-dock-admission-test` | Fork test `harnessSurfaceCannotMoveIntoDock` (fork commit 4224cc3a8ae) inside upstream's Dock test suite: a workspace-owned Claude harness surface is rejected by both `canMoveSurfaceIntoDock` and `moveSurfaceIntoDock` and stays with its workspace (regression coverage for #461). Was unfenced until the 2026-09-30 upstream merge, which also adapted it to upstream's Optional `workspace.dockSplit` (`workspace.requiredDockSplitForTesting`, matching the sibling tests) |
+| 513 | `Sources/GhosttyTerminalView.swift` | `release-clear-selection-seam` | **Release-build compiler-crash workaround.** `sendSyntheticGhosttyMouseRelease` calls `GhosttyRuntimeCInterop.clearSelection(surface)` instead of the header-imported `ghostty_surface_clear_selection`. The ghostty pin now exports that symbol in `ghostty.h` as `(ghostty_surface_t)` (Optional pointer) while `CmuxTerminalCore` still binds it via `@_silgen_name` with a non-optional pointer; with both in the Release SIL link, swift-frontend 6.2.4 aborts with `SILFunction type mismatch for 'ghostty_surface_clear_selection'` (DESERIALIZATION FAILURE) and `scripts/supermux-release.sh` fails |
 
 ## How to re-apply
 
@@ -4489,3 +4490,14 @@ never reaches it. Re-apply: append `&& SUPERMUX_IOS27_TOOLBAR_MINIMIZE` to that 
 fence (the flag is deliberately never defined, so the UIKit `PinnedNavigationBarApplier` path always
 runs). This is a temporary toolchain workaround: once the SDK exposes `toolbarMinimizeBehavior(_:for:)`
 (or upstream changes the gate), delete the fence, take upstream's line, and retire #511.
+
+### 513. Release SIL type mismatch on `ghostty_surface_clear_selection` — `release-clear-selection-seam`
+
+Upstream's lifecycle-cancel path in `sendSyntheticGhosttyMouseRelease` (`Sources/GhosttyTerminalView.swift`)
+calls the GhosttyKit-header `ghostty_surface_clear_selection`, while
+`GhosttyRuntimeCInterop.swift` in `CmuxTerminalCore` still declares the same symbol with
+`@_silgen_name` and a non-optional `ghostty_surface_t`. Debug builds link fine; the Release build
+crashes swift-frontend in `MandatorySILLinker` with `SILFunction type mismatch`. Re-apply: route that
+one call through `GhosttyRuntimeCInterop.clearSelection(surface)` like every other call site in the
+file. Retire this row once upstream drops the `@_silgen_name` shim (the header now exports the
+symbol) or stops calling the header function directly — then take upstream's line.
