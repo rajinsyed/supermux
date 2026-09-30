@@ -42,12 +42,17 @@ extension TerminalController {
     /// `mobile.supermux.files.search`: file contents matching `query` (a fixed
     /// string, 1–1000 characters) under the root. Result:
     /// ``SupermuxFileSearchDTO`` with root-relative paths. `rg_missing` when
-    /// this Mac has no ripgrep.
+    /// this Mac has no ripgrep. Refused with `forbidden` while
+    /// `DisableFileTransfer` is on, like `files.read`: each result carries a
+    /// line of the file, so repeated searches would copy files off this Mac.
     @MainActor
     func v2SupermuxFilesSearch(params: [String: Any]) async -> V2CallResult {
         guard let query = params["query"] as? String,
               !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, query.count <= 1000 else {
             return .err(code: "invalid_params", message: "query must be 1 to 1000 characters", data: nil)
+        }
+        guard !ManagedFileTransferPolicy.isDisabled else {
+            return .err(code: "forbidden", message: ManagedFileTransferPolicy.disabledMessage, data: nil)
         }
         return await supermuxFilesOperation(params: params) { browser in
             do {
