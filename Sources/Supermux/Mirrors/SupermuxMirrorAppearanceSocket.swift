@@ -20,8 +20,10 @@ import Foundation
 /// - `host_layer_hex` / `host_layer_alpha`: the pane background view's fill.
 /// - `backdrop_cutout_present`: whether the pane cut itself out of the shared backdrop.
 /// - `app_background_hex` / `app_background_opacity`: this Mac's Ghostty defaults.
-/// - for a device mirror: `mirror_phase`, and the colors its replays applied
-///   (`applied_remote_colors`, `last_replay_color_osc`, `replays`).
+/// - for a device mirror: `mirror_phase`, the program-authored colors its last
+///   replay set (`applied_remote_colors`; every other color it reset to this
+///   Mac's theme), whether that replay's own screen bytes carried color OSC
+///   (`last_replay_color_osc`), and `replays`.
 @MainActor
 enum SupermuxMirrorAppearanceSocket {
     static func terminalBackground(_ params: [String: Any]) throws -> [String: Any] {
