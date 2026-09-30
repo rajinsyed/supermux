@@ -32,13 +32,15 @@ public struct SupermuxDeviceChip: View {
                 .font(.system(size: 9 * fontScale, weight: .medium))
                 .lineLimit(1)
                 .truncationMode(.tail)
+                // Compact: a long Mac name truncates instead of crowding the title.
+                .frame(maxWidth: 64 * fontScale, alignment: .leading)
+                .fixedSize(horizontal: true, vertical: false)
         }
         .foregroundStyle(.secondary)
         .padding(.horizontal, 5 * fontScale)
         .frame(height: 15 * fontScale)
         .background(Capsule().fill(Color.primary.opacity(0.07)))
         .opacity(isOnline ? 1 : 0.45)
-        .fixedSize()
         .help(helpText)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(helpText)
