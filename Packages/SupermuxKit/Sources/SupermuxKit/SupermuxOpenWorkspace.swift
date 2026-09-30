@@ -44,6 +44,11 @@ public struct SupermuxOpenWorkspace: Identifiable, Hashable, Sendable {
     /// workspace showing another Mac's workspace), for the row's device chip;
     /// `nil` for this Mac's own workspaces.
     public let device: SupermuxProjectDevice?
+    /// The `cmux set-status` pills the row shows (a mirror's come from its
+    /// Mac), without the agent pills the activity indicator already shows.
+    public let statusPills: [SupermuxRowStatusPill]
+    /// The `cmux set-progress` bar the row shows, if any.
+    public let progress: SupermuxRowProgress?
 
     /// Creates a snapshot.
     /// - Parameters:
@@ -58,6 +63,8 @@ public struct SupermuxOpenWorkspace: Identifiable, Hashable, Sendable {
     ///   - pullRequest: The workspace branch's pull request, if cmux probed one.
     ///   - unreadCount: The row's displayed unread count (0 hides the badge).
     ///   - device: The Mac a device mirror shows, or `nil` for a local workspace.
+    ///   - statusPills: The status pills to show under the title.
+    ///   - progress: The progress bar to show under the title, if any.
     public init(
         id: UUID,
         title: String,
@@ -69,7 +76,9 @@ public struct SupermuxOpenWorkspace: Identifiable, Hashable, Sendable {
         isRunning: Bool = false,
         pullRequest: SupermuxPullRequest? = nil,
         unreadCount: Int = 0,
-        device: SupermuxProjectDevice? = nil
+        device: SupermuxProjectDevice? = nil,
+        statusPills: [SupermuxRowStatusPill] = [],
+        progress: SupermuxRowProgress? = nil
     ) {
         self.id = id
         self.title = title
@@ -82,6 +91,8 @@ public struct SupermuxOpenWorkspace: Identifiable, Hashable, Sendable {
         self.pullRequest = pullRequest
         self.unreadCount = unreadCount
         self.device = device
+        self.statusPills = statusPills
+        self.progress = progress
     }
 
     /// The row's VoiceOver label: the title, plus the Mac a device mirror
