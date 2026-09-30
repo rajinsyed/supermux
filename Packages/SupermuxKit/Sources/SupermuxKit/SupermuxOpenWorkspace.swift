@@ -83,4 +83,11 @@ public struct SupermuxOpenWorkspace: Identifiable, Hashable, Sendable {
         self.unreadCount = unreadCount
         self.device = device
     }
+
+    /// The row's VoiceOver label: the title, plus the Mac a device mirror
+    /// runs on ("api on MacBook Pro"), as flat mirror rows announce theirs.
+    public var accessibilityLabel: String {
+        guard let device else { return title }
+        return String(localized: "supermux.workspace.accessibility.onMac", defaultValue: "\(title) on \(device.name)")
+    }
 }
