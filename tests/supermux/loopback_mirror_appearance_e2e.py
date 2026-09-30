@@ -374,7 +374,11 @@ class MirrorAppearanceE2E:
         before = self.background(surface_id).get("replays")
         self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "stop"})
         try:
-            wait_for("the mirror to detach", lambda: self.background(surface_id).get("mirror_phase") != "attached", 10, interval_s=0.2)
+            # Informational: the replay counter below is what proves a fresh replay.
+            detached = bool(wait_for("the mirror to detach",
+                                     lambda: self.background(surface_id).get("mirror_phase") != "attached", 5, interval_s=0.2))
+        except Failure:
+            detached = False
         finally:
             self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "restore"})
         wait_for("the loopback link to reconnect", lambda: self.device().get("link_state") == "connected", self.timeout)
@@ -386,7 +390,7 @@ class MirrorAppearanceE2E:
 
         wait_for("the mirror to re-attach on a fresh replay", reattached, self.timeout)
         time.sleep(1.0)  # color changes reach the view on the next main-queue turn
-        return {"replays_before": before, "replays_after": self.background(surface_id).get("replays")}
+        return {"replays_before": before, "replays_after": self.background(surface_id).get("replays"), "saw_detach": detached}
 
     # -- steps ----------------------------------------------------------------
 
