@@ -66,6 +66,13 @@ SUPERMUX_NSE_CODE_SIGN_ENTITLEMENTS = Config/supermux-notification-service.entit
 // SUPERMUX:end ios-communication-notifications
 PRODUCT_BUNDLE_IDENTIFIER = $(CMUX_APP_BUNDLE_IDENTIFIER)
 CMUX_NOTIFICATION_SERVICE_BUNDLE_IDENTIFIER = $(CMUX_HOST_BUNDLE_IDENTIFIER).NotificationService
+// SUPERMUX:begin ios-nse-supermux-decoration
+// Upstream's NotificationService is the app's ONLY notification service
+// extension; it also runs the fork's avatar decoration. Keep it on the fork's
+// registered extension App ID (<app id>.notification-service, whose profiles
+// carry group.com.supermux.ios) instead of upstream's .NotificationService.
+CMUX_NOTIFICATION_SERVICE_BUNDLE_IDENTIFIER = $(SUPERMUX_NSE_BUNDLE_ID)
+// SUPERMUX:end ios-nse-supermux-decoration
 // User-visible versions (CFBundleShortVersionString). Keep beta and production
 // independent: TestFlight can stay on the already-approved beta version while
 // the first production App Store upload starts from its own release version.
@@ -151,6 +158,12 @@ INFOPLIST_KEY_NSCameraUsageDescription = Scan cmux pairing QR codes from your Ma
 // or Release/TestFlight defaults.
 CMUX_APP_CODE_SIGN_ENTITLEMENTS = Config/cmux.entitlements
 CMUX_NOTIFICATION_SERVICE_CODE_SIGN_ENTITLEMENTS = Config/NotificationService.entitlements
+// SUPERMUX:begin ios-nse-supermux-decoration
+// The fork's extension file: the host keychain group (upstream's decryption)
+// plus group.com.supermux.ios (project icons), never upstream's
+// group.dev.cmux.ios. The dogfood command overrides SUPERMUX_NSE_CODE_SIGN_ENTITLEMENTS.
+CMUX_NOTIFICATION_SERVICE_CODE_SIGN_ENTITLEMENTS = $(SUPERMUX_NSE_CODE_SIGN_ENTITLEMENTS)
+// SUPERMUX:end ios-nse-supermux-decoration
 // SUPERMUX:begin ios-communication-notifications
 // Read by the APP target as $(SUPERMUX_APP_CODE_SIGN_ENTITLEMENTS) (set on the
 // target in project.pbxproj). The fork notification service extension reads
