@@ -48,7 +48,7 @@ A device is any `.device` machine in `SurfaceCatalog.shared` whose provider is a
     // events (SupermuxDevices+Events.swift)
     func events() -> AsyncStream<SupermuxDeviceEvent>   // one independent stream per call
     // RPC (SupermuxDevices+RPC.swift)
-    static let longOperationTimeout: Duration            // 600 s
+    // Reply deadlines: SupermuxDeviceReplyDeadline (SupermuxKit), one audited per-method table
     func request(_ method: String, params: [String: Any] = [:], on: SurfaceMachineID,
                  timeout: Duration? = nil) async throws -> [String: Any]
     func request(_ method: SupermuxMobileMethod, params:, on:, timeout:) async throws -> [String: Any]
@@ -86,8 +86,12 @@ Rules for consumers:
   leaves the previous records, which only ever errs toward keeping mirrors).
 - `request` errors are `SupermuxDeviceError` (`unknownDevice`, `notConnected(name)`,
   `hostRejected(code:message:)`, `malformedResponse`, …; `.code` is a stable string). A request that
-  **times out makes the upstream link reconnect**, so pass `SupermuxDevices.longOperationTimeout` for
-  `mobile.supermux.worktree.create` and `agent.start`. `timeout: nil` uses the link runtime's default.
+  **times out makes the upstream link reconnect** (every mirror of that Mac drops), so callers never
+  pick deadlines: `timeout: nil` applies `SupermuxDeviceReplyDeadline.forMethod(method)`, one audited
+  table (exhaustive over `SupermuxMobileMethod`, derived from the host's own git/fetch/network/
+  checkout/clone bounds, package-tested). Long host work (Changes history/push/pull, commit, AI
+  message, worktree create/remove, agent.start, clone, …) gets a deadline that outlasts it; calls the
+  host answers from memory keep the link's 20 s default. Only the DEBUG socket driver passes one.
 - Decodable variant uses the `SupermuxWireJSON` convention (plain `JSONDecoder`, DTO `CodingKeys` carry
   snake_case). Example:
   `try await devices.request(SupermuxMobileMethod.projectsList.rawValue, on: m, resultKey: "projects", as: [SupermuxProjectDTO].self)`.

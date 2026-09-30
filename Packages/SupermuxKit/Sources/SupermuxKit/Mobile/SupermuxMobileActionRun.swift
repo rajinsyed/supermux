@@ -8,7 +8,7 @@ public enum SupermuxMobileActionRunOutcome: Equatable, Sendable {
     case openURL(URL)
     /// Any other launchable action (editor commands like `cursor .`
     /// included): the Mac executes it through the desktop launch path
-    /// (``SupermuxTabManagerOpener/runAction(_:)``) and returns ok.
+    /// (``SupermuxTabManagerOpener/runAction(_:in:)``) and returns ok.
     case command(String)
 }
 

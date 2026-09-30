@@ -33,12 +33,22 @@ DEBUG `supermux.devices.mirror.*` socket drivers):
      the mirror still holds only panes projected from the other Mac).
   8. run_stop_from_mirror_presets_bar — Run/Stop in the mirror stops it (the
      port closes).
+  8b. run_second_workspace_from_its_mirror — with the first workspace
+     running, a second workspace of the same project on the other Mac (a
+     worktree created through the remote New Worktree path) runs
+     from its own mirror; that mirror keeps showing its run (the older run
+     does not hide it), and its Run / Stop stops only that run.
   9. changes_lists_remote_change — the mirror's Changes model is remote and
      lists README.md (modified) and NOTES.txt (untracked).
  10. changes_stage_unstage_round_trip — stage then unstage README.md from the
      mirror's model; the scratch repo's real index follows each step.
  11. changes_file_diff_is_remote — the file-row diff of README.md comes back
      from the other Mac and is marked remote.
+ 11b. changes_slow_fetch_keeps_link — with a remote whose `git fetch` takes
+     longer than the link's 20 s default reply deadline: a count read
+     (`changes.history {fetch: false}`) answers without waiting on it, a
+     fetching history page and the panel's Fetch both succeed, and the link
+     to the other Mac never drops (a second socket watches it throughout).
  12. changes_panel_mounted — with the mirror selected and the right sidebar
      on Changes, the mounted panel's own model is the remote one (a
      screenshot of the window is saved when screen capture is allowed).
@@ -47,6 +57,10 @@ DEBUG `supermux.devices.mirror.*` socket drivers):
      source workspace, the mirror gains no local pane).
  14. preset_without_remote_match_types_command — a chip the other Mac lacks
      types its command into a new remote terminal (same checks).
+ 14b. project_action_runs_where_the_user_looks — the remote project row's
+     Actions menu runs the command in the workspace over there whose mirror
+     is selected here, and at the project's own workspace there when nothing
+     of that Mac is selected (never in whatever that Mac has selected).
  15. new_workspace_menu_lists_mac — the + menu has "New Workspace on ▸" with
      the loopback Mac enabled.
  16. new_workspace_on_mac_from_menu — clicking it creates a workspace on the
@@ -74,6 +88,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -84,6 +99,9 @@ LOOPBACK_DEVICE_ID = "5e1f10b0-0000-4000-8000-000000000001"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ARTIFACTS_DIR = REPO_ROOT / "tests" / "supermux" / "artifacts"
 PROVISIONAL_TITLE = "Cloud VM"
+# Longer than the device link's 20 s default reply deadline, shorter than the
+# host's own 30 s `git fetch` timeout.
+SLOW_FETCH_SECONDS = 23
 
 
 class CheckFailure(Exception):
@@ -181,6 +199,43 @@ def port_listening(port: int) -> bool:
 def git(repo: Path, *args: str) -> str:
     result = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, check=True)
     return result.stdout
+
+
+class LinkWatcher:
+    """Polls one device's link state on its own socket connection while a slow
+    call runs on the main one, and records every poll that was not connected."""
+
+    def __init__(self, socket_path: str, device_id: str, interval_s: float = 0.25) -> None:
+        self.socket_path = socket_path
+        self.device_id = device_id
+        self.interval_s = interval_s
+        self.polls = 0
+        self.drops: List[str] = []
+        self.poll_errors: List[str] = []
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+
+    def __enter__(self) -> "LinkWatcher":
+        self._thread.start()
+        return self
+
+    def __exit__(self, *_: Any) -> None:
+        self._stop.set()
+        self._thread.join(timeout=10)
+
+    def _run(self) -> None:
+        started = time.monotonic()
+        with SocketClient(self.socket_path, timeout_s=10) as client:
+            while not self._stop.is_set():
+                try:
+                    devices = (client.call("supermux.devices.list", {}) or {}).get("devices") or []
+                    state = next((d.get("link_state") for d in devices if d.get("device_id") == self.device_id), "missing")
+                    self.polls += 1
+                    if state != "connected":
+                        self.drops.append(f"+{time.monotonic() - started:.1f}s {state}")
+                except (CheckFailure, OSError, ValueError) as error:
+                    self.poll_errors.append(str(error))
+                self._stop.wait(self.interval_s)
 
 
 class WorkspaceBehaviorsE2E:
@@ -398,6 +453,59 @@ class WorkspaceBehaviorsE2E:
         wait_for("the mirror to show the run stopped", lambda: not self.inspect(self.mirror_id)["run"]["is_running"], self.timeout_s)
         return {"port_listening": False, "run": self.remote_run()}
 
+    def holds(self, description: str, probe: Callable[[], bool], seconds: float = 2.0) -> None:
+        """`probe` stays true for `seconds` (a state a later refresh must not undo)."""
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            if not probe():
+                raise CheckFailure(f"{description} did not hold")
+            time.sleep(0.25)
+
+    def run_second_workspace_from_its_mirror(self) -> Dict[str, Any]:
+        """Two workspaces of one project run at once on the other Mac (runs
+        are per workspace there). The mirror of the one that started second
+        shows its own run, and its Run / Stop stops that run only."""
+        self.remote("mobile.supermux.project.update", {
+            "project_id": self.project_id, "patch": {"run_commands": ["sleep 3600"]},
+        })
+        self.mirror("run_toggle", {"workspace_id": self.mirror_id, "via": "presets_bar"})
+        wait_for("the first workspace's run over there", lambda: self.inspect(self.source_id)["run"]["is_running"], self.timeout_s)
+
+        # A worktree of the project over there (the sidebar's remote New Worktree path).
+        opened = self.rpc("supermux.devices.remote_worktree_create", {
+            "machine": self.machine, "project_id": self.project_id,
+            "workspace_name": f"rws second {self.nonce}", "branch_name": f"rws-second-{self.nonce}", "focus": False,
+        }, timeout_s=180) or {}
+        second, second_mirror = norm(opened.get("remote_workspace_id")), norm(opened.get("workspace_id"))
+        if not second or not second_mirror or second == second_mirror:
+            raise CheckFailure(f"remote_worktree_create returned {opened}")
+        self.created_local[:0] = [second_mirror]
+        self.created_local.append(second)
+        wait_for(
+            "the second mirror's remote project",
+            lambda: norm((self.inspect(second_mirror).get("target") or {}).get("remote_project_id")) == norm(self.project_id),
+            self.timeout_s,
+        )
+
+        self.mirror("run_toggle", {"workspace_id": second_mirror, "via": "presets_bar"})
+        wait_for("the second workspace's run over there", lambda: self.inspect(second)["run"]["is_running"], self.timeout_s)
+        wait_for("the second mirror to show its run", lambda: self.inspect(second_mirror)["run"]["is_running"], self.timeout_s)
+        time.sleep(1.5)  # let the follow-up run.state refresh land
+        self.holds("the second mirror showing its run", lambda: self.inspect(second_mirror)["run"]["is_running"])
+        self.holds("the first mirror showing its run", lambda: self.inspect(self.mirror_id)["run"]["is_running"], 0.5)
+
+        self.mirror("run_toggle", {"workspace_id": second_mirror, "via": "presets_bar"})
+        wait_for("the second workspace's run to stop over there", lambda: not self.inspect(second)["run"]["is_running"], self.timeout_s)
+        if not self.inspect(self.source_id)["run"]["is_running"]:
+            raise CheckFailure("stopping the second workspace's run stopped the first workspace's run")
+        wait_for("the second mirror to show its run stopped", lambda: not self.inspect(second_mirror)["run"]["is_running"], self.timeout_s)
+        time.sleep(1.5)
+        self.holds("the first mirror still showing its run", lambda: self.inspect(self.mirror_id)["run"]["is_running"])
+
+        self.mirror("run_toggle", {"workspace_id": self.mirror_id, "via": "presets_bar"})
+        wait_for("the first workspace's run to stop over there", lambda: not self.inspect(self.source_id)["run"]["is_running"], self.timeout_s)
+        return {"second_workspace_id": second, "second_mirror_id": second_mirror}
+
     # -- 9-12: changes ---------------------------------------------------------
 
     def changes(self, action: str, **params: Any) -> Dict[str, Any]:
@@ -443,6 +551,48 @@ class WorkspaceBehaviorsE2E:
         if not diff.get("is_remote") or f"+changed-{self.nonce}" not in str(diff.get("patch")):
             raise CheckFailure(f"diff: {diff}")
         return {"diff_title": diff.get("title"), "is_remote": True, "patch_excerpt": str(diff.get("patch"))[:300]}
+
+    def timed_history(self, fetch: Optional[bool]) -> float:
+        """One `changes.history` page for the source workspace, sent with NO
+        explicit deadline (the device facade's own deadline for the method
+        applies), and how long it took."""
+        params: Dict[str, Any] = {"workspace_id": self.source_id, "limit": 5}
+        if fetch is not None:
+            params["fetch"] = fetch
+        started = time.monotonic()
+        self.rpc("supermux.devices.request", {
+            "machine": self.machine, "method": "mobile.supermux.changes.history", "params": params,
+        }, timeout_s=90)
+        return round(time.monotonic() - started, 1)
+
+    def changes_slow_fetch_keeps_link(self) -> Dict[str, Any]:
+        git(self.repo, "remote", "add", "origin", "ssh://supermux-e2e.invalid/scratch.git")
+        git(self.repo, "config", "ssh.variant", "simple")
+        git(self.repo, "config", "core.sshCommand", f"sleep {SLOW_FETCH_SECONDS} #")
+        timings: Dict[str, float] = {}
+        fetched: Dict[str, Any] = {}
+        try:
+            with LinkWatcher(self.client.path, LOOPBACK_DEVICE_ID) as watcher:
+                timings["count_read"] = self.timed_history(fetch=False)
+                timings["fetching_read"] = self.timed_history(fetch=None)
+                started = time.monotonic()
+                fetched = self.changes("fetch")["model"]
+                timings["panel_fetch"] = round(time.monotonic() - started, 1)
+        finally:
+            git(self.repo, "remote", "remove", "origin")
+            git(self.repo, "config", "--unset", "core.sshCommand")
+            git(self.repo, "config", "--unset", "ssh.variant")
+        if watcher.drops:
+            raise CheckFailure(f"the link to the other Mac dropped during slow fetches: {watcher.drops[:5]} (timings {timings})")
+        if watcher.polls == 0:
+            raise CheckFailure(f"the link watcher never polled: {watcher.poll_errors[:3]}")
+        if timings["count_read"] > 10:
+            raise CheckFailure(f"a count read waited {timings['count_read']}s for the other Mac's git fetch")
+        if timings["fetching_read"] < 20:
+            raise CheckFailure(f"the fetch took only {timings['fetching_read']}s; this check needs one slower than 20 s")
+        if fetched.get("last_error"):
+            raise CheckFailure(f"the panel's Fetch failed: {fetched.get('last_error')}")
+        return {"timings": timings, "link_polls": watcher.polls, "poll_errors": watcher.poll_errors[:3]}
 
     def changes_panel_mounted(self) -> Dict[str, Any]:
         self.rpc("workspace.select", {"workspace_id": self.mirror_id})
@@ -533,6 +683,71 @@ class WorkspaceBehaviorsE2E:
         wait_for(f"{marker} to appear", marker.exists, 30)
         projection = self.assert_terminal_on_source(result.get("terminal_id"))
         return {"launch": result, "marker": str(marker), **projection}
+
+    # -- 14b: a remote project's action ----------------------------------------
+
+    def open_second_mirror(self, cwd: Path, title: str) -> Dict[str, str]:
+        """A workspace over there at `cwd`, and its mirror here."""
+        created = self.rpc("workspace.create", {"title": title, "cwd": str(cwd), "focus": False}) or {}
+        remote_id = norm(created.get("workspace_id"))
+        if not remote_id:
+            raise CheckFailure(f"workspace.create returned {created}")
+        self.created_local.append(remote_id)
+        opened = self.rpc("supermux.devices.await_open", {
+            "machine": self.machine, "remote_workspace_id": remote_id, "timeout_seconds": 60, "focus": False,
+        }, timeout_s=70) or {}
+        mirror_id = norm(opened.get("workspace_id"))
+        if not mirror_id or mirror_id == remote_id:
+            raise CheckFailure(f"await_open returned {opened}")
+        self.created_local.insert(0, mirror_id)
+        return {"remote": remote_id, "mirror": mirror_id}
+
+    def run_remote_action(self, action_id: str, marker: Path) -> str:
+        """Runs the action from the remote project row's Actions menu; returns
+        the directory its command ran in (it writes `pwd` to `marker`)."""
+        marker.unlink(missing_ok=True)
+        result = self.rpc("supermux.devices.remote_action_run", {
+            "machine": self.machine, "project_id": self.project_id, "action_id": action_id,
+        }, timeout_s=90) or {}
+        if result.get("outcome") != "command":
+            raise CheckFailure(f"remote_action_run returned {result}")
+        wait_for(f"{marker} to be written", lambda: marker.exists() and marker.read_text(encoding="utf-8").strip(), 30)
+        return os.path.realpath(marker.read_text(encoding="utf-8").strip())
+
+    def project_action_runs_where_the_user_looks(self) -> Dict[str, Any]:
+        marker = self.workdir / f"action-{self.nonce}"
+        action_id = str(uuid.uuid4()).upper()
+        self.remote("mobile.supermux.project.update", {"project_id": self.project_id, "patch": {"actions": [
+            {"id": action_id, "name": f"rws where {self.nonce}", "command": f"pwd > {marker}"},
+        ]}})
+        wait_for("the project's action to reach this Mac", lambda: any(
+            norm(listed) == action_id
+            for d in (self.rpc("supermux.devices.remote_projects", {"refresh": True}) or {}).get("devices") or []
+            for p in d.get("projects") or [] if norm(p.get("id")) == norm(self.project_id)
+            for listed in p.get("action_ids") or []
+        ), self.timeout_s)
+        try:
+            # Looking at a mirror of a workspace over there (a subfolder of the project):
+            # the action runs in that workspace, like a local project action.
+            sub = self.repo / "sub"
+            sub.mkdir(exist_ok=True)
+            looking = self.open_second_mirror(sub, f"rws action {self.nonce}")
+            self.rpc("workspace.select", {"workspace_id": looking["mirror"]})
+            in_mirror = self.run_remote_action(action_id, marker)
+            if in_mirror != os.path.realpath(sub):
+                raise CheckFailure(f"with the mirror of {sub} selected, the action ran in {in_mirror}")
+            # Looking at nothing on that Mac: the project's own workspace over there, never
+            # whichever workspace that Mac happens to have selected.
+            elsewhere = self.rpc("workspace.create", {"title": f"rws elsewhere {self.nonce}", "cwd": str(self.workdir), "focus": False}) or {}
+            elsewhere_id = norm(elsewhere.get("workspace_id"))
+            self.created_local.append(elsewhere_id)
+            self.rpc("workspace.select", {"workspace_id": elsewhere_id})
+            elsewhere_ran_in = self.run_remote_action(action_id, marker)
+            if elsewhere_ran_in != os.path.realpath(self.repo):
+                raise CheckFailure(f"looking at no workspace of that Mac, the action ran in {elsewhere_ran_in}, not the project root")
+        finally:
+            marker.unlink(missing_ok=True)
+        return {"ran_in_selected_mirror": in_mirror, "ran_at_project_root": elsewhere_ran_in}
 
     # -- 15-17: New Workspace on ▸ <Mac> ---------------------------------------
 
@@ -643,12 +858,15 @@ class WorkspaceBehaviorsE2E:
             self.step("local_path_actions_off_in_mirror", self.local_path_actions)
             self.step("run_start_from_mirror_shortcut", self.run_start)
             self.step("run_stop_from_mirror_presets_bar", self.run_stop)
+            self.step("run_second_workspace_from_its_mirror", self.run_second_workspace_from_its_mirror)
             self.step("changes_lists_remote_change", self.changes_lists_remote_change)
             self.step("changes_stage_unstage_round_trip", self.changes_stage_round_trip)
             self.step("changes_file_diff_is_remote", self.changes_file_diff)
+            self.step("changes_slow_fetch_keeps_link", self.changes_slow_fetch_keeps_link)
             self.step("changes_panel_mounted", self.changes_panel_mounted)
             self.step("preset_matches_remote_preset", self.preset_matches_remote)
             self.step("preset_without_remote_match_types_command", self.preset_types_command)
+            self.step("project_action_runs_where_the_user_looks", self.project_action_runs_where_the_user_looks)
             self.step("new_workspace_menu_lists_mac", self.new_workspace_menu)
             self.step("new_workspace_on_mac_from_menu", self.new_workspace_from_menu)
             self.step("new_workspace_shortcut_on_mirror", self.new_workspace_shortcut)

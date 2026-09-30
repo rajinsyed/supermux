@@ -17,14 +17,14 @@ public protocol SupermuxRemoteChangesTransport: AnyObject, Sendable {
     /// never by the local mirror's id.
     var remoteWorkspaceID: String { get }
 
-    /// One `mobile.supermux.*` call; returns the host's result object.
+    /// One `mobile.supermux.*` call; returns the host's result object. The
+    /// reply deadline is the method's own (``SupermuxDeviceReplyDeadline``).
     /// - Parameters:
     ///   - method: The wire method.
     ///   - params: The params object (the backend adds `workspace_id`).
-    ///   - timeout: The reply deadline; `nil` uses the link's default.
-    func request(_ method: String, params: [String: Any], timeout: Duration?) async throws -> [String: Any]
+    func request(_ method: String, params: [String: Any]) async throws -> [String: Any]
 
-    /// The host's error code for a failed ``request(_:params:timeout:)``
+    /// The host's error code for a failed ``request(_:params:)``
     /// (e.g. `ai_unavailable`, `stale_root`), when it sent one.
     func errorCode(_ error: any Error) -> String?
 

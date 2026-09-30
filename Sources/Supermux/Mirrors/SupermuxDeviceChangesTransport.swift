@@ -17,8 +17,8 @@ final class SupermuxDeviceChangesTransport: SupermuxRemoteChangesTransport {
         self.devices = devices
     }
 
-    func request(_ method: String, params: [String: Any], timeout: Duration?) async throws -> [String: Any] {
-        try await devices.request(method, params: params, on: target.machine, timeout: timeout)
+    func request(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+        try await devices.request(method, params: params, on: target.machine)
     }
 
     func errorCode(_ error: any Error) -> String? {
