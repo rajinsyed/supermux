@@ -132,6 +132,9 @@ public struct SupermuxMirrorReconciler: Sendable {
         public var unhide: [SupermuxRemoteWorkspaceRef] = []
         /// Run another pass after this many seconds to confirm a pending suspicion.
         public var followUpAfter: TimeInterval?
+
+        /// An empty plan (nothing to open, close or unhide).
+        public init() {}
     }
 
     private enum SuspicionKind: Hashable, Sendable {
