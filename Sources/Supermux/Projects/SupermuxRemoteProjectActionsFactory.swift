@@ -37,7 +37,8 @@ enum SupermuxRemoteProjectActionsFactory {
             },
             runAction: { location, action in
                 perform {
-                    if let url = try await commands.runAction(location, actionID: action.id) {
+                    guard let manager = window.tabManager else { return }
+                    if let url = try await commands.runAction(location, action: action, in: manager) {
                         _ = NSWorkspace.shared.open(url)
                     }
                 }

@@ -10,7 +10,7 @@ import SupermuxMobileCore
 /// uses), the wire parsing/patch semantics are the package-tested
 /// ``SupermuxMobilePresetPatch``, and launches reuse the desktop paths
 /// verbatim (``SupermuxCommandLaunch`` shell input; project actions through
-/// ``SupermuxTabManagerOpener/runAction(_:)``).
+/// ``SupermuxTabManagerOpener/runAction(_:in:)``).
 ///
 /// `supermux.projects.updated` (presets persist in the projects file) is
 /// emitted by ``SupermuxMobileProjectsObserver`` watching the model, so
@@ -126,14 +126,17 @@ extension TerminalController {
         ])
     }
 
-    /// `mobile.supermux.action.run` `{project_id, action_id}`: runs one of
-    /// the project's custom actions. An `open_url` action (a command that IS
-    /// a single absolute http(s) URL) returns `{kind: "open_url", url}`
-    /// WITHOUT executing anything mac-side — the phone opens it locally.
-    /// Every other launchable action (editor commands included) executes
-    /// through the exact desktop path — a focused terminal tab in the
-    /// selected workspace (``SupermuxTabManagerOpener/runAction(_:)``) — and
-    /// returns `{ok: true, kind: "command"}`.
+    /// `mobile.supermux.action.run` `{project_id, action_id, workspace_id?}`:
+    /// runs one of the project's custom actions. An `open_url` action (a
+    /// command that IS a single absolute http(s) URL) returns
+    /// `{kind: "open_url", url}` WITHOUT executing anything mac-side — the
+    /// caller opens it locally. Every other launchable action (editor
+    /// commands included) executes through the exact desktop path — a
+    /// terminal tab in the selected workspace
+    /// (``SupermuxTabManagerOpener/runAction(_:in:)``), or in the additive
+    /// `workspace_id` when another Mac names the workspace its user is
+    /// looking at (its mirror of it; this Mac's selection is invisible
+    /// there) — and returns `{ok: true, kind: "command"}`.
     @MainActor
     func v2SupermuxActionRun(params: [String: Any]) async -> V2CallResult {
         let project: SupermuxProject
@@ -158,7 +161,14 @@ extension TerminalController {
         case let .openURL(url):
             return .ok(SupermuxMobileActionRun.openURLResult(url: url))
         case .command:
-            guard let tabManager = v2ResolveTabManager(params: params) else {
+            var named: Workspace?
+            if params["workspace_id"] != nil {
+                switch supermuxNamedLocalWorkspace(params: params) {
+                case let .failure(error): return error
+                case let .success(resolved): named = resolved
+                }
+            }
+            guard let tabManager = named?.owningTabManager ?? v2ResolveTabManager(params: params) else {
                 return .err(code: "unavailable", message: "Workspace context is unavailable", data: nil)
             }
             SupermuxComposition.projectsModel.noteOpened(id: project.id)
@@ -171,7 +181,7 @@ extension TerminalController {
                 initialCommand: action.command,
                 projectId: project.id,
                 preservesUserFocus: true
-            ))
+            ), in: named)
             return .ok(SupermuxMobileActionRun.commandResult())
         }
     }

@@ -13,6 +13,7 @@ import SupermuxMobileCore
 struct SupermuxRemoteProjectCommands {
     let devices: SupermuxDevices
     let opener: SupermuxDeviceWorkspaceOpener
+    let index: SupermuxDeviceWorkspaceIndex
     let remoteProjects: SupermuxRemoteProjectsModel
     let projectsModel: SupermuxProjectsModel
     let setupService: SupermuxProjectSetupService
@@ -22,6 +23,7 @@ struct SupermuxRemoteProjectCommands {
         SupermuxRemoteProjectCommands(
             devices: SupermuxComposition.devices,
             opener: SupermuxComposition.deviceWorkspaceOpener,
+            index: SupermuxComposition.deviceWorkspaceIndex,
             remoteProjects: SupermuxComposition.remoteProjects,
             projectsModel: SupermuxComposition.projectsModel,
             setupService: SupermuxComposition.projectSetupService
@@ -140,15 +142,45 @@ struct SupermuxRemoteProjectCommands {
     }
 
     /// `action.run` there. Returns the URL of an `open_url` action, which the
-    /// caller opens on this Mac.
-    func runAction(_ location: SupermuxProjectLocation, actionID: String) async throws -> URL? {
-        let result = try await devices.request(
-            .actionRun,
-            params: ["project_id": location.projectID.uuidString, "action_id": actionID],
-            on: try Self.machine(of: location)
-        )
+    /// caller opens on this Mac. A command runs where the user is looking,
+    /// like a local project action: in the workspace whose mirror this window
+    /// shows when it is on that Mac, else in the project's own workspace
+    /// there (opened and shown here, like clicking the project). Never in
+    /// whatever that Mac has selected, which nobody here can see.
+    func runAction(
+        _ location: SupermuxProjectLocation,
+        action: SupermuxProjectActionDTO,
+        in tabManager: TabManager
+    ) async throws -> URL? {
+        let machine = try Self.machine(of: location)
+        var params: [String: Any] = ["project_id": location.projectID.uuidString, "action_id": action.id]
+        if !Self.opensURL(action) {
+            params["workspace_id"] = try await actionWorkspace(location, on: machine, in: tabManager)
+        }
+        let result = try await devices.request(.actionRun, params: params, on: machine)
         guard result["kind"] as? String == "open_url", let raw = result["url"] as? String else { return nil }
         return URL(string: raw)
+    }
+
+    /// The remote workspace a command action runs in (see ``runAction(_:action:in:)``).
+    private func actionWorkspace(
+        _ location: SupermuxProjectLocation,
+        on machine: SurfaceMachineID,
+        in tabManager: TabManager
+    ) async throws -> String {
+        if let selected = tabManager.selectedWorkspace,
+           let ref = index.ref(forLocal: selected),
+           ref.machineID == machine.rawValue {
+            return ref.workspaceID
+        }
+        return try await openProject(location, in: tabManager).ref.workspaceID
+    }
+
+    /// Whether the action only opens a URL (the host runs nothing for it).
+    private static func opensURL(_ action: SupermuxProjectActionDTO) -> Bool {
+        guard let model = SupermuxProjectAction(dto: action),
+              case .openURL = SupermuxMobileActionRun.outcome(for: model) else { return false }
+        return true
     }
 
     /// `project.delete` there (the repository and worktrees stay on disk).

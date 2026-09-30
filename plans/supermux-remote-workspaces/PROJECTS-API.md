@@ -136,7 +136,7 @@ func openProject(_ location, in:) async throws -> Opened                    // p
 func openWorktree(_ worktree, in:) async throws -> Opened                   // worktree.open
 func createWorktree(_ location, request:, in:, focus: = true) async throws -> Opened   // worktree.create {open:true}
 func removeWorktree(_ worktree, deleteBranch:, force:) async throws        // dirty → throws; isDirtyWorktree(_:)
-func runAction(_ location, actionID:) async throws -> URL?                 // open_url → caller opens locally
+func runAction(_ location, action:, in:) async throws -> URL?              // open_url → caller opens locally; a command runs in the selected mirror's workspace on that Mac, else project.open's (action.run {workspace_id})
 func removeProject(_ location) async throws                                // project.delete
 func addExistingFolder(_ destination, path:) async throws -> String        // project.create / local addProject
 func cloneRepository(_ destination, remoteURL:, path:) async throws -> String   // project.clone / local clone + addProject
