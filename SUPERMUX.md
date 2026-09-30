@@ -244,7 +244,10 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   title while the sheet is key, which left a blank gap) and the text says it closes the workspace on
   that Mac; mirror rows' menus offer Hide Here
   and Close on <Mac>… directly. Closing a single mirrored tab closes that terminal on the owning
-  Mac, like a local tab.
+  Mac, like a local tab: when that Mac says a program is still running there (by its own
+  close-confirmation setting), the viewer asks "Close “X” on <Mac>?" (Cancel, the Return/Esc default,
+  brings the tab back); Kill Terminal… forces. A tab closed while that Mac is unreachable disappears
+  at once and its close is sent first when the link is back (#640–#644).
 - **Sidebar rows:** inside a project, this Mac's workspaces come first, then each Mac's mirrors;
   every mirror row (nested or flat) marks its Mac with a small Mac + cloud icon right before its
   branch name (the Mac's name in its tooltip); nested rows show no `cmux set-status` pills or
