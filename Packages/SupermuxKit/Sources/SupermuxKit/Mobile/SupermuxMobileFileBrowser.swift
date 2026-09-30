@@ -75,16 +75,24 @@ public struct SupermuxMobileFileBrowser: Sendable {
             }
     }
 
+    /// The most entries one listing returns, so a huge folder's reply stays
+    /// far inside the device link's 8 MiB frame (Cloud's panel stops at the
+    /// same count).
+    public static let maxListEntries = 10_000
+
     /// The `files.list` result payload: ``SupermuxFileListDTO`` — `{path,
-    /// entries, home}` with snake_case ``SupermuxFileEntryDTO`` objects
-    /// (`path` echoes the normalized root-relative directory, `""` for the
-    /// root; `home` is this Mac's home folder).
-    public func listPayload(path: String?, showHidden: Bool = false) throws -> [String: Any] {
+    /// entries, home, truncated?}` with snake_case ``SupermuxFileEntryDTO``
+    /// objects (`path` echoes the normalized root-relative directory, `""` for
+    /// the root; `home` is this Mac's home folder). At most `limit` entries;
+    /// `truncated` says the folder holds more.
+    public func listPayload(path: String?, showHidden: Bool = false, limit: Int = maxListEntries) throws -> [String: Any] {
         let directory = try resolveExisting(path ?? "", allowRoot: true, allowGitInternals: showHidden)
+        let entries = try list(path: path, showHidden: showHidden)
         return try SupermuxWireJSON().dictionary(from: SupermuxFileListDTO(
             path: relativePath(of: directory),
-            entries: try list(path: path, showHidden: showHidden),
-            home: NSHomeDirectory()
+            entries: Array(entries.prefix(limit)),
+            home: NSHomeDirectory(),
+            truncated: entries.count > limit ? true : nil
         ))
     }
 
