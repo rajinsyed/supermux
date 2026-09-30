@@ -13,6 +13,8 @@ import Testing
         "mobile.supermux.project.open",
         "mobile.supermux.project.icon",
         "mobile.supermux.projects.set_section_collapsed",
+        "mobile.supermux.project.probe",
+        "mobile.supermux.project.clone",
         // Worktrees
         "mobile.supermux.worktrees.list",
         "mobile.supermux.worktree.suggest_branch",
@@ -66,7 +68,7 @@ import Testing
 
     @Test func allExposesEveryMethodExactlyOnce() {
         #expect(SupermuxMobileMethod.all.map(\.rawValue) == Self.expectedRawValues)
-        #expect(SupermuxMobileMethod.all.count == 47)
+        #expect(SupermuxMobileMethod.all.count == 49)
         #expect(Set(SupermuxMobileMethod.all).count == SupermuxMobileMethod.all.count)
     }
 
