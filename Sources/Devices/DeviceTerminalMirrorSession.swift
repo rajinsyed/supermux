@@ -87,6 +87,11 @@ final class DeviceTerminalMirrorSession {
     /// carry no color state of their own (SupermuxDeviceMirrorColors).
     private(set) var supermuxColors = SupermuxDeviceMirrorColorState()
     // SUPERMUX:end device-mirror-viewer-colors
+    // SUPERMUX:begin device-mirror-sizing-claim
+    /// Whether this mirror holds its terminal's grid for this Mac and pushed
+    /// this Mac's size preference on this connection (SupermuxTerminalSizingDefaults).
+    var supermuxSizingClaim = SupermuxTerminalSizingClaim()
+    // SUPERMUX:end device-mirror-sizing-claim
 
     convenience init(link: DeviceLink, remoteWorkspaceID: String, remoteSurfaceID: UUID) {
         self.init(
@@ -97,7 +102,7 @@ final class DeviceTerminalMirrorSession {
             // SUPERMUX:begin device-mirror-input-batch (upstream's viewer argument gains a trailing comma)
             viewer: RemoteMacTerminalViewer(
                 clientID: link.clientID,
-                identity: TerminalController.shared.localSizingIdentity()
+                identity: SupermuxTerminalSizingDefaults.viewerIdentity(for: link.instance)
             ),
             supportsSupermuxInput: { [instance = link.instance] in
                 SupermuxDeviceTerminalInput.supportsForwardedInput(on: .device(instance))
@@ -301,6 +306,9 @@ final class DeviceTerminalMirrorSession {
     private func linkDropped() {
         adoptedRelay?.discard()
         if phase == .attached || phase == .attaching { phase = .detached }
+        // SUPERMUX:begin device-mirror-sizing-claim (the next attach is a reconnect: push the claim again)
+        SupermuxTerminalSizingDefaults.shared.connectionDropped(self)
+        // SUPERMUX:end device-mirror-sizing-claim
     }
 
     /// Single-flight replay of the source screen, followed by sequenced live bytes.
@@ -363,6 +371,9 @@ final class DeviceTerminalMirrorSession {
             // SUPERMUX:begin device-mirror-hidden-counts (a show or hide during the replay round trip)
             supermuxReconcileHiddenCounts()
             // SUPERMUX:end device-mirror-hidden-counts
+            // SUPERMUX:begin device-mirror-sizing-claim (a shown mirror holds the grid, pushed once per connection)
+            SupermuxTerminalSizingDefaults.shared.mirrorAttached(self)
+            // SUPERMUX:end device-mirror-sizing-claim
             let buffered = attachingBytes
             attachingBytes.removeAll(keepingCapacity: true)
             attachingByteCount = 0
@@ -529,6 +540,8 @@ final class DeviceTerminalMirrorSession {
     func supermuxSetHidden(_ hidden: Bool) {
         guard hidden != supermuxHidden else { return }
         supermuxHidden = hidden
+        // Shown, this Mac claims the terminal's grid again; hidden, it gives the claim up.
+        SupermuxTerminalSizingDefaults.shared.mirrorVisibilityChanged(self)
         // Not attached yet: the replay, or the reconcile after it, carries it.
         guard phase == .attached else { return }
         supermuxReconcileHiddenCounts()

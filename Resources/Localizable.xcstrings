@@ -617079,6 +617079,23 @@
           }
         }
       }
+    },
+    "supermux.terminalSizing.appliesToAll" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Applies to all terminals on this Mac."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この Mac のすべてのターミナルに適用されます。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

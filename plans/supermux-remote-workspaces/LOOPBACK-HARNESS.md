@@ -284,6 +284,28 @@ forces without asking; an idle tab closes without asking; and a tab closed while
 
 ```bash
 CMUX_TAG=<tag> python3 tests/supermux/loopback_mirror_tab_close_e2e.py [--claude]
+## Terminal size policy E2E
+
+`tests/supermux/loopback_terminal_sizing_policy_e2e.py` (touchpoints #665–#670) checks that a
+terminal fills the Mac it is viewed from and that the size mode is one sticky choice per Mac. In the
+loopback the source workspace is the "other Mac" and its auto mirror the viewer; DEBUG builds give
+the loopback's mirrors a distinct sizing device id, so the two "Macs" have distinct priority keys. A
+fake phone (`e2e-phone-…`, 40x12) and a fake second Mac (`e2e-mac-b-…`) report viewports over the
+device link (`mobile.terminal.viewport` through `supermux.devices.request`). Steps: the source
+terminal is Priority with the shown mirror first and takes its grid (decided and real PTY grid), even
+while the other Mac's own small pane counts; a local terminal keeps its Mac pane's grid while the
+phone views it; Follow Latest chosen on one mirror reaches every terminal, and new terminals (local
+and over the link) start in it; a second Mac's own Priority choice is not pushed back by the shown
+mirror (3 s hold, generation barely moves); its 400x150 pane is not clamped to 300x120; hiding then
+showing the mirror, and a link drop after the other Mac reset the policy, claim the terminal again; a
+priority order dragged on the mirror reaches the local terminal relative to its own pane; and with
+`--app-path`, Largest Window survives a quit and relaunch. It drives the DEBUG
+`supermux.devices.terminal_sizing.{state,reset,select_mode,set_priority}` methods
+(`Sources/Supermux/Devices/SupermuxTerminalSizingSocketCommands.swift`), which run the size panel's
+own actions, and resets the preference at start and end.
+
+```bash
+CMUX_TAG=<tag> python3 tests/supermux/loopback_terminal_sizing_policy_e2e.py --app-path "<App path>"
 ```
 
 Every suite at once: `CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh` (launches, runs and
