@@ -16659,7 +16659,12 @@ struct TabItemView: View, Equatable {
                         .padding(.trailing, SidebarCompactStatusGlyph.titleSpacing - titleRowSpacing)
                 }
 
-                SidebarCloudWorkspaceBadgeView(label: detailVisibility.showsBranchDirectory ? workspaceSnapshot.remoteWorkspaceBadgeLabel : nil, pointSize: scaledFontSize(10), tint: activeSecondaryColor(0.7), symbol: workspaceSnapshot.remoteWorkspaceBadgeSymbol)
+                // SUPERMUX:begin sidebar-flatrow-device-chip (a device mirror always shows the fork's named Mac chip instead of the icon-only badge)
+                SidebarCloudWorkspaceBadgeView(label: detailVisibility.showsBranchDirectory && workspaceSnapshot.deviceWorkspaceLabel == nil ? workspaceSnapshot.remoteWorkspaceBadgeLabel : nil, pointSize: scaledFontSize(10), tint: activeSecondaryColor(0.7), symbol: workspaceSnapshot.remoteWorkspaceBadgeSymbol)
+                if let deviceWorkspaceLabel = workspaceSnapshot.deviceWorkspaceLabel {
+                    SupermuxFlatRowDeviceChip(deviceWorkspaceLabel: deviceWorkspaceLabel, fontScale: fontScale)
+                }
+                // SUPERMUX:end sidebar-flatrow-device-chip
 
                 if isEditing {
                     SidebarInlineRenameField(

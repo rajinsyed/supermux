@@ -197,6 +197,12 @@ struct SupermuxProjectsMount: View {
         // publications, so a nested row's badge appears/clears live — the same
         // per-workspace summary source cmux's flat rows read.
         let unreadSnapshot = TerminalNotificationStore.shared.sidebarUnread.snapshot
+        // Device mirrors nest by their remote record's project (never by
+        // local path); reading it here re-renders on ownership changes.
+        let ownership = SupermuxMirrorOwnership.current()
+        // Nested mirrors render remote record fields (branch, activity, PR);
+        // follow the device revision only while any mirror nests here.
+        let _ = ownership.owners.isEmpty ? 0 : SupermuxComposition.devices.revision
         let openWorkspaces = tabManager.tabs.map { workspace -> SupermuxOpenWorkspace in
             let isSelected = workspace.id == tabManager.selectedTabId
             // Full snapshots (branch/PR/activity, each walking the bonsplit
@@ -205,9 +211,19 @@ struct SupermuxProjectsMount: View {
             guard let projectId = resolutionCache.projectId(
                 forWorkspace: workspace,
                 projects: projects,
-                associations: associations
+                associations: associations,
+                ownership: ownership
             ) else {
                 return SupermuxWorkspaceRow.standaloneSnapshot(for: workspace, isSelected: isSelected)
+            }
+            if ownership.isMirror(workspace) {
+                return SupermuxMirrorRowSnapshot.snapshot(
+                    for: workspace,
+                    isSelected: isSelected,
+                    projectId: projectId,
+                    includePullRequest: pullRequestsEnabled,
+                    unreadCount: unreadSnapshot.unreadCount(forWorkspaceId: workspace.id)
+                )
             }
             return SupermuxWorkspaceRow.snapshot(
                 for: workspace,
@@ -284,7 +300,9 @@ struct SupermuxProjectsMount: View {
             // One app-wide logo cache, shared with the workspace switcher.
             iconStore: SupermuxComposition.projectIconStore,
             // "Start Claude in a New Worktree" (prompt-first worktree launch).
-            agentLaunch: SupermuxComposition.agentLaunch
+            agentLaunch: SupermuxComposition.agentLaunch,
+            // Other Macs' copies: remote-only rows, device chips and actions.
+            remote: SupermuxRemoteProjectsPresenter.presentation(for: tabManager)
         )
         // Subscribe once on appear and re-subscribe only when the set of open
         // workspaces changes; `register` eagerly seeds the switcher's MRU order.

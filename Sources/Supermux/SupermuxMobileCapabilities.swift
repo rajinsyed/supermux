@@ -56,6 +56,9 @@ enum SupermuxMobileCapabilities {
             // agent.options / agent.start are served: prompt-first worktree
             // creation that opens a workspace already running Claude.
             SupermuxMobileCapability.agentLaunchV1.rawValue,
+            // project.probe / project.clone are served: other Macs register
+            // their copy of a repo here (project sync) and "Set Up on <Mac>…".
+            SupermuxMobileCapability.projectSetupV1.rawValue,
         ]
     }
 }
