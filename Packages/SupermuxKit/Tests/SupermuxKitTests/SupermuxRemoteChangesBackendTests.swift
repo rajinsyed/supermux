@@ -91,6 +91,50 @@ import SupermuxKit
         #expect(transport.calls.last?.params["expected_root"] as? String == "/host/root")
     }
 
+    @Test func discardAllNeverFollowsTheShellIntoARootThePanelDidNotShow() async {
+        let transport = FakeRemoteChangesTransport(remoteWorkspaceID: Self.remoteID)
+        transport.respond("mobile.supermux.changes.status", with: Self.status(
+            root: "/wt-a", unstaged: [["path": "a.txt", "kind": "modified"]]
+        ))
+        let backend = SupermuxRemoteChangesBackend(transport: transport)
+        _ = await backend.status(repoPath: "/wt-a")
+
+        // Over there the workspace's shell `cd`s to another worktree before
+        // this panel refreshes; the user confirms Discard All for wt-a.
+        Self.moveHost(transport, to: "/wt-b", unstaged: "b.txt")
+        await #expect(throws: (any Error).self) {
+            try await backend.discardAll(repoPath: "/wt-a")
+        }
+        #expect(!transport.accepted.contains { $0.method == "mobile.supermux.changes.discard" })
+    }
+
+    @Test func anAICommitNeverFollowsTheShellIntoAnotherRoot() async {
+        let transport = FakeRemoteChangesTransport(remoteWorkspaceID: Self.remoteID)
+        transport.currentRoot = "/wt-a"
+        transport.respond("mobile.supermux.changes.status", with: Self.status(
+            root: "/wt-a", unstaged: [["path": "a.txt", "kind": "modified"]]
+        ))
+        transport.respond("mobile.supermux.changes.generate_commit_message", with: ["message": "feat: a"])
+        let backend = SupermuxRemoteChangesBackend(transport: transport)
+        let model = SupermuxChangesModel(backend: backend, commitGenerator: SupermuxRemoteCommitMessenger(backend: backend))
+        model.setDirectory("/wt-a")
+        await pollUntil { model.snapshot.unstaged.map(\.path) == ["a.txt"] && model.aiCommitConfigured }
+
+        // The shell `cd`s to another worktree while the message is written.
+        transport.afterReply = { method in
+            guard method == "mobile.supermux.changes.generate_commit_message" else { return }
+            transport.afterReply = nil
+            Self.moveHost(transport, to: "/wt-b", unstaged: "b.txt")
+        }
+        await model.performCommit()
+
+        let committed = transport.accepted.filter {
+            $0.method == "mobile.supermux.changes.stage" || $0.method == "mobile.supermux.changes.commit"
+        }
+        #expect(committed.isEmpty, "staged or committed in the other worktree: \(committed.map(\.method))")
+        #expect(model.lastError != nil)
+    }
+
     // MARK: - Mutations
 
     @Test func stageAndUnstageSendPathsOrAll() async throws {
@@ -302,6 +346,14 @@ import SupermuxKit
         ]
     }
 
+    /// The workspace's directory over there moves (a `cd` in its shell).
+    private static func moveHost(_ transport: FakeRemoteChangesTransport, to root: String, unstaged path: String) {
+        transport.currentRoot = root
+        transport.respond("mobile.supermux.changes.status", with: status(
+            root: root, unstaged: [["path": path, "kind": "modified"]]
+        ))
+    }
+
     private static func commit(_ sha: String, pushed: Bool) -> [String: Any] {
         ["sha": sha, "short_sha": sha, "author": "a", "relative_date": "now", "subject": sha, "is_pushed": pushed]
     }
@@ -314,13 +366,17 @@ import SupermuxKit
 }
 
 /// Scripted stand-in for the device link: canned replies per method, recorded
-/// calls, and a manual event feed.
+/// calls, and a manual event feed. With ``currentRoot`` set it also applies
+/// the host's stale-view guard: a call whose `expected_root` differs is
+/// refused with `stale_root`, exactly as the owning Mac refuses it.
 @MainActor
 final class FakeRemoteChangesTransport: SupermuxRemoteChangesTransport {
     struct Call {
         let method: String
         let params: [String: Any]
         let timeout: Duration?
+        /// Whether the host carried the call out (not refused).
+        let accepted: Bool
     }
 
     struct Rejected: Error {
@@ -329,6 +385,10 @@ final class FakeRemoteChangesTransport: SupermuxRemoteChangesTransport {
 
     let remoteWorkspaceID: String
     private(set) var calls: [Call] = []
+    /// The workspace's directory over there, when the test models it.
+    var currentRoot: String?
+    /// Runs after each call is answered (e.g. the shell `cd`s meanwhile).
+    var afterReply: ((String) -> Void)?
     private var replies: [String: [String: Any]] = [:]
     private var failures: [String: String] = [:]
     private var continuations: [AsyncStream<SupermuxRemoteChangesEvent>.Continuation] = []
@@ -336,6 +396,9 @@ final class FakeRemoteChangesTransport: SupermuxRemoteChangesTransport {
     init(remoteWorkspaceID: String) {
         self.remoteWorkspaceID = remoteWorkspaceID
     }
+
+    /// The calls the host carried out.
+    var accepted: [Call] { calls.filter(\.accepted) }
 
     func respond(_ method: String, with reply: [String: Any]) {
         failures[method] = nil
@@ -351,8 +414,11 @@ final class FakeRemoteChangesTransport: SupermuxRemoteChangesTransport {
     }
 
     func request(_ method: String, params: [String: Any], timeout: Duration?) async throws -> [String: Any] {
-        calls.append(Call(method: method, params: params, timeout: timeout))
-        if let code = failures[method] { throw Rejected(code: code) }
+        defer { afterReply?(method) }
+        let expected = params["expected_root"] as? String
+        let refusal = failures[method] ?? (expected != nil && currentRoot != nil && expected != currentRoot ? "stale_root" : nil)
+        calls.append(Call(method: method, params: params, timeout: timeout, accepted: refusal == nil))
+        if let refusal { throw Rejected(code: refusal) }
         return replies[method] ?? ["ok": true]
     }
 
