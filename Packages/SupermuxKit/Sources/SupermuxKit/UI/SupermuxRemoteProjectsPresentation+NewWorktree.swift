@@ -40,9 +40,9 @@ extension SupermuxRemoteProjectsPresentation {
         SupermuxNewWorktreeContext(project: row.project, setUpTargets: row.setUpTargets)
     }
 
-    /// The sheet model for `context`: picker rows with this window's link
-    /// states, the default Mac (an explicit choice, else the last one used for
-    /// this project, else its first copy), and targets for each copy.
+    /// The sheet model for `context`: picker rows with live link states, the
+    /// default Mac (an explicit choice, else the last one used for this
+    /// project, else its first copy), and targets for each copy.
     /// - Parameters:
     ///   - context: The project and its set-up targets.
     ///   - preferredDeviceKey: A Mac chosen from the row menu, if any.
@@ -57,7 +57,7 @@ extension SupermuxRemoteProjectsPresentation {
     ) -> SupermuxNewWorktreeSheetModel {
         let entries = SupermuxWorktreeDevicePlanner.entries(
             for: context.project,
-            availability: deviceAvailability,
+            availability: deviceAvailability(),
             setUpTargets: context.setUpTargets
         )
         let initial = SupermuxWorktreeDevicePlanner.defaultEntryID(
@@ -72,6 +72,7 @@ extension SupermuxRemoteProjectsPresentation {
             initialEntryID: initial,
             makeTarget: { location in location.isThisMac ? localTarget() : makeRemote(location) },
             lastDevices: lastWorktreeDevices,
+            availability: deviceAvailability,
             onSetUp: onSetUp
         )
     }

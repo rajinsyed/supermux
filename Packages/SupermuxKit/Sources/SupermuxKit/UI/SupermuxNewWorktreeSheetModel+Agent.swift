@@ -13,11 +13,19 @@ extension SupermuxNewWorktreeSheetModel {
         return models.first { $0.value == selectedModel }
     }
 
+    /// The other Mac's name while its command list is still on its way (the
+    /// Claude chips have nothing to show yet); `nil` otherwise.
+    public var loadingCommandsDeviceName: String? {
+        guard commands.isEmpty, modelsLoading else { return nil }
+        return remoteDeviceName
+    }
+
     /// Whether the command list can be edited here (this Mac only).
     public var canEditCommands: Bool { target?.canEditAgentCommands == true }
 
-    /// The exact shell line the new terminal will run; `nil` when another
-    /// Mac's shell builds it.
+    /// The exact shell line the new terminal will run; `nil` when it is not
+    /// known here (another Mac that has not named its shell yet, or a prompt
+    /// that Mac reads from a file).
     public var previewLine: String? {
         target?.shellLinePreview(command: command, model: selectedModel, effort: selectedEffort, prompt: prompt)
     }
@@ -54,14 +62,16 @@ extension SupermuxNewWorktreeSheetModel {
     }
 
     /// Loads `command`'s catalog. The first load for a command applies the
-    /// remembered model/effort; a refresh (`forceRefresh`) keeps the user's
-    /// current picks, dropping only a model the new catalog no longer lists.
+    /// remembered model/effort; a refresh (`forceRefresh`) or a reload of a
+    /// catalog already shown (the Mac reconnected) keeps the user's current
+    /// picks, dropping only a model the new catalog no longer lists.
     /// Another Mac's command list is not known up front: the first load adopts
     /// the list and selection that Mac answers with.
     public func loadModels(for command: String, forceRefresh: Bool = false) async {
         guard let target, target.supportsAgentLaunch else { return }
         let adoptsCommandList = commands.isEmpty
         guard adoptsCommandList || !command.isEmpty else { return }
+        let keepsPicks = forceRefresh || !models.isEmpty
         let generation = targetGeneration
         modelsLoading = true
         modelsError = nil
@@ -79,7 +89,7 @@ extension SupermuxNewWorktreeSheetModel {
         }
         models = options.models
         modelsError = options.modelsSource == .unavailable ? options.modelsError : nil
-        if forceRefresh {
+        if keepsPicks {
             if let selectedModel, !models.selectableModels.contains(where: { $0.value == selectedModel }) {
                 self.selectedModel = nil
             }

@@ -28,8 +28,14 @@ public final class SupermuxNewWorktreeSheetModel {
 
     /// The unified project id (the last-device memory key).
     public let projectID: UUID
-    /// The device picker's rows.
-    public let entries: [SupermuxWorktreeDeviceEntry]
+    /// The device picker's rows, each with its Mac's link state read live: a
+    /// Mac that finishes connecting while the sheet is open becomes
+    /// selectable, and one that drops is disabled (Create too, when it is
+    /// the selected one). Which Macs are listed is fixed when the sheet opens.
+    public var entries: [SupermuxWorktreeDeviceEntry] {
+        let now = availability()
+        return rows.map { row in now[row.deviceKey].map(row.with(availability:)) ?? row }
+    }
     /// The selected picker row.
     public private(set) var selectedEntryID: String?
     /// Where Create / Start Claude goes; `nil` when the selected Mac has no target.
@@ -65,6 +71,8 @@ public final class SupermuxNewWorktreeSheetModel {
 
     /// Bumped on every Mac switch; async results for an older value are dropped.
     @ObservationIgnored var targetGeneration = 0
+    @ObservationIgnored private let rows: [SupermuxWorktreeDeviceEntry]
+    @ObservationIgnored private let availability: @MainActor () -> [String: SupermuxWorktreeDeviceAvailability]
     @ObservationIgnored private var targets: [String: any SupermuxWorktreeCreationTarget] = [:]
     @ObservationIgnored private let makeTarget: @MainActor (SupermuxProjectLocation) -> (any SupermuxWorktreeCreationTarget)?
     @ObservationIgnored private let lastDevices: SupermuxWorktreeLastDeviceStore?
@@ -80,6 +88,8 @@ public final class SupermuxNewWorktreeSheetModel {
     ///   - makeTarget: Builds the target for a project copy (called once per
     ///     copy, the first time it is selected).
     ///   - lastDevices: Where a successful create records its Mac.
+    ///   - availability: Each Mac's link state now, by device key (read on
+    ///     every render; a Mac missing here keeps its row's opening state).
     ///   - onSetUp: Hands a "Set Up on <Mac>…" row to the setup sheet.
     public init(
         projectID: UUID,
@@ -87,10 +97,12 @@ public final class SupermuxNewWorktreeSheetModel {
         initialEntryID: String?,
         makeTarget: @escaping @MainActor (SupermuxProjectLocation) -> (any SupermuxWorktreeCreationTarget)?,
         lastDevices: SupermuxWorktreeLastDeviceStore? = nil,
+        availability: @escaping @MainActor () -> [String: SupermuxWorktreeDeviceAvailability] = { [:] },
         onSetUp: @escaping @MainActor (SupermuxProjectSetupDestination) -> Void = { _ in }
     ) {
         self.projectID = projectID
-        self.entries = entries
+        self.rows = entries
+        self.availability = availability
         self.makeTarget = makeTarget
         self.lastDevices = lastDevices
         self.onSetUp = onSetUp
@@ -203,9 +215,17 @@ public final class SupermuxNewWorktreeSheetModel {
 
     // MARK: - Loading
 
-    /// Loads the selected Mac's AI availability, branches and Claude options.
+    /// Changes when another Mac is selected or the selected one becomes
+    /// reachable or unreachable: the sheet runs ``load()`` on every change.
+    public var loadKey: String {
+        "\(selectedEntryID ?? "")|\(selectedEntry?.canCreate == true)"
+    }
+
+    /// Loads the selected Mac's AI availability, branches and Claude options
+    /// (nothing while it is unreachable; its hint says why). Loading again
+    /// after a reconnect keeps what the user picked.
     public func load() async {
-        guard let target else { return }
+        guard let target, selectedEntry?.canCreate == true else { return }
         let generation = targetGeneration
         async let configured: Bool = target.isAINamingConfigured()
         async let branches: Void = loadBranches()
@@ -288,6 +308,9 @@ public final class SupermuxNewWorktreeSheetModel {
                 recordDevice(entry)
                 onFinished()
             } catch is CancellationError {
+                // Cancel (or the sheet going away) while naming. A request
+                // lost after it was sent comes back as an "outcome unknown"
+                // failure from the target instead.
                 phase = .idle
                 statusMessage = nil
             } catch {
@@ -340,6 +363,11 @@ public final class SupermuxNewWorktreeSheetModel {
                 )
                 recordDevice(entry)
                 onFinished()
+            } catch is CancellationError {
+                // Only a cancelled flow gets here: targets report a request
+                // lost after it was sent as an "outcome unknown" failure.
+                phase = .idle
+                statusMessage = nil
             } catch {
                 errorMessage = error.localizedDescription
                 statusMessage = nil

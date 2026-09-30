@@ -22,7 +22,7 @@ Steps:
      shows.
   4. remote_branches_load: selecting the Loopback Mac makes it the target and
      loads its branches (worktrees.list include_branches) and Claude commands
-     (agent.options).
+     (agent.options), whose shell dialect lets its launch line be previewed.
   5. remote_error_is_localized: a create with an unknown starting branch fails
      with the other Mac's sentence (no raw code), the sheet is editable again,
      and nothing is remembered.
@@ -37,6 +37,25 @@ Steps:
      configured, Start Claude on the Loopback Mac runs agent.start; its
      workspace's terminal echoes the prompt, and its mirror opens selected.
      The command list is restored afterwards.
+  9. availability_is_live: with the Loopback Mac selected and fields typed,
+     its link is held down (DEBUG `supermux.devices.link`) while its options
+     load: the open sheet disables it, the dropped load never shows a raw
+     CancellationError, after the redial it is selectable again, and the typed
+     fields and the selection survive both edges.
+ 10. dropped_link_create_reports_unknown_outcome /
+ 11. dropped_link_start_claude_reports_unknown_outcome: the link drops while
+     the other Mac is still creating (a post-checkout hook slows its
+     `git worktree add`): the sheet ends editable with a sentence naming the
+     Mac that says the connection dropped, never silently idle and never a
+     raw CancellationError.
+ 12. host_open_keeps_selection_for_other_macs: worktree.create {open},
+     worktree.open, project.open and agent.start with `select: false` (what
+     another Mac sends) leave every window's selection alone; project.open
+     without it (the phone) still selects.
+ 13. unfocused_remote_create_keeps_selection: a remote create whose mirror
+     opens without focus changes no selection on either side.
+
+`--only a,b` runs just those steps (after 1-2) and records each result.
 
 Prints a JSON report, writes it to tests/supermux/artifacts/ (or --report),
 exits non-zero on any failed check. Stdlib only.
@@ -53,6 +72,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -137,6 +157,60 @@ class PickerE2E:
         listed = self.request("mobile.supermux.worktrees.list", {"project_id": self.project_id})
         return listed.get("worktrees") or []
 
+    def selected_workspaces(self) -> List[str]:
+        """Every window's selected workspace (the loopback's two Macs share them)."""
+        selected: List[str] = []
+        for window in (self.client.call("window.list", {}) or {}).get("windows") or []:
+            window_id = window.get("id") or window.get("window_id")
+            rows = (self.client.call("workspace.list", {"window_id": window_id}) or {}).get("workspaces") or []
+            selected += [norm(r.get("id")) for r in rows if r.get("selected") or r.get("is_selected")]
+        return sorted(selected)
+
+    def load_on_second_connection(self, session: str) -> None:
+        """Runs the sheet's `load` without blocking this connection."""
+        try:
+            with SocketClient(self.client.path, timeout_s=120) as other:
+                other.call(PREFIX + "load", {"session_id": session}, timeout_s=120)
+        except (OSError, SmokeFailure):
+            pass
+
+    def set_link(self, action: str) -> None:
+        self.client.call("supermux.devices.link", {"machine": self.machine, "action": action})
+
+    def wait_link_connected(self) -> None:
+        def connected() -> Optional[bool]:
+            devices = (self.client.call("supermux.devices.list", {}) or {}).get("devices") or []
+            return any(d.get("machine") == self.machine and d.get("link_state") == "connected" for d in devices) or None
+
+        wait_for("the Loopback Mac to reconnect", connected, self.timeout_s)
+
+    def slow_worktree_add(self, seconds: int) -> Path:
+        """A post-checkout hook, so `git worktree add` on the other Mac takes `seconds`."""
+        hook = self.repo / ".git" / "hooks" / "post-checkout"
+        hook.write_text(f"#!/bin/sh\nsleep {seconds}\n")
+        hook.chmod(0o755)
+        return hook
+
+    def adopt_orphan(self, branch: str) -> Optional[Dict[str, Any]]:
+        """The worktree a dropped create made anyway, queued for cleanup."""
+        worktree = next((w for w in self.remote_worktrees() if w.get("branch") == branch), None)
+        remote_id = (worktree or {}).get("workspace_id")
+        if remote_id:
+            def mirrors() -> Optional[List[Dict[str, Any]]]:
+                bindings = self.client.call("supermux.devices.bindings", {}) or {}
+                rows = [m for m in bindings.get("mirrors") or [] if norm(m.get("remote_workspace_id")) == norm(remote_id)]
+                return rows if any(m.get("is_bound") for m in rows) else None
+
+            try:  # let auto-mirror finish, so cleanup never races a mirror mid-open
+                rows = wait_for("the orphan's auto-mirror", mirrors, self.timeout_s)
+            except SmokeFailure:
+                rows = []
+            for mirror in rows:
+                self.created.append({"mirror": mirror["workspace_id"], "remote": remote_id})
+            if not rows:
+                self.created.append({"mirror": remote_id, "remote": remote_id})
+        return worktree
+
     def check_mirror_selected(self, result: Dict[str, Any]) -> Dict[str, Any]:
         mirror = result.get("mirror") or {}
         remote_id = result.get("remote_workspace_id")
@@ -166,6 +240,8 @@ class PickerE2E:
         copies = [m for m in bindings.get("mirrors") or [] if norm(m.get("remote_workspace_id")) == norm(remote_id)]
         if len(copies) != 1:
             raise SmokeFailure(f"{len(copies)} mirrors of one remote workspace (auto-mirror raced the open): {copies}")
+        if norm(remote_id) in self.selected_workspaces():
+            raise SmokeFailure("the owning Mac selected its new workspace (it must open it in the background)")
         return {"mirror_workspace_id": mirror["workspace_id"], "remote_workspace_id": remote_id,
                 "mirror_title": row.get("title"), "reused_in_flight_or_existing": mirror.get("reused")}
 
@@ -251,8 +327,11 @@ class PickerE2E:
             raise SmokeFailure(f"base branch {state.get('base_branch')!r}, want main")
         if not state.get("commands"):
             raise SmokeFailure(f"no Claude commands from agent.options: {state}")
-        if state.get("preview_line") is not None:
-            raise SmokeFailure("a remote target must not preview a local shell line")
+        # The other Mac names its shell's dialect in agent.options, so its
+        # launch line is previewed from the same code (loopback: this shell).
+        preview = str(state.get("preview_line") or "")
+        if not preview.startswith(str(state.get("command"))):
+            raise SmokeFailure(f"the other Mac's launch line is not previewed: {preview!r}")
         return {"branches": branches, "commands": state.get("commands"), "command": state.get("command"),
                 "ai_naming_configured": state.get("ai_naming_configured")}
 
@@ -306,11 +385,18 @@ class PickerE2E:
             raise SmokeFailure(f"a new sheet preselected {state.get('selected_entry_id')}, want the last device")
         return {"last_device": stored, "new_sheet_default": state.get("selected_entry_id")}
 
-    def check_prompt_start(self) -> Dict[str, Any]:
+    def ensure_echo_command(self) -> None:
+        """Offers a harmless "echo" Claude command (restored in cleanup), so no
+        agent.start here ever launches the real Claude."""
+        if self.previous_commands is not None:
+            return
         self.previous_commands = self.call("set_agent_commands", {})
         previous = self.previous_commands.get("previous") or []
         self.call("set_agent_commands", {"commands": ["echo", *[c for c in previous if c != "echo"]],
                                          "selected": self.previous_commands.get("previous_selected")})
+
+    def check_prompt_start(self) -> Dict[str, Any]:
+        self.ensure_echo_command()
         session = self.sessions[-1]
         state = self.call("load", {"session_id": session}, timeout_s=180)
         if "echo" not in (state.get("commands") or []):
@@ -322,6 +408,10 @@ class PickerE2E:
             timeout_s=300,
         )
         facts = self.check_mirror_selected(result)
+        preview = str(result.get("preview_line") or "")
+        if not preview.startswith("echo") or marker not in preview:
+            raise SmokeFailure(f"the other Mac's launch line is not previewed with the prompt: {preview!r}")
+        facts["preview_line"] = preview
         source_id = facts["remote_workspace_id"]  # loopback: the remote workspace is local too
 
         def echoed() -> Optional[str]:
@@ -344,6 +434,158 @@ class PickerE2E:
                       "agent_worktree_path": worktree.get("path")})
         return facts
 
+    def check_live_availability(self) -> Dict[str, Any]:
+        state = self.open_session(preferred_device=self.machine)
+        session = state["session_id"]
+        typed = {"prompt": f"live {self.nonce}", "workspace_name": f"live ws {self.nonce}",
+                 "branch_name": f"live-{self.nonce}"}
+        self.call("fill", {"session_id": session, **typed})
+
+        def loopback_row(current: Dict[str, Any]) -> Dict[str, Any]:
+            return next(e for e in current.get("entries") or [] if e.get("device_key") == self.machine)
+
+        def kept(current: Dict[str, Any]) -> None:
+            lost = {k: current.get(k) for k in typed if current.get(k) != typed[k]}
+            if lost or current.get("selected_entry_id") != self.machine:
+                raise SmokeFailure(f"the link change reset the sheet: {lost}, selected {current.get('selected_entry_id')}")
+
+        # The drop lands while that Mac's options load (a second connection,
+        # as the sheet's own load runs beside the user's typing).
+        loading = threading.Thread(target=self.load_on_second_connection, args=(session,), daemon=True)
+        loading.start()
+        time.sleep(1.0)
+        self.set_link("stop")
+        try:
+            loading.join(self.timeout_s)
+
+            def dropped() -> Optional[Dict[str, Any]]:
+                current = self.call("state", {"session_id": session})
+                row = loopback_row(current)
+                if row.get("availability") != "online" and not row.get("can_create") and not current.get("can_create"):
+                    return current
+                return None
+
+            down = wait_for("the dropped Mac to be disabled in the open sheet", dropped, self.timeout_s)
+            kept(down)
+            raw = [str(down.get(k)) for k in ("branch_load_error", "models_error") if "CancellationError" in str(down.get(k))]
+            if raw:
+                raise SmokeFailure(f"a load the link dropped under shows the raw error: {raw}")
+        finally:
+            self.set_link("restore")
+
+        def back() -> Optional[Dict[str, Any]]:
+            current = self.call("state", {"session_id": session})
+            row = loopback_row(current)
+            if row.get("availability") == "online" and row.get("can_create") and current.get("can_create"):
+                return current
+            return None
+
+        up = wait_for("the reconnected Mac to be selectable again in the open sheet", back, self.timeout_s)
+        kept(up)
+        return {"while_down": loopback_row(down).get("availability"), "after_restore": loopback_row(up).get("availability")}
+
+    def check_dropped_link(self, prompt: bool) -> Dict[str, Any]:
+        """The link drops after the create went out: the sheet must say the
+        outcome is unknown (naming the Mac), never idle silently or show a raw
+        CancellationError."""
+        self.wait_link_connected()
+        state = self.open_session(preferred_device=self.machine)
+        session = state["session_id"]
+        self.call("load", {"session_id": session}, timeout_s=180)
+        branch = f"drop-{'agent' if prompt else 'plain'}-{self.nonce}"
+        params: Dict[str, Any] = {"session_id": session, "workspace_name": f"drop {self.nonce}",
+                                  "branch_name": branch, "await_open": False, "stop_link_after_seconds": 1.0}
+        if prompt:
+            self.ensure_echo_command()
+            params.update({"prompt": f"say drop {self.nonce}", "command": "echo"})
+        hook = self.slow_worktree_add(4)
+        try:
+            result = self.call("submit", params, timeout_s=240)
+        finally:
+            self.set_link("restore")
+            self.wait_link_connected()
+            time.sleep(5.0)  # the other Mac finishes its git work after the drop
+            hook.unlink(missing_ok=True)
+            orphan = self.adopt_orphan(branch)
+        message = str(result.get("error_message") or "")
+        device_name = str((result.get("target") or {}).get("remote_device_name") or "")
+        if result.get("finished") or result.get("phase") != "idle":
+            raise SmokeFailure(f"a dropped create did not end editable and unfinished: {result}")
+        if "CancellationError" in message or "dropped" not in message or device_name not in message:
+            raise SmokeFailure(f"a dropped create must say the outcome is unknown on {device_name!r}, got {message!r}")
+        return {"error_message": message, "created_anyway": orphan is not None}
+
+    def check_host_open_keeps_selection(self) -> Dict[str, Any]:
+        """Opens requested by another Mac (`select: false`) never switch this
+        Mac's selected workspace; the phone's default (no param) still does."""
+        self.wait_link_connected()
+        self.ensure_echo_command()
+        before = self.selected_workspaces()
+        opened: Dict[str, str] = {}
+
+        def unchanged(label: str, result: Dict[str, Any]) -> None:
+            workspace_id = result.get("workspace_id")
+            if not workspace_id:
+                raise SmokeFailure(f"{label} opened no workspace: {result}")
+            opened[label] = workspace_id
+            self.created.append({"mirror": workspace_id, "remote": workspace_id})
+            time.sleep(0.5)
+            after = self.selected_workspaces()
+            if after != before:
+                raise SmokeFailure(f"{label} {{select: false}} changed the selection: {before} -> {after}")
+
+        created = self.request("mobile.supermux.worktree.create", {
+            "project_id": self.project_id, "branch_name": f"keep-{self.nonce}", "open": True, "select": False,
+        }, timeout_s=120)
+        unchanged("worktree.create", created)
+        path = (created.get("worktree") or {}).get("path")
+        unchanged("worktree.open", self.request("mobile.supermux.worktree.open", {
+            "project_id": self.project_id, "worktree_path": path, "select": False}))
+        unchanged("project.open", self.request("mobile.supermux.project.open", {
+            "project_id": self.project_id, "select": False}))
+        unchanged("agent.start", self.request("mobile.supermux.agent.start", {
+            "project_id": self.project_id, "prompt": f"say keep {self.nonce}", "command": "echo",
+            "workspace_name": f"keep agent {self.nonce}", "branch_name": f"keep-agent-{self.nonce}",
+            "select": False,
+        }, timeout_s=300))
+        # Opened in the background, each still reaches the other Mac: its
+        # auto-mirror opens (and cleanup then never races a mirror mid-open).
+        sources = sorted({norm(w) for w in opened.values()})
+
+        def mirrored() -> Optional[List[str]]:
+            bindings = self.client.call("supermux.devices.bindings", {}) or {}
+            rows = [m for m in bindings.get("mirrors") or [] if norm(m.get("remote_workspace_id")) in sources]
+            bound = {norm(m.get("remote_workspace_id")) for m in rows if m.get("is_bound")}
+            return [m["workspace_id"] for m in rows] if bound == set(sources) else None
+
+        mirrors = wait_for("auto-mirrors of the background-opened workspaces", mirrored, self.timeout_s)
+        if self.selected_workspaces() != before:
+            raise SmokeFailure(f"auto-mirroring a background-opened workspace changed the selection: {before}")
+        # The phone passes nothing and keeps today's behavior: the workspace is selected.
+        default = self.request("mobile.supermux.project.open", {"project_id": self.project_id})
+        if norm(default.get("workspace_id")) not in self.selected_workspaces():
+            raise SmokeFailure(f"project.open without select no longer selects: {default}")
+        return {"opened": opened, "mirrors": mirrors, "selected_before": before}
+
+    def check_unfocused_remote_create(self) -> Dict[str, Any]:
+        """A viewer-side remote create that does not focus leaves every
+        window's selection alone: the owning Mac did not select its new
+        workspace either."""
+        before = self.selected_workspaces()
+        result = self.client.call("supermux.devices.remote_worktree_create", {
+            "machine": self.machine, "project_id": self.project_id,
+            "workspace_name": f"unfocused {self.nonce}", "branch_name": f"unfocused-{self.nonce}", "focus": False,
+        }, timeout_s=240) or {}
+        remote_id, mirror_id = result.get("remote_workspace_id"), result.get("workspace_id")
+        if not remote_id or not mirror_id:
+            raise SmokeFailure(f"remote_worktree_create returned no workspaces: {result}")
+        self.created.append({"mirror": mirror_id, "remote": remote_id})
+        time.sleep(1.0)
+        after = self.selected_workspaces()
+        if after != before:
+            raise SmokeFailure(f"an unfocused remote create changed the selection: {before} -> {after}")
+        return {"remote_workspace_id": remote_id, "mirror_workspace_id": mirror_id}
+
     # -- cleanup -------------------------------------------------------------
 
     def cleanup(self) -> None:
@@ -363,9 +605,15 @@ class PickerE2E:
         for session in self.sessions:
             attempt(lambda session=session: self.call("close", {"session_id": session}))
         if not self.keep:
+            # Source first: auto-mirror then closes its mirror. Closing the
+            # mirror first would let auto-mirror re-mirror the source just
+            # before it closes.
+            closed: set = set()
             for created in self.created:
-                attempt(lambda c=created: self.client.call("workspace.close", {"workspace_id": c["mirror"]}))
-                attempt(lambda c=created: self.client.call("workspace.close", {"workspace_id": c["remote"]}))
+                for key in ("remote", "mirror"):
+                    if norm(created[key]) not in closed:
+                        closed.add(norm(created[key]))
+                        attempt(lambda w=created[key]: self.close_workspace_if_open(w))
                 attempt(lambda c=created: self.client.call(
                     "supermux.devices.unhide", {"machine": self.machine, "remote_workspace_id": c["remote"]}))
             if self.project_id and self.machine:
@@ -381,23 +629,50 @@ class PickerE2E:
         if errors:
             self.facts["cleanup_errors"] = errors
 
+    def close_workspace_if_open(self, workspace_id: str) -> None:
+        """Closes a workspace unless it is already gone (a closed source takes its mirror along)."""
+        time.sleep(0.3)
+        for window in (self.client.call("window.list", {}) or {}).get("windows") or []:
+            window_id = window.get("id") or window.get("window_id")
+            rows = (self.client.call("workspace.list", {"window_id": window_id}) or {}).get("workspaces") or []
+            if any(norm(r.get("id")) == norm(workspace_id) for r in rows):
+                self.client.call("workspace.close", {"workspace_id": workspace_id})
+                return
+
     def remote_worktrees_safe(self) -> List[Dict[str, Any]]:
         try:
             return self.remote_worktrees()
         except SmokeFailure:
             return []
 
-    def run(self) -> bool:
+    def run(self, only: Optional[List[str]] = None) -> bool:
+        """Runs every step, stopping at the first failure; with `only`, runs
+        just those steps (after the two setup steps) and records each result."""
+        plan: List[Any] = [
+            ("picker_lists_this_mac_and_loopback", self.check_rows),
+            ("remote_branches_load", self.check_remote_branches),
+            ("remote_error_is_localized", self.check_remote_error),
+            ("plain_create_selects_mirror", self.check_plain_create),
+            ("last_device_persisted", self.check_last_device),
+            ("prompt_start_runs_agent_start", self.check_prompt_start),
+            ("availability_is_live", self.check_live_availability),
+            ("dropped_link_create_reports_unknown_outcome", lambda: self.check_dropped_link(prompt=False)),
+            ("dropped_link_start_claude_reports_unknown_outcome", lambda: self.check_dropped_link(prompt=True)),
+            ("host_open_keeps_selection_for_other_macs", self.check_host_open_keeps_selection),
+            ("unfocused_remote_create_keeps_selection", self.check_unfocused_remote_create),
+        ]
         try:
             self.step("device_connected", self.check_device)
             self.step("project_registered", self.register_project)
-            self.step("picker_lists_this_mac_and_loopback", self.check_rows)
-            self.step("remote_branches_load", self.check_remote_branches)
-            self.step("remote_error_is_localized", self.check_remote_error)
-            self.step("plain_create_selects_mirror", self.check_plain_create)
-            self.step("last_device_persisted", self.check_last_device)
-            self.step("prompt_start_runs_agent_start", self.check_prompt_start)
-            return True
+            for name, action in plan:
+                if only and name not in only:
+                    continue
+                try:
+                    self.step(name, action)
+                except SmokeFailure:
+                    if not only:
+                        raise
+            return all(step["ok"] for step in self.steps)
         except SmokeFailure:
             return False
         except (OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
@@ -414,6 +689,7 @@ def main() -> int:
     parser.add_argument("--scratch", help="scratch folder for the test repo (default: /tmp/<tag>)")
     parser.add_argument("--timeout", type=float, default=45.0, help="seconds to wait for each check")
     parser.add_argument("--keep", action="store_true", help="leave the workspaces, worktrees and project in place")
+    parser.add_argument("--only", help="comma-separated step names to run (after the setup steps), each recorded even if another fails")
     parser.add_argument("--report", help="report path (default: tests/supermux/artifacts/loopback_new_worktree_picker_e2e-<tag>.json)")
     args = parser.parse_args()
     if not args.tag and not args.socket:
@@ -425,7 +701,7 @@ def main() -> int:
     try:
         with SocketClient(socket_path, timeout_s=60) as client:
             e2e = PickerE2E(client, scratch, timeout_s=args.timeout, keep=args.keep)
-            passed = e2e.run()
+            passed = e2e.run(only=[n.strip() for n in args.only.split(",")] if args.only else None)
             steps, facts = e2e.steps, e2e.facts
     except OSError as error:
         passed, steps, facts = False, [{"name": "connect", "ok": False, "error": f"{socket_path}: {error}"}], {}

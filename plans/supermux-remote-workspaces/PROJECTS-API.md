@@ -130,6 +130,10 @@ never cached; nothing is ever written to `supermux-projects.json`.
 
 All take a `SupermuxProjectLocation`/`SupermuxRemoteWorktree` on a device and a window's `TabManager`,
 do the RPC, then (when the Mac returned `workspace_id`) `deviceWorkspaceOpener.openWhenAvailable(…, focus:)`.
+Every RPC that opens a workspace there (`project.open`, `worktree.open`, `worktree.create {open:true}`,
+`agent.start`) carries `select: false`: the host's handlers pass it to `SupermuxOpenWorkspaceRequest.
+selectsWorkspace`, so `SupermuxTabManagerOpener` neither selects a reused workspace nor a new one (which it
+eager-loads so its command and setup script run). Without the param (the phone) the host selects as before.
 
 ```swift
 func openProject(_ location, in:) async throws -> Opened                    // project.open
@@ -234,7 +238,7 @@ remote-only row's "New Worktree…". P1's minimal `SupermuxRemoteNewWorktreeShee
     var initialAgentCommands: SupermuxAgentCommandList { get }
     func setAgentCommands(_:) -> SupermuxAgentCommandList; func rememberAgentCommand(_:)
     func agentOptions(for command: String, forceRefresh: Bool) async -> SupermuxAgentLaunchOptionsDTO
-    func shellLinePreview(command:model:effort:prompt:) -> String?          // nil for another Mac
+    func shellLinePreview(command:model:effort:prompt:) -> String?          // nil when not known here
     func startAgent(_ request: SupermuxAgentLaunchRequest, willCreateWorktree:) async throws
 }
 final class SupermuxLocalWorktreeCreationTarget     // This Mac: exactly the pre-P2 calls
@@ -252,7 +256,13 @@ final class SupermuxRemoteWorktreeCreationTarget   // over the device link, open
 - **Picker rows**: This Mac first (when it has a copy), the other Macs in location order with a
   link-state dot (connecting / offline rows listed but disabled, with a hint), then "Set Up on…"
   rows for connected Macs lacking the project (`extras.setUpTargets` / `row.setUpTargets`; hands
-  off to P1's setup sheet). Hidden when there is one row in total.
+  off to P1's setup sheet). Hidden when there is one row in total. Which Macs are listed is fixed
+  when the sheet opens, but each row's link state is read live (`presentation.deviceAvailability`
+  is a provider over the observable device list): a Mac that finishes connecting becomes
+  selectable, one that drops is disabled (Create too, with its hint), and neither edge touches the
+  selection or the typed input. The sheet reloads when the selected Mac becomes reachable
+  (`loadKey`); a reload keeps the user's model / effort picks. A load the link drops under reads
+  as that Mac being unreachable (`not_connected` sentence), never as the raw `CancellationError`.
 - **Default**: the row menu's Mac, else the last Mac a worktree was created on for this unified
   project (recorded only after a successful create), else the first Mac that can create, else the
   first copy (an offline-only project still opens and explains why).
@@ -265,17 +275,27 @@ final class SupermuxRemoteWorktreeCreationTarget   // over the device link, open
   cannot be stopped); the sheet closes when it returns, then
   `deviceWorkspaceOpener.openWhenAvailable(ref, in: <clicking window>, focus: true)` opens (or reuses
   the auto-mirror's in-flight / existing) mirror and selects it; an open failure shows an alert.
-  Errors become sentences naming the Mac (`SupermuxRemoteWorktreeFailure`). A blank branch is
-  AI-named by `worktree.suggest_branch` only when that Mac already reported
-  `ai_naming_configured == true` (additive `agent.options` field); otherwise the other Mac names it
-  inside `worktree.create`. The shell line is not previewed for another Mac.
+  Errors become sentences naming the Mac (`SupermuxRemoteWorktreeFailure`). A link that drops after
+  the request went out (a `CancellationError` from the reconnect, or `not_connected` after a
+  connected send) is `outcome_unknown`: "The connection to <Mac> dropped while it was creating the
+  worktree. Check its worktrees before trying again." — never a silent return to idle (which invited a
+  duplicate) or the raw error text; that Mac's worktree list is refreshed (and again on reconnect).
+  Only a cancelled flow cancels silently. A blank branch is AI-named by `worktree.suggest_branch`
+  only when that Mac already reported `ai_naming_configured == true` (additive `agent.options`
+  field); otherwise the other Mac names it inside `worktree.create`. The launch line is previewed
+  for another Mac once `agent.options` names its shell (`shell_flavor`: `posix` / `fish`, additive),
+  with the same `SupermuxAgentLaunchCommand.shellLine`; it is hidden before that and for a prompt
+  long enough that Mac reads it from a file. Until that Mac's command list arrives, the Claude chips
+  show "Loading commands from <Mac>…".
 
 DEBUG socket drivers (`supermux.devices.new_worktree.*`, same model as the sheet):
 `open {project_id, preferred_device?, window_id?}` → `{session_id, unified_project_id, entries,
 selected_entry_id, shows_picker, target, branches, base_branch, commands, command, …}`,
 `select {session_id, entry_id}`, `load {session_id}`, `state {session_id}`,
-`submit {session_id, prompt?, workspace_name?, branch_name?, base_branch?, command?, await_open?}` →
-state + `{finished, machine, remote_workspace_id, mirror}`, `close {session_id}`,
+`fill {session_id, prompt?, workspace_name?, branch_name?, base_branch?, command?}`,
+`submit {session_id, <fill fields>, await_open?, stop_link_after_seconds?}` →
+state + `{finished, machine, remote_workspace_id, mirror}` (`stop_link_after_seconds` holds that Mac's
+link down that long after the request went out), `close {session_id}`,
 `last_device {project_id}`, `set_agent_commands {commands?, selected?}` → `{previous, previous_selected, …}`.
 E2E: `CMUX_TAG=<tag> python3 tests/supermux/loopback_new_worktree_picker_e2e.py` (also in
 `tests/supermux/run_all_loopback_e2e.sh`).

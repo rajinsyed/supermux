@@ -29,12 +29,14 @@ struct SupermuxNewWorktreeDevicePicker: View {
                     .padding(.vertical, 1)
                 }
             }
-            if let hint {
-                Text(hint)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            // The line is always laid out (blank for This Mac), so switching
+            // Macs never makes the sheet jump.
+            Text(verbatim: hint ?? " ")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .opacity(hint == nil ? 0 : 1)
+                .accessibilityHidden(hint == nil)
         }
     }
 
@@ -47,8 +49,9 @@ struct SupermuxNewWorktreeDevicePicker: View {
                 Circle()
                     .fill(dotColor(entry.availability))
                     .frame(width: 6, height: 6)
+                // One weight for both states, so selecting never resizes the chip.
                 Text(entry.name)
-                    .font(.system(size: 11, weight: isSelected ? .semibold : .medium))
+                    .font(.system(size: 11, weight: .medium))
                     .lineLimit(1)
                 if let status = statusText(entry.availability) {
                     Text(status)
@@ -104,7 +107,7 @@ struct SupermuxNewWorktreeDevicePicker: View {
         guard let entry = sheet.selectedEntry, !entry.isThisMac else { return nil }
         return unavailableReason(entry) ?? String(
             localized: "supermux.newWorktree.device.remoteHint",
-            defaultValue: "Created in \(entry.name)’s copy of the project; its workspace opens here."
+            defaultValue: "Creates the worktree on \(entry.name) and opens it here."
         )
     }
 
