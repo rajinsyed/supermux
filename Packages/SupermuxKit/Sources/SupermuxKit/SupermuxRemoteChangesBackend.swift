@@ -235,12 +235,27 @@ public final class SupermuxRemoteChangesBackend: SupermuxChangesBackend {
         }
         renewal.cancel()
         // The consumer is gone (this task is cancelled): release the lease
-        // from a fresh task so the request is not cancelled with it.
-        Task { @MainActor [weak self] in await self?.setWatchLease(false) }
+        // from a fresh task so the request is not cancelled with it. Switching
+        // away from a mirror also drops this backend, so the task holds only
+        // what the request needs, never `self`.
+        let transport = self.transport
+        let clientID = self.clientID
+        Task { @MainActor in await Self.setWatchLease(false, clientID: clientID, on: transport) }
     }
 
     private func setWatchLease(_ enable: Bool) async {
-        _ = try? await call(.changesWatch, ["enable": enable, "client_id": clientID])
+        await Self.setWatchLease(enable, clientID: clientID, on: transport)
+    }
+
+    private static func setWatchLease(
+        _ enable: Bool,
+        clientID: String,
+        on transport: any SupermuxRemoteChangesTransport
+    ) async {
+        _ = try? await transport.request(
+            SupermuxMobileMethod.changesWatch.rawValue,
+            params: ["enable": enable, "client_id": clientID, "workspace_id": transport.remoteWorkspaceID]
+        )
     }
 
     // MARK: - Calls
