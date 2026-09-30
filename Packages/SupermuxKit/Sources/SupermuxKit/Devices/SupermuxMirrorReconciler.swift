@@ -22,6 +22,12 @@ public import Foundation
 ///   pending projection) while its remote workspace still exists is closed the
 ///   same confirmed way, so the next pass reopens it fresh. Only with
 ///   auto-mirror on (otherwise nothing would reopen it).
+/// - **Duplicate**: when several local mirrors show one remote workspace (a
+///   reopened closed window or workspace next to the mirror auto-mirror opened
+///   to replace it), one survives — a projected one first, then the bound one
+///   (the mirror every entry point resolves the ref to), then the lowest local
+///   id — and the others close the same confirmed way. Runs with auto-mirror
+///   off too, but not while an open of the ref is in flight.
 /// - **Hidden** refs whose remote workspace is confirmed gone are unhidden, so
 ///   the hidden set never outgrows the live remote workspaces.
 ///
@@ -142,6 +148,7 @@ public struct SupermuxMirrorReconciler: Sendable {
     private enum SuspicionKind: Hashable, Sendable {
         case gone(UUID)
         case orphan(UUID)
+        case duplicate(UUID)
         case hiddenGone
     }
 
@@ -165,9 +172,18 @@ public struct SupermuxMirrorReconciler: Sendable {
         let devicesByID = Dictionary(input.devices.map { ($0.machineID, $0) }, uniquingKeysWith: { first, _ in first })
         let remoteByRef = Self.remoteWorkspacesByRef(input.devices)
         let mirroredRefs = Set(input.mirrors.map(\.ref))
+        let survivors = Self.duplicateSurvivors(input.mirrors)
 
         for mirror in input.mirrors {
             guard let device = devicesByID[mirror.ref.machineID], device.isAuthoritative else { continue }
+            if let survivor = survivors[mirror.ref], survivor != mirror.localWorkspaceID {
+                guard !input.busy.contains(mirror.ref) else { continue }
+                let key = SuspicionKey(ref: mirror.ref, kind: .duplicate(mirror.localWorkspaceID))
+                if observe(key, now: input.now, into: &seen) {
+                    plan.closes.append(Close(localWorkspaceID: mirror.localWorkspaceID, ref: mirror.ref, reason: .duplicate))
+                }
+                continue
+            }
             if let remote = remoteByRef[mirror.ref] {
                 let isOrphan = input.autoMirror && mirror.isBound && !mirror.isProjected
                     && remote.terminalCount > 0 && !input.busy.contains(mirror.ref)
@@ -215,6 +231,20 @@ public struct SupermuxMirrorReconciler: Sendable {
         guard let earliest = suspicions.values.min() else { return nil }
         let remaining = confirmationInterval - now.timeIntervalSince(earliest)
         return max(remaining, 0) + 0.05
+    }
+
+    /// For every ref shown by more than one mirror, the one mirror to keep:
+    /// projected first, then bound, then the lowest local id (stable across
+    /// passes, so a duplicate's suspicion can confirm).
+    private static func duplicateSurvivors(_ mirrors: [Mirror]) -> [SupermuxRemoteWorkspaceRef: UUID] {
+        Dictionary(grouping: mirrors, by: \.ref).compactMapValues { group in
+            guard group.count > 1 else { return nil }
+            return group.min { lhs, rhs in
+                if lhs.isProjected != rhs.isProjected { return lhs.isProjected }
+                if lhs.isBound != rhs.isBound { return lhs.isBound }
+                return lhs.localWorkspaceID.uuidString < rhs.localWorkspaceID.uuidString
+            }?.localWorkspaceID
+        }
     }
 
     /// One device's workspaces that need a mirror, in the remote's sort order.
