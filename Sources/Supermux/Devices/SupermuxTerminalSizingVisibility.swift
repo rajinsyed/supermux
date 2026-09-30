@@ -77,6 +77,13 @@ final class SupermuxTerminalSizingVisibility {
         hiddenHosts.insert(surface.id)
     }
 
+    /// A pane's grid changed. A pane shown for the first time gets its real
+    /// size here without a visibility change (it starts out "visible" before
+    /// it has a window), so look again once layout settles.
+    func surfaceGeometryChanged(_ surfaceID: UUID) {
+        Task { @MainActor [weak self] in self?.refresh(surfaceID: surfaceID) }
+    }
+
     // MARK: - Updates
 
     private func refresh(surfaceID: UUID?) {

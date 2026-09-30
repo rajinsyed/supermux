@@ -428,6 +428,9 @@ final class DeviceTerminalMirrorSession {
     }
 
     private func paneGridChanged() {
+        // SUPERMUX:begin device-mirror-hidden-counts (a pane laid out for the first time just came on screen)
+        if let surface { SupermuxTerminalSizingVisibility.shared.surfaceGeometryChanged(surface.id) }
+        // SUPERMUX:end device-mirror-hidden-counts
         guard phase != .stopped, let report = measurePaneGrid(), phase == .attached else { return }
         sendSizing("mobile.terminal.viewport", report)
     }
