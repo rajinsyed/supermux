@@ -16,7 +16,8 @@ import SupermuxKit
 /// `local_projects {}` (this Mac's `projects.list` host payload + origin map),
 /// and (DEBUG builds only) `request {machine, method, params?, timeout_seconds?}`,
 /// `bind {workspace_id, machine, remote_workspace_id}` and `unbind {workspace_id}` (test hooks for the
-/// export filter and restart-stable bindings without a second Mac).
+/// export filter and restart-stable bindings without a second Mac), and the `mirror.*`
+/// mirror-behavior drivers (``SupermuxMirrorSocketCommands``).
 @MainActor
 enum SupermuxDevicesSocketCommands {
     nonisolated static let methodPrefix = "supermux.devices."
@@ -62,6 +63,15 @@ enum SupermuxDevicesSocketCommands {
                 #else
                 return unknownMethod()
                 #endif
+            case let sub where sub.hasPrefix(SupermuxMirrorSocketCommands.methodPrefix):
+                // Mirror-behavior E2E drivers (DEBUG builds only).
+                #if DEBUG
+                result = try await SupermuxMirrorSocketCommands.handle(
+                    sub.dropFirst(SupermuxMirrorSocketCommands.methodPrefix.count), params: params
+                )
+                #else
+                return unknownMethod()
+                #endif
             default:
                 return unknownMethod()
             }
@@ -70,6 +80,8 @@ enum SupermuxDevicesSocketCommands {
             }
             return .ok(value)
         } catch let error as InvalidParams {
+            return .err(code: "invalid_params", message: error.message, data: nil)
+        } catch let error as SupermuxMirrorSocketCommands.InvalidParams {
             return .err(code: "invalid_params", message: error.message, data: nil)
         } catch let error as SupermuxDeviceError {
             return .err(code: error.code, message: error.localizedDescription, data: nil)

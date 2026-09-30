@@ -8549,6 +8549,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             ?? preferredMainWindowContextForWorkspaceCreation(event: event, debugSource: debugSource)
         let manager = context?.tabManager ?? preferredTabManager
         if let manager, let machine = manager.selectedWorkspace?.deviceMachineForNewWorkspace {
+            // SUPERMUX:begin device-new-workspace-opener
+            if SupermuxComposition.deviceNewWorkspace.start(on: machine, in: manager) { return true }
+            // SUPERMUX:end device-new-workspace-opener
             return deviceWorkspaceCreationCoordinator?.start(on: machine, in: manager) ?? false
         }
         if let manager,
