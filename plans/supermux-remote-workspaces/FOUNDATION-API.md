@@ -168,6 +168,8 @@ func openWhenAvailable(_ ref:, in tabManager:, focus:, timeout: Duration = .seco
   sequence `remoteWorkspaceGroup → CloudWorkspaceLayoutTranslator.fetch → projectGroupAsNewLocalWorkspace
   (window-scoped SurfaceCatalog.NewWorkspaceHost(tabManager:)) → bindCloudWorkspace`, binds the local
   workspace **at creation** (so the export filter never leaks it), and selects it only when `focus`.
+  An open that fails after creating the local workspace (e.g. the remote workspace closed meanwhile:
+  "Unknown surface") unbinds and closes it again, so nothing half-created stays in the sidebar.
   A remote workspace with no terminal throws `.nothingToMirror` unless `createStarterTerminalIfEmpty`
   (auto-mirror should pass `false`; explicit user opens `true`). Browsers in the remote workspace are
   refused by upstream's `materialize` and simply skipped.
