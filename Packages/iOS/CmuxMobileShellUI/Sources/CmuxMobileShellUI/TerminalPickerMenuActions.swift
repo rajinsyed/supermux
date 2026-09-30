@@ -15,7 +15,9 @@ struct TerminalPickerMenuActions {
     let selectBrowserStream: (String) -> Void
     let selectSimulatorStream: (String) -> Void
     // SUPERMUX:begin ios-pane-actions
-    let createSimulator: () -> Void
+    /// Defaulted so upstream call sites (and upstream tests) that predate the
+    /// fork's simulator pane action compile unchanged.
+    var createSimulator: () -> Void = {}
     // SUPERMUX:end ios-pane-actions
     let openTextSheet: () -> Void
     let copyDebugLogs: () -> Void

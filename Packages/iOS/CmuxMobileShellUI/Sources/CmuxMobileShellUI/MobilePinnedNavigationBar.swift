@@ -32,7 +32,12 @@ extension View {
     @ViewBuilder
     func mobilePinnedNavigationBar() -> some View {
         #if canImport(UIKit)
-        #if compiler(>=6.4)
+        // SUPERMUX:begin ios27-sdk-no-toolbar-minimize
+        // Xcode 27.0 (27A266a) ships Swift 6.4 but its iOS 27 SDK has no
+        // `toolbarMinimizeBehavior(_:for:)`, so upstream's compiler gate fails
+        // to build. Keep the UIKit stand-in only until the SDK exposes it.
+        #if compiler(>=6.4) && SUPERMUX_IOS27_TOOLBAR_MINIMIZE
+        // SUPERMUX:end ios27-sdk-no-toolbar-minimize
         if #available(iOS 27.0, *) {
             background(PinnedNavigationBarApplier())
                 .toolbarMinimizeBehavior(.never, for: .navigationBar)

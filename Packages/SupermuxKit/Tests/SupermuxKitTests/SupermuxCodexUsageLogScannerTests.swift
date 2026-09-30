@@ -191,7 +191,11 @@ struct SupermuxCodexUsageLogScannerTests {
         """.utf8)
         #expect(original.count == replacement.count)
         let file = try write(original, to: relativePath, under: root)
-        let fixedModificationDate = Date(timeIntervalSince1970: 1_780_000_000)
+        // Relative to now (whole seconds, a day back) so the file always sits
+        // inside the scanner's rolling window; a literal date ages out of it.
+        let fixedModificationDate = Date(
+            timeIntervalSince1970: (Date().timeIntervalSince1970 - 86_400).rounded(.down)
+        )
         try FileManager.default.setAttributes(
             [.modificationDate: fixedModificationDate],
             ofItemAtPath: file.path
