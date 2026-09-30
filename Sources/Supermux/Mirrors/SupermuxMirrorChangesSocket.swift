@@ -32,8 +32,11 @@ enum SupermuxMirrorChangesSocket {
             await model.unstage(change)
         case "diff":
             payload["diff"] = try await diff(params, model: model, workspace: workspace)
+        case "fetch":
+            // The panel's Fetch and its auto-fetch timer.
+            await model.fetchAndRefresh()
         default:
-            throw SupermuxMirrorSocketCommands.InvalidParams(message: "action must be status, stage, unstage or diff")
+            throw SupermuxMirrorSocketCommands.InvalidParams(message: "action must be status, stage, unstage, diff or fetch")
         }
         payload["model"] = describe(model)
         return payload

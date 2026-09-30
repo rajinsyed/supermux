@@ -39,6 +39,11 @@ DEBUG `supermux.devices.mirror.*` socket drivers):
      mirror's model; the scratch repo's real index follows each step.
  11. changes_file_diff_is_remote — the file-row diff of README.md comes back
      from the other Mac and is marked remote.
+ 11b. changes_slow_fetch_keeps_link — with a remote whose `git fetch` takes
+     longer than the link's 20 s default reply deadline: a count read
+     (`changes.history {fetch: false}`) answers without waiting on it, a
+     fetching history page and the panel's Fetch both succeed, and the link
+     to the other Mac never drops (a second socket watches it throughout).
  12. changes_panel_mounted — with the mirror selected and the right sidebar
      on Changes, the mounted panel's own model is the remote one (a
      screenshot of the window is saved when screen capture is allowed).
@@ -74,6 +79,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -84,6 +90,9 @@ LOOPBACK_DEVICE_ID = "5e1f10b0-0000-4000-8000-000000000001"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ARTIFACTS_DIR = REPO_ROOT / "tests" / "supermux" / "artifacts"
 PROVISIONAL_TITLE = "Cloud VM"
+# Longer than the device link's 20 s default reply deadline, shorter than the
+# host's own 30 s `git fetch` timeout.
+SLOW_FETCH_SECONDS = 23
 
 
 class CheckFailure(Exception):
@@ -181,6 +190,43 @@ def port_listening(port: int) -> bool:
 def git(repo: Path, *args: str) -> str:
     result = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, check=True)
     return result.stdout
+
+
+class LinkWatcher:
+    """Polls one device's link state on its own socket connection while a slow
+    call runs on the main one, and records every poll that was not connected."""
+
+    def __init__(self, socket_path: str, device_id: str, interval_s: float = 0.25) -> None:
+        self.socket_path = socket_path
+        self.device_id = device_id
+        self.interval_s = interval_s
+        self.polls = 0
+        self.drops: List[str] = []
+        self.poll_errors: List[str] = []
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+
+    def __enter__(self) -> "LinkWatcher":
+        self._thread.start()
+        return self
+
+    def __exit__(self, *_: Any) -> None:
+        self._stop.set()
+        self._thread.join(timeout=10)
+
+    def _run(self) -> None:
+        started = time.monotonic()
+        with SocketClient(self.socket_path, timeout_s=10) as client:
+            while not self._stop.is_set():
+                try:
+                    devices = (client.call("supermux.devices.list", {}) or {}).get("devices") or []
+                    state = next((d.get("link_state") for d in devices if d.get("device_id") == self.device_id), "missing")
+                    self.polls += 1
+                    if state != "connected":
+                        self.drops.append(f"+{time.monotonic() - started:.1f}s {state}")
+                except (CheckFailure, OSError, ValueError) as error:
+                    self.poll_errors.append(str(error))
+                self._stop.wait(self.interval_s)
 
 
 class WorkspaceBehaviorsE2E:
@@ -444,6 +490,48 @@ class WorkspaceBehaviorsE2E:
             raise CheckFailure(f"diff: {diff}")
         return {"diff_title": diff.get("title"), "is_remote": True, "patch_excerpt": str(diff.get("patch"))[:300]}
 
+    def timed_history(self, fetch: Optional[bool]) -> float:
+        """One `changes.history` page for the source workspace, sent with NO
+        explicit deadline (the device facade's own deadline for the method
+        applies), and how long it took."""
+        params: Dict[str, Any] = {"workspace_id": self.source_id, "limit": 5}
+        if fetch is not None:
+            params["fetch"] = fetch
+        started = time.monotonic()
+        self.rpc("supermux.devices.request", {
+            "machine": self.machine, "method": "mobile.supermux.changes.history", "params": params,
+        }, timeout_s=90)
+        return round(time.monotonic() - started, 1)
+
+    def changes_slow_fetch_keeps_link(self) -> Dict[str, Any]:
+        git(self.repo, "remote", "add", "origin", "ssh://supermux-e2e.invalid/scratch.git")
+        git(self.repo, "config", "ssh.variant", "simple")
+        git(self.repo, "config", "core.sshCommand", f"sleep {SLOW_FETCH_SECONDS} #")
+        timings: Dict[str, float] = {}
+        fetched: Dict[str, Any] = {}
+        try:
+            with LinkWatcher(self.client.path, LOOPBACK_DEVICE_ID) as watcher:
+                timings["count_read"] = self.timed_history(fetch=False)
+                timings["fetching_read"] = self.timed_history(fetch=None)
+                started = time.monotonic()
+                fetched = self.changes("fetch")["model"]
+                timings["panel_fetch"] = round(time.monotonic() - started, 1)
+        finally:
+            git(self.repo, "remote", "remove", "origin")
+            git(self.repo, "config", "--unset", "core.sshCommand")
+            git(self.repo, "config", "--unset", "ssh.variant")
+        if watcher.drops:
+            raise CheckFailure(f"the link to the other Mac dropped during slow fetches: {watcher.drops[:5]} (timings {timings})")
+        if watcher.polls == 0:
+            raise CheckFailure(f"the link watcher never polled: {watcher.poll_errors[:3]}")
+        if timings["count_read"] > 10:
+            raise CheckFailure(f"a count read waited {timings['count_read']}s for the other Mac's git fetch")
+        if timings["fetching_read"] < 20:
+            raise CheckFailure(f"the fetch took only {timings['fetching_read']}s; this check needs one slower than 20 s")
+        if fetched.get("last_error"):
+            raise CheckFailure(f"the panel's Fetch failed: {fetched.get('last_error')}")
+        return {"timings": timings, "link_polls": watcher.polls, "poll_errors": watcher.poll_errors[:3]}
+
     def changes_panel_mounted(self) -> Dict[str, Any]:
         self.rpc("workspace.select", {"workspace_id": self.mirror_id})
         self.cli("right-sidebar", "set", "changes")
@@ -646,6 +734,7 @@ class WorkspaceBehaviorsE2E:
             self.step("changes_lists_remote_change", self.changes_lists_remote_change)
             self.step("changes_stage_unstage_round_trip", self.changes_stage_round_trip)
             self.step("changes_file_diff_is_remote", self.changes_file_diff)
+            self.step("changes_slow_fetch_keeps_link", self.changes_slow_fetch_keeps_link)
             self.step("changes_panel_mounted", self.changes_panel_mounted)
             self.step("preset_matches_remote_preset", self.preset_matches_remote)
             self.step("preset_without_remote_match_types_command", self.preset_types_command)

@@ -186,6 +186,28 @@ import SupermuxKit
         #expect(await backend.incomingCommits(repoPath: "/r", limit: 1).map(\.hash) == ["i2"])
     }
 
+    @Test func countAndFeedReadsNeverWaitOnAHostFetch() async {
+        let transport = FakeRemoteChangesTransport(remoteWorkspaceID: Self.remoteID)
+        transport.respond("mobile.supermux.changes.history", with: [
+            "commits": [Self.commit("c1", pushed: false)], "incoming": [],
+        ])
+        let backend = SupermuxRemoteChangesBackend(transport: transport)
+
+        _ = await backend.unpushedCountWithoutUpstream(repoPath: "/r")
+        _ = await backend.unpushedCommits(repoPath: "/r", hasUpstream: true, limit: 5)
+        _ = await backend.incomingCommits(repoPath: "/r", limit: 5)
+        let reads = transport.calls.filter { $0.method == "mobile.supermux.changes.history" }
+        // Like the local engine, counts come from the last fetch: a refresh on
+        // a branch without an upstream must not run `git fetch` over there.
+        #expect(!reads.isEmpty)
+        #expect(reads.allSatisfy { $0.params["fetch"] as? Bool == false })
+
+        // Only the panel's Fetch (and its auto-fetch) asks the host to fetch.
+        #expect(await backend.fetch(repoPath: "/r"))
+        #expect(transport.calls.last?.method == "mobile.supermux.changes.history")
+        #expect(transport.calls.last?.params["fetch"] as? Bool != false)
+    }
+
     // MARK: - Change signals
 
     @Test func changeSignalsLeaseTheWatcherYieldOnEventsAndReleaseOnCancel() async {
