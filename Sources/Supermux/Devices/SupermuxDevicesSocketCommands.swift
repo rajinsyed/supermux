@@ -90,6 +90,7 @@ enum SupermuxDevicesSocketCommands {
             #if DEBUG
             case let name where SupermuxDeviceNotificationSocketCommands.handles(name):
                 result = try await SupermuxDeviceNotificationSocketCommands.handle(String(name), params)
+            case let name where SupermuxDeviceTerminalCloseSocketCommands.handles(name): result = try SupermuxDeviceTerminalCloseSocketCommands.handle(name, params)
             #endif
             case let name where SupermuxRemoteMacsSocketCommands.methods.contains(name):
                 // Settings "Remote Macs" card and the flat-row device chip.
