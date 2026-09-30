@@ -72,6 +72,9 @@ final class SupermuxMirrorRunController {
             on: target.machine
         )
         apply(result, on: target)
+        // The run tab opens in the background over there, which may announce
+        // no layout change; pull the layout so the mirror shows it now.
+        await devices.provider(for: target.machine)?.refresh(force: true)
     }
 
     /// Stops the remote project's run command in the mirrored remote workspace.
