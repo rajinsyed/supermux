@@ -1,7 +1,9 @@
 # Supermux: remote Macs as first-class workspaces (DESIGN)
 
-Status: in progress (branch `remote-workspace-sync`). Owner: Supermux fork.
-Research maps: `/tmp/rws/*.md` (session-local) — the facts below are distilled from them.
+Status: implemented on branch `remote-workspace-sync`; verified end to end with the DEBUG loopback
+device (`tests/supermux/run_all_loopback_e2e.sh`), not yet between two physical Macs. Owner: Supermux
+fork. APIs: [FOUNDATION-API.md](FOUNDATION-API.md), [PROJECTS-API.md](PROJECTS-API.md); test harness:
+[LOOPBACK-HARNESS.md](LOOPBACK-HARNESS.md).
 
 ## Problem
 
