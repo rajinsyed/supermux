@@ -597809,6 +597809,23 @@
         }
       }
     },
+    "supermux.newWorktree.remoteError.outcomeUnknown" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The connection to %@ dropped while it was creating the worktree. Check its worktrees before trying again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ワークツリーの作成中に %@ との接続が切れました。もう一度試す前に、そちらのワークツリーを確認してください。"
+          }
+        }
+      }
+    },
     "supermux.newWorktree.remoteError.outdated" : {
       "extractionState" : "manual",
       "localizations" : {

@@ -288,6 +288,9 @@ public final class SupermuxNewWorktreeSheetModel {
                 recordDevice(entry)
                 onFinished()
             } catch is CancellationError {
+                // Cancel (or the sheet going away) while naming. A request
+                // lost after it was sent comes back as an "outcome unknown"
+                // failure from the target instead.
                 phase = .idle
                 statusMessage = nil
             } catch {
@@ -340,6 +343,11 @@ public final class SupermuxNewWorktreeSheetModel {
                 )
                 recordDevice(entry)
                 onFinished()
+            } catch is CancellationError {
+                // Only a cancelled flow gets here: targets report a request
+                // lost after it was sent as an "outcome unknown" failure.
+                phase = .idle
+                statusMessage = nil
             } catch {
                 errorMessage = error.localizedDescription
                 statusMessage = nil
