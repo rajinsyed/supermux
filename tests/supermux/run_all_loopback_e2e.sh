@@ -37,6 +37,9 @@ quit_app
 rm -rf "$SCRATCH"
 mkdir -p "$SCRATCH/push-state" "$REPORTS"
 chmod 700 "$SCRATCH/push-state"
+# The auto-mirror suite's branch check needs an existing repo on a known branch.
+git init -q -b main "$SCRATCH/auto-mirror-repo"
+git -C "$SCRATCH/auto-mirror-repo" -c user.name=e2e -c user.email=e2e@example.invalid commit -q --allow-empty -m init
 cd "$ROOT"
 
 # One line per suite: name, then its extra arguments (one per line in the case).
