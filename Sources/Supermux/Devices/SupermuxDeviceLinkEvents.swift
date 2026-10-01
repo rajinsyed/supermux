@@ -76,6 +76,19 @@ extension DeviceLink {
 
 // MARK: - Missed deadlines (touchpoint `device-link-slow-request`)
 
+extension SupermuxDeviceLinkEvents {
+    /// The `hostRejected` code of a request whose reply missed its deadline
+    /// while the other Mac still answers. The work may still run there.
+    nonisolated static let missedDeadlineCode = "timed_out"
+
+    /// Whether `error` is a missed reply deadline on a link that stays up
+    /// (``DeviceLink/supermuxMissedDeadline(_:_:client:isCurrent:)``).
+    nonisolated static func isMissedDeadline(_ error: any Error) -> Bool {
+        guard case let .hostRejected(code, _)? = error as? DeviceLinkError else { return false }
+        return code == missedDeadlineCode
+    }
+}
+
 extension DeviceLink {
     /// How long the liveness check after a missed deadline waits for the other Mac.
     static let supermuxLivenessTimeoutNanoseconds: UInt64 = 10_000_000_000
@@ -113,7 +126,7 @@ extension DeviceLink {
         #endif
         let name = record.deviceName
         return DeviceLinkError.hostRejected(
-            code: "timed_out",
+            code: SupermuxDeviceLinkEvents.missedDeadlineCode,
             message: String(
                 localized: "supermux.devices.error.replyTimedOut",
                 defaultValue: "\(name) did not answer in time. It is still connected; try again."

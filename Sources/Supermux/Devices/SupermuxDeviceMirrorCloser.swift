@@ -17,7 +17,9 @@ private let mirrorCloseLog = Logger(subsystem: "dev.cmux", category: "supermux-m
 ///   here). A workspace pinned there is unpinned there, then closed. While
 ///   that Mac is offline the close waits in a persisted pending set, which
 ///   auto-mirror never reopens, and is sent once that Mac is back (even after
-///   a relaunch). A refusal beeps and auto-mirror shows the workspace again.
+///   a relaunch). A reply that misses its deadline, or a Mac that stays busy,
+///   is no refusal: the close stays pending and is sent again. A refusal
+///   beeps and auto-mirror shows the workspace again.
 ///   A close not sent yet is cancelled when a local workspace shows that
 ///   remote workspace again (Reopen Closed Workspace, a manual open).
 /// - **Hide Here** (the row menus): remembers the ref in the hidden set so
@@ -153,16 +155,31 @@ final class SupermuxDeviceMirrorCloser {
         } catch SupermuxDeviceError.notConnected {
             // Sent again as soon as that Mac is back.
             lastSent[ref] = nil
+        } catch SupermuxDeviceError.hostRejected(let code, _)
+                    where code == SupermuxDeviceLinkEvents.missedDeadlineCode || code == "server_busy" {
+            // Not a refusal: that Mac still answers, but its reply came after
+            // the deadline (the close may still run there) or it stayed busy
+            // (the close never ran). It stays pending, so auto-mirror never
+            // reopens it; its record disappearing settles it, else it is sent
+            // again once `resendDelay` has passed.
+            mirrorCloseLog.info("close of \(ref.description, privacy: .public) got no answer in time; it stays pending")
+            lastSent[ref] = Date()
+            resendLater()
         } catch SupermuxDeviceError.hostRejected(let code, let message) {
             mirrorCloseLog.error("\(ref.description, privacy: .public) refused its close: \(message, privacy: .public)")
             forget(ref)
             if code != "not_found" { NSSound.beep() }
         } catch {
             mirrorCloseLog.error("close of \(ref.description, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
-            Task { @MainActor [weak self] in
-                try? await Task.sleep(nanoseconds: UInt64(Self.resendDelay * 1_000_000_000))
-                self?.onChange()
-            }
+            resendLater()
+        }
+    }
+
+    /// Runs the pending closes again once a resend is due.
+    private func resendLater() {
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(Self.resendDelay * 1_000_000_000))
+            self?.onChange()
         }
     }
 
