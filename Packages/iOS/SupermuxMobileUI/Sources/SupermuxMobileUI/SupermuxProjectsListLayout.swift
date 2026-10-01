@@ -201,7 +201,14 @@ public struct SupermuxProjectsListLayout: Sendable {
                 key: key,
                 display: lead.row.merged(worktreeCount: project.worktreeCount, isExpanded: project.isExpanded),
                 locationRowIDs: project.allRowIDs,
-                showsWorktreeCreation: lead.showsWorktreeCreation
+                showsWorktreeCreation: lead.showsWorktreeCreation,
+                copies: project.locations.map { location in
+                    SupermuxProjectCopyChoice(
+                        rowID: location.row.id,
+                        macName: location.mac.displayName,
+                        isOnline: location.mac.status == .connected
+                    )
+                }
             )))
             for workspace in nested {
                 entries.append(.workspace(workspace.id))
