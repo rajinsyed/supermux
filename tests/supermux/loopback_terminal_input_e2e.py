@@ -33,7 +33,10 @@ Ghostty view (debug.shortcut.simulate), so they take the same path a keyboard do
                                    a tab opened from the mirror (created in the background on
                                    the source Mac) gets the mirror's full grid, not the size of
                                    a pane nobody there has seen
- 10. hidden_mirror_does_not_count  a mirror that is not on screen stops counting
+ 10. new_tab_from_mirror_shortcut_fills_the_mirror
+                                   the same for Cmd+T pressed in the mirror (the other Mac
+                                   starts that terminal after the grid was decided)
+ 11. hidden_mirror_does_not_count  a mirror that is not on screen stops counting
 
 Writes a JSON report (default tests/supermux/artifacts/loopback_terminal_input_e2e-<tag>.json)
 with expected and received hex per key, and exits non-zero on any failure. Stdlib only.
@@ -440,9 +443,23 @@ class TerminalInputE2E:
         result = wait_for("the new tab to take the viewing mirror's grid", self.follows_viewer(terminal), self.timeout)
         return {"terminal": terminal, "mirror_panel": panel, **result}
 
+    def new_tab_from_mirror_shortcut_fills_the_mirror(self) -> Dict[str, Any]:
+        """The user's path: Cmd+T in the mirror's terminal. The other Mac starts the
+        new terminal only after the mirror already asked for its grid; the grid must
+        still reach the terminal once it starts."""
+        self.mirror_focused()
+        before = set(self.surfaces(self.source_id))
+        self.sock.call("debug.shortcut.simulate", {"combo": "cmd+t"})
+        terminal = wait_for("the new tab on the source Mac",
+                            lambda: next((t for t in self.surfaces(self.source_id) if t not in before), None), self.timeout)
+        result = wait_for("the new tab to take the viewing mirror's grid", self.follows_viewer(terminal), self.timeout)
+        return {"terminal": terminal, **result}
+
     def hidden_mirror(self) -> Dict[str, Any]:
         """Showing the source instead hides the mirror, which then stops counting."""
         self.sock.call("workspace.select", {"workspace_id": self.source_id})
+        # Earlier steps added tabs; show the recorder's tab so its pane is on screen.
+        self.sock.call("surface.focus", {"workspace_id": self.source_id, "surface_id": self.source_surface})
 
         def stopped() -> Optional[Dict[str, Any]]:
             rows = self.participants(self.size_state(self.source_surface))
@@ -486,6 +503,7 @@ class TerminalInputE2E:
             ok = self.step("keys_survive_reattach", self.keys_survive_reattach) and ok
             ok = self.step("hidden_source_pane_does_not_count", self.hidden_source_pane) and ok
             ok = self.step("new_remote_tab_fills_the_mirror", self.new_remote_tab_fills_the_mirror) and ok
+            ok = self.step("new_tab_from_mirror_shortcut_fills_the_mirror", self.new_tab_from_mirror_shortcut_fills_the_mirror) and ok
             ok = self.step("hidden_mirror_does_not_count", self.hidden_mirror) and ok
         self.facts["received_hex_total"] = self.received_hex()
         self.cleanup()
