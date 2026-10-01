@@ -26,6 +26,8 @@ import SupermuxKit
 /// - `preset_launch {workspace_id, name, command}` — a presets-bar chip.
 /// - `action_run {workspace_id, action_id}` — a remote project action.
 /// - `changes {workspace_id, action: status|stage|unstage|diff|fetch, path?, staged?, open_viewer?}`.
+/// - `tab_bar_new_tab`, `tab_context_action` — where a new tab lands
+///   (``SupermuxTabOrderSocketCommands``, DEBUG builds only).
 @MainActor
 enum SupermuxMirrorSocketCommands {
     static let methodPrefix = "mirror."
@@ -67,6 +69,10 @@ enum SupermuxMirrorSocketCommands {
             return try await actionRun(params)
         case "changes":
             return try await SupermuxMirrorChangesSocket.handle(params, workspace: try mirrorWorkspace(params))
+        #if DEBUG
+        case let sub where SupermuxTabOrderSocketCommands.methods.contains(sub):
+            return try SupermuxTabOrderSocketCommands.handle(sub, params: params)
+        #endif
         default:
             throw InvalidParams(message: "unknown mirror method \(method)")
         }
