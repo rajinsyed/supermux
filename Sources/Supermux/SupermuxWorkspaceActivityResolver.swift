@@ -6,7 +6,7 @@ import SupermuxKit
 /// Derives a workspace's ``SupermuxWorkspaceActivity`` from cmux's per-agent
 /// lifecycle state.
 ///
-/// cmux tracks each agent's lifecycle (`running`/`needsInput`/`idle`) per panel
+/// cmux tracks each agent's lifecycle (`running`/`backgroundWorkPending`/`needsInput`/`idle`) per panel
 /// in `Workspace.agentLifecycleStatesByPanelId`. That store isn't `@Published`,
 /// and several real paths mutate it without touching any field cmux's sidebar
 /// publishers carry (the `set_agent_lifecycle` socket command, agent
