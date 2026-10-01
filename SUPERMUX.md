@@ -305,8 +305,8 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
 - **The Files panel in a mirror is that Mac's folder** (#675–#681, capability
   `supermux.files_read.v1`): the workspace's current folder there (it follows a `cd`), hidden files
   listed as the local panel lists them (`.git` included; git internals are readable, never
-  mutable), that Mac's git colors, Find (ripgrep over there), live refresh from that Mac's folder
-  watcher, a read-only preview on double-click/Return/search hit (downloaded, 8 MB cap), and New
+  mutable), that Mac's git colors, Find (ripgrep over there), live refresh, a read-only preview on
+  double-click/Return/search hit (downloaded, 8 MB cap), and New
   File/New Folder/Rename/Duplicate/Move to Trash run there. Every call is confined to that folder
   (`..`, symlinks out of it and a stale folder are refused). That Mac answers every call within a
   bound (30 s; 300 s for Duplicate and Move to Trash, which keep running there) and the link's
@@ -316,6 +316,15 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   folder over 10,000 entries lists the first 10,000. The panel names the Mac when it cannot browse:
   not connected, loading, "Update Supermux on <Mac> to browse its files here." (an older Mac), or no
   folder reported yet.
+  Live refresh follows the local panel's rule: the panel leases `files.watch` on that Mac, a
+  watcher on the folder's own entries (the local panel's `FileWatcher`, not the recursive Changes
+  watcher), and an entry added, removed or renamed there (or a reconnect, which re-leases) refreshes
+  it **in place**: the root and expanded folders are listed again and merged into the rows shown,
+  so it never empties or shows the spinner, expansion, selection and scroll stay, rows are rebuilt
+  only when a listing changed and git colors are published only when they changed. As locally,
+  edits deeper in the tree (`.git/` included) do not refresh it, so their git colors update on the
+  next root-entry change, `cd` or reconnect. Both Macs need this build (an earlier
+  `files_read.v1` host refuses `files.watch`; the panel then refreshes only on reconnect and `cd`).
 - **Notifications:** the owning Mac pushes to the phone (the viewer never forwards `.deviceMac`
   rows, so no duplicates); the phone badges the total over every pairable Mac build; read state
   flows both ways, and mirrored notifications (read state and Mark as Unread included) survive a
