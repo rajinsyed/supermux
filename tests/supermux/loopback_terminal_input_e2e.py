@@ -34,6 +34,12 @@ Ghostty view (debug.shortcut.simulate), so they take the same path a keyboard do
                                    reports: the replay restores the program's mouse modes
                                    (button tracking, SGR format) instead of leaving the
                                    mirror selecting text
+  7c. keys_survive_busy_reconnect  the same after a re-attach in which the other Mac answers
+                                   this Mac's first capability request `server_busy` (its
+                                   per-connection request quota full of the re-attaching
+                                   terminals' replays, as on a Mac with many mirrored
+                                   terminals): Shift+Enter and a drag still reach the
+                                   program exactly, not as re-parsed text
   8. hidden_source_pane_does_not_count
                                    the source Mac's hidden pane does not hold the grid
                                    down: the terminal takes the viewing mirror's grid
@@ -478,9 +484,26 @@ class TerminalInputE2E:
         return {"received_hex": got}
 
     def keys_survive_reattach(self) -> Dict[str, Any]:
+        self.reattach()
+        return self.key_check("shift+enter", "1b5b31333b3275")()
+
+    def keys_survive_busy_reconnect(self) -> Dict[str, Any]:
+        """A Mac with many mirrored terminals answers the capability request of a
+        reconnect `server_busy` while their replays fill its request quota: the
+        mirror must still forward keys and write mouse reports exactly."""
+        self.reattach(busy_capabilities=True)
+        keys = self.key_check("shift+enter", "1b5b31333b3275")()
+        self.mirror_focused()
+        return {"shift_enter": keys, "mouse": self.mouse_drag()}
+
+    def reattach(self, busy_capabilities: bool = False) -> None:
+        """Drops the loopback link, dials it again and waits for the mirror to
+        re-attach; `busy_capabilities` makes the other Mac answer this Mac's
+        first capability request on the new connection `server_busy`."""
         self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "stop"})
         time.sleep(1.0)
-        self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "restore"})
+        self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "restore",
+                                                 "busy_capabilities": busy_capabilities})
 
         def reconnected() -> bool:
             device = self.device()
@@ -490,7 +513,6 @@ class TerminalInputE2E:
         wait_for("the mirror to re-attach (REC-READY replayed)", lambda: "REC-READY" in self.mirror_text(), self.timeout)
         time.sleep(1.5)
         self.mirror_focused()
-        return self.key_check("shift+enter", "1b5b31333b3275")()
 
     def mouse_survives_replay(self) -> Dict[str, Any]:
         """Every grid change of the other Mac's terminal replays the mirror (a link drop
@@ -580,6 +602,7 @@ class TerminalInputE2E:
             ok = self.step("mouse_drag_is_mouse_reports", self.mouse_drag) and ok
             ok = self.step("keys_survive_reattach", self.keys_survive_reattach) and ok
             ok = self.step("mouse_survives_replay", self.mouse_survives_replay) and ok
+            ok = self.step("keys_survive_busy_reconnect", self.keys_survive_busy_reconnect) and ok
             ok = self.step("hidden_source_pane_does_not_count", self.hidden_source_pane) and ok
             ok = self.step("new_remote_tab_fills_the_mirror", self.new_remote_tab_fills_the_mirror) and ok
             ok = self.step("new_tab_from_mirror_shortcut_fills_the_mirror", self.new_tab_from_mirror_shortcut_fills_the_mirror) and ok
