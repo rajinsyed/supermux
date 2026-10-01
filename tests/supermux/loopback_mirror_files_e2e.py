@@ -43,6 +43,17 @@ folder (the loopback's files are on this disk too):
                                      whose git colors there match the local panel's (a change
                                      under src/ is colored), and `cd ..` brings it back
  13. live_refresh                    a file created in the folder appears with no action
+ 13d. idle_panel_stays_still         with nothing changing on the other Mac the panel does not
+                                     refresh at all (no emptying, spinner, row rebuild or git
+                                     colors) for --idle-seconds
+ 13e. deep_churn_keeps_root_rows     for --churn-seconds a file deep in src/ and .git/index change
+                                     five times a second (agents, builds, git): the panel, like the
+                                     local one, watches only its root's entries, so it never empties
+                                     or shows the spinner, and its rows, src/'s expansion and the
+                                     selection stay as they were
+ 13f. root_change_updates_in_place   a file created and then removed at the root appears and goes
+                                     in place: the rows are rebuilt, never emptied, no spinner, and
+                                     src/ stays expanded with the selection kept
  13b. file_operations_on_the_other_mac
                                      the panel's context menu offers New File, New Folder,
                                      Rename, Duplicate and Move to Trash for a row (New File and
@@ -677,6 +688,95 @@ class MirrorFilesE2E:
         wait_for(f"{name} to appear in the mirror's panel", listed, self.args.refresh_timeout, interval_s=0.25)
         return {"seconds_to_appear": round(time.monotonic() - started, 2)}
 
+    def counters(self, reset: bool = False) -> Dict[str, Any]:
+        """The panel's visible-refresh counters since the last reset (the driver's probe)."""
+        return self.files("counters", reset=reset)
+
+    @staticmethod
+    def visible_refreshes(seen: Dict[str, Any]) -> Dict[str, Any]:
+        return {key: seen.get(key) for key in ("emptied", "loading_shown", "rebuilt", "git_published")}
+
+    def src_expanded(self, state: Dict[str, Any]) -> bool:
+        src = self.row(state, "src")
+        return src["path"] in (state.get("expanded_paths") or []) and src.get("children") is not None
+
+    def idle_panel_stays_still(self) -> Dict[str, Any]:
+        """The local panel does nothing while its folder is idle; neither may the mirror's."""
+        self.require("mirror_id")
+        self.device_state()
+        time.sleep(2.0)  # Lets a refresh queued by an earlier step land first.
+        self.counters(reset=True)
+        time.sleep(self.args.idle_seconds)
+        seen = self.visible_refreshes(self.counters())
+        if any(seen.values()):
+            raise Failure(f"an idle panel refreshed in {self.args.idle_seconds:.0f}s: {seen}")
+        return {"counters": seen}
+
+    def deep_churn_keeps_root_rows(self) -> Dict[str, Any]:
+        """The user saw the panel blank and reload every second at a repo root: the mirror
+        reloaded the whole tree for every change anywhere under the folder (.git included).
+        The local panel watches only the root folder's entries, so deep churn never moves it."""
+        self.require("mirror_id")
+        src = self.row(self.device_state(), "src")
+        self.files("expand", path=src["path"])
+        before = self.device_state()
+        if not self.src_expanded(before):
+            raise Failure(f"src/ did not expand: {before.get('expanded_paths')}")
+        self.counters(reset=True)
+        deep, index = self.root / "src" / "nested" / "deep.txt", self.root / ".git" / "index"
+        writes = 0
+        deadline = time.monotonic() + self.args.churn_seconds
+        while time.monotonic() < deadline:
+            with open(deep, "a") as handle:
+                handle.write(f"churn {writes}\n")
+            os.utime(index)
+            writes += 1
+            time.sleep(0.2)
+        time.sleep(2.0)
+        seen = self.visible_refreshes(self.counters())
+        after = self.device_state()
+        problems = []
+        if seen["emptied"] or seen["loading_shown"]:
+            problems.append(f"the panel reloaded visibly under deep churn: {seen}")
+        if shape(after["rows"]) != shape(before["rows"]):
+            problems.append(f"rows {shape(after['rows'])} != before {shape(before['rows'])}")
+        if not self.src_expanded(after):
+            problems.append(f"src/ is no longer expanded: {after.get('expanded_paths')}")
+        if after.get("selected_path") != before.get("selected_path"):
+            problems.append(f"selection {after.get('selected_path')!r} != before {before.get('selected_path')!r}")
+        if problems:
+            raise Failure("; ".join(problems))
+        return {"writes": writes, "counters": seen}
+
+    def root_change_updates_in_place(self) -> Dict[str, Any]:
+        """A change to the root's entries refreshes the panel the local way: in place."""
+        self.require("mirror_id")
+        before = self.device_state()
+        self.counters(reset=True)
+        name = f"appear-{self.nonce}.txt"
+
+        def listed(present: bool) -> Callable[[], bool]:
+            return lambda: (name in [n for n, _ in shape(self.device_state()["rows"])]) == present
+
+        (self.root / name).write_text("appears\n")
+        wait_for(f"{name} to appear in the mirror's panel", listed(True), self.args.refresh_timeout, interval_s=0.25)
+        (self.root / name).unlink()
+        wait_for(f"{name} to leave the mirror's panel", listed(False), self.args.refresh_timeout, interval_s=0.25)
+        seen = self.visible_refreshes(self.counters())
+        after = self.device_state()
+        problems = []
+        if seen["emptied"] or seen["loading_shown"]:
+            problems.append(f"a root change emptied the panel or showed the spinner: {seen}")
+        if not seen["rebuilt"]:
+            problems.append(f"the rows were never rebuilt: {seen}")
+        if not self.src_expanded(after):
+            problems.append(f"src/ is no longer expanded: {after.get('expanded_paths')}")
+        if after.get("selected_path") != before.get("selected_path"):
+            problems.append(f"selection {after.get('selected_path')!r} != before {before.get('selected_path')!r}")
+        if problems:
+            raise Failure("; ".join(problems))
+        return {"counters": seen}
+
     def file_operations_on_the_other_mac(self) -> Dict[str, Any]:
         self.require("mirror_id")
         state = self.device_state()
@@ -886,6 +986,9 @@ class MirrorFilesE2E:
             ("named_pipe_read_refused", self.named_pipe_read_refused),
             ("root_follows_remote_cd", self.root_follows_remote_cd),
             ("live_refresh", self.live_refresh),
+            ("idle_panel_stays_still", self.idle_panel_stays_still),
+            ("deep_churn_keeps_root_rows", self.deep_churn_keeps_root_rows),
+            ("root_change_updates_in_place", self.root_change_updates_in_place),
             ("file_operations_on_the_other_mac", self.file_operations_on_the_other_mac),
             ("file_op_error_with_panel_hidden", self.file_op_error_with_panel_hidden),
             ("link_drop_is_honest", self.link_drop_is_honest),
@@ -903,6 +1006,8 @@ def main() -> int:
     parser.add_argument("--scratch", help="scratch directory for the test folder (a nonce subfolder is made)")
     parser.add_argument("--timeout", type=float, default=30.0, help="seconds per wait")
     parser.add_argument("--refresh-timeout", type=float, default=6.0, help="seconds a new file may take to appear")
+    parser.add_argument("--idle-seconds", type=float, default=5.0, help="seconds an idle panel must stay still")
+    parser.add_argument("--churn-seconds", type=float, default=6.0, help="seconds of deep churn under the folder")
     parser.add_argument("--app-path", help="the tagged .app to relaunch for the older-host check")
     parser.add_argument("--projects-file", help="SUPERMUX_PROJECTS_FILE for the relaunch (a scratch projects file)")
     parser.add_argument("--push-state-dir", help="SUPERMUX_PHONE_PUSH_STATE_DIR for the relaunch")

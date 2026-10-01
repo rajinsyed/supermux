@@ -1,5 +1,6 @@
 import AppKit
 import Bonsplit
+import Combine
 import CryptoKit
 import Foundation
 
@@ -12,7 +13,13 @@ import Foundation
 ///
 /// `{workspace_id, action, path?, query?, timeout_seconds?}` where `action` is:
 /// - `state` — resolver kind, provider kind, root, header text, status message,
-///   loaded rows (expanded children nested), git decorations (root-relative).
+///   loaded rows (expanded children nested), git decorations (root-relative),
+///   expanded paths and the selected path.
+/// - `counters {reset?}` — how often the panel refreshed visibly since the
+///   last reset, without waiting for it to settle: `emptied` (the rows went
+///   away), `loading_shown` (the spinner came up), `rebuilt` (the rows were
+///   rebuilt) and `git_published` (git colors were published), plus
+///   `since_seconds`. `reset: true` zeroes them after the reply is built.
 /// - `expand {path}` — `store.expand(node:)`, waits for the children or an error.
 /// - `open {path, probe?}` — the double-click path (`FileExplorerPreviewCoordinator.open`),
 ///   waits for the preview panel of that remote path. With `probe: false` it
@@ -45,6 +52,8 @@ enum SupermuxMirrorFilesSocket {
     #if DEBUG
     /// The driver's stores, one per workspace (a window's panel keeps one store).
     private static var stores: [UUID: FileExplorerStore] = [:]
+    /// The refresh counters of each driver store (`counters`).
+    private static var probes: [UUID: RefreshProbe] = [:]
     /// The windowless coordinator `menu_action` ran an item on, kept until the
     /// next one so its operation's task can report back.
     private static var menuCoordinator: FileExplorerPanelView.Coordinator?
@@ -58,6 +67,12 @@ enum SupermuxMirrorFilesSocket {
             let store = mount(workspace)
             await settle(store, timeout: .seconds(min(5, timeout.components.seconds)))
             return describe(store, workspace: workspace)
+        case "counters":
+            _ = mount(workspace)
+            guard let probe = probes[workspace.id] else { return [:] }
+            let counts = probe.snapshot()
+            if params["reset"] as? Bool == true { probe.reset() }
+            return counts
         case "expand":
             let store = mount(workspace)
             await settle(store, timeout: timeout)
@@ -101,10 +116,11 @@ enum SupermuxMirrorFilesSocket {
             return try menuAction(params, store: store)
         case "unmount":
             stores[workspace.id]?.applyWorkspaceRoot(.none)
+            probes[workspace.id] = nil
             return ["unmounted": stores.removeValue(forKey: workspace.id) != nil]
         default:
             throw SupermuxMirrorSocketCommands.InvalidParams(
-                message: "action must be state, expand, open, preview, alert, dismiss_alert, materialize, search, local_rows, local_git_status, menu, operation, menu_action or unmount"
+                message: "action must be state, counters, expand, open, preview, alert, dismiss_alert, materialize, search, local_rows, local_git_status, menu, operation, menu_action or unmount"
             )
         }
         #else
@@ -118,6 +134,7 @@ enum SupermuxMirrorFilesSocket {
     /// The workspace's store, synced like the right sidebar's on every call.
     private static func mount(_ workspace: Workspace) -> FileExplorerStore {
         let store = stores[workspace.id] ?? FileExplorerStore()
+        if stores[workspace.id] == nil { probes[workspace.id] = RefreshProbe(store) }
         stores[workspace.id] = store
         store.showHiddenFiles = true
         store.syncWorkspaceRoot(from: workspace)
@@ -153,7 +170,45 @@ enum SupermuxMirrorFilesSocket {
             "is_loading": store.isRootLoading || !store.loadingPaths.isEmpty,
             "rows": store.rootNodes.map { row($0, root: store.rootPath) },
             "git_status": relativeStatus(store.gitStatusByPath, root: store.rootPath),
+            "expanded_paths": store.expandedPaths.sorted(),
+            "selected_path": store.selectedPath ?? NSNull(),
         ]
+    }
+
+    /// Counts the panel's visible refreshes from the store's own published
+    /// values: what `reload()` does (rows emptied, the spinner shown) against
+    /// a refresh in place (rows rebuilt, git colors published).
+    private final class RefreshProbe {
+        private var emptied = 0
+        private var loadingShown = 0
+        private var rebuilt = 0
+        private var gitPublished = 0
+        private var since = Date()
+        private var subscriptions: Set<AnyCancellable> = []
+
+        @MainActor
+        init(_ store: FileExplorerStore) {
+            store.$rootNodes.map(\.isEmpty).removeDuplicates().dropFirst().filter { $0 }
+                .sink { [weak self] _ in self?.emptied += 1 }.store(in: &subscriptions)
+            store.$isRootLoading.removeDuplicates().dropFirst().filter { $0 }
+                .sink { [weak self] _ in self?.loadingShown += 1 }.store(in: &subscriptions)
+            store.$contentRevision.removeDuplicates().dropFirst()
+                .sink { [weak self] _ in self?.rebuilt += 1 }.store(in: &subscriptions)
+            store.$gitStatusByPath.dropFirst()
+                .sink { [weak self] _ in self?.gitPublished += 1 }.store(in: &subscriptions)
+        }
+
+        func snapshot() -> [String: Any] {
+            [
+                "emptied": emptied, "loading_shown": loadingShown, "rebuilt": rebuilt,
+                "git_published": gitPublished, "since_seconds": Date().timeIntervalSince(since),
+            ]
+        }
+
+        func reset() {
+            emptied = 0; loadingShown = 0; rebuilt = 0; gitPublished = 0
+            since = Date()
+        }
     }
 
     /// Which provider backs the panel, without naming fork types the driver
