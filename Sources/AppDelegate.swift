@@ -8582,10 +8582,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     // SUPERMUX:begin device-new-workspace-this-mac
     /// "New Workspace on ▸ This Mac": the local New Workspace, even while the
-    /// selected workspace routes a plain New Workspace to a Cloud VM.
+    /// selected workspace routes a plain New Workspace to a Cloud VM or
+    /// another Mac. `placementOverride: .end` places it after every row (the
+    /// sidebar empty area's menu).
     @discardableResult
-    func supermuxPerformLocalNewWorkspaceAction(tabManager: TabManager) -> Bool {
-        performNewWorkspaceCreationAction(initialSurface: .terminal, preferredTabManager: tabManager, event: nil, debugSource: "supermux.newWorkspace.thisMac")
+    func supermuxPerformLocalNewWorkspaceAction(tabManager: TabManager, placementOverride: WorkspacePlacement? = nil) -> Bool {
+        performNewWorkspaceCreationAction(
+            initialSurface: .terminal,
+            preferredTabManager: tabManager,
+            event: nil,
+            placementOverride: placementOverride,
+            debugSource: "supermux.newWorkspace.thisMac"
+        )
     }
     // SUPERMUX:end device-new-workspace-this-mac
 
