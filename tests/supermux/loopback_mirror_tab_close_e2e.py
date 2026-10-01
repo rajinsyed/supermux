@@ -13,7 +13,8 @@ down showed the same card, and the closed tab came back on reconnect.
 This suite drives the real device path against ONE tagged DEBUG build running
 the loopback device ("Loopback Mac" = this same app's own mobile host). The
 close prompt ("Close “X” on <Mac>?") is pre-answered through
-`supermux.devices.terminal_close.answer`, so no modal ever shows:
+`supermux.devices.terminal_close.answer`, so no modal shows except in step 6,
+which shows the real prompt and lets it answer Cancel by itself:
 
   1. setup                              auto-mirror on, the loopback linked and fetched
   2. source_with_terminals              a source workspace with T0 idle, T1-T3 busy, T4
@@ -26,12 +27,19 @@ close prompt ("Close “X” on <Mac>?") is pre-answered through
   5. busy_tab_close_cancelled           answer Cancel, close T2's mirror tab -> asked
                                         once, T2 kept and projected again, the new pane
                                         attached and rendering, no overlay, no card
-  6. reopened_pane_attaches             T0 projected into another workspace, closed and
+  6. shown_prompt_keeps_app_responsive  the real prompt for busy T2 (Cancel pressed after
+                                        a few seconds) -> the app answers other requests at
+                                        once while it is up, then T2 is projected again
+  7. reopened_pane_attaches             T0 projected into another workspace, closed and
                                         projected again (same link) -> the new pane attaches
-  7. kill_terminal_forces               vm.terminal_close on busy T3 (Kill Terminal…) ->
+  8. first_pane_replays_beside_another  T0 in a second, split pane (same link), then the
+                                        mirror's T0 pane replays -> it attaches again and
+                                        does not take the size back; the second pane
+                                        closes, the mirror's pane replays -> attaches again
+  9. kill_terminal_forces               vm.terminal_close on busy T3 (Kill Terminal…) ->
                                         closed there, no prompt
-  8. idle_tab_close_control             close idle T0's mirror tab -> closed there, no prompt
-  9. offline_close                      link down, close idle T4's mirror tab -> gone at
+ 10. idle_tab_close_control             close idle T0's mirror tab -> closed there, no prompt
+ 11. offline_close                      link down, close idle T4's mirror tab -> gone at
                                         once, no card; on reconnect T4 is closed there and
                                         never projected again
 
@@ -254,6 +262,18 @@ class MirrorTabCloseE2E:
             raise Failure(f"{terminal} is not a terminal of the source")
         return bool(result.get("needs_confirm"))
 
+    def replay_pane(self, workspace_id: str, panel: str) -> None:
+        self.sock.call("supermux.devices.terminal_close.replay", {"workspace_id": workspace_id, "panel_id": panel})
+
+    def mac_viewport(self, terminal: str) -> Any:
+        """The viewport the owning Mac holds for this Mac's link on `terminal`, or None."""
+        state = (self.sock.call("terminal.size_state", {"surface_id": terminal}) or {}).get("size_state") or {}
+        for row in state.get("participants") or []:
+            participant = row.get("participant") if isinstance(row.get("participant"), dict) else row
+            if str(participant.get("id", "")).startswith("mobile:mac-"):
+                return participant.get("viewport")
+        return None
+
     def read_text(self, workspace_id: str, surface: str) -> str:
         result = self.sock.call("surface.read_text", {"workspace_id": workspace_id, "surface_id": surface}) or {}
         return str(result.get("text") or "")
@@ -444,6 +464,48 @@ class MirrorTabCloseE2E:
             raise Failure("; ".join(problems))
         return {"old_panel": old_panel, "new_panel": panel}
 
+    def shown_prompt_keeps_app_responsive(self) -> Dict[str, Any]:
+        """The real prompt is up: other requests (main-actor work) are still answered at once.
+
+        A prompt run as a nested modal session from the close's main-actor task
+        stalls the main queue until it is answered, so every request waits.
+        """
+        self.require_busy("T2")
+        self.answer("show")
+        old_panel = self.close_mirror_tab("T2")
+        slowest = 0.0
+
+        def timed(call: Callable[[], Any]) -> Any:
+            nonlocal slowest
+            started = time.monotonic()
+            value = call()
+            slowest = max(slowest, time.monotonic() - started)
+            return value
+
+        problems: List[str] = []
+        shown = wait_for("the close prompt to show", lambda: timed(self.asked), self.timeout)
+        if not all(prompt.get("shown") is True for prompt in shown):
+            problems.append(f"the prompt was answered without showing: {shown}")
+        deadline = time.monotonic() + 2.5
+        while time.monotonic() < deadline:
+            timed(lambda: self.surfaces(self.mirror_id))
+            timed(self.asked)
+            time.sleep(0.1)
+        if slowest > 1.0:
+            problems.append(f"a request waited {slowest:.1f}s while the prompt was up (expected under 1s)")
+
+        def new_panel() -> Optional[str]:
+            panel = self.mirror_panel(self.terms["T2"])
+            return panel if panel and panel != old_panel else None
+
+        panel = wait_for("T2 to be projected again after the prompt's Cancel", new_panel, self.timeout)
+        if not self.source_has("T2"):
+            problems.append("the source lost T2 although the prompt was cancelled")
+        problems += self.asked_problems(1)
+        if problems:
+            raise Failure("; ".join(problems))
+        return {"slowest_request_seconds": round(slowest, 2), "new_panel": panel}
+
     def reopened_pane_attaches(self) -> Dict[str, Any]:
         resource = (self.projections(self.mirror_id).get(up(self.terms["T0"])) or {}).get("resource")
         if not resource:
@@ -452,9 +514,7 @@ class MirrorTabCloseE2E:
         self.extra_id = up(created.get("workspace_id") or created.get("created_workspace_id"))
 
         def project() -> str:
-            opened = self.sock.call("surface.project", {"resource": resource, "workspace_id": self.extra_id,
-                                                        "reuse": False, "focus": False}, timeout_s=60) or {}
-            return up(opened.get("panel_id") or opened.get("surface_id"))
+            return self.project_into_extra(resource)
 
         def attached(panel: str) -> Callable[[], Any]:
             return lambda: (self.pane(self.extra_id, panel) or {}).get("attached")
@@ -473,6 +533,75 @@ class MirrorTabCloseE2E:
             raise Failure(f"the mirror's T0 pane is no longer attached: {mirror_pane}")
         self.close_extra()
         return {"first_panel": first, "reopened_panel": second}
+
+    def project_into_extra(self, resource: str) -> str:
+        opened = self.sock.call("surface.project", {"resource": resource, "workspace_id": self.extra_id,
+                                                    "reuse": False, "focus": False}, timeout_s=60) or {}
+        return up(opened.get("panel_id") or opened.get("surface_id"))
+
+    def first_pane_replays_beside_another(self) -> Dict[str, Any]:
+        """The mirror's T0 pane replays again after another pane of T0 on the same link reported.
+
+        Every pane of one link shares its client id, and the owning Mac fences
+        that client's viewport generations. A pane whose replay carried a
+        generation below a later pane's report or clear was refused with
+        `viewport_transition` until it showed "Mac disconnected". A pane that
+        only re-syncs must also not take the size back from the pane that
+        reported last, or two panes of different sizes resize the terminal in turn.
+        """
+        terminal = self.terms["T0"]
+        mirror_pane = self.mirror_panel(terminal)
+        resource = (self.projections(self.mirror_id).get(up(terminal)) or {}).get("resource")
+        if not mirror_pane or not resource:
+            raise Failure("precondition: the mirror does not show T0")
+
+        def mirror_attached() -> Any:
+            return (self.pane(self.mirror_id, mirror_pane) or {}).get("attached")
+
+        def replays_and_stays_attached(when: str) -> Optional[str]:
+            self.replay_pane(self.mirror_id, mirror_pane)
+            # A refused replay retries three times (50/100/200 ms) and then detaches.
+            time.sleep(1.5)
+            if not mirror_attached():
+                return f"the mirror's T0 pane did not attach again {when}: {self.pane(self.mirror_id, mirror_pane)}"
+            return holds(lambda: None if mirror_attached()
+                         else f"the mirror's T0 pane detached {when}: {self.pane(self.mirror_id, mirror_pane)}", 1.5)
+
+        wait_for("the mirror's T0 pane to attach", mirror_attached, self.timeout)
+        created = self.sock.call("workspace.create", {"title": f"tab-close-second-{self.nonce}", "focus": False}) or {}
+        self.extra_id = up(created.get("workspace_id") or created.get("created_workspace_id"))
+        second = self.project_into_extra(resource)
+        wait_for("T0's second pane to attach", lambda: (self.pane(self.extra_id, second) or {}).get("attached"),
+                 self.timeout)
+        size_before_split = self.mac_viewport(terminal)
+        try:
+            self.sock.call("surface.split_off", {"workspace_id": self.extra_id, "surface_id": second,
+                                                 "direction": "right", "focus": False})
+        except Failure as error:
+            self.facts["second_pane_split_error"] = str(error)
+        # The second pane measures its narrower grid and reports it.
+        time.sleep(1.0)
+        reported = self.mac_viewport(terminal)
+        sizes_differ = reported is not None and reported != size_before_split
+        self.facts.update(second_pane_viewport=reported, viewport_before_split=size_before_split,
+                          second_pane_size_differs=sizes_differ)
+        problems: List[str] = []
+        problem = replays_and_stays_attached("beside the second pane")
+        if problem:
+            problems.append(problem)
+        if sizes_differ:
+            taken = holds(lambda: None if self.mac_viewport(terminal) == reported
+                          else f"the mirror's replay took the size back: {self.mac_viewport(terminal)} "
+                               f"instead of the second pane's {reported}", 1.0)
+            if taken:
+                problems.append(taken)
+        self.close_extra()
+        problem = replays_and_stays_attached("after the second pane closed")
+        if problem:
+            problems.append(problem)
+        if problems:
+            raise Failure("; ".join(problems))
+        return {"mirror_pane": mirror_pane, "second_pane": second, "second_pane_size_differs": sizes_differ}
 
     def kill_terminal_forces(self) -> Dict[str, Any]:
         self.require_busy("T3")
@@ -586,7 +715,9 @@ class MirrorTabCloseE2E:
                 ("host_close_requires_confirmation", self.host_close_requires_confirmation),
                 ("busy_tab_close_confirmed", self.busy_tab_close_confirmed),
                 ("busy_tab_close_cancelled", self.busy_tab_close_cancelled),
+                ("shown_prompt_keeps_app_responsive", self.shown_prompt_keeps_app_responsive),
                 ("reopened_pane_attaches", self.reopened_pane_attaches),
+                ("first_pane_replays_beside_another", self.first_pane_replays_beside_another),
                 ("kill_terminal_forces", self.kill_terminal_forces),
                 ("idle_tab_close_control", self.idle_tab_close_control),
                 ("offline_close", self.offline_close),

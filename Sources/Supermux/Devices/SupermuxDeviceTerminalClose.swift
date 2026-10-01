@@ -37,7 +37,7 @@ enum SupermuxDeviceTerminalClose {
             return try await send("mobile.terminal.close", params)
         } catch let DeviceLinkError.hostRejected(code, _) where code == "confirmation_required" {
             try Task.checkCancellation()
-            let confirmed = SupermuxDeviceTerminalClosePrompt.ask(
+            let confirmed = await SupermuxDeviceTerminalClosePrompt.ask(
                 terminalTitle: terminalTitle(surfaceID: surfaceID, machine: machine, catalog: catalog),
                 deviceName: deviceName(machine: machine, catalog: catalog),
                 window: localWorkspaceID.flatMap { AppDelegate.shared?.tabManagerFor(tabId: $0)?.window }
