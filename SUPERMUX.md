@@ -238,7 +238,9 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   re-exported by this Mac's mobile host (the loop guard; the phone talks to every Mac directly).
 - **Closing a mirror** asks **Close on <Mac>** (closes the real workspace there) or **Hide Here**
   (keeps it running there; "Show Hidden Remote Workspaces" brings it back). Cancel is the prompt's
-  Return/Esc default and Close on <Mac> is marked destructive; mirror rows' menus offer Hide Here
+  Return/Esc default; Close on <Mac> is a plain button (macOS 27 does not draw the destructive red
+  title while the sheet is key, which left a blank gap) and the text says it closes the workspace on
+  that Mac; mirror rows' menus offer Hide Here
   and Close on <Mac>… directly. Closing a single mirrored tab closes that terminal on the owning
   Mac, like a local tab.
 - **Sidebar rows:** inside a project, this Mac's workspaces come first, then each Mac's mirrors;

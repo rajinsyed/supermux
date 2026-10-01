@@ -126,7 +126,7 @@ restore: quit the app, relaunch it with the opt-in, and the mirror reconnects.
   (`supermux.devices.close_prompt`): nested rows list this Mac's workspaces before each Mac's
   mirrors, a nested mirror's accessibility label names its Mac, `set_status` / `set_progress` show on
   nested rows (local and mirror), a flat mirror's directory line omits the Mac name, and the prompt
-  is safe (destructive Close on <Mac>, Cancel as the Return/Esc default, the Mac named once, the
+  is safe (a plain, enabled, visible Close on <Mac>, Cancel as the Return/Esc default, the Mac named once, the
   worktree outcome and Hide Here explained). Layout (chip placement and alignment, spinner size,
   the footer) is checked visually.
 
