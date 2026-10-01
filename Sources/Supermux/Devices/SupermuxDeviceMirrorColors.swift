@@ -1,3 +1,4 @@
+import AppKit
 import CMUXMobileCore
 import CmuxCloudTui
 import Foundation
@@ -53,6 +54,26 @@ enum SupermuxDeviceMirrorColors {
             return nil
         }
         return String(format: "#%02x%02x%02x", rgb.red, rgb.green, rgb.blue)
+    }
+
+    /// The pane-local background override for an OSC background change.
+    ///
+    /// Ghostty reports a reset (OSC 111) as a change to the default color, and
+    /// a stored override, even one equal to the default, makes the pane paint
+    /// its own fill instead of sharing the window's backdrop. On a mirror pane
+    /// (manual-mirror IO: device mirrors, and upstream's Cloud and remote
+    /// mirrors), a change back to this Mac's default clears the override, so
+    /// a program's reset (live, or a replay's authored-color delta) gives the
+    /// pane its translucency back. Local panes keep upstream's behavior.
+    static func surfaceBackgroundOverride(for color: NSColor, defaultColor: NSColor, isMirror: Bool) -> NSColor? {
+        guard isMirror,
+              let changed = color.usingColorSpace(.sRGB),
+              let fallback = defaultColor.usingColorSpace(.sRGB) else { return color }
+        let tolerance: CGFloat = 1.5 / 255
+        let isDefault = abs(changed.redComponent - fallback.redComponent) <= tolerance
+            && abs(changed.greenComponent - fallback.greenComponent) <= tolerance
+            && abs(changed.blueComponent - fallback.blueComponent) <= tolerance
+        return isDefault ? nil : color
     }
 }
 
