@@ -195,6 +195,9 @@ extension TerminalController {
 
     /// The Mac pane resized: re-report its grid as the Mac participant's viewport.
     func localSizingMacViewportChanged(surfaceID: UUID) {
+        // SUPERMUX:begin sizing-hidden-mac-pane (a pane laid out for the first time just came on screen)
+        SupermuxTerminalSizingVisibility.shared.surfaceGeometryChanged(surfaceID)
+        // SUPERMUX:end sizing-hidden-mac-pane
         guard var host = localSizingHostsBySurfaceID[surfaceID],
               let viewport = localSizingControllersBySurfaceID[surfaceID]?.naturalViewport() else { return }
         let previous = host.state
