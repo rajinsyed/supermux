@@ -146,7 +146,7 @@ final class SupermuxDeviceMirrorCoordinator {
     #endif
 
     /// Refs whose open is queued, in flight (here or from any other opener
-    /// caller), backing off, or whose remote close is in flight.
+    /// caller), backing off, or whose close on their Mac is pending.
     var busyRefs: Set<SupermuxRemoteWorkspaceRef> {
         let now = Date()
         let backingOff = retryAfter.filter { $0.value > now }.keys
@@ -182,6 +182,8 @@ final class SupermuxDeviceMirrorCoordinator {
             #endif
             index.pruneBindings()
         }
+        // Closes the user made while a Mac was offline go out once it is back.
+        closer.sendPendingCloses()
         reconcileCount += 1
         lastAutoMirror = settings.autoMirror
         let plan = reconciler.plan(makeInput())

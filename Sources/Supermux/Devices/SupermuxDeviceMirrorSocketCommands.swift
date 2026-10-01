@@ -6,13 +6,14 @@ import SupermuxKit
 /// The device-mirror `supermux.devices.*` socket methods (auto-mirror, close
 /// semantics, hidden set), dispatched from ``SupermuxDevicesSocketCommands``:
 ///
-/// - `close_mirror {workspace_id, action: "close_on_mac" | "hide"}` — the two
-///   prompt answers without a prompt; `close_on_mac` waits for the other Mac.
-/// - `close_prompt {workspace_id}` — the close prompt a user close of that
-///   mirror shows (text, buttons, default and Esc button), without showing it.
+/// - `close_mirror {workspace_id, action: "close_on_mac" | "hide"}` — a
+///   user close without this Mac's confirmations (closes it on its Mac; waits
+///   for the send, `pending_on_mac` says whether it still waits for that Mac)
+///   or Hide Here.
 /// - `unhide {machine?, remote_workspace_id?}` — unhide one ref, one device's
 ///   refs, or (no params) every hidden ref; auto-mirror reopens them.
-/// - `hidden {}` — the hidden set.
+/// - `hidden {}` — the hidden set, and `pending_remote_closes` (closed here,
+///   not yet on their Mac).
 /// - `set_auto_mirror {enabled}` — the `supermux.devices.autoMirror` setting.
 /// - `reconcile {}` — run an auto-mirror pass now and report its state.
 /// - `fail_next_open {machine, remote_workspace_id}` (DEBUG builds only) — the
@@ -20,7 +21,7 @@ import SupermuxKit
 @MainActor
 enum SupermuxDeviceMirrorSocketCommands {
     static let methods: Set<String> = {
-        var methods: Set<String> = ["close_mirror", "close_prompt", "unhide", "hidden", "set_auto_mirror", "reconcile"]
+        var methods: Set<String> = ["close_mirror", "unhide", "hidden", "set_auto_mirror", "reconcile"]
         #if DEBUG
         methods.insert("fail_next_open")
         #endif
@@ -32,7 +33,6 @@ enum SupermuxDeviceMirrorSocketCommands {
             let result: [String: Any]
             switch name {
             case "close_mirror": result = try await closeMirror(params, payloads: payloads)
-            case "close_prompt": result = try closePrompt(params)
             case "unhide": result = unhide(params)
             case "hidden": result = hidden()
             case "set_auto_mirror": result = try setAutoMirror(params)
@@ -65,12 +65,6 @@ enum SupermuxDeviceMirrorSocketCommands {
         return (workspace, ref)
     }
 
-    private static func closePrompt(_ params: [String: Any]) throws -> [String: Any] {
-        let (workspace, _) = try mirror(params)
-        let items = SupermuxComposition.deviceMirrorCloser.promptItems(for: [workspace])
-        return SupermuxDeviceMirrorClosePrompt.describe(items)
-    }
-
     private static func closeMirror(_ params: [String: Any], payloads: SupermuxDevicesSocketPayloads) async throws -> [String: Any] {
         let (workspace, ref) = try mirror(params)
         let id = workspace.id
@@ -82,6 +76,7 @@ enum SupermuxDeviceMirrorSocketCommands {
         case "close_on_mac":
             try await closer.closeOnMac(workspace)
             payload["action"] = "close_on_mac"
+            payload["pending_on_mac"] = closer.pendingRemoteCloses.contains(ref)
         case "hide":
             guard closer.hideHere(workspace) else { throw invalid("the mirror could not be closed") }
             payload["action"] = "hide"
@@ -103,7 +98,8 @@ enum SupermuxDeviceMirrorSocketCommands {
 
     private static func hidden() -> [String: Any] {
         let refs = SupermuxComposition.hiddenRemoteWorkspaces.refs.sorted { $0.description < $1.description }
-        return ["hidden": refs.map(refPayload)]
+        let pending = SupermuxComposition.deviceMirrorCloser.pendingRemoteCloses.sorted { $0.description < $1.description }
+        return ["hidden": refs.map(refPayload), "pending_remote_closes": pending.map(refPayload)]
     }
 
     private static func setAutoMirror(_ params: [String: Any]) throws -> [String: Any] {
