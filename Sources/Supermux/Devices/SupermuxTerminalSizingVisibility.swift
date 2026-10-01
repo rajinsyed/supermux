@@ -56,6 +56,16 @@ final class SupermuxTerminalSizingVisibility {
                 self?.refresh(surfaceID: surfaceID)
             }
         })
+        // A workspace mounted again shows its pane before the pane is back in
+        // its window (the portal binds it a moment later), so the visibility
+        // change above can find it off screen; look again once it is in the window.
+        observers.append(center.addObserver(forName: .terminalSurfaceHostedViewDidMoveToWindow, object: nil, queue: .main) { [weak self] note in
+            let surfaceID = note.userInfo?["surfaceId"] as? UUID
+            MainActor.assumeIsolated {
+                guard let surfaceID else { return }
+                Task { @MainActor [weak self] in self?.refresh(surfaceID: surfaceID) }
+            }
+        })
         for name in [NSWindow.didChangeOcclusionStateNotification, NSApplication.didHideNotification, NSApplication.didUnhideNotification] {
             observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.refresh(surfaceID: nil) }
