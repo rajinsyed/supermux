@@ -9,7 +9,9 @@ public import Foundation
 /// `SupermuxCoalescedRefresh` does): its answer is never computed before it
 /// asked, so a client that asks after a commit never gets pre-commit colors,
 /// and slow work never piles up. A request that gives up at its bound leaves
-/// its run going (`GitStatusProvider` cannot stop git).
+/// its run going (`GitStatusProvider` cannot stop git). Each run has a thread
+/// of its own (at most one per key), so runs never wait for GCD's global pool,
+/// which stuck `files.*` work or anything else in the app can fill.
 ///
 /// ```swift
 /// let runs = SupermuxSharedRuns<[String: GitFileStatus]> { root in GitStatusProvider().fetchStatus(directory: root) }
@@ -19,14 +21,10 @@ public final class SupermuxSharedRuns<Value: Sendable>: @unchecked Sendable {
     private let lock = NSLock()
     private var running: [String: SupermuxSharedRun<Value>] = [:]
     private var queued: [String: SupermuxSharedRun<Value>] = [:]
-    private let queue: DispatchQueue
     private let work: @Sendable (String) -> Value
 
-    /// - Parameters:
-    ///   - queue: where each run executes.
-    ///   - work: the blocking work for one key.
-    public init(queue: DispatchQueue = .global(qos: .utility), work: @escaping @Sendable (String) -> Value) {
-        self.queue = queue
+    /// - Parameter work: the blocking work for one key.
+    public init(work: @escaping @Sendable (String) -> Value) {
         self.work = work
     }
 
@@ -48,7 +46,7 @@ public final class SupermuxSharedRuns<Value: Sendable>: @unchecked Sendable {
     }
 
     private func start(_ run: SupermuxSharedRun<Value>, for key: String) {
-        queue.async {
+        Thread.detachNewThread {
             let value = self.work(key)
             self.end(run, for: key)
             run.finish(value)
