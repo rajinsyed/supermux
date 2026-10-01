@@ -112,6 +112,16 @@ quit + relaunch dedupe check).
     for 60 s the link stays `connected` and admits no new loopback connection
     (`supermux.devices.link {action: "status"}` reports `phase`, `connections_admitted` and
     `stall_armed`), and the source's output still reaches the mirror afterwards.
+12. `slow_request_keeps_the_link_while_main_is_stuck` (#723): the same, with `main_seconds: 12`,
+    which blocks the app's main thread (the loopback host's) for 12 s from the moment the link sends
+    its liveness probe, longer than the probe's 10 s deadline. The probe carries no `client_id`, so the
+    host answers it without its main thread and the link still stays (`main_stall_armed` reports a
+    block not yet used).
+13. `slow_replay_reattaches_the_mirror` (#690): the loopback host holds the mirror pane's next
+    `mobile.terminal.replay` for 25 s (`supermux.devices.terminal_close.replay` starts it). The replay
+    misses its deadline on a live link, and the pane must be attached again within 45 s
+    (`supermux.devices.terminal_close.inspect`) with the link connected throughout. Before, it stayed
+    detached: the reconnect that used to re-attach it no longer comes.
 
 Cleanup closes the mirror first, then the source. `--keep` leaves both open, which is how to test
 restore: quit the app, relaunch it with the opt-in, and the mirror reconnects.
@@ -352,7 +362,12 @@ reconnect does not close the source and drops the pending close. W10 groups a mi
 workspace and deletes the group with `workspace.group.delete {close_workspaces: true}`: the source
 closes on its Mac and is not hidden. W11 builds a local workspace holding only terminals borrowed
 (`surface.project`) from two sources, closes its own shell, and checks it is not taken for a mirror
-and that closing it leaves both sources, their mirrors and the pending/hidden sets alone.
+and that closing it leaves both sources, their mirrors and the pending/hidden sets alone. W12 makes
+the loopback host hold the next `workspace.close` for 30 s (`supermux.devices.link {action: "stall",
+method: "workspace.close"}`): the close misses its 20 s deadline on a live link (`timed_out`), and for
+26 s it must stay in `pending_remote_closes` with auto-mirror reopening nothing; then the source
+closes and the pending close is forgotten. Before, the closer took `timed_out` as a refusal: it forgot
+the close and beeped, and auto-mirror reopened the workspace until the held close ran.
 
 ```bash
 CMUX_TAG=<tag> python3 tests/supermux/loopback_mirror_workspace_close_e2e.py \
@@ -468,7 +483,19 @@ includes a named pipe nobody writes, so every git command there blocks, as in a 
 unanswered privacy prompt. `projects.list` must answer within 4 s (the host's 2 s bound plus slack)
 three times on the host (`supermux.devices.local_projects`) and once over the link; before the bound
 it waited for git until the 5 s kill. Cleanup opens the pipe for writing to release the waiting git
-processes, then removes it.
+processes, then removes it. Each answer must also keep the healthy project's `git_remote_url` (the
+last origin known stands in for a lookup not finished in time).
+
+`first_load_is_bounded_while_a_folder_blocks` (needs `--app-path`; the runner passes it with
+`--push-state-dir`) then makes a preset (`preset.create`, an `echo` command) and relaunches the app
+with that project still registered, so the projects model's first load waits in its `git worktree
+list` until the 30 s kill. Right after the link connects it sends, at once and each on its own socket,
+`projects.list` (both projects, the healthy origin), `run.state`, `project.icon` (no icon:
+`not_found` is an answer), `worktrees.list` for the healthy project and `preset.launch` into a fresh
+workspace. Each must answer within 8 s (2 s for the load, 2 s more for the origins), the calls must end
+within 25 s of the launch (else the step is vacuous), and the launch must open exactly one terminal.
+Before the bound, `preset.launch` waited for the whole load and missed the 20 s deadline, and the
+terminal still opened later.
 
 ## The ~20 s link flap (round 4) and why E2E did not see it
 
