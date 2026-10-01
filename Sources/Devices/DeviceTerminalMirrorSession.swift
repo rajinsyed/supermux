@@ -73,6 +73,11 @@ final class DeviceTerminalMirrorSession {
     /// Consecutive `viewport_transition` answers, bounded so a host that never
     /// settles cannot spin the attach loop.
     private var viewportTransitionRetries = 0
+    // SUPERMUX:begin device-mirror-replay-timed-out
+    /// Consecutive replays that missed their deadline on a live link
+    /// (SupermuxDeviceLinkEvents.isMissedDeadline), bounded like the above.
+    private var supermuxTimedOutRetries = 0
+    // SUPERMUX:end device-mirror-replay-timed-out
     // SUPERMUX:begin device-mirror-hidden-counts
     /// Set while this mirror's pane is off screen here: it then reports
     /// `counts_override: false`, so a pane nobody looks at never sizes the
@@ -372,6 +377,9 @@ final class DeviceTerminalMirrorSession {
             let replay = try await Self.decodeReplay(response)
             guard !Task.isCancelled, phase == .attaching, isConnected() else { return }
             viewportTransitionRetries = 0
+            // SUPERMUX:begin device-mirror-replay-timed-out
+            supermuxTimedOutRetries = 0
+            // SUPERMUX:end device-mirror-replay-timed-out
             receiveReplaySizing(response)
             if let columns = replay.columns, let rows = replay.rows { pin(columns: columns, rows: rows) }
             // SUPERMUX:begin device-mirror-viewer-colors (the replay, then every color settled to this Mac's theme plus the authored ones)
@@ -401,6 +409,17 @@ final class DeviceTerminalMirrorSession {
             phase = .detached
         } catch {
             guard !Task.isCancelled, phase != .stopped else { return }
+            // SUPERMUX:begin device-mirror-replay-timed-out
+            // The replay missed its deadline but the link stayed up (a slow Mac is
+            // not a lost Mac): ask again, as the reconnect used to, instead of
+            // staying detached on a connected link.
+            if SupermuxDeviceLinkEvents.isMissedDeadline(error), isConnected(), supermuxTimedOutRetries < 3 {
+                supermuxTimedOutRetries += 1
+                replayNeeded = true
+                try? await Task.sleep(nanoseconds: SupermuxDeviceLinkEvents.missedDeadlineRetryDelayNanoseconds)
+                return
+            }
+            // SUPERMUX:end device-mirror-replay-timed-out
             if Self.isViewportTransition(error), viewportTransitionRetries < 3 {
                 // The host is applying this Mac's grid; the next replay
                 // captures the settled grid.
