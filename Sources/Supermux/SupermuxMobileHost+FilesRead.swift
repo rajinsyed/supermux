@@ -94,7 +94,7 @@ extension TerminalController {
     /// (``SupermuxGitStatusRuns``), so a git slower than the requests for it
     /// never piles up git processes.
     nonisolated static func supermuxGitStatus(root: String) -> SupermuxFileGitStatusDTO {
-        let run = SupermuxGitStatusRuns.shared.join(root: root)
+        let run = SupermuxGitStatusRuns.shared.join(root)
         let isRepository = supermuxIsInsideRepository(root)
         guard let found = run.wait(seconds: supermuxFilesGitStatusTimeout) else {
             return SupermuxFileGitStatusDTO(isRepository: isRepository, timedOut: true, statuses: [])
@@ -124,61 +124,9 @@ extension TerminalController {
     }
 }
 
-/// The `git status` runs in progress on this Mac, at most one per folder. A
-/// request for a folder whose run is still going waits for that run instead
-/// of starting another git: a request that gives up at its bound leaves its
-/// git running (`GitStatusProvider` cannot stop it), and the next request
-/// must not add a second one.
-private final class SupermuxGitStatusRuns: @unchecked Sendable {
-    static let shared = SupermuxGitStatusRuns()
-
-    private let lock = NSLock()
-    private var running: [String: SupermuxGitStatusRun] = [:]
-
-    /// The folder's run in progress, or a new one started now.
-    func join(root: String) -> SupermuxGitStatusRun {
-        lock.lock()
-        defer { lock.unlock() }
-        if let run = running[root] { return run }
-        let run = SupermuxGitStatusRun()
-        running[root] = run
-        DispatchQueue.global(qos: .utility).async {
-            let statuses = GitStatusProvider().fetchStatus(directory: root)
-            self.end(run, for: root)
-            run.finish(statuses)
-        }
-        return run
-    }
-
-    private func end(_ run: SupermuxGitStatusRun, for root: String) {
-        lock.lock()
-        if running[root] === run { running[root] = nil }
-        lock.unlock()
-    }
-}
-
-/// One `git status` run; any number of requests wait for it.
-private final class SupermuxGitStatusRun: @unchecked Sendable {
-    private let finished = DispatchGroup()
-    private let lock = NSLock()
-    private var statuses: [String: GitFileStatus] = [:]
-
-    init() {
-        finished.enter()
-    }
-
-    func finish(_ statuses: [String: GitFileStatus]) {
-        lock.lock()
-        self.statuses = statuses
-        lock.unlock()
-        finished.leave()
-    }
-
-    /// The run's result, or `nil` while it is still going after `seconds`.
-    func wait(seconds: TimeInterval) -> [String: GitFileStatus]? {
-        guard finished.wait(timeout: .now() + seconds) == .success else { return nil }
-        lock.lock()
-        defer { lock.unlock() }
-        return statuses
+/// The `git status` runs on this Mac, per folder (``SupermuxSharedRuns``).
+private enum SupermuxGitStatusRuns {
+    static let shared = SupermuxSharedRuns<[String: GitFileStatus]> { root in
+        GitStatusProvider().fetchStatus(directory: root)
     }
 }
