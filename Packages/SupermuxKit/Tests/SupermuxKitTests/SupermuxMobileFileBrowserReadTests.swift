@@ -93,6 +93,29 @@ import Testing
         }
     }
 
+    /// A named pipe lists as a plain file, but opening it for reading waits
+    /// for a writer. The read must refuse it at once: a host thread stuck in
+    /// `open` would make the viewer miss its deadline and drop the link.
+    @Test func readRefusesANamedPipeWithoutWaitingForAWriter() throws {
+        try withRoot { _, root in
+            let pipe = root.appendingPathComponent("pipe").path
+            #expect(mkfifo(pipe, 0o600) == 0)
+            // Releases a reader stuck in `open` (the bug), so the test ends.
+            let release = Thread {
+                Thread.sleep(forTimeInterval: 3)
+                let writer = open(pipe, O_WRONLY | O_NONBLOCK)
+                if writer >= 0 { close(writer) }
+            }
+            release.start()
+            let browser = try SupermuxMobileFileBrowser(rootPath: root.path)
+            let started = Date()
+            #expect(throws: SupermuxMobileFileBrowserError.invalidPath(path: "pipe")) {
+                try browser.read(path: "pipe", offset: 0, length: 10)
+            }
+            #expect(Date().timeIntervalSince(started) < 2)
+        }
+    }
+
     // MARK: - Chunks
 
     @Test func readReturnsTheRequestedChunkAndSaysWhenItEnds() throws {
