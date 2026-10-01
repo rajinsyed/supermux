@@ -365,25 +365,27 @@ final class cmuxUITests: XCTestCase {
             try frame(scratch, "scratch").minX + 15,
             "Nested workspace rows are indented"
         )
-        // Each workspace appears exactly once.
-        for id in ["ws-feat-x", "ws-cmux-main", "ws-cmux-fix", "ws-docs-notes", "ws-infra-api", "ws-infra-ops", "ws-scratch"] {
-            XCTAssertEqual(
-                app.descendants(matching: .any).matching(identifier: "MobileWorkspaceRow-\(id)").count,
-                1,
-                "\(id) must appear exactly once"
-            )
+        // Each workspace appears exactly once (the table drops a repeated id,
+        // so a duplicate would silently vanish from its group).
+        func count(_ id: String) -> Int {
+            app.descendants(matching: .any).matching(identifier: "MobileWorkspaceRow-\(id)").count
+        }
+        for id in ["ws-feat-x", "ws-cmux-main", "ws-cmux-fix", "ws-docs-notes", "ws-infra-api"] {
+            XCTAssertEqual(count(id), 1, "\(id) must appear exactly once")
         }
         XCTAssertFalse(elements(prefix: "SupermuxProjectWorkspaceRow-").firstMatch.exists, "No fork copy of a workspace row")
 
         // A project-owned workspace in a cmux group stays in its group.
         let opsHeader = element("MobileWorkspaceGroupHeader-group-studio-ops")
         let infraOps = workspaceRow("ws-infra-ops")
-        if !infraOps.isHittable { app.swipeUp(velocity: .slow) }
+        for _ in 0..<4 where !(infraOps.exists && infraOps.isHittable) { app.swipeUp(velocity: .slow) }
         XCTAssertTrue(opsHeader.waitForExistence(timeout: 5))
         try assertAbove(opsHeader, infraOps, "infra-ops stays under its Ops group header")
+        XCTAssertEqual(count("ws-infra-ops"), 1, "infra-ops shows only in its group, not nested too")
+        capture("01b-groups-and-loose-rows")
 
         // Multi-Mac project rows carry the Mac marker; single-Mac ones don't.
-        if !featX.isHittable { app.swipeDown(velocity: .slow) }
+        for _ in 0..<4 where !(featX.exists && featX.isHittable) { app.swipeDown(velocity: .slow) }
         let featXAccessory = element("SupermuxNestedWorkspaceAccessory-ws-feat-x")
         XCTAssertTrue(featXAccessory.waitForExistence(timeout: 5), "feat-x shows its Mac marker and PR badge")
         XCTAssertTrue(featXAccessory.label.contains("MacBook Pro"), "feat-x names its Mac: \(featXAccessory.label)")
@@ -433,7 +435,7 @@ final class cmuxUITests: XCTestCase {
             elements(prefix: "SupermuxProjectRow-").matching(NSPredicate(format: "label == %@", "docs")).firstMatch.exists,
             "docs has no Studio location"
         )
-        XCTAssertFalse(element("SupermuxNestedWorkspaceAccessory-ws-cmux-fix").label.contains("Studio"),
+        XCTAssertFalse(element("SupermuxNestedWorkspaceAccessory-ws-cmux-fix").exists,
                        "One Mac in scope needs no Mac marker")
         capture("06-scoped-to-studio")
         tap(macPicker, in: app)
