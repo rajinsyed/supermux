@@ -72,7 +72,8 @@ the main Mac is closed), and the same on iOS.
    `supermux_status_entries` / `supermux_progress` / `supermux_log` fields so `cmux set-status`,
    `set-progress` and `log` pills from the remote render on the mirror row. Host pokes sync on those
    changes and on branch/PR changes. A waiting agent (`backgroundWorkPending`) counts as working, and
-   the additive `supermux_working_panel_ids` lets a mirror spin exactly the tabs whose agent works.
+   the additive `supermux_working_panel_ids` lets a mirror spin exactly the tabs whose agent works
+   (re-synced on every status projector pass, so a tab projected after the record arrived spins too).
 8. **Phone push comes from the Mac that runs the agent.** The viewer Mac never forwards `.deviceMac`
    notifications to the phone (and excludes them from its phone badge: every Mac pushes and reports
    only its OWN unread count, and the phone badges the total, keeping the latest count per Mac

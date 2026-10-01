@@ -26,7 +26,9 @@ extension SupermuxWorkspaceActivityResolver {
 
 extension Workspace {
     /// The ids of the panels whose own agent is working, in tab order: the
-    /// record's `supermux_working_panel_ids` another Mac's mirror reads.
+    /// record's `supermux_working_panel_ids` another Mac's mirror reads. A
+    /// Claude harness pane's id can be among them; it is never mirrored as a
+    /// terminal, so it matches no mirror tab.
     @MainActor
     func supermuxWorkingPanelIDs() -> [String] {
         orderedPanelIds.compactMap { panelID in
