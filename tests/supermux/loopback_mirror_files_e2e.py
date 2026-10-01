@@ -110,6 +110,10 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 ARTIFACTS_DIR = REPO_ROOT / "tests" / "supermux" / "artifacts"
 SUITE = "loopback_mirror_files_e2e"
 BIG_FILE_BYTES = 9 * 1024 * 1024
+# How long a mirror's Duplicate or Move to Trash may take: the viewer's reply
+# deadline for files.duplicate / files.trash (SupermuxDeviceReplyDeadline.fileCopy,
+# 330 s) plus the driver's settle (20 s) and some slack.
+FILE_COPY_REPLY_SECONDS = 360
 
 
 class Failure(Exception):
@@ -832,8 +836,16 @@ class MirrorFilesE2E:
         if root_menu != expected[:2]:
             problems.append(f"empty-area menu {root_menu} != {expected[:2]}")
 
+        seconds: Dict[str, float] = {}
+
         def run(op: str, entry: str, **params: Any) -> Dict[str, Any]:
-            result = self.files("operation", op=op, path=f"{base}/{entry}", **params)
+            # Move to Trash is macOS's own and can take tens of seconds (on a
+            # headless Mac with privacy prompts up it waited ~45 s per item in
+            # the kernel on ~/.Trash), so duplicate and trash get the product's bound.
+            reply_s = FILE_COPY_REPLY_SECONDS if op in ("duplicate", "trash") else 60
+            started = time.monotonic()
+            result = self.files("operation", timeout_s=reply_s, op=op, path=f"{base}/{entry}", **params)
+            seconds[f"{op} {entry}"] = round(time.monotonic() - started, 2)
             if not result.get("ok"):
                 problems.append(f"{op} {entry}: {result}")
             return result
@@ -864,7 +876,7 @@ class MirrorFilesE2E:
             problems.append(f"renaming .git/HEAD was not refused: {refused}")
         if problems:
             raise Failure("; ".join(problems))
-        return {"row_menu": row_menu, "root_menu": root_menu, "git_internals": refused.get("error")}
+        return {"row_menu": row_menu, "root_menu": root_menu, "git_internals": refused.get("error"), "seconds": seconds}
 
     def file_op_error_with_panel_hidden(self) -> Dict[str, Any]:
         """A failed file operation must not run a nested modal inside the operation's
