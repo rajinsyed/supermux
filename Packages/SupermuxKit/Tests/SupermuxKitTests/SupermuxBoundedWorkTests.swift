@@ -16,6 +16,13 @@ import Testing
 ///    (a crash) or replaces the answer already sent.
 /// 4. Stuck work runs on Swift's cooperative pool, so a handful of stuck
 ///    calls starves every other task in the app.
+/// 5. The bound waits for a thread from the same GCD pool the stuck work
+///    holds, so once enough calls are stuck (a hung network volume) no answer
+///    comes at the bound at all.
+///
+/// Serialized: the full-pool case holds GCD's global pool for a moment, which
+/// would delay the other cases' work.
+@Suite(.serialized)
 struct SupermuxBoundedWorkTests {
     @Test func workThatFinishesInTimeAnswersWithItsOwnValue() async {
         let value = await SupermuxBoundedWork(timeout: 5).run({ "done" }, orAfterTimeout: { "timed out" })
@@ -69,6 +76,32 @@ struct SupermuxBoundedWorkTests {
         #expect(answer == 42)
         #expect(clock.now - started < .seconds(1))
         for _ in 0..<stuck { gate.signal() }
+    }
+}
+
+extension SupermuxBoundedWorkTests {
+    @Test func theBoundHoldsWhileTheGlobalPoolIsFull() async {
+        // Fill GCD's constrained (non-overcommit) global pool, about 64
+        // threads per process, with work stuck as on a hung volume. A
+        // detached thread lets it go after 3 s, so a bound that waits for
+        // the pool fails the timing check below rather than hanging.
+        let gate = DispatchSemaphore(value: 0)
+        let stuck = 160
+        for _ in 0..<stuck {
+            DispatchQueue.global(qos: .userInitiated).async { gate.wait() }
+        }
+        Thread.detachNewThread {
+            Thread.sleep(forTimeInterval: 3)
+            for _ in 0..<stuck { gate.signal() }
+        }
+        try? await Task.sleep(for: .milliseconds(200))
+        let clock = ContinuousClock()
+        let started = clock.now
+        let value = await SupermuxBoundedWork(timeout: 0.2).run({ "done" }, orAfterTimeout: { "timed out" })
+        let waited = clock.now - started
+        for _ in 0..<stuck { gate.signal() }
+        #expect(value == "timed out")
+        #expect(waited < .seconds(2))
     }
 }
 
