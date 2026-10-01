@@ -52,6 +52,17 @@ struct SupermuxTerminalInputBatchTests {
         #expect(batch.items == [.bytes(Data("abcd".utf8))])
     }
 
+    @Test func appendsItemsAndEmptiesKeepingTheLimit() {
+        var batch = SupermuxTerminalInputBatch(byteLimit: 2)
+        do { let appended = batch.append(.key(escape)); #expect(appended) }
+        do { let appended = batch.append(.bytes(Data("a".utf8))); #expect(appended) }
+        do { let appended = batch.append(.bytes(Data("b".utf8))); #expect(!appended) }
+        batch.removeAll()
+        #expect(batch.isEmpty)
+        do { let appended = batch.append(.bytes(Data("ab".utf8))); #expect(appended) }
+        do { let appended = batch.append(.bytes(Data("c".utf8))); #expect(!appended) }
+    }
+
     // MARK: 4-5. Wire form
 
     @Test func wireFormRoundTrips() throws {

@@ -61,4 +61,7 @@ public struct SupermuxMobileCapabilities: Sendable, Equatable {
     public var supportsPhonePushShare: Bool { contains(.phonePushShareV1) }
     /// The Mac serves cross-Mac project setup (`project.probe` / `project.clone`).
     public var supportsProjectSetup: Bool { contains(.projectSetupV1) }
+    /// The Mac takes device-mirror input batches (Mac-to-Mac only; no phone
+    /// UI depends on it).
+    public var supportsTerminalInput: Bool { contains(.terminalInputV1) }
 }

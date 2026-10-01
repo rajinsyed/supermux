@@ -12,7 +12,7 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **601**. The remote-workspaces work (#517–#599) left
+- Numbering: the highest number in use is **637**. The remote-workspaces work (#517–#599) left
   unassigned gaps it may still grow into: **523–524, 527–529, 539–544, 558–559, 562–569,
   578–579 and 588–589** (never assigned, not retired); #600–#601 came from the 2026-10-01 upstream merge. Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
@@ -572,6 +572,14 @@ Rules for adding a touchpoint:
 | 599 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the 4 workstream-X files under `Sources/Supermux/Devices/` into the cmux target (four entries each, `Devices/…` paths inside the `Supermux` group; the `+` path is quoted): `SupermuxDeviceLayoutChangeObserver`, `SupermuxRemoteMacsSettingsFeed`, `HostSettingsActions+SupermuxRemoteMacs`, `SupermuxRemoteMacsSocketCommands`. Ids `50BE000C0000000000000001`–`…0008` (odd = file reference, even = build file, in that order); `grep -c 50BE000C cmux.xcodeproj/project.pbxproj` prints 16 |
 | 600 | `Sources/TerminalCopyAction.swift` | `claude-harness-builtin-action` | Adds a `.newClaudeHarness` arm returning `nil` to upstream's exhaustive `terminalCopyAction` switch (a harness pane is not a copy action). Added at the 2026-10-01 upstream merge, when upstream introduced the copy built-ins; part of the #433–442 family |
 | 601 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/MobileDisplaySettings.swift` | `ios-notifications-tab-default` | Flips the absent-key default of upstream's `feedReplacesNotifications` from `true` to `false`, so the phone keeps the Notifications tab (where the fork's project-aware rows render, #365/#366) beside upstream's new agent Feed tab. An explicit choice under Settings → Legacy Notifications Tab still wins. Open decision recorded in SUPERMUX-UPGRADES.md (2026-10-01) |
+| 630 | `Sources/Devices/DeviceTerminalInputRouter.swift` | `device-mirror-input-batch` | Remote Macs input fidelity. The router queues a `SupermuxTerminalInputBatch` (ordered bytes and forwarded key presses) instead of `Data`: `import SupermuxKit`; the `pending` property; a designated `init(sendBatch:onFailure:)` plus upstream's `init(send:onFailure:)` kept as a convenience init that sends the batch's bytes only (upstream tests construct it); `enqueue` keeps `.namedKey` frames that decode as `SupermuxForwardedKeyEvent` and drops the mirror's own terminal replies (`SupermuxDeviceTerminalInput.batchItem`); `takePending` returns the batch |
+| 631 | `Sources/Devices/DeviceTerminalMirrorSession.swift` | `device-mirror-input-batch`, `device-mirror-hidden-counts` | Input: `import SupermuxKit`, a defaulted `supportsSupermuxInput` init parameter (the convenience init passes the link's `supermux.terminal_input.v1` capability), and the router's send closure builds its params with `SupermuxDeviceTerminalInput.inputParams` (the ordered batch as `supermux_input` when the host takes it, else upstream's text). Sizing: a `supermuxHidden` flag, `supermuxSetHidden(_:)`, tracking in `bind`/`stop`, and `counts_override` on the replay while the pane is off screen (`SupermuxTerminalSizingVisibility`) |
+| 632 | `Sources/TerminalController.swift` | `device-mirror-input-host` | Two fences in `v2MobileTerminalInput`: the `text` guard accepts an empty text when the request carries a `supermux_input` batch, and the delivery closure hands the batch to `SupermuxDeviceTerminalInput.deliver` (bytes exactly via a Ghostty `text:` binding, keys through `ghostty_surface_key` with this Mac's terminal state) instead of `sendInputResult(text)` |
+| 633 | `Sources/TerminalController+SharedSizing.swift` | `sizing-hidden-mac-pane` | In `localSizingHost(surfaceID:create:)`, the new host is `var` and `SupermuxTerminalSizingVisibility.shared.prepareHost(&host, surface:)` marks an off-screen Mac pane `counts_override: false` before the first grid applies, so a never-shown tab does not hold the shared grid at its default size |
+| 634 | `Sources/Devices/DeviceSurfaceProvider.swift` | `device-mirror-key-resolver` | `makeCloudManualMirrorPane(… keyNameResolver: nil …)` → `SupermuxDeviceTerminalInput.keyResolver(for: machine)`, so a device-mirror pane forwards key presses to a Mac that takes them |
+| 635 | `Sources/Surfaces/Workspace+CloudTerminalReservation.swift` | `device-mirror-key-resolver` | `reservationKeyNameResolver(for:)` returns `SupermuxDeviceTerminalInput.keyResolver(for:)` for a device instead of nil (the resolver returns nil per key until that Mac advertises `supermux.terminal_input.v1`) |
+| 636 | `cmuxTests/CloudTerminalPaneReservationTests.swift` | `device-mirror-key-resolver` | `import GhosttyKit` and upstream's `devicePaneReservationsLeaveNamedKeysToGhostty` rewritten as `…UnlessTheMacTakesThem`: the device resolver exists and leaves Enter to Ghostty while the Mac's capabilities are unknown |
+| 637 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/Devices/SupermuxDeviceTerminalInput.swift` and `SupermuxTerminalSizingVisibility.swift` into the cmux target (ids `50BE0016…01`–`…04`, four entries each, `Devices/…` paths in the Supermux group) |
 
 ## How to re-apply
 
@@ -5045,3 +5053,30 @@ Upstream's iOS agent Feed (2026-10-01 merge) hides the Notifications tab unless 
 `MobileDisplaySettings.init(defaults:)`, change the `feedReplacesNotifications` fallback from
 `?? true` to `?? false` inside the fence. Retire this row (take upstream's `?? true`) if the fork
 decides to converge on the Feed, ideally after porting the project avatar into the Feed rows.
+
+
+### 630–637. Remote Macs: typing and sizing behave as on the Mac itself — `device-mirror-input-batch`, `device-mirror-hidden-counts`, `device-mirror-input-host`, `sizing-hidden-mac-pane`, `device-mirror-key-resolver`
+
+User feedback: in a device mirror, Claude Code received Esc as Escape plus a literal "[27u", a mouse
+drag as Esc presses, and modified keys as junk; and a tab opened from the mirror stayed small until
+it was opened on the other Mac. Fork code: `Sources/Supermux/Devices/SupermuxDeviceTerminalInput.swift`,
+`SupermuxTerminalSizingVisibility.swift`, and in SupermuxKit `SupermuxForwardedKeyEvent`,
+`SupermuxTerminalInputBatch`, `SupermuxTerminalReplyFilter` (their tests list the failure modes).
+Capability: `supermux.terminal_input.v1`; an older Mac on either side keeps upstream's text path.
+
+Re-apply after an upstream merge:
+- **#630 router**: keep the batch as the pending store and upstream's `init(send:onFailure:)` as a
+  convenience over `init(sendBatch:onFailure:)`; `enqueue` must route every `TerminalManualInput`
+  through `SupermuxDeviceTerminalInput.batchItem` (never drop `.namedKey` unconditionally).
+- **#631 session**: wherever upstream builds the `mobile.terminal.input` params in the router's send
+  closure, build them with `SupermuxDeviceTerminalInput.inputParams(batch, base:, hostTakesBatches:)`
+  and keep upstream's later fields (`client_id`). Keep the replay's `counts_override` while
+  `supermuxHidden` or while the host still holds it, and the `track`/`untrack` calls in `bind`/`stop`.
+- **#632 host**: the `supermux_input` batch must reach `SupermuxDeviceTerminalInput.deliver` inside
+  upstream's `MobileTerminalByteTee.performMobileInput` closure, so ordering, admission, viewport
+  piggyback and acknowledgements stay upstream's.
+- **#633**: wherever upstream creates a `LocalTerminalSizingHost` for a local terminal, call
+  `prepareHost(&host, surface:)` before storing and applying it. Retire #633 and the host half of
+  `SupermuxTerminalSizingVisibility` if upstream stops counting off-screen panes itself.
+- **#634/#635**: every device-pane `keyNameResolver` comes from `SupermuxDeviceTerminalInput.keyResolver(for:)`.
+- **#636**: keep the rewritten reservation test in step with #635.

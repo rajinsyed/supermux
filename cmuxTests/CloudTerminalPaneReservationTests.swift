@@ -2,6 +2,9 @@ import CmuxCloud
 import CmuxCloudTui
 import CmuxSurfaceCatalogModel
 import Foundation
+// SUPERMUX:begin device-mirror-key-resolver
+import GhosttyKit
+// SUPERMUX:end device-mirror-key-resolver
 import Testing
 
 #if canImport(cmux_DEV)
@@ -91,14 +94,20 @@ struct CloudTerminalPaneReservationTests {
         #expect(await recorder.bytes == expected)
     }
 
+    // SUPERMUX:begin device-mirror-key-resolver (device reservations forward keys only to a Mac that takes them)
     @Test @MainActor
-    func devicePaneReservationsLeaveNamedKeysToGhostty() {
-        // The device router sends bytes only, so a named-key resolver on a
-        // device reservation would silently drop Enter, arrows and Tab.
+    func devicePaneReservationsLeaveNamedKeysToGhosttyUnlessTheMacTakesThem() throws {
+        // A Mac that has not advertised supermux.terminal_input.v1 gets bytes
+        // only, so the resolver must leave Enter, arrows and Tab to Ghostty.
         let device = SurfaceMachineID.device(SurfaceDeviceInstanceID(deviceID: "other-mac", tag: "default"))
-        #expect(Workspace.reservationKeyNameResolver(for: device) == nil)
+        let resolver = try #require(Workspace.reservationKeyNameResolver(for: device))
+        var enter = ghostty_input_key_s()
+        enter.action = GHOSTTY_ACTION_PRESS
+        enter.keycode = 36
+        #expect(resolver(enter) == nil)
         #expect(Workspace.reservationKeyNameResolver(for: .cloud("reservation-fixture")) != nil)
     }
+    // SUPERMUX:end device-mirror-key-resolver
 
     @Test @MainActor
     func storeRoutesFailureToTheReservedPaneAndReplaysTheSameRequestOnRetry() async throws {

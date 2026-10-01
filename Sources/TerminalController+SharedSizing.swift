@@ -127,7 +127,8 @@ extension TerminalController {
         let surface = target.surface
         let controller = LocalTerminalSharingController(surfaceID: surfaceID, surface: surface, owner: self)
         let viewport = controller.naturalViewport() ?? TerminalGridSize(cols: 80, rows: 24)
-        let host = LocalTerminalSizingHost(
+        // SUPERMUX:begin sizing-hidden-mac-pane (a Mac pane that is off screen here does not count toward the grid)
+        var host = LocalTerminalSizingHost(
             macParticipant: localSizingIdentity().participant(
                 id: "mac:\(surfaceID.uuidString.lowercased())",
                 deviceKind: .mac,
@@ -135,6 +136,8 @@ extension TerminalController {
             ),
             initialSize: viewport
         )
+        SupermuxTerminalSizingVisibility.shared.prepareHost(&host, surface: surface)
+        // SUPERMUX:end sizing-hidden-mac-pane
         localSizingHostsBySurfaceID[surfaceID] = host
         localSizingControllersBySurfaceID[surfaceID] = controller
         ensureTerminalSharingPresentation()
