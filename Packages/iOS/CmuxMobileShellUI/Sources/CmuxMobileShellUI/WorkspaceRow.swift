@@ -1,6 +1,9 @@
 import CmuxMobileShell
 import CmuxMobileShellModel
 import CmuxMobileSupport
+// SUPERMUX:begin supermux-mobile-nested-accessory (the nested row's accessory slot — see SUPERMUX-TOUCHPOINTS.md)
+import SupermuxMobileUI
+// SUPERMUX:end supermux-mobile-nested-accessory
 import SwiftUI
 
 /// Everything a workspace row draws, and nothing else.
@@ -164,6 +167,9 @@ struct WorkspaceRow: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(content.previewLineLimit, reservesSpace: true)
+                        // SUPERMUX:begin supermux-mobile-nested-accessory (a nested row's accessory ends where this text slot ends, before the changes chip)
+                        .supermuxNestedAccessorySlot()
+                        // SUPERMUX:end supermux-mobile-nested-accessory
 
                     if let changesChip = content.changesChip {
                         Spacer(minLength: 8)
