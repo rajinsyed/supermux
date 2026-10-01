@@ -12,6 +12,8 @@ same SupermuxWorktreeDisclosure the view uses). Nothing here expands a row or
 calls `supermux.devices.remote_worktrees` (both load the other Mac's list on
 their own); only the background refresh (`remote_projects {refresh: true}`,
 what a link connect, a projects/run event or the safety-net timer runs) does.
+That refresh starts the worktree sweep without waiting for it, so the steps
+poll until the lists land.
 
 Steps:
   1. device_connected: the loopback device is connected and serves

@@ -91,7 +91,7 @@ private(set) var devices: [SupermuxDeviceProjects]   // device order; offline on
 private(set) var icons: [String: NSImage]            // key: projectKey(machine:projectID:)
 func device(_ machine: SurfaceMachineID) -> SupermuxDeviceProjects?
 func icon(machine:projectID:) -> NSImage?
-func refresh(_ machine) async                         // projects.list (projects + presets) + run.state + icons + wanted worktrees; coalesced
+func refresh(_ machine) async                         // projects.list (projects + presets) + run.state + icons; coalesced; starts the worktree sweep (not awaited)
 func refreshAll()
 func refreshRuns(_ machine) async                     // run.state only (after a mirror's Run / Stop)
 func apply(run: SupermuxRunStateDTO, on machine)      // fold a run.start/stop result in before the poke lands
@@ -107,7 +107,7 @@ struct SupermuxDeviceProjects {                       // ids are that Mac's ids
 ```
 
 Refresh triggers: `.linkConnected`, `supermux.projects.updated` / `supermux.run.updated` topics (full
-refresh), `supermux.worktrees.updated` (worktree lists rows asked for), a device appearing online, and
+refresh), `supermux.worktrees.updated` (the worktree sweep only), a device appearing online, and
 a 120 s safety net. Only devices whose host advertises `supermux.projects.v1` are fetched. The offline
 cache is `SupermuxPaths.remoteProjectsCacheFileURL` (`~/Library/Application Support/cmux/supermux-remote-projects.json`,
 or next to `SUPERMUX_PROJECTS_FILE` in DEBUG runs), keyed by machine wire id; the loopback device is
@@ -211,9 +211,14 @@ most every 10 min otherwise), for each connected, non-loopback device serving pr
   unopened worktree, always with its number: this Mac's worktrees with no open workspace here plus
   the other Macs' worktrees that are not open there and mirrored here. The main checkout never
   counts. Every refresh of a Mac (link connect, `projects.updated` / `run.updated`, the 120 s safety
-  net, `remote_projects {refresh}`) loads `worktrees.list` for every project it lists, so the pill
-  is right without expanding the row; `supermux.worktrees.updated` refreshes them in between.
-  Remote-only rows follow the same rule while their Mac is online.
+  net, `remote_projects {refresh}`) starts a sweep of `worktrees.list` for every project it lists
+  (when it serves `supermux.worktrees.v1`), so the pill is right without expanding the row;
+  `supermux.worktrees.updated` starts one in between. The sweep runs beside the refresh, never
+  delaying the next project list or run state: four lists in flight at a time, one sweep per Mac
+  (calls meanwhile queue one more). A list the Mac cannot give (a folder that is not a git repo, a
+  transient failure) keeps the previous one and leaves the Mac's `last_error` alone, so
+  `remote_projects {refresh}` can return before the lists land. Remote-only rows follow the same
+  rule while their Mac is online.
 - Remote-only rows: device chip, run indicator, dimmed + "offline" tooltip while the Mac is offline;
   tap = Open on <Mac>; menu: New Worktree… (the device-aware sheet, P2), Worktrees ▸, Actions ▸, Set Up on <Mac>…
   (incl. This Mac), Remove from Projects on <Mac>….
