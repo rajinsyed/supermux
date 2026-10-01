@@ -154,6 +154,19 @@ import Testing
         }
     }
 
+    /// A huge folder must not produce a reply larger than the device link's
+    /// frame: the listing stops at the cap and says so.
+    @Test func hiddenListingStopsAtTheEntryCap() throws {
+        try withRoot { _, root in
+            let browser = try SupermuxMobileFileBrowser(rootPath: root.path)
+            let payload = try browser.listPayload(path: nil, showHidden: true, limit: 3)
+            #expect((payload["entries"] as? [[String: Any]])?.count == 3)
+            #expect(payload["truncated"] as? Bool == true)
+            let whole = try browser.listPayload(path: nil, showHidden: true)
+            #expect(whole["truncated"] == nil)
+        }
+    }
+
     @Test func listPayloadNamesTheHostHome() throws {
         try withRoot { _, root in
             let browser = try SupermuxMobileFileBrowser(rootPath: root.path)

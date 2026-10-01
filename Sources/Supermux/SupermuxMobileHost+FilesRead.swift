@@ -17,6 +17,8 @@ import SupermuxMobileCore
 extension TerminalController {
     /// How long `files.git_status` waits for git before answering `timed_out`.
     nonisolated static let supermuxFilesGitStatusTimeout: TimeInterval = 30
+    /// The most decorated paths one `files.git_status` returns.
+    nonisolated static let supermuxFilesGitStatusMaxEntries = 20_000
 
     /// `mobile.supermux.files.read`: one chunk of the regular file at
     /// root-relative `path` (`offset`, `length` ≤ 512 KiB). Result:
@@ -99,7 +101,12 @@ extension TerminalController {
             guard path.hasPrefix(prefix) else { return nil }
             return SupermuxFileGitStatusEntryDTO(path: String(path.dropFirst(prefix.count)), status: String(describing: status))
         }.sorted { $0.path < $1.path }
-        return SupermuxFileGitStatusDTO(isRepository: isRepository || !statuses.isEmpty, statuses: statuses)
+        // Colors only: a repository with a huge change set keeps its reply far
+        // inside the device link's frame by dropping the rest.
+        return SupermuxFileGitStatusDTO(
+            isRepository: isRepository || !statuses.isEmpty,
+            statuses: Array(statuses.prefix(supermuxFilesGitStatusMaxEntries))
+        )
     }
 
     /// Whether `directory` or one of its ancestors holds a `.git` entry.
