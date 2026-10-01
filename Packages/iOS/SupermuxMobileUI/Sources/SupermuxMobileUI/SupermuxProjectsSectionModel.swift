@@ -271,6 +271,17 @@ public final class SupermuxProjectsSectionModel {
         }
     }
 
+    /// Closes the open swipe tray when its row is no longer listed (a search,
+    /// a filter, a collapse, a Mac leaving, a worktree opened or removed).
+    /// A worktree row is keyed by its path, so without this a worktree
+    /// recreated at the same path would come back with Remove revealed.
+    /// - Parameter ids: The swipe-tray ids of the rows on screen.
+    public func closeSwipeTray(unlessAmong ids: Set<String>) {
+        if let open = openSwipeRowID, !ids.contains(open) {
+            openSwipeRowID = nil
+        }
+    }
+
     /// Fetches a project's custom icon PNG through its Mac's session.
     /// - Parameter projectID: The project ROW id.
     public func iconPNGData(forProjectID projectID: String) async -> Data? {

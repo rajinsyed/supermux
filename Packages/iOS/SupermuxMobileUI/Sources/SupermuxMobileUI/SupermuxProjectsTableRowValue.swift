@@ -63,6 +63,19 @@ public enum SupermuxProjectsTableRowValue: Equatable, Sendable {
     /// An expanded project with nothing under it.
     case notice
 
+    /// The id of the row's swipe tray (``SupermuxSidebarSwipeRow``), or
+    /// `nil` for rows without one. The one place this id is spelled.
+    public var swipeRowID: String? {
+        switch self {
+        case .project(let project):
+            "project:\(project.key)"
+        case .worktree(let worktree):
+            "worktree:\(worktree.projectRowID):\(worktree.worktree.id)"
+        case .header, .loading, .empty, .worktreeLoading, .newWorktree, .notice:
+            nil
+        }
+    }
+
     /// What the row's measured height depends on. Equal identities share one
     /// measurement, so paint-only changes (names, counts, PR, run state)
     /// never re-measure.
