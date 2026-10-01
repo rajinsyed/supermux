@@ -107,14 +107,18 @@ public actor SupermuxGitRemoteURLResolver {
     }
 
     /// Origins for several roots within `timeout` seconds, keyed by each root
-    /// exactly as passed: the roots resolved by then, and for the rest the
-    /// last origin known, however old. The lookups still running end on their
-    /// own and are cached for the next call. The git deadline alone does not
-    /// bound this: git blocked in a folder whose macOS privacy prompt nobody
-    /// answers cannot be killed until the kernel lets it go.
+    /// exactly as passed: the origins found by then, and for every other root
+    /// the last origin known, however old. Only git answering "no origin" in
+    /// time removes one; a root whose lookup ended without an answer (timed
+    /// out, or still running) keeps it, whether or not the rest of the batch
+    /// was done in time. The lookups still running end on their own and are
+    /// cached for the next call. The git deadline alone does not bound this:
+    /// git blocked in a folder whose macOS privacy prompt nobody answers cannot
+    /// be killed until the kernel lets it go.
     public func remoteURLs(forRoots roots: [String], within timeout: TimeInterval) async -> [String: String] {
         let resolved = await SupermuxBoundedAwait(timeout: timeout).value { await self.remoteURLs(forRoots: roots) }
-        return resolved ?? lastKnownRemoteURLs(forRoots: roots)
+        // A "no origin" answered in time already replaced its cache entry.
+        return lastKnownRemoteURLs(forRoots: roots).merging(resolved ?? [:]) { _, fresh in fresh }
     }
 
     /// Forgets one root's answer; the next request asks git again.
