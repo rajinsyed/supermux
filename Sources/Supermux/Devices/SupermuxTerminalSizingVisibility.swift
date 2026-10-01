@@ -78,10 +78,10 @@ final class SupermuxTerminalSizingVisibility {
     func track(_ session: DeviceTerminalMirrorSession, surface: TerminalSurface) {
         start()
         mirrors[surface.id] = TrackedMirror(session: session, surface: surface)
-        refreshMirror(surface.id)
+        refreshMirror(surface.id, settled: true)
         // A pane bound while it is being mounted reaches its window a turn later.
         let surfaceID = surface.id
-        Task { @MainActor [weak self] in self?.refreshMirror(surfaceID) }
+        Task { @MainActor [weak self] in self?.refreshMirror(surfaceID, settled: true) }
     }
 
     func untrack(surfaceID: UUID) {
@@ -149,18 +149,34 @@ final class SupermuxTerminalSizingVisibility {
             refreshHost(surfaceID)
             return
         }
-        Array(mirrors.keys).forEach(refreshMirror)
+        for surfaceID in Array(mirrors.keys) { refreshMirror(surfaceID) }
         Array(TerminalController.shared.localSizingHostsBySurfaceID.keys).forEach(refreshHost)
     }
 
-    private func refreshMirror(_ surfaceID: UUID) {
+    /// Shows at once; hides only once the pane is still off screen a moment
+    /// later (`settled` skips that wait, for a pane just bound). A pane is
+    /// re-hosted, briefly out of its window, when a tab or the focus changes
+    /// beside it: hiding on that flicker made a shown pane give up speaking
+    /// for this Mac and told the other Mac this Mac does not count.
+    private func refreshMirror(_ surfaceID: UUID, settled: Bool = false) {
         guard let tracked = mirrors[surfaceID] else { return }
         guard let session = tracked.session, let surface = tracked.surface else {
             mirrors[surfaceID] = nil
             return
         }
-        session.supermuxSetHidden(!Self.isOnScreen(surface))
+        let onScreen = Self.isOnScreen(surface)
+        guard !onScreen, !session.supermuxHidden, !settled else {
+            session.supermuxSetHidden(!onScreen)
+            return
+        }
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: Self.hideSettleNanoseconds)
+            self?.refreshMirror(surfaceID, settled: true)
+        }
     }
+
+    /// How long a pane must stay off screen before it counts as hidden.
+    private static let hideSettleNanoseconds: UInt64 = 250_000_000
 
     private func refreshHost(_ surfaceID: UUID) {
         let controller = TerminalController.shared

@@ -514,7 +514,7 @@ final class DeviceTerminalMirrorSession {
         let generations = SupermuxDeviceViewportGenerations.shared
         guard let pane = sharingSurfaceID, generations.reporter(of: viewer, surfaceID: remoteSurfaceID) != pane,
               viewer?.viewport != nil else { return false }
-        generations.raise(&viewer, surfaceID: remoteSurfaceID)
+        generations.bump(&viewer, surfaceID: remoteSurfaceID)
         generations.record(viewer, surfaceID: remoteSurfaceID, reportedBy: pane)
         if phase == .attached, let report = viewer?.viewportParams() { sendSizing("mobile.terminal.viewport", report) }
         return true
@@ -634,18 +634,24 @@ final class DeviceTerminalMirrorSession {
 
     private func supermuxReconcileHiddenCounts() {
         // A following pane leaves the counts to the pane that speaks for this Mac.
-        guard supermuxHidden != supermuxHostHoldsHiddenCounts, supermuxReportsGrid(), let viewer else { return }
+        guard supermuxHidden != supermuxHostHoldsHiddenCounts, supermuxReportsGrid() else { return }
+        let value: Bool?
         if supermuxHidden {
-            guard supermuxOwnCountsOverride == nil, let report = viewer.countsParams(false) else { return }
-            supermuxHostHoldsHiddenCounts = true
-            sendSizing("mobile.terminal.viewport", report)
+            guard supermuxOwnCountsOverride == nil else { return }
+            value = false
         } else {
             supermuxHostHoldsHiddenCounts = false
             // The false is this Mac's own (a user's choice clears the flag), so
             // lift it unless the other Mac shows a counts override of true.
-            guard supermuxOwnCountsOverride != true, let report = viewer.countsParams(nil) else { return }
-            sendSizing("mobile.terminal.viewport", report)
+            guard supermuxOwnCountsOverride != true else { return }
+            value = nil
         }
+        // Above every earlier report: panes of the terminal send these from
+        // separate tasks, and the other Mac must apply them in this order.
+        SupermuxDeviceViewportGenerations.shared.bump(&viewer, surfaceID: remoteSurfaceID)
+        guard let report = viewer?.countsParams(value) else { return }
+        if value == false { supermuxHostHoldsHiddenCounts = true }
+        sendSizing("mobile.terminal.viewport", report)
     }
 
     /// This mirror's counts override as the host last published it.

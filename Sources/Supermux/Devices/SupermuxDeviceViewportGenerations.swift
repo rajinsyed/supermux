@@ -46,6 +46,17 @@ final class SupermuxDeviceViewportGenerations {
         viewer?.advanceGeneration(atLeast: floor)
     }
 
+    /// Raises `viewer` above every generation this link reported for
+    /// `surfaceID` and records it, so the report it sends next is applied
+    /// after all earlier ones (the host drops a lower generation), whatever
+    /// order the separate sends arrive in.
+    func bump(_ viewer: inout RemoteMacTerminalViewer?, surfaceID: UUID) {
+        raise(&viewer, surfaceID: surfaceID)
+        guard let current = viewer?.generation else { return }
+        viewer?.advanceGeneration(atLeast: current + 1)
+        record(viewer, surfaceID: surfaceID)
+    }
+
     /// Records the generation `viewer` just reported; with `pane`, that local
     /// pane's grid is now the one the host holds.
     func record(_ viewer: RemoteMacTerminalViewer?, surfaceID: UUID, reportedBy pane: UUID? = nil) {
