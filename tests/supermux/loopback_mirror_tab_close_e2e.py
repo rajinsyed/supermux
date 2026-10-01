@@ -21,7 +21,10 @@ pre-answers Cancel, so the old prompt shows no modal and keeps the terminal:
 
   1. setup                              auto-mirror on, the loopback linked and fetched
   2. source_with_terminals              a source workspace with T0 idle, T1-T3 busy, T4
-                                        idle, every terminal projected in its mirror
+                                        idle and T5 idle, every terminal projected in its
+                                        mirror; no step closes T5, so every close below
+                                        closes a tab beside another one (a workspace's last
+                                        tab cannot be closed on its own)
   3. host_close_requires_confirmation   mobile.terminal.close on busy T1 without force
                                         -> confirmation_required, T1 still there
   4. busy_tab_close_forces              close T1's mirror tab -> no prompt, T1 closed
@@ -427,7 +430,8 @@ class MirrorTabCloseE2E:
         self.mirror_id = up(wait_for("the auto-mirror of the source", lambda: (self.mirrors_of_source() or [None])[0],
                                      self.timeout)["workspace_id"])
         self.terms["T0"] = wait_for("the source's first terminal", lambda: self.surfaces(self.source_id), self.timeout)[0]
-        for name in ("T1", "T2", "T3", "T4"):
+        # T5 is never closed: it keeps the mirror from being down to the tab a step closes.
+        for name in ("T1", "T2", "T3", "T4", "T5"):
             created = self.sock.call("surface.create", {"workspace_id": self.source_id, "type": "terminal"}) or {}
             self.terms[name] = up(created.get("surface_id"))
             if not self.terms[name]:
