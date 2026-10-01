@@ -22,7 +22,8 @@ import SupermuxKit
 /// (`close_mirror`, `unhide`, `hidden`, `set_auto_mirror`, `reconcile`) are handled by
 /// ``SupermuxDeviceMirrorSocketCommands``, plus the notification /
 /// phone-push hooks in ``SupermuxDeviceNotificationSocketCommands`` (`push_decisions`,
-/// `notification_records`, `notification_overrides`, `notification_mark_unread`, `phone_push_debug`,
+/// `notification_records`, `notification_overrides`, `notification_mark_unread`,
+/// `notification_indicators`, `notification_click`, `phone_push_debug`,
 /// `phone_push_probe`, `phone_push_share_now`), the `mirror.*` mirror-behavior drivers
 /// (``SupermuxMirrorSocketCommands``), the `terminal_sizing.*` size preference drivers
 /// (``SupermuxTerminalSizingSocketCommands``), and the `new_worktree.*` New Worktree
