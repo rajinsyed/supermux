@@ -24,10 +24,11 @@ public struct SupermuxProjectsPreviewMac: Sendable {
 ///   `git@github.com:acme/cmux.git`) and `docs`; workspaces `feat-x` (pinned,
 ///   cmux), `cmux-main` (cmux, hosts the run), `docs-notes` (docs) and the
 ///   loose `scratch`.
-/// - Studio (`preview-studio`/`stable`): `cmux` (`https://github.com/acme/cmux`,
-///   another path) and `infra`; workspaces `cmux-fix` (cmux), `infra-api`
-///   (infra), and the cmux group "Ops" (led by `ops-lead`) holding
-///   `infra-ops`, which infra owns.
+/// - Studio (`preview-studio`/`stable`): an origin-less `cmux` copy at the
+///   MacBook's own path (listed first, so a first-match merge would wrongly
+///   pair it), `cmux` (`https://github.com/acme/cmux`, another path) and
+///   `infra`; workspaces `cmux-fix` (cmux), `infra-api` (infra), and the cmux
+///   group "Ops" (led by `ops-lead`) holding `infra-ops`, which infra owns.
 /// - Mac mini (`preview-mini`): no Supermux capabilities; one loose workspace.
 public enum SupermuxProjectsPreviewFixture {
     /// The launch-environment switch.
@@ -93,6 +94,9 @@ public enum SupermuxProjectsPreviewFixture {
                 mac: studio,
                 client: SupermuxPreviewMacClient(
                     projects: [
+                        // Same name and root as the MacBook's cmux but no
+                        // origin: the unique-origin match below must win.
+                        SupermuxProjectDTO(id: "proj-b-cmux-copy", name: "cmux", rootPath: "/Users/me/src/cmux"),
                         SupermuxProjectDTO(
                             id: "proj-b-cmux",
                             name: "cmux",
