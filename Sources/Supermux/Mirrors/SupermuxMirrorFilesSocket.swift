@@ -34,12 +34,20 @@ import Foundation
 ///   Rename / Duplicate / Move to Trash runs for a device folder (`op`:
 ///   `new_file`, `new_folder`, `rename`, `duplicate`, `trash`), then the
 ///   panel's refresh; `{ok, path?}` or `{ok: false, error}`.
+/// - `menu_action {path, item}` — picks a context-menu item (its action
+///   selector, e.g. `supermuxDuplicate:`) for the row at `path` through the
+///   panel's own coordinator, as a click does, but for a panel with no window
+///   (the Files panel hidden while the operation runs): `{started}`. A
+///   failure is the coordinator's alert (see `alert`).
 /// - `unmount` — drops the driver's store (its observation and refresh go with it).
 @MainActor
 enum SupermuxMirrorFilesSocket {
     #if DEBUG
     /// The driver's stores, one per workspace (a window's panel keeps one store).
     private static var stores: [UUID: FileExplorerStore] = [:]
+    /// The windowless coordinator `menu_action` ran an item on, kept until the
+    /// next one so its operation's task can report back.
+    private static var menuCoordinator: FileExplorerPanelView.Coordinator?
     #endif
 
     static func handle(_ params: [String: Any], workspace: Workspace) async throws -> [String: Any] {
@@ -87,12 +95,16 @@ enum SupermuxMirrorFilesSocket {
             let store = mount(workspace)
             await settle(store, timeout: timeout)
             return await operation(params, store: store)
+        case "menu_action":
+            let store = mount(workspace)
+            await settle(store, timeout: timeout)
+            return try menuAction(params, store: store)
         case "unmount":
             stores[workspace.id]?.applyWorkspaceRoot(.none)
             return ["unmounted": stores.removeValue(forKey: workspace.id) != nil]
         default:
             throw SupermuxMirrorSocketCommands.InvalidParams(
-                message: "action must be state, expand, open, preview, alert, dismiss_alert, materialize, search, local_rows, local_git_status, menu, operation or unmount"
+                message: "action must be state, expand, open, preview, alert, dismiss_alert, materialize, search, local_rows, local_git_status, menu, operation, menu_action or unmount"
             )
         }
         #else
@@ -381,6 +393,26 @@ enum SupermuxMirrorFilesSocket {
             menu.addSupermuxRootFileOperationItems(coordinator: coordinator)
         }
         return menu.items.filter { !$0.isSeparatorItem }.compactMap { $0.action.map(NSStringFromSelector) }
+    }
+
+    /// Picks the row's context-menu item with action `item` on a coordinator
+    /// with no window, as a hidden Files panel's would run it.
+    private static func menuAction(_ params: [String: Any], store: FileExplorerStore) throws -> [String: Any] {
+        let path = try SupermuxMirrorSocketCommands.string(params, "path")
+        let item = try SupermuxMirrorSocketCommands.string(params, "item")
+        guard let node = findNode(path, in: store.rootNodes) else {
+            throw SupermuxMirrorSocketCommands.InvalidParams(message: "no loaded row at \(path)")
+        }
+        let coordinator = FileExplorerPanelView.Coordinator(store: store, state: FileExplorerState(), onOpenFilePreview: { _ in })
+        let menu = NSMenu()
+        menu.addSupermuxFileOperationItems(coordinator: coordinator, clickedNode: node)
+        guard let menuItem = menu.items.first(where: { $0.action.map(NSStringFromSelector) == item }),
+              let action = menuItem.action else {
+            throw SupermuxMirrorSocketCommands.InvalidParams(message: "the row's menu has no \(item)")
+        }
+        menuCoordinator = coordinator
+        let started = NSApp.sendAction(action, to: menuItem.target, from: menuItem)
+        return ["started": started, "has_window": coordinator.supermuxHostWindow != nil]
     }
 
     /// Runs one operation through the panel's remote provider, then refreshes
