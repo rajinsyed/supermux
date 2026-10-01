@@ -13,6 +13,8 @@ enum SupermuxDeviceFileError: LocalizedError, Equatable {
     case tooLarge(deviceName: String)
     /// `rg_missing`: that Mac has no ripgrep.
     case searchNeedsRipgrep(deviceName: String)
+    /// `timed_out`: that Mac answered at its bound while the work runs on.
+    case timedOut(deviceName: String)
     /// Any other refusal, in the host's own words.
     case host(message: String)
 
@@ -28,6 +30,8 @@ enum SupermuxDeviceFileError: LocalizedError, Equatable {
             return String(localized: "supermux.mirror.files.error.tooLarge", defaultValue: "Previews of files on \(name) are limited to 8 MB.")
         case .searchNeedsRipgrep(let name):
             return String(localized: "supermux.mirror.files.error.ripgrep", defaultValue: "Search needs ripgrep (rg) on \(name).")
+        case .timedOut(let name):
+            return String(localized: "supermux.mirror.files.error.timedOut", defaultValue: "\(name) did not finish in time. It may still finish there.")
         case .host(let message):
             return message
         }
@@ -48,6 +52,7 @@ enum SupermuxDeviceFileError: LocalizedError, Equatable {
         case "stale_root": return SupermuxDeviceFileError.folderChanged(deviceName: deviceName)
         case "not_found": return SupermuxDeviceFileError.missing(deviceName: deviceName)
         case "rg_missing": return SupermuxDeviceFileError.searchNeedsRipgrep(deviceName: deviceName)
+        case "timed_out": return SupermuxDeviceFileError.timedOut(deviceName: deviceName)
         case "invalid_params" where message.contains("escapes"):
             return SupermuxDeviceFileError.outsideFolder(deviceName: deviceName)
         default: return SupermuxDeviceFileError.host(message: message)

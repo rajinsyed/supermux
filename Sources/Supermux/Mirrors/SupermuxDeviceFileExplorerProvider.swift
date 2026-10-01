@@ -1,4 +1,5 @@
 import Foundation
+import SupermuxKit
 import SupermuxMobileCore
 
 /// The Files panel's provider for a device mirror: the owning Mac's folder,
@@ -19,6 +20,7 @@ final class SupermuxDeviceFileExplorerProvider: RemoteFileExplorerProvider, @unc
     let root: SupermuxMirrorFileRoot
     private let transport: SupermuxDeviceFileTransport
     private let limiter = SupermuxDeviceFileRequestLimiter(limit: 4)
+    private let gitColors = SupermuxCoalescedRefresh<[String: GitFileStatus]>()
     private let searchQueue = CloudFileExplorerSearchQueue()
     private let homeLock = NSLock()
     private var learnedHome = ""
@@ -101,15 +103,24 @@ final class SupermuxDeviceFileExplorerProvider: RemoteFileExplorerProvider, @unc
 
     /// The git colors for the folder, keyed like the store's nodes; empty when
     /// that Mac cannot answer.
+    ///
+    /// Live refreshes ask up to once a second while one `git status` there
+    /// can take seconds, so at most one call is in flight per panel and the
+    /// requests made meanwhile share one re-run (``gitColors``). It stays
+    /// outside the listing limiter: with one call at a time it can never
+    /// queue folder listings and previews behind it.
     nonisolated func gitStatus() async -> [String: GitFileStatus] {
         let transport = self.transport
-        guard let reply = try? await limited({ try await transport.gitStatus() }) else { return [:] }
-        var statuses: [String: GitFileStatus] = [:]
-        for entry in reply.statuses {
-            guard let status = Self.gitFileStatus(entry.status) else { continue }
-            statuses[Self.join(root.rootPath, entry.path)] = status
+        let rootPath = root.rootPath
+        return await gitColors.run {
+            guard let reply = try? await transport.gitStatus() else { return [:] }
+            var statuses: [String: GitFileStatus] = [:]
+            for entry in reply.statuses {
+                guard let status = Self.gitFileStatus(entry.status) else { continue }
+                statuses[Self.join(rootPath, entry.path)] = status
+            }
+            return statuses
         }
-        return statuses
     }
 
     // MARK: - File operations (the panel's New File, Rename, Duplicate, Trash)

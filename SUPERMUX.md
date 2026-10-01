@@ -308,7 +308,10 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   mutable), that Mac's git colors, Find (ripgrep over there), live refresh from that Mac's folder
   watcher, a read-only preview on double-click/Return/search hit (downloaded, 8 MB cap), and New
   File/New Folder/Rename/Duplicate/Move to Trash run there. Every call is confined to that folder
-  (`..`, symlinks out of it and a stale folder are refused). Not offered: editing a preview, Open
+  (`..`, symlinks out of it and a stale folder are refused). That Mac answers every call within a
+  bound (30 s; 300 s for Duplicate and Move to Trash, which keep running there) and the link's
+  reply deadline outlasts it, runs one `git status` per folder at a time, and refuses previews and
+  Find while its `DisableFileTransfer` policy is on. Not offered: editing a preview, Open
   Externally, Reveal in Finder, drag out; a symlink out of the folder lists but does not open; a
   folder over 10,000 entries lists the first 10,000. The panel names the Mac when it cannot browse:
   not connected, loading, "Update Supermux on <Mac> to browse its files here." (an older Mac), or no
