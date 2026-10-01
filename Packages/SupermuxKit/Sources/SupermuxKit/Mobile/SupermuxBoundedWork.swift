@@ -46,8 +46,9 @@ public struct SupermuxBoundedWork: Sendable {
     }
 }
 
-/// Resumes a continuation with the first value it is given; later ones are dropped.
-private final class SupermuxFirstAnswer<Value: Sendable>: @unchecked Sendable {
+/// Resumes a continuation with the first value it is given; later ones are
+/// dropped (also ``SupermuxBoundedAwait``'s).
+final class SupermuxFirstAnswer<Value: Sendable>: @unchecked Sendable {
     private let lock = NSLock()
     private var continuation: CheckedContinuation<Value, Never>?
 
