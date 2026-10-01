@@ -73,8 +73,10 @@ enum SupermuxNewWorktreeMacOptions {
 
     /// Another Mac's copy of `project`, or `nil` when it has none or the
     /// phone cannot tell which of its checkouts is meant. The rule is the
-    /// list's own merge rule (``SupermuxPhoneProjectMerge``), so the sheet
-    /// offers exactly the Macs the merged project row spans.
+    /// list's own merge rule (``SupermuxPhoneProjectMerge``), applied to one
+    /// pair of Macs; the section model then drops any match the merge gave
+    /// to a different row, so the sheet never offers a Mac outside the
+    /// project's row.
     /// - Parameters:
     ///   - project: The chosen project on its own Mac.
     ///   - ownProjects: Every project on the chosen project's Mac.
