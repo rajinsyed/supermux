@@ -89,8 +89,8 @@ public struct SupermuxRemoteProjectsPresentation {
     /// Worktree picker's dots follow a Mac that connects or drops while the
     /// sheet is open).
     public var deviceAvailability: @MainActor () -> [String: SupermuxWorktreeDeviceAvailability]
-    /// Where the New Worktree sheet remembers the last Mac a worktree was
-    /// created on (one choice for every project).
+    /// Where the New Worktree sheet remembers the last Mac the user chose for
+    /// a worktree (one choice for every project).
     public var lastWorktreeDevices: SupermuxWorktreeLastDeviceStore
 
     /// Creates a presentation.

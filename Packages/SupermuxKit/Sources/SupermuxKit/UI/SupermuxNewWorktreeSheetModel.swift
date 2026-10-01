@@ -76,6 +76,9 @@ public final class SupermuxNewWorktreeSheetModel {
     @ObservationIgnored private var targets: [String: any SupermuxWorktreeCreationTarget] = [:]
     @ObservationIgnored private let makeTarget: @MainActor (SupermuxProjectLocation) -> (any SupermuxWorktreeCreationTarget)?
     @ObservationIgnored private let lastDevices: SupermuxWorktreeLastDeviceStore?
+    /// Whether the selected Mac is the user's choice (picked in the picker, or
+    /// asked for from "New Worktree on ▸ <Mac>"), not one the sheet fell back to.
+    @ObservationIgnored private var selectionIsChoice: Bool
     @ObservationIgnored private let onSetUp: @MainActor (SupermuxProjectSetupDestination) -> Void
     @ObservationIgnored private var createTask: Task<Void, Never>?
 
@@ -85,9 +88,12 @@ public final class SupermuxNewWorktreeSheetModel {
     ///   - entries: The picker rows (``SupermuxWorktreeDevicePlanner/entries(for:availability:setUpTargets:)``).
     ///   - initialEntryID: The preselected row
     ///     (``SupermuxWorktreeDevicePlanner/defaultEntryID(in:preferredDeviceKey:lastUsedDeviceKey:)``).
+    ///   - initialEntryIsChoice: Whether that row is the Mac the user asked
+    ///     for ("New Worktree on ▸ <Mac>"); a create there is then remembered
+    ///     like a Mac picked in the sheet.
     ///   - makeTarget: Builds the target for a project copy (called once per
     ///     copy, the first time it is selected).
-    ///   - lastDevices: Where a successful create records its Mac.
+    ///   - lastDevices: Where a successful create on a chosen Mac records it.
     ///   - availability: Each Mac's link state now, by device key (read on
     ///     every render; a Mac missing here keeps its row's opening state).
     ///   - onSetUp: Hands a "Set Up on <Mac>…" row to the setup sheet.
@@ -95,6 +101,7 @@ public final class SupermuxNewWorktreeSheetModel {
         projectID: UUID,
         entries: [SupermuxWorktreeDeviceEntry],
         initialEntryID: String?,
+        initialEntryIsChoice: Bool = false,
         makeTarget: @escaping @MainActor (SupermuxProjectLocation) -> (any SupermuxWorktreeCreationTarget)?,
         lastDevices: SupermuxWorktreeLastDeviceStore? = nil,
         availability: @escaping @MainActor () -> [String: SupermuxWorktreeDeviceAvailability] = { [:] },
@@ -105,6 +112,7 @@ public final class SupermuxNewWorktreeSheetModel {
         self.availability = availability
         self.makeTarget = makeTarget
         self.lastDevices = lastDevices
+        self.selectionIsChoice = initialEntryIsChoice
         self.onSetUp = onSetUp
         if let entry = entries.first(where: { $0.id == initialEntryID }), entry.location != nil {
             activate(entry)
@@ -134,6 +142,7 @@ public final class SupermuxNewWorktreeSheetModel {
             return
         }
         guard entry.canCreate else { return }
+        selectionIsChoice = true
         activate(entry)
     }
 
@@ -384,7 +393,12 @@ public final class SupermuxNewWorktreeSheetModel {
         return String(localized: "supermux.agent.status.creating", defaultValue: "Creating worktree…")
     }
 
+    /// Remembers the Mac of a successful create when the user chose it, or
+    /// when no Mac is remembered yet. A Mac the sheet fell back to (the
+    /// remembered one lacks this project or cannot create now) leaves the
+    /// memory alone: the remembered Mac is skipped here, not forgotten.
     private func recordDevice(_ entry: SupermuxWorktreeDeviceEntry) {
-        lastDevices?.record(deviceKey: entry.deviceKey)
+        guard let lastDevices, selectionIsChoice || lastDevices.deviceKey() == nil else { return }
+        lastDevices.record(deviceKey: entry.deviceKey)
     }
 }

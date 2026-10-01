@@ -43,7 +43,8 @@ extension SupermuxRemoteProjectsPresentation {
     /// The sheet model for `context`: picker rows with live link states, the
     /// default Mac (an explicit choice, else the last Mac any worktree was
     /// created on when it can create here, else the first Mac that can), and
-    /// targets for each copy.
+    /// targets for each copy. Only a create on a Mac the user chose (here or
+    /// in the sheet) replaces the remembered Mac.
     /// - Parameters:
     ///   - context: The project and its set-up targets.
     ///   - preferredDeviceKey: A Mac chosen from the row menu, if any.
@@ -71,6 +72,7 @@ extension SupermuxRemoteProjectsPresentation {
             projectID: context.project.id,
             entries: entries,
             initialEntryID: initial,
+            initialEntryIsChoice: initial != nil && initial == preferredDeviceKey,  // a create row's id is its device key
             makeTarget: { location in location.isThisMac ? localTarget() : makeRemote(location) },
             lastDevices: lastWorktreeDevices,
             availability: deviceAvailability,
