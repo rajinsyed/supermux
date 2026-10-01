@@ -243,7 +243,7 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   Mac, like a local tab.
 - **Sidebar rows:** inside a project, this Mac's workspaces come first, then each Mac's mirrors;
   every mirror row (nested or flat) carries its Mac's chip on the right, lined up; nested rows show
-  the same `cmux set-status` pills and progress as flat rows.
+  no `cmux set-status` pills or progress (the working spinner is their status), flat rows do.
 - **Projects** merge across Macs by normalized git origin (`SupermuxGitRemoteIdentity`), else by
   identical name + path. Project sync (setting) registers a Mac's projects on the other Mac when the
   same repo already exists at the same path; it never clones or deletes. "Set Up on <Mac>…" adds an

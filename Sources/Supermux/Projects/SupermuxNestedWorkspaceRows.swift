@@ -1,30 +1,6 @@
 import Foundation
 import SupermuxKit
 
-/// Which optional details nested rows draw: the flat rows' own sidebar
-/// settings (Settings › Sidebar), so a workspace shows the same thing flat or
-/// nested.
-struct SupermuxNestedRowDetails: Equatable {
-    /// PR badges (cmux's PR polling gates).
-    var includesPullRequest: Bool
-    /// `cmux set-status` pills (the custom-metadata detail).
-    var showsStatus: Bool
-    /// `cmux set-progress` bars (the progress detail).
-    var showsProgress: Bool
-
-    /// The settings as stored now (the socket's view; the mount derives the
-    /// same values from its `@AppStorage` so a toggle re-renders it).
-    static func current(defaults: UserDefaults = .standard) -> Self {
-        let visibility = SidebarWorkspaceDetailDefaults.auxiliaryDetailVisibility(defaults: defaults)
-        return Self(
-            includesPullRequest: SidebarWorkspaceDetailDefaults.watchGitStatusValue(defaults: defaults)
-                && visibility.showsPullRequests,
-            showsStatus: visibility.showsMetadata,
-            showsProgress: visibility.showsProgress
-        )
-    }
-}
-
 /// The rows the Projects section nests under projects, for one window: one
 /// snapshot per workspace (full for project-owned rows, the cheap standalone
 /// one for the rest), in the order the section shows them. The mount renders
@@ -35,11 +11,11 @@ enum SupermuxNestedWorkspaceRows {
     /// The window's rows.
     /// - Parameters:
     ///   - tabManager: The window.
-    ///   - details: Which optional details the rows show.
+    ///   - includePullRequest: Whether PR badges show (cmux's PR polling gates).
     ///   - unreadCount: The displayed unread count of a workspace.
     static func rows(
         for tabManager: TabManager,
-        details: SupermuxNestedRowDetails,
+        includePullRequest: Bool,
         unreadCount: (UUID) -> Int
     ) -> [SupermuxOpenWorkspace] {
         let projects = SupermuxComposition.projectsModel.projects
@@ -75,10 +51,8 @@ enum SupermuxNestedWorkspaceRows {
                     for: workspace,
                     isSelected: isSelected,
                     projectId: projectId,
-                    includePullRequest: details.includesPullRequest,
-                    unreadCount: unreadCount(workspace.id),
-                    showsStatus: details.showsStatus,
-                    showsProgress: details.showsProgress
+                    includePullRequest: includePullRequest,
+                    unreadCount: unreadCount(workspace.id)
                 )
             }
             return SupermuxWorkspaceRow.snapshot(
@@ -86,10 +60,8 @@ enum SupermuxNestedWorkspaceRows {
                 isSelected: isSelected,
                 projectId: projectId,
                 isRunning: SupermuxComposition.runCoordinator.isRunning(workspaceId: workspace.id),
-                includePullRequest: details.includesPullRequest,
-                unreadCount: unreadCount(workspace.id),
-                showsStatus: details.showsStatus,
-                showsProgress: details.showsProgress
+                includePullRequest: includePullRequest,
+                unreadCount: unreadCount(workspace.id)
             )
         }
         // Inside a project: this Mac's workspaces first (tab order), then each
