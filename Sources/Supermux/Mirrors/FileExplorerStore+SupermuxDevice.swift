@@ -15,5 +15,6 @@ extension FileExplorerStore {
             setProvider(SupermuxDeviceFileExplorerProvider(root: root, devices: SupermuxComposition.devices), reloadIfAvailable: false)
         }
         setRootPath(root.rootPath)
+        SupermuxMirrorFileExplorerLiveRefresh.start(for: self)
     }
 }
