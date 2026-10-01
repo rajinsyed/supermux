@@ -16,9 +16,15 @@ import Foundation
 ///   before mirrors closed like local workspaces also logged their own close
 ///   prompt as `kind: "mirror"`) and `still_open` (the ids still open here).
 ///   The workspaces must be in one window.
+/// - `reopen_closed_workspace {}`: Reopen Closed Workspace (⌘⇧T) without
+///   activating the window. Returns `reopened` and `workspace_ids` (the
+///   workspaces it added).
+/// - `hold_remote_closes {enabled}`: while enabled, closes waiting for their
+///   Mac are kept but not sent (``SupermuxDeviceMirrorCloser/debugHoldSends``);
+///   disabling runs an auto-mirror pass, which sends them. Returns `held`.
 @MainActor
 enum SupermuxDeviceMirrorCloseSocketCommands {
-    static let method = "user_close"
+    static let methods: Set<String> = ["user_close", "reopen_closed_workspace", "hold_remote_closes"]
 
     struct HookError: LocalizedError {
         let message: String
@@ -27,10 +33,32 @@ enum SupermuxDeviceMirrorCloseSocketCommands {
 
     /// Whether `name` (the part after `supermux.devices.`) is this driver.
     static func handles(_ name: String) -> Bool {
-        name == method
+        methods.contains(name)
     }
 
-    static func handle(_ params: [String: Any]) throws -> [String: Any] {
+    static func handle(_ name: String, _ params: [String: Any]) throws -> [String: Any] {
+        switch name {
+        case "reopen_closed_workspace": return reopenClosedWorkspace()
+        case "hold_remote_closes": return try holdRemoteCloses(params)
+        default: return try userClose(params)
+        }
+    }
+
+    private static func reopenClosedWorkspace() -> [String: Any] {
+        let before = Set(SupermuxDeviceWorkspaceIndex.allMainWindowWorkspaces().map(\.id))
+        let reopened = AppDelegate.shared?.reopenMostRecentlyClosedWorkspace(shouldActivate: false) ?? false
+        let added = SupermuxDeviceWorkspaceIndex.allMainWindowWorkspaces().map(\.id).filter { !before.contains($0) }
+        return ["reopened": reopened, "workspace_ids": added.map(\.uuidString)]
+    }
+
+    private static func holdRemoteCloses(_ params: [String: Any]) throws -> [String: Any] {
+        guard let enabled = params["enabled"] as? Bool else { throw HookError(message: "enabled (bool) is required") }
+        SupermuxComposition.deviceMirrorCloser.debugHoldSends = enabled
+        if !enabled { SupermuxComposition.deviceMirrorCoordinator.reconcileNow() }
+        return ["held": enabled]
+    }
+
+    private static func userClose(_ params: [String: Any]) throws -> [String: Any] {
         let ids = try workspaceIDs(params)
         let accepts: Bool
         switch params["answer"] as? String ?? "close" {

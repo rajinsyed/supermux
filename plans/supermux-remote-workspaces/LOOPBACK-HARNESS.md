@@ -329,7 +329,16 @@ mirror closed while the link is down goes at once, is listed in `hidden {}`'s
 `pending_remote_closes`, and its source closes on reconnect without the mirror coming back (W5);
 the host answers `confirmation_required` without force and closes with it (W6, the phone's
 contract); and, with `--app-path`, a close made offline survives a quit and relaunch and lands once
-the loopback is back (W7).
+the loopback is back (W7, run last). W8 pauses sending with the DEBUG
+`supermux.devices.hold_remote_closes {enabled}` driver, so the source and its record stay while the
+link is up, and checks that several auto-mirror passes reopen nothing (only the pending set guards
+it), then releases the hold and the source closes. W9 closes a mirror offline, reopens it with the
+DEBUG `supermux.devices.reopen_closed_workspace {}` driver (⌘⇧T, no activation) and checks that the
+reconnect does not close the source and drops the pending close. W10 groups a mirror with a local
+workspace and deletes the group with `workspace.group.delete {close_workspaces: true}`: the source
+closes on its Mac and is not hidden. W11 builds a local workspace holding only terminals borrowed
+(`surface.project`) from two sources, closes its own shell, and checks it is not taken for a mirror
+and that closing it leaves both sources, their mirrors and the pending/hidden sets alone.
 
 ```bash
 CMUX_TAG=<tag> python3 tests/supermux/loopback_mirror_workspace_close_e2e.py \

@@ -9,7 +9,7 @@ private let mirrorCloseLog = Logger(subsystem: "dev.cmux", category: "supermux-m
 /// Close semantics for device mirrors (DESIGN.md decision 3).
 ///
 /// - **User closes** (sidebar ×, context menu Close / Close Others / Below /
-///   Above, ⌘⇧W, closing the last tab, a multi-close): exactly this Mac's own
+///   Above, ⌘⇧W, closing the last tab, a multi-close, Delete Group): exactly this Mac's own
 ///   confirmations, as for a local workspace (pinned, running process,
 ///   settings, the batch "Close workspaces?"), and no prompt of the fork's.
 ///   Once they pass, the mirror closes here at once and its workspace closes
@@ -18,6 +18,8 @@ private let mirrorCloseLog = Logger(subsystem: "dev.cmux", category: "supermux-m
 ///   that Mac is offline the close waits in a persisted pending set, which
 ///   auto-mirror never reopens, and is sent once that Mac is back (even after
 ///   a relaunch). A refusal beeps and auto-mirror shows the workspace again.
+///   A close not sent yet is cancelled when a local workspace shows that
+///   remote workspace again (Reopen Closed Workspace, a manual open).
 /// - **Hide Here** (the row menus): remembers the ref in the hidden set so
 ///   auto-mirror never reopens it, then closes the mirror here only.
 /// - **Programmatic closes** of a mirror (socket, AppleScript, scripts):
@@ -48,6 +50,12 @@ final class SupermuxDeviceMirrorCloser {
     var onChange: @MainActor () -> Void = {}
     /// Local closes whose bookkeeping (hide / unbind) is already done.
     private var decided: Set<UUID> = []
+    #if DEBUG
+    /// E2E hook (`supermux.devices.hold_remote_closes`): while true, pending
+    /// closes are kept but not sent, so a test can check that auto-mirror
+    /// leaves a pending ref alone while its record is still there.
+    var debugHoldSends = false
+    #endif
 
     init(
         devices: SupermuxDevices,
@@ -100,8 +108,25 @@ final class SupermuxDeviceMirrorCloser {
     /// forgets those whose remote workspace is gone. Runs on every auto-mirror
     /// pass, so a close made offline goes out once that Mac is back.
     func sendPendingCloses() {
+        #if DEBUG
+        if debugHoldSends { return }
+        #endif
+        let unsent = pending.refs.filter { sends[$0] == nil }
+        guard !unsent.isEmpty else { return }
+        // Mirrors only: a local workspace that merely borrows one of that
+        // workspace's terminals does not bring it back.
+        let shown = Set(index.mirrors().map(\.ref))
         let now = Date()
-        for ref in pending.refs where sends[ref] == nil {
+        for ref in unsent {
+            // The user brought the mirror back (Reopen Closed Workspace, a
+            // manual open): cancel the close instead of killing what they
+            // reopened. The mirror just closed is no longer live, so it never
+            // matches here.
+            if shown.contains(ref) {
+                mirrorCloseLog.info("\(ref.description, privacy: .public) is shown again; its close is cancelled")
+                forget(ref)
+                continue
+            }
             guard let device = devices.device(for: ref.machine), device.isConnected, device.hasFetchedRecords else { continue }
             guard let remoteID = devices.record(for: ref)?.id else {
                 forget(ref)

@@ -251,7 +251,10 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   waits (persisted, so also across a relaunch) and auto-mirror does not show the workspace again;
   it is sent once that Mac is back. A refusal beeps and the mirror comes back. Mirror rows' menus
   also offer **Hide Here** (keeps it running there; "Show Hidden Remote Workspaces" brings it back);
-  socket/CLI/AppleScript closes of a mirror stay Hide Here. Closing a mirrored tab ends that
+  Reopen Closed Workspace (⌘⇧T) on a mirror whose offline close was not sent yet cancels that
+  close. Delete Group closes its member mirrors on their Mac too; other socket/CLI/AppleScript
+  closes of a mirror stay Hide Here. A workspace holding only terminals borrowed from several
+  remote workspaces is not a mirror and closes here only. Closing a mirrored tab ends that
   terminal on the owning Mac like a local tab, even when a program runs there (always `force`); a
   tab closed while that Mac is unreachable disappears at once and its close is sent first when the
   link is back (#530, #640–#644). The phone's workspace close forces too, after its own
