@@ -48,6 +48,11 @@ folder (the loopback's files are on this disk too):
                                      New Folder for the empty area), and each runs on the other
                                      Mac's disk and the panel lists the result (git internals
                                      stay refused)
+ 13c. file_op_error_with_panel_hidden
+                                     a Duplicate the other Mac refuses (.git/HEAD), run by a Files
+                                     panel that has left its window (hidden while the operation
+                                     ran), reports the failure as a sheet on the main window while
+                                     the app keeps answering, and OK dismisses it
  14. link_drop_is_honest             with the link down the panel names the Mac and says it is not
                                      connected, with no rows; the redial brings the rows back
  15. older_host_fallback             (with --app-path) relaunched with the capability suppressed,
@@ -707,6 +712,43 @@ class MirrorFilesE2E:
             raise Failure("; ".join(problems))
         return {"row_menu": row_menu, "root_menu": root_menu, "git_internals": refused.get("error")}
 
+    def file_op_error_with_panel_hidden(self) -> Dict[str, Any]:
+        """A failed file operation must not run a nested modal inside the operation's
+        main-actor task. With the panel's window gone (the Files panel or the right sidebar
+        hidden while a slow operation ran on the other Mac) the error alert fell back to a bare
+        `runModal()`, which starves the main queue: every socket call and mirror waits for OK."""
+        self.require("mirror_id")
+        base = str(self.device_state()["root_path"]).rstrip("/")
+        self.files("expand", path=f"{base}/.git")
+        started = self.files("menu_action", path=f"{base}/.git/HEAD", item="supermuxDuplicate:")
+        if not started.get("started") or started.get("has_window"):
+            raise Failure(f"the hidden panel's Duplicate did not start: {started}")
+        problems: List[str] = []
+        try:
+            def alert_up() -> Dict[str, Any]:
+                alert = self.files("alert", timeout_s=10)
+                if not alert.get("shown"):
+                    raise Failure(f"no alert yet: {alert}")
+                return alert
+
+            alert = wait_for("the Duplicate failure alert", alert_up, self.timeout)
+            if alert.get("presentation") != "sheet":
+                problems.append(f"the failure alert is not a sheet on the main window: {alert}")
+            answered = time.monotonic()
+            self.sock.call("supermux.devices.list", {}, timeout_s=10)
+            answered = round(time.monotonic() - answered, 2)
+            if answered > 5:
+                problems.append(f"with the alert up the app took {answered}s to answer")
+        finally:
+            dismissed = self.files("dismiss_alert", timeout_s=10)
+        if not dismissed.get("dismissed") or (self.files("alert", timeout_s=10) or {}).get("shown"):
+            problems.append(f"OK did not dismiss the alert: {dismissed}")
+        if (self.root / ".git" / "HEAD copy").exists():
+            problems.append("the refused Duplicate wrote into .git on the other Mac")
+        if problems:
+            raise Failure("; ".join(problems))
+        return {"alert": alert, "answered_seconds": answered}
+
     def link_drop_is_honest(self) -> Dict[str, Any]:
         self.require("mirror_id", "machine")
         self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "stop"})
@@ -833,6 +875,7 @@ class MirrorFilesE2E:
             ("root_follows_remote_cd", self.root_follows_remote_cd),
             ("live_refresh", self.live_refresh),
             ("file_operations_on_the_other_mac", self.file_operations_on_the_other_mac),
+            ("file_op_error_with_panel_hidden", self.file_op_error_with_panel_hidden),
             ("link_drop_is_honest", self.link_drop_is_honest),
             ("older_host_fallback", self.older_host_fallback),
         ]:
