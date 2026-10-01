@@ -4,7 +4,8 @@ import Foundation
 /// Host read → viewer read. When another Mac reads, clears or supersedes a
 /// notification, its feed row turns read (`read_by` "mac"); the local copy on
 /// the mirror pane is marked read too, so stale unread counts, Dock badges and
-/// "needs input" rows do not pile up here.
+/// "needs input" rows do not pile up here, and a focused mirror pane's ring
+/// goes away with it.
 ///
 /// Only a row that turned read SINCE the previous feed counts. A row the host
 /// already reported read stays read there forever, and applying it on every
@@ -37,6 +38,12 @@ enum SupermuxDeviceNotificationReadMirror {
         cmuxDebugLog("supermux.device.notification.hostRead machine=\(machineID) marking=\(ids.count)")
         #endif
         store.markNotificationFeedRead(ids: ids)
+        // A read there also ends the focused pane's ring here, which a feed
+        // read alone keeps (upstream clears it only on a click or typing).
+        for notification in store.notifications where ids.contains(notification.id) {
+            guard let surfaceId = notification.surfaceId else { continue }
+            store.clearFocusedReadIndicator(forTabId: notification.tabId, surfaceId: surfaceId)
+        }
     }
 
     /// Ids of the rows the host reports read.

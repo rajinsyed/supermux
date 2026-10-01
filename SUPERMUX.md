@@ -298,7 +298,9 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   from This Mac stay per terminal. A viewing Mac's pane counts up to 500x200 (a phone's, 300x120). A
   pane that is not on screen (a tab never shown on its Mac, a mirror in a background workspace, a hidden
   or fully covered window) does not count, so a tab opened from a mirror takes the mirror's size at
-  once; a terminal that starts after its grid was decided gets it when it becomes ready.
+  once; a terminal that starts after its grid was decided gets it when it becomes ready. A
+  terminal's tab draws no avatar for the attached Macs (#720); its context menu keeps Size to My
+  Window, Terminal Size and Disconnect Others, and the size panel lists who is attached.
 - **A mirror uses this Mac's terminal appearance** (#650–#653): the owning Mac's replay carries no
   theme colors, so a mirror pane shares the window's (translucent) backdrop exactly like a local
   pane; only colors a program on the other Mac set itself (OSC 4/10/11/12) are mirrored, and its
@@ -337,8 +339,9 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
 - **Notifications:** the owning Mac pushes to the phone (the viewer never forwards `.deviceMac`
   rows, so no duplicates); the phone badges the total over every pairable Mac build; read state
   flows both ways, and mirrored notifications (read state and Mark as Unread included) survive a
-  relaunch of the viewer; an unattended Mac (away/locked) never
-  swallows a notification as "already visible"; Macs share the direct-APNs setup and phone tokens
+  relaunch of the viewer; a notification for the pane you are looking at (a mirror's or a local
+  one) rings and badges like any other until you click or type in it, with no banner, and is not
+  pushed to the phone while you are at the Mac (an away or locked Mac still pushes it); Macs share the direct-APNs setup and phone tokens
   with each other (setting, default on; the key only travels to a same-account Mac over the
   authenticated link and never overwrites a different key).
 - **Enablement:** the Supermux release identity seeds Beta › Cloud Machines, "Discover other Macs"

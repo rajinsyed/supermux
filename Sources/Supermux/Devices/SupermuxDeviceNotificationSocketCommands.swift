@@ -1,4 +1,6 @@
 #if DEBUG
+import AppKit
+import Bonsplit
 import CMUXMobileCore
 import CmuxCloud
 import CmuxIrohTransport
@@ -23,6 +25,12 @@ import SupermuxMobileCore
 ///   removes the stored value). Reports each current value.
 /// - `notification_mark_unread {id}`: Mark as Unread on one record, through the
 ///   same user-action path as the notification row's menu item.
+/// - `notification_indicators {surface_id}`: what a pane shows for its
+///   notifications: unread record, the focused-read indicator, the pane ring,
+///   its tab's badge and the workspace's unread count.
+/// - `notification_click {surface_id}`: a left click in the pane's terminal,
+///   delivered to its view's `mouseDown`/`mouseUp` (the real pointer path),
+///   then that pane's `notification_indicators`.
 /// - `phone_push_debug {}`: the direct lane's directory, its status, the share
 ///   coordinator's attempts and pending notification retries.
 /// - `phone_push_probe {caller, method, params?}`: runs `phone_push.status` /
@@ -33,7 +41,8 @@ import SupermuxMobileCore
 enum SupermuxDeviceNotificationSocketCommands {
     private static let methods: Set<String> = [
         "push_decisions", "notification_records", "notification_overrides",
-        "notification_mark_unread", "phone_push_debug", "phone_push_probe", "phone_push_share_now",
+        "notification_mark_unread", "notification_indicators", "notification_click",
+        "phone_push_debug", "phone_push_probe", "phone_push_share_now",
     ]
 
     struct HookError: LocalizedError {
@@ -57,6 +66,10 @@ enum SupermuxDeviceNotificationSocketCommands {
             return try overrides(params)
         case "notification_mark_unread":
             return try markUnread(params)
+        case "notification_indicators":
+            return try indicators(params)
+        case "notification_click":
+            return try click(params)
         case "phone_push_debug":
             return await phonePushDebug()
         case "phone_push_probe":
@@ -146,6 +159,64 @@ enum SupermuxDeviceNotificationSocketCommands {
         }
         let isRead = store.notifications.first { $0.id == id }?.isRead ?? false
         return ["id": id.uuidString, "is_read": isRead]
+    }
+
+    /// The pane `surface_id` names and the workspace that owns it.
+    private static func pane(_ params: [String: Any]) throws -> (workspace: Workspace, surfaceID: UUID) {
+        guard let surfaceID = (params["surface_id"] as? String).flatMap(UUID.init(uuidString:)),
+              let workspace = AppDelegate.shared?.workspaceContainingPanel(panelId: surfaceID)?.workspace else {
+            throw HookError(message: "surface_id must name an open pane")
+        }
+        return (workspace, surfaceID)
+    }
+
+    private static func indicators(_ params: [String: Any]) throws -> [String: Any] {
+        guard let store = AppDelegate.shared?.notificationStore else { throw HookError(message: "no notification store") }
+        let (workspace, surfaceID) = try pane(params)
+        let tab = workspace.surfaceIdFromPanelId(surfaceID).flatMap { workspace.bonsplitController.tab($0) }
+        let ring = workspace.terminalPanel(for: surfaceID)?.hostedView.debugNotificationRingState()
+        return [
+            "workspace_id": workspace.id.uuidString,
+            "surface_id": surfaceID.uuidString,
+            "is_app_focused": AppFocusState.isAppFocused(),
+            "focused_surface_id": workspace.owningTabManager?.focusedSurfaceId(for: workspace.id)
+                .map { $0.uuidString as Any } ?? NSNull(),
+            "has_unread_notification": store.hasUnreadNotification(forTabId: workspace.id, surfaceId: surfaceID),
+            "has_visible_indicator": store.hasVisibleNotificationIndicator(forTabId: workspace.id, surfaceId: surfaceID),
+            "focused_read_indicator_surface_id": store.focusedReadIndicatorSurfaceId(forTabId: workspace.id)
+                .map { $0.uuidString as Any } ?? NSNull(),
+            "workspace_unread_count": store.unreadCount(forTabId: workspace.id),
+            "tab_shows_notification_badge": tab.map { $0.showsNotificationBadge as Any } ?? NSNull(),
+            "ring_visible": ring.map { (!$0.isHidden && $0.opacity > 0) as Any } ?? NSNull(),
+        ]
+    }
+
+    private static func click(_ params: [String: Any]) throws -> [String: Any] {
+        let (workspace, surfaceID) = try pane(params)
+        guard let view = workspace.terminalPanel(for: surfaceID)?.hostedView.surfaceView else {
+            throw HookError(message: "surface_id is not a terminal")
+        }
+        guard let window = view.window else { throw HookError(message: "the terminal is not in a window") }
+        let center = view.convert(NSPoint(x: view.bounds.midX, y: view.bounds.midY), to: nil)
+        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            guard let event = NSEvent.mouseEvent(
+                with: type,
+                location: center,
+                modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber,
+                context: nil,
+                eventNumber: 0,
+                clickCount: 1,
+                pressure: type == .leftMouseDown ? 1 : 0
+            ) else { throw HookError(message: "could not make a mouse event") }
+            if type == .leftMouseDown {
+                view.mouseDown(with: event)
+            } else {
+                view.mouseUp(with: event)
+            }
+        }
+        return try indicators(params)
     }
 
     private static func phonePushDebug() async -> [String: Any] {
