@@ -817,6 +817,13 @@ final class FileExplorerStore: ObservableObject {
     }
     // SUPERMUX:end file-explorer-operations-reveal
 
+    // SUPERMUX:begin mirror-file-explorer-device
+    /// A device mirror's tree changed in place (Sources/Supermux/Mirrors/
+    /// FileExplorerStore+SupermuxDevice.swift): the outline rebuilds its rows
+    /// from the same node objects. `contentRevision` is private(set).
+    func supermuxNoteTreeChanged() { contentRevision &+= 1 }
+    // SUPERMUX:end mirror-file-explorer-device
+
     /// Paths currently being loaded
     private(set) var loadingPaths: Set<String> = []
 
@@ -960,7 +967,8 @@ final class FileExplorerStore: ObservableObject {
             Task { [weak self] in
                 let status = await device.gitStatus()
                 guard let self, self.gitStatusGeneration == generation, self.resourceContextID == context else { return }
-                self.gitStatusByPath = status
+                // Published only when the colors changed: each publish rebuilds every loaded folder's rows.
+                if self.gitStatusByPath != status { self.gitStatusByPath = status }
             }
             return
         }

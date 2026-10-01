@@ -49,7 +49,8 @@ public enum SupermuxMobileCapability: String, CaseIterable, Codable, Sendable, E
     /// Read-only file browsing for another Mac's Files panel is served:
     /// `files.list {show_hidden}` (with the host's `home`), chunked
     /// `files.read`, `files.search` and `files.git_status`, all confined to
-    /// the workspace's folder.
+    /// the workspace's folder, and `files.watch` (`supermux.files.updated`
+    /// when the folder's own entries change).
     case filesReadV1 = "supermux.files_read.v1"
 
     /// Every capability, in declaration order (derived from `CaseIterable`).
