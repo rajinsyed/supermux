@@ -19,7 +19,9 @@ import Foundation
 ///   last reset, without waiting for it to settle: `emptied` (the rows went
 ///   away), `loading_shown` (the spinner came up), `rebuilt` (the rows were
 ///   rebuilt) and `git_published` (git colors were published), plus
-///   `since_seconds`. `reset: true` zeroes them after the reply is built.
+///   `refreshes` (live refreshes run, changed or not: re-listing and git
+///   status over the link) and `since_seconds`. `reset: true` zeroes them
+///   after the reply is built.
 /// - `expand {path}` — `store.expand(node:)`, waits for the children or an error.
 /// - `open {path, probe?}` — the double-click path (`FileExplorerPreviewCoordinator.open`),
 ///   waits for the preview panel of that remote path. With `probe: false` it
@@ -68,10 +70,14 @@ enum SupermuxMirrorFilesSocket {
             await settle(store, timeout: .seconds(min(5, timeout.components.seconds)))
             return describe(store, workspace: workspace)
         case "counters":
-            _ = mount(workspace)
+            let key = ObjectIdentifier(mount(workspace))
             guard let probe = probes[workspace.id] else { return [:] }
-            let counts = probe.snapshot()
-            if params["reset"] as? Bool == true { probe.reset() }
+            var counts = probe.snapshot()
+            counts["refreshes"] = SupermuxMirrorFileExplorerLiveRefresh.refreshRuns[key] ?? 0
+            if params["reset"] as? Bool == true {
+                probe.reset()
+                SupermuxMirrorFileExplorerLiveRefresh.refreshRuns[key] = nil
+            }
             return counts
         case "expand":
             let store = mount(workspace)
@@ -117,6 +123,9 @@ enum SupermuxMirrorFilesSocket {
         case "unmount":
             stores[workspace.id]?.applyWorkspaceRoot(.none)
             probes[workspace.id] = nil
+            if let store = stores[workspace.id] {
+                SupermuxMirrorFileExplorerLiveRefresh.refreshRuns[ObjectIdentifier(store)] = nil
+            }
             return ["unmounted": stores.removeValue(forKey: workspace.id) != nil]
         default:
             throw SupermuxMirrorSocketCommands.InvalidParams(

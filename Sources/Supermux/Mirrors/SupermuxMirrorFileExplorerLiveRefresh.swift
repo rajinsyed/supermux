@@ -27,6 +27,12 @@ enum SupermuxMirrorFileExplorerLiveRefresh {
     private static var running: [ObjectIdentifier: Running] = [:]
     private static let minimumInterval: Duration = .seconds(1)
     private static let checkInterval: Duration = .seconds(5)
+    #if DEBUG
+    /// How many refreshes each store's live refresh ran, changed or not (the
+    /// DEBUG files driver's `counters`: a refresh that changes nothing is
+    /// otherwise invisible).
+    static var refreshRuns: [ObjectIdentifier: Int] = [:]
+    #endif
 
     /// Starts (or restarts) the refresh for the store's device provider.
     static func start(for store: FileExplorerStore) {
@@ -43,6 +49,9 @@ enum SupermuxMirrorFileExplorerLiveRefresh {
                 if wait > .zero { try? await Task.sleep(for: wait) }
                 guard let store, store.provider === provider, !Task.isCancelled else { return }
                 lastRefresh = clock.now
+                #if DEBUG
+                Self.refreshRuns[ObjectIdentifier(store), default: 0] += 1
+                #endif
                 await store.supermuxRefreshInPlace()
             }
         }
@@ -78,7 +87,8 @@ struct SupermuxMirrorFilesWatch {
         let events = devices.events()
         return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
             let task = Task { @MainActor in
-                await lease(true)
+                // The folder in the owning Mac's own spelling, as its events name it.
+                var hostRoot = await lease(true)
                 let renewal = Task { @MainActor in
                     while !Task.isCancelled {
                         try? await Task.sleep(for: Self.renewal)
@@ -89,10 +99,10 @@ struct SupermuxMirrorFilesWatch {
                 for await event in events where event.machine == root.machine {
                     switch event {
                     case .linkConnected:
-                        await lease(true)
+                        if let leased = await lease(true) { hostRoot = leased }
                         continuation.yield()
                     case .topic(_, .filesUpdated, _):
-                        if concerns(event.payloadObject) { continuation.yield() }
+                        if concerns(event.payloadObject, hostRoot: hostRoot) { continuation.yield() }
                     default:
                         continue
                     }
@@ -108,20 +118,26 @@ struct SupermuxMirrorFilesWatch {
     }
 
     /// Whether an event names this workspace and this folder (a panel that
-    /// followed a `cd` ignores the old folder's last changes).
-    private func concerns(_ payload: [String: Any]?) -> Bool {
+    /// followed a `cd` ignores the old folder's last changes). The folder is
+    /// compared with the lease reply's `root`: the owning Mac normalizes both
+    /// on its own disk, while normalizing here would read this Mac's disk
+    /// (`standardizingPath` drops `/private` only where the shorter path
+    /// exists). Before any lease worked, the panel's folder is the fallback.
+    private func concerns(_ payload: [String: Any]?, hostRoot: String?) -> Bool {
         guard let workspaceID = payload?["workspace_id"] as? String,
               let folder = payload?["root"] as? String else { return false }
         return SupermuxRemoteWorkspaceRef.canonicalWorkspaceID(workspaceID)
             == SupermuxRemoteWorkspaceRef.canonicalWorkspaceID(root.remoteWorkspaceID)
-            && Self.normalized(folder) == Self.normalized(root.rootPath)
+            && folder == (hostRoot ?? Self.normalized(root.rootPath))
     }
 
-    /// Starts, renews or releases the lease; a refusal (an older Mac, a `cd`
-    /// there answering `stale_root`, the link down) leaves refreshes to
-    /// reconnects and re-roots.
-    private func lease(_ enable: Bool) async {
-        _ = try? await devices.request(
+    /// Starts, renews or releases the lease and returns the folder as the
+    /// owning Mac spells it (`nil` on a release or a refusal). A refusal (an
+    /// older Mac, a `cd` there answering `stale_root`, the link down) leaves
+    /// refreshes to reconnects and re-roots.
+    @discardableResult
+    private func lease(_ enable: Bool) async -> String? {
+        let reply = try? await devices.request(
             SupermuxMobileMethod.filesWatch,
             params: [
                 "enable": enable,
@@ -131,6 +147,7 @@ struct SupermuxMirrorFilesWatch {
             ],
             on: root.machine
         )
+        return reply?["root"] as? String
     }
 
     private static func normalized(_ path: String) -> String {

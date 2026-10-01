@@ -15,6 +15,9 @@ enum SupermuxDeviceFileError: LocalizedError, Equatable {
     case searchNeedsRipgrep(deviceName: String)
     /// `timed_out`: that Mac answered at its bound while the work runs on.
     case timedOut(deviceName: String)
+    /// `unavailable`: that Mac cannot read it (a folder gone or unreadable
+    /// there), in its own words.
+    case unavailable(message: String)
     /// Any other refusal, in the host's own words.
     case host(message: String)
 
@@ -32,7 +35,7 @@ enum SupermuxDeviceFileError: LocalizedError, Equatable {
             return String(localized: "supermux.mirror.files.error.ripgrep", defaultValue: "Search needs ripgrep (rg) on \(name).")
         case .timedOut(let name):
             return String(localized: "supermux.mirror.files.error.timedOut", defaultValue: "\(name) did not finish in time. It may still finish there.")
-        case .host(let message):
+        case .unavailable(let message), .host(let message):
             return message
         }
     }
@@ -53,6 +56,7 @@ enum SupermuxDeviceFileError: LocalizedError, Equatable {
         case "not_found": return SupermuxDeviceFileError.missing(deviceName: deviceName)
         case "rg_missing": return SupermuxDeviceFileError.searchNeedsRipgrep(deviceName: deviceName)
         case "timed_out": return SupermuxDeviceFileError.timedOut(deviceName: deviceName)
+        case "unavailable": return SupermuxDeviceFileError.unavailable(message: message)
         case "invalid_params" where message.contains("escapes"):
             return SupermuxDeviceFileError.outsideFolder(deviceName: deviceName)
         default: return SupermuxDeviceFileError.host(message: message)
