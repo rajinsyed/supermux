@@ -42,7 +42,7 @@ enum SupermuxTabIndicatorSocket {
         ]
     }
 
-    private static func describe(_ tab: Tab, pane: PaneID, isSelected: Bool, in workspace: Workspace) -> [String: Any] {
+    private static func describe(_ tab: Bonsplit.Tab, pane: PaneID, isSelected: Bool, in workspace: Workspace) -> [String: Any] {
         let panelID = workspace.panelIdFromSurfaceId(tab.id)
         let panel = panelID.flatMap { workspace.panels[$0] }
         let projection = panelID.flatMap { SurfaceCatalog.shared.projection(forPanel: $0) }
