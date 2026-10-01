@@ -5,7 +5,7 @@ import SwiftUI
 /// the project lives on more than one Mac, remote worktrees in the Worktrees
 /// menu, and "Set Up on <Mac>…".
 extension SupermuxProjectRowView {
-    /// Unopened worktrees of the device copies (loaded when the row expands).
+    /// Unopened worktrees of the device copies (loaded on every refresh).
     var remoteWorktrees: [SupermuxRemoteWorktree] { remoteExtras?.worktrees ?? [] }
 
     /// The worktree pill: this Mac's unopened worktrees plus the device

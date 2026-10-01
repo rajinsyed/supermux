@@ -173,6 +173,22 @@ It drives DEBUG-only socket hooks (`supermux.devices.push_decisions`, `notificat
 `Sources/Supermux/Devices/SupermuxDeviceNotificationSocketCommands.swift`) and refuses to run the
 share steps unless the app reports the scratch directory.
 
+## Worktree pill E2E
+
+`tests/supermux/loopback_worktree_disclosure_e2e.py` checks a project row's worktree pill through
+`supermux.devices.projects_presentation`'s `worktree_disclosure {shown, count}` (built by the same
+`SupermuxWorktreeDisclosure` the row uses). A fresh scratch project lives on This Mac and the online
+Loopback Mac: it shows no pill, and the Loopback Mac's (empty) worktree list loads at refresh; a
+worktree made there with `worktree.create {open: false}` shows "⑂ N ›" from a refresh alone; once
+that worktree and the main checkout are open here and mirrored, the pill is gone again. It never
+expands a row or calls `remote_worktrees` (both load the other Mac's list on their own). Remote-only
+rows are checked against the same rule, though the loopback, sharing this Mac's list, usually has
+none. Best-effort window screenshots land in `tests/supermux/artifacts/`.
+
+```bash
+CMUX_TAG=<tag> python3 tests/supermux/loopback_worktree_disclosure_e2e.py --scratch /tmp/<tag>
+```
+
 ## New Worktree device picker E2E
 
 `tests/supermux/loopback_new_worktree_picker_e2e.py` (workstream P2) drives the DEBUG

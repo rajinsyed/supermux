@@ -104,17 +104,15 @@ struct SupermuxRemoteProjectRowView: View {
         .accessibilityAddTraits(.isButton)
     }
 
-    /// The worktree disclosure: the loaded count, or just a chevron before
-    /// the first load (expanding loads that Mac's worktrees).
+    /// The "⑂ N ›" worktree disclosure, shown only while that Mac has an
+    /// unopened worktree of the project (see ``SupermuxWorktreeDisclosure``).
     private func expandToggle(count: Int) -> some View {
         Button(action: toggleExpanded) {
             HStack(spacing: 3 * fontScale) {
                 Image(systemName: "arrow.triangle.branch")
                     .font(.system(size: 8 * fontScale, weight: .semibold))
-                if count > 0 {
-                    Text("\(count)")
-                        .font(.system(size: 9.5 * fontScale, weight: .semibold).monospacedDigit())
-                }
+                Text("\(count)")
+                    .font(.system(size: 9.5 * fontScale, weight: .semibold).monospacedDigit())
                 Image(systemName: "chevron.right")
                     .font(.system(size: 6.5 * fontScale, weight: .bold))
                     .rotationEffect(.degrees(isExpanded ? 90 : 0))

@@ -2,8 +2,8 @@ import AppKit
 import SwiftUI
 
 /// The Projects section's other-Mac parts: remote-only project rows (after
-/// the local projects), lazy loading of device worktrees on expansion, and the
-/// "Set Up on <Mac>…" sheet.
+/// the local projects), a device worktree load on expansion (a backstop: every
+/// refresh already loads them), and the "Set Up on <Mac>…" sheet.
 extension SupermuxProjectsSectionView {
     /// Remote-only projects, each with the mirrors it owns nested under it.
     @ViewBuilder
@@ -33,7 +33,7 @@ extension SupermuxProjectsSectionView {
     }
 
     /// Toggles a remote-only project's worktree disclosure, loading that
-    /// Mac's worktrees on open.
+    /// Mac's worktrees on open if no refresh has yet.
     func toggleRemoteExpanded(_ row: SupermuxRemoteProjectRow) {
         if expandedRemoteProjectIds.contains(row.id) {
             expandedRemoteProjectIds.remove(row.id)
@@ -43,7 +43,8 @@ extension SupermuxProjectsSectionView {
         }
     }
 
-    /// Loads the device copies' worktrees when a local project row expands.
+    /// Loads the device copies' worktrees when a local project row expands,
+    /// if no refresh has yet.
     func loadRemoteWorktrees(forLocalProject id: UUID) {
         guard let extras = remote.extrasByLocalProjectID[id] else { return }
         for location in extras.project.remoteLocations where location.isOnline {
