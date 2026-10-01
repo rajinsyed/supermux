@@ -3439,6 +3439,7 @@
 		50BE00170100000000000006 /* SupermuxDeviceTerminalClosePrompt.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00170100000000000005 /* SupermuxDeviceTerminalClosePrompt.swift */; };
 		50BE00170100000000000002 /* SupermuxDeviceTerminalCloseSocketCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00170100000000000001 /* SupermuxDeviceTerminalCloseSocketCommands.swift */; };
 		50BE00160000000000000002 /* SupermuxDeviceTerminalInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00160000000000000001 /* SupermuxDeviceTerminalInput.swift */; };
+		50BE00170100000000000008 /* SupermuxDeviceViewportGenerations.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00170100000000000007 /* SupermuxDeviceViewportGenerations.swift */; };
 		50BE00040000000000000012 /* SupermuxDeviceWorkspaceIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00040000000000000011 /* SupermuxDeviceWorkspaceIndex.swift */; };
 		50BE00040000000000000014 /* SupermuxDeviceWorkspaceOpener.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00040000000000000013 /* SupermuxDeviceWorkspaceOpener.swift */; };
 		50BE00010000000000000104 /* SupermuxDirectPhonePush.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00010000000000000103 /* SupermuxDirectPhonePush.swift */; };
@@ -7858,6 +7859,7 @@
 		50BE00170100000000000005 /* SupermuxDeviceTerminalClosePrompt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceTerminalClosePrompt.swift; sourceTree = "<group>"; };
 		50BE00170100000000000001 /* SupermuxDeviceTerminalCloseSocketCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceTerminalCloseSocketCommands.swift; sourceTree = "<group>"; };
 		50BE00160000000000000001 /* SupermuxDeviceTerminalInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceTerminalInput.swift; sourceTree = "<group>"; };
+		50BE00170100000000000007 /* SupermuxDeviceViewportGenerations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceViewportGenerations.swift; sourceTree = "<group>"; };
 		50BE00040000000000000011 /* SupermuxDeviceWorkspaceIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceWorkspaceIndex.swift; sourceTree = "<group>"; };
 		50BE00040000000000000013 /* SupermuxDeviceWorkspaceOpener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceWorkspaceOpener.swift; sourceTree = "<group>"; };
 		50BE00010000000000000103 /* SupermuxDirectPhonePush.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxDirectPhonePush.swift; sourceTree = "<group>"; };
@@ -9366,6 +9368,7 @@
 				50BE00170100000000000001 /* SupermuxDeviceTerminalCloseSocketCommands.swift */,
 				50BE00170100000000000003 /* SupermuxDeviceTerminalClose.swift */,
 				50BE00170100000000000005 /* SupermuxDeviceTerminalClosePrompt.swift */,
+				50BE00170100000000000007 /* SupermuxDeviceViewportGenerations.swift */,
 				50BE00050000000000000019 /* SupermuxDeviceMirrorPalette.swift */,
 				50BE0005000000000000001B /* SupermuxDeviceMirrorSocketCommands.swift */,
 				50BE0005000000000000001D /* SupermuxDevicesSocketPayloads+MirrorStatus.swift */,
@@ -16219,6 +16222,7 @@
 				50BE00170100000000000006 /* SupermuxDeviceTerminalClosePrompt.swift in Sources */,
 				50BE00170100000000000002 /* SupermuxDeviceTerminalCloseSocketCommands.swift in Sources */,
 				50BE00160000000000000002 /* SupermuxDeviceTerminalInput.swift in Sources */,
+				50BE00170100000000000008 /* SupermuxDeviceViewportGenerations.swift in Sources */,
 				50BE00040000000000000012 /* SupermuxDeviceWorkspaceIndex.swift in Sources */,
 				50BE00040000000000000014 /* SupermuxDeviceWorkspaceOpener.swift in Sources */,
 				50BE00010000000000000104 /* SupermuxDirectPhonePush.swift in Sources */,

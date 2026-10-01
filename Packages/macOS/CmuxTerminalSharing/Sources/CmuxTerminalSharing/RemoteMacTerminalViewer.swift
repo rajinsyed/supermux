@@ -72,6 +72,15 @@ public struct RemoteMacTerminalViewer: Sendable {
         return viewportParams()
     }
 
+    // SUPERMUX:begin remote-mac-viewer-generation-floor
+    /// Raises the viewport generation to at least `floor`, so a new viewer of
+    /// a terminal this link already reported (or cleared) starts above the
+    /// host's fence for its client id instead of below it.
+    public mutating func advanceGeneration(atLeast floor: UInt64) {
+        generation = max(generation, floor)
+    }
+    // SUPERMUX:end remote-mac-viewer-generation-floor
+
     /// A report that changes only `counts_override` (`nil` restores the
     /// automatic rule). Keeps the generation: the grid did not change.
     public func countsParams(_ value: Bool?) -> [String: Any]? {

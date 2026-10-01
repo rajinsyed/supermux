@@ -374,6 +374,9 @@ final class DeviceTerminalMirrorSession {
                 // captures the settled grid.
                 viewportTransitionRetries += 1
                 replayNeeded = true
+                // SUPERMUX:begin device-mirror-viewport-generations (50/100/200 ms between the retries)
+                try? await Task.sleep(nanoseconds: SupermuxDeviceViewportGenerations.transitionRetryDelayNanoseconds(attempt: viewportTransitionRetries))
+                // SUPERMUX:end device-mirror-viewport-generations
                 return
             }
             deviceMirrorLog.error("device terminal replay failed: \(String(describing: error), privacy: .private)")
@@ -432,7 +435,15 @@ final class DeviceTerminalMirrorSession {
     @discardableResult
     private func measurePaneGrid() -> [String: Any]? {
         guard viewer != nil, let natural = surface?.naturalGridSize() else { return nil }
-        return viewer?.paneResized(TerminalGridSize(cols: natural.columns, rows: natural.rows))
+        // SUPERMUX:begin device-mirror-viewport-generations
+        // Report above every generation the host saw from this link for this
+        // terminal, an earlier pane's clear included; the host fences lower ones.
+        // (upstream: `return viewer?.paneResized(…)`)
+        SupermuxDeviceViewportGenerations.shared.raise(&viewer, surfaceID: remoteSurfaceID)
+        let report = viewer?.paneResized(TerminalGridSize(cols: natural.columns, rows: natural.rows))
+        SupermuxDeviceViewportGenerations.shared.record(viewer, surfaceID: remoteSurfaceID)
+        return report
+        // SUPERMUX:end device-mirror-viewport-generations
     }
 
     private func paneGridChanged() {
@@ -485,6 +496,9 @@ final class DeviceTerminalMirrorSession {
         }
         surface?.onNaturalGridInputsChanged = nil
         if viewer.viewport != nil, isConnected() { sendSizing("mobile.terminal.viewport", viewer.clearParams()) }
+        // SUPERMUX:begin device-mirror-viewport-generations (the clear's generation fences this terminal on the host)
+        if viewer.viewport != nil { SupermuxDeviceViewportGenerations.shared.recordClear(viewer, surfaceID: remoteSurfaceID) }
+        // SUPERMUX:end device-mirror-viewport-generations
         sharingSurfaceID = nil
     }
     // SUPERMUX:begin device-mirror-hidden-counts
