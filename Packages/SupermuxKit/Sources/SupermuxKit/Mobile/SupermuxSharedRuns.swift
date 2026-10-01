@@ -1,12 +1,15 @@
 public import Foundation
 
-/// Blocking work per key (a folder's `git status`), shared by the requests
-/// for that key so slow work never piles up.
+/// Blocking work per key (a folder's `git status`), at most one run in
+/// progress and one queued per key, shared by the requests for that key.
 ///
-/// A request for a key whose run is still going waits for that run instead of
-/// starting another: a request that gives up at its bound leaves the work
-/// running (`GitStatusProvider` cannot stop git), and the next request must
-/// not add a second one.
+/// A request for an idle key starts a run at once. A request made while the
+/// key's run is going waits for the one follow-up run that starts when that
+/// run ends, shared by every request made meanwhile (as the viewer's
+/// `SupermuxCoalescedRefresh` does): its answer is never computed before it
+/// asked, so a client that asks after a commit never gets pre-commit colors,
+/// and slow work never piles up. A request that gives up at its bound leaves
+/// its run going (`GitStatusProvider` cannot stop git).
 ///
 /// ```swift
 /// let runs = SupermuxSharedRuns<[String: GitFileStatus]> { root in GitStatusProvider().fetchStatus(directory: root) }
@@ -15,6 +18,7 @@ public import Foundation
 public final class SupermuxSharedRuns<Value: Sendable>: @unchecked Sendable {
     private let lock = NSLock()
     private var running: [String: SupermuxSharedRun<Value>] = [:]
+    private var queued: [String: SupermuxSharedRun<Value>] = [:]
     private let queue: DispatchQueue
     private let work: @Sendable (String) -> Value
 
@@ -26,25 +30,38 @@ public final class SupermuxSharedRuns<Value: Sendable>: @unchecked Sendable {
         self.work = work
     }
 
-    /// The key's run in progress, or a new one started now.
+    /// A run that starts no earlier than this call: a new one for an idle
+    /// key, else the follow-up queued behind the key's run in progress.
     public func join(_ key: String) -> SupermuxSharedRun<Value> {
         lock.lock()
         defer { lock.unlock() }
-        if let run = running[key] { return run }
-        let run = SupermuxSharedRun<Value>()
-        running[key] = run
+        guard running[key] != nil else {
+            let run = SupermuxSharedRun<Value>()
+            running[key] = run
+            start(run, for: key)
+            return run
+        }
+        if let next = queued[key] { return next }
+        let next = SupermuxSharedRun<Value>()
+        queued[key] = next
+        return next
+    }
+
+    private func start(_ run: SupermuxSharedRun<Value>, for key: String) {
         queue.async {
             let value = self.work(key)
             self.end(run, for: key)
             run.finish(value)
         }
-        return run
     }
 
+    /// The run ended: the follow-up, if any request queued one, starts now.
     private func end(_ run: SupermuxSharedRun<Value>, for key: String) {
         lock.lock()
-        if running[key] === run { running[key] = nil }
-        lock.unlock()
+        defer { lock.unlock() }
+        guard running[key] === run else { return }
+        running[key] = queued.removeValue(forKey: key)
+        if let next = running[key] { start(next, for: key) }
     }
 }
 
@@ -65,7 +82,8 @@ public final class SupermuxSharedRun<Value: Sendable>: @unchecked Sendable {
         finished.leave()
     }
 
-    /// The run's value, or `nil` while it is still going after `seconds`.
+    /// The run's value, or `nil` while it is still going (or has not started)
+    /// after `seconds`.
     public func wait(seconds: TimeInterval) -> Value? {
         guard finished.wait(timeout: .now() + seconds) == .success else { return nil }
         lock.lock()
