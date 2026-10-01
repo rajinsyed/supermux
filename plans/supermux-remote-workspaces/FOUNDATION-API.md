@@ -343,7 +343,8 @@ SupermuxDeviceMirrorsGlue.unhide(machineID:ref:)   // unhide + reconcile
 - **Socket** (`supermux.devices.*`, all builds): `remote_macs_settings {}` (the card's snapshot plus
   `discovery_enabled` / `incoming_access_enabled`), `remote_macs_settings_set {setting:
   auto_mirror|sync_projects|share_push, enabled}` or `{action: show_hidden}` (the card's own
-  actions), `flat_chips {}` (per mirror: `label`, `mac_name`, `chip_state`, `dimmed`). E2E:
+  actions), `flat_chips {}` (per mirror: `label`, `mac_name`, `chip_state`, `dimmed`, and what the flat
+  row draws: `style: "icon"`, `symbol`, `badge_symbol`, `help`, `placement` `branch_line|title_line`). E2E:
   `tests/supermux/loopback_remote_macs_settings_e2e.py [--screenshot]`.
 
 ## Not done here (owned by later workstreams)

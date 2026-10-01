@@ -41,7 +41,7 @@ public struct SupermuxOpenWorkspace: Identifiable, Hashable, Sendable {
     /// number whether it renders flat or nested under a project.
     public let unreadCount: Int
     /// The Mac this workspace mirrors when it is a device mirror (a local
-    /// workspace showing another Mac's workspace), for the row's device chip;
+    /// workspace showing another Mac's workspace), for the row's Mac icon;
     /// `nil` for this Mac's own workspaces.
     public let device: SupermuxProjectDevice?
 
@@ -90,4 +90,26 @@ public struct SupermuxOpenWorkspace: Identifiable, Hashable, Sendable {
         guard let device else { return title }
         return String(localized: "supermux.workspace.accessibility.onMac", defaultValue: "\(title) on \(device.name)")
     }
+
+    /// The branch line the row shows, if any (an empty branch shows none).
+    public var displayedBranch: String? {
+        guard let branch, !branch.isEmpty else { return nil }
+        return branch
+    }
+
+    /// Where the row draws its Mac's icon: right before the branch name, or
+    /// before the title when it shows no branch; `nil` for this Mac's own
+    /// workspaces, which draw none.
+    public var deviceIconPlacement: SupermuxDeviceIconPlacement? {
+        guard device != nil else { return nil }
+        return displayedBranch == nil ? .beforeTitle : .beforeBranch
+    }
+}
+
+/// Where a nested workspace row draws the icon of the Mac it lives on.
+public enum SupermuxDeviceIconPlacement: Sendable {
+    /// Right before the branch name.
+    case beforeBranch
+    /// Right before the title (the row shows no branch).
+    case beforeTitle
 }

@@ -35,23 +35,25 @@ struct SupermuxOpenWorkspaceRowView: View {
             Color.clear
                 .frame(width: 20 * fontScale, height: 12 * fontScale)
             VStack(alignment: .leading, spacing: 0) {
-                Text(workspace.title)
-                    .font(.system(size: 11.5 * fontScale, weight: workspace.isSelected ? .semibold : .regular))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                if let branch = workspace.branch, !branch.isEmpty {
-                    Text(branch)
-                        .font(.system(size: 9.5 * fontScale, design: .monospaced))
-                        .foregroundStyle(.secondary)
+                HStack(spacing: 3 * fontScale) {
+                    deviceIcon(at: .beforeTitle)
+                    Text(workspace.title)
+                        .font(.system(size: 11.5 * fontScale, weight: workspace.isSelected ? .semibold : .regular))
                         .lineLimit(1)
-                        .truncationMode(.middle)
+                        .truncationMode(.tail)
+                }
+                if let branch = workspace.displayedBranch {
+                    HStack(spacing: 3 * fontScale) {
+                        deviceIcon(at: .beforeBranch)
+                        Text(branch)
+                            .font(.system(size: 9.5 * fontScale, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
                 }
             }
             Spacer(minLength: 2)
-            // A device mirror names the Mac it runs on (dimmed while offline).
-            if let device = workspace.device {
-                SupermuxDeviceChip(device: device, fontScale: fontScale)
-            }
             if let pullRequest = workspace.pullRequest {
                 SupermuxPullRequestBadge(
                     pullRequest: pullRequest,
@@ -120,6 +122,15 @@ struct SupermuxOpenWorkspaceRowView: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(workspace.accessibilityLabel)
         .accessibilityAddTraits(workspace.isSelected ? [.isButton, .isSelected] : .isButton)
+    }
+
+    /// A device mirror's Mac icon (its name in the tooltip, dimmed while that
+    /// Mac is offline), drawn only at the row's placement for it.
+    @ViewBuilder
+    private func deviceIcon(at placement: SupermuxDeviceIconPlacement) -> some View {
+        if let device = workspace.device, workspace.deviceIconPlacement == placement {
+            SupermuxRemoteMacIcon(device: device, pointSize: 9 * fontScale)
+        }
     }
 
     @ViewBuilder

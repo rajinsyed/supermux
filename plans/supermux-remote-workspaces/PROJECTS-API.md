@@ -189,7 +189,7 @@ most every 10 min otherwise), for each connected, non-loopback device serving pr
   `extrasByLocalProjectID` (device worktrees, "Set Up on <Mac>" targets, clone URL) plus the window's
   `SupermuxRemoteProjectActions` (built by `SupermuxRemoteProjectActionsFactory`: alerts, dirty-worktree
   confirm → force, remove-project confirm).
-- Nested mirror rows come from `SupermuxMirrorRowSnapshot` (device chip; branch/PR/activity/run state
+- Nested mirror rows come from `SupermuxMirrorRowSnapshot` (device; branch/PR/activity/run state
   from the remote record when the mirror has none; empty directory so a same-path local worktree row
   is not hidden). The mount builds every nested row through `SupermuxNestedWorkspaceRows` (shared
   with `supermux.devices.sidebar_rows`), which orders a project's rows with
@@ -199,22 +199,30 @@ most every 10 min otherwise), for each connected, non-loopback device serving pr
   main: the amber working spinner is their only agent status (an "Idle" or "Running" line under the
   branch would duplicate it). Flat rows, local and mirror, keep their pills and progress. A mirror's
   VoiceOver label adds "on <Mac>".
+- Which Mac a row lives on is the small Mac + cloud icon `SupermuxRemoteMacIcon` (`laptopcomputer`
+  with a knocked-out `cloud.fill` badge; no name capsule), its tooltip and VoiceOver label "On <Mac>"
+  (plus " — Connecting…" / " — Offline", when it is also dimmed). It sits immediately before the
+  branch name: on a nested mirror row before its branch (before the title when the mirror has no
+  branch, `SupermuxOpenWorkspace.deviceIconPlacement`), on a remote worktree row before its branch
+  name. `SupermuxDeviceChip` is now a thin wrapper that draws this icon (the remote-only project
+  header keeps it after its name: it has no branch).
 - Row layout (`SupermuxOpenWorkspaceRowView`), as on main and the same for local and mirror rows:
-  the device chip, PR and run badges, the amber working spinner (6·scale, always visible, hover
-  included), the unread badge, then the close button while hovered. Remote worktree rows: the
-  device chip, the PR badge, then the hover arrow.
+  PR and run badges, the amber working spinner (6·scale, always visible, hover included), the unread
+  badge, then the close button while hovered. Remote worktree rows: the PR badge, then the hover
+  arrow.
 - A mirror row's menu (nested and flat, #574) offers **Hide Here** and **Close on <Mac>…** (the
   mirror close prompt); a local row keeps Close Workspace.
 - Local project rows: device worktrees (chips) in the disclosure (pill shows a bare chevron until they
   load), "Open on ▸" when several Macs have it, remote worktrees in "Worktrees ▸", "Set Up on <Mac>…".
   Edit/Reveal/Move stay local-only.
-- Remote-only rows: device chip, run indicator, dimmed + "offline" tooltip while the Mac is offline;
+- Remote-only rows: Mac icon, run indicator, dimmed + "offline" tooltip while the Mac is offline;
   tap = Open on <Mac>; menu: New Worktree… (the device-aware sheet, P2), Worktrees ▸, Actions ▸, Set Up on <Mac>…
   (incl. This Mac), Remove from Projects on <Mac>….
-- Flat rows (touchpoint #561): device mirrors always show `SupermuxFlatRowDeviceChip`, after the
-  title and right before the trailing slot. The chip looks its Mac up in the device facade by name
-  (`SupermuxDeviceChipState.resolve`, SupermuxKit) and dims while that Mac is offline or connecting;
-  an unknown name is never dimmed. The row's directory line drops upstream's "<Mac> · " prefix
+- Flat rows (touchpoint #561): device mirrors always show the Mac icon (`SupermuxFlatRowDeviceChip`),
+  first on the row's branch/directory line in every layout, or before the title when the row draws no
+  such line (`SupermuxFlatRowDeviceChip.drawsOnBranchLine`), tinted with the row's secondary color.
+  It looks its Mac up in the device facade by name (`SupermuxDeviceChipState.resolve`, SupermuxKit)
+  and dims while that Mac is offline or connecting; an unknown name is never dimmed. The row's directory line drops upstream's "<Mac> · " prefix
   (`SupermuxDeviceMirrorSidebar.directoryCandidates`, #532); remote paths are never abbreviated.
 
 ## Socket introspection (`supermux.devices.*`, served by `SupermuxProjectsSocketCommands`)
@@ -225,7 +233,7 @@ CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.remote_projects '{
 CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.remote_worktrees '{"machine":"device:…","project_id":"<that Mac's id>"}'
 CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.remote_worktree_create '{"machine":"device:…","project_id":"…","workspace_name":"x","branch_name":"y","focus":false}'
 CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.projects_presentation '{}'   # what the window's Projects section receives
-CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.sidebar_rows '{}'           # {projects:[{project_id, font_scale, rows:[{workspace_id,title,device_name,branch,unread_count,accessibility_label,activity}]}], flat:[{workspace_id,title,is_mirror,device_label,subtitle_candidates,branch_directory_lines,activity}]} as drawn
+CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.sidebar_rows '{}'           # {projects:[{project_id, font_scale, rows:[{workspace_id,title,device_name,branch,unread_count,accessibility_label,activity,device_icon:{style,symbol,badge_symbol,help,dimmed}|null,device_icon_placement:before_branch|before_title|null}]}], flat:[{workspace_id,title,is_mirror,device_label,subtitle_candidates,branch_directory_lines,activity,device_icon,device_icon_placement:branch_line|title_line|null}]} as drawn
 CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.project_sync '{}'            # run a sync pass now → report
 ```
 
