@@ -199,8 +199,9 @@ way a project row does. On a scratch repo it checks: the rows are This Mac then 
 the Loopback Mac's branches and Claude commands load; a failing create shows the other Mac's
 sentence and is not remembered; Create on the Loopback Mac ends with exactly one bound mirror,
 selected in the window; the Mac is remembered and preselected next time, for a second project too
-(one choice for every project), with This Mac preselected instead while that Mac's link is down
-(the remembered Mac is cleared at the start and restored at the end); and Start Claude runs
+(one choice for every project), with This Mac preselected instead while that Mac's link is down, and
+a Create on that fallback row (no row picked) does not replace the remembered Mac (the remembered
+Mac is cleared at the start and restored at the end); and Start Claude runs
 `agent.start` (with a temporary `echo` command, restored afterwards) and its mirror opens selected.
 It then drops the loopback link on purpose (DEBUG `supermux.devices.link {machine, action:
 stop|restore}`): an open sheet disables the dropped Mac and re-enables it after the redial without

@@ -38,6 +38,10 @@ Steps:
      preselects the Loopback Mac too: one choice serves every project.
  7c. global_device_offline_falls_back_to_this_mac: with the remembered Mac's
      link held down, that second project's new sheet preselects This Mac.
+ 7d. fallback_create_keeps_remembered_mac: with that link held down again,
+     Create on the row the second project's sheet fell back to (This Mac, no
+     row picked) succeeds and leaves the remembered Mac the Loopback Mac: only
+     a Mac the user chose replaces it.
   8. prompt_start_runs_agent_start: with a harmless Claude command ("echo")
      configured, Start Claude on the Loopback Mac runs agent.start; its
      workspace's terminal echoes the prompt, and its mirror opens selected.
@@ -128,7 +132,8 @@ class PickerE2E:
         # The remembered Mac before this run (restored in cleanup), once captured.
         self.previous_last_device: Optional[Dict[str, Any]] = None
         self.other_project_id: Optional[str] = None
-        self.registered: List[str] = []  # projects this run created (deleted in cleanup)
+        # Projects this run created, with their main checkout (deleted in cleanup).
+        self.registered: Dict[str, str] = {}
 
     # -- helpers -------------------------------------------------------------
 
@@ -175,8 +180,9 @@ class PickerE2E:
         self.call("close", {"session_id": state["session_id"]})
         return state
 
-    def remote_worktrees(self) -> List[Dict[str, Any]]:
-        listed = self.request("mobile.supermux.worktrees.list", {"project_id": self.project_id})
+    def remote_worktrees(self, project_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """The Loopback Mac's worktrees of a project (default: the first one)."""
+        listed = self.request("mobile.supermux.worktrees.list", {"project_id": project_id or self.project_id})
         return listed.get("worktrees") or []
 
     def selected_workspaces(self) -> List[str]:
@@ -213,9 +219,10 @@ class PickerE2E:
         hook.chmod(0o755)
         return hook
 
-    def adopt_orphan(self, branch: str) -> Optional[Dict[str, Any]]:
-        """The worktree a dropped create made anyway, queued for cleanup."""
-        worktree = next((w for w in self.remote_worktrees() if w.get("branch") == branch), None)
+    def adopt_orphan(self, branch: str, project_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """The worktree a create made (a dropped one, or one on This Mac that
+        returns no workspace ids), its workspace and auto-mirror queued for cleanup."""
+        worktree = next((w for w in self.remote_worktrees(project_id) if w.get("branch") == branch), None)
         remote_id = (worktree or {}).get("workspace_id")
         if remote_id:
             def mirrors() -> Optional[List[Dict[str, Any]]]:
@@ -304,7 +311,7 @@ class PickerE2E:
         project = self.request("mobile.supermux.project.create", {"root_path": str(repo)}).get("project") or {}
         if not project.get("id"):
             raise SmokeFailure(f"project.create returned no project: {project}")
-        self.registered.append(project["id"])
+        self.registered[project["id"]] = str(repo)
 
         def merged() -> Optional[Dict[str, Any]]:
             unified = self.client.call("supermux.devices.unified_projects", {}) or {}
@@ -467,6 +474,49 @@ class PickerE2E:
         loopback = next(e for e in state.get("entries") or [] if e.get("device_key") == self.machine)
         return {"selected_entry_id": state.get("selected_entry_id"),
                 "offline_row": {k: loopback.get(k) for k in ("device_key", "availability", "can_create")}}
+
+    def check_fallback_create_keeps_remembered_mac(self) -> Dict[str, Any]:
+        """Create on the Mac the sheet fell back to is not a choice: with the
+        remembered Mac's link down, the second project's sheet preselects This
+        Mac, Create there (no row picked) finishes, and the remembered Mac is
+        still the Loopback Mac."""
+        other = self.ensure_other_project()
+        self.last_device(set=self.machine)
+        branch = f"fallback-{self.nonce}"
+        session: Optional[str] = None
+        self.set_link("stop")
+        try:
+            def offline_sheet() -> Optional[Dict[str, Any]]:
+                state = self.call("open", {"project_id": other})
+                row = next((e for e in state.get("entries") or [] if e.get("device_key") == self.machine), None)
+                if row is not None and not row.get("can_create"):
+                    return state
+                self.call("close", {"session_id": state["session_id"]})
+                return None
+
+            state = wait_for("the second project's sheet to list the Loopback Mac as unavailable", offline_sheet, self.timeout_s)
+            session = state["session_id"]
+            if state.get("selected_entry_id") != THIS_MAC:
+                raise SmokeFailure(f"with the remembered Mac offline the sheet preselected {state.get('selected_entry_id')}, want {THIS_MAC}")
+            result = self.call(
+                "submit",
+                {"session_id": session, "workspace_name": f"fallback {self.nonce}", "branch_name": branch},
+                timeout_s=240,
+            )
+            if not result.get("finished"):
+                raise SmokeFailure(f"Create on This Mac did not finish: {result}")
+        finally:
+            self.set_link("restore")
+            if session:
+                self.call("close", {"session_id": session})
+            self.wait_link_connected()
+            created = self.adopt_orphan(branch, project_id=other)
+        stored = self.last_device().get("device_key")
+        if stored != self.machine:
+            raise SmokeFailure(
+                f"a create on the Mac the sheet fell back to replaced the remembered Mac: {stored!r}, want {self.machine}"
+            )
+        return {"default_row": THIS_MAC, "worktree_path": (created or {}).get("path"), "last_device": stored}
 
     def ensure_echo_command(self) -> None:
         """Offers a harmless "echo" Claude command (restored in cleanup), so no
@@ -701,14 +751,15 @@ class PickerE2E:
                         attempt(lambda w=created[key]: self.close_workspace_if_open(w))
                 attempt(lambda c=created: self.client.call(
                     "supermux.devices.unhide", {"machine": self.machine, "remote_workspace_id": c["remote"]}))
-            if self.project_id and self.machine:
-                for worktree in self.remote_worktrees_safe():
-                    if worktree.get("path") != str(self.repo):
-                        attempt(lambda w=worktree: self.request(
-                            "mobile.supermux.worktree.remove",
-                            {"project_id": self.project_id, "worktree_path": w["path"], "force": True, "delete_branch": True},
-                            timeout_s=120,
-                        ))
+            if self.machine:
+                for project_id, checkout in self.registered.items():
+                    for worktree in self.remote_worktrees_safe(project_id):
+                        if worktree.get("path") != checkout:
+                            attempt(lambda p=project_id, w=worktree: self.request(
+                                "mobile.supermux.worktree.remove",
+                                {"project_id": p, "worktree_path": w["path"], "force": True, "delete_branch": True},
+                                timeout_s=120,
+                            ))
             for project_id in self.registered:
                 attempt(lambda p=project_id: self.request("mobile.supermux.project.delete", {"project_id": p}))
             shutil.rmtree(self.root, ignore_errors=True)
@@ -725,9 +776,9 @@ class PickerE2E:
                 self.client.call("workspace.close", {"workspace_id": workspace_id})
                 return
 
-    def remote_worktrees_safe(self) -> List[Dict[str, Any]]:
+    def remote_worktrees_safe(self, project_id: Optional[str] = None) -> List[Dict[str, Any]]:
         try:
-            return self.remote_worktrees()
+            return self.remote_worktrees(project_id)
         except SmokeFailure:
             return []
 
@@ -742,6 +793,7 @@ class PickerE2E:
             ("last_device_persisted", self.check_last_device),
             ("last_device_is_global", self.check_last_device_is_global),
             ("global_device_offline_falls_back_to_this_mac", self.check_global_device_offline_fallback),
+            ("fallback_create_keeps_remembered_mac", self.check_fallback_create_keeps_remembered_mac),
             ("prompt_start_runs_agent_start", self.check_prompt_start),
             ("availability_is_live", self.check_live_availability),
             ("dropped_link_create_reports_unknown_outcome", lambda: self.check_dropped_link(prompt=False)),
