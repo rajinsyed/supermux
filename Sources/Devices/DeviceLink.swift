@@ -214,6 +214,18 @@ final class DeviceLink {
 
     /// Keeps large replay replies encoded until their decoder leaves the UI actor.
     func requestData(_ method: String, params: [String: Any] = [:], timeoutNanoseconds: UInt64? = nil) async throws -> Data {
+        // SUPERMUX:begin device-link-busy-retry
+        // A request the host refused as busy never ran there: ask again on the
+        // same connection (SupermuxDeviceLinkEvents.swift). The upstream body
+        // follows unchanged.
+        let supermuxGeneration = generation
+        return try await supermuxAskingAgainWhileBusy(isCurrent: { self.generation == supermuxGeneration }) {
+            try await self.supermuxRequestDataOnce(method, params: params, timeoutNanoseconds: timeoutNanoseconds)
+        }
+    }
+
+    private func supermuxRequestDataOnce(_ method: String, params: [String: Any], timeoutNanoseconds: UInt64?) async throws -> Data {
+        // SUPERMUX:end device-link-busy-retry
         guard DevicesFeature.isEnabled, let client, phase == .connected else { throw DeviceLinkError.notConnected }
         let requestGeneration = generation
         let requestData = try MobileCoreRPCClient.requestData(method: method, params: params)

@@ -80,12 +80,6 @@ extension SupermuxDevices {
 
     // MARK: - Host capabilities
 
-    /// The waits before asking a busy host for its capabilities again (about
-    /// 8 s in all), see ``fetchHostCapabilities(on:)``.
-    private static let busyHostRetryDelays: [Duration] = [
-        .milliseconds(250), .milliseconds(500), .seconds(1), .seconds(2), .seconds(4),
-    ]
-
     /// The capabilities the device's host advertises (`mobile.host.status`),
     /// fetched once per link connection. `nil` when unknown (not connected,
     /// or the host did not answer).
@@ -94,7 +88,10 @@ extension SupermuxDevices {
         if let cached = capabilitiesByInstance[instance] { return cached }
         if let task = capabilityTasks[instance] { return await task.value }
         let task = Task { @MainActor [weak self] () -> Set<String>? in
-            await self?.fetchHostCapabilities(on: machine)
+            guard let self,
+                  let status = try? await self.request("mobile.host.status", on: machine),
+                  let list = status["capabilities"] as? [String] else { return nil }
+            return Set(list)
         }
         capabilityTasks[instance] = task
         let capabilities = await task.value
@@ -103,31 +100,6 @@ extension SupermuxDevices {
             if let capabilities { capabilitiesByInstance[instance] = capabilities }
         }
         return capabilities
-    }
-
-    /// Asks the host for its capabilities. A host that answers `server_busy`
-    /// never ran the request (its per-connection request quota was full, as
-    /// it is right after a reconnect while every mirrored terminal
-    /// re-attaches), so it is asked again after a short wait; otherwise the
-    /// connection would go without capabilities until the next reconnect, and
-    /// a mirror would type through upstream's text path. Any other failure is
-    /// the answer for this connection. A link edge cancels the wait.
-    private func fetchHostCapabilities(on machine: SurfaceMachineID) async -> Set<String>? {
-        var delays = Self.busyHostRetryDelays[...]
-        while true {
-            do {
-                let status = try await request("mobile.host.status", on: machine)
-                return (status["capabilities"] as? [String]).map { Set($0) }
-            } catch let error as SupermuxDeviceError where error.code == "server_busy" {
-                guard let delay = delays.popFirst() else { return nil }
-                #if DEBUG
-                cmuxDebugLog("supermux.devices capabilities: host busy, asking again in \(delay)")
-                #endif
-                guard (try? await Task.sleep(for: delay)) != nil else { return nil }
-            } catch {
-                return nil
-            }
-        }
     }
 
     /// The capabilities already known for this link connection, without a round trip.

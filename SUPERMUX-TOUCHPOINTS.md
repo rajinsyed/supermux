@@ -12,7 +12,7 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **720**. The remote-workspaces work (#517–#599) left
+- Numbering: the highest number in use is **721**. The remote-workspaces work (#517–#599) left
   unassigned gaps it may still grow into: **523–524, 527–529, 539–544, 558–559, 562–569,
   578–579 and 588–589** (never assigned, not retired); #600–#601 came from the 2026-10-01 upstream merge; #620–#622 and
   #630–#639 are the remote-workspaces feedback round (602–619 and 623–629 unassigned). The second
@@ -21,8 +21,9 @@ Rules for adding a touchpoint:
   its stabilization uses #682–#684 (preview refresh and its alert) and #685–#686 (replayed mouse modes); its second review and visual check use #687–#689 (mirror placeholders after a relaunch, Mac wording, a cancelled close's selection; #689 was
   retired in round 4); 645–649, 654–659, 671–674 are unassigned. The third feedback round (round 4) uses #695–#696 (a mirror
   closes like a local workspace; the phone forces its close), #700–#704 (the iPhone's merged projects list), #715–#718 (Waiting
-  keeps the working indicator; tab spinners) and #720 (no device avatar on tabs), and retired #453–#457 (focused-pane
-  suppression) and #689; 690–694, 697–699, 705–714, 719 and 721–724 are unassigned. Number **351** is unused (the notifications
+  keeps the working indicator; tab spinners), #720 (no device avatar on tabs) and, in its stabilization, #721 (a busy
+  host is asked again), and retired #453–#457 (focused-pane suppression) and #689; 690–694, 697–699, 705–714, 719 and
+  722–724 are unassigned. Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 82, 83, 89, 106, 121, 142, 213, 214,
   220, 229, 237, 250, 251, 252–258, 335, 470, 473–481, 483, 484, and 487** are unused; all are
@@ -636,6 +637,7 @@ Rules for adding a touchpoint:
 | 717 | `Sources/Mobile/MobileStateSync.swift` | `supermux-mobile-workspace-fields` | Inside the existing `workspaceRow` fence (#140/#272/#536): the trailing `supermuxWorkingPanelIDs: workspace.supermuxWorkingPanelIDs()` argument (`Sources/Supermux/Workspace+SupermuxPanelActivity.swift`: panels in tab order whose own lifecycle resolves to working). Freshness: every lifecycle change already forces a v2 poke (`SupermuxMobileActivityObserver`) |
 | 718 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/Mirrors/SupermuxTabIndicatorSocket.swift` (DEBUG driver `supermux.devices.mirror.tab_indicators`, ids `50BE00180400000000000001`/`…02`), `Workspace+SupermuxPanelActivity.swift` (`…03`/`…04`) and `SupermuxTabActivitySync.swift` (`…05`/`…06`) into the cmux target, four entries each, in the Supermux group |
 | 720 | `Sources/Workspace+TerminalSharing.swift` | `tab-presence-accessory-hidden` | Two fences. In `updateTerminalSharingPresence(panelId:snapshot:)` the tab presence goes through `supermuxTabPresence(_:)`, which (second fence, a private func in the same extension) keeps the presence but empties its `participants`: the tab draws no attached-device avatar (the `laptopcomputer` glyph for another of your Macs), while its context menu keeps the terminal-size section (Size to My Window, Terminal Size ▸, Disconnect Others…), which Bonsplit shows whenever the presence is non-nil. The size panel still lists the attached Macs. `vendor/bonsplit` is untouched; an "On <Mac>" tab-menu row would go in `supermuxTabPresence` if Bonsplit gains a host hook. E2E: `tests/supermux/loopback_terminal_input_e2e.py` (`tabs_draw_no_device_accessory`) |
+| 721 | `Sources/Devices/DeviceLink.swift` | `device-link-busy-retry` | `requestData(_:params:timeoutNanoseconds:)` becomes a call to `supermuxAskingAgainWhileBusy(isCurrent:_:)` (an extension in `Sources/Supermux/Devices/SupermuxDeviceLinkEvents.swift`) around upstream's unchanged body, renamed `supermuxRequestDataOnce`. A request the host answers `server_busy` (its per-connection request quota full, so the request never ran) is sent again after 0.25, 0.5, 1, 2 and 4 s on the same connection (a new link generation cancels it); every other answer and error is unchanged. Every device request goes through it: capabilities, replays, viewports, layout fetches, held tab closes. E2E: `loopback_terminal_input_e2e.py` (`keys_survive_busy_reconnect`), `loopback_mirror_tab_close_e2e.py` (`offline_close_lands_on_a_busy_host`) |
 
 ## How to re-apply
 
@@ -5517,6 +5519,30 @@ Retire this if upstream moves the accessory off the tab itself.
 
 Verify: `CMUX_E2E_SUITES="loopback_terminal_input_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`
 (`tabs_draw_no_device_accessory`, through the DEBUG `supermux.devices.mirror.tab_chrome` driver).
+
+### 721. A busy host is asked again — `device-link-busy-retry`
+
+After a reconnect every mirrored terminal re-attaches at once (replays, viewports), and the capability
+request and the tab closes held while offline go out at the same time. On a Mac with many mirrored
+terminals that overflows the host's per-connection request quota (`MobileHostRPCWorkQuota`, 16), and the
+host answers `server_busy` without running the request. Upstream's `DeviceLink.requestData` turned that
+into `hostRejected`, and each caller took it as final: the capability fetch left the connection without
+`supermux.terminal_input.v1` (the mirror typed through upstream's text path, Esc arriving as CSI 27 u), and
+a held close failed, so the closed tab came back with its terminal still running. The phone already
+treats `server_busy` as transient.
+
+Re-apply after an upstream merge: `requestData` keeps its signature and calls
+`supermuxAskingAgainWhileBusy(isCurrent:_:)` with a check that `generation` is still the one the request
+started on; upstream's body moves unchanged into the private `supermuxRequestDataOnce`. Only
+`hostRejected(code: "server_busy", …)` is retried. Retire this if upstream's client stops overrunning the
+host's quota (the fork's client quota, #157, keeps one slot of headroom, but a host counts a request
+until its response write finishes, so a burst of answers can still leave the host fuller than the client
+thinks) or retries `server_busy` itself.
+
+Verify: `CMUX_E2E_SUITES="loopback_terminal_input_e2e loopback_mirror_tab_close_e2e" CMUX_TAG=<tag>
+tests/supermux/run_all_loopback_e2e.sh` (`keys_survive_busy_reconnect`,
+`offline_close_lands_on_a_busy_host`: the DEBUG `supermux.devices.link {action: restore, busy: <method>}`
+makes the loopback host answer that method `server_busy` once).
 
 ### 700–704. The iPhone shows projects and workspaces as one merged list — `supermux-mobile-projects-nested-reorder`, `supermux-mobile-nested-accessory`, `supermux-mobile-merged-projects-fixture`, `supermux-mobile-merged-projects-uitest`
 
