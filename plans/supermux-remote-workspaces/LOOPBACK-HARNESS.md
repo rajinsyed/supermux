@@ -142,11 +142,37 @@ workspace draws (the detector's control); its auto-mirror, opened in the backgro
 background local terminal that set OSC 11 draws; and with `--app-path`, after a quit and relaunch,
 the restored mirror draws. Each sampled screenshot is copied next to the JSON report. It guards
 touchpoint #538: a terminal whose pane-local OSC 11 fill arrived off screen used to stay blank when
-shown, and mirrors always hit that because the owning Mac's replay carries its colors.
+shown, and mirrors always hit that because the owning Mac's replay carried its colors. Since #651 a
+mirror's replay carries none, so the mirror steps guard that mirrors draw and the background OSC 11
+terminal step is the one that exercises the cutout.
 
 ```bash
 CMUX_TAG=<tag> python3 tests/supermux/loopback_mirror_render_e2e.py \
   --app-path "<App path>" --projects-file /tmp/<tag>/projects.json
+```
+
+## Mirror appearance E2E
+
+`tests/supermux/loopback_mirror_appearance_e2e.py` checks that a device mirror paints its
+background like the local pane it mirrors (#650–#653). The DEBUG driver
+`supermux.devices.mirror.terminal_background {surface_id}` reports how a terminal paints:
+`background_override` (the pane-local OSC 11 color), `fill_owner` (`shared` window backdrop or
+`terminal` host layer), `host_layer_alpha`, `backdrop_cutout_present`, this Mac's
+`app_background_opacity`, and for a mirror the colors its replays applied
+(`applied_remote_colors`, sparse) and whether the last replay's own bytes carried color OSC
+(`last_replay_color_osc`). Steps: a translucency precondition (skipped, not failed, when this Mac's
+Ghostty background is opaque; the driver checks still run); the source's local pane as the control
+and pixel baseline; its auto-mirror matching it (driver fields and the pane's modal RGBA fill in a
+`debug.window.screenshot`, within `--fill-tolerance`, default 6); the same after a fresh replay
+(`supermux.devices.link` stop + restore); a program's `OSC 11` reaching the mirror live and through
+the replay's authored-color sidecar; its `OSC 111` giving the mirror the shared backdrop back; and
+with `--app-path`, the restored background mirror after a relaunch. Loopback shares one Ghostty
+config between both ends, so a host color equal to this Mac's default could look right by accident:
+`applied_remote_colors == {}` and `last_replay_color_osc == false` are the hard proof. Screenshots
+are kept next to the JSON report (default `tests/supermux/artifacts/loopback_mirror_appearance_e2e-<tag>.json`).
+
+```bash
+CMUX_E2E_SUITES="loopback_mirror_appearance_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
 ```
 
 ## Notification and phone-push parity E2E

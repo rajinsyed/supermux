@@ -12,10 +12,11 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **639**. The remote-workspaces work (#517–#599) left
+- Numbering: the highest number in use is **653**. The remote-workspaces work (#517–#599) left
   unassigned gaps it may still grow into: **523–524, 527–529, 539–544, 558–559, 562–569,
   578–579 and 588–589** (never assigned, not retired); #600–#601 came from the 2026-10-01 upstream merge; #620–#622 and
-  #630–#639 are the remote-workspaces feedback round (602–619 and 623–629 unassigned). Number **351** is unused (the notifications
+  #630–#639 are the remote-workspaces feedback round (602–619 and 623–629 unassigned); #650–#653
+  make device mirrors use this Mac's terminal appearance (640–649 left to that round's other items). Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 82, 83, 89, 106, 121, 142, 213, 214,
   220, 229, 237, 250, 251, 252–258, 335, 470, 473–481, 483, 484, and 487** are unused; all are
@@ -529,7 +530,7 @@ Rules for adding a touchpoint:
 | 535 | `Packages/Shared/CMUXMobileCore/Sources/CMUXMobileCore/MobileStateSyncRecords.swift` | `supermux-mobile-workspace-fields` | Inside the existing fences (#139/#271): additive `supermux_status_entries` (`[SupermuxStatusEntry{key,value,icon?,color?,priority?}]`), `supermux_progress` (`{value,label?}`) and `supermux_log` (`{message,level?}`) on `WorkspaceSyncRecord` — nested types, stored properties, defaulted init params, lenient decoding (malformed → nil), CodingKeys. Mac-to-Mac mirrors render them; the phone ignores them |
 | 536 | `Sources/Mobile/MobileStateSync.swift` | `supermux-mobile-workspace-fields` | Inside the existing `workspaceRow` fence (#140/#272): fills `supermuxStatusEntries/Progress/Log` from `SupermuxMobileWorkspaceStatusFields` (the host row's pills minus the agent-lifecycle pills its indicator duplicates, progress, latest log; bounded), and falls back to `SupermuxMobileWorkspaceStatusFields.branch/pullRequest` for workspaces no project owns (the augmenter is association-gated; the phone reads branch/PR only on project rows, so its UI is unchanged). Freshness: `SupermuxMobileSidebarStatusObserver` pokes the v2 host on sidebar-metadata changes |
 | 537 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the 15 workstream-Ma files into the cmux target (four entries each: `PBXFileReference` inside the `Supermux` group, `PBXBuildFile`, group child, Sources phase), right after the loopback harness entries. File refs `50BE0005000000000000000{1,3,…}` odd, build files even, in this order: `Devices/SupermuxDeviceMirrorStatus`, `Devices/SupermuxMobileWorkspaceStatusFields`, `SupermuxMobileSidebarStatusObserver`, `Devices/SupermuxDeviceStatusProjector`, `Devices/SupermuxDeviceMirrorStatusWriter`, `Devices/SupermuxDeviceMirrorCoordinator`, `Devices/SupermuxDeviceMirrorWindowPicker`, `Devices/SupermuxDeviceMirrorCloser`, `Devices/SupermuxDeviceMirrorClosePrompt`, `Devices/SupermuxComposition+DeviceMirrors`, `Devices/SupermuxDeviceMirrorSidebar`, `Devices/SupermuxDeviceLayoutSurfaceFilter`, `Devices/SupermuxDeviceMirrorPalette`, `Devices/SupermuxDeviceMirrorSocketCommands`, `Devices/SupermuxDevicesSocketPayloads+MirrorStatus` (`.swift`; paths with `+` quoted). `grep -c 50BE0005 cmux.xcodeproj/project.pbxproj` prints 60 |
-| 538 | `Sources/GhosttyTerminalView.swift` | `backdrop-cutout-after-first-frame` | **Upstream bug fix: terminals that stay blank when shown.** `GhosttySurfaceScrollView.synchronizeSharedBackdropCutout(visible:)` returns before building upstream's Core Image shared-backdrop cutout (the pane-local OSC 11 fill) while the pane is detached (`window == nil`) or its surface has not presented a frame (`TerminalSurface.hasPresentedFrame`). A cutout built then leaves the whole terminal blank once the pane is shown (the buffer holds the text, the window draws only the fill): every auto-mirror opened in the background, every mirror restored at launch (the other Mac's replay carries its OSC 11 colors), and any background local terminal that sets OSC 11. The next fill change builds the cutout as upstream does. Retire when upstream replaces the cutout (open PR #9103, persistent root backdrop) or fixes early creation. E2E: `tests/supermux/loopback_mirror_render_e2e.py` |
+| 538 | `Sources/GhosttyTerminalView.swift` | `backdrop-cutout-after-first-frame` | **Upstream bug fix: terminals that stay blank when shown.** `GhosttySurfaceScrollView.synchronizeSharedBackdropCutout(visible:)` returns before building upstream's Core Image shared-backdrop cutout (the pane-local OSC 11 fill) while the pane is detached (`window == nil`) or its surface has not presented a frame (`TerminalSurface.hasPresentedFrame`). A cutout built then leaves the whole terminal blank once the pane is shown (the buffer holds the text, the window draws only the fill): every auto-mirror opened in the background, every mirror restored at launch (the other Mac's replay carries its OSC 11 colors), and any background local terminal that sets OSC 11. The next fill change builds the cutout as upstream does. Retire when upstream replaces the cutout (open PR #9103, persistent root backdrop) or fixes early creation. Since #651 a mirror's replay no longer carries the other Mac's colors, so a mirror reaches the cutout only when a program there sets a background. E2E: `tests/supermux/loopback_mirror_render_e2e.py` |
 | 545 | `Sources/TerminalNotificationStore.swift` | `device-mac-phone-forward` | Remote Macs, notification parity (workstream Mb; DESIGN.md decision 8: the Mac that runs the agent pushes). Four small fenced sites, all calling `Sources/Supermux/SupermuxPhoneForwardGate.swift`: (1) first line of `emitNotificationsDismissed(ids:)` shadows `ids` with `SupermuxPhoneForwardGate.phoneFacingDismissIDs(ids, in: notifications)` (dismissals of records mirrored from another Mac never reach a phone that never got them from this Mac); (2) in the same method `let unreadCount = indexes.unreadCount` becomes `supermuxPhoneBadgeCount`; (3) `emitUnreadBadgeEventIfChanged` uses `supermuxPhoneBadgeCount`; (4) in `deliverNotificationSideEffects`, upstream's `if shouldAttemptPhone { PhonePushClient.shared.forward(notification, badgeCount: indexes.unreadCount) }` becomes `let supermuxRelayAttempted = shouldAttemptPhone && SupermuxPhoneForwardGate.allowsUpstreamRelay(for: notification)` plus the same forward with `badgeCount: supermuxPhoneBadgeCount`. `supermuxPhoneBadgeCount` (store extension in the gate file) is the unread count minus unread `.deviceMac` records: THIS Mac's share of the phone badge. Every Mac sends only its own share, and the phone badges the total over every Mac (`SupermuxPhoneBadgeLedger`, #554–#557); do not put mirrored records back into this count, or the phone counts them once per Mac. Local banner, sound, sidebar and Dock handling of `.deviceMac` records is untouched |
 | 546 | `Sources/TerminalNotificationStore.swift` | `direct-phone-push` | Changes the body of #332's visible-forward fence: after computing `focusedPaneAlreadyVisible` (the #452 policy with `exactPaneFocused: isFocusedSurfaceArrival`, never `shouldSuppressExternalDelivery`) it calls `SupermuxComposition.directPhonePush.deliver(notification:focusedPaneAlreadyVisible:upstreamRelayAttempted: supermuxRelayAttempted, badgeCount: supermuxPhoneBadgeCount)` instead of `forward` behind `configuration().forwardingEnabled`. `deliver` (fork `SupermuxDirectPhonePush`) skips `.deviceMac` records, applies upstream's `PhonePushClient.currentAdmission()` (enabled plus `onlyWhenAway`, which the direct lane used to ignore), records the DEBUG decision log (`supermux.devices.push_decisions`), and stamps `macInstanceTag` (`MobileHostIdentity.instanceTag()`) into the payload so iPhone tap routing matches rows tagged `default`. The dismiss fence is unchanged (it now receives the #545 phone badge); the fork's `SupermuxDirectPhonePush.forwardDismissed` stamps `macDeviceId`/`macInstanceTag` and `SupermuxPhonePushService` sends every notify push with `mutable-content` and the dismiss push with an empty alert plus `mutable-content`, so the phone's extension sees each one and can total the badge per Mac |
 | 547 | `Sources/TerminalController+MobileNotificationSync.swift` | `device-mac-phone-badge` | In `v2MobileNotificationReconcile`, `"unread_count": store.unreadNotificationCount` becomes `store.supermuxPhoneBadgeCount` (#545): this Mac's own share, which the phone files under this Mac and adds to every other Mac's share (#554–#557) |
@@ -586,6 +587,10 @@ Rules for adding a touchpoint:
 | 637 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/Devices/SupermuxDeviceTerminalInput.swift` and `SupermuxTerminalSizingVisibility.swift` into the cmux target (ids `50BE0016…01`–`…04`, four entries each, `Devices/…` paths in the Supermux group) |
 | 638 | `Packages/macOS/CmuxTerminal/Sources/CmuxTerminal/Surface/TerminalSurface+SupermuxInput.swift` | `unfenced` | Whole fork-owned file in the upstream package: `supermuxDeferInputDuringClipboardRead(estimatedBytes:replay:)`, a public door to the internal `deferInputDuringRuntimeClipboardRead`, so a device mirror's input batch waits behind a paste's clipboard read on this Mac as local typing does. Re-apply: keep it calling whatever upstream names the runtime clipboard-read input deferral |
 | 639 | `Sources/GhosttyTerminalView.swift` | `device-mirror-key-sequence` | In `sendGhosttyKey`, the named-key branch's `if let keyName = terminalSurface?.manualInputKeyName(for:)` also requires `keySequence.isEmpty, keyTables.isEmpty`: while a Ghostty key sequence (leader) or key table is pending, the key stays with this Ghostty, which flushes the leader or matches the binding, instead of being forwarded and leaving the leader stuck. Also fixes the same gap for remote-tmux named keys |
+| 650 | `Packages/Shared/CMUXMobileCore/Sources/CMUXMobileCore/MobileTerminalRenderGridReplay.swift` | `replay-theme-portable` | `public var includesColorState = true` plus a fenced `init(_:includesColorState:)`, and the full snapshot's OSC 10/11/12 + `appendPaletteRestore` wrapped in `if includesColorState { … }`. Default true, so phone, iOS and remote-tmux callers are unchanged; device mirrors pass false (`SupermuxDeviceMirrorColors.themePortableBytes`) so this Mac's theme stands for every color the other Mac's program did not set. E2E: `tests/supermux/loopback_mirror_appearance_e2e.py` |
+| 651 | `Sources/Devices/DeviceTerminalMirrorSession.swift` | `device-mirror-viewer-colors` | `import CmuxCloudTui`; `private(set) var supermuxColors = SupermuxDeviceMirrorColorState()`; `Replay` gains `var colors: CloudTuiRemoteColors?`; `decodeReplay`'s render-grid branch returns `SupermuxDeviceMirrorColors.themePortableBytes(frame)` and `authored(in: frame)` (the program-authored colors, sparse); `attach()` feeds `supermuxColors.bytes(applying:colors:to:)` (the replay, then the authored-color delta) instead of `replay.bytes`. Device mirrors look like local panes with this Mac's appearance, translucency included |
+| 652 | `Sources/GhosttyTerminalView.swift` | `osc-default-bg-clears-override` | In `GHOSTTY_ACTION_COLOR_CHANGE`'s background branch, `surfaceView.backgroundColor = newColor` becomes `SupermuxDeviceMirrorColors.surfaceBackgroundOverride(for:defaultColor:isMirror:)`: on a manual-mirror surface a change back to this Mac's default background (Ghostty reports OSC 111 that way) clears the pane override instead of pinning a pane-local fill, so a program's reset gives the mirror its translucency back. Local panes unchanged |
+| 653 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/Mirrors/SupermuxMirrorAppearanceSocket.swift` (ids `50BE0017020…01`/`…02`, DEBUG driver `supermux.devices.mirror.terminal_background`) and `Sources/Supermux/Devices/SupermuxDeviceMirrorColors.swift` (ids `…03`/`…04`) into the cmux target, four entries each |
 
 ## How to re-apply
 
@@ -4712,7 +4717,8 @@ the terminal's scroll view (text, cursor, overlays) once the pane is shown; buil
 shown a frame it does not (upstream issue #8870 is the milder late-creation symptom). Building it
 during the move into the real window, or one main-queue turn later while the pane was still hidden,
 still blanked it; only the presented-frame gate held. Mirrors hit it every time because the owning
-Mac's replay carries its colors.
+Mac's replay carried its colors; since #651 it carries none, so a mirror reaches the cutout only when
+a program on the other Mac sets a background (the background OSC 11 terminal step still exercises it).
 
 Re-apply: in `GhosttySurfaceScrollView.synchronizeSharedBackdropCutout(visible:)`
 (`Sources/GhosttyTerminalView.swift`), before `if visible {`, add the fenced early return
@@ -5133,3 +5139,41 @@ Verify: `CMUX_TAG=<tag> python3 tests/supermux/loopback_workspace_behaviors_e2e.
 `new_workspace_shortcut_on_mirror`, `empty_area_on_mirror_creates_local_root`,
 `empty_area_menu_lists_macs`, `empty_area_menu_creates_on_mac_in_home` and
 `empty_area_menu_this_mac_creates_local`).
+
+### 650–653. Device mirrors use this Mac's terminal appearance — `replay-theme-portable`, `device-mirror-viewer-colors`, `osc-default-bg-clears-override`
+
+User feedback: remote (device-mirror) tabs ignored a translucent background. Every replay from the
+other Mac restored that Mac's default colors (OSC 10/11/12) and palette, so each mirror pane got a
+pane-local OSC 11 override and painted its own fill (`TerminalSurfaceBackgroundFillPlan` owner
+`terminal`, plus the Core Image cutout) instead of the window's shared translucent backdrop a local
+pane uses; it looked opaque and showed the other Mac's colors. The fix follows upstream's Cloud
+mirror: the replay carries no color state, and only the colors a program on the other Mac set itself
+(its effective colors that differ from its `terminal_config_theme`) travel beside it as a sparse
+`CloudTuiRemoteColors` set, applied as `oscDelta` from what the surface already holds. A host that
+does not export `terminal_config_theme` sends none, so this Mac's theme wins. Fork code:
+`Sources/Supermux/Devices/SupermuxDeviceMirrorColors.swift` (`SupermuxDeviceMirrorColors`,
+`SupermuxDeviceMirrorColorState`); DEBUG driver `Sources/Supermux/Mirrors/SupermuxMirrorAppearanceSocket.swift`.
+
+Re-apply after an upstream merge:
+- **#650** in `MobileTerminalRenderGridReplay`: keep upstream's `init(_:)` and add the fenced
+  `includesColorState` property and `init(_:includesColorState:)`. Wrap whatever block the full
+  snapshot uses to restore default colors and palette (today OSC 10/11/12 via `oscColorOrResetBytes`
+  and `appendPaletteRestore`, just before the default-style SGR) in `if includesColorState { … }`. If
+  upstream adds another color emission to the full snapshot, put it inside the same `if`. Retire if
+  upstream gives the replay its own theme-portable mode, and pass that instead.
+- **#651** in `DeviceTerminalMirrorSession`: the render-grid branch of `decodeReplay` must build its
+  bytes with `SupermuxDeviceMirrorColors.themePortableBytes(frame)` and its colors with
+  `authored(in: frame)`; wherever `attach()` feeds the replay to the surface, feed
+  `supermuxColors.bytes(applying:colors:to: surface?.id)` instead. The legacy `snapshot_data_b64`
+  branch leaves `colors` nil (its RIS resets every color). Live `terminal.bytes` stay untouched.
+- **#652** in the `GHOSTTY_ACTION_COLOR_CHANGE` background branch: the value stored in
+  `surfaceView.backgroundColor` comes from `SupermuxDeviceMirrorColors.surfaceBackgroundOverride`
+  with `isMirror: surfaceView.terminalSurface?.ioMode == .manualMirror`; keep upstream's
+  `applySurfaceBackground()` / `applyWindowBackgroundIfActive()` after it. Retire if upstream stops
+  treating a color change to the default as an override.
+- **#653**: pbxproj entries only.
+
+Verify: `CMUX_E2E_SUITES="loopback_mirror_appearance_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`
+(steps `mirror_matches_local`, `mirror_after_resync`, `authored_color_propagates`,
+`authored_reset_restores_translucency`, `restored_mirror_matches_local`; the hard proof is the
+mirror driver's `applied_remote_colors == {}` and `last_replay_color_osc == false`).
