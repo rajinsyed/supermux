@@ -325,7 +325,8 @@ SupermuxDeviceMirrorsGlue.unhide(machineID:ref:)   // unhide + reconcile
 - **Record fields** (state sync v2, additive): `supermux_status_entries` `[{key,value,icon?,color?,priority?}]`,
   `supermux_progress` `{value,label?}`, `supermux_log` `{message,level?}`, `supermux_working_panel_ids`
   `[terminal id]` (terminals whose own agent is running or waiting; `nil` from an older host, `[]` when
-  none: the mirror spins those tabs, #716/#717); `supermux_branch` /
+  none: the mirror spins those tabs, #716/#717; a Claude harness pane's id can appear too and matches
+  no mirror tab); `supermux_branch` /
   `supermux_pull_request` now also travel for workspaces no project owns (v2 only; the phone reads them
   only on project rows). The host pokes sync on sidebar-metadata changes
   (`SupermuxMobileSidebarStatusObserver`).

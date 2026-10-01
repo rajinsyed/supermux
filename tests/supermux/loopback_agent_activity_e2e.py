@@ -36,7 +36,20 @@ Checks:
                               keep the working indicator; a second Stop with no
                               background work settles it: nothing spins and the
                               completion notification arrives
-  8. cleanup                  S closed (M closes with it), auto-mirror restored
+  8. harness_tab_spins        a Claude harness tab in S spins while its agent runs
+                              and stops once it is idle, like a terminal tab
+  9. late_mirror_tab_spins    T_A running; M's T_A tab is reset to the state a tab
+                              is created in (`reset_tab_loading`) and a projector
+                              pass runs: the tab spins again (a mirror tab projected
+                              after its overlay arrived gets its spinner)
+ 10. moved_tab_spins          a second workspace S2 with its mirror M2; T_A, still
+                              running, moves into S2: its tab spins in S2 and its
+                              newly projected tab in M2 spins
+ 11. dock_tab_spins           T_A Waiting moves into its window's Dock: the Dock tab
+                              spins; set idle it stops, set running it spins again
+                              (the Dock keeps its own lifecycle store)
+ 12. cleanup                  S and S2 closed (M and M2 close with them), auto-mirror
+                              restored
 
 Writes a JSON report (default tests/supermux/artifacts/loopback_agent_activity_e2e-<tag>.json)
 and exits non-zero on any failure. Stdlib only.
@@ -101,6 +114,8 @@ class AgentActivityE2E:
         self.tab_a = ""
         self.tab_b = ""
         self.claude_pid: Optional[int] = None
+        self.source2 = ""
+        self.mirror2 = ""
         self.initial_auto_mirror: Optional[bool] = None
 
     # -- reads ----------------------------------------------------------------
@@ -120,10 +135,13 @@ class AgentActivityE2E:
         raise Failure("no loopback device (launch with SUPERMUX_DEBUG_LOOPBACK_DEVICE=1)")
 
     def mirror_binding(self) -> Optional[Dict[str, Any]]:
+        return self.mirror_of(self.source)
+
+    def mirror_of(self, workspace_id: str) -> Optional[Dict[str, Any]]:
         rows = (self.sock.call("supermux.devices.bindings", {}) or {}).get("mirrors") or []
-        found = [m for m in rows if m.get("machine") == self.machine and up(m.get("remote_workspace_id")) == up(self.source)]
+        found = [m for m in rows if m.get("machine") == self.machine and up(m.get("remote_workspace_id")) == up(workspace_id)]
         if len(found) > 1:
-            raise Failure(f"{len(found)} mirrors of the source")
+            raise Failure(f"{len(found)} mirrors of {workspace_id}")
         return found[0] if found else None
 
     def terminals(self, workspace_id: str) -> List[str]:
@@ -146,6 +164,26 @@ class AgentActivityE2E:
             if remote in (self.tab_a, self.tab_b):
                 found["mirror"][remote] = tab.get("is_loading")
         return found
+
+    def local_tab(self, workspace_id: str, panel: str) -> Dict[str, Any]:
+        """The tab of `panel` in a local workspace's tab bar."""
+        for tab in self.indicators(workspace_id).get("tabs") or []:
+            if up(tab.get("panel_id")) == up(panel):
+                return tab
+        raise Failure(f"no tab for {panel} in {workspace_id} yet")
+
+    def mirror_tab(self, mirror_id: str, terminal: str) -> Dict[str, Any]:
+        """The tab of a mirror that shows the host's `terminal`."""
+        for tab in self.indicators(mirror_id).get("tabs") or []:
+            if up(tab.get("remote_surface_id")) == up(terminal):
+                return tab
+        raise Failure(f"no tab for {terminal} in the mirror {mirror_id} yet")
+
+    def dock_tab(self, panel: str) -> Dict[str, Any]:
+        tab = self.sock.call("supermux.devices.mirror.dock_tab", {"surface_id": panel}) or {}
+        if not tab.get("in_dock"):
+            raise Failure(f"{panel} is not in a Dock")
+        return tab
 
     def activities(self) -> Dict[str, Any]:
         """S's and M's flat-row activity, M's mirror status activity and the
@@ -172,8 +210,8 @@ class AgentActivityE2E:
 
     # -- actions --------------------------------------------------------------
 
-    def lifecycle(self, panel: str, value: str) -> None:
-        self.sock.v1(f"set_agent_lifecycle {AGENT_KEY} {value} --tab={self.source} --panel={panel}")
+    def lifecycle(self, panel: str, value: str, workspace: Optional[str] = None) -> None:
+        self.sock.v1(f"set_agent_lifecycle {AGENT_KEY} {value} --tab={workspace or self.source} --panel={panel}")
 
     def hook(self, subcommand: str, payload: Dict[str, Any]) -> str:
         """Runs `cmux claude-hook <subcommand>` of the tagged build against S's
@@ -290,6 +328,16 @@ class AgentActivityE2E:
                     if bool(loading) != (terminal in working):
                         raise Failure(f"tab spinners {self.named(found)}")
             return self.named(found)
+
+        return wait_for(description, check, self.timeout)
+
+    def expect_loading(self, read: Callable[[], Dict[str, Any]], loading: bool, description: str) -> Dict[str, Any]:
+        """Waits until the tab `read` returns spins (or not)."""
+        def check() -> Optional[Dict[str, Any]]:
+            tab = read()
+            if bool(tab.get("is_loading")) == loading:
+                return tab
+            raise Failure(f"is_loading={tab.get('is_loading')} lifecycle={tab.get('lifecycle')}")
 
         return wait_for(description, check, self.timeout)
 
@@ -448,9 +496,102 @@ class AgentActivityE2E:
             raise Failure("; ".join(problems))
         return result
 
+    def harness_tab_spins(self) -> Dict[str, Any]:
+        added = self.sock.call("surface.create", {"workspace_id": self.source, "type": "claude_harness",
+                                                  "focus": False}) or {}
+        harness = up(added.get("surface_id"))
+        if not harness:
+            raise Failure(f"surface.create claude_harness returned no surface_id: {added}")
+        try:
+            tab = wait_for("the harness tab on S", lambda: self.local_tab(self.source, harness), self.timeout)
+            if tab.get("panel_type") != "claudeHarness":
+                raise Failure(f"the harness tab reads as {tab.get('panel_type')}")
+            # The lifecycle a harness pane's own Claude session writes.
+            self.lifecycle(harness, "running")
+            running = self.expect_loading(lambda: self.local_tab(self.source, harness), True,
+                                          "the harness tab to spin while its Claude runs")
+            self.lifecycle(harness, "idle")
+            idle = self.expect_loading(lambda: self.local_tab(self.source, harness), False,
+                                       "the harness tab to stop once its Claude is idle")
+        finally:
+            self.sock.call("surface.close", {"workspace_id": self.source, "surface_id": harness, "force": True})
+        return {"harness": harness, "running": running, "idle": idle}
+
+    def late_mirror_tab_spins(self) -> Dict[str, Any]:
+        self.lifecycle(self.tab_a, "running")
+        self.expect_tabs({self.tab_a}, "T_A's tab to spin on S and on M")
+        tab = self.mirror_tab(self.mirror, self.tab_a)
+        # A tab is created not spinning: stand in for M's T_A tab being
+        # projected after the overlay that names it working arrived.
+        self.sock.call("supermux.devices.mirror.reset_tab_loading",
+                       {"workspace_id": self.mirror, "panel_id": tab.get("panel_id")})
+        # Recorded, not asserted: with the fix any projector pass that lands
+        # here already spins it again; without it nothing does.
+        reset = self.mirror_tab(self.mirror, self.tab_a)
+        # The pass a new projection's catalog change runs; the overlay is unchanged.
+        self.sock.call("supermux.devices.reconcile", {})
+        spun = self.expect_loading(lambda: self.mirror_tab(self.mirror, self.tab_a), True,
+                                   "M's re-created T_A tab to spin after a projector pass")
+        return {"reset": reset, "after_pass": spun}
+
+    def moved_tab_spins(self) -> Dict[str, Any]:
+        title = f"agent-activity-{self.nonce}-2"
+        created = self.sock.call("workspace.create", {"title": title, "focus": False,
+                                                      "working_directory": str(self.root)}) or {}
+        self.source2 = up(created.get("workspace_id") or created.get("created_workspace_id"))
+        if not self.source2:
+            raise Failure(f"workspace.create returned no id: {created}")
+        self.sock.call("workspace.rename", {"workspace_id": self.source2, "title": title})
+        first = wait_for("S2's first terminal", lambda: (self.terminals(self.source2) or [None])[0], self.timeout)
+        self.mirror2 = up(wait_for("S2's mirror", lambda: self.mirror_of(self.source2), self.timeout).get("workspace_id"))
+        wait_for("S2's terminal on its mirror", lambda: self.mirror_tab(self.mirror2, first), self.timeout)
+        self.facts.update(source2=self.source2, mirror2=self.mirror2)
+        self.lifecycle(self.tab_a, "running")
+        self.expect_loading(lambda: self.local_tab(self.source, self.tab_a), True, "T_A's tab to spin on S")
+        self.sock.call("surface.move", {"surface_id": self.tab_a, "workspace_id": self.source2, "focus": False})
+        local = self.expect_loading(lambda: self.local_tab(self.source2, self.tab_a), True,
+                                    "T_A's tab to keep spinning in S2")
+        mirrored = self.expect_loading(lambda: self.mirror_tab(self.mirror2, self.tab_a), True,
+                                       "T_A's new tab in M2 to spin")
+        return {"source2": self.source2, "mirror2": self.mirror2, "local": local, "mirror": mirrored}
+
+    def dock_tab_spins(self) -> Dict[str, Any]:
+        # T_A lives in S2 (moved_tab_spins) beside S2's own terminal, so moving
+        # it out empties no workspace; without S2 it moves out of S.
+        home = self.source2 or self.source
+        self.lifecycle(self.tab_a, "backgroundWorkPending", home)
+        self.expect_loading(lambda: self.local_tab(home, self.tab_a), True, "T_A's Waiting tab to spin")
+        moved = self.sock.call("supermux.devices.mirror.move_into_dock", {"surface_id": self.tab_a}) or {}
+        if not moved.get("moved"):
+            raise Failure(f"T_A did not move into the Dock: {moved}")
+        problems: List[str] = []
+        result: Dict[str, Any] = {"dock_owner_id": moved.get("dock_owner_id")}
+        try:
+            for name, value, loading in (
+                ("moved_in_waiting", None, True),
+                ("set_idle", "idle", False),
+                ("set_running", "running", True),
+            ):
+                if value:
+                    self.lifecycle(self.tab_a, value, home)
+                try:
+                    result[name] = self.expect_loading(lambda: self.dock_tab(self.tab_a), loading,
+                                                       f"T_A's Dock tab to {'spin' if loading else 'stop'} ({name})")
+                except Failure as error:
+                    problems.append(f"{name}: {error}")
+        finally:
+            self.lifecycle(self.tab_a, "idle", home)
+            self.sock.call("surface.close", {"surface_id": self.tab_a, "force": True})
+        if problems:
+            raise Failure("; ".join(problems))
+        return result
+
     def cleanup(self) -> Dict[str, Any]:
-        # Close the source only: auto-mirror closes its mirror once the remote
+        # Close the sources only: auto-mirror closes each mirror once its remote
         # workspace is gone.
+        if self.source2:
+            self.sock.call("workspace.close", {"workspace_id": self.source2, "force": True})
+            wait_for("M2 to close with S2", lambda: self.mirror_of(self.source2) is None, self.timeout)
         if self.source:
             self.sock.call("workspace.close", {"workspace_id": self.source, "force": True})
             wait_for("the mirror to close with its source", lambda: self.mirror_binding() is None, self.timeout)
@@ -458,7 +599,7 @@ class AgentActivityE2E:
             self.sock.call("supermux.devices.set_auto_mirror", {"enabled": False})
         if not self.args.keep:
             shutil.rmtree(self.root, ignore_errors=True)
-        return {"closed": self.source or None}
+        return {"closed": [w for w in (self.source, self.source2) if w] or None}
 
     def run(self) -> bool:
         ok = self.step("setup", self.setup) and self.step("source_with_two_tabs", self.source_with_two_tabs)
@@ -469,6 +610,10 @@ class AgentActivityE2E:
                 ("spinner_follows_the_tab", self.spinner_follows_the_tab),
                 ("settled_clears", self.settled_clears),
                 ("hook_driven_waiting", self.hook_driven_waiting),
+                ("harness_tab_spins", self.harness_tab_spins),
+                ("late_mirror_tab_spins", self.late_mirror_tab_spins),
+                ("moved_tab_spins", self.moved_tab_spins),
+                ("dock_tab_spins", self.dock_tab_spins),
             ]:
                 ok = self.step(name, check) and ok
         return self.step("cleanup", self.cleanup) and ok

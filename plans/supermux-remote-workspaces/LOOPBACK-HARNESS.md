@@ -152,7 +152,7 @@ CMUX_E2E_SUITES="loopback_new_tab_order_e2e" CMUX_TAG=<tag> tests/supermux/run_a
 ## Agent activity E2E
 
 `tests/supermux/loopback_agent_activity_e2e.py` checks the agent-working indicator while an agent is
-"Waiting" and the per-tab working spinner (#715–#718). A background workspace S gets a second
+"Waiting" and the per-tab working spinner (#715–#719). A background workspace S gets a second
 terminal; with the lifecycle set over `set_agent_lifecycle`, T_A's agent `backgroundWorkPending`
 must read as `working` on S's and its mirror's flat rows, the mirror status and the phone's
 `mobile.workspace.list`, and only T_A's tab must spin on S and on the mirror
@@ -168,6 +168,13 @@ stand-in running in T_A (it execs a long sleep under its own PID, as the wrapper
 and the `CMUX_AGENT_LAUNCH_*` launch capture. Without the PID upstream registers no agent process, so
 it hides the agent's pill; without the launch capture the pane gets no resume binding, so upstream
 drops the completion notification as `session-unbound`.
+Then: a Claude harness tab in S spins while its lifecycle is `running` and stops at `idle`; the
+mirror's T_A tab, reset to the state a tab is created in (`supermux.devices.mirror.reset_tab_loading`,
+DEBUG), spins again after one projector pass (`supermux.devices.reconcile`) with the overlay
+unchanged; a second workspace S2 gets running T_A over `surface.move` and both S2's tab and the newly
+projected tab in S2's mirror spin; last, T_A Waiting moves into its window's Dock
+(`supermux.devices.mirror.move_into_dock`, DEBUG, the drag's `moveSurfaceIntoDock`) and its Dock tab
+(`supermux.devices.mirror.dock_tab`, DEBUG) spins, stops at `idle` and spins again at `running`.
 
 ```bash
 CMUX_E2E_SUITES="loopback_agent_activity_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
