@@ -13,7 +13,8 @@ down showed the same card, and the closed tab came back on reconnect.
 This suite drives the real device path against ONE tagged DEBUG build running
 the loopback device ("Loopback Mac" = this same app's own mobile host). The
 close prompt ("Close “X” on <Mac>?") is pre-answered through
-`supermux.devices.terminal_close.answer`, so no modal ever shows:
+`supermux.devices.terminal_close.answer`, so no modal shows except in step 6,
+which shows the real prompt and lets it answer Cancel by itself:
 
   1. setup                              auto-mirror on, the loopback linked and fetched
   2. source_with_terminals              a source workspace with T0 idle, T1-T3 busy, T4
@@ -26,12 +27,15 @@ close prompt ("Close “X” on <Mac>?") is pre-answered through
   5. busy_tab_close_cancelled           answer Cancel, close T2's mirror tab -> asked
                                         once, T2 kept and projected again, the new pane
                                         attached and rendering, no overlay, no card
-  6. reopened_pane_attaches             T0 projected into another workspace, closed and
+  6. shown_prompt_keeps_app_responsive  the real prompt for busy T2 (Cancel pressed after
+                                        a few seconds) -> the app answers other requests at
+                                        once while it is up, then T2 is projected again
+  7. reopened_pane_attaches             T0 projected into another workspace, closed and
                                         projected again (same link) -> the new pane attaches
-  7. kill_terminal_forces               vm.terminal_close on busy T3 (Kill Terminal…) ->
+  8. kill_terminal_forces               vm.terminal_close on busy T3 (Kill Terminal…) ->
                                         closed there, no prompt
-  8. idle_tab_close_control             close idle T0's mirror tab -> closed there, no prompt
-  9. offline_close                      link down, close idle T4's mirror tab -> gone at
+  9. idle_tab_close_control             close idle T0's mirror tab -> closed there, no prompt
+ 10. offline_close                      link down, close idle T4's mirror tab -> gone at
                                         once, no card; on reconnect T4 is closed there and
                                         never projected again
 
@@ -444,6 +448,48 @@ class MirrorTabCloseE2E:
             raise Failure("; ".join(problems))
         return {"old_panel": old_panel, "new_panel": panel}
 
+    def shown_prompt_keeps_app_responsive(self) -> Dict[str, Any]:
+        """The real prompt is up: other requests (main-actor work) are still answered at once.
+
+        A prompt run as a nested modal session from the close's main-actor task
+        stalls the main queue until it is answered, so every request waits.
+        """
+        self.require_busy("T2")
+        self.answer("show")
+        old_panel = self.close_mirror_tab("T2")
+        slowest = 0.0
+
+        def timed(call: Callable[[], Any]) -> Any:
+            nonlocal slowest
+            started = time.monotonic()
+            value = call()
+            slowest = max(slowest, time.monotonic() - started)
+            return value
+
+        problems: List[str] = []
+        shown = wait_for("the close prompt to show", lambda: timed(self.asked), self.timeout)
+        if not all(prompt.get("shown") is True for prompt in shown):
+            problems.append(f"the prompt was answered without showing: {shown}")
+        deadline = time.monotonic() + 2.5
+        while time.monotonic() < deadline:
+            timed(lambda: self.surfaces(self.mirror_id))
+            timed(self.asked)
+            time.sleep(0.1)
+        if slowest > 1.0:
+            problems.append(f"a request waited {slowest:.1f}s while the prompt was up (expected under 1s)")
+
+        def new_panel() -> Optional[str]:
+            panel = self.mirror_panel(self.terms["T2"])
+            return panel if panel and panel != old_panel else None
+
+        panel = wait_for("T2 to be projected again after the prompt's Cancel", new_panel, self.timeout)
+        if not self.source_has("T2"):
+            problems.append("the source lost T2 although the prompt was cancelled")
+        problems += self.asked_problems(1)
+        if problems:
+            raise Failure("; ".join(problems))
+        return {"slowest_request_seconds": round(slowest, 2), "new_panel": panel}
+
     def reopened_pane_attaches(self) -> Dict[str, Any]:
         resource = (self.projections(self.mirror_id).get(up(self.terms["T0"])) or {}).get("resource")
         if not resource:
@@ -586,6 +632,7 @@ class MirrorTabCloseE2E:
                 ("host_close_requires_confirmation", self.host_close_requires_confirmation),
                 ("busy_tab_close_confirmed", self.busy_tab_close_confirmed),
                 ("busy_tab_close_cancelled", self.busy_tab_close_cancelled),
+                ("shown_prompt_keeps_app_responsive", self.shown_prompt_keeps_app_responsive),
                 ("reopened_pane_attaches", self.reopened_pane_attaches),
                 ("kill_terminal_forces", self.kill_terminal_forces),
                 ("idle_tab_close_control", self.idle_tab_close_control),
