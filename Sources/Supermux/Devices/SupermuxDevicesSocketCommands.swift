@@ -17,7 +17,8 @@ import SupermuxKit
 /// and (DEBUG builds only) `request {machine, method, params?, timeout_seconds?}`,
 /// `bind {workspace_id, machine, remote_workspace_id}` and `unbind {workspace_id}` (test hooks for the
 /// export filter and restart-stable bindings without a second Mac), and `link {machine, action:
-/// stop|restore, busy?}` (holds a link down, then redials it), and `terminal_mouse_drag {surface_id, from, to}`
+/// stop|restore|stall|status, busy?, method?, seconds?}` (holds a link down, then redials it; holds one
+/// loopback host request), and `terminal_mouse_drag {surface_id, from, to}`
 /// (a real Ghostty mouse drag across a terminal, for the mirror input E2E), and `user_close
 /// {workspace_id | workspace_ids, answer?}` (a user close with its confirmations pre-answered),
 /// `reopen_closed_workspace {}` and `hold_remote_closes {enabled}`
@@ -286,13 +287,17 @@ enum SupermuxDevicesSocketCommands {
         return ["surface_id": surfaceID.uuidString, "has_selection": selected]
     }
 
-    /// `link {machine, action: "stop" | "restore", busy?}`: holds a device link
-    /// down (tearing down its client like a transport loss, but without the
-    /// immediate redial) or dials it again, so E2E can drop the link under an
-    /// in-flight request and watch availability change live. `busy:
-    /// "<method>"` on a restore makes the loopback host answer the new
-    /// connection's first `<method>` request after its sync fetch
-    /// `server_busy` (``SupermuxDeviceLoopbackHostAcceptor``).
+    /// `link {machine, action: "stop" | "restore" | "stall" | "status", busy?,
+    /// method?, seconds?}`: holds a device link down (tearing down its client
+    /// like a transport loss, but without the immediate redial) or dials it
+    /// again, so E2E can drop the link under an in-flight request and watch
+    /// availability change live. `busy: "<method>"` on a restore makes the
+    /// loopback host answer the new connection's first `<method>` request
+    /// after its sync fetch `server_busy`; `stall` makes it hold its next
+    /// `method` request for `seconds` (default 30) before answering it
+    /// (``SupermuxDeviceLoopbackHostAcceptor``). Every action answers the
+    /// link's phase, the loopback connections admitted since launch (a redial
+    /// adds one) and whether a stall is still armed.
     private static func setLink(_ params: [String: Any], devices: SupermuxDevices) throws -> [String: Any] {
         let machine = try machine(params)
         guard let link = devices.provider(for: machine)?.link else {
@@ -303,9 +308,20 @@ enum SupermuxDevicesSocketCommands {
         case "restore":
             SupermuxDeviceLoopbackHostAcceptor.busyMethodForNextConnection = params["busy"] as? String
             link.refresh()
-        default: throw InvalidParams(message: "action must be stop or restore")
+        case "stall":
+            SupermuxDeviceLoopbackHostAcceptor.stalledRequest = (
+                method: try required(params, "method"),
+                seconds: min(max(number(params, "seconds") ?? 30, 1), 600)
+            )
+        case "status": break
+        default: throw InvalidParams(message: "action must be stop, restore, stall or status")
         }
-        return ["machine": machine.rawValue, "phase": String(describing: link.phase)]
+        return [
+            "machine": machine.rawValue,
+            "phase": String(describing: link.phase),
+            "connections_admitted": SupermuxDeviceLoopbackHostAcceptor.admittedConnections,
+            "stall_armed": SupermuxDeviceLoopbackHostAcceptor.stalledRequest != nil,
+        ]
     }
     #endif
 

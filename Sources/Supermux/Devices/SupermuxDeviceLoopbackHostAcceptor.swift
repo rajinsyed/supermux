@@ -22,6 +22,13 @@ final class SupermuxDeviceLoopbackHostAcceptor {
     /// ``BusyRequest``); armed by the DEBUG `supermux.devices.link
     /// {action: "restore", busy: "<method>"}`.
     static var busyMethodForNextConnection: String?
+    /// The method whose next request the loopback host holds, and for how
+    /// many seconds (see ``holdIfStalled(_:)``); armed by the DEBUG
+    /// `supermux.devices.link {action: "stall", method, seconds}`.
+    static var stalledRequest: (method: String, seconds: Double)?
+    /// Connections admitted since launch: a link that redials adds one, which
+    /// E2E reads through `supermux.devices.link {action: "status"}`.
+    private(set) static var admittedConnections = 0
 
     private let peer: CmxIrohAdmittedPeer
     private let layouts: DeviceWorkspaceLayoutHost
@@ -61,6 +68,7 @@ final class SupermuxDeviceLoopbackHostAcceptor {
         let layouts = self.layouts
         let busy = BusyRequest(method: Self.busyMethodForNextConnection)
         Self.busyMethodForNextConnection = nil
+        Self.admittedConnections += 1
         cmuxDebugLog("supermux.loopback host admitted connection")
         Task {
             let exit = await MobileHostService.acceptTransport(
@@ -70,6 +78,7 @@ final class SupermuxDeviceLoopbackHostAcceptor {
                 firstFrameTimeoutNanoseconds: 0,
                 peerRequestHandler: { request in
                     if let refused = await busy.answer(request) { return refused }
+                    await Self.holdIfStalled(request)
                     return await layouts.handle(request)
                 },
                 isCurrent: { true }
@@ -77,6 +86,17 @@ final class SupermuxDeviceLoopbackHostAcceptor {
             await transport.close()
             cmuxDebugLog("supermux.loopback host connection ended: \(String(describing: exit.lifecycle))")
         }
+    }
+
+    /// Holds the first request for the stalled method (any connection) for
+    /// the armed seconds, then lets it run as usual: one slow host call, as a
+    /// git command or file read in a folder behind an unanswered macOS privacy
+    /// prompt is. The connection keeps answering everything else meanwhile.
+    private static func holdIfStalled(_ request: MobileHostRPCRequest) async {
+        guard let stall = stalledRequest, stall.method == request.method else { return }
+        stalledRequest = nil
+        cmuxDebugLog("supermux.loopback host holds \(stall.method) for \(stall.seconds) s")
+        try? await Task.sleep(for: .milliseconds(Int(stall.seconds * 1000)))
     }
 }
 
