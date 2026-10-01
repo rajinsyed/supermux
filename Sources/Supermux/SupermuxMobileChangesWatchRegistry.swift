@@ -197,18 +197,29 @@ final class SupermuxMobileChangesWatchRegistry {
     /// folder and its parent, 300 ms throttle). An entry added, removed or
     /// renamed in the folder signals; edits deeper down (`.git/` included)
     /// do not, exactly as for the local panel.
+    ///
+    /// The watcher's init opens the folder and its parent, which blocks in
+    /// the kernel while a macOS privacy prompt for that folder is unanswered
+    /// (nobody answers it on a headless Mac). So it is built on a thread of
+    /// its own: never on the main actor, where `files.watch` builds the
+    /// stream (the whole app would hang and the caller miss its deadline),
+    /// nor on Swift's cooperative pool.
     nonisolated static func rootEntryChanges(_ path: String) -> AsyncStream<Void> {
-        let watcher = FileWatcher(path: path, throttle: .milliseconds(300))
-        return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+        AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
             // The task keeps the watcher alive: its stream ends when it goes.
             let task = Task {
-                for await _ in watcher.events { continuation.yield() }
+                let watcher = await withCheckedContinuation { (built: CheckedContinuation<FileWatcher, Never>) in
+                    Thread.detachNewThread {
+                        built.resume(returning: FileWatcher(path: path, throttle: .milliseconds(300)))
+                    }
+                }
+                if !Task.isCancelled {
+                    for await _ in watcher.events { continuation.yield() }
+                }
+                await watcher.stop()
                 continuation.finish()
             }
-            continuation.onTermination = { _ in
-                task.cancel()
-                Task { await watcher.stop() }
-            }
+            continuation.onTermination = { _ in task.cancel() }
         }
     }
 
