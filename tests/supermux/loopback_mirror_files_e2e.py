@@ -44,16 +44,20 @@ folder (the loopback's files are on this disk too):
                                      under src/ is colored), and `cd ..` brings it back
  13. live_refresh                    a file created in the folder appears with no action
  13d. idle_panel_stays_still         with nothing changing on the other Mac the panel does not
-                                     refresh at all (no emptying, spinner, row rebuild or git
-                                     colors) for --idle-seconds
+                                     refresh at all (no emptying, spinner, row rebuild, git
+                                     colors, nor a refresh that changes nothing) for --idle-seconds
  13e. deep_churn_keeps_root_rows     for --churn-seconds a file deep in src/ and .git/index change
                                      five times a second (agents, builds, git): the panel, like the
-                                     local one, watches only its root's entries, so it never empties
-                                     or shows the spinner, and its rows, src/'s expansion and the
-                                     selection stay as they were
+                                     local one, watches only its root's entries, so it never
+                                     refreshes at all (every counter 0), and its rows, src/'s
+                                     expansion and the selection stay as they were
  13f. root_change_updates_in_place   a file created and then removed at the root appears and goes
-                                     in place: the rows are rebuilt, never emptied, no spinner, and
+                                     in place: a refresh runs and rebuilds the rows, never emptied,
+                                     no spinner, and
                                      src/ stays expanded with the selection kept
+ 13g. root_gone_says_so              the folder renamed away on the other Mac (the shell still
+                                     there): the panel empties and says why, as the local panel's
+                                     reload does; renamed back, its rows return
  13b. file_operations_on_the_other_mac
                                      the panel's context menu offers New File, New Folder,
                                      Rename, Duplicate and Move to Trash for a row (New File and
@@ -694,7 +698,9 @@ class MirrorFilesE2E:
 
     @staticmethod
     def visible_refreshes(seen: Dict[str, Any]) -> Dict[str, Any]:
-        return {key: seen.get(key) for key in ("emptied", "loading_shown", "rebuilt", "git_published")}
+        """The probe's counters plus `refreshes`: live refreshes run, even one that changed
+        nothing (a re-list and a git status over the link), which no visible counter shows."""
+        return {key: seen.get(key) for key in ("emptied", "loading_shown", "rebuilt", "git_published", "refreshes")}
 
     def src_expanded(self, state: Dict[str, Any]) -> bool:
         src = self.row(state, "src")
@@ -736,8 +742,8 @@ class MirrorFilesE2E:
         seen = self.visible_refreshes(self.counters())
         after = self.device_state()
         problems = []
-        if seen["emptied"] or seen["loading_shown"]:
-            problems.append(f"the panel reloaded visibly under deep churn: {seen}")
+        if any(seen.values()):
+            problems.append(f"the panel refreshed under deep churn: {seen}")
         if shape(after["rows"]) != shape(before["rows"]):
             problems.append(f"rows {shape(after['rows'])} != before {shape(before['rows'])}")
         if not self.src_expanded(after):
@@ -769,6 +775,8 @@ class MirrorFilesE2E:
             problems.append(f"a root change emptied the panel or showed the spinner: {seen}")
         if not seen["rebuilt"]:
             problems.append(f"the rows were never rebuilt: {seen}")
+        if not seen["refreshes"]:
+            problems.append(f"no live refresh was counted: {seen}")
         if not self.src_expanded(after):
             problems.append(f"src/ is no longer expanded: {after.get('expanded_paths')}")
         if after.get("selected_path") != before.get("selected_path"):
@@ -776,6 +784,34 @@ class MirrorFilesE2E:
         if problems:
             raise Failure("; ".join(problems))
         return {"counters": seen}
+
+    def root_gone_says_so(self) -> Dict[str, Any]:
+        """The folder vanishing on the other Mac (a deleted worktree, a checkout that removed
+        it) while the shell stays there: the local panel's reload empties the tree and says why.
+        The mirror's in-place refresh kept the old rows with no message until a reconnect."""
+        self.require("mirror_id")
+        before = self.device_state()
+        away = self.root.with_name(f"{self.root.name}-away-{self.nonce}")
+        os.rename(self.root, away)
+        try:
+            def says_gone() -> Dict[str, Any]:
+                state = self.state()
+                if state.get("rows") or not state.get("status_message"):
+                    raise Failure(f"folder gone: {brief(state)}")
+                return state
+
+            gone = wait_for("the panel to say its folder is gone", says_gone, self.timeout)
+        finally:
+            os.rename(away, self.root)
+
+        def back() -> Dict[str, Any]:
+            state = self.device_state()
+            if shape(state["rows"]) != shape(before["rows"]):
+                raise Failure(f"rows {shape(state['rows'])} != before {shape(before['rows'])}")
+            return state
+
+        wait_for("the rows to come back with the folder", back, self.timeout)
+        return {"status_message": gone.get("status_message")}
 
     def file_operations_on_the_other_mac(self) -> Dict[str, Any]:
         self.require("mirror_id")
@@ -989,6 +1025,7 @@ class MirrorFilesE2E:
             ("idle_panel_stays_still", self.idle_panel_stays_still),
             ("deep_churn_keeps_root_rows", self.deep_churn_keeps_root_rows),
             ("root_change_updates_in_place", self.root_change_updates_in_place),
+            ("root_gone_says_so", self.root_gone_says_so),
             ("file_operations_on_the_other_mac", self.file_operations_on_the_other_mac),
             ("file_op_error_with_panel_hidden", self.file_op_error_with_panel_hidden),
             ("link_drop_is_honest", self.link_drop_is_honest),

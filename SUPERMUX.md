@@ -341,7 +341,11 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   watcher), and an entry added, removed or renamed there (or a reconnect, which re-leases) refreshes
   it **in place**: the root and expanded folders are listed again and merged into the rows shown,
   so it never empties or shows the spinner, expansion, selection and scroll stay, rows are rebuilt
-  only when a listing changed and git colors are published only when they changed. As locally,
+  only when a listing changed and git colors are published only when they changed. A failed
+  listing keeps its rows (link down, timeout, a busy Mac), except a folder gone or unreadable
+  there: as the local reload does, the tree empties and says why, and the rows return when the
+  folder does. Events are matched against the folder as that Mac spells it (its `files.watch`
+  reply's `root`), never normalized on this Mac's disk. As locally,
   edits deeper in the tree (`.git/` included) do not refresh it, so their git colors update on the
   next root-entry change, `cd` or reconnect. Both Macs need this build (an earlier
   `files_read.v1` host refuses `files.watch`; the panel then refreshes only on reconnect and `cd`).
