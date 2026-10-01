@@ -155,7 +155,9 @@ extension TerminalController {
                     )
                     return
                 }
-                let closed = tabManager.deleteWorkspaceGroup(groupId: groupID)
+                // SUPERMUX:begin device-mirror-phone-group-delete (upstream: `let closed = tabManager.deleteWorkspaceGroup(groupId: groupID)`)
+                let closed = SupermuxDeviceMirrorCloseGate.phoneGroupDelete { tabManager.deleteWorkspaceGroup(groupId: groupID) }
+                // SUPERMUX:end device-mirror-phone-group-delete
                 guard (isPinnedEmptyGroup ? closed == 0 : closed == memberCount) else {
                     mutationError = .err(
                         code: "invalid_request",

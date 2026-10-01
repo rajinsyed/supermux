@@ -368,6 +368,12 @@ method: "workspace.close"}`): the close misses its 20 s deadline on a live link 
 26 s it must stay in `pending_remote_closes` with auto-mirror reopening nothing; then the source
 closes and the pending close is forgotten. Before, the closer took `timed_out` as a refusal: it forgot
 the close and beeped, and auto-mirror reopened the workspace until the held close ran.
+W13 deletes the same kind of group from the phone (mobile `workspace.group.action {action: delete}` sent
+over the loopback link with `supermux.devices.request`): the phone never listed the mirror member,
+so its source stays open, is hidden here and is not queued for a close. W14 borrows one terminal of
+a source into a local workspace (keeping its own shell), hides the source's mirror and unhides it:
+the source gets its own mirror again, and auto-mirror runs at most a few passes in 3 s (the skip
+loop ran ~15).
 
 ```bash
 CMUX_TAG=<tag> python3 tests/supermux/loopback_mirror_workspace_close_e2e.py \
