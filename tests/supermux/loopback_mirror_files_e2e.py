@@ -876,7 +876,7 @@ class MirrorFilesE2E:
             problems.append(f"renaming .git/HEAD was not refused: {refused}")
         if problems:
             raise Failure("; ".join(problems))
-        return {"row_menu": row_menu, "root_menu": root_menu, "git_internals": refused.get("error"), "seconds": seconds}
+        return {"row_menu": row_menu, "root_menu": root_menu, "git_internals": refused.get("error"), "op_seconds": seconds}
 
     def file_op_error_with_panel_hidden(self) -> Dict[str, Any]:
         """A failed file operation must not run a nested modal inside the operation's

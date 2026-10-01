@@ -453,7 +453,7 @@ browse its files here." Move to Trash moves the scratch files to this Mac's Tras
 Move to Trash can take tens of seconds per item on a headless Mac (with privacy prompts left up it
 waited ~45 s in the kernel on `~/.Trash`, from any process), so Duplicate and Move to Trash get the
 product's reply bound (`SupermuxDeviceReplyDeadline.fileCopy`) and the step reports each
-operation's `seconds`. A call that gets no reply hangs up the suite's socket, so its late reply
+operation's `op_seconds`. A call that gets no reply hangs up the suite's socket, so its late reply
 cannot answer the next step's call.
 
 ```bash
