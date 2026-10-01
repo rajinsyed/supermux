@@ -384,9 +384,15 @@ final class cmuxUITests: XCTestCase {
             try frame(scratch, "scratch").minX + 15,
             "Nested workspace rows are indented"
         )
-        // The table drops a repeated row id, so counting rows cannot catch a
-        // nested workspace that is also left in the loose list; the drag
-        // step below does.
+        // Each workspace is listed once. The table drops a repeated row id, so
+        // counting rows can never see a nested workspace also left in the
+        // loose list (which would make a drag move the wrong row); the DEBUG
+        // table names any id it dropped in its accessibility value instead.
+        let workspaceList = element("MobileWorkspaceList")
+        func assertNoDroppedDuplicates(_ moment: String) {
+            XCTAssertEqual(workspaceList.value as? String ?? "", "", "No row id is listed twice (\(moment))")
+        }
+        assertNoDroppedDuplicates("merged list")
         func count(_ id: String) -> Int {
             app.descendants(matching: .any).matching(identifier: "MobileWorkspaceRow-\(id)").count
         }
@@ -556,22 +562,8 @@ final class cmuxUITests: XCTestCase {
                        "The Studio-only cmux copy offers only the Studio, not the MacBook cmux another row holds")
         closeNewWorktree()
 
-        // Every workspace is listed once. A nested workspace also left in the
-        // loose list would be dropped by the table but kept by the list's
-        // model, so a drag would move a different row: drag mini-shell above
-        // scratch and check that mini-shell is the row that moved.
-        let miniShell = workspaceRow("ws-mini-shell")
-        reveal(miniShell)
-        XCTAssertTrue(waitForHittable(scratch, timeout: 5), "scratch shares the screen with mini-shell")
-        try assertAbove(scratch, miniShell, "mini-shell starts below scratch")
-        let scratchFrame = try frame(scratch, "scratch")
-        dragWorkspaceRow(miniShell, to: CGPoint(x: scratchFrame.midX, y: scratchFrame.minY + 2), in: app)
-        XCTAssertNotNil(waitForFrame(of: miniShell, timeout: 5, where: { $0.midY < scratchFrame.midY }),
-                        "The dragged mini-shell lands where scratch was")
-        try assertAbove(miniShell, scratch, "mini-shell, not another row, moved above scratch")
-        XCTAssertEqual(try frame(miniShell, "mini-shell").minX, try frame(scratch, "scratch").minX, accuracy: 1,
-                       "mini-shell stays a loose row")
-        capture("12-loose-row-reordered")
+        // Still no row listed twice after opening, scoping and back.
+        assertNoDroppedDuplicates("after the disclosure and Mac scoping steps")
         for _ in 0..<3 where !(featX.exists && featX.isHittable) { app.swipeDown(velocity: .slow) }
 
         // Searching flattens: no project rows, matching workspaces only.

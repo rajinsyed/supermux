@@ -253,6 +253,16 @@ final class WorkspaceListTableCoordinator: NSObject, UITableViewDataSource,
                 height: height
             )
         }
+        // SUPERMUX:begin supermux-mobile-duplicate-row-probe (DEBUG: name the row ids the dedupe above dropped, so the merged-list UI test can see a nested workspace left in the loose list)
+        #if DEBUG
+        var dropped: [String] = []
+        if items.count != configuration.items.count {
+            var counted = Set<String>()
+            dropped = configuration.items.map(\.id).filter { !counted.insert($0).inserted }
+        }
+        tableView.accessibilityValue = dropped.isEmpty ? nil : "dropped duplicate rows: \(dropped.joined(separator: ", "))"
+        #endif
+        // SUPERMUX:end supermux-mobile-duplicate-row-probe
         return (items, rows)
     }
 
