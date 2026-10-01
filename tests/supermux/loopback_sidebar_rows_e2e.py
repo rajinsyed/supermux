@@ -31,8 +31,9 @@ showing it. Checks:
   8. flat_mirror_subtitle_omits_mac      a flat mirror's directory line does not repeat the
                                          Mac name (its icon's tooltip names it), and its Mac
                                          icon sits on that line
-  9. close_prompt_is_safe                "Close on <Mac>" is destructive and not the Return
-                                         default; Cancel is; the Mac name appears at most
+  9. close_prompt_is_safe                "Close on <Mac>" is a plain, enabled, visible button
+                                         and not the Return default; Cancel answers Return
+                                         and Esc; the Mac name appears at most
                                          once in the text and once in the button; the text
                                          says the worktree stays and explains Hide Here
 
@@ -435,10 +436,22 @@ class SidebarRowsE2E:
         problems: List[str] = []
         if close is None or cancel is None or hide is None:
             raise Failure(f"expected Close on <Mac>, Hide Here and Cancel: {prompt.get('buttons')}")
-        if not close.get("destructive"):
-            problems.append("Close on <Mac> is not marked destructive")
-        if close.get("key_equivalent") == "\r":
-            problems.append("Close on <Mac> is the Return default")
+        order = [b.get("role") for b in prompt.get("buttons") or []]
+        if order != ["close_on_mac", "hide", "cancel"]:
+            problems.append(f"button order is {order}")
+        # A plain button: macOS 27 does not draw the destructive red title
+        # while the sheet is key, which left a blank gap where Close sat.
+        if close.get("destructive") is not False:
+            problems.append(f"Close on <Mac> is marked destructive ({close.get('destructive')!r})")
+        if close.get("enabled") is not True:
+            problems.append("Close on <Mac> is disabled while the Mac is connected")
+        for role, button in (("close_on_mac", close), ("hide", hide), ("cancel", cancel)):
+            if button.get("hidden") is not False:
+                problems.append(f"{role} is hidden ({button.get('hidden')!r})")
+            if button.get("alpha") != 1:
+                problems.append(f"{role} has alpha {button.get('alpha')!r}")
+        if close.get("key_equivalent") == "\r" or hide.get("key_equivalent") == "\r":
+            problems.append("Close on <Mac> or Hide Here is the Return default")
         if cancel.get("key_equivalent") != "\r":
             problems.append(f"Cancel is not the default (key {cancel.get('key_equivalent')!r})")
         if prompt.get("escape_role") != "cancel":

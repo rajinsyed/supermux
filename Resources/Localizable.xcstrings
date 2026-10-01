@@ -616994,6 +616994,23 @@
           }
         }
       }
+    },
+    "supermux.mirror.newWorkspace.macWithStatus" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ (%2$@)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@（%2$@）"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

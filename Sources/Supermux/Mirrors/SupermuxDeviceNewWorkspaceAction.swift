@@ -1,10 +1,11 @@
 import CmuxSurfaceCatalogModel
 import Foundation
 
-/// Creates a global (project-less) workspace on another Mac and opens its
-/// mirror in the window that asked: the one path behind
-/// "New Workspace on ▸ <Mac>" and ⌘N while a device-backed workspace is
-/// selected.
+/// Creates a global (project-less) workspace on another Mac, in that Mac's
+/// home folder, and opens its mirror in the window that asked: the one path
+/// behind "New Workspace on ▸ <Mac>" (the `+` menu and the sidebar's
+/// empty-area menu). A plain `+` / ⌘N creates on this Mac even while a
+/// mirror is selected (touchpoint #571).
 ///
 /// It goes through the foundation's ``SupermuxDeviceWorkspaceOpener`` (remote
 /// `workspace.create` first, then the mirror opens already titled and bound),
@@ -15,7 +16,7 @@ import Foundation
 final class SupermuxDeviceNewWorkspaceAction {
     private let devices: SupermuxDevices
     private let opener: SupermuxDeviceWorkspaceOpener
-    /// One create per (window, Mac) at a time; a repeated ⌘N is absorbed.
+    /// One create per (window, Mac) at a time; a repeated click is absorbed.
     private var inFlight: Set<String> = []
 
     init(devices: SupermuxDevices, opener: SupermuxDeviceWorkspaceOpener) {
@@ -30,8 +31,8 @@ final class SupermuxDeviceNewWorkspaceAction {
 
     /// Starts creating a workspace on `machine` in `manager`'s window.
     /// - Returns: `false` when the fork does not own `machine`, or when a
-    ///   create for this window and Mac is already running (upstream's ⌘N
-    ///   contract for a repeat press); otherwise `true`.
+    ///   create for this window and Mac is already running (a repeat press);
+    ///   otherwise `true`.
     @discardableResult
     func start(on machine: SurfaceMachineID, in manager: TabManager) -> Bool {
         guard handles(machine) else { return false }

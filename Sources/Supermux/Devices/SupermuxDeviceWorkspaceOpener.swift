@@ -173,13 +173,14 @@ final class SupermuxDeviceWorkspaceOpener {
 
     // MARK: - Create a global workspace on a device
 
-    /// Creates a workspace on the device (optionally at `workingDirectory` on
-    /// that Mac) and opens it as a bound mirror in `tabManager`'s window.
+    /// Creates a workspace on the device (at `workingDirectory` on that Mac,
+    /// or else in that Mac's home folder) and opens it as a bound mirror in
+    /// `tabManager`'s window.
     ///
     /// The remote workspace is created first (`workspace.create` with
-    /// `working_directory`), then opened through upstream's shared
-    /// `createWorkspaceAndOpenLocally` with a window-scoped host, so the local
-    /// row never shows the provisional "Cloud VM" title.
+    /// `working_directory`, or ``rootDirectoryParam``), then opened through
+    /// upstream's shared `createWorkspaceAndOpenLocally` with a window-scoped
+    /// host, so the local row never shows the provisional "Cloud VM" title.
     func createWorkspace(
         on machine: SurfaceMachineID,
         title: String?,
@@ -192,6 +193,8 @@ final class SupermuxDeviceWorkspaceOpener {
         if let title = title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty { params["title"] = title }
         if let directory = workingDirectory?.trimmingCharacters(in: .whitespacesAndNewlines), !directory.isEmpty {
             params["working_directory"] = directory
+        } else {
+            params[Self.rootDirectoryParam] = true
         }
         let response = try await devices.request("workspace.create", params: params, on: machine)
         guard let remoteID = (response["created_workspace_id"] as? String) ?? (response["workspace_id"] as? String) else {
@@ -227,6 +230,29 @@ final class SupermuxDeviceWorkspaceOpener {
         index.bind(workspace, to: ref)
         if focus { select(workspace) }
         return Opened(ref: ref, workspace: workspace, reused: false)
+    }
+
+    // MARK: - Root workspaces (both sides of `workspace.create`)
+
+    /// The `workspace.create` flag ``createWorkspace(on:title:workingDirectory:in:focus:)``
+    /// sends when no directory was asked for: the host starts the workspace in
+    /// its home folder rather than inheriting the directory of whatever it has
+    /// selected (a Mac without this fork ignores the flag and inherits). The
+    /// viewer cannot send "~" itself: hosts accept absolute paths only.
+    static let rootDirectoryParam = "supermux_root_directory"
+
+    /// Host side of ``rootDirectoryParam`` (the `device-root-workspace-create`
+    /// touchpoint in `v2MobileWorkspaceCreate`): with the flag and neither
+    /// `working_directory` nor `cwd`, sets `working_directory` to this Mac's
+    /// home folder. Any other create (the phone's included) is left as is.
+    static func applyRootDirectoryRequest(to params: inout [String: Any]) {
+        guard params[rootDirectoryParam] as? Bool == true,
+              isAbsent(params["working_directory"]), isAbsent(params["cwd"]) else { return }
+        params["working_directory"] = FileManager.default.homeDirectoryForCurrentUser.path
+    }
+
+    private static func isAbsent(_ value: Any?) -> Bool {
+        value == nil || value is NSNull
     }
 
     // MARK: - Wait for a remote workspace
