@@ -600463,23 +600463,6 @@
         }
       }
     },
-    "supermux.devices.menu.closeOnMac" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Close on %@…"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ で閉じる…"
-          }
-        }
-      }
-    },
     "supermux.devices.terminalClose.button.close" : {
       "extractionState" : "manual",
       "localizations" : {
