@@ -15196,7 +15196,9 @@ class TerminalController {
         case "feed.exit_plan.reply":
             result = v2FeedExitPlanReply(params: request.params)
         case "notification.feed.mark_read":
-            result = v2MobileNotificationFeedMarkRead(params: request.params)
+            // SUPERMUX:begin device-mac-read-clears-host-ring (upstream: `result = v2MobileNotificationFeedMarkRead(params: request.params)`; another Mac's read also ends the focused pane's ring, Sources/Supermux/Devices/SupermuxDeviceNotificationReadMirror.swift)
+            result = supermuxNotificationFeedMarkRead(params: request.params, executionContext: executionContext)
+            // SUPERMUX:end device-mac-read-clears-host-ring
         case "notification.feed.mark_unread":
             result = v2MobileNotificationFeedMarkUnread(params: request.params)
         case "notification.feed.mark_all_read":

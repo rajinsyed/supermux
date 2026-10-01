@@ -131,7 +131,7 @@ A notification for the pane you are looking at is unread like any other: the pan
 
 When the screen is locked, the display is asleep, or there has been no keyboard or mouse input for two minutes, a notification for the focused pane is still pushed to your phone, so an unattended Mac running agents never keeps one to itself.
 
-Notifications from your other Macs (My Devices) appear on this Mac's mirror of the remote pane, with the remote Mac's project. This Mac never forwards them to your phone and leaves them out of the phone's badge: the Mac that runs the agent sends the push. Reading one on either Mac reads it on both, and clears the mirror pane's ring.
+Notifications from your other Macs (My Devices) appear on this Mac's mirror of the remote pane, with the remote Mac's project. This Mac never forwards them to your phone and leaves them out of the phone's badge: the Mac that runs the agent sends the push. Reading one on either Mac reads it on both, and clears its pane's ring on both.
 <!-- SUPERMUX:end focused-pane-notification-suppression-doc -->
 
 ## Suppress only the focused surface

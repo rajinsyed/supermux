@@ -231,7 +231,8 @@ badge), reads travel both ways, Mark as Unread on a host-read mirror copy surviv
 next feed, a notification for a focused pane (the mirror's or the source's) stays unread with the
 ring, the tab badge and the workspace badge until a real click in the pane clears it (DEBUG
 `notification_indicators` / `notification_click`, plus a window screenshot of the ring beside the
-report), a present user's focused pane is not pushed to the phone while an away host's is, `notifications.suppressWhenAppFocused` withholds only the banner (panes the
+report) or the notification is read on the other Mac (in both directions, #548/#722; a newer unread
+copy on the same mirror pane keeps the ring when the host reads an older one), a present user's focused pane is not pushed to the phone while an away host's is, `notifications.suppressWhenAppFocused` withholds only the banner (panes the
 user is not looking at stay unread on both Macs), a burst over the admission budget is fully
 delivered, and `mobile.supermux.phone_push.status/share` work over the Mac link while `share`
 refuses non-Mac callers. Like the smoke, it pauses auto-mirror for its run so its explicit
