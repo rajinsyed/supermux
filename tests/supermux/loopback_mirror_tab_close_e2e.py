@@ -24,9 +24,10 @@ which shows the real prompt and lets it answer Cancel by itself:
   4. busy_tab_close_confirmed           answer Close, close T1's mirror tab -> asked once
                                         naming the Mac, T1 closed there, not projected
                                         again, no failure card
-  5. busy_tab_close_cancelled           answer Cancel, close T2's mirror tab -> asked
-                                        once, T2 kept and projected again, the new pane
-                                        attached and rendering, no overlay, no card
+  5. busy_tab_close_cancelled           answer Cancel, close T2's (selected) mirror tab ->
+                                        asked once, T2 kept and projected again at its old
+                                        place in the tab strip and selected again, the new
+                                        pane attached and rendering, no overlay, no card
   6. shown_prompt_keeps_app_responsive  the real prompt for busy T2 (Cancel pressed after
                                         a few seconds) -> the app answers other requests at
                                         once while it is up, then T2 is projected again
@@ -483,9 +484,22 @@ class MirrorTabCloseE2E:
             raise Failure("; ".join(problems))
         return {"closed_panel": panel}
 
+    def tab_place(self, workspace_id: str, panel: str) -> Optional[Dict[str, Any]]:
+        """Where a tab sits: its pane, its index in that pane's strip, and whether it is selected."""
+        for pane in (self.sock.call("pane.list", {"workspace_id": workspace_id}) or {}).get("panes") or []:
+            ids = [up(s) for s in pane.get("surface_ids") or []]
+            if up(panel) in ids:
+                return {"pane": str(pane.get("id") or pane.get("pane_id") or ""), "index": ids.index(up(panel)),
+                        "selected": up(pane.get("selected_surface_id")) == up(panel), "tabs": len(ids)}
+        return None
+
     def busy_tab_close_cancelled(self) -> Dict[str, Any]:
         self.require_busy("T2")
         self.answer("cancel")
+        before_panel = self.mirror_panel(self.terms["T2"]) or ""
+        self.sock.call("surface.focus", {"workspace_id": self.mirror_id, "surface_id": before_panel})
+        before = wait_for("T2's mirror tab to be selected", lambda: (lambda p: p if p and p["selected"] else None)(
+            self.tab_place(self.mirror_id, before_panel)), self.timeout)
         old_panel = self.close_mirror_tab("T2")
         problems: List[str] = []
 
@@ -497,6 +511,13 @@ class MirrorTabCloseE2E:
         if not self.source_has("T2"):
             problems.append("the source lost T2 although the prompt was cancelled")
         problems += self.asked_problems(1)
+        try:
+            after = wait_for("T2's tab back at its place and selected",
+                             lambda: (lambda p: p if p and p["pane"] == before["pane"] and p["index"] == before["index"]
+                                      and p["selected"] else None)(self.tab_place(self.mirror_id, panel)), 5.0)
+        except Failure as error:
+            after = self.tab_place(self.mirror_id, panel)
+            problems.append(f"after Cancel T2's tab is at {after}, not back at {before} and selected ({error})")
         try:
             wait_for("the new T2 pane to attach", lambda: (self.pane(self.mirror_id, panel) or {}).get("attached"), 5.0)
         except Failure as error:
@@ -514,7 +535,7 @@ class MirrorTabCloseE2E:
             problems.append(f"a failure card is shown: {card}")
         if problems:
             raise Failure("; ".join(problems))
-        return {"old_panel": old_panel, "new_panel": panel}
+        return {"old_panel": old_panel, "new_panel": panel, "before": before, "after": after}
 
     def shown_prompt_keeps_app_responsive(self) -> Dict[str, Any]:
         """The real prompt is up: other requests (main-actor work) are still answered at once.
@@ -672,10 +693,16 @@ class MirrorTabCloseE2E:
         created = self.sock.call("workspace.create", {"title": f"tab-close-home-{self.nonce}", "focus": False}) or {}
         self.home_id = up(created.get("workspace_id") or created.get("created_workspace_id"))
         self.select(self.mirror_id)
+
+        def mirror_shown_and_counting() -> bool:
+            pane = self.pane(self.mirror_id, mirror_pane) or {}
+            problem = self.not_counting(terminal)
+            if pane.get("hidden") is not False or not pane.get("attached") or problem:
+                raise Failure(f"mirror pane {pane}; {problem}")
+            return True
+
         wait_for("the mirror's T0 pane on screen, attached, and this Mac counting for T0",
-                 lambda: (self.pane(self.mirror_id, mirror_pane) or {}).get("hidden") is False
-                 and (self.pane(self.mirror_id, mirror_pane) or {}).get("attached")
-                 and self.not_counting(terminal) is None, self.timeout)
+                 mirror_shown_and_counting, self.timeout)
         created = self.sock.call("workspace.create", {"title": f"tab-close-panes-{self.nonce}", "focus": False}) or {}
         self.extra_id = up(created.get("workspace_id") or created.get("created_workspace_id"))
         self.facts["panes_workspace_terminal"] = wait_for("the panes workspace's own terminal",
@@ -751,10 +778,14 @@ class MirrorTabCloseE2E:
             raise Failure("precondition: B1 (pane_opened_off_screen_keeps_counting failed)")
         self.select(self.extra_id)
         self.sock.call("surface.focus", {"workspace_id": self.extra_id, "surface_id": own})
-        wait_for("B1 on screen and speaking, this Mac counting",
-                 lambda: (self.pane(self.extra_id, b1) or {}).get("speaks")
-                 and (self.pane(self.extra_id, b1) or {}).get("hidden") is False
-                 and self.not_counting(terminal) is None, self.timeout)
+        def b1_shown_speaking() -> bool:
+            pane = self.pane(self.extra_id, b1) or {}
+            problem = self.not_counting(terminal)
+            if not pane.get("speaks") or pane.get("hidden") is not False or problem:
+                raise Failure(f"B1 {pane}; {problem}")
+            return True
+
+        wait_for("B1 on screen and speaking, this Mac counting", b1_shown_speaking, self.timeout)
         self.sock.call("surface.close", {"workspace_id": self.extra_id, "surface_id": b1, "force": True})
         missing: List[float] = []
         started = time.monotonic()

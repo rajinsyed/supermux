@@ -36,6 +36,12 @@ viewer:
  14. local_plus_button_appends           its tab bar + with the first tab focused
  15. local_new_terminal_to_right         "New Terminal to the Right" locally still lands
                                          right of its tab
+ 16. failed_mirror_tab_not_restored_locally
+                                         (--app-path) the mirror's + while the link is down:
+                                         the reserved pane fails with Mac wording (names the
+                                         Mac, never "Cloud"); after a quit and relaunch the
+                                         mirror holds only the owner's terminals, never that
+                                         pane restored as a local shell
 
 After every create the suite waits for exactly one new terminal on the owning
 side, checks its order, waits for the mirror to show the same order (read as
@@ -54,8 +60,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import plistlib
 import re
 import socket
+import subprocess
 import sys
 import time
 import uuid
@@ -71,6 +79,10 @@ SETTLE_SECONDS = 1.5
 
 class Failure(Exception):
     """A check failed; the message says which and why."""
+
+
+class Skipped(Exception):
+    """A step that cannot run in this invocation (it says why)."""
 
 
 class RateLimited(Exception):
@@ -189,6 +201,7 @@ class Pair:
 class NewTabOrderE2E:
     def __init__(self, sock: Socket, args: argparse.Namespace) -> None:
         self.sock = sock
+        self.args = args
         self.timeout = args.timeout
         self.keep = args.keep
         self.nonce = uuid.uuid4().hex[:6]
@@ -351,14 +364,18 @@ class NewTabOrderE2E:
         try:
             record.update(action() or {})
             record["ok"] = True
+        except Skipped as skipped:
+            record["ok"] = None
+            record["skipped"] = str(skipped)
         except Failure as error:
             record["ok"] = False
             record["error"] = str(error)
         record["seconds"] = round(time.monotonic() - started, 2)
         self.steps.append(record)
-        print(f"{'PASS' if record['ok'] else 'FAIL'} {name} ({record['seconds']}s)"
-              + ("" if record["ok"] else ": " + record["error"]), file=sys.stderr)
-        return record["ok"]
+        label = {True: "PASS", False: "FAIL", None: "SKIP"}[record["ok"]]
+        detail = record.get("error") or record.get("skipped")
+        print(f"{label} {name} ({record['seconds']}s){': ' + detail if detail else ''}", file=sys.stderr)
+        return record["ok"] is not False
 
     def setup(self) -> Dict[str, Any]:
         state = self.sock.call("supermux.devices.set_auto_mirror", {"enabled": True}) or {}
@@ -534,6 +551,92 @@ class NewTabOrderE2E:
         record = self.new_tab(pair, lambda: self.tab_menu_terminal_to_right(pair.owner, anchor), right_of(0))
         return {"anchor_local_tab": anchor, **record}
 
+    def failed_mirror_tab_not_restored_locally(self) -> Dict[str, Any]:
+        """A reserved mirror tab whose create failed must not come back as a local shell.
+
+        The pane is a placeholder for a terminal the other Mac never made. The session saved
+        it like any terminal pane, so a relaunch restored it as a LOCAL shell inside the
+        mirror, placed first and looking like the other Mac's tabs. Its failure text also
+        said "The Cloud operation failed" for a Mac.
+        """
+        if not self.args.app_path:
+            raise Skipped("pass --app-path to quit and relaunch")
+        pair = self.need(self.remote)
+        device_name = str(self.device().get("name") or "")
+        self.sock.call("workspace.select", {"workspace_id": pair.mirror})
+        self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "stop"})
+        problems: List[str] = []
+        try:
+            wait_for("the loopback link to drop", lambda: self.device().get("link_state") != "connected", self.timeout)
+            self.plus_button(pair.mirror)
+
+            def failed() -> List[Dict[str, Any]]:
+                return [p for p in self.pending_creations(pair.mirror) if p.get("failure")]
+
+            placeholder = wait_for("the mirror's new tab to fail with the link down", failed, self.timeout)[0]
+            text = str(placeholder.get("failure") or "")
+            if "Cloud" in text or (device_name and device_name not in text):
+                problems.append(f"the failed tab's text is not about {device_name!r}: {text!r}")
+        finally:
+            self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "restore"})
+        self.relaunch()
+        wait_for("the loopback device to reconnect after the relaunch",
+                 lambda: self.device().get("link_state") == "connected" and self.device().get("has_fetched_records"),
+                 self.timeout)
+        owner_terminals = wait_for("the owner's restored terminals", lambda: self.order(pair.owner), self.timeout)
+        mirror = up(wait_for("the restored mirror", lambda: (self.mirrors_of(pair.owner) or [None])[0],
+                             self.timeout)["workspace_id"])
+        restored = Pair(pair.label, pair.owner, mirror)
+        self.remote = restored
+
+        def only_owner_terminals() -> List[str]:
+            order = self.mirror_order(restored)
+            if sorted(order) != sorted(self.order(pair.owner)):
+                raise Failure(f"mirror {order} vs owner {self.order(pair.owner)}")
+            return order
+
+        try:
+            settled = wait_for("the restored mirror to hold exactly the owner's terminals", only_owner_terminals, self.timeout)
+            time.sleep(SETTLE_SECONDS)
+            settled = only_owner_terminals()
+        except Failure as error:
+            problems.append(f"after the relaunch: {error}")
+            settled = self.mirror_order(restored)
+        if problems:
+            raise Failure("; ".join(problems))
+        return {"failure_text": text, "owner_terminals": owner_terminals, "mirror_after_relaunch": settled}
+
+    def relaunch(self) -> None:
+        app = self.args.app_path
+        bundle_id = plistlib.loads((Path(app) / "Contents" / "Info.plist").read_bytes())["CFBundleIdentifier"]
+        self.sock.close()
+        subprocess.run(["osascript", "-e", f'tell application id "{bundle_id}" to quit'], check=False, capture_output=True)
+
+        def quit_done() -> bool:
+            result = subprocess.run(["osascript", "-e", f'application id "{bundle_id}" is running'],
+                                    check=False, capture_output=True, text=True)
+            return result.stdout.strip() != "true"
+
+        wait_for("the app to quit", quit_done, 60, interval_s=0.5)
+        env_args = ["--env", "SUPERMUX_DEBUG_LOOPBACK_DEVICE=1"]
+        if self.args.projects_file:
+            env_args += ["--env", f"SUPERMUX_PROJECTS_FILE={self.args.projects_file}"]
+        subprocess.run(["open", "-g", *env_args, app], check=True)
+
+        def socket_alive() -> bool:
+            probe = Socket(self.sock.path, timeout_s=3)
+            try:
+                probe.connect()
+                probe.call("supermux.devices.list", {})
+                return True
+            except (OSError, Failure):
+                return False
+            finally:
+                probe.close()
+
+        wait_for("the relaunched app's socket", socket_alive, 60, interval_s=0.5)
+        self.sock.connect()
+
     @staticmethod
     def need(pair: Optional[Pair]) -> Pair:
         if pair is None:
@@ -570,6 +673,7 @@ class NewTabOrderE2E:
                 ("local_cmd_t_appends", self.local_cmd_t_appends),
                 ("local_plus_button_appends", self.local_plus_button_appends),
                 ("local_new_terminal_to_right", self.local_new_terminal_to_right),
+                ("failed_mirror_tab_not_restored_locally", self.failed_mirror_tab_not_restored_locally),
             ]:
                 ok = self.step(name, check) and ok
         self.cleanup()
@@ -582,6 +686,8 @@ def main() -> int:
     parser.add_argument("--socket", default=os.environ.get("CMUX_SOCKET_PATH"))
     parser.add_argument("--timeout", type=float, default=30.0, help="seconds to wait before a check gives up")
     parser.add_argument("--keep", action="store_true", help="leave the test workspaces and mirrors open")
+    parser.add_argument("--app-path", help="the tagged .app to quit and relaunch for the restore check")
+    parser.add_argument("--projects-file", help="SUPERMUX_PROJECTS_FILE to relaunch with")
     parser.add_argument("--report", help="report path")
     args = parser.parse_args()
     if not args.tag and not args.socket:
