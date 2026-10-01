@@ -28,17 +28,54 @@ public struct SupermuxNestedWorkspaceAccessory: Equatable, Sendable {
     }
 }
 
+/// The bounds of the shell row's preview-line text: where a nested row's
+/// accessory ends, so it never covers what follows the text on that line.
+private struct SupermuxNestedAccessorySlotKey: PreferenceKey {
+    static var defaultValue: Anchor<CGRect>? { nil }
+
+    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
+        value = value ?? nextValue()
+    }
+}
+
+/// How far from the row's trailing edge the accessory stays, clear of the
+/// activity dot drawn there.
+private let supermuxNestedAccessoryDotClearance: CGFloat = 20
+
 extension View {
-    /// Overlays a nested workspace row with its accessory, bottom-trailing on
-    /// the preview line and clear of the activity dot. An overlay, so it is
-    /// height-neutral: the row measures exactly like any other workspace row.
+    /// Marks the shell row's preview-line text as the accessory's slot. The
+    /// text fills the space before the changes chip (the chip's own spacer
+    /// keeps its 8pt gap), so the slot ends right where the chip begins, or
+    /// at the row's end without one. Layout-neutral: the text stays leading.
+    public func supermuxNestedAccessorySlot() -> some View {
+        frame(maxWidth: .infinity, alignment: .leading)
+            .anchorPreference(key: SupermuxNestedAccessorySlotKey.self, value: .bounds) { $0 }
+    }
+
+    /// Overlays a nested workspace row with its accessory at the trailing end
+    /// of the preview line's slot (``supermuxNestedAccessorySlot()``), so it
+    /// sits before the changes chip instead of on it, and clear of the
+    /// activity dot. An overlay, so it is height-neutral: the row measures
+    /// exactly like any other workspace row.
     /// - Parameter accessory: The row's accessory; `nil` overlays nothing.
     public func supermuxNestedWorkspaceAccessory(_ accessory: SupermuxNestedWorkspaceAccessory?) -> some View {
-        overlay(alignment: .bottomTrailing) {
-            if let accessory {
-                SupermuxNestedWorkspaceAccessoryView(accessory: accessory)
-                    .padding(.trailing, 20)
-                    .padding(.bottom, 10)
+        overlayPreferenceValue(SupermuxNestedAccessorySlotKey.self) { slot in
+            if let accessory, let slot {
+                GeometryReader { proxy in
+                    let frame = proxy[slot]
+                    // A slot that runs to the row's end (no changes chip)
+                    // keeps the accessory clear of the activity dot there.
+                    let dotClearance = max(0, supermuxNestedAccessoryDotClearance - (proxy.size.width - frame.maxX))
+                    // Padding, not an offset, so the accessibility frame
+                    // follows the drawn one.
+                    SupermuxNestedWorkspaceAccessoryView(accessory: accessory)
+                        .padding(.trailing, dotClearance)
+                        .padding(.bottom, 2)
+                        .frame(width: frame.width, height: frame.height, alignment: .bottomTrailing)
+                        .padding(.leading, frame.minX)
+                        .padding(.top, frame.minY)
+                }
+                .allowsHitTesting(false)
             }
         }
     }

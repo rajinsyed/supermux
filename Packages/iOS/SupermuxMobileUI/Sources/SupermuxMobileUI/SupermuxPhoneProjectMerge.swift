@@ -19,6 +19,15 @@ public struct SupermuxMergedProject: Equatable, Sendable, Identifiable {
     public let id: String
     /// One location per Mac, in Mac display order. Never empty.
     public let locations: [Location]
+    /// Every Mac's copy's row id, including Macs the Mac title picker hides:
+    /// the disclosure is one state across all of them.
+    public let allRowIDs: [String]
+
+    init(id: String, locations: [Location], allRowIDs: [String]? = nil) {
+        self.id = id
+        self.locations = locations
+        self.allRowIDs = allRowIDs ?? locations.map(\.row.id)
+    }
 
     /// The location the row's name, look and primary actions come from.
     public var lead: Location { locations[0] }
@@ -39,14 +48,15 @@ public struct SupermuxMergedProject: Equatable, Sendable, Identifiable {
     func keeping(_ isIncluded: (Location) -> Bool) -> SupermuxMergedProject? {
         let kept = locations.filter(isIncluded)
         guard !kept.isEmpty else { return nil }
-        return SupermuxMergedProject(id: id, locations: kept)
+        return SupermuxMergedProject(id: id, locations: kept, allRowIDs: allRowIDs)
     }
 }
 
-/// Merges every Mac's projects into one list with the Mac sidebar's rule:
-/// the same normalized git origin when it is unique on both Macs, else the
-/// same name and standardized root with no conflicting origin. A merged
-/// project takes at most one project per Mac.
+/// Merges every Mac's projects into one list with the Mac sidebar's rule
+/// (`SupermuxUnifiedProjects.match`): first every match by the same
+/// normalized git origin when it is unique on both Macs, then, among the
+/// projects still unmatched, the same name and standardized root with no
+/// conflicting origin. A merged project takes at most one project per Mac.
 enum SupermuxPhoneProjectMerge {
     /// The facts the matching rule reads from one Mac's project.
     struct Facts {
@@ -57,16 +67,23 @@ enum SupermuxPhoneProjectMerge {
         let originIsUnique: Bool
     }
 
-    /// Whether two projects on different Macs are the same repository.
-    static func sameProject(_ lhs: Facts, _ rhs: Facts) -> Bool {
-        if let origin = lhs.origin, origin == rhs.origin, lhs.originIsUnique, rhs.originIsUnique {
-            return true
-        }
+    /// The first rule: the same origin, unique on both Macs.
+    static func sameOrigin(_ lhs: Facts, _ rhs: Facts) -> Bool {
+        guard let origin = lhs.origin else { return false }
+        return origin == rhs.origin && lhs.originIsUnique && rhs.originIsUnique
+    }
+
+    /// The second rule: the same name and root, with no conflicting origin.
+    static func sameNameAndRoot(_ lhs: Facts, _ rhs: Facts) -> Bool {
         let conflicting = lhs.origin != nil && rhs.origin != nil && lhs.origin != rhs.origin
         return lhs.name == rhs.name
             && standardized(lhs.rootPath) == standardized(rhs.rootPath)
             && !conflicting
     }
+
+    /// Both rules, in the order the Mac sidebar applies them: a later rule
+    /// only sees what every earlier rule left unmatched.
+    static var rules: [(Facts, Facts) -> Bool] { [sameOrigin, sameNameAndRoot] }
 
     /// The origins that appear exactly once among one Mac's projects.
     static func uniqueOrigins(_ origins: [String?]) -> Set<String> {
@@ -84,28 +101,35 @@ enum SupermuxPhoneProjectMerge {
         var merged: [(locations: [SupermuxMergedProject.Location], facts: Facts)] = []
         for (groupIndex, group) in groups.enumerated() where group.isDisplayed {
             let unique = uniqueOrigins(group.rows.map(\.gitRemoteIdentity))
-            var fresh: [(locations: [SupermuxMergedProject.Location], facts: Facts)] = []
-            for row in group.rows {
-                let location = SupermuxMergedProject.Location(
-                    row: row,
-                    mac: group.header,
-                    showsWorktreeCreation: group.showsWorktreeCreation
+            let candidates = group.rows.map { row in
+                (
+                    locations: [SupermuxMergedProject.Location(
+                        row: row,
+                        mac: group.header,
+                        showsWorktreeCreation: group.showsWorktreeCreation
+                    )],
+                    facts: Facts(
+                        name: row.name,
+                        rootPath: row.rootPath,
+                        origin: row.gitRemoteIdentity,
+                        originIsUnique: row.gitRemoteIdentity.map(unique.contains) ?? false
+                    )
                 )
-                let facts = Facts(
-                    name: row.name,
-                    rootPath: row.rootPath,
-                    origin: row.gitRemoteIdentity,
-                    originIsUnique: row.gitRemoteIdentity.map(unique.contains) ?? false
-                )
-                if let index = merged.firstIndex(where: { entry in
-                    !entry.locations.contains { $0.mac.pairingID == group.header.pairingID }
-                        && sameProject(entry.facts, facts)
-                }) {
-                    merged[index].locations.append(location)
-                } else {
-                    fresh.append(([location], facts))
+            }
+            var matched = Array(repeating: false, count: candidates.count)
+            for rule in rules {
+                for index in candidates.indices where !matched[index] {
+                    // Appending the location marks the entry as holding this
+                    // Mac, so a later rule cannot take it again.
+                    guard let entry = merged.firstIndex(where: { entry in
+                        !entry.locations.contains { $0.mac.pairingID == group.header.pairingID }
+                            && rule(entry.facts, candidates[index].facts)
+                    }) else { continue }
+                    merged[entry].locations += candidates[index].locations
+                    matched[index] = true
                 }
             }
+            var fresh = candidates.indices.filter { !matched[$0] }.map { candidates[$0] }
             if groupIndex > 0 {
                 fresh.sort { $0.facts.name.localizedStandardCompare($1.facts.name) == .orderedAscending }
             }

@@ -130,6 +130,13 @@ private struct SupermuxProjectsSectionDriver: ViewModifier {
             .onChange(of: selectedWorkspaceID) { _, selected in
                 model.shellSelectionDidChange(to: selected?.rawValue)
             }
+            // A Mac's copy that joins an open merged project opens too (the
+            // iPhone's merged list; the macOS `List` keeps per-Mac rows).
+            #if os(iOS)
+            .onChange(of: model.closedCopiesOfOpenProjects, initial: true) { _, projectIDs in
+                model.openClosedCopies(projectIDs)
+            }
+            #endif
             // Detail-route destination, New Worktree sheet and error alerts: on
             // the stable wrapper above the `List`, never inside a lazy row.
             .modifier(SupermuxProjectsSectionNavigation(model: model))

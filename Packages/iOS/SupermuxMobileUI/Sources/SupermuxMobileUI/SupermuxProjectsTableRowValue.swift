@@ -1,5 +1,17 @@
 import Foundation
 
+/// One Mac's copy of a merged project, as the row's per-Mac menu offers it.
+public struct SupermuxProjectCopyChoice: Equatable, Sendable, Identifiable {
+    /// The copy's project ROW id.
+    public var id: String { rowID }
+    /// The copy's project ROW id.
+    public let rowID: String
+    /// The Mac's user-facing name.
+    public let macName: String
+    /// Whether that Mac is connected (an offline Mac's entry is disabled).
+    public let isOnline: Bool
+}
+
 /// One project row in the iPhone's merged list.
 public struct SupermuxMergedProjectRowValue: Equatable, Sendable {
     /// The merged project's key.
@@ -8,10 +20,14 @@ public struct SupermuxMergedProjectRowValue: Equatable, Sendable {
     /// and disclosure. Its `id` (the lead's row id) is what tap, details and
     /// New Worktree act on.
     public let display: SupermuxProjectRowSnapshot
-    /// Every location's row id, so the disclosure opens on every Mac.
+    /// Every location's row id, so the disclosure opens on every Mac —
+    /// including Macs the Mac title picker currently hides.
     public let locationRowIDs: [String]
     /// Whether the lead Mac serves worktree creation.
     public let showsWorktreeCreation: Bool
+    /// Every shown Mac's copy, for the "Open on" and "Project Details on"
+    /// menus (drawn only when there are several).
+    public let copies: [SupermuxProjectCopyChoice]
 }
 
 /// One unopened worktree under an expanded merged project.
@@ -46,6 +62,19 @@ public enum SupermuxProjectsTableRowValue: Equatable, Sendable {
     case newWorktree(projectRowID: String, isPreparing: Bool)
     /// An expanded project with nothing under it.
     case notice
+
+    /// The id of the row's swipe tray (``SupermuxSidebarSwipeRow``), or
+    /// `nil` for rows without one. The one place this id is spelled.
+    public var swipeRowID: String? {
+        switch self {
+        case .project(let project):
+            "project:\(project.key)"
+        case .worktree(let worktree):
+            "worktree:\(worktree.projectRowID):\(worktree.worktree.id)"
+        case .header, .loading, .empty, .worktreeLoading, .newWorktree, .notice:
+            nil
+        }
+    }
 
     /// What the row's measured height depends on. Equal identities share one
     /// measurement, so paint-only changes (names, counts, PR, run state)
