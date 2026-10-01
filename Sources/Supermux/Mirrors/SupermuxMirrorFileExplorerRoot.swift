@@ -62,11 +62,14 @@ enum SupermuxMirrorFileExplorerRoot {
     /// Re-resolves a mirror's Files root whenever the devices change (the
     /// remote folder after a `cd`, the link going down or up, capabilities
     /// arriving), the way upstream's observation follows a Cloud machine.
-    /// Ends once the observation stops or goes away.
+    /// Ends once the observation stops or goes away. Local workspaces are left
+    /// alone (a mirror's directory is always remote provenance); the mirror
+    /// check runs per change, so a mirror whose panes are still being
+    /// projected when the panel first shows it is followed too.
     static func followDeviceChanges(for observation: FileExplorerWorkspaceObservation) {
-        guard let workspace = observation.workspace,
-              SupermuxComposition.deviceWorkspaceIndex.isDeviceMirror(workspace) else { return }
+        guard let workspace = observation.workspace, workspace.usesRemoteDirectoryProvenance else { return }
         let devices = SupermuxComposition.devices
+        let index = SupermuxComposition.deviceWorkspaceIndex
         Task { @MainActor [weak observation] in
             while !Task.isCancelled {
                 await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
@@ -78,8 +81,8 @@ enum SupermuxMirrorFileExplorerRoot {
                 }
                 // onChange fires at willSet: let the bump land first.
                 await Task.yield()
-                guard let observation, observation.workspace != nil else { return }
-                observation.refresh()
+                guard let observation, let workspace = observation.workspace else { return }
+                if index.isDeviceMirror(workspace) { observation.refresh() }
             }
         }
     }
