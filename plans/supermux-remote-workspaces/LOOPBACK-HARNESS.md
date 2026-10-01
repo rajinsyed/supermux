@@ -378,7 +378,8 @@ and syncs it exactly like the right sidebar (`showHiddenFiles`, `syncWorkspaceRo
 provider, follow-the-folder observation and live refresh are the real ones. Actions: `state` (also
 the expanded paths and the selection), `counters {reset?}` (the panel's visible refreshes since the
 last reset, counted from the store's published values: `emptied`, `loading_shown`, `rebuilt`,
-`git_published`),
+`git_published`, plus `refreshes`, the live refresh runs, which also counts a refresh that changed
+nothing),
 `expand`, `open` (the double-click path, after a download probe so a failure is a reply; with
 `probe: false` it only starts the open and a refusal is the coordinator's alert), `preview` (the open
 previews of a path and what each shows), `alert` / `dismiss_alert` (the alert up on the workspace's
@@ -400,12 +401,15 @@ confinement probes (`..`, the symlink, a directory read, a wrong `expected_root`
 phone's dotfile-free listing, git status and search answer; a `files.read` of a named pipe in the
 folder is refused at once (it never waits for a writer) and the link stays up; `cd src` / `cd ..` in the source
 terminal re-roots the panel; a new file appears with no action (`--refresh-timeout`, default 6 s);
-an idle panel does not refresh at all for `--idle-seconds` (default 5); while a file deep in `src/`
-and `.git/index` change five times a second for `--churn-seconds` (default 6) the panel never empties
-or shows the spinner and keeps its rows, `src/`'s expansion and the selection (the user's "refreshes
+an idle panel does not refresh at all for `--idle-seconds` (default 5; every counter 0, `refreshes`
+included, so a loop that re-lists unchanged folders fails too); while a file deep in `src/` and
+`.git/index` change five times a second for `--churn-seconds` (default 6) the panel does not refresh
+at all (every counter 0) and keeps its rows, `src/`'s expansion and the selection (the user's "refreshes
 every second at the repo root": the old live refresh reloaded the whole tree for any change under
-the folder); a file created and removed at the root appears and goes in place (rows rebuilt, never
-emptied, `src/` still expanded, selection kept);
+the folder); a file created and removed at the root appears and goes in place (a refresh runs and
+rebuilds the rows, never emptied, `src/` still expanded, selection kept); the folder renamed away
+there (the shell still in it) empties the panel with the reason, as the local reload does, and
+renamed back its rows return;
 the menu offers New File / New Folder / Rename / Duplicate / Move to Trash and each changes the
 disk; with the link held down the panel names the Mac and says it is not connected (no rows), and
 the redial brings the rows back; with `--app-path`, a relaunch with
