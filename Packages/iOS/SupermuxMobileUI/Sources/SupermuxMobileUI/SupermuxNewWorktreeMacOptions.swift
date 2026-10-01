@@ -72,7 +72,9 @@ enum SupermuxNewWorktreeMacOptions {
     }
 
     /// Another Mac's copy of `project`, or `nil` when it has none or the
-    /// phone cannot tell which of its checkouts is meant.
+    /// phone cannot tell which of its checkouts is meant. The rule is the
+    /// list's own merge rule (``SupermuxPhoneProjectMerge``), so the sheet
+    /// offers exactly the Macs the merged project row spans.
     /// - Parameters:
     ///   - project: The chosen project on its own Mac.
     ///   - ownProjects: Every project on the chosen project's Mac.
@@ -82,25 +84,23 @@ enum SupermuxNewWorktreeMacOptions {
         ownProjects: [SupermuxProjectDTO],
         in candidates: [SupermuxProjectDTO]
     ) -> SupermuxProjectDTO? {
-        if let identity = project.gitRemoteIdentity,
-           ownProjects.filter({ $0.gitRemoteIdentity == identity }).count == 1 {
-            let sameOrigin = candidates.filter { $0.gitRemoteIdentity == identity }
-            if sameOrigin.count == 1 { return sameOrigin[0] }
-        }
+        let own = facts(project, among: ownProjects)
         return candidates.first { candidate in
-            candidate.name == project.name
-                && sameRoot(candidate.rootPath, project.rootPath)
-                && !conflicting(candidate.gitRemoteIdentity, project.gitRemoteIdentity)
+            SupermuxPhoneProjectMerge.sameProject(own, facts(candidate, among: candidates))
         }
     }
 
-    private static func sameRoot(_ lhs: String, _ rhs: String) -> Bool {
-        (lhs as NSString).standardizingPath == (rhs as NSString).standardizingPath
-    }
-
-    private static func conflicting(_ lhs: String?, _ rhs: String?) -> Bool {
-        guard let lhs, let rhs else { return false }
-        return lhs != rhs
+    private static func facts(
+        _ project: SupermuxProjectDTO,
+        among projects: [SupermuxProjectDTO]
+    ) -> SupermuxPhoneProjectMerge.Facts {
+        let unique = SupermuxPhoneProjectMerge.uniqueOrigins(projects.map(\.gitRemoteIdentity))
+        return SupermuxPhoneProjectMerge.Facts(
+            name: project.name,
+            rootPath: project.rootPath,
+            origin: project.gitRemoteIdentity,
+            originIsUnique: project.gitRemoteIdentity.map(unique.contains) ?? false
+        )
     }
 
     private static func option(_ mac: SupermuxMacInfo, projectID: String) -> SupermuxNewWorktreeMacOption {
