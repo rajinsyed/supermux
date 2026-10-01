@@ -62,15 +62,19 @@ enum SupermuxMirrorFileExplorerRoot {
     /// Re-resolves a mirror's Files root whenever the devices change (the
     /// remote folder after a `cd`, the link going down or up, capabilities
     /// arriving), the way upstream's observation follows a Cloud machine.
-    /// Ends once the observation stops or goes away. Local workspaces are left
-    /// alone (a mirror's directory is always remote provenance); the mirror
-    /// check runs per change, so a mirror whose panes are still being
-    /// projected when the panel first shows it is followed too.
+    ///
+    /// Every observation is registered, whatever its workspace looks like
+    /// now: a mirror restored at launch or still attaching has no projected
+    /// panes yet, so no check made here could tell it is one. The mirror
+    /// check runs per change instead, and local workspaces are skipped
+    /// there. One app-wide loop serves all observations, held weakly, so an
+    /// observation that goes away leaves nothing behind.
     static func followDeviceChanges(for observation: FileExplorerWorkspaceObservation) {
-        guard let workspace = observation.workspace, workspace.usesRemoteDirectoryProvenance else { return }
+        followed.add(observation)
+        guard followLoop == nil else { return }
         let devices = SupermuxComposition.devices
         let index = SupermuxComposition.deviceWorkspaceIndex
-        Task { @MainActor [weak observation] in
+        followLoop = Task { @MainActor in
             while !Task.isCancelled {
                 await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
                     withObservationTracking {
@@ -81,11 +85,18 @@ enum SupermuxMirrorFileExplorerRoot {
                 }
                 // onChange fires at willSet: let the bump land first.
                 await Task.yield()
-                guard let observation, let workspace = observation.workspace else { return }
-                if index.isDeviceMirror(workspace) { observation.refresh() }
+                for observation in followed.allObjects {
+                    guard let workspace = observation.workspace, index.isDeviceMirror(workspace) else { continue }
+                    observation.refresh()
+                }
             }
         }
     }
+
+    /// The observations ``followDeviceChanges(for:)`` serves, held weakly.
+    private static let followed = NSHashTable<FileExplorerWorkspaceObservation>.weakObjects()
+    /// The one loop that follows the devices for all of them.
+    private static var followLoop: Task<Void, Never>?
 
     private static func unavailable(
         _ workspace: Workspace,
