@@ -17,8 +17,9 @@ internal import SupermuxMobileCore
 /// `files.*` call and 300 s for a file duplicate or trash), and the
 /// deadlines below are derived from those bounds. `nil` keeps the link's own
 /// 20 s default, which suits calls the host answers from memory or within a
-/// few seconds of its own bounds (`projects.list`, `run.state` and
-/// `project.icon` wait at most 2 s for the projects' first load).
+/// few seconds of its own bounds (`projects.list`, `run.state`,
+/// `project.icon`, the `preset.*` calls and every call that names a project
+/// wait at most 2 s for the projects' first load).
 ///
 /// ```swift
 /// devices.request(.changesHistory, params: params, on: machine)   // gets `network`

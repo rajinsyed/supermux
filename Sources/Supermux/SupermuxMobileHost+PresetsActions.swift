@@ -29,8 +29,9 @@ extension TerminalController {
         } catch {
             return .err(code: "invalid_params", message: "Malformed preset params", data: nil)
         }
-        let model = SupermuxComposition.projectsModel
-        await model.loadIfNeeded()
+        // Bounded like every project lookup; the presets must be read first,
+        // or the load would overwrite the new one.
+        guard let model = await supermuxLoadedProjectsModel() else { return supermuxProjectsStillLoading() }
         model.addPreset(preset)
         return supermuxPresetResult(preset)
     }
@@ -245,7 +246,11 @@ extension TerminalController {
     }
 
     /// Resolves the request's `preset_id` against the loaded model, or the
-    /// wire error to return (`invalid_params` / `not_found`).
+    /// wire error to return (`invalid_params` / `not_found`, or `unavailable`
+    /// while even the projects file is not read). The wait for the first load
+    /// is bounded (``supermuxLoadedProjectsModel()``): a launch that waited for
+    /// all of it missed another Mac's 20 s deadline and still ran there later,
+    /// so the "try again" its user was told opened a second terminal.
     @MainActor
     private func supermuxResolvePreset(
         params: [String: Any]
@@ -254,8 +259,9 @@ extension TerminalController {
               let presetID = UUID(uuidString: idString) else {
             return .failure(.err(code: "invalid_params", message: "preset_id must be a preset UUID", data: nil))
         }
-        let model = SupermuxComposition.projectsModel
-        await model.loadIfNeeded()
+        guard let model = await supermuxLoadedProjectsModel() else {
+            return .failure(supermuxProjectsStillLoading())
+        }
         guard let preset = model.presets.first(where: { $0.id == presetID }) else {
             return .failure(.err(code: "not_found", message: "Unknown preset", data: [
                 "preset_id": idString,
