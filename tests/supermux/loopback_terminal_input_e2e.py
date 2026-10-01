@@ -25,6 +25,10 @@ Ghostty view (debug.shortcut.simulate), so they take the same path a keyboard do
   7. keys_survive_reattach         after the link drops and the mirror re-attaches (a
                                    replay resets the mirror's keyboard flags), Shift+Enter
                                    still arrives as CSI 13;2 u
+  7b. mouse_survives_replay        after that replay a drag still arrives as SGR mouse
+                                   reports: the replay restores the program's mouse modes
+                                   (button tracking, SGR format) instead of leaving the
+                                   mirror selecting text
   8. hidden_source_pane_does_not_count
                                    the source Mac's hidden pane does not hold the grid
                                    down: the terminal takes the viewing mirror's grid
@@ -446,6 +450,12 @@ class TerminalInputE2E:
         self.mirror_focused()
         return self.key_check("shift+enter", "1b5b31333b3275")()
 
+    def mouse_survives_replay(self) -> Dict[str, Any]:
+        """Every grid change of the other Mac's terminal replays the mirror (a link drop
+        too), and the replay must leave the program's mouse modes live."""
+        self.mirror_focused()
+        return self.mouse_drag()
+
     def hidden_source_pane(self) -> Dict[str, Any]:
         """The mirror is on screen and the source is not: the mirror's grid wins."""
         self.sock.call("workspace.select", {"workspace_id": self.mirror_id})
@@ -526,6 +536,7 @@ class TerminalInputE2E:
             ok = self.step("typed_text", self.typed_text) and ok
             ok = self.step("mouse_drag_is_mouse_reports", self.mouse_drag) and ok
             ok = self.step("keys_survive_reattach", self.keys_survive_reattach) and ok
+            ok = self.step("mouse_survives_replay", self.mouse_survives_replay) and ok
             ok = self.step("hidden_source_pane_does_not_count", self.hidden_source_pane) and ok
             ok = self.step("new_remote_tab_fills_the_mirror", self.new_remote_tab_fills_the_mirror) and ok
             ok = self.step("new_tab_from_mirror_shortcut_fills_the_mirror", self.new_tab_from_mirror_shortcut_fills_the_mirror) and ok
