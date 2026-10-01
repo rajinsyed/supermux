@@ -19,8 +19,9 @@ import SupermuxKit
 /// export filter and restart-stable bindings without a second Mac), and `link {machine, action:
 /// stop|restore, busy?}` (holds a link down, then redials it), and `terminal_mouse_drag {surface_id, from, to}`
 /// (a real Ghostty mouse drag across a terminal, for the mirror input E2E), and `user_close
-/// {workspace_id | workspace_ids, answer?}` (a user close with its confirmations pre-answered,
-/// ``SupermuxDeviceMirrorCloseSocketCommands``). The device-mirror methods
+/// {workspace_id | workspace_ids, answer?}` (a user close with its confirmations pre-answered),
+/// `reopen_closed_workspace {}` and `hold_remote_closes {enabled}`
+/// (``SupermuxDeviceMirrorCloseSocketCommands``). The device-mirror methods
 /// (`close_mirror`, `unhide`, `hidden`, `set_auto_mirror`, `reconcile`) are handled by
 /// ``SupermuxDeviceMirrorSocketCommands``, plus the notification /
 /// phone-push hooks in ``SupermuxDeviceNotificationSocketCommands`` (`push_decisions`,
@@ -95,7 +96,7 @@ enum SupermuxDevicesSocketCommands {
             case let name where SupermuxDeviceNotificationSocketCommands.handles(name):
                 result = try await SupermuxDeviceNotificationSocketCommands.handle(String(name), params)
             case let name where SupermuxDeviceTerminalCloseSocketCommands.handles(name): result = try SupermuxDeviceTerminalCloseSocketCommands.handle(name, params)
-            case let name where SupermuxDeviceMirrorCloseSocketCommands.handles(name): result = try SupermuxDeviceMirrorCloseSocketCommands.handle(params)
+            case let name where SupermuxDeviceMirrorCloseSocketCommands.handles(name): result = try SupermuxDeviceMirrorCloseSocketCommands.handle(name, params)
             case let name where SupermuxTerminalSizingSocketCommands.handles(name):
                 result = try SupermuxTerminalSizingSocketCommands.handle(name, params: params)
             #endif

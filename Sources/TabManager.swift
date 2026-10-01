@@ -2514,6 +2514,12 @@ class TabManager: ObservableObject {
     }
 
     func closeWorkspaceForGroupDeletion(_ tab: Workspace, recordHistory: Bool) {
+        // SUPERMUX:begin device-mirror-close
+        // Delete Group closes its members (the user confirmed it): a device
+        // mirror closes here and on its Mac, like a sidebar close, instead of
+        // being hidden. Generated-anchor cleanup (recordHistory false) is untouched.
+        if recordHistory, SupermuxDeviceMirrorCloseGate.closeOnItsMac(tab, in: self) { return }
+        // SUPERMUX:end device-mirror-close
         closeWorkspace(tab, recordHistory: recordHistory)
     }
 

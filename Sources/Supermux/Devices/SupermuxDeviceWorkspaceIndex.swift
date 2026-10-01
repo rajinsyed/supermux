@@ -16,8 +16,9 @@ struct SupermuxDeviceMirror {
 ///
 /// A local workspace mirrors a remote workspace when a persisted binding
 /// (``SupermuxDeviceBindingStore``, written by the fork's opener) names it, or
-/// when its panes project a device's terminals — live projections and restored
-/// ones still waiting for the link (``SurfaceCatalog/pendingRestoredProjections``).
+/// when every pane projects a terminal of that one remote workspace — live
+/// projections and restored ones still waiting for the link
+/// (``SurfaceCatalog/pendingRestoredProjections``).
 /// The binding wins, so a mirror keeps its identity while its panes are
 /// placeholders or all closed.
 ///
@@ -54,14 +55,24 @@ final class SupermuxDeviceWorkspaceIndex {
     // MARK: - Local -> remote
 
     /// Whether the workspace mirrors a remote workspace: bound, or every pane
-    /// projects a device terminal. A workspace mixing local panes with one
-    /// borrowed remote pane is a local workspace. O(1) for local workspaces.
+    /// projects a terminal of one and the same device workspace (the set
+    /// upstream's layout coordinator keeps synchronized as that workspace's
+    /// view). A workspace mixing local panes with borrowed remote panes, or
+    /// borrowing terminals of several remote workspaces, is a local
+    /// workspace. O(1) for local workspaces.
     func isDeviceMirror(_ workspace: Workspace) -> Bool {
         if bindings.ref(forStableID: workspace.stableId) != nil { return true }
         guard catalog.projectionMachines(forWorkspace: workspace.id).contains(where: \.isDevice) else { return false }
         let panelIDs = workspace.panels.keys
         guard !panelIDs.isEmpty else { return false }
-        return panelIDs.allSatisfy { catalog.machineOwningPanel($0)?.isDevice == true }
+        var refs = Set<SupermuxRemoteWorkspaceRef>()
+        for panelID in panelIDs {
+            guard let projection = catalog.projectionIncludingPendingRestore(forPanel: panelID),
+                  projection.resource.machine.isDevice,
+                  let remoteID = remoteWorkspaceID(of: projection) else { return false }
+            refs.insert(SupermuxRemoteWorkspaceRef(machine: projection.resource.machine, workspaceID: remoteID))
+        }
+        return refs.count == 1
     }
 
     /// The remote workspace a local workspace mirrors, if any.
