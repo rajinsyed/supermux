@@ -563,6 +563,9 @@ extension DockSplitStore {
         reconcileReason: String
     ) {
         installSubscription(for: panel)
+        // SUPERMUX:begin dock-tab-agent-working-attach
+        SupermuxTabActivitySync.syncDock(self, panelId: panel.id)
+        // SUPERMUX:end dock-tab-agent-working-attach
         withCoalescedTerminalViewReattach {
             applyVisibility(to: panel)
             if let terminal = panel as? TerminalPanel {
