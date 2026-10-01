@@ -138,6 +138,9 @@ extension TerminalController {
         )
         SupermuxTerminalSizingVisibility.shared.prepareHost(&host, surface: surface)
         // SUPERMUX:end sizing-hidden-mac-pane
+        // SUPERMUX:begin sizing-default-policy (a new terminal starts with this Mac's size preference, not Fit everyone)
+        SupermuxTerminalSizingDefaults.shared.prepareHost(&host)
+        // SUPERMUX:end sizing-default-policy
         localSizingHostsBySurfaceID[surfaceID] = host
         localSizingControllersBySurfaceID[surfaceID] = controller
         ensureTerminalSharingPresentation()
