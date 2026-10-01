@@ -27,10 +27,19 @@ import SupermuxMobileCore
 enum SupermuxMirrorTerminalPlacement {
     nonisolated static let paramKey = "after_surface_id"
 
-    /// The other Mac's terminal each positioned request goes right of, by
-    /// request id. Kept for the request's retries, which must resend identical
-    /// params; bounded, oldest first.
-    private static var anchors: [UUID: String] = [:]
+    /// Where each positioned request goes, by request id: the other Mac's
+    /// terminal it was remembered right of, until its first send decides.
+    private enum Anchor {
+        /// Remembered; no attempt has been sent yet.
+        case remembered(String)
+        /// What the first attempt sent as `after_surface_id` (nil: nothing).
+        case decided(String?)
+    }
+
+    /// Kept for the request's retries, which must resend identical params: the
+    /// other Mac answers a retry whose params differ "Request ID was reused for
+    /// another edit". Bounded, oldest first.
+    private static var anchors: [UUID: Anchor] = [:]
     private static var anchorOrder: [UUID] = []
     private static let anchorLimit = 64
 
@@ -79,25 +88,35 @@ enum SupermuxMirrorTerminalPlacement {
               let left = workspace.cloudTerminalSourcePlacement(forPanel: leftPanel),
               left.machine == source.machine,
               let remoteTabID = left.remoteTabID else { return }
-        anchors[request.id] = remoteTabID
+        anchors[request.id] = .remembered(remoteTabID)
         anchorOrder.append(request.id)
         if anchorOrder.count > anchorLimit { anchors.removeValue(forKey: anchorOrder.removeFirst()) }
     }
 
     /// The `after_surface_id` for a request: its remembered terminal, when it is
-    /// in the request's remote workspace and that Mac places by it.
+    /// in the request's remote workspace and that Mac places by it. Decided on
+    /// the first attempt; every retry of the request sends the same answer,
+    /// whatever the capability cache or the catalog says by then.
     static func afterSurfaceID(
         for request: CloudTerminalCreationRequest,
         remoteWorkspaceID: String,
         on machine: SurfaceMachineID,
         catalog: SurfaceCatalog
     ) -> String? {
-        guard let anchor = anchors[request.id],
-              catalog.resources[SurfaceResourceID(machine: machine, kind: .terminal, key: anchor)]?
-                .remoteWorkspace?.id == remoteWorkspaceID,
-              SupermuxComposition.devices.cachedHostCapabilities(on: machine)?
-                .contains(SupermuxMobileCapability.terminalPlacementV1.rawValue) == true else { return nil }
-        return anchor
+        switch anchors[request.id] {
+        case nil:
+            return nil
+        case .decided(let after):
+            return after
+        case .remembered(let anchor):
+            let placesByAnchor = catalog.resources[SurfaceResourceID(machine: machine, kind: .terminal, key: anchor)]?
+                .remoteWorkspace?.id == remoteWorkspaceID
+                && SupermuxComposition.devices.cachedHostCapabilities(on: machine)?
+                    .contains(SupermuxMobileCapability.terminalPlacementV1.rawValue) == true
+            let after = placesByAnchor ? anchor : nil
+            anchors[request.id] = .decided(after)
+            return after
+        }
     }
 
     // MARK: - Host
