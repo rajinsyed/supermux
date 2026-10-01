@@ -120,6 +120,10 @@ public enum SupermuxMobileMethod: String, CaseIterable, Codable, Sendable, Equat
     case filesSearch = "mobile.supermux.files.search"
     /// Reads the git status the desktop Files panel colors rows with.
     case filesGitStatus = "mobile.supermux.files.git_status"
+    /// Leases a watcher on the workspace folder's own entries (not its
+    /// subtree), the desktop Files panel's live refresh, for another Mac's
+    /// panel: `supermux.files.updated` while the lease is renewed.
+    case filesWatch = "mobile.supermux.files.watch"
 
     // MARK: Workspace selection / panes
 

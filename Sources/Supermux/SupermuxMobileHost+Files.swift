@@ -102,6 +102,43 @@ extension TerminalController {
         }
     }
 
+    /// `mobile.supermux.files.watch`: starts, renews or releases another
+    /// Mac's lease on the workspace folder's own entries (see
+    /// ``SupermuxMobileHostGlue/filesWatchRegistry``), the desktop Files
+    /// panel's live refresh: each change emits `supermux.files.updated
+    /// {workspace_id, root}`. `{workspace_id, expected_root, enable,
+    /// client_id}`; `enable: true` resolves the folder like every `files.*`
+    /// call (never another machine's path, `stale_root` after a `cd`) and
+    /// answers `{watching: true, ttl_seconds, root}`; the caller renews within
+    /// the TTL. `enable: false` releases only that client's hold, even after
+    /// the workspace closed: `{watching: false}`.
+    @MainActor
+    func v2SupermuxFilesWatch(params: [String: Any]) async -> V2CallResult {
+        guard let enable = params["enable"] as? Bool else {
+            return .err(code: "invalid_params", message: "enable must be a boolean", data: nil)
+        }
+        guard let workspaceID = v2UUID(params, "workspace_id") else {
+            return .err(code: "invalid_params", message: "workspace_id must be a workspace UUID", data: nil)
+        }
+        let registry = SupermuxMobileHostGlue.filesWatchRegistry
+        let holder = params["client_id"] as? String
+        guard enable else {
+            registry.unwatch(workspaceId: workspaceID.uuidString, holder: holder)
+            return .ok(["watching": false])
+        }
+        let root: String
+        switch await supermuxResolveFilesRoot(params: params) {
+        case let .failure(error): return error
+        case let .success(resolved): root = resolved
+        }
+        registry.watch(workspaceId: workspaceID.uuidString, directory: root, holder: holder)
+        return .ok([
+            "watching": true,
+            "ttl_seconds": Int(SupermuxMobileChangesWatchRegistry.ttl),
+            "root": Self.supermuxNormalizedPath(root),
+        ])
+    }
+
     // MARK: - Shared pieces
 
     /// Resolves the request's root, builds the confined browser, runs `work`,

@@ -1,3 +1,4 @@
+import CmuxFoundation
 import Foundation
 import SupermuxKit
 import SupermuxMobileCore
@@ -17,6 +18,12 @@ import SupermuxMobileCore
 /// The clock, the watch-stream factory, and the event sink are all
 /// constructor-injected so the TTL contract (validation RPC-CHG-07) is
 /// unit-testable without real FSEvents or a live mobile session.
+///
+/// A second instance (``SupermuxMobileHostGlue/filesWatchRegistry``) serves
+/// `mobile.supermux.files.watch` for another Mac's Files panel: the same
+/// leases, but on ``rootEntryChanges(_:)`` (the folder's own entries, as the
+/// desktop panel watches) and emitting `supermux.files.updated
+/// {workspace_id, root}`.
 @MainActor
 final class SupermuxMobileChangesWatchRegistry {
     /// Lease duration: a holder not heartbeated for this long is swept.
@@ -43,6 +50,7 @@ final class SupermuxMobileChangesWatchRegistry {
     private let now: @MainActor () -> Date
     private let makeChangeStream: @MainActor (String) -> AsyncStream<Void>
     private let emit: @MainActor (_ topic: String, _ payload: [String: Any]) -> Void
+    private let topic: SupermuxMobileTopic
     private let sweepsAutomatically: Bool
     private let sweepIntervalValue: Duration
     private var entries: [String: Entry] = [:]
@@ -54,6 +62,9 @@ final class SupermuxMobileChangesWatchRegistry {
     ///   - makeChangeStream: Watch-stream factory; defaults to a real
     ///     ``SupermuxRepositoryWatcher`` on the given directory.
     ///   - emit: The event sink; defaults to `MobileHostService.emitEvent`.
+    ///   - topic: The topic each change emits: `supermux.changes.updated
+    ///     {workspace_id}` (the default), or `supermux.files.updated`, whose
+    ///     payload also names the watched folder as `root`.
     ///   - sweepsAutomatically: Whether to run the periodic TTL sweep task;
     ///     tests pass `false` and call ``sweep()`` with an advanced clock.
     ///   - sweepInterval: How often the automatic sweep re-checks; defaults to
@@ -67,12 +78,14 @@ final class SupermuxMobileChangesWatchRegistry {
         emit: @escaping @MainActor (_ topic: String, _ payload: [String: Any]) -> Void = { topic, payload in
             MobileHostService.shared.emitEvent(topic: topic, payload: payload)
         },
+        topic: SupermuxMobileTopic = .changesUpdated,
         sweepsAutomatically: Bool = true,
         sweepInterval: Duration? = nil
     ) {
         self.now = now
         self.makeChangeStream = makeChangeStream
         self.emit = emit
+        self.topic = topic
         self.sweepsAutomatically = sweepsAutomatically
         // Resolved here rather than as a default argument: default-argument
         // expressions evaluate in the caller's context, where touching the
@@ -122,13 +135,17 @@ final class SupermuxMobileChangesWatchRegistry {
         holders[token] = now()
         let stream = makeChangeStream(normalized)
         let emit = emit
+        let topic = topic.rawValue
+        // A Files panel shows one folder: the event says which, so a panel
+        // that has since followed a `cd` ignores the old folder's changes.
+        // The Changes payload stays `{workspace_id}`.
+        let root = self.topic == .filesUpdated ? normalized : nil
         let watchTask = Task { @MainActor in
             for await _ in stream {
                 if Task.isCancelled { return }
-                emit(
-                    SupermuxMobileTopic.changesUpdated.rawValue,
-                    ["workspace_id": workspaceId]
-                )
+                var payload: [String: Any] = ["workspace_id": workspaceId]
+                if let root { payload["root"] = root }
+                emit(topic, payload)
             }
         }
         entries[workspaceId] = Entry(
@@ -173,6 +190,26 @@ final class SupermuxMobileChangesWatchRegistry {
             }
         }
         stopSweepingIfIdle()
+    }
+
+    /// A change stream for the folder's own entries, not its subtree: the
+    /// desktop Files panel's watcher (CmuxFoundation ``FileWatcher`` on the
+    /// folder and its parent, 300 ms throttle). An entry added, removed or
+    /// renamed in the folder signals; edits deeper down (`.git/` included)
+    /// do not, exactly as for the local panel.
+    nonisolated static func rootEntryChanges(_ path: String) -> AsyncStream<Void> {
+        let watcher = FileWatcher(path: path, throttle: .milliseconds(300))
+        return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+            // The task keeps the watcher alive: its stream ends when it goes.
+            let task = Task {
+                for await _ in watcher.events { continuation.yield() }
+                continuation.finish()
+            }
+            continuation.onTermination = { _ in
+                task.cancel()
+                Task { await watcher.stop() }
+            }
+        }
     }
 
     // MARK: - Internals

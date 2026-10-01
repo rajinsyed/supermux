@@ -51,7 +51,7 @@ struct SupermuxMobileAuthorizationTests {
                  .filesTrash:
                 expected = .workspaceScopedPermitted
             // SUPERMUX:begin mirror-file-explorer-authz
-            case .filesRead, .filesSearch, .filesGitStatus:
+            case .filesRead, .filesSearch, .filesGitStatus, .filesWatch:
                 expected = .workspaceScopedPermitted
             // SUPERMUX:end mirror-file-explorer-authz
             default:
