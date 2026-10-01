@@ -23,7 +23,14 @@ Checks:
                               and on M (per tab, not per workspace)
   6. settled_clears           both idle: no row is working and no tab spins
   7. hook_driven_waiting      a real `cmux claude-hook` turn: prompt-submit, then a
-                              Stop with a background task still running. Upstream's
+                              Stop with a background task still running. Each hook
+                              runs with the environment cmux's `claude` wrapper gives
+                              Claude Code and its hooks (CMUX_CLAUDE_PID of a live
+                              stand-in running in T_A, the CMUX_AGENT_LAUNCH_* launch
+                              capture): upstream shows an agent's pill only while a
+                              live PID registered by SessionStart owns it, and
+                              notifies only a pane whose resume binding (published
+                              from the launch capture) names the session. Upstream's
                               grey "Waiting" pill shows (guard), no notification
                               arrives while waiting (guard), the rows and T_A's tab
                               keep the working indicator; a second Stop with no
@@ -41,9 +48,11 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -69,6 +78,12 @@ AGENT_KEY = "claude_code"
 # The environment a hook run keeps from ours; everything agent- or cmux-shaped
 # is dropped so the hook never reads as a nested agent or targets another app.
 HOOK_ENV_KEYS = ("PATH", "HOME", "USER", "LOGNAME", "TMPDIR", "LANG", "CMUX_DERIVED_DATA")
+# The Claude Code stand-in run in T_A: it records its PID, then becomes a long sleep
+# under that same PID (exec), as cmux's `claude` wrapper execs Claude Code.
+CLAUDE_STAND_IN = """#!/bin/sh
+echo $$ > "$1"
+exec sleep 900
+"""
 
 
 class AgentActivityE2E:
@@ -85,6 +100,7 @@ class AgentActivityE2E:
         self.mirror = ""
         self.tab_a = ""
         self.tab_b = ""
+        self.claude_pid: Optional[int] = None
         self.initial_auto_mirror: Optional[bool] = None
 
     # -- reads ----------------------------------------------------------------
@@ -171,6 +187,7 @@ class AgentActivityE2E:
             CMUX_CLI_SENTRY_DISABLED="1",
             CMUX_CLAUDE_HOOK_SENTRY_DISABLED="1",
         )
+        env.update(self.claude_wrapper_env())
         command = [str(REPO_ROOT / "scripts" / "cmux-debug-cli.sh"), "claude-hook", subcommand,
                    "--workspace", self.source, "--surface", self.tab_a]
         completed = subprocess.run(command, input=json.dumps(payload), env=env,
@@ -182,6 +199,52 @@ class AgentActivityE2E:
         if completed.returncode != 0:
             raise Failure(f"claude-hook {subcommand} exited {completed.returncode}: {completed.stderr.strip()[:300]}")
         return completed.stdout
+
+    def claude_executable(self) -> Path:
+        return self.root / "claude"
+
+    def claude_wrapper_env(self) -> Dict[str, str]:
+        """What cmux's `claude` wrapper exports to Claude Code, and so to every
+        hook it runs: the agent's PID (the wrapper execs Claude Code, so its
+        own $$) and the launch capture (kind, executable, cwd, argv) the hooks
+        publish as the pane's resume binding."""
+        if not self.claude_pid:
+            return {}
+        executable = str(self.claude_executable())
+        return {
+            "CMUX_CLAUDE_PID": str(self.claude_pid),
+            "CMUX_AGENT_LAUNCH_KIND": "claude",
+            "CMUX_AGENT_LAUNCH_EXECUTABLE": executable,
+            "CMUX_AGENT_LAUNCH_CWD": str(self.root),
+            "CMUX_AGENT_LAUNCH_ARGV_B64": base64.b64encode((executable + "\0").encode()).decode(),
+        }
+
+    def start_claude_stand_in(self) -> int:
+        """Runs the Claude Code stand-in in T_A, as typing `claude` there would,
+        and returns its PID."""
+        executable = self.claude_executable()
+        executable.write_text(CLAUDE_STAND_IN)
+        executable.chmod(0o755)
+        pid_file = self.root / "claude.pid"
+        pid_file.unlink(missing_ok=True)
+        self.sock.call("surface.send_text", {"workspace_id": self.source, "surface_id": self.tab_a,
+                                             "text": f"'{executable}' '{pid_file}'\n"})
+
+        def started() -> Optional[int]:
+            text = pid_file.read_text().strip() if pid_file.exists() else ""
+            return int(text) if text.isdigit() else None
+
+        self.claude_pid = wait_for("the Claude Code stand-in to start in T_A", started, self.timeout)
+        self.facts["claude_stand_in_pid"] = self.claude_pid
+        return self.claude_pid
+
+    def stop_claude_stand_in(self) -> None:
+        if self.claude_pid:
+            try:
+                os.kill(self.claude_pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            self.claude_pid = None
 
     def screenshot(self, workspace_id: str, label: str) -> Optional[str]:
         """Best effort: selects the workspace and keeps a window screenshot
@@ -325,6 +388,13 @@ class AgentActivityE2E:
         return {"activity": rows, "tabs": self.expect_tabs(set(), "no tab to spin once both agents are idle")}
 
     def hook_driven_waiting(self) -> Dict[str, Any]:
+        self.start_claude_stand_in()
+        try:
+            return self.hook_turn()
+        finally:
+            self.stop_claude_stand_in()
+
+    def hook_turn(self) -> Dict[str, Any]:
         session = f"e2e-{self.nonce}-{uuid.uuid4().hex[:8]}"
         base = {"session_id": session, "cwd": str(self.root)}
         self.hook("session-start", {**base, "hook_event_name": "SessionStart", "source": "startup"})
