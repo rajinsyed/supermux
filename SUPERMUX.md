@@ -250,9 +250,10 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   identical name + path. Project sync (setting) registers a Mac's projects on the other Mac when the
   same repo already exists at the same path; it never clones or deletes. "Set Up on <Mac>…" adds an
   existing folder or clones there.
-- **Creating remotely:** the New Worktree sheet's device picker (last device remembered per
-  project, link states live while the sheet is open), "New Workspace on ▸ <Mac>" in every New
-  Workspace menu, and ⌘N inside a mirror. The new workspace's mirror opens and is selected in the
+- **Creating remotely:** the New Worktree sheet's device picker (the last Mac the user chose for a
+  worktree is preselected in every project, link states live while the sheet is open), "New
+  Workspace on ▸ <Mac>" in every New Workspace menu, and ⌘N inside a mirror. The new workspace's
+  mirror opens and is selected in the
   clicking window; the owning Mac opens the workspace in the background (`select: false`), so its
   window never switches under whoever is using it. A link that drops after the create went out says
   the outcome is unknown and to check that Mac's worktrees, instead of inviting a duplicate. The

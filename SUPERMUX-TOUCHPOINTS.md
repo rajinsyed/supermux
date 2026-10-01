@@ -4954,8 +4954,9 @@ because the whole file is fork-owned.
 ### 590. New Worktree on any Mac (workstream P2) — pbxproj only
 
 Why: the Mac New Worktree sheet creates on This Mac or on another Mac that has the project (device
-picker, last Mac remembered per project), and every entry point (hover ＋, context menu,
-"New Worktree on ▸ <Mac>", remote-only rows) opens that one sheet. All logic is fork-owned: the
+picker; the last Mac the user chose for a worktree is remembered once for every project), and every
+entry point (hover ＋, context menu, "New Worktree on ▸ <Mac>", remote-only rows) opens that one
+sheet. All logic is fork-owned: the
 sheet, its model and the `SupermuxWorktreeCreationTarget` seam live in `Packages/SupermuxKit`
 (`UI/SupermuxNewWorktreeSheet*.swift`, `UI/SupermuxNewWorktreeSheetModel*.swift`,
 `Agent/Supermux{WorktreeCreationTarget,LocalWorktreeCreationTarget}.swift`,

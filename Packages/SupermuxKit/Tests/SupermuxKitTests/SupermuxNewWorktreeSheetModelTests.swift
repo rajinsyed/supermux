@@ -21,6 +21,9 @@ import Testing
 /// 9. The plain path asks for an AI branch although the branch was typed.
 /// 10. A create on another Mac shows no "Creating on <Mac>…" progress, and a
 ///     failure there leaves the sheet stuck busy.
+/// 11. A create on a Mac the sheet fell back to (the remembered Mac lacks the
+///     project or cannot create now, and the user picked no row) replaces the
+///     remembered Mac, so the user's choice no longer reaches other projects.
 @MainActor
 struct SupermuxNewWorktreeSheetModelTests {
     private let studio = SupermuxProjectDevice(machineID: "device:aaaa@default", name: "Studio", isOnline: true)
@@ -41,12 +44,15 @@ struct SupermuxNewWorktreeSheetModelTests {
         var destinations: [SupermuxProjectSetupDestination] = []
     }
 
-    private func makeFixture(lastUsed: String? = nil) throws -> Fixture {
+    /// - Parameters:
+    ///   - lastUsed: The remembered Mac.
+    ///   - preferred: The Mac asked for from "New Worktree on ▸ <Mac>".
+    private func makeFixture(lastUsed: String? = nil, preferred: String? = nil) throws -> Fixture {
         let suite = "SupermuxNewWorktreeSheetModelTests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defaults.removePersistentDomain(forName: suite)
         let store = SupermuxWorktreeLastDeviceStore(defaults: defaults)
-        if let lastUsed { store.record(deviceKey: lastUsed, forProject: unifiedID) }
+        if let lastUsed { store.record(deviceKey: lastUsed) }
         let project = SupermuxUnifiedProject(
             id: unifiedID,
             name: "app",
@@ -74,14 +80,16 @@ struct SupermuxNewWorktreeSheetModelTests {
         remote.commandList = SupermuxAgentCommandList(commands: [], selected: "")
         remote.remoteCommands = SupermuxAgentCommandList(commands: ["ccx"], selected: "ccx")
         let setUps = SetUpRecorder()
+        let initial = SupermuxWorktreeDevicePlanner.defaultEntryID(
+            in: entries,
+            preferredDeviceKey: preferred,
+            lastUsedDeviceKey: store.deviceKey()
+        )
         let model = SupermuxNewWorktreeSheetModel(
             projectID: unifiedID,
             entries: entries,
-            initialEntryID: SupermuxWorktreeDevicePlanner.defaultEntryID(
-                in: entries,
-                preferredDeviceKey: nil,
-                lastUsedDeviceKey: store.deviceKey(forProject: unifiedID)
-            ),
+            initialEntryID: initial,
+            initialEntryIsChoice: initial != nil && initial == preferred,
             makeTarget: { location in location.isThisMac ? local : (location.machineID == "device:aaaa@default" ? remote : nil) },
             lastDevices: store,
             onSetUp: { setUps.destinations.append($0) }
@@ -173,7 +181,7 @@ struct SupermuxNewWorktreeSheetModelTests {
         #expect(request.baseBranch == nil)
         #expect(request.workspaceName == "login")
         #expect(fixture.remote.suggestCalls == 0)
-        #expect(fixture.store.deviceKey(forProject: unifiedID) == "device:aaaa@default")
+        #expect(fixture.store.deviceKey() == "device:aaaa@default")
     }
 
     @Test func blankBranchAsksThatMacForAnAIName() async throws {
@@ -222,7 +230,45 @@ struct SupermuxNewWorktreeSheetModelTests {
         #expect(!finished)
         #expect(model.phase == .idle)
         #expect(model.errorMessage == "Studio is offline.")
-        #expect(fixture.store.deviceKey(forProject: unifiedID) == nil)
+        #expect(fixture.store.deviceKey() == nil)
+    }
+
+    @Test func aMacTheSheetFellBackToIsNotRemembered() async throws {
+        // Air is remembered but offline, so the sheet falls back to This Mac.
+        let fixture = try makeFixture(lastUsed: "device:cccc@default")
+        let model = fixture.model
+        #expect(model.selectedEntryID == SupermuxWorktreeDeviceEntry.thisMacKey)
+        var finished = false
+        await finish(model.submit { finished = true })
+        #expect(finished)
+        #expect(fixture.local.createdRequests.count == 1)
+        #expect(fixture.store.deviceKey() == "device:cccc@default")
+    }
+
+    @Test func aFallbackMacTheUserPicksIsRemembered() async throws {
+        let fixture = try makeFixture(lastUsed: "device:cccc@default")
+        let model = fixture.model
+        model.selectEntry(id: "device:aaaa@default")
+        model.selectEntry(id: SupermuxWorktreeDeviceEntry.thisMacKey)
+        await finish(model.submit {})
+        #expect(fixture.local.createdRequests.count == 1)
+        #expect(fixture.store.deviceKey() == SupermuxWorktreeDeviceEntry.thisMacKey)
+    }
+
+    @Test func aMacAskedForFromTheRowMenuIsRemembered() async throws {
+        // This Mac is remembered; "New Worktree on ▸ Studio" opens on Studio.
+        let fixture = try makeFixture(lastUsed: SupermuxWorktreeDeviceEntry.thisMacKey, preferred: "device:aaaa@default")
+        #expect(fixture.model.selectedEntryID == "device:aaaa@default")
+        await finish(fixture.model.submit {})
+        #expect(fixture.remote.createdRequests.count == 1)
+        #expect(fixture.store.deviceKey() == "device:aaaa@default")
+    }
+
+    @Test func withNothingRememberedTheFirstCreateIsRemembered() async throws {
+        let fixture = try makeFixture()
+        await finish(fixture.model.submit {})
+        #expect(fixture.local.createdRequests.count == 1)
+        #expect(fixture.store.deviceKey() == SupermuxWorktreeDeviceEntry.thisMacKey)
     }
 
     @Test func thisMacOnlyProjectHidesThePicker() throws {

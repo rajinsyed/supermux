@@ -15,7 +15,8 @@ import SupermuxKit
 /// `select {session_id, entry_id}`, `load {session_id}`,
 /// `fill {session_id, prompt?, workspace_name?, branch_name?, base_branch?, command?}`,
 /// `submit {session_id, <fill fields>, await_open?, stop_link_after_seconds?}`,
-/// `state {session_id}`, `close {session_id}`, `last_device {project_id}`,
+/// `state {session_id}`, `close {session_id}`, `last_device {set?}` (the one
+/// remembered Mac; `set` replaces it and returns `previous`),
 /// `set_agent_commands {commands, selected?}` (returns the previous list, for restoring).
 @MainActor
 enum SupermuxNewWorktreeSocketCommands {
@@ -65,8 +66,7 @@ enum SupermuxNewWorktreeSocketCommands {
             sessions[try string(params, "session_id")] = nil
             return ["closed": true]
         case "last_device":
-            let projectID = try uuid(params, "project_id")
-            return ["device_key": SupermuxWorktreeLastDeviceStore().deviceKey(forProject: projectID) ?? NSNull()]
+            return try lastDevice(params)
         case "set_agent_commands":
             return setAgentCommands(params)
         default:
@@ -152,6 +152,25 @@ enum SupermuxNewWorktreeSocketCommands {
             payload["mirror"] = payloads.opened(try await open.value)
         }
         return payload
+    }
+
+    /// The Mac the New Worktree sheet remembers (one for every project, so a
+    /// `project_id` is accepted and ignored). `set` (a device key, or null to
+    /// forget) replaces it and returns the value it replaced as `previous`,
+    /// so a test can start from a known state and restore the user's.
+    private static func lastDevice(_ params: [String: Any]) throws -> [String: Any] {
+        let store = SupermuxWorktreeLastDeviceStore()
+        let current = store.deviceKey()
+        guard let value = params["set"] else { return ["device_key": current ?? NSNull()] }
+        switch value {
+        case let key as String where !key.isEmpty:
+            store.record(deviceKey: key)
+        case is NSNull:
+            UserDefaults.standard.removeObject(forKey: SupermuxWorktreeLastDeviceStore.defaultsKey)
+        default:
+            throw invalid("set must be a device key or null")
+        }
+        return ["device_key": store.deviceKey() ?? NSNull(), "previous": current ?? NSNull()]
     }
 
     /// Sets this Mac's Claude command list (the loopback device serves the

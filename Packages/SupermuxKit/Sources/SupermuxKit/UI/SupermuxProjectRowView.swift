@@ -319,8 +319,9 @@ public struct SupermuxProjectRowView: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: 2)
-            if showsWorktreeDisclosure {
-                worktreeCountToggle
+            let disclosure = worktreeDisclosure
+            if disclosure.isShown {
+                worktreeCountToggle(count: disclosure.count)
             }
             // Hover-only, so the count pill sits flush right when idle.
             if isHovered {
@@ -357,16 +358,13 @@ public struct SupermuxProjectRowView: View {
     /// The "⑂ N ›" pill: unopened-worktree count plus a chevron that rotates
     /// open. Tinted a little stronger while expanded so the open state reads
     /// at a glance.
-    private var worktreeCountToggle: some View {
+    private func worktreeCountToggle(count: Int) -> some View {
         Button(action: actions.toggleExpanded) {
             HStack(spacing: 3 * fontScale) {
                 Image(systemName: "arrow.triangle.branch")
                     .font(.system(size: 8 * fontScale, weight: .semibold))
-                // Before another Mac's worktrees load, the pill is just a chevron.
-                if worktreeDisclosureCount > 0 {
-                    Text("\(worktreeDisclosureCount)")
-                        .font(.system(size: 9.5 * fontScale, weight: .semibold).monospacedDigit())
-                }
+                Text("\(count)")
+                    .font(.system(size: 9.5 * fontScale, weight: .semibold).monospacedDigit())
                 Image(systemName: "chevron.right")
                     .font(.system(size: 6.5 * fontScale, weight: .bold))
                     .rotationEffect(.degrees(isExpanded ? 90 : 0))
@@ -478,15 +476,11 @@ struct SupermuxWorktreeRowView: View {
                     onOpen: openPullRequest
                 )
             }
-            // Hover-only "open" hint in the rows' shared trailing slot, laid
-            // out always so the PR badge stays put and lines up with the
-            // open-workspace rows' badges.
-            SupermuxRowTrailingSlot(fontScale: fontScale) {
-                Image(systemName: "arrow.right")
-                    .font(.system(size: 8.5 * fontScale, weight: .semibold))
-                    .foregroundStyle(.tertiary)
-                    .opacity(isHovered ? 1 : 0)
-            }
+            // Hover-only "open" hint; laid out always so the PR badge stays put.
+            Image(systemName: "arrow.right")
+                .font(.system(size: 8.5 * fontScale, weight: .semibold))
+                .foregroundStyle(.tertiary)
+                .opacity(isHovered ? 1 : 0)
         }
         // Match the open-workspace row so worktree names align under the project name.
         .padding(.leading, 7)

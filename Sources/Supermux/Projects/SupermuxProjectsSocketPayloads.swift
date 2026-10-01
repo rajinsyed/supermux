@@ -210,9 +210,12 @@ enum SupermuxProjectsSocketPayloads {
         ]
     }
 
-    /// What the window's Projects section is handed about other Macs.
+    /// What the window's Projects section is handed about other Macs, with
+    /// each row's worktree pill as the row draws it (`worktree_disclosure`).
     static func presentation(for tabManager: TabManager) -> [String: Any] {
         let presentation = SupermuxRemoteProjectsPresenter.presentation(for: tabManager)
+        let nested = nestedWorkspacesByProject(for: tabManager)
+        let localWorktrees = SupermuxComposition.projectsModel.worktreesByProjectId
         return [
             "remote_only_rows": presentation.rows.map { row -> [String: Any] in
                 [
@@ -225,6 +228,7 @@ enum SupermuxProjectsSocketPayloads {
                     "action_count": row.actions.count,
                     "worktrees": row.worktrees.map(remoteWorktree),
                     "set_up_targets": row.setUpTargets.map(\.name),
+                    "worktree_disclosure": worktreeDisclosure(SupermuxWorktreeDisclosure(remoteOnly: row)),
                 ]
             },
             "local_rows": presentation.extrasByLocalProjectID.map { id, extras -> [String: Any] in
@@ -234,9 +238,28 @@ enum SupermuxProjectsSocketPayloads {
                     "worktrees": extras.worktrees.map(remoteWorktree),
                     "set_up_targets": extras.setUpTargets.map(\.name),
                     "remote_url": extras.remoteURL ?? NSNull(),
+                    "worktree_disclosure": worktreeDisclosure(SupermuxWorktreeDisclosure(
+                        worktrees: localWorktrees[id] ?? [],
+                        openWorkspaces: nested[id] ?? [],
+                        extras: extras
+                    )),
                 ]
             },
         ]
+    }
+
+    /// The window's nested workspace rows by owning project (the mount's own builder).
+    private static func nestedWorkspacesByProject(for tabManager: TabManager) -> [UUID: [SupermuxOpenWorkspace]] {
+        var result: [UUID: [SupermuxOpenWorkspace]] = [:]
+        for row in SupermuxNestedWorkspaceRows.rows(for: tabManager, details: .current(), unreadCount: { _ in 0 }) {
+            guard let projectId = row.projectId else { continue }
+            result[projectId, default: []].append(row)
+        }
+        return result
+    }
+
+    private static func worktreeDisclosure(_ disclosure: SupermuxWorktreeDisclosure) -> [String: Any] {
+        ["shown": disclosure.isShown, "count": disclosure.count]
     }
 
     static func remoteWorktree(_ worktree: SupermuxRemoteWorktree) -> [String: Any] {

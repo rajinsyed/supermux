@@ -176,6 +176,24 @@ It drives DEBUG-only socket hooks (`supermux.devices.push_decisions`, `notificat
 `Sources/Supermux/Devices/SupermuxDeviceNotificationSocketCommands.swift`) and refuses to run the
 share steps unless the app reports the scratch directory.
 
+## Worktree pill E2E
+
+`tests/supermux/loopback_worktree_disclosure_e2e.py` checks a project row's worktree pill through
+`supermux.devices.projects_presentation`'s `worktree_disclosure {shown, count}` (built by the same
+`SupermuxWorktreeDisclosure` the row uses). A fresh scratch project lives on This Mac and the online
+Loopback Mac: it shows no pill, and the Loopback Mac's (empty) worktree list loads at refresh; a
+worktree made there with `worktree.create {open: false}` shows "⑂ N ›" from a refresh alone; once
+that worktree and the main checkout are open here and mirrored, the pill is gone again. It never
+expands a row or calls `remote_worktrees` (both load the other Mac's list on their own). Remote-only
+rows are checked against the same rule when there are any; the loopback shares this Mac's project
+list, so it has none and that step is reported as skipped (`ok: null`, listed under `skipped_steps`
+in the run-all summary). The remote-only pill is checked by dogfooding on a real second Mac. Best-effort
+window screenshots land in `tests/supermux/artifacts/`.
+
+```bash
+CMUX_TAG=<tag> python3 tests/supermux/loopback_worktree_disclosure_e2e.py --scratch /tmp/<tag>
+```
+
 ## New Worktree device picker E2E
 
 `tests/supermux/loopback_new_worktree_picker_e2e.py` (workstream P2) drives the DEBUG
@@ -183,7 +201,10 @@ share steps unless the app reports the scratch directory.
 way a project row does. On a scratch repo it checks: the rows are This Mac then the Loopback Mac;
 the Loopback Mac's branches and Claude commands load; a failing create shows the other Mac's
 sentence and is not remembered; Create on the Loopback Mac ends with exactly one bound mirror,
-selected in the window; the Mac is remembered and preselected next time; and Start Claude runs
+selected in the window; the Mac is remembered and preselected next time, for a second project too
+(one choice for every project), with This Mac preselected instead while that Mac's link is down, and
+a Create on that fallback row (no row picked) does not replace the remembered Mac (the remembered
+Mac is cleared at the start and restored at the end); and Start Claude runs
 `agent.start` (with a temporary `echo` command, restored afterwards) and its mirror opens selected.
 It then drops the loopback link on purpose (DEBUG `supermux.devices.link {machine, action:
 stop|restore}`): an open sheet disables the dropped Mac and re-enables it after the redial without

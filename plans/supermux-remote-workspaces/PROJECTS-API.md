@@ -91,11 +91,11 @@ private(set) var devices: [SupermuxDeviceProjects]   // device order; offline on
 private(set) var icons: [String: NSImage]            // key: projectKey(machine:projectID:)
 func device(_ machine: SurfaceMachineID) -> SupermuxDeviceProjects?
 func icon(machine:projectID:) -> NSImage?
-func refresh(_ machine) async                         // projects.list (projects + presets) + run.state + icons + wanted worktrees; coalesced
+func refresh(_ machine) async                         // projects.list (projects + presets) + run.state + icons; coalesced; starts the worktree sweep (not awaited)
 func refreshAll()
 func refreshRuns(_ machine) async                     // run.state only (after a mirror's Run / Stop)
 func apply(run: SupermuxRunStateDTO, on machine)      // fold a run.start/stop result in before the poke lands
-func ensureWorktrees(on machine, projectID:)          // lazy first load (rows call it on expand)
+func ensureWorktrees(on machine, projectID:)          // backstop load on expand (every refresh already loads every listed project's list)
 func refreshWorktrees(on machine, projectID:) async   // worktrees.list {include_branches: false}
 
 struct SupermuxDeviceProjects {                       // ids are that Mac's ids
@@ -107,7 +107,7 @@ struct SupermuxDeviceProjects {                       // ids are that Mac's ids
 ```
 
 Refresh triggers: `.linkConnected`, `supermux.projects.updated` / `supermux.run.updated` topics (full
-refresh), `supermux.worktrees.updated` (worktree lists rows asked for), a device appearing online, and
+refresh), `supermux.worktrees.updated` (the worktree sweep only), a device appearing online, and
 a 120 s safety net. Only devices whose host advertises `supermux.projects.v1` are fetched. The offline
 cache is `SupermuxPaths.remoteProjectsCacheFileURL` (`~/Library/Application Support/cmux/supermux-remote-projects.json`,
 or next to `SUPERMUX_PROJECTS_FILE` in DEBUG runs), keyed by machine wire id; the loopback device is
@@ -212,10 +212,21 @@ most every 10 min otherwise), for each connected, non-loopback device serving pr
   arrow.
 - A mirror row's menu (nested and flat, #574) offers **Hide Here** and **Close on <Mac>…** (the
   mirror close prompt); a local row keeps Close Workspace.
-- Local project rows: device worktrees (each with its Mac icon) in the disclosure (pill shows a bare
-  chevron until they load), "Open on ▸" when several Macs have it, remote worktrees in "Worktrees ▸",
-  "Set Up on <Mac>…".
-  Edit/Reveal/Move stay local-only.
+- Local project rows: device worktrees (each with its Mac icon) in the disclosure, "Open on ▸" when
+  several Macs have it, remote worktrees in "Worktrees ▸", "Set Up on <Mac>…". Edit/Reveal/Move stay
+  local-only.
+- The worktree pill ("⑂ N ›", `SupermuxWorktreeDisclosure`) shows only when the project has an
+  unopened worktree, always with its number: this Mac's worktrees with no open workspace here plus
+  the other Macs' worktrees that are not open there and mirrored here. The main checkout never
+  counts. Every refresh of a Mac (link connect, `projects.updated` / `run.updated`, the 120 s safety
+  net, `remote_projects {refresh}`) starts a sweep of `worktrees.list` for every project it lists
+  (when it serves `supermux.worktrees.v1`), so the pill is right without expanding the row;
+  `supermux.worktrees.updated` starts one in between. The sweep runs beside the refresh, never
+  delaying the next project list or run state: four lists in flight at a time, one sweep per Mac
+  (calls meanwhile queue one more). A list the Mac cannot give (a folder that is not a git repo, a
+  transient failure) keeps the previous one and leaves the Mac's `last_error` alone, so
+  `remote_projects {refresh}` can return before the lists land. Remote-only rows follow the same
+  rule while their Mac is online.
 - Remote-only rows: Mac icon, run indicator, dimmed + "offline" tooltip while the Mac is offline;
   tap = Open on <Mac>; menu: New Worktree… (the device-aware sheet, P2), Worktrees ▸, Actions ▸, Set Up on <Mac>…
   (incl. This Mac), Remove from Projects on <Mac>….
@@ -233,14 +244,29 @@ CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.unified_projects '
 CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.remote_projects '{"refresh":true}'
 CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.remote_worktrees '{"machine":"device:…","project_id":"<that Mac's id>"}'
 CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.remote_worktree_create '{"machine":"device:…","project_id":"…","workspace_name":"x","branch_name":"y","focus":false}'
-CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.projects_presentation '{}'   # what the window's Projects section receives
-CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.sidebar_rows '{}'           # {window_id, font_scale, projects:[{project_id, rows:[{workspace_id,title,device_name,branch,unread_count,accessibility_label,activity,device_icon:{style,symbol,badge_symbol,help,dimmed}|null,device_icon_placement:before_branch|before_title|null}]}], flat:[{workspace_id,title,is_mirror,device_label,subtitle_candidates,branch_directory_lines,activity,device_icon,device_icon_placement:branch_line|title_line|null}]} as drawn
+- Local project rows: device worktrees (each with its Mac icon) in the disclosure, "Open on ▸" when
+  several Macs have it, remote worktrees in "Worktrees ▸", "Set Up on <Mac>…". Edit/Reveal/Move stay
+  local-only.
+- The worktree pill ("⑂ N ›", `SupermuxWorktreeDisclosure`) shows only when the project has an
+  unopened worktree, always with its number: this Mac's worktrees with no open workspace here plus
+  the other Macs' worktrees that are not open there and mirrored here. The main checkout never
+  counts. Every refresh of a Mac (link connect, `projects.updated` / `run.updated`, the 120 s safety
+  net, `remote_projects {refresh}`) starts a sweep of `worktrees.list` for every project it lists
+  (when it serves `supermux.worktrees.v1`), so the pill is right without expanding the row;
+  `supermux.worktrees.updated` starts one in between. The sweep runs beside the refresh, never
+  delaying the next project list or run state: four lists in flight at a time, one sweep per Mac
+  (calls meanwhile queue one more). A list the Mac cannot give (a folder that is not a git repo, a
+  transient failure) keeps the previous one and leaves the Mac's `last_error` alone, so
+  `remote_projects {refresh}` can return before the lists land. Remote-only rows follow the same
+  rule while their Mac is online.
+- Remote-only rows: Mac icon, run indicator, dimmed + "offline" tooltip while the Mac is offline;
 CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.project_sync '{}'            # run a sync pass now → report
 ```
 
 All take an optional `window_id`. E2E: `CMUX_TAG=<tag> python3 tests/supermux/loopback_projects_e2e.py
 --projects-file <scratch projects.json>` (launch the build with `SUPERMUX_DEBUG_LOOPBACK_DEVICE=1` and
-`SUPERMUX_PROJECTS_FILE` set to that file; the suite edits it as another build would).
+`SUPERMUX_PROJECTS_FILE` set to that file; the suite edits it as another build would), and
+`tests/supermux/loopback_worktree_disclosure_e2e.py` for the worktree pill.
 
 ## New Worktree on any Mac (P2)
 
@@ -270,7 +296,7 @@ final class SupermuxLocalWorktreeCreationTarget     // This Mac: exactly the pre
 @Observable final class SupermuxNewWorktreeSheetModel   // entries, selectEntry(id:), load(), submit(onFinished:)
 struct SupermuxWorktreeDeviceEntry { id, deviceKey ("this-mac" | machine id), name, availability, action: .create(location) | .setUp(destination), canCreate }
 enum SupermuxWorktreeDevicePlanner { entries(for:availability:setUpTargets:), showsPicker(_:), defaultEntryID(in:preferredDeviceKey:lastUsedDeviceKey:) }
-struct SupermuxWorktreeLastDeviceStore                  // UserDefaults `supermux.newWorktree.lastDevice.v1`
+struct SupermuxWorktreeLastDeviceStore                  // UserDefaults `supermux.newWorktree.lastDevice.v2`: one device key for every project
 enum SupermuxRemoteWorktreeFailure { message(code:hostMessage:deviceName:) }
 extension SupermuxRemoteProjectsPresentation { newWorktreeContext(forLocal:), newWorktreeContext(forRemote:), newWorktreeSheetModel(context:preferredDeviceKey:localTarget:onSetUp:) }
 // SupermuxRemoteProjectActions.makeWorktreeTarget (replaces createWorktree); presentation gains deviceAvailability + lastWorktreeDevices
@@ -288,9 +314,13 @@ final class SupermuxRemoteWorktreeCreationTarget   // over the device link, open
   selection or the typed input. The sheet reloads when the selected Mac becomes reachable
   (`loadKey`); a reload keeps the user's model / effort picks. A load the link drops under reads
   as that Mac being unreachable (`not_connected` sentence), never as the raw `CancellationError`.
-- **Default**: the row menu's Mac, else the last Mac a worktree was created on for this unified
-  project (recorded only after a successful create), else the first Mac that can create, else the
-  first copy (an offline-only project still opens and explains why).
+- **Default**: the row menu's Mac, else the remembered Mac (one global choice for every project)
+  when it can create this project now, else the first Mac that can create (This Mac first when it
+  has a copy), else the first copy (an offline-only project still opens and explains why). A
+  successful create records its Mac only when the user chose it (picked a row in the sheet, or the
+  row menu's "New Worktree on ▸ <Mac>"), or when nothing is remembered yet; a failed create never
+  does. A remembered Mac that lacks the project, is offline or still connecting is skipped, not
+  forgotten: a create on the row the sheet fell back to leaves it remembered.
 - **Switching Mac** keeps the prompt, workspace name and branch, resets the starting branch to that
   Mac's default, reloads its branches (`worktrees.list {include_branches: true}`) and Claude options
   (`agent.options {project_id, command?}`; another Mac's command list is adopted from its answer and
@@ -321,7 +351,9 @@ selected_entry_id, shows_picker, target, branches, base_branch, commands, comman
 `submit {session_id, <fill fields>, await_open?, stop_link_after_seconds?}` →
 state + `{finished, machine, remote_workspace_id, mirror}` (`stop_link_after_seconds` holds that Mac's
 link down that long after the request went out), `close {session_id}`,
-`last_device {project_id}`, `set_agent_commands {commands?, selected?}` → `{previous, previous_selected, …}`.
+`last_device {set?}` → `{device_key}` (the one remembered Mac; a `project_id` is accepted and ignored;
+`set`, a device key or null, replaces it and adds `previous`), `set_agent_commands {commands?, selected?}`
+→ `{previous, previous_selected, …}`.
 E2E: `CMUX_TAG=<tag> python3 tests/supermux/loopback_new_worktree_picker_e2e.py` (also in
 `tests/supermux/run_all_loopback_e2e.sh`).
 

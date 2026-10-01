@@ -56,6 +56,7 @@ suite_args() {
   case "$1" in
     loopback_projects_e2e) printf '%s\n' --scratch "$SCRATCH/projects" --projects-file "$SCRATCH/projects.json" ;;
     loopback_new_worktree_picker_e2e) printf '%s\n' --scratch "$SCRATCH/picker" ;;
+    loopback_worktree_disclosure_e2e) printf '%s\n' --scratch "$SCRATCH/disclosure" ;;
     loopback_notifications_e2e) printf '%s\n' --push-state-dir "$SCRATCH/push-state" --work-dir "$SCRATCH/notifications" ;;
     loopback_auto_mirror_e2e) printf '%s\n' --app-path "$APP" --projects-file "$SCRATCH/projects.json" --git-repo "$SCRATCH/auto-mirror-repo" ;;
     loopback_mirror_render_e2e) printf '%s\n' --app-path "$APP" --projects-file "$SCRATCH/projects.json" ;;
@@ -66,7 +67,7 @@ suite_args() {
 
 # The mirror-render and auto-mirror suites run last: they quit and relaunch the app for their restart checks.
 # CMUX_E2E_SUITES="a b" runs only those suites (same order rules).
-SUITES=(${CMUX_E2E_SUITES:-loopback_device_smoke loopback_projects_e2e loopback_new_worktree_picker_e2e loopback_workspace_behaviors_e2e loopback_notifications_e2e loopback_tab_sync_e2e loopback_remote_macs_settings_e2e loopback_sidebar_rows_e2e loopback_terminal_input_e2e loopback_mirror_render_e2e loopback_auto_mirror_e2e})
+SUITES=(${CMUX_E2E_SUITES:-loopback_device_smoke loopback_projects_e2e loopback_worktree_disclosure_e2e loopback_new_worktree_picker_e2e loopback_workspace_behaviors_e2e loopback_notifications_e2e loopback_tab_sync_e2e loopback_remote_macs_settings_e2e loopback_sidebar_rows_e2e loopback_terminal_input_e2e loopback_mirror_render_e2e loopback_auto_mirror_e2e})
 
 status=0
 for name in "${SUITES[@]}"; do
@@ -94,7 +95,8 @@ for path in sorted(reports.glob("*.json")):
     summary[path.stem] = {
         "passed": bool(data.get("passed")),
         "steps": len(steps),
-        "failed_steps": [s.get("name") for s in steps if not s.get("ok")],
+        "failed_steps": [s.get("name") for s in steps if not s.get("ok") and not s.get("skipped")],
+        "skipped_steps": [s.get("name") for s in steps if s.get("skipped")],
     }
 out.write_text(json.dumps(summary, indent=2))
 print(json.dumps(summary, indent=2))
