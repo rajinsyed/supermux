@@ -268,7 +268,7 @@ final class SupermuxLocalWorktreeCreationTarget     // This Mac: exactly the pre
 @Observable final class SupermuxNewWorktreeSheetModel   // entries, selectEntry(id:), load(), submit(onFinished:)
 struct SupermuxWorktreeDeviceEntry { id, deviceKey ("this-mac" | machine id), name, availability, action: .create(location) | .setUp(destination), canCreate }
 enum SupermuxWorktreeDevicePlanner { entries(for:availability:setUpTargets:), showsPicker(_:), defaultEntryID(in:preferredDeviceKey:lastUsedDeviceKey:) }
-struct SupermuxWorktreeLastDeviceStore                  // UserDefaults `supermux.newWorktree.lastDevice.v1`
+struct SupermuxWorktreeLastDeviceStore                  // UserDefaults `supermux.newWorktree.lastDevice.v2`: one device key for every project
 enum SupermuxRemoteWorktreeFailure { message(code:hostMessage:deviceName:) }
 extension SupermuxRemoteProjectsPresentation { newWorktreeContext(forLocal:), newWorktreeContext(forRemote:), newWorktreeSheetModel(context:preferredDeviceKey:localTarget:onSetUp:) }
 // SupermuxRemoteProjectActions.makeWorktreeTarget (replaces createWorktree); presentation gains deviceAvailability + lastWorktreeDevices
@@ -286,9 +286,11 @@ final class SupermuxRemoteWorktreeCreationTarget   // over the device link, open
   selection or the typed input. The sheet reloads when the selected Mac becomes reachable
   (`loadKey`); a reload keeps the user's model / effort picks. A load the link drops under reads
   as that Mac being unreachable (`not_connected` sentence), never as the raw `CancellationError`.
-- **Default**: the row menu's Mac, else the last Mac a worktree was created on for this unified
-  project (recorded only after a successful create), else the first Mac that can create, else the
-  first copy (an offline-only project still opens and explains why).
+- **Default**: the row menu's Mac, else the last Mac a worktree was created on in any project (one
+  global choice, recorded only after a successful create) when it can create this project now, else
+  the first Mac that can create (This Mac first when it has a copy), else the first copy (an
+  offline-only project still opens and explains why). A remembered Mac that lacks the project, is
+  offline or still connecting is skipped, not forgotten.
 - **Switching Mac** keeps the prompt, workspace name and branch, resets the starting branch to that
   Mac's default, reloads its branches (`worktrees.list {include_branches: true}`) and Claude options
   (`agent.options {project_id, command?}`; another Mac's command list is adopted from its answer and
@@ -319,7 +321,9 @@ selected_entry_id, shows_picker, target, branches, base_branch, commands, comman
 `submit {session_id, <fill fields>, await_open?, stop_link_after_seconds?}` →
 state + `{finished, machine, remote_workspace_id, mirror}` (`stop_link_after_seconds` holds that Mac's
 link down that long after the request went out), `close {session_id}`,
-`last_device {project_id}`, `set_agent_commands {commands?, selected?}` → `{previous, previous_selected, …}`.
+`last_device {set?}` → `{device_key}` (the one remembered Mac; a `project_id` is accepted and ignored;
+`set`, a device key or null, replaces it and adds `previous`), `set_agent_commands {commands?, selected?}`
+→ `{previous, previous_selected, …}`.
 E2E: `CMUX_TAG=<tag> python3 tests/supermux/loopback_new_worktree_picker_e2e.py` (also in
 `tests/supermux/run_all_loopback_e2e.sh`).
 

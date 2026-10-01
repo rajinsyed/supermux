@@ -26,7 +26,7 @@ public final class SupermuxNewWorktreeSheetModel {
         case runningGit
     }
 
-    /// The unified project id (the last-device memory key).
+    /// The unified project id.
     public let projectID: UUID
     /// The device picker's rows, each with its Mac's link state read live: a
     /// Mac that finishes connecting while the sheet is open becomes
@@ -385,6 +385,6 @@ public final class SupermuxNewWorktreeSheetModel {
     }
 
     private func recordDevice(_ entry: SupermuxWorktreeDeviceEntry) {
-        lastDevices?.record(deviceKey: entry.deviceKey, forProject: projectID)
+        lastDevices?.record(deviceKey: entry.deviceKey)
     }
 }
