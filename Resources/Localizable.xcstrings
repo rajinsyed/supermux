@@ -24562,13 +24562,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Couldn’t reach Stack"
+            "value": "Couldn’t reach cmux"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Stack に接続できません"
+            "value": "cmux に接続できません"
           }
         },
         "zh-Hans": {
@@ -24798,13 +24798,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Stack rejected the sign-in"
+            "value": "cmux couldn’t complete the sign-in"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Stack がサインインを拒否しました"
+            "value": "cmux でサインインを完了できませんでした"
           }
         },
         "zh-Hans": {
@@ -24916,13 +24916,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Stack is temporarily unavailable"
+            "value": "cmux sign-in is temporarily unavailable"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Stack は一時的に利用できません"
+            "value": "cmux のサインインは一時的に利用できません"
           }
         },
         "zh-Hans": {
@@ -25093,13 +25093,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Confirm you’re using the intended Stack account, then try again."
+            "value": "Confirm you’re using the intended cmux account, then try again."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "使用する Stack アカウントが正しいことを確認して、もう一度試してください。"
+            "value": "使用する cmux アカウントが正しいことを確認して、もう一度試してください。"
           }
         },
         "zh-Hans": {
@@ -25152,13 +25152,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Stack couldn’t authorize this sign-in"
+            "value": "cmux couldn’t authorize this sign-in"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Stack がこのサインインを承認できませんでした"
+            "value": "cmux がこのサインインを承認できませんでした"
           }
         },
         "zh-Hans": {
@@ -25565,13 +25565,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux is verifying your Stack account. Keep this pane open."
+            "value": "cmux is verifying your account. Keep this pane open."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux が Stack アカウントを確認しています。このペインを開いたままにしてください。"
+            "value": "cmux がアカウントを確認しています。このペインを開いたままにしてください。"
           }
         },
         "zh-Hans": {
@@ -25683,13 +25683,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux is preparing a secure Stack sign-in window."
+            "value": "cmux is preparing a secure sign-in window."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux が安全な Stack サインインウインドウを準備しています。"
+            "value": "cmux が安全なサインインウインドウを準備しています。"
           }
         },
         "zh-Hans": {
@@ -26096,13 +26096,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Continue with your Stack account."
+            "value": "Continue with your cmux account."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Stack アカウントで続行します。"
+            "value": "cmux アカウントで続行します。"
           }
         },
         "zh-Hans": {
@@ -26214,13 +26214,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux is connected to your Stack account."
+            "value": "Your cmux account is connected."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux が Stack アカウントに接続されました。"
+            "value": "cmux アカウントに接続しました。"
           }
         },
         "zh-Hans": {
@@ -29794,23 +29794,6 @@
         }
       }
     },
-    "agent.generic.notification.body.needsAttention": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ needs your attention"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ の確認が必要です"
-          }
-        }
-      }
-    },
     "agent.generic.notification.body.reportedError": {
       "extractionState": "manual",
       "localizations": {
@@ -29866,23 +29849,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@에서 오류를 보고했습니다"
-          }
-        }
-      }
-    },
-    "agent.generic.notification.body.sentNotification": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ sent a notification"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ から通知が届きました"
           }
         }
       }
@@ -87270,16 +87236,124 @@
     "cli.hooks.error.configDirectoryIsFile": {
       "extractionState": "manual",
       "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تعذّر على cmux إنشاء دليل hooks: يوجد ملف في %@. أزل الملف المتعارض أو أعد تسميته، ثم شغّل `cmux hooks setup` مرة أخرى."
+          }
+        },
+        "bs": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cmux nije mogao kreirati direktorij hookova: datoteka postoji na %@. Uklonite ili preimenujte konfliktnu datoteku, a zatim ponovo pokrenite `cmux hooks setup`."
+          }
+        },
+        "da": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cmux kunne ikke oprette hookmappen: der findes en fil på %@. Fjern eller omdøb filen, og kør derefter `cmux hooks setup` igen."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cmux konnte das Hook-Verzeichnis nicht erstellen: Unter %@ ist bereits eine Datei vorhanden. Entferne die Datei oder benenne sie um und führe dann `cmux hooks setup` erneut aus."
+          }
+        },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux could not create the hooks directory: a file exists at %@; remove or rename the conflicting file and re-run `cmux hooks setup`"
+            "value": "cmux could not create the hooks directory: a file exists at %@. Remove or rename the conflicting file, then run `cmux hooks setup` again."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cmux no pudo crear el directorio de hooks: ya existe un archivo en %@. Elimina o cambia el nombre del archivo en conflicto y vuelve a ejecutar `cmux hooks setup`."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cmux n’a pas pu créer le dossier des hooks : un fichier existe à l’emplacement %@. Supprimez ou renommez ce fichier, puis relancez `cmux hooks setup`."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cmux non è riuscito a creare la directory degli hook: esiste già un file in %@. Rimuovi o rinomina il file in conflitto, quindi esegui di nuovo `cmux hooks setup`."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmux は hooks ディレクトリを作成できませんでした: %@ にファイルがあります。競合するファイルを削除または名前変更してから `cmux hooks setup` を再実行してください"
+            "value": "cmux は hooks ディレクトリを作成できませんでした。%@ にファイルがあります。競合するファイルを削除または名前変更してから `cmux hooks setup` を再実行してください。"
+          }
+        },
+        "km": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cmux មិនអាចបង្កើតថត hooks បានទេ៖ មានឯកសារមួយនៅ %@។ លុប ឬប្តូរឈ្មោះឯកសារដែលប៉ះទង្គិច រួចដំណើរការ `cmux hooks setup` ម្តងទៀត។"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cmux가 hooks 디렉터리를 만들지 못했습니다. %@에 파일이 있습니다. 충돌하는 파일을 제거하거나 이름을 바꾼 다음 `cmux hooks setup`을 다시 실행하세요."
+          }
+        },
+        "nb": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cmux kunne ikke opprette hookmappen: det finnes en fil på %@. Fjern eller gi nytt navn til filen, og kjør deretter `cmux hooks setup` på nytt."
+          }
+        },
+        "pl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cmux nie mógł utworzyć katalogu hooków: w %@ istnieje plik. Usuń plik powodujący konflikt lub zmień jego nazwę, a następnie ponownie uruchom `cmux hooks setup`."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O cmux não conseguiu criar o diretório de hooks: existe um arquivo em %@. Remova ou renomeie o arquivo conflitante e execute `cmux hooks setup` novamente."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cmux не удалось создать каталог хуков: по пути %@ уже существует файл. Удалите или переименуйте этот файл, затем снова выполните `cmux hooks setup`."
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cmux ไม่สามารถสร้างไดเรกทอรี hooks ได้ เนื่องจากมีไฟล์อยู่ที่ %@ โปรดลบหรือเปลี่ยนชื่อไฟล์ที่ขัดแย้ง แล้วเรียกใช้ `cmux hooks setup` อีกครั้ง"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cmux hooks dizinini oluşturamadı: %@ konumunda bir dosya var. Çakışan dosyayı kaldırın veya yeniden adlandırın, ardından `cmux hooks setup` komutunu tekrar çalıştırın."
+          }
+        },
+        "uk": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cmux не вдалося створити каталог хуків: за шляхом %@ вже існує файл. Видаліть або перейменуйте цей файл, а потім знову виконайте `cmux hooks setup`."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cmux 无法创建 hooks 目录：%@ 处已有文件。请移除或重命名冲突文件，然后再次运行 `cmux hooks setup`。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cmux 無法建立 hooks 目錄：%@ 已有檔案。請移除或重新命名衝突的檔案，然後再次執行 `cmux hooks setup`。"
           }
         }
       }
@@ -87881,40 +87955,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ 勾點已安裝於 %@"
-          }
-        }
-      }
-    },
-    "cli.hooks.kimi.legacyCleanupWarning": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Warning: cmux hooks are active at %@, but cmux could not remove its legacy hook block from %@. Check that path and re-run `cmux hooks setup kimi` to finish cleanup."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "警告: cmux hooks は %@ で有効ですが、従来の hook ブロックを %@ から削除できませんでした。そのパスを確認し、`cmux hooks setup kimi` を再実行してクリーンアップを完了してください。"
-          }
-        }
-      }
-    },
-    "cli.hooks.kimi.legacyUninstallWarning": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Warning: cmux could not remove its legacy hook block from %@. Check that path and re-run `cmux hooks uninstall kimi` to finish cleanup."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "警告: 従来の hook ブロックを %@ から削除できませんでした。そのパスを確認し、`cmux hooks uninstall kimi` を再実行してクリーンアップを完了してください。"
           }
         }
       }
@@ -109633,19 +109673,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "[cmux] the remote VM may have been paused, destroyed, or lost network."
+            "value": "[cmux] the SSH connection ended; the remote session may still be running."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "[cmux] リモート VM は一時停止、削除、またはネットワーク切断された可能性があります。"
-          }
-        },
-        "km": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "[cmux] VM ពីចម្ងាយអាចត្រូវបានផ្អាក លុបចោល ឬបាត់បង់បណ្តាញ។"
+            "value": "[cmux] SSH 接続が終了しました。リモートセッションはまだ実行中の可能性があります。"
           }
         },
         "zh-Hans": {
@@ -109666,28 +109700,10 @@
             "value": "[cmux] la connexion SSH a pris fin ; la session distante est peut-être encore en cours d'exécution."
           }
         },
-        "it": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "[cmux] la VM remota potrebbe essere stata messa in pausa, eliminata o aver perso la rete."
-          }
-        },
         "ar": {
           "stringUnit": {
             "state": "translated",
             "value": "[cmux] انتهى اتصال SSH؛ قد لا تزال الجلسة البعيدة قيد التشغيل."
-          }
-        },
-        "bs": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "[cmux] udaljeni VM je možda pauziran, uništen ili je izgubio mrežu."
-          }
-        },
-        "da": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "[cmux] den eksterne VM kan være sat på pause, slettet eller have mistet netværket."
           }
         },
         "es": {
@@ -109706,48 +109722,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "[cmux] SSH 연결이 종료되었습니다. 원격 세션은 계속 실행 중일 수 있습니다."
-          }
-        },
-        "nb": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "[cmux] den eksterne VM-en kan være satt på pause, slettet eller ha mistet nettverket."
-          }
-        },
-        "pl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "[cmux] zdalna VM mogła zostać wstrzymana, usunięta lub utracić sieć."
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "[cmux] a VM remota pode ter sido pausada, destruída ou perdido a rede."
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "[cmux] удаленная VM могла быть приостановлена, удалена или потерять сеть."
-          }
-        },
-        "th": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "[cmux] VM ระยะไกลอาจถูกพัก ถูกลบ หรือสูญเสียการเชื่อมต่อเครือข่าย"
-          }
-        },
-        "tr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "[cmux] uzak VM duraklatılmış, silinmiş veya ağ bağlantısını kaybetmiş olabilir."
-          }
-        },
-        "uk": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "[cmux] віддалену VM могло бути призупинено, видалено або вона втратила мережу."
           }
         }
       }
@@ -183269,13 +183243,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No user theme or terminal colors, so cmux applies its managed default colors."
+            "value": "No user Ghostty settings, so cmux applies its managed default colors."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ユーザーのテーマやターミナル色がないため、cmux の管理されたデフォルト色を適用します。"
+            "value": "ユーザーの Ghostty 設定がないため、cmux の管理するデフォルト色を適用します。"
           }
         },
         "zh-Hans": {
@@ -218146,13 +218120,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Set up cmux Dock controls for the current context.\n\nFirst, learn the feature before editing:\n1. Run `cmux docs dock` if the cmux CLI is available. If it is not, read https://cmux.com/docs/dock.\n2. Inspect the repository or current directory to understand the project type, scripts, package manager, dev servers, logs, task runners, test commands, and any existing TUI tools.\n3. If the desired Dock is ambiguous, ask the user what they want monitored or controlled before writing files.\n\nDock is cmux's right-sidebar terminal control area. A Dock config is JSON with a top-level `controls` array. Each control runs a command in its own Ghostty-backed terminal section using the user's login shell. Controls are useful for project dashboards, git/status views, dev server or build status, test watchers, log tails, queues, local services, or a custom TUI such as `cmux feed tui --opentui` when that feed is useful.\n\nChoose where to write the config:\n- In a repository or project directory, create or edit `.cmux/dock.json` so teammates can share it.\n- For a personal default outside a repo, create or edit `~/.config/cmux/dock.json`.\n- If both exist, project `.cmux/dock.json` is more specific for that project. Nested project configs apply to that directory tree; use the nearest relevant project config instead of writing unrelated controls globally.\n- If there is no repo and no clear project root, use the global config only after confirming the user wants a personal Dock.\n\nSchema:\n{\n  \"controls\": [\n    {\n      \"id\": \"short-stable-id\",\n      \"title\": \"Human label\",\n      \"command\": \"safe command to run\",\n      \"cwd\": \"optional/path\",\n      \"height\": 220,\n      \"env\": { \"NAME\": \"value\" }\n    }\n  ]\n}\n\nRules:\n- Keep ids stable, lowercase, and unique.\n- Use `cwd` for subdirectories; relative paths resolve from the config base.\n- Use `height` only when a control needs a fixed amount of vertical space.\n- Use `env` only for non-secret values needed by one control.\n- Do not put secrets, tokens, or machine-specific private paths in a shared project config.\n- Prefer commands that are safe to start repeatedly and make sense in a terminal.\n- Do not invent unavailable scripts. Read package files, Makefiles, Procfiles, README docs, config files, and existing tooling first.\n- Keep shared project Docks portable for teammates. Put personal or machine-specific controls in the global Dock.\n\nDeliverable:\n- Create or update the appropriate dock.json.\n- Preserve existing useful controls unless the user asked to replace them.\n- Validate that the JSON parses.\n- Summarize what each control does and any commands the user should review before trusting the Dock config."
+            "value": "Set up cmux Dock controls for the current context.\n\nFirst, learn the feature before editing:\n1. Run `cmux docs dock` if the cmux CLI is available. If it is not, read https://cmux.com/docs/dock.\n2. Inspect the repository or current directory to understand the project type, scripts, package manager, dev servers, logs, task runners, test commands, and any existing TUI tools.\n3. If the desired Dock is ambiguous, ask the user what they want monitored or controlled before writing files.\n\nDock is cmux's right-sidebar terminal and browser control area. A Dock config is JSON with a top-level `controls` array. Terminal controls run commands in Ghostty-backed sections using the user's login shell; browser controls embed URLs. Controls are useful for project dashboards, git/status views, dev server or build status, test watchers, log tails, queues, local services, or fixed web dashboards.\n\nChoose where to write the config:\n- In a repository or project directory, create or edit `.cmux/dock.json` so teammates can share it.\n- For a personal default outside a repo, create or edit `~/.config/cmux/dock.json`.\n- If both exist, project `.cmux/dock.json` is more specific for that project. Nested project configs apply to that directory tree; use the nearest relevant project config instead of writing unrelated controls globally.\n- If there is no repo and no clear project root, use the global config only after confirming the user wants a personal Dock.\n\nSchema:\n{\n  \"controls\": [\n    {\n      \"id\": \"short-stable-id\",\n      \"title\": \"Human label\",\n      \"command\": \"safe command to run\",\n      \"cwd\": \"optional/path\",\n      \"height\": 220,\n      \"env\": { \"NAME\": \"value\" }\n    },\n    {\n      \"id\": \"dashboard\",\n      \"title\": \"Dashboard\",\n      \"type\": \"browser\",\n      \"url\": \"http://127.0.0.1:3000\",\n      \"chrome\": false\n    }\n  ]\n}\n\nRules:\n- Keep ids stable, lowercase, and unique.\n- `type` is optional: `terminal` is the default, or use `browser`.\n- Terminal controls require `command`; browser controls require `url`.\n- Browser controls default to `chrome: true`. Set `chrome: false` to hide browser chrome, including the address bar and toolbar; Focus Address Bar then does nothing for that pane, while `cmux browser goto` and `cmux browser reload` remain available.\n- Use `cwd` for subdirectories; relative paths resolve from the config base.\n- Use `height` only when a control needs a fixed amount of vertical space.\n- Use `env` only for non-secret values needed by one control.\n- Do not put secrets, tokens, or machine-specific private paths in a shared project config.\n- Prefer commands that are safe to start repeatedly and make sense in a terminal.\n- Do not invent unavailable scripts. Read package files, Makefiles, Procfiles, README docs, config files, and existing tooling first.\n- Keep shared project Docks portable for teammates. Put personal or machine-specific controls in the global Dock.\n\nDeliverable:\n- Create or update the appropriate dock.json.\n- Preserve existing useful controls unless the user asked to replace them.\n- Validate that the JSON parses.\n- Summarize what each control does and any commands the user should review before trusting the Dock config."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "現在のコンテキストに合わせて cmux Dock コントロールを設定してください。\n\n編集する前に機能を確認してください:\n1. cmux CLI が使える場合は `cmux docs dock` を実行してください。使えない場合は https://cmux.com/docs/dock を読んでください。\n2. リポジトリまたは現在のディレクトリを調べ、プロジェクト種別、スクリプト、パッケージマネージャー、開発サーバー、ログ、タスクランナー、テストコマンド、既存の TUI ツールを把握してください。\n3. どの Dock を作るべきか曖昧な場合は、ファイルを書く前に何を監視または操作したいかユーザーに確認してください。\n\nDock は cmux の右サイドバーにあるターミナルコントロール領域です。Dock 設定はトップレベルに `controls` 配列を持つ JSON です。各コントロールはユーザーのログインシェルを使い、Ghostty ベースの独立したターミナルセクションで command を実行します。プロジェクトダッシュボード、git/status、開発サーバーやビルド状態、テストウォッチャー、ログ tail、キュー、ローカルサービス、または有用な場合の `cmux feed tui --opentui` のようなカスタム TUI に向いています。\n\n設定を書く場所を選んでください:\n- リポジトリまたはプロジェクトディレクトリでは、チームで共有できるように `.cmux/dock.json` を作成または編集してください。\n- リポジトリ外の個人用デフォルトでは、`~/.config/cmux/dock.json` を作成または編集してください。\n- 両方がある場合、そのプロジェクトでは `.cmux/dock.json` がより具体的です。ネストしたプロジェクト設定はそのディレクトリツリーに適用されます。無関係なコントロールをグローバルに書かず、最も近い適切なプロジェクト設定を使ってください。\n- リポジトリがなく、明確なプロジェクトルートもない場合は、個人用 Dock でよいかユーザーに確認してからグローバル設定を使ってください。\n\nスキーマ:\n{\n  \"controls\": [\n    {\n      \"id\": \"short-stable-id\",\n      \"title\": \"Human label\",\n      \"command\": \"safe command to run\",\n      \"cwd\": \"optional/path\",\n      \"height\": 220,\n      \"env\": { \"NAME\": \"value\" }\n    }\n  ]\n}\n\nルール:\n- id は安定した小文字の一意な値にしてください。\n- サブディレクトリで実行する場合は `cwd` を使ってください。相対パスは設定ファイルの基準ディレクトリから解決されます。\n- `height` は固定の縦幅が必要なコントロールにだけ使ってください。\n- `env` はそのコントロールだけに必要な非秘密の値にだけ使ってください。\n- 共有するプロジェクト設定にシークレット、トークン、マシン固有の非公開パスを入れないでください。\n- 繰り返し起動しても安全で、ターミナル内で意味のあるコマンドを優先してください。\n- 存在しないスクリプトを作り上げないでください。先に package ファイル、Makefile、Procfile、README、設定ファイル、既存ツールを読んでください。\n- 共有プロジェクト Dock はチームメイトが使えるよう移植性を保ってください。個人用またはマシン固有のコントロールはグローバル Dock に入れてください。\n\n成果物:\n- 適切な dock.json を作成または更新してください。\n- ユーザーが置き換えを依頼していない限り、既存の有用なコントロールは残してください。\n- JSON がパースできることを検証してください。\n- 各コントロールの役割と、信頼する前にユーザーが確認すべきコマンドを要約してください。"
+            "value": "現在のコンテキストに合わせて cmux Dock コントロールを設定してください。\n\n編集する前に機能を確認してください:\n1. cmux CLI が使える場合は `cmux docs dock` を実行してください。使えない場合は https://cmux.com/docs/dock を読んでください。\n2. リポジトリまたは現在のディレクトリを調べ、プロジェクト種別、スクリプト、パッケージマネージャー、開発サーバー、ログ、タスクランナー、テストコマンド、既存の TUI ツールを把握してください。\n3. どの Dock を作るべきか曖昧な場合は、ファイルを書く前に何を監視または操作したいかユーザーに確認してください。\n\nDock は cmux の右サイドバーにあるターミナルとブラウザのコントロール領域です。Dock 設定はトップレベルに `controls` 配列を持つ JSON です。ターミナルコントロールはユーザーのログインシェルを使う Ghostty ベースのセクションでコマンドを実行し、ブラウザコントロールは URL を埋め込みます。プロジェクトダッシュボード、git/status、開発サーバーやビルド状態、テストウォッチャー、ログ tail、キュー、ローカルサービス、固定 Web ダッシュボードなどに向いています。\n\n設定を書く場所を選んでください:\n- リポジトリまたはプロジェクトディレクトリでは、チームで共有できるように `.cmux/dock.json` を作成または編集してください。\n- リポジトリ外の個人用デフォルトでは、`~/.config/cmux/dock.json` を作成または編集してください。\n- 両方がある場合、そのプロジェクトでは `.cmux/dock.json` がより具体的です。ネストしたプロジェクト設定はそのディレクトリツリーに適用されます。無関係なコントロールをグローバルに書かず、最も近い適切なプロジェクト設定を使ってください。\n- リポジトリがなく、明確なプロジェクトルートもない場合は、個人用 Dock でよいかユーザーに確認してからグローバル設定を使ってください。\n\nスキーマ:\n{\n  \"controls\": [\n    {\n      \"id\": \"short-stable-id\",\n      \"title\": \"Human label\",\n      \"command\": \"safe command to run\",\n      \"cwd\": \"optional/path\",\n      \"height\": 220,\n      \"env\": { \"NAME\": \"value\" }\n    },\n    {\n      \"id\": \"dashboard\",\n      \"title\": \"Dashboard\",\n      \"type\": \"browser\",\n      \"url\": \"http://127.0.0.1:3000\",\n      \"chrome\": false\n    }\n  ]\n}\n\nルール:\n- id は安定した小文字の一意な値にしてください。\n- `type` は省略可能です。デフォルトは `terminal` で、ブラウザには `browser` を指定します。\n- ターミナルコントロールには `command`、ブラウザコントロールには `url` が必要です。\n- ブラウザコントロールのデフォルトは `chrome: true` です。`chrome: false` にするとブラウザクローム（アドレスバーとツールバー）が非表示になり、そのペインでは「アドレスバーにフォーカス」は何もしません。`cmux browser goto` と `cmux browser reload` は引き続き利用できます。\n- サブディレクトリで実行する場合は `cwd` を使ってください。相対パスは設定ファイルの基準ディレクトリから解決されます。\n- `height` は固定の縦幅が必要なコントロールにだけ使ってください。\n- `env` はそのコントロールだけに必要な非秘密の値にだけ使ってください。\n- 共有するプロジェクト設定にシークレット、トークン、マシン固有の非公開パスを入れないでください。\n- 繰り返し起動しても安全で、ターミナル内で意味のあるコマンドを優先してください。\n- 存在しないスクリプトを作り上げないでください。先に package ファイル、Makefile、Procfile、README、設定ファイル、既存ツールを読んでください。\n- 共有プロジェクト Dock はチームメイトが使えるよう移植性を保ってください。個人用またはマシン固有のコントロールはグローバル Dock に入れてください。\n\n成果物:\n- 適切な dock.json を作成または更新してください。\n- ユーザーが置き換えを依頼していない限り、既存の有用なコントロールは残してください。\n- JSON がパースできることを検証してください。\n- 各コントロールの役割と、信頼する前にユーザーが確認すべきコマンドを要約してください。"
           }
         },
         "zh-Hans": {
@@ -274387,23 +274361,6 @@
         }
       }
     },
-    "mobile.pairing.getApp.prompt": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Don't have it yet?"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "まだお持ちでないですか？"
-          }
-        }
-      }
-    },
     "mobile.pairing.manual.copied": {
       "extractionState": "manual",
       "localizations": {
@@ -276456,23 +276413,6 @@
         }
       }
     },
-    "mobile.pairing.needsTailscale.body": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This Mac has no Tailscale address, so your iPhone can't reach it. Install Tailscale on this Mac and your iPhone (same account), then refresh."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この Mac には Tailscale アドレスがないため、iPhone から接続できません。この Mac と iPhone の両方に（同じアカウントで）Tailscale をインストールしてから、更新してください。"
-          }
-        }
-      }
-    },
     "mobile.pairing.preparing": {
       "extractionState": "manual",
       "localizations": {
@@ -276709,40 +276649,6 @@
         }
       }
     },
-    "mobile.pairing.req.signIn.subtitle": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Sign in to authorize this Mac for pairing."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この Mac のペアリングを許可するにはサインインしてください。"
-          }
-        }
-      }
-    },
-    "mobile.pairing.req.signIn.title": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Signed in to cmux"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "cmux にサインイン済み"
-          }
-        }
-      }
-    },
     "mobile.pairing.req.tailscale.get": {
       "extractionState": "manual",
       "localizations": {
@@ -276798,23 +276704,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Tailscale 받기"
-          }
-        }
-      }
-    },
-    "mobile.pairing.req.tailscale.hint": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tailscale must be installed and connected on both this Mac and your iPhone. Both devices must be connected to the same Tailscale network."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この Mac と iPhone の両方に Tailscale をインストールして接続してください。両方のデバイスを同じ Tailscale ネットワークに接続する必要があります。"
           }
         }
       }
@@ -276878,40 +276767,6 @@
         }
       }
     },
-    "mobile.pairing.req.tailscale.reachable": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tailscale is connected on this Mac. It must also be installed and connected on your iPhone. Both devices must be connected to the same Tailscale network."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この Mac は Tailscale に接続済みです。iPhone にも Tailscale をインストールして接続してください。両方のデバイスを同じ Tailscale ネットワークに接続する必要があります。"
-          }
-        }
-      }
-    },
-    "mobile.pairing.req.tailscale.title": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tailscale"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tailscale"
-          }
-        }
-      }
-    },
     "mobile.pairing.retry": {
       "extractionState": "manual",
       "localizations": {
@@ -276967,466 +276822,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "다시 시도"
-          }
-        }
-      }
-    },
-    "mobile.pairing.signIn.button": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Sign In"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "サインイン"
-          }
-        }
-      }
-    },
-    "mobile.pairing.signIn.connecting": {
-      "extractionState": "manual",
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "جارٍ الاتصال…"
-          }
-        },
-        "bs": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Povezivanje…"
-          }
-        },
-        "da": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Forbinder…"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Verbindung wird hergestellt…"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Connecting…"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Conectando…"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Connexion…"
-          }
-        },
-        "it": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Connessione…"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "接続しています…"
-          }
-        },
-        "km": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "កំពុងភ្ជាប់…"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "연결 중…"
-          }
-        },
-        "nb": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Kobler til…"
-          }
-        },
-        "pl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Łączenie…"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Conectando…"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Подключение…"
-          }
-        },
-        "th": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "กำลังเชื่อมต่อ…"
-          }
-        },
-        "tr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Bağlanıyor…"
-          }
-        },
-        "uk": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Підключення…"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在连接…"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在連接…"
-          }
-        }
-      }
-    },
-    "mobile.pairing.signIn.openInBrowser": {
-      "extractionState": "manual",
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "فتح في المتصفح"
-          }
-        },
-        "bs": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Otvori u pregledniku"
-          }
-        },
-        "da": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Åbn i browser"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Im Browser öffnen"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Open in Browser"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Abrir en el navegador"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ouvrir dans le navigateur"
-          }
-        },
-        "it": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Apri nel browser"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ブラウザで開く"
-          }
-        },
-        "km": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "បើកក្នុងកម្មវិធីរុករក"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "브라우저에서 열기"
-          }
-        },
-        "nb": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Åpne i nettleser"
-          }
-        },
-        "pl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Otwórz w przeglądarce"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Abrir no navegador"
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Открыть в браузере"
-          }
-        },
-        "th": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "เปิดในเบราว์เซอร์"
-          }
-        },
-        "tr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tarayıcıda Aç"
-          }
-        },
-        "uk": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Відкрити у браузері"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在浏览器中打开"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "在瀏覽器中打開"
-          }
-        }
-      }
-    },
-    "mobile.pairing.signIn.prompt": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Sign in with your cmux account to pair your iPhone."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "iPhone をペアリングするには、cmux アカウントでサインインしてください。"
-          }
-        }
-      }
-    },
-    "mobile.pairing.signIn.slowHint": {
-      "extractionState": "manual",
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "قد تتوقف نافذة تسجيل الدخول في النظام عن الاستجابة. إذا لم يحدث شيء، فافتح تسجيل الدخول في المتصفح الافتراضي بدلاً من ذلك."
-          }
-        },
-        "bs": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Sistemski prozor za prijavu može prestati odgovarati. Ako se ništa ne dogodi, otvorite prijavu u zadanom pregledniku."
-          }
-        },
-        "da": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Systemets loginvindue kan holde op med at svare. Hvis der ikke sker noget, skal du i stedet åbne login i din standardbrowser."
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Das System-Anmeldefenster reagiert möglicherweise nicht mehr. Wenn nichts passiert, öffne die Anmeldung stattdessen in deinem Standardbrowser."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The system sign-in window may stop responding. If nothing happens, open sign-in in your default browser instead."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "La ventana de inicio de sesión del sistema puede dejar de responder. Si no sucede nada, abre el inicio de sesión en tu navegador predeterminado."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "La fenêtre de connexion du système peut ne plus répondre. Si rien ne se passe, ouvrez plutôt la connexion dans votre navigateur par défaut."
-          }
-        },
-        "it": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "La finestra di accesso di sistema potrebbe smettere di rispondere. Se non succede nulla, apri l’accesso nel browser predefinito."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "システムのサインインウィンドウが応答しなくなることがあります。何も起きない場合は、デフォルトのブラウザでサインインを開いてください。"
-          }
-        },
-        "km": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "បង្អួចចូលគណនីរបស់ប្រព័ន្ធអាចឈប់ឆ្លើយតប។ ប្រសិនបើគ្មានអ្វីកើតឡើង សូមបើកការចូលគណនីក្នុងកម្មវិធីរុករកលំនាំដើមរបស់អ្នកជំនួសវិញ។"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "시스템 로그인 창이 응답하지 않을 수 있습니다. 아무 반응이 없으면 기본 브라우저에서 로그인을 열어 주세요."
-          }
-        },
-        "nb": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Systemets påloggingsvindu kan slutte å svare. Hvis ingenting skjer, åpner du påloggingen i standardnettleseren i stedet."
-          }
-        },
-        "pl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Systemowe okno logowania może przestać odpowiadać. Jeśli nic się nie dzieje, otwórz logowanie w domyślnej przeglądarce."
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "A janela de login do sistema pode parar de responder. Se nada acontecer, abra o login no navegador padrão."
-          }
-        },
-        "ru": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Системное окно входа может перестать отвечать. Если ничего не происходит, откройте вход в браузере по умолчанию."
-          }
-        },
-        "th": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "หน้าต่างลงชื่อเข้าของระบบอาจหยุดตอบสนอง หากไม่มีอะไรเกิดขึ้น ให้เปิดการลงชื่อเข้าในเบราว์เซอร์เริ่มต้นแทน"
-          }
-        },
-        "tr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Sistem oturum açma penceresi yanıt vermeyi durdurabilir. Hiçbir şey olmazsa oturum açmayı varsayılan tarayıcınızda açın."
-          }
-        },
-        "uk": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Системне вікно входу може перестати відповідати. Якщо нічого не відбувається, відкрийте вхід у браузері за умовчанням."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "系统登录窗口可能会停止响应。如果没有任何反应，请改用默认浏览器打开登录。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "系統登入視窗可能會停止回應。如果沒有任何反應，請改用預設瀏覽器開啟登入。"
-          }
-        }
-      }
-    },
-    "mobile.pairing.step.install": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Install cmux on your iPhone and open it."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "iPhone に cmux をインストールして開きます。"
-          }
-        }
-      }
-    },
-    "mobile.pairing.step.scan": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "On your iPhone, choose Tailscale, tap Scan QR Code, then scan the code above."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "接続方法として Tailscale を選び、「QR コードをスキャン」をタップして上のコードにカメラを向けます。"
-          }
-        }
-      }
-    },
-    "mobile.pairing.step.signIn": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Sign in with the same account you use on this Mac."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この Mac と同じアカウントでサインインします。"
           }
         }
       }
@@ -277696,40 +277091,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "iPhone을 기다리는 중…"
-          }
-        }
-      }
-    },
-    "mobile.pairing.window.heading": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pair your iPhone with Tailscale"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "TailscaleでiPhoneをペアリング"
-          }
-        }
-      }
-    },
-    "mobile.pairing.window.subheading": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "iPhones on your cmux account connect automatically. Use this code only for Tailscale."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "同じ cmux アカウントでサインインしている iPhone は自動的に接続されます。iPhone の接続方法で Tailscale を選択した場合は、このコードを使用してください。"
           }
         }
       }
@@ -294512,13 +293873,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "failed to install remote daemon binary"
+            "value": "failed to install remote daemon"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "リモートデーモンのバイナリをインストールできませんでした"
+            "value": "リモートデーモンをインストールできませんでした"
           }
         },
         "zh-Hans": {
@@ -294748,13 +294109,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "failed to upload cmuxd-remote"
+            "value": "failed to upload remote daemon"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "cmuxd-remote をアップロードできませんでした"
+            "value": "リモートデーモンをアップロードできませんでした"
           }
         },
         "zh-Hans": {
@@ -329466,7 +328827,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Controls which HTTP (non-HTTPS) hosts can open in cmux without a warning prompt. Defaults include localhost, *.localhost, 127.0.0.1, ::1, 0.0.0.0, and *.localtest.me."
+            "value": "Controls which HTTP (non-HTTPS) hosts can open in cmux without a warning prompt. Defaults include localhost, *.localhost, 127.0.0.1, ::1, 0.0.0.0, and *.localtest.me. Remove entries to block them; reset to restore defaults."
           }
         },
         "es": {
@@ -329490,7 +328851,7 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "警告プロンプトなしでcmuxで開けるHTTP（非HTTPS）ホストを制御します。デフォルトにはlocalhost、*.localhost、127.0.0.1、::1、0.0.0.0、*.localtest.meが含まれます。"
+            "value": "警告プロンプトなしでcmuxで開けるHTTP（非HTTPS）ホストを制御します。デフォルトにはlocalhost、*.localhost、127.0.0.1、::1、0.0.0.0、*.localtest.meが含まれます。エントリを削除するとそのホストをブロックし、リセットでデフォルトに戻せます。"
           }
         },
         "ko": {
@@ -329585,7 +328946,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "One host or wildcard per line (for example: localhost, *.localhost, 127.0.0.1, ::1, 0.0.0.0, *.localtest.me)."
+            "value": "One host or wildcard per line. Remove entries to block them."
           }
         },
         "es": {
@@ -329609,7 +328970,7 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "1行に1つのホストまたはワイルドカード（例: localhost, *.localhost, 127.0.0.1, ::1, 0.0.0.0, *.localtest.me）。"
+            "value": "1行に1つのホストまたはワイルドカード。エントリを削除するとそのホストをブロックします。"
           }
         },
         "ko": {
@@ -347131,13 +346492,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Custom raw TCP routes are not accepted because they cannot prove the remote Mac. Iroh private paths stay encrypted and bound to its exact EndpointID."
+            "value": "The other Mac must run a current cmux build that advertises Iroh private-path support. Custom raw TCP routes are not accepted because they cannot prove the remote Mac. Iroh private paths stay encrypted and bound to its exact EndpointID."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "カスタムの生 TCP ルートはリモート Mac を証明できないため受け付けません。Iroh のプライベート経路は暗号化され、正確な EndpointID に結び付けられます。"
+            "value": "接続先のMacは、Irohのプライベート経路サポートを通知する最新のcmuxを実行している必要があります。カスタムの生 TCP ルートはリモート Mac を証明できないため受け付けません。Iroh のプライベート経路は暗号化され、正確な EndpointID に結び付けられます。"
           }
         },
         "zh-Hans": {
