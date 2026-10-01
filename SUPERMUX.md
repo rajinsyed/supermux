@@ -280,6 +280,10 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   that is not on screen (a tab never shown on its Mac, a mirror in a background workspace, a hidden
   or fully covered window) does not count, so a tab opened from a mirror takes the mirror's size at
   once; a terminal that starts after its grid was decided gets it when it becomes ready.
+- **A mirror uses this Mac's terminal appearance** (#650–#653): the owning Mac's replay carries no
+  theme colors, so a mirror pane shares the window's (translucent) backdrop exactly like a local
+  pane; only colors a program on the other Mac set itself (OSC 4/10/11/12) are mirrored, and its
+  reset gives the backdrop back.
 - **Inside a mirror**, ⌘G/Run, presets, project actions and the Changes panel act on the owning Mac
   over `mobile.supermux.*` (Generate & Commit follows that Mac's own AI-key rule); Finder/editor/
   file-explorer actions and the full diff view, which need a local path, are disabled with an

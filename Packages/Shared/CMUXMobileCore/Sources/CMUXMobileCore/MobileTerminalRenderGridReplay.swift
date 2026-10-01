@@ -21,6 +21,24 @@ public struct MobileTerminalRenderGridReplay: Sendable {
         self.frame = frame
     }
 
+    // SUPERMUX:begin replay-theme-portable
+    /// Whether a full snapshot restores the frame's default colors (OSC
+    /// 10/11/12) and palette. A Mac viewing another Mac's terminal turns it
+    /// off so its own theme stands for every color the remote program did not
+    /// set; the program's colors travel separately.
+    public var includesColorState = true
+
+    /// Creates a replay over `frame`, optionally without its color state.
+    ///
+    /// - Parameters:
+    ///   - frame: The render-grid frame to synthesize bytes for.
+    ///   - includesColorState: Whether a full snapshot restores default colors and palette.
+    public init(_ frame: MobileTerminalRenderGridFrame, includesColorState: Bool) {
+        self.frame = frame
+        self.includesColorState = includesColorState
+    }
+    // SUPERMUX:end replay-theme-portable
+
     /// Synthesize a VT byte stream that reproduces ``frame`` when fed to a
     /// terminal emulator.
     ///
@@ -144,10 +162,14 @@ public struct MobileTerminalRenderGridReplay: Sendable {
         // Dynamic default colors (OSC 10/11/12). Nil frame values reset the
         // previous override so a full snapshot behaves like the old RIS path.
         // Apply them before clearing so blank cells use the captured defaults.
-        bytes.append(oscColorOrResetBytes(10, reset: 110, frame.terminalForeground))
-        bytes.append(oscColorOrResetBytes(11, reset: 111, frame.terminalBackground))
-        bytes.append(oscColorOrResetBytes(12, reset: 112, frame.terminalCursorColor))
-        appendPaletteRestore(to: &bytes)
+        // SUPERMUX:begin replay-theme-portable
+        if includesColorState {
+            bytes.append(oscColorOrResetBytes(10, reset: 110, frame.terminalForeground))
+            bytes.append(oscColorOrResetBytes(11, reset: 111, frame.terminalBackground))
+            bytes.append(oscColorOrResetBytes(12, reset: 112, frame.terminalCursorColor))
+            appendPaletteRestore(to: &bytes)
+        }
+        // SUPERMUX:end replay-theme-portable
         bytes.append(sgrBytes(for: defaultStyle))
         // A screen-anchored full without scrollback preserves the consumer's
         // local history: it repaints the active grid in place instead of
