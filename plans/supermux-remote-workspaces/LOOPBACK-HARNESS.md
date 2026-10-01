@@ -317,16 +317,21 @@ other Mac's folder. It drives the DEBUG `supermux.devices.mirror.files {workspac
 (`Sources/Supermux/Mirrors/SupermuxMirrorFilesSocket.swift`), which keeps a Files store per workspace
 and syncs it exactly like the right sidebar (`showHiddenFiles`, `syncWorkspaceRoot`), so the resolver,
 provider, follow-the-folder observation and live refresh are the real ones. Actions: `state`,
-`expand`, `open` (the double-click path, after a download probe so a failure never raises the modal
-alert), `materialize`, `search`, `menu` / `operation` (the context menu's file operations),
-`local_rows` / `local_git_status` (what THIS Mac's panel shows for the same folder) and `unmount`.
+`expand`, `open` (the double-click path, after a download probe so a failure is a reply; with
+`probe: false` it only starts the open and a refusal is the coordinator's alert), `preview` (the open
+previews of a path and what each shows), `alert` / `dismiss_alert` (the alert up on the workspace's
+window, and its OK), `materialize`, `search`, `menu` / `operation` (the context menu's file
+operations), `local_rows` / `local_git_status` (what THIS Mac's panel shows for the same folder) and
+`unmount`.
 
 On a scratch git repo (dotfiles, a nested match, an image, a 9 MiB file, a symlink to `/etc` and a
 sibling `outside/` folder) it checks: the Loopback Mac advertises `supermux.files_read.v1`; the
 mirror's panel is the device provider at the source's folder and lists exactly what the local panel
 lists there (hidden files, order); `src/` expands the same; the symlink out cannot be expanded (an
 error naming the Mac); the git colors equal the local panel's; README.md opens a read-only preview in
-the mirror with the file's exact bytes and reopening reuses it; the 9 MiB file is refused (8 MB);
+the mirror with the file's exact bytes, and after it changes there reopening reuses that preview,
+which shows the new bytes with no alert; the 9 MiB file is refused (8 MB), and opened the double-click
+way the refusal is a sheet naming the limit while the app keeps answering, which OK dismisses;
 Find returns the one nested hit and a query like `--version` is only a pattern; raw `files.*`
 confinement probes (`..`, the symlink, a directory read, a wrong `expected_root`, renaming
 `.git/HEAD`) are refused while chunked reads, `.git/HEAD` reads, hidden listing (with `home`), the
