@@ -326,16 +326,15 @@ final class DeviceWorkspaceLayoutCoordinator {
                 throw DeviceLinkError.malformedResponse("mobile.terminal.close")
             }
             if present {
-                // SUPERMUX:begin device-terminal-close-confirm
-                // A mirror tab's close asks first when the Mac reports a running
-                // program, as a local tab does; every other close forces. (upstream:
-                // `request("mobile.terminal.close", ["workspace_id": remoteID, "surface_id": close.surfaceID])`)
-                let data = try await SupermuxDeviceTerminalClose.request(
-                    surfaceID: close.surfaceID, remoteWorkspaceID: remoteID, machine: machine,
-                    asksFirst: close.workspaceID != nil, localWorkspaceID: close.workspaceID,
-                    catalog: catalog, send: request
+                // SUPERMUX:begin device-terminal-close-force
+                // Every close of another Mac's terminal ends it there, like closing a
+                // local tab: this Mac already ran its own close confirmation. (upstream
+                // sends no "force", so the other Mac refused a busy terminal)
+                let data = try await request(
+                    "mobile.terminal.close",
+                    ["workspace_id": remoteID, "surface_id": close.surfaceID, "force": true]
                 )
-                // SUPERMUX:end device-terminal-close-confirm
+                // SUPERMUX:end device-terminal-close-force
                 guard let reply = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                       reply["closed"] as? Bool == true,
                       (reply["workspace_id"] as? String)?.caseInsensitiveCompare(remoteID) == .orderedSame,
@@ -352,7 +351,7 @@ final class DeviceWorkspaceLayoutCoordinator {
             // SUPERMUX:begin device-terminal-close-deferred
             // The link dropped under a mirror tab's close: hold it for the
             // reconnect instead of bringing the tab back with a failure card.
-            if let id = close.workspaceID, !stopped, !isConnected(), !(error is SupermuxDeviceTerminalClose.Declined) {
+            if let id = close.workspaceID, !stopped, !isConnected() {
                 SupermuxDeviceHeldCloses.shared.hold(
                     .init(remoteWorkspaceID: remoteID, surfaceID: close.surfaceID, localWorkspaceID: id), on: machine
                 )
@@ -367,12 +366,7 @@ final class DeviceWorkspaceLayoutCoordinator {
                 // of treating its missing local pane as a permanent detach.
                 if let id = close.workspaceID { deliveries[id] = nil }
             }
-            // SUPERMUX:begin device-terminal-close-confirm (a declined prompt restores the tab above without a failure card, selected again if it was)
-            if error is SupermuxDeviceTerminalClose.Declined, let id = close.workspaceID {
-                SupermuxDeviceClosedTabs.shared.closeDeclined(surfaceKey: close.surfaceID, workspaceID: id, machine: machine)
-            }
-            close.fail(error is SupermuxDeviceTerminalClose.Declined ? CancellationError() as any Error : error)
-            // SUPERMUX:end device-terminal-close-confirm
+            close.fail(error)
         }
     }
 

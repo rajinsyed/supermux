@@ -64,7 +64,8 @@ anything.** It is the contract that keeps the fork mergeable with upstream cmux.
    empty-area menu) creates project-less workspaces remotely, while a plain New Workspace always stays
    on this Mac. Activity
    spinners, status pills, progress, logs, branch/PR, unread and notification banners mirror the
-   owning Mac; closing a mirror asks "Close on <Mac>" vs "Hide Here". The phone gets pushes from the
+   owning Mac; closing a mirror closes it on its Mac like a local workspace (row menus also offer
+   "Hide Here"). The phone gets pushes from the
    Mac that runs the agent, so the main Mac can be closed. Details: "Remote Macs (devices)" below and
    `plans/supermux-remote-workspaces/`.
 
@@ -239,16 +240,18 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   window already holding that Mac's mirrors, survive restarts (bindings keyed by
   `Workspace.stableId`), close by themselves when the remote workspace closes, and are never
   re-exported by this Mac's mobile host (the loop guard; the phone talks to every Mac directly).
-- **Closing a mirror** asks **Close on <Mac>** (closes the real workspace there) or **Hide Here**
-  (keeps it running there; "Show Hidden Remote Workspaces" brings it back). Cancel is the prompt's
-  Return/Esc default; Close on <Mac> is a plain button (macOS 27 does not draw the destructive red
-  title while the sheet is key, which left a blank gap) and the text says it closes the workspace on
-  that Mac; mirror rows' menus offer Hide Here
-  and Close on <Mac>… directly. Closing a single mirrored tab closes that terminal on the owning
-  Mac, like a local tab: when that Mac says a program is still running there (by its own
-  close-confirmation setting), the viewer asks "Close “X” on <Mac>?" (Cancel, the Return/Esc default,
-  brings the tab back); Kill Terminal… forces. A tab closed while that Mac is unreachable disappears
-  at once and its close is sent first when the link is back (#640–#644).
+- **Closing a mirror** works like closing a local workspace: only this Mac's own confirmations
+  (pinned, running process, the close settings, the batch "Close workspaces?"), no prompt of the
+  fork's; then the mirror closes here at once and the real workspace closes on its Mac (with
+  `force`; a workspace pinned there is unpinned there first). While that Mac is offline the close
+  waits (persisted, so also across a relaunch) and auto-mirror does not show the workspace again;
+  it is sent once that Mac is back. A refusal beeps and the mirror comes back. Mirror rows' menus
+  also offer **Hide Here** (keeps it running there; "Show Hidden Remote Workspaces" brings it back);
+  socket/CLI/AppleScript closes of a mirror stay Hide Here. Closing a mirrored tab ends that
+  terminal on the owning Mac like a local tab, even when a program runs there (always `force`); a
+  tab closed while that Mac is unreachable disappears at once and its close is sent first when the
+  link is back (#530, #640–#644). The phone's workspace close forces too, after its own
+  "Delete Workspace?" (#695).
 - **Sidebar rows:** inside a project, this Mac's workspaces come first, then each Mac's mirrors;
   every mirror row (nested or flat) marks its Mac with a small Mac + cloud icon right before its
   branch name (the Mac's name in its tooltip); nested rows show no `cmux set-status` pills or

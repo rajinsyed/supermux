@@ -45,10 +45,12 @@ the main Mac is closed), and the same on iOS.
 2. **Mirrors are never re-exported.** The host skips device-mirror workspaces in `mobile.sync.*` and
    `mobile.workspace.list` (touchpoint). This prevents mirror-of-mirror loops between Macs and phone
    duplicates (the phone connects to both Macs directly).
-3. **Close = close on the owning Mac**, behind a confirmation ("Close on <Mac>" / "Hide Here" /
-   Cancel). "Hide Here" detaches and remembers the remote id in a hidden set so auto-mirror does not
-   re-open it. A remote workspace that disappears on its host closes its local mirror. Closing a
-   single mirrored tab already kills the remote terminal upstream (matches local).
+3. **Close = close on the owning Mac**, with this Mac's normal close confirmations only (as for a
+   local workspace; no prompt of the fork's). A close while that Mac is offline is kept (persisted)
+   and sent when it reconnects; auto-mirror does not reopen it meanwhile. The row menu's "Hide Here"
+   keeps it running there: it detaches and remembers the remote id in a hidden set so auto-mirror
+   does not re-open it. A remote workspace that disappears on its host closes its local mirror.
+   Closing a mirrored tab ends that terminal there (`force`), like a local tab.
 4. **Remote Mac is the source of truth for its own projects.** Remote projects are aggregated live
    (never written into `supermux-projects.json`). Projects merge across devices into one sidebar row
    when their normalized git origin URL matches (new additive DTO field `git_remote_url`), falling

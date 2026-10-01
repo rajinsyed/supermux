@@ -8,17 +8,26 @@ extension SupermuxComposition {
     /// Remote workspaces the user chose to "Hide Here".
     static let hiddenRemoteWorkspaces = SupermuxHiddenRemoteWorkspaces(defaults: .standard)
 
+    /// Remote workspaces closed here while their Mac was offline (or whose
+    /// close is in flight): auto-mirror never reopens them, and the close is
+    /// sent once that Mac is back. Never the Hide Here set.
+    static let pendingRemoteWorkspaceCloses = SupermuxHiddenRemoteWorkspaces(
+        defaults: .standard,
+        key: "supermux.devices.pendingRemoteCloses.v1"
+    )
+
     /// Remote record -> mirror row status (activity/branch/PR overlays, pills, progress, log).
     static let deviceStatusProjector = SupermuxDeviceStatusProjector(
         devices: devices,
         index: deviceWorkspaceIndex
     )
 
-    /// Close on <Mac> / Hide Here / programmatic and coordinator closes.
+    /// User closes (on the mirror's Mac) / Hide Here / programmatic and coordinator closes.
     static let deviceMirrorCloser = SupermuxDeviceMirrorCloser(
         devices: devices,
         index: deviceWorkspaceIndex,
-        hidden: hiddenRemoteWorkspaces
+        hidden: hiddenRemoteWorkspaces,
+        pending: pendingRemoteWorkspaceCloses
     )
 
     /// The auto-mirror reconcile loop.

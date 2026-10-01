@@ -8,8 +8,8 @@ import Foundation
 /// drops while the close is on its way, the close is held here instead of
 /// failing with a Cloud failure card; ``DeviceWorkspaceLayoutCoordinator``
 /// sends every held close first when that Mac's link is back, under the same
-/// rules as a live close (an idle terminal closes, a busy one asks, Cancel
-/// brings the tab back, a terminal that no longer exists is dropped). Until
+/// rules as a live close (the terminal closes there even when a program runs
+/// in it; a terminal that no longer exists is dropped). Until
 /// then the layout reconcile leaves a held terminal out
 /// (``SupermuxDeviceLayoutSurfaceFilter``), so the tab never comes back on its
 /// own. Held closes live in memory for the app's lifetime.
