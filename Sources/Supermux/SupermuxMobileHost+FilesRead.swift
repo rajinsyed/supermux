@@ -15,8 +15,9 @@ import SupermuxMobileCore
 /// (``SupermuxHostFileSearch``), and git status is the desktop panel's own
 /// `git status --porcelain` (``GitStatusProvider``) behind a time bound.
 extension TerminalController {
-    /// How long `files.git_status` waits for git before answering `timed_out`.
-    nonisolated static let supermuxFilesGitStatusTimeout: TimeInterval = 30
+    /// How long `files.git_status` waits for git before answering `timed_out`
+    /// (inside the call's own bound, `SupermuxMobileFileBrowser.gitStatusTimeout`).
+    nonisolated static let supermuxFilesGitStatusTimeout = SupermuxMobileFileBrowser.operationTimeout
     /// The most decorated paths one `files.git_status` returns.
     nonisolated static let supermuxFilesGitStatusMaxEntries = 20_000
 
@@ -71,7 +72,7 @@ extension TerminalController {
     /// root-relative path. Result: ``SupermuxFileGitStatusDTO``.
     @MainActor
     func v2SupermuxFilesGitStatus(params: [String: Any]) async -> V2CallResult {
-        await supermuxFilesOperation(params: params) { browser in
+        await supermuxFilesOperation(params: params, timeout: SupermuxMobileFileBrowser.gitStatusTimeout) { browser in
             .ok(try SupermuxWireJSON().dictionary(from: Self.supermuxGitStatus(root: browser.rootPath)))
         }
     }
