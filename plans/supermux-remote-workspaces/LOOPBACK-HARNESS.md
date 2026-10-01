@@ -449,7 +449,12 @@ the menu offers New File / New Folder / Rename / Duplicate / Move to Trash and e
 disk; with the link held down the panel names the Mac and says it is not connected (no rows), and
 the redial brings the rows back; with `--app-path`, a relaunch with
 `CMUX_DEBUG_SUPPRESS_MOBILE_CAPS=supermux.files_read.v1` shows "Update Supermux on Loopback Mac to
-browse its files here." Move to Trash moves the scratch files to this Mac's Trash.
+browse its files here." Move to Trash moves the scratch files to this Mac's Trash. macOS's own
+Move to Trash can take tens of seconds per item on a headless Mac (with privacy prompts left up it
+waited ~45 s in the kernel on `~/.Trash`, from any process), so Duplicate and Move to Trash get the
+product's reply bound (`SupermuxDeviceReplyDeadline.fileCopy`) and the step reports each
+operation's `seconds`. A call that gets no reply hangs up the suite's socket, so its late reply
+cannot answer the next step's call.
 
 ```bash
 CMUX_E2E_SUITES="loopback_mirror_files_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
