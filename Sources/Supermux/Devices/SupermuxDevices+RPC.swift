@@ -13,9 +13,10 @@ extension SupermuxDevices {
     ///   - machine: The device machine.
     ///   - timeout: An explicit reply deadline, for the DEBUG socket driver
     ///     only. `nil` (every caller) uses the method's audited deadline,
-    ///     ``SupermuxDeviceReplyDeadline``: a missed deadline makes the whole
-    ///     link reconnect, so long host work gets a deadline that outlasts it
-    ///     and everything else keeps the link's default.
+    ///     ``SupermuxDeviceReplyDeadline``: a missed deadline fails the call
+    ///     (and reconnects the link when the other Mac stops answering, #723),
+    ///     so long host work gets a deadline that outlasts it and everything
+    ///     else keeps the link's default.
     /// - Returns: The host's result object.
     /// - Throws: ``SupermuxDeviceError``.
     func request(

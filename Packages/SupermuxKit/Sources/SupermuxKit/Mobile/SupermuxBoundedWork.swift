@@ -6,7 +6,7 @@ public import Foundation
 ///
 /// The host uses it for each `files.*` call another Mac or a phone makes, so
 /// the caller always gets an answer before its reply deadline (a missed
-/// deadline makes the device link reconnect). The work keeps running to its
+/// deadline fails the call). The work keeps running to its
 /// end; it only stops holding up the answer. It runs outside Swift's
 /// cooperative pool, so stuck work never starves the app's other tasks.
 ///

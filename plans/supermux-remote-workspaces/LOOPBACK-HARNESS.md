@@ -106,6 +106,12 @@ quit + relaunch dedupe check).
    (`device.workspace.layout.changed` + reconcile).
 10. `mirror_split_creates_source_terminal`: a split in the mirror creates a real source terminal
     (`device.workspace.terminal.create`), and that terminal is projected back.
+11. `slow_request_keeps_the_link` (#723): the loopback host holds one
+    `mobile.supermux.projects.list` for 30 s (`supermux.devices.link {machine, action: "stall",
+    method, seconds}`), past the link's 20 s reply deadline. Only that request fails (`timed_out`);
+    for 60 s the link stays `connected` and admits no new loopback connection
+    (`supermux.devices.link {action: "status"}` reports `phase`, `connections_admitted` and
+    `stall_armed`), and the source's output still reaches the mirror afterwards.
 
 Cleanup closes the mirror first, then the source. `--keep` leaves both open, which is how to test
 restore: quit the app, relaunch it with the opt-in, and the mirror reconnects.
@@ -453,6 +459,34 @@ CMUX_TAG=<tag> python3 tests/supermux/loopback_mirror_files_e2e.py --scratch /tm
 
 Every suite at once: `CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh` (launches, runs and
 quits the tagged app per suite; scratch state in `/tmp/<tag>-e2e`).
+
+## Projects E2E: a blocked project folder
+
+`loopback_projects_e2e.py`'s `projects_list_answers_while_a_folder_blocks` adds a project the way
+another build does (the shared projects file, then a save that folds it in) whose `.git/config`
+includes a named pipe nobody writes, so every git command there blocks, as in a folder behind an
+unanswered privacy prompt. `projects.list` must answer within 4 s (the host's 2 s bound plus slack)
+three times on the host (`supermux.devices.local_projects`) and once over the link; before the bound
+it waited for git until the 5 s kill. Cleanup opens the pipe for writing to release the waiting git
+processes, then removes it.
+
+## The ~20 s link flap (round 4) and why E2E did not see it
+
+The round-4 visual check launched `rws-int` without `SUPERMUX_PROJECTS_FILE`, so it read the user's
+real project list: 11 projects, all in ~/Documents. The tagged app's Documents privacy prompt sat
+unanswered (behind two other system prompts), and every access there waited about 10 s in the kernel
+and then failed (`Interrupted system call`; a `git worktree list` took 21 s). On every connect the
+viewer asks `mobile.supermux.projects.list`; the host's handler waited for the projects model's first
+load (31 s: each project's `config.json` import and `git worktree list`) and for a `git config`
+origin lookup per project, which the 5 s git kill cannot end while the kernel holds it. The reply
+missed the link's 20 s deadline, and the link took that as a dead transport and redialed: connected
+for 20 s, then 30 s of backoff, 29 times in 22 minutes. Temporary request timing on both sides showed
+`projects.list` timing out at 20.0 s on the viewer while the host was still running it (31.4 s), and
+nothing else slow. `run_all_loopback_e2e.sh` always points `SUPERMUX_PROJECTS_FILE` at a scratch file,
+so E2E runs had no ~/Documents projects and a stable link. Fixed by #723 (a missed deadline fails alone
+while the host answers) and the host-side bounds (SUPERMUX.md, "A slow Mac is not a lost Mac").
+When you check visually with the real project list, expect the same prompt: never answer it for the
+user; the link now stays up regardless.
 
 ## How it works
 
