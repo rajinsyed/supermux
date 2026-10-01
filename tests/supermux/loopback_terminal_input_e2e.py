@@ -491,19 +491,22 @@ class TerminalInputE2E:
         """A Mac with many mirrored terminals answers the capability request of a
         reconnect `server_busy` while their replays fill its request quota: the
         mirror must still forward keys and write mouse reports exactly."""
-        self.reattach(busy_capabilities=True)
+        self.reattach(busy="mobile.host.status")
         keys = self.key_check("shift+enter", "1b5b31333b3275")()
         self.mirror_focused()
         return {"shift_enter": keys, "mouse": self.mouse_drag()}
 
-    def reattach(self, busy_capabilities: bool = False) -> None:
+    def reattach(self, busy: Optional[str] = None) -> None:
         """Drops the loopback link, dials it again and waits for the mirror to
-        re-attach; `busy_capabilities` makes the other Mac answer this Mac's
-        first capability request on the new connection `server_busy`."""
+        re-attach; `busy` names a method the other Mac answers `server_busy` the
+        first time this Mac asks on the new connection (`mobile.host.status`:
+        the capability request)."""
         self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "stop"})
         time.sleep(1.0)
-        self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "restore",
-                                                 "busy_capabilities": busy_capabilities})
+        restore = {"machine": self.machine, "action": "restore"}
+        if busy:
+            restore["busy"] = busy
+        self.sock.call("supermux.devices.link", restore)
 
         def reconnected() -> bool:
             device = self.device()

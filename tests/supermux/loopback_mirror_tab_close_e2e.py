@@ -20,11 +20,11 @@ from before the fix had a "Close “X” on <Mac>?" prompt with a DEBUG pre-answ
 pre-answers Cancel, so the old prompt shows no modal and keeps the terminal:
 
   1. setup                              auto-mirror on, the loopback linked and fetched
-  2. source_with_terminals              a source workspace with T0 idle, T1-T3 busy, T4
-                                        idle and T5 idle, every terminal projected in its
-                                        mirror; no step closes T5, so every close below
-                                        closes a tab beside another one (a workspace's last
-                                        tab cannot be closed on its own)
+  2. source_with_terminals              a source workspace with T0 idle, T1-T3 busy, T4-T6
+                                        idle, every terminal projected in its mirror; no
+                                        step closes T5, so every close below closes a tab
+                                        beside another one (a workspace's last tab cannot be
+                                        closed on its own)
   3. host_close_requires_confirmation   mobile.terminal.close on busy T1 without force
                                         -> confirmation_required, T1 still there
   4. busy_tab_close_forces              close T1's mirror tab -> no prompt, T1 closed
@@ -59,6 +59,12 @@ pre-answers Cancel, so the old prompt shows no modal and keeps the terminal:
  11. offline_close                      link down, close idle T4's mirror tab -> gone at
                                         once, no card; on reconnect T4 is closed there and
                                         never projected again
+ 11b. offline_close_lands_on_a_busy_host
+                                        the same for T6, but the other Mac answers the held
+                                        close `server_busy` on reconnect (its request quota
+                                        full of the re-attaching terminals' replays, as on a
+                                        Mac with many mirrored terminals) -> T6 still closes
+                                        there and never comes back
 
 The busy terminals run a stand-in for Claude Code (alternate screen, kitty
 keyboard flags, a marker line, a sleeping child); `--claude` runs the real
@@ -431,7 +437,7 @@ class MirrorTabCloseE2E:
                                      self.timeout)["workspace_id"])
         self.terms["T0"] = wait_for("the source's first terminal", lambda: self.surfaces(self.source_id), self.timeout)[0]
         # T5 is never closed: it keeps the mirror from being down to the tab a step closes.
-        for name in ("T1", "T2", "T3", "T4", "T5"):
+        for name in ("T1", "T2", "T3", "T4", "T5", "T6"):
             created = self.sock.call("surface.create", {"workspace_id": self.source_id, "type": "terminal"}) or {}
             self.terms[name] = up(created.get("surface_id"))
             if not self.terms[name]:
@@ -777,20 +783,33 @@ class MirrorTabCloseE2E:
         return {"closed_panel": panel}
 
     def offline_close(self) -> Dict[str, Any]:
-        self.require_idle("T4")
+        return self.close_offline_then_reconnect("T4")
+
+    def offline_close_lands_on_a_busy_host(self) -> Dict[str, Any]:
+        """A close held while the link was down is sent first on reconnect, while
+        every mirrored terminal re-attaches; a Mac whose request quota that fills
+        answers it `server_busy`, and the close must still land there."""
+        return self.close_offline_then_reconnect("T6", busy="mobile.terminal.close")
+
+    def close_offline_then_reconnect(self, name: str, busy: Optional[str] = None) -> Dict[str, Any]:
+        """Link down, close idle `name`'s mirror tab: gone at once with no card; on
+        reconnect (the other Mac answering the first `busy` request `server_busy`,
+        if given) it is closed there and never projected again."""
+        self.require_idle(name)
         self.old_prompt("cancel")
-        panel = self.mirror_panel(self.terms["T4"])
+        panel = self.mirror_panel(self.terms[name])
         if not panel:
-            raise Failure("precondition: the mirror does not show T4")
+            raise Failure(f"precondition: the mirror does not show {name}")
         self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "stop"})
         self.link_stopped = True
         wait_for("the loopback link to drop", lambda: self.device().get("link_state") != "connected", self.timeout)
         self.sock.call("surface.close", {"workspace_id": self.mirror_id, "surface_id": panel, "force": True})
         problems: List[str] = []
         try:
-            wait_for("T4's mirror tab to close", lambda: panel not in self.surfaces(self.mirror_id), 3.0)
+            wait_for(f"{name}'s mirror tab to close", lambda: panel not in self.surfaces(self.mirror_id), 3.0)
         except Failure as error:
             problems.append(str(error))
+
         def no_card() -> Optional[str]:
             card = self.failure_card()
             return f"a failure card is shown while offline: {card}" if card else None
@@ -798,15 +817,18 @@ class MirrorTabCloseE2E:
         shown = holds(no_card, 2.0)
         if shown:
             problems.append(shown)
-        self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "restore"})
+        restore = {"machine": self.machine, "action": "restore"}
+        if busy:
+            restore["busy"] = busy
+        self.sock.call("supermux.devices.link", restore)
         self.link_stopped = False
         wait_for("the loopback link to reconnect", lambda: self.device().get("link_state") == "connected", self.timeout)
         try:
-            wait_for("T4 to close on the source after the reconnect", lambda: not self.source_has("T4"), 10.0)
+            wait_for(f"{name} to close on the source after the reconnect", lambda: not self.source_has(name), 10.0)
         except Failure as error:
             problems.append(str(error))
-        back = holds(lambda: "T4 came back in the mirror after the reconnect"
-                     if up(self.terms["T4"]) in self.projections(self.mirror_id) else None, 5.0)
+        back = holds(lambda: f"{name} came back in the mirror after the reconnect"
+                     if up(self.terms[name]) in self.projections(self.mirror_id) else None, 5.0)
         if back:
             problems.append(back)
         problems += self.prompt_problems()
@@ -882,6 +904,7 @@ class MirrorTabCloseE2E:
                 ("idle_tab_close_control", self.idle_tab_close_control),
                 ("offline_busy_tab_close_forces_on_reconnect", self.offline_busy_tab_close_forces_on_reconnect),
                 ("offline_close", self.offline_close),
+                ("offline_close_lands_on_a_busy_host", self.offline_close_lands_on_a_busy_host),
             ]:
                 ok = self.step(name, check) and ok
         self.cleanup()

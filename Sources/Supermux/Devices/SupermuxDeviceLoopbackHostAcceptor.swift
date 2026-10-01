@@ -18,10 +18,10 @@ import Foundation
 /// long as the app.
 @MainActor
 final class SupermuxDeviceLoopbackHostAcceptor {
-    /// How many of the next connections answer the viewer's capability
-    /// request busy (see ``BusyCapabilityRequest``); armed by the DEBUG
-    /// `supermux.devices.link {action: "restore", busy_capabilities: true}`.
-    static var busyCapabilityConnections = 0
+    /// The method the next connection answers busy once (see
+    /// ``BusyRequest``); armed by the DEBUG `supermux.devices.link
+    /// {action: "restore", busy: "<method>"}`.
+    static var busyMethodForNextConnection: String?
 
     private let peer: CmxIrohAdmittedPeer
     private let layouts: DeviceWorkspaceLayoutHost
@@ -59,8 +59,8 @@ final class SupermuxDeviceLoopbackHostAcceptor {
     private func admit(_ transport: any CmxByteTransport) {
         let peer = self.peer
         let layouts = self.layouts
-        let busy = BusyCapabilityRequest(armed: Self.busyCapabilityConnections > 0)
-        Self.busyCapabilityConnections = max(0, Self.busyCapabilityConnections - 1)
+        let busy = BusyRequest(method: Self.busyMethodForNextConnection)
+        Self.busyMethodForNextConnection = nil
         cmuxDebugLog("supermux.loopback host admitted connection")
         Task {
             let exit = await MobileHostService.acceptTransport(
@@ -80,25 +80,26 @@ final class SupermuxDeviceLoopbackHostAcceptor {
     }
 }
 
-/// One connection's armed fault: the first `mobile.host.status` after the
-/// post-connect `mobile.sync.fetch` (the viewer's capability request, not the
-/// dial's identity check) is answered `server_busy`, word for word what the
-/// host answers while its per-connection request quota is full, as it is when
-/// every mirrored terminal re-attaches at once after a reconnect.
+/// One connection's armed fault: the first request for `method` after the
+/// post-connect `mobile.sync.fetch` (so a `mobile.host.status` is the viewer's
+/// capability request, not the dial's identity check) is answered
+/// `server_busy`, word for word what the host answers while its
+/// per-connection request quota is full, as it is when every mirrored
+/// terminal re-attaches at once after a reconnect.
 @MainActor
-private final class BusyCapabilityRequest {
-    private var armed: Bool
+private final class BusyRequest {
+    private var method: String?
     private var fetched = false
 
-    init(armed: Bool) {
-        self.armed = armed
+    init(method: String?) {
+        self.method = method
     }
 
     func answer(_ request: MobileHostRPCRequest) -> MobileHostRPCResult? {
         if request.method == "mobile.sync.fetch" { fetched = true }
-        guard armed, fetched, request.method == "mobile.host.status" else { return nil }
-        armed = false
-        cmuxDebugLog("supermux.loopback host answered the capability request busy")
+        guard fetched, let method, request.method == method else { return nil }
+        self.method = nil
+        cmuxDebugLog("supermux.loopback host answered \(method) busy")
         return .failure(MobileHostRPCError(code: "server_busy", message: "Too many requests are pending"))
     }
 }
