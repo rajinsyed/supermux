@@ -3554,6 +3554,8 @@
 		50BE000100000000000000B9 /* SupermuxSidebarFontScaleStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000B8 /* SupermuxSidebarFontScaleStore.swift */; };
 		50BE000100000000000000A7 /* SupermuxTabManagerOpener.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000A6 /* SupermuxTabManagerOpener.swift */; };
 		50BE00170300000000000002 /* SupermuxTabOrderSocketCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00170300000000000001 /* SupermuxTabOrderSocketCommands.swift */; };
+		50BE00170400000000000002 /* SupermuxTerminalSizingDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00170400000000000001 /* SupermuxTerminalSizingDefaults.swift */; };
+		50BE00170400000000000004 /* SupermuxTerminalSizingSocketCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00170400000000000003 /* SupermuxTerminalSizingSocketCommands.swift */; };
 		50BE00160000000000000004 /* SupermuxTerminalSizingVisibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00160000000000000003 /* SupermuxTerminalSizingVisibility.swift */; };
 		50BE00060000000000000006 /* SupermuxUnifiedProjectsModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00060000000000000005 /* SupermuxUnifiedProjectsModel.swift */; };
 		50BE00010000000000000100 /* SupermuxUsageAnalyticsMenuButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000FF /* SupermuxUsageAnalyticsMenuButton.swift */; };
@@ -7976,6 +7978,8 @@
 		50BE000100000000000000B8 /* SupermuxSidebarFontScaleStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxSidebarFontScaleStore.swift; sourceTree = "<group>"; };
 		50BE000100000000000000A6 /* SupermuxTabManagerOpener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxTabManagerOpener.swift; sourceTree = "<group>"; };
 		50BE00170300000000000001 /* SupermuxTabOrderSocketCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mirrors/SupermuxTabOrderSocketCommands.swift; sourceTree = "<group>"; };
+		50BE00170400000000000001 /* SupermuxTerminalSizingDefaults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxTerminalSizingDefaults.swift; sourceTree = "<group>"; };
+		50BE00170400000000000003 /* SupermuxTerminalSizingSocketCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxTerminalSizingSocketCommands.swift; sourceTree = "<group>"; };
 		50BE00160000000000000003 /* SupermuxTerminalSizingVisibility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxTerminalSizingVisibility.swift; sourceTree = "<group>"; };
 		50BE00060000000000000005 /* SupermuxUnifiedProjectsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Projects/SupermuxUnifiedProjectsModel.swift; sourceTree = "<group>"; };
 		50BE000100000000000000FF /* SupermuxUsageAnalyticsMenuButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxUsageAnalyticsMenuButton.swift; sourceTree = "<group>"; };
@@ -9384,6 +9388,8 @@
 				50BE00170100000000000005 /* SupermuxDeviceTerminalClosePrompt.swift */,
 				50BE00170100000000000007 /* SupermuxDeviceViewportGenerations.swift */,
 				50BE00170100000000000009 /* SupermuxDeviceHeldCloses.swift */,
+				50BE00170400000000000001 /* SupermuxTerminalSizingDefaults.swift */,
+				50BE00170400000000000003 /* SupermuxTerminalSizingSocketCommands.swift */,
 				50BE00050000000000000019 /* SupermuxDeviceMirrorPalette.swift */,
 				50BE0005000000000000001B /* SupermuxDeviceMirrorSocketCommands.swift */,
 				50BE0005000000000000001D /* SupermuxDevicesSocketPayloads+MirrorStatus.swift */,
@@ -16339,6 +16345,8 @@
 				50BE000100000000000000B9 /* SupermuxSidebarFontScaleStore.swift in Sources */,
 				50BE000100000000000000A7 /* SupermuxTabManagerOpener.swift in Sources */,
 				50BE00170300000000000002 /* SupermuxTabOrderSocketCommands.swift in Sources */,
+				50BE00170400000000000002 /* SupermuxTerminalSizingDefaults.swift in Sources */,
+				50BE00170400000000000004 /* SupermuxTerminalSizingSocketCommands.swift in Sources */,
 				50BE00160000000000000004 /* SupermuxTerminalSizingVisibility.swift in Sources */,
 				50BE00060000000000000006 /* SupermuxUnifiedProjectsModel.swift in Sources */,
 				50BE00010000000000000100 /* SupermuxUsageAnalyticsMenuButton.swift in Sources */,

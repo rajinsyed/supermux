@@ -78,6 +78,12 @@ final class SupermuxTerminalSizingVisibility {
         mirrors[surfaceID] = nil
     }
 
+    /// The live device mirrors, by local surface id (SupermuxTerminalSizingDefaults
+    /// applies this Mac's size preference to each).
+    func trackedMirrorSessions() -> [UUID: DeviceTerminalMirrorSession] {
+        mirrors.compactMapValues(\.session)
+    }
+
     // MARK: - Host (local terminals with viewers)
 
     /// Called as a local terminal's sizing host is created: an off-screen
