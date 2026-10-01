@@ -641,6 +641,7 @@ Rules for adding a touchpoint:
 | 720 | `Sources/Workspace+TerminalSharing.swift` | `tab-presence-accessory-hidden` | Two fences. In `updateTerminalSharingPresence(panelId:snapshot:)` the tab presence goes through `supermuxTabPresence(_:)`, which (second fence, a private func in the same extension) keeps the presence but empties its `participants`: the tab draws no attached-device avatar (the `laptopcomputer` glyph for another of your Macs), while its context menu keeps the terminal-size section (Size to My Window, Terminal Size ▸, Disconnect Others…), which Bonsplit shows whenever the presence is non-nil. The size panel still lists the attached Macs. `vendor/bonsplit` is untouched; an "On <Mac>" tab-menu row would go in `supermuxTabPresence` if Bonsplit gains a host hook. E2E: `tests/supermux/loopback_terminal_input_e2e.py` (`tabs_draw_no_device_accessory`) |
 | 721 | `Sources/Devices/DeviceLink.swift` | `device-link-busy-retry` | `requestData(_:params:timeoutNanoseconds:)` becomes a call to `supermuxAskingAgainWhileBusy(isCurrent:_:)` (an extension in `Sources/Supermux/Devices/SupermuxDeviceLinkEvents.swift`) around upstream's unchanged body, renamed `supermuxRequestDataOnce`. A request the host answers `server_busy` (its per-connection request quota full, so the request never ran) is sent again after 0.25, 0.5, 1, 2 and 4 s on the same connection (a new link generation cancels it); every other answer and error is unchanged. Every device request goes through it: capabilities, replays, viewports, layout fetches, held tab closes. E2E: `loopback_terminal_input_e2e.py` (`keys_survive_busy_reconnect`), `loopback_mirror_tab_close_e2e.py` (`offline_close_lands_on_a_busy_host`) |
 | 722 | `Sources/TerminalController.swift` | `device-mac-read-clears-host-ring` | In `mobileHostHandleRPC`, the `notification.feed.mark_read` case calls `supermuxNotificationFeedMarkRead(params: request.params, executionContext: executionContext)` instead of `v2MobileNotificationFeedMarkRead(params: request.params)`. The fork wrapper (`Sources/Supermux/Devices/SupermuxDeviceNotificationReadMirror.swift`) runs upstream's handler unchanged; only when the caller is an admitted Mac peer (`SupermuxMobilePeerPolicy.isAdmittedMacPeer`, i.e. another of your Macs acking its mirror copy's read) it also clears the focused-read indicator of each pane whose record that request turned read, unless the pane still has an unread record. So a read on the viewer Mac ends the host's focused-pane ring (and the phone's pane ring, which follows `hasVisibleNotificationIndicator`), the reverse of #548. A phone's read keeps upstream's semantics. E2E: `tests/supermux/loopback_notifications_e2e.py` (`mirror_read_clears_focused_source_ring`) |
+| 723 | `Sources/Devices/DeviceLink.swift` | `device-link-slow-request` | In `supermuxRequestDataOnce` (upstream's `requestData` body, see #721), upstream's `.requestTimedOut` comes out of the `.connectionClosed, .requestTimedOut, .transportWriteTimedOut` case into its own case, which throws `supermuxMissedDeadline(_:client:isCurrent:)` (an extension in `Sources/Supermux/Devices/SupermuxDeviceLinkEvents.swift`). A request whose reply missed its deadline no longer reconnects the link by itself: the link sends `mobile.events.probe` (answered by the host's connection, never by its main actor) with a 10 s deadline; any answer, a refusal included, keeps the link and fails only that request as `hostRejected(code: "timed_out")` with a localized message (`supermux.devices.error.replyTimedOut`); no answer is a dead link and calls upstream's `reportTransportLost`, as before. A closed transport and a stuck write keep upstream's reconnect. E2E: `loopback_device_smoke.py` (`slow_request_keeps_the_link`) |
 
 ## How to re-apply
 
@@ -5577,6 +5578,31 @@ the ring. If upstream starts clearing the indicator on a feed read itself, retir
 Verify: `CMUX_E2E_SUITES="loopback_notifications_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`
 (`mirror_read_clears_focused_source_ring`; `host_read_clears_focused_mirror_ring` and
 `newer_mirror_copy_keeps_ring` cover #548's side).
+
+### 723. A reply that misses its deadline fails alone while the host still answers — `device-link-slow-request`
+
+Upstream's `DeviceLink` took every request whose reply missed its deadline (20 s by default) as a dead
+transport: `reportTransportLost`, then a redial after the reconnect policy's backoff. That drops every
+mirror, Files panel and held close of that Mac, and the reconnect sends the same slow call again. One
+slow host call is enough: on a Mac whose projects all live in ~/Documents, with the Documents privacy
+prompt unanswered (nobody answers it on a headless Mac), every `git` and file access there blocks in
+the kernel, `mobile.supermux.projects.list` took 20–30 s, and the link connected and dropped every ~20 s
+for 22 minutes (round 4's visual check).
+The host side of that call is bounded too (`projects.list`, fork code), but no single host call should
+be able to take the link down.
+
+Re-apply after an upstream merge: in the `catch let error as MobileShellConnectionError` switch of
+`supermuxRequestDataOnce` (upstream's `requestData` body, #721), give `.requestTimedOut` its own case that
+throws `await supermuxMissedDeadline(error, client: client) { !Task.isCancelled && requestGeneration ==
+self.generation }`, and leave `.connectionClosed` and `.transportWriteTimedOut` on upstream's
+`reportTransportLost` path. If upstream's RPC session gains its own liveness check that tells a slow
+request from a dead transport, or stops failing the link on one timeout, retire this. Keep the probe a
+method the host's connection answers itself (`mobile.events.probe`), so a host whose main actor is busy
+still counts as alive.
+
+Verify: `CMUX_E2E_SUITES="loopback_device_smoke" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`
+(`slow_request_keeps_the_link`: the DEBUG `supermux.devices.link {action: stall, method, seconds}` makes the
+loopback host hold one `projects.list` for 30 s; the link must stay connected, with no redial, for 60 s).
 
 ### 700–704. The iPhone shows projects and workspaces as one merged list — `supermux-mobile-projects-nested-reorder`, `supermux-mobile-nested-accessory`, `supermux-mobile-merged-projects-fixture`, `supermux-mobile-merged-projects-uitest`
 

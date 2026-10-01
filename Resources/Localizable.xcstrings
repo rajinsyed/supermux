@@ -599035,6 +599035,23 @@
         }
       }
     },
+    "supermux.devices.error.replyTimedOut" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ did not answer in time. It is still connected; try again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ が時間内に応答しませんでした。接続は保たれています。もう一度お試しください。"
+          }
+        }
+      }
+    },
     "supermux.devices.error.unknownDevice" : {
       "extractionState" : "manual",
       "localizations" : {
