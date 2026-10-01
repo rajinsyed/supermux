@@ -6,6 +6,14 @@ import SupermuxKit
 /// bounded so an orphaned reveal cannot linger for the whole session.
 private let supermuxRevealTimeout: TimeInterval = 10
 
+/// The disk a file operation runs on, captured when the user starts it.
+private enum SupermuxFileOpDisk: Sendable {
+    /// This Mac's disk.
+    case thisMac
+    /// A device mirror's folder, on the Mac that owns it.
+    case device(SupermuxDeviceFileExplorerProvider)
+}
+
 // MARK: - Context-menu population
 
 extension NSMenu {
@@ -74,41 +82,48 @@ extension FileExplorerPanelView.Coordinator {
     /// a device mirror's folder (run on its Mac over `files.create/rename/
     /// duplicate/trash`, the same root-confined engine the phone uses).
     var supermuxSupportsFileOperations: Bool {
-        store.provider is LocalFileExplorerProvider || supermuxDeviceProvider != nil
+        supermuxFileOpDisk != nil
     }
 
-    /// The device mirror's provider when the panel shows another Mac's folder.
-    private var supermuxDeviceProvider: SupermuxDeviceFileExplorerProvider? {
-        store.provider as? SupermuxDeviceFileExplorerProvider
+    /// The disk the panel shows right now; `nil` for providers without file
+    /// operations. Every operation captures it when the user starts it,
+    /// before any sheet, and runs only there.
+    private var supermuxFileOpDisk: SupermuxFileOpDisk? {
+        if let device = store.provider as? SupermuxDeviceFileExplorerProvider { return .device(device) }
+        return store.provider is LocalFileExplorerProvider ? .thisMac : nil
     }
 
     @objc func supermuxNewFile(_ sender: NSMenuItem) {
-        guard let request = sender.representedObject as? SupermuxFileOpRequest else { return }
-        let device = supermuxDeviceProvider
+        guard let request = sender.representedObject as? SupermuxFileOpRequest,
+              let disk = supermuxFileOpDisk else { return }
         supermuxPromptAndCreate(
             title: SupermuxFileOpText.newFileTitle,
             messageFormat: SupermuxFileOpText.newFileMessageFormat,
             request: request
         ) { name, directory in
-            if let device {
+            switch disk {
+            case .device(let device):
                 return URL(fileURLWithPath: try await device.create(at: (directory.path as NSString).appendingPathComponent(name), folder: false))
+            case .thisMac:
+                return try SupermuxFileSystemOperations.createFile(named: name, in: directory)
             }
-            return try SupermuxFileSystemOperations.createFile(named: name, in: directory)
         }
     }
 
     @objc func supermuxNewFolder(_ sender: NSMenuItem) {
-        guard let request = sender.representedObject as? SupermuxFileOpRequest else { return }
-        let device = supermuxDeviceProvider
+        guard let request = sender.representedObject as? SupermuxFileOpRequest,
+              let disk = supermuxFileOpDisk else { return }
         supermuxPromptAndCreate(
             title: SupermuxFileOpText.newFolderTitle,
             messageFormat: SupermuxFileOpText.newFolderMessageFormat,
             request: request
         ) { name, directory in
-            if let device {
+            switch disk {
+            case .device(let device):
                 return URL(fileURLWithPath: try await device.create(at: (directory.path as NSString).appendingPathComponent(name), folder: true))
+            case .thisMac:
+                return try SupermuxFileSystemOperations.createDirectory(named: name, in: directory)
             }
-            return try SupermuxFileSystemOperations.createDirectory(named: name, in: directory)
         }
     }
 
@@ -164,12 +179,12 @@ extension FileExplorerPanelView.Coordinator {
     }
 
     @objc func supermuxDuplicate(_ sender: NSMenuItem) {
-        guard let node = sender.representedObject as? FileExplorerNode else { return }
+        guard let node = sender.representedObject as? FileExplorerNode,
+              let disk = supermuxFileOpDisk else { return }
         // Honor the active multi-selection, like Move to Trash, so Duplicate is
         // not silently partial. Each item is duplicated independently (Finder
         // duplicates a selected folder and a selected child separately).
         let urls = supermuxContextNodes(clicked: node).map { URL(fileURLWithPath: $0.path) }
-        let device = supermuxDeviceProvider
         supermuxRunFileOperation(
             identity: store.workspaceRootIdentity,
             rootPath: store.rootPath,
@@ -177,10 +192,9 @@ extension FileExplorerPanelView.Coordinator {
         ) {
             var reveal: SupermuxFileExplorerSelection.FileOpReveal = .none
             for url in urls {
-                if let device {
-                    reveal = .reveal(try await device.duplicate(url.path))
-                } else {
-                    reveal = .reveal(try SupermuxFileSystemOperations.duplicate(url).path)
+                switch disk {
+                case .device(let device): reveal = .reveal(try await device.duplicate(url.path))
+                case .thisMac: reveal = .reveal(try SupermuxFileSystemOperations.duplicate(url).path)
                 }
             }
             return reveal
@@ -195,8 +209,11 @@ extension FileExplorerPanelView.Coordinator {
     /// Shared rename entrypoint used by both the context menu and the keyboard.
     /// The move itself runs off the main actor via `supermuxRunFileOperation`
     /// (a `moveItem` on a stalled network volume can block for seconds),
-    /// mirroring create/duplicate/trash.
+    /// mirroring create/duplicate/trash. The disk is chosen before the sheet
+    /// opens: a link drop while it is open must never rename the other Mac's
+    /// path on this Mac's disk (or the reverse).
     func supermuxBeginRename(_ node: FileExplorerNode) {
+        guard let disk = supermuxFileOpDisk else { return }
         let identity = store.workspaceRootIdentity
         let rootPath = store.rootPath
         supermuxPromptForName(
@@ -213,14 +230,16 @@ extension FileExplorerPanelView.Coordinator {
             let showHiddenFiles = self.store.showHiddenFiles
             let sourcePath = node.path
             let source = URL(fileURLWithPath: sourcePath)
-            let device = self.supermuxDeviceProvider
             self.supermuxRunFileOperation(
                 identity: identity,
                 rootPath: rootPath,
                 mutatedParentPaths: [source.deletingLastPathComponent().path]
             ) {
-                let renamed = try await device?.rename(sourcePath, to: name)
-                    ?? SupermuxFileSystemOperations.rename(source, to: name).path
+                let renamed: String
+                switch disk {
+                case .device(let device): renamed = try await device.rename(sourcePath, to: name)
+                case .thisMac: renamed = try SupermuxFileSystemOperations.rename(source, to: name).path
+                }
                 return SupermuxFileExplorerSelection.revealForRenamedItem(
                     path: renamed, showHiddenFiles: showHiddenFiles)
             }
@@ -230,7 +249,7 @@ extension FileExplorerPanelView.Coordinator {
     /// Shared trash entrypoint used by both the context menu and the keyboard.
     func supermuxMoveNodesToTrash(_ nodes: [FileExplorerNode]) {
         let targets = supermuxTopLevelNodes(nodes)
-        guard !targets.isEmpty else { return }
+        guard !targets.isEmpty, let disk = supermuxFileOpDisk else { return }
         let urls = targets.map { URL(fileURLWithPath: $0.path) }
         // After trashing, retarget the selection to a surviving parent so the
         // authoritative store selection no longer points at a deleted path — which
@@ -243,17 +262,15 @@ extension FileExplorerPanelView.Coordinator {
         // could re-root while it is open), matching create/rename.
         let identity = store.workspaceRootIdentity
         let rootPath = store.rootPath
-        let device = supermuxDeviceProvider
         supermuxConfirmTrash(targets) { [weak self] in
             self?.supermuxRunFileOperation(
                 identity: identity,
                 rootPath: rootPath,
                 mutatedParentPaths: urls.map { $0.deletingLastPathComponent().path }
             ) {
-                if let device {
-                    try await device.trash(urls.map(\.path))
-                } else {
-                    try SupermuxFileSystemOperations.moveToTrash(urls)
+                switch disk {
+                case .device(let device): try await device.trash(urls.map(\.path))
+                case .thisMac: try SupermuxFileSystemOperations.moveToTrash(urls)
                 }
                 return revealAfter
             }
