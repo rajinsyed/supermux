@@ -36,6 +36,20 @@ which shows the real prompt and lets it answer Cancel by itself:
                                         mirror's T0 pane replays -> it attaches again and
                                         does not take the size back; the second pane
                                         closes, the mirror's pane replays -> attaches again
+  8b. pane_opened_off_screen_keeps_counting
+                                        the mirror's T0 pane on screen, T0 projected into a
+                                        background workspace X (B1, off screen) -> this Mac
+                                        still counts for T0 (the hidden pane never makes the
+                                        other Mac drop it)
+  8c. speaker_hidden_beside_shown_pane  in X, B2 (a tab beside X's own terminal) speaks and
+                                        B1 is on screen; B2's tab is switched away -> this
+                                        Mac still counts (B1 speaks now)
+  8d. shown_pane_lifts_counts_another_pane_left
+                                        nothing of T0 on screen -> this Mac stops counting;
+                                        the mirror's pane comes back on screen -> it counts
+                                        again, although another pane set the "not counting"
+  8e. speaker_closes_beside_another     B1 speaks and closes while the mirror's pane and B2
+                                        stay -> this Mac never leaves T0's participants
   9. kill_terminal_forces               vm.terminal_close on busy T3 (Kill Terminal…) ->
                                         closed there, no prompt
  10. idle_tab_close_control             close idle T0's mirror tab -> closed there, no prompt
@@ -204,6 +218,7 @@ class MirrorTabCloseE2E:
         self.source_id = ""
         self.mirror_id = ""
         self.extra_id = ""
+        self.home_id = ""
         self.link_stopped = False
         self.terms: Dict[str, str] = {}
         self.markers: Dict[str, str] = {}
@@ -273,6 +288,43 @@ class MirrorTabCloseE2E:
             if str(participant.get("id", "")).startswith("mobile:mac-"):
                 return participant.get("viewport")
         return None
+
+    def link_row(self, terminal: str) -> Optional[Dict[str, Any]]:
+        """This Mac's participant row (its link's client) on `terminal`, as the owning Mac holds it."""
+        state = (self.sock.call("terminal.size_state", {"surface_id": terminal}) or {}).get("size_state") or {}
+        for row in state.get("participants") or []:
+            participant = row.get("participant") if isinstance(row.get("participant"), dict) else row
+            if str(participant.get("id", "")).startswith("mobile:mac-"):
+                return {"viewport": participant.get("viewport"), "counts_override": participant.get("counts_override"),
+                        "counts": row.get("counts")}
+        return None
+
+    def not_counting(self, terminal: str) -> Optional[str]:
+        """Why this Mac does not count toward `terminal`'s grid, or None when it does."""
+        row = self.link_row(terminal)
+        if row is None:
+            return "this Mac is not a participant of T0"
+        if row.get("counts_override") is False or not row.get("counts"):
+            return f"this Mac does not count for T0: {row}"
+        return None
+
+    def panes_of(self, terminal: str) -> Dict[str, Any]:
+        """Every pane of `terminal` here, by workspace (diagnostics)."""
+        found = {}
+        for workspace_id in (self.mirror_id, self.extra_id):
+            if workspace_id:
+                found[workspace_id] = [p for p in self.inspect(workspace_id).get("panes") or []
+                                       if up(p.get("remote_surface_id")) == up(terminal)]
+        return found
+
+    def select(self, workspace_id: str) -> None:
+        self.sock.call("workspace.select", {"workspace_id": workspace_id})
+
+    def pane_id_of(self, workspace_id: str, surface: str) -> str:
+        for pane in (self.sock.call("pane.list", {"workspace_id": workspace_id}) or {}).get("panes") or []:
+            if up(surface) in [up(s) for s in pane.get("surface_ids") or []]:
+                return str(pane.get("pane_id") or pane.get("id") or "")
+        raise Failure(f"no pane holds {surface} in {workspace_id}")
 
     def read_text(self, workspace_id: str, surface: str) -> str:
         result = self.sock.call("surface.read_text", {"workspace_id": workspace_id, "surface_id": surface}) or {}
@@ -603,6 +655,120 @@ class MirrorTabCloseE2E:
             raise Failure("; ".join(problems))
         return {"mirror_pane": mirror_pane, "second_pane": second, "second_pane_size_differs": sizes_differ}
 
+    def keeps_counting(self, terminal: str, when: str, seconds: float = 2.0) -> None:
+        problem = holds(lambda: self.not_counting(terminal), seconds)
+        if problem:
+            raise Failure(f"{when}: {problem}; panes {self.panes_of(terminal)}")
+
+    def pane_opened_off_screen_keeps_counting(self) -> Dict[str, Any]:
+        """Every pane of one terminal on a link shares its client id, and the owning Mac keeps one
+        counts override per client id. A new pane of T0 off screen must not hand the other Mac this
+        Mac's automatic `counts_override: false` while another pane of T0 is on screen here."""
+        terminal = self.terms["T0"]
+        mirror_pane = self.mirror_panel(terminal)
+        resource = (self.projections(self.mirror_id).get(up(terminal)) or {}).get("resource")
+        if not mirror_pane or not resource:
+            raise Failure("precondition: the mirror does not show T0")
+        created = self.sock.call("workspace.create", {"title": f"tab-close-home-{self.nonce}", "focus": False}) or {}
+        self.home_id = up(created.get("workspace_id") or created.get("created_workspace_id"))
+        self.select(self.mirror_id)
+        wait_for("the mirror's T0 pane on screen, attached, and this Mac counting for T0",
+                 lambda: (self.pane(self.mirror_id, mirror_pane) or {}).get("hidden") is False
+                 and (self.pane(self.mirror_id, mirror_pane) or {}).get("attached")
+                 and self.not_counting(terminal) is None, self.timeout)
+        created = self.sock.call("workspace.create", {"title": f"tab-close-panes-{self.nonce}", "focus": False}) or {}
+        self.extra_id = up(created.get("workspace_id") or created.get("created_workspace_id"))
+        self.facts["panes_workspace_terminal"] = wait_for("the panes workspace's own terminal",
+                                                          lambda: self.surfaces(self.extra_id), self.timeout)[0]
+        b1 = self.project_into_extra(resource)
+        self.facts["b1"] = b1
+        wait_for("B1 to attach", lambda: (self.pane(self.extra_id, b1) or {}).get("attached"), self.timeout)
+        self.keeps_counting(terminal, "with B1 opened off screen beside the mirror's pane on screen")
+        return {"b1": b1, "panes": self.panes_of(terminal)}
+
+    def speaker_hidden_beside_shown_pane(self) -> Dict[str, Any]:
+        """The pane that speaks for this Mac goes off screen while another pane of the same
+        terminal stays on screen: that pane speaks now, and this Mac keeps counting."""
+        terminal, b1 = self.terms["T0"], self.facts.get("b1")
+        own = self.facts.get("panes_workspace_terminal")
+        resource = (self.projections(self.mirror_id).get(up(terminal)) or {}).get("resource")
+        if not b1 or not own or not resource:
+            raise Failure("precondition: B1 and the panes workspace (pane_opened_off_screen_keeps_counting failed)")
+        opened = self.sock.call("surface.project", {
+            "resource": resource, "workspace_id": self.extra_id, "pane_id": self.pane_id_of(self.extra_id, own),
+            "placement": "tab", "reuse": False, "focus": False,
+        }, timeout_s=60) or {}
+        b2 = up(opened.get("panel_id") or opened.get("surface_id"))
+        self.facts["b2"] = b2
+        wait_for("B2 to attach", lambda: (self.pane(self.extra_id, b2) or {}).get("attached"), self.timeout)
+        self.select(self.extra_id)
+        self.sock.call("surface.focus", {"workspace_id": self.extra_id, "surface_id": b2})
+
+        def both_shown_b2_speaks() -> bool:
+            one, two = self.pane(self.extra_id, b1) or {}, self.pane(self.extra_id, b2) or {}
+            if one.get("hidden") is not False or two.get("hidden") is not False or not two.get("speaks"):
+                raise Failure(f"B1 {one}, B2 {two}")
+            problem = self.not_counting(terminal)
+            if problem:
+                raise Failure(problem)
+            return True
+
+        wait_for("B1 and B2 on screen, B2 speaking, this Mac counting", both_shown_b2_speaks, self.timeout)
+        # Let every pane's view of the size state catch up with the counting it shows.
+        time.sleep(0.5)
+        self.sock.call("surface.focus", {"workspace_id": self.extra_id, "surface_id": own})
+        wait_for("B2 off screen", lambda: (self.pane(self.extra_id, b2) or {}).get("hidden") is True, self.timeout)
+        self.keeps_counting(terminal, "with B2 (the speaker) off screen and B1 on screen")
+        return {"b2": b2, "panes": self.panes_of(terminal)}
+
+    def shown_pane_lifts_counts_another_pane_left(self) -> Dict[str, Any]:
+        """The automatic "not counting" one pane set is this Mac's, not that pane's: a pane of the
+        same terminal that comes on screen later lifts it."""
+        terminal = self.terms["T0"]
+        mirror_pane = self.mirror_panel(terminal)
+        if not self.home_id or not self.extra_id or not mirror_pane:
+            raise Failure("precondition: the panes workspace (pane_opened_off_screen_keeps_counting failed)")
+        self.select(self.home_id)
+        stopped = wait_for("this Mac to stop counting for T0 with none of its panes on screen",
+                           lambda: (self.link_row(terminal) or {}).get("counts_override") is False, self.timeout)
+        self.select(self.mirror_id)
+        wait_for("the mirror's T0 pane on screen", lambda: (self.pane(self.mirror_id, mirror_pane) or {}).get("hidden") is False,
+                 self.timeout)
+        try:
+            wait_for("this Mac to count for T0 again", lambda: self.not_counting(terminal) is None, 5.0)
+        except Failure as error:
+            raise Failure(f"{error}: {self.link_row(terminal)}; panes {self.panes_of(terminal)}")
+        self.keeps_counting(terminal, "with the mirror's pane back on screen", 1.5)
+        return {"stopped": stopped, "panes": self.panes_of(terminal)}
+
+    def speaker_closes_beside_another(self) -> Dict[str, Any]:
+        """The pane that speaks for this Mac closes while other panes of the terminal stay open:
+        one of them speaks now. Its clear would drop this Mac from the terminal until some later
+        grid change made the others replay (two resizes of the program in between)."""
+        terminal, b1 = self.terms["T0"], self.facts.get("b1")
+        own = self.facts.get("panes_workspace_terminal")
+        if not b1 or not own:
+            raise Failure("precondition: B1 (pane_opened_off_screen_keeps_counting failed)")
+        self.select(self.extra_id)
+        self.sock.call("surface.focus", {"workspace_id": self.extra_id, "surface_id": own})
+        wait_for("B1 on screen and speaking, this Mac counting",
+                 lambda: (self.pane(self.extra_id, b1) or {}).get("speaks")
+                 and (self.pane(self.extra_id, b1) or {}).get("hidden") is False
+                 and self.not_counting(terminal) is None, self.timeout)
+        self.sock.call("surface.close", {"workspace_id": self.extra_id, "surface_id": b1, "force": True})
+        missing: List[float] = []
+        started = time.monotonic()
+        while time.monotonic() - started < 3.0:
+            if self.link_row(terminal) is None:
+                missing.append(round(time.monotonic() - started, 2))
+            time.sleep(0.05)
+        if b1 in self.surfaces(self.extra_id):
+            raise Failure("B1 did not close")
+        if missing:
+            raise Failure(f"this Mac left T0's participants after the speaking pane closed (at {missing[:5]} s); "
+                          f"panes {self.panes_of(terminal)}")
+        return {"panes": self.panes_of(terminal), "row": self.link_row(terminal)}
+
     def kill_terminal_forces(self) -> Dict[str, Any]:
         self.require_busy("T3")
         self.answer("cancel")
@@ -673,6 +839,14 @@ class MirrorTabCloseE2E:
 
     # -- run ------------------------------------------------------------------
 
+    def close_panes_workspace(self) -> Dict[str, Any]:
+        """The panes workspace closes (its last pane of T0 with it); the mirror's pane stays attached."""
+        self.close_extra()
+        mirror_pane = self.mirror_panel(self.terms["T0"]) or ""
+        wait_for("the mirror's T0 pane to stay attached", lambda: (self.pane(self.mirror_id, mirror_pane) or {}).get("attached"),
+                 self.timeout)
+        return {}
+
     def close_extra(self) -> None:
         if self.extra_id:
             try:
@@ -692,6 +866,12 @@ class MirrorTabCloseE2E:
         if self.keep:
             return
         self.close_extra()
+        if self.home_id:
+            try:
+                self.sock.call("workspace.close", {"workspace_id": self.home_id, "force": True})
+            except Failure as error:
+                if "not_found" not in str(error):
+                    self.facts.setdefault("cleanup_errors", []).append(str(error))
         # The source first, so the mirror closes by itself instead of being hidden.
         for workspace_id in (self.source_id, self.mirror_id):
             if not workspace_id:
@@ -718,6 +898,11 @@ class MirrorTabCloseE2E:
                 ("shown_prompt_keeps_app_responsive", self.shown_prompt_keeps_app_responsive),
                 ("reopened_pane_attaches", self.reopened_pane_attaches),
                 ("first_pane_replays_beside_another", self.first_pane_replays_beside_another),
+                ("pane_opened_off_screen_keeps_counting", self.pane_opened_off_screen_keeps_counting),
+                ("speaker_hidden_beside_shown_pane", self.speaker_hidden_beside_shown_pane),
+                ("shown_pane_lifts_counts_another_pane_left", self.shown_pane_lifts_counts_another_pane_left),
+                ("speaker_closes_beside_another", self.speaker_closes_beside_another),
+                ("close_panes_workspace", self.close_panes_workspace),
                 ("kill_terminal_forces", self.kill_terminal_forces),
                 ("idle_tab_close_control", self.idle_tab_close_control),
                 ("offline_close", self.offline_close),

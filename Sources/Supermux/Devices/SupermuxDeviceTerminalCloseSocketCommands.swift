@@ -8,8 +8,9 @@ import Foundation
 ///
 /// - `terminal_close.inspect {workspace_id}`: every device-mirror pane of that
 ///   workspace (`panel_id`, `remote_surface_id`, `has_session`, `attached`,
-///   `connecting`, `overlay_title`) and the workspace's failure card
-///   (`title`, `message`, `recovery`) or null.
+///   `connecting`, `overlay_title`, `hidden` (off screen here), `speaks` (the
+///   pane whose grid the other Mac holds for this link)) and the workspace's
+///   failure card (`title`, `message`, `recovery`) or null.
 /// - `terminal_close.answer {answer?: "close" | "cancel" | "show" | "clear"}`:
 ///   sets (or, with `clear`, removes) the answer the "Close “X” on <Mac>?"
 ///   prompt takes without showing itself, so no modal blocks a run. `show`
@@ -55,7 +56,13 @@ enum SupermuxDeviceTerminalCloseSocketCommands {
             .sorted { $0.panelID.uuidString < $1.panelID.uuidString }
         let panes = projections.map { projection -> [String: Any] in
             let provider = catalog.provider(for: projection.resource.machine) as? DeviceSurfaceProvider
-            let attachment = provider?.sessions[projection.panelID]?.attachment
+            let session = provider?.sessions[projection.panelID]
+            let attachment = session?.attachment
+            let reporter = session.flatMap { session in
+                session.viewer.flatMap {
+                    SupermuxDeviceViewportGenerations.shared.reporter(clientID: $0.clientID, surfaceID: session.remoteSurfaceID)
+                }
+            }
             return [
                 "panel_id": projection.panelID.uuidString,
                 "remote_surface_id": projection.resource.key,
@@ -63,6 +70,8 @@ enum SupermuxDeviceTerminalCloseSocketCommands {
                 "attached": attachment?.isConnected ?? false,
                 "connecting": attachment?.isConnecting ?? false,
                 "overlay_title": attachment?.presentation?.title ?? NSNull(),
+                "hidden": session?.supermuxHidden ?? NSNull(),
+                "speaks": reporter == projection.panelID,
             ]
         }
         var card: Any = NSNull()

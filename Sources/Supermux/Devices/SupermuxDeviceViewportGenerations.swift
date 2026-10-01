@@ -61,6 +61,12 @@ final class SupermuxDeviceViewportGenerations {
         return reporter != pane
     }
 
+    /// The local pane whose grid the host holds for `clientID` on `surfaceID`
+    /// (the DEBUG tab-close driver reports it).
+    func reporter(clientID: String, surfaceID: UUID) -> UUID? {
+        reporters[clientID]?[surfaceID]
+    }
+
     /// The wait before replaying again after the host's `attempt`-th
     /// `viewport_transition` (50, 100, then 200 ms), so a transient resize on
     /// the host cannot use up the retries within a millisecond.
