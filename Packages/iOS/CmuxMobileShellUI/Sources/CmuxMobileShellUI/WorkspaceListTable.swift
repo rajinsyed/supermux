@@ -45,7 +45,7 @@ struct WorkspaceListTable: UIViewControllerRepresentable {
     let openWorkspaceChanges: (@MainActor (MobileWorkspacePreview) -> Void)?
 
     // SUPERMUX:begin supermux-mobile-projects-table-row (fork Projects payload; nil = section hidden, so an upstream Mac renders exactly today's list)
-    var supermuxProjects: SupermuxProjectsTableRowConfiguration? = nil
+    var supermuxProjects: SupermuxProjectsTablePayload? = nil
     // SUPERMUX:end supermux-mobile-projects-table-row
     let connectionRequiresReauth: Bool
     let connectionError: String?

@@ -114,9 +114,13 @@ paired with an upstream cmux Mac renders exactly upstream's UI.
 
 > **Where the Projects UI is mounted on iPhone (read before touching the workspace list).**
 > The iPhone renders the workspace list through a UIKit `UITableView`
-> (`WorkspaceListTable`), not the SwiftUI `List`. The Projects section therefore renders as one
-> table row — touchpoints #148–#151 — while the SwiftUI `SupermuxProjectsMobileSection` mount is
-> macOS-only. The session driver lives on the iOS `workspaceTable` (#97).
+> (`WorkspaceListTable`), not the SwiftUI `List`. Projects and workspaces are ONE list there, like
+> the Mac sidebar: the table's leading run is a slim PROJECTS caption, then each project (merged
+> across Macs) as its own row with its workspaces nested right under it as the shell's own
+> indented workspace rows, then the shell's groups and loose workspaces — touchpoints #148–#151,
+> #502 and #700–#702, projected by `SupermuxProjectsListLayout`. The SwiftUI
+> `SupermuxProjectsMobileSection` mount (with per-Mac headers) is macOS-only. The session driver
+> lives on the iOS `workspaceTable` (#97).
 >
 > This is the fork's most dangerous known failure mode, because it fails **silently and
 > compiling**: upstream 0.64.20 moved the iOS list behind `#if os(iOS)` and left the fork's mount
@@ -130,7 +134,7 @@ Status per fork feature area:
 
 | # | Fork feature area | Mobile status | How / where |
 |---|-------------------|---------------|-------------|
-| 1 | Projects (sticky, full CRUD) | ✅ on iOS | `SupermuxProjectsTableSection` (iPhone, hosted in the #148 table row) / `SupermuxProjectsMobileSection` (macOS `List`) + `SupermuxProjectDetailScreen` + `SupermuxProjectEditorSheet` over `projects.list` / `project.create/update/delete/open` |
+| 1 | Projects (sticky, full CRUD) | ✅ on iOS | `SupermuxProjectsListLayout` + `SupermuxProjectsTableRowView` (iPhone: one row per project in the workspace table, #148–#151) / `SupermuxProjectsMobileSection` (macOS `List`) + `SupermuxProjectDetailScreen` + `SupermuxProjectEditorSheet` over `projects.list` / `project.create/update/delete/open` |
 | 2 | Project icons & colors | ✅ on iOS | custom icon via `project.icon` (base64 PNG, etag-cached `SupermuxProjectIconCache`) → SF Symbol → letter avatar tinted by `color_hex` |
 | 3 | Worktrees (create/open/remove, starting branch, AI branch suggest) | ✅ on iOS | `SupermuxNewWorktreeSheet` + project-detail worktree rows over lazy `worktrees.list` branch snapshots (`include_branches`) / `worktree.suggest_branch/create/open/remove` (dirty removals require `force` after a phone-side confirm) |
 | 4 | Worktree PR badges | ✅ on iOS | `SupermuxPullRequestDTO` (number/state/url; title optional-nil, matching the desktop probe) on `worktrees.list` rows |
@@ -143,7 +147,7 @@ Status per fork feature area:
 | 11 | Workspace switcher | ✅ covered by existing surface — **deliberate decision** | the existing iOS workspace list already is the mobile switcher; no new switcher UI was built. Workspace selection and the focused panel sync bidirectionally with the Mac: v1 preserves terminal-only compatibility, while `supermux.selection_sync.v2` covers terminals, browser tabs, Simulator tabs, and forward-compatible future panel kinds. Phone-created panels request atomic Mac focus before the create reply, and browser/Simulator streams wait for the ordered focus operation before starting, so a newly opened or selected tab is immediately visible and operable on both devices |
 | 12 | Agent activity indicators | ✅ on iOS | additive `supermux_activity` travels for project-associated and global workspaces; the real iPhone `UITableView` row mounts `SupermuxWorkspaceActivityDot` and shows the amber working spinner whenever any tab's agent is running or waiting on its background work (upstream's "Waiting") |
 | 13 | File explorer ops | ✅ on iOS | `SupermuxFileBrowserScreen` (browse, new file/folder, rename, duplicate, trash — never `rm`) over root-confined `files.*`; doubles as the project editor's folder picker |
-| 14 | Project association / nesting | ✅ on iOS | additive `supermux_project_id` field folds loose project-owned rows under the Projects section; a project's open workspaces are listed in its detail screen |
+| 14 | Project association / nesting | ✅ on iOS | additive `supermux_project_id` field nests loose project-owned workspaces right under their project as the shell's own workspace rows (swipes, menu, unread, preview, selection all upstream's), pinned first, then by Mac; a workspace in a cmux group stays in its group; a search or a filter-menu filter flattens the list. One function (`SupermuxProjectsListLayout.nestedWorkspaceIDs`) decides both the nesting and the flat-list hide, so each workspace shows once; nested rows are not reorderable (#700). A project's open workspaces are also listed in its detail screen |
 | 15 | Empty-home behavior | mac-side only — **deliberate decision** | pure macOS window behavior; the mobile close path is already handled by touchpoint #71. No iOS surface (recorded mission decision) |
 | 16 | Sidebar polish (font scale, switcher cards, list filter) | mac-side only | pure macOS sidebar cosmetics with no mobile analogue; the phone's Projects section has its own mobile-native styling |
 | 17 | Unread badge (one design, both devices) | ✅ on iOS | additive `supermux_unread_count` field + `SupermuxUnreadBadgeStyle`/`SupermuxUnreadBadgeContent` in `SupermuxMobileCore`, wrapped per platform (`SupermuxUnreadBadgeView` on the Mac, `SupermuxMobileUnreadBadge` on the phone) and mirrored by the AppKit sidebar's Core Graphics renderer. Both apps now draw the same gradient capsule with localized overflow; the phone wrapper follows Dynamic Type, and its old permanently reserved unread gutter is gone. Touchpoints #261–#284, #291, #297–#298 |
@@ -151,7 +155,7 @@ Status per fork feature area:
 
 | 19 | Usage limits (Claude Code + Codex) | ✅ on iOS, read-only by design | a gauge ring in the workspace-list toolbar, filled to the tightest limit across both providers, opening `SupermuxUsageScreen`: window meters with reset countdowns and the ahead-of-pace marker, the other cswap accounts, provider notes (not configured / re-login / offline session log), and the honest oldest-measurement footer. The Mac projects its EXISTING `SupermuxUsageModel` — the same one the sidebar popover renders — over `mobile.supermux.usage.state`; credentials, polling, and the rate-limit floor all stay Mac-side. **cswap account switching is deliberately not ported**: it mutates which account Claude Code is logged in as, and that decision belongs at the machine doing the work. Touchpoints #340–#341 |
 | 20 | Start Claude from the New Worktree sheet | ✅ on iOS | the iOS `SupermuxNewWorktreeSheet` gains a prompt field and a Claude section (`SupermuxNewWorktreeClaudeSection`) over `mobile.supermux.agent.options` / `agent.start`, gated on `supermux.agent_launch.v1`; store `SupermuxMobileAgentLaunchStore` (MobileKit), loaded alongside the branch snapshot in `requestNewWorktree` / the detail screen's prepare. No extra entry points: every existing New Worktree affordance reaches it. Commands, catalogs, naming, git, and the terminal launch stay Mac-side (the phone cannot edit the command list; do that in the Mac sheet) |
-| 21 | Projects and worktrees on every connected Mac | ✅ on iOS | per-Mac seams (`supermuxConnectionSeams`, #580–#586), one Supermux session per Mac, Mac headers when more than one Mac has projects, a Mac picker in New Worktree for Macs with the same repo, navigation that maps Mac-local ids to the right Mac's row, push registration with every Mac |
+| 21 | Projects and worktrees on every connected Mac | ✅ on iOS | per-Mac seams (`supermuxConnectionSeams`, #580–#586), one Supermux session per Mac, projects merged across Macs with the Mac sidebar's rule (`SupermuxPhoneProjectMerge`: unique git origin, else name + standardized root; one location per Mac) and a Mac marker on nested rows only when a project spans Macs (no per-Mac headers on iPhone), the Mac title picker scoping the block to that Mac, a Mac picker in New Worktree for Macs with the same repo (same merge rule), navigation that maps Mac-local ids to the right Mac's row, push registration with every Mac |
 
 **Recorded non-goals** (deliberate, may be revisited later):
 
