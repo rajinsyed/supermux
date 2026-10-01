@@ -59,6 +59,13 @@ public struct SupermuxProjectsListLayout: Sendable {
     /// What each nested workspace row adds, by workspace id.
     public let accessories: [MobileWorkspacePreview.ID: SupermuxNestedWorkspaceAccessory]
 
+    /// The swipe-tray ids of the rows on screen. A tray whose row left the
+    /// list is closed (``SupermuxProjectsSectionModel/closeSwipeTray(unlessAmong:)``),
+    /// so a row that comes back never reappears with its actions revealed.
+    public var swipeableRowIDs: Set<String> {
+        Set(forkRows.values.compactMap(\.swipeRowID))
+    }
+
     /// No project block: the list is exactly the shell's own.
     public static let empty = SupermuxProjectsListLayout(entries: [], nestedWorkspaceIDs: [], forkRows: [:], accessories: [:])
 

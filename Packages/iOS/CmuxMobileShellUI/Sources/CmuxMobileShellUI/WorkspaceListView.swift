@@ -635,6 +635,10 @@ struct WorkspaceListView: View {
             workspacesByID: currentWorkspacesByID
         )
             .supermuxProjectsSectionDriver(model: supermuxProjects, seams: store?.supermuxConnectionSeams ?? [], workspaces: workspaces, selectedWorkspaceID: selectedWorkspaceID, selectWorkspace: { selectWorkspace($0) }, resolveWorkspace: supermuxResolveWorkspace, closeWorkspace: supermuxRequestWorkspaceClose)
+            // A fork row's open swipe tray closes when the row leaves the list.
+            .onChange(of: supermuxProjectsLayout.swipeableRowIDs, initial: true) { _, ids in
+                supermuxProjects.closeSwipeTray(unlessAmong: ids)
+            }
             // SUPERMUX:begin supermux-mobile-usage-button (usage session driver on the stable list — the toolbar gauge that renders it is torn down on every push)
             .supermuxUsageDriver(model: supermuxUsage, connection: store?.supermuxConnectionSeam)
             // SUPERMUX:end supermux-mobile-usage-button
