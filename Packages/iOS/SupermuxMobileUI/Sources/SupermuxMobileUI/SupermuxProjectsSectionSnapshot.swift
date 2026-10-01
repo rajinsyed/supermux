@@ -240,8 +240,8 @@ public struct SupermuxProjectsSectionActions {
     /// sheet then hides its prompt path).
     public let makeAgentLaunchStore: @MainActor (_ projectID: String) -> SupermuxMobileAgentLaunchStore?
     /// Opens or closes a merged project's disclosure on every Mac it spans
-    /// (project ROW ids, one per Mac).
-    public let toggleProjectsExpanded: @MainActor (_ projectIDs: [String]) -> Void
+    /// (its merged key, then its project ROW ids, one per Mac).
+    public let toggleProjectsExpanded: @MainActor (_ key: String, _ projectIDs: [String]) -> Void
     /// The one row whose swipe tray is open, across every cell of the list.
     public let openSwipeRowID: @MainActor () -> String?
     /// Opens one row's swipe tray (closing any other), or closes it (`nil`).
@@ -288,7 +288,7 @@ public struct SupermuxProjectsSectionActions {
         requestNewWorktree: @escaping @MainActor (_ projectID: String) -> Void = { _ in },
         preparingNewWorktreeProjectID: String? = nil,
         makeAgentLaunchStore: @escaping @MainActor (_ projectID: String) -> SupermuxMobileAgentLaunchStore? = { _ in nil },
-        toggleProjectsExpanded: @escaping @MainActor (_ projectIDs: [String]) -> Void = { _ in },
+        toggleProjectsExpanded: @escaping @MainActor (_ key: String, _ projectIDs: [String]) -> Void = { _, _ in },
         openSwipeRowID: @escaping @MainActor () -> String? = { nil },
         setOpenSwipeRowID: @escaping @MainActor (_ rowID: String?) -> Void = { _ in }
     ) {

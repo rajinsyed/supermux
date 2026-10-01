@@ -130,11 +130,12 @@ private struct SupermuxProjectsSectionDriver: ViewModifier {
             .onChange(of: selectedWorkspaceID) { _, selected in
                 model.shellSelectionDidChange(to: selected?.rawValue)
             }
-            // A Mac's copy that joins an open merged project opens too (the
+            // A Mac's copy that joins a merged project takes the project's
+            // state: open inside an open one, closed inside a closed one (the
             // iPhone's merged list; the macOS `List` keeps per-Mac rows).
             #if os(iOS)
-            .onChange(of: model.closedCopiesOfOpenProjects, initial: true) { _, projectIDs in
-                model.openClosedCopies(projectIDs)
+            .onChange(of: model.copiesOutOfStep, initial: true) { _, projectIDs in
+                model.syncCopies(projectIDs)
             }
             #endif
             // Detail-route destination, New Worktree sheet and error alerts: on

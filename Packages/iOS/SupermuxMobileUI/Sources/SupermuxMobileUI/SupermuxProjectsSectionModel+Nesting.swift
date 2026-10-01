@@ -47,30 +47,39 @@ extension SupermuxProjectsSectionModel {
 
     /// Opens or closes a project merged across Macs: closes it on every Mac
     /// when any of them has it open, otherwise opens it on all of them, so
-    /// the merged row shows every Mac's worktrees.
-    /// - Parameter projectIDs: The merged project's ROW ids, one per Mac.
-    public func toggleProjectsExpanded(_ projectIDs: [String]) {
+    /// the merged row shows every Mac's worktrees. The choice is kept under
+    /// the merged key, so a Mac whose copy is not listed yet follows it.
+    /// - Parameters:
+    ///   - key: The merged project's key (``SupermuxMergedProject/id``).
+    ///   - projectIDs: The merged project's ROW ids, one per Mac.
+    public func toggleProjectsExpanded(key: String, projectIDs: [String]) {
         openSwipeRowID = nil
         let isOpen = projectIDs.contains(where: isProjectExpanded)
         for projectID in projectIDs where isProjectExpanded(projectID) == isOpen {
             toggleProjectExpanded(projectID)
         }
+        mergedDisclosure[key] = !isOpen
+        expansionDefaults.set(mergedDisclosure, forKey: Self.mergedDisclosureDefaultsKey)
     }
 
-    /// Copies still closed inside a merged project another Mac's copy has
-    /// open: a Mac that connected, or a copy that started matching, after
-    /// the user opened it. The driver opens them, so a merged disclosure is
-    /// never half open (its pill counting worktrees it does not list).
-    var closedCopiesOfOpenProjects: [String] {
-        SupermuxPhoneProjectMerge.merge(snapshot.groups)
-            .filter(\.isExpanded)
-            .flatMap { project in project.locations.filter { !$0.row.isExpanded }.map(\.row.id) }
+    /// Copies whose disclosure disagrees with their merged project's: a Mac
+    /// that connected, or a copy that started matching, after the user
+    /// opened or closed the project. The driver toggles them, so a merged
+    /// disclosure is never half open and a stale copy never reopens it. A
+    /// project the user never toggled here is open when any copy is.
+    var copiesOutOfStep: [String] {
+        SupermuxPhoneProjectMerge.merge(snapshot.groups).flatMap { project in
+            let isOpen = mergedDisclosure[project.id] ?? project.isExpanded
+            return project.locations.filter { $0.row.isExpanded != isOpen }.map(\.row.id)
+        }
     }
 
-    /// Opens each listed copy that is still closed.
+    /// Toggles each listed copy that is still out of step, opening or
+    /// closing its worktree session with it.
     /// - Parameter projectIDs: Project ROW ids.
-    func openClosedCopies(_ projectIDs: [String]) {
-        for projectID in projectIDs where !isProjectExpanded(projectID) {
+    func syncCopies(_ projectIDs: [String]) {
+        let outOfStep = Set(copiesOutOfStep)
+        for projectID in projectIDs where outOfStep.contains(projectID) {
             toggleProjectExpanded(projectID)
         }
     }
