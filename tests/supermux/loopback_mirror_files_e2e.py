@@ -40,7 +40,8 @@ folder (the loopback's files are on this disk too):
  11b. named_pipe_read_refused        files.read of a named pipe in the folder is refused at once
                                      (it never waits for a writer) and the link stays up
  12. root_follows_remote_cd          `cd src` in the source terminal re-roots the mirror's panel,
-                                     `cd ..` brings it back
+                                     whose git colors there match the local panel's (a change
+                                     under src/ is colored), and `cd ..` brings it back
  13. live_refresh                    a file created in the folder appears with no action
  13b. file_operations_on_the_other_mac
                                      the panel's context menu offers New File, New Folder,
@@ -646,11 +647,22 @@ class MirrorFilesE2E:
                 return state
             return probe
 
+        # A change under src/, so the panel rooted there has a git color to show.
+        (self.root / "src" / "main.swift").write_text(f'print("changed-{self.nonce}")\n')
         self.sock.call("surface.send_text", {"workspace_id": self.source_id, "surface_id": terminals[0], "text": "cd src\n"})
         moved = wait_for("the mirror's panel to follow `cd src`", rooted_at(self.root / "src", local_src), self.timeout)
+        local_git = (self.files("local_git_status", path=str(self.root / "src")) or {}).get("git_status") or {}
+
+        def colors_match() -> Dict[str, Any]:
+            mirror = self.device_state().get("git_status") or {}
+            if mirror != local_git or mirror.get("main.swift") != "modified":
+                raise Failure(f"git colors rooted at src/: mirror {mirror}, local {local_git}")
+            return mirror
+
+        colors = wait_for("the git colors of the panel rooted at src/", colors_match, self.timeout)
         self.sock.call("surface.send_text", {"workspace_id": self.source_id, "surface_id": terminals[0], "text": "cd ..\n"})
         back = wait_for("the mirror's panel to follow `cd ..`", rooted_at(self.root), self.timeout)
-        return {"moved_to": moved.get("root_path"), "back_to": back.get("root_path")}
+        return {"moved_to": moved.get("root_path"), "git_status_at_src": colors, "back_to": back.get("root_path")}
 
     def live_refresh(self) -> Dict[str, Any]:
         self.require("mirror_id")
