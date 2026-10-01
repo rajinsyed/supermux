@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""End-to-end test of the Settings "Remote Macs" card and the flat-row device
-chip, against one tagged DEBUG build running the loopback device.
+"""End-to-end test of the Settings "Remote Macs" card and the flat-row Mac
+icon, against one tagged DEBUG build running the loopback device.
 
 The card's socket twins (`supermux.devices.remote_macs_settings*`) read the
 card's exact snapshot and call the card's own actions, so these checks drive
@@ -12,7 +12,9 @@ the same write path as the toggles and buttons:
   4. hidden_count_and_show        Hide Here raises the card's hidden count; Show Hidden Workspaces
                                   brings the mirror back and clears it
   5. sync_and_share_round_trip    the two other toggles write and read back
-  6. flat_chip_names_mac          a mirror's flat-row chip names the Loopback Mac and is not dimmed
+  6. flat_chip_names_mac          a mirror's flat row marks the Loopback Mac with the small Mac + cloud
+                                  icon (tooltip "On <Mac>", not dimmed, no name capsule) on its
+                                  branch/directory line (before the title when the row has none)
   7. settings_card_screenshot     (with --screenshot) opens Settings on Automation and captures the window
 
 Writes a JSON report (default tests/supermux/artifacts/loopback_remote_macs_settings_e2e-<tag>.json)
@@ -201,7 +203,22 @@ class RemoteMacsSettingsE2E:
             raise Failure(f"the chip names {found.get('mac_name')!r}, not {mac_name!r}")
         if found.get("chip_state") != "online" or found.get("dimmed"):
             raise Failure(f"a connected Mac's chip renders {found.get('chip_state')} dimmed={found.get('dimmed')}")
-        return {"chip": found}
+        # Drawn as the small Mac + cloud icon (no name capsule), its tooltip
+        # naming the Mac, on the row's branch/directory line when the row shows
+        # one (else before the title).
+        flat = next((r for r in (self.sock.call("supermux.devices.sidebar_rows", {}) or {}).get("flat") or []
+                     if up(r.get("workspace_id")) == up(mirror.get("workspace_id"))), {})
+        has_line = bool(flat.get("subtitle_candidates") or flat.get("branch_directory_lines"))
+        expected = {
+            "style": "icon",
+            "symbol": "laptopcomputer",
+            "help": f"On {mac_name}",
+            "placement": "branch_line" if has_line else "title_line",
+        }
+        wrong = {key: found.get(key) for key, value in expected.items() if found.get(key) != value}
+        if wrong:
+            raise Failure(f"the flat-row Mac marker has {wrong}, expected {expected}")
+        return {"chip": found, "row_has_branch_line": has_line}
 
     def settings_card_screenshot(self) -> Dict[str, Any]:
         self.sock.call("settings.open", {"target": "automation", "activate": False})

@@ -4,14 +4,16 @@ import Foundation
 import SupermuxKit
 
 /// `supermux.devices.*` methods for the Settings "Remote Macs" card and the
-/// flat-row device chip, so E2E tests read and drive exactly what the UI does:
+/// flat-row Mac icon, so E2E tests read and drive exactly what the UI does:
 ///
 /// - `remote_macs_settings {}` — the card's snapshot, plus upstream's
 ///   discoverability preferences it reports.
 /// - `remote_macs_settings_set {setting: auto_mirror|sync_projects|share_push, enabled}`
 ///   or `{action: show_hidden}` — the card's own actions.
-/// - `flat_chips {}` — for every device mirror, the Mac its flat-row chip
-///   names and the state it renders (`online` / `connecting` / `offline`).
+/// - `flat_chips {}` — for every device mirror, the Mac its flat-row icon
+///   names, the state it renders (`online` / `connecting` / `offline`), and
+///   what is drawn: `style: "icon"`, `symbol`, `help` (the tooltip) and
+///   `placement` (`branch_line`, or `title_line` when the row draws none).
 @MainActor
 enum SupermuxRemoteMacsSocketCommands {
     static let methods: Set<String> = ["remote_macs_settings", "remote_macs_settings_set", "flat_chips"]
@@ -70,18 +72,26 @@ enum SupermuxRemoteMacsSocketCommands {
 
     private static func flatChips() -> [String: Any] {
         let devices = SupermuxComposition.devices.devices
+        let settings = SidebarTabItemSettingsSnapshot()
         let chips = SupermuxComposition.deviceWorkspaceIndex.mirrors().compactMap { mirror -> [String: Any]? in
             guard let label = CloudWorkspaceSidebarPresentation.deviceLabel(workspace: mirror.workspace) else { return nil }
             let name = SupermuxFlatRowDeviceChip.macName(fromDeviceWorkspaceLabel: label)
             let state = SupermuxFlatRowDeviceChip.state(ofMacNamed: name, devices: devices)
-            return [
+            let snapshot = SidebarWorkspaceSnapshotFactory(
+                workspace: mirror.workspace,
+                settings: settings,
+                showsAgentActivity: true
+            ).makeSnapshot()
+            var chip: [String: Any] = [
                 "workspace_id": mirror.workspace.id.uuidString,
                 "machine": mirror.ref.machineID,
                 "label": label,
                 "mac_name": name,
                 "chip_state": String(describing: state),
-                "dimmed": state.isDimmed,
+                "placement": SupermuxProjectsSocketPayloads.flatDeviceIconPlacement(snapshot, settings: settings),
             ]
+            chip.merge(SupermuxProjectsSocketPayloads.deviceIcon(name: name, state: state)) { current, _ in current }
+            return chip
         }
         return ["chips": chips]
     }

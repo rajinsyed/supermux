@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// An unopened worktree of a project copy on another Mac, indented under the
-/// project like a local worktree row, with the Mac's chip. Tapping opens it on
-/// that Mac and focuses its mirror here.
+/// project like a local worktree row, with the Mac's icon before its branch.
+/// Tapping opens it on that Mac and focuses its mirror here.
 struct SupermuxRemoteWorktreeRowView: View {
     let worktree: SupermuxRemoteWorktree
     let open: () -> Void
@@ -21,27 +21,25 @@ struct SupermuxRemoteWorktreeRowView: View {
                 .font(.system(size: 8.5 * fontScale, weight: .semibold))
                 .foregroundStyle(.tertiary)
                 .frame(width: 20 * fontScale)
-            Text(worktree.displayName)
-                .font(.system(size: 11.5 * fontScale))
-                .foregroundStyle(isHovered && isOnline ? Color.primary : Color.secondary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .layoutPriority(1)
+            HStack(spacing: 3 * fontScale) {
+                // The Mac it lives on, right before its branch (name in the tooltip).
+                if let device = worktree.location.device {
+                    SupermuxRemoteMacIcon(device: device, pointSize: 9 * fontScale)
+                }
+                Text(worktree.displayName)
+                    .font(.system(size: 11.5 * fontScale))
+                    .foregroundStyle(isHovered && isOnline ? Color.primary : Color.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
             Spacer(minLength: 2)
             if let pullRequest = worktree.pullRequest {
                 SupermuxPullRequestBadge(pullRequest: pullRequest, fontScale: fontScale, onOpen: openPullRequest)
             }
-            // The Mac's chip right before the shared trailing slot, where the
-            // open-workspace rows put theirs, so chips line up down the list.
-            if let device = worktree.location.device {
-                SupermuxDeviceChip(device: device, fontScale: fontScale)
-            }
-            SupermuxRowTrailingSlot(fontScale: fontScale) {
-                Image(systemName: "arrow.right")
-                    .font(.system(size: 8.5 * fontScale, weight: .semibold))
-                    .foregroundStyle(.tertiary)
-                    .opacity(isHovered && isOnline ? 1 : 0)
-            }
+            Image(systemName: "arrow.right")
+                .font(.system(size: 8.5 * fontScale, weight: .semibold))
+                .foregroundStyle(.tertiary)
+                .opacity(isHovered && isOnline ? 1 : 0)
         }
         .padding(.leading, 7)
         .padding(.trailing, 6)
