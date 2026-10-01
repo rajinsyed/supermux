@@ -673,10 +673,10 @@ class MirrorFilesE2E:
         if root_menu != expected[:2]:
             problems.append(f"empty-area menu {root_menu} != {expected[:2]}")
 
-        def run(op: str, name: str, **params: Any) -> Dict[str, Any]:
-            result = self.files("operation", op=op, path=f"{base}/{name}", **params)
+        def run(op: str, entry: str, **params: Any) -> Dict[str, Any]:
+            result = self.files("operation", op=op, path=f"{base}/{entry}", **params)
             if not result.get("ok"):
-                problems.append(f"{op} {name}: {result}")
+                problems.append(f"{op} {entry}: {result}")
             return result
 
         def rows_include(name: str, present: bool = True) -> Callable[[], bool]:
