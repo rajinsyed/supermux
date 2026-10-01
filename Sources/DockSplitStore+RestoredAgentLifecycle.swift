@@ -388,6 +388,9 @@ extension DockSplitStore {
                 runtime: shouldKeep ? runtime : nil
             )
         }
+        // SUPERMUX:begin dock-tab-agent-working
+        SupermuxTabActivitySync.syncDock(self, panelId: panelId)
+        // SUPERMUX:end dock-tab-agent-working
     }
 
     private func syncAgentNeedsInputAttention(
