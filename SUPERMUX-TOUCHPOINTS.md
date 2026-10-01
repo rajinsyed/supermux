@@ -12,12 +12,13 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **681**. The remote-workspaces work (#517–#599) left
+- Numbering: the highest number in use is **684**. The remote-workspaces work (#517–#599) left
   unassigned gaps it may still grow into: **523–524, 527–529, 539–544, 558–559, 562–569,
   578–579 and 588–589** (never assigned, not retired); #600–#601 came from the 2026-10-01 upstream merge; #620–#622 and
   #630–#639 are the remote-workspaces feedback round (602–619 and 623–629 unassigned). The second
   feedback round uses #640–#644 (busy mirror tab close), #650–#653 (mirror appearance), #660–#664
   (new tabs append), #665–#670 (terminal size preference) and #675–#681 (a mirror's Files panel);
+  its stabilization uses #682–#684 (preview refresh and its alert);
   645–649, 654–659, 671–674 are unassigned. Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 82, 83, 89, 106, 121, 142, 213, 214,
@@ -618,6 +619,9 @@ Rules for adding a touchpoint:
 | 679 | `Sources/FileExplorerPreviewCoordinator.swift` | `mirror-file-preview-error` | The failed-open alert's text falls back to `SupermuxDeviceFileError.previewAlertText(for:)` before upstream's generic sentence, so a mirror's refusal names the Mac ("Previews of files on <Mac> are limited to 8 MB.") instead of Cloud's "limited to 1 MB" |
 | 680 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the Remote Macs Files panel files into the cmux target, four entries each, ids `50BE00170500000000000001`–`…14` (hex): `Mirrors/SupermuxMirrorFilesSocket.swift` (`…01`/`…02`), `SupermuxMobileHost+FilesRead.swift` (`…03`/`…04`), `SupermuxHostFileSearch.swift` (`…05`/`…06`), `Mirrors/SupermuxMirrorFileRoot.swift` (`…07`/`…08`), `Mirrors/SupermuxDeviceFileError.swift` (`…09`/`…0A`), `Mirrors/SupermuxDeviceFileTransport.swift` (`…0B`/`…0C`), `Mirrors/SupermuxDeviceFileExplorerProvider.swift` (`…0D`/`…0E`), `Mirrors/FileExplorerStore+SupermuxDevice.swift` (`…0F`/`…10`), `Mirrors/SupermuxMirrorFileExplorerLiveRefresh.swift` (`…11`/`…12`), `Mirrors/FileSearchController+SupermuxDevice.swift` (`…13`/`…14`), all in the Supermux group |
 | 681 | `cmuxTests/SupermuxMobileAuthorizationTests.swift` | `mirror-file-explorer-authz` | `classificationCoversWorkspacePaneAndMacWideMethods` expects `files.read`, `files.search` and `files.git_status` to be workspace-scoped (like `files.list`), so the scoped-ticket matrix covers them |
+| 682 | `Sources/FileExplorerPreviewCoordinator.swift` | `preview-error-alert-nonblocking` | `present(_:window:)` shows the failed-open alert with `SupermuxAlertPresentation.show(alert, preferring: window)` instead of `_ = alert.runCmuxModal(presentingWindow: window)`. It is called from the open's main-actor task, where `runCmuxModal`'s nested modal session starved the main queue: every socket call, mirror and main-actor task waited for OK (the files E2E hung the whole app). Now a sheet on the main window (or an app-modal alert run from a run-loop block outside the job) that nothing waits for |
+| 683 | `Sources/CloudFilePreviewCache.swift` | `preview-refresh-readonly-replace` | In `refresh(_:provider:)`, the new copy replaces the preview's with `rename(2)` (throwing `POSIXError` on failure) instead of `replaceItemAt` / `moveItem`. The preview copy is `0o400` and `replaceItemAt` needs a writable original, so every refresh (reopening an open remote preview, its Refresh button) failed with "permission denied" and raised "Unable to open remote file" — Cloud and device previews alike |
+| 684 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/SupermuxAlertPresentation.swift` (the non-blocking alert presenter for #682 and the busy mirror-tab close prompt) into the cmux target (ids `50BE00170600000000000001`/`…02`, four entries, in the Supermux group) |
 
 ## How to re-apply
 
@@ -5339,3 +5343,26 @@ Re-apply after an upstream merge:
 Verify: `swift test --filter SupermuxMobileFileBrowser` in `Packages/SupermuxKit`, then
 `CMUX_E2E_SUITES="loopback_mirror_files_e2e loopback_workspace_behaviors_e2e" CMUX_TAG=<tag>
 tests/supermux/run_all_loopback_e2e.sh`.
+
+### 682–684. A remote preview reopens and refreshes; its error alert never blocks the main queue — `preview-error-alert-nonblocking`, `preview-refresh-readonly-replace`
+
+Found by the files E2E: reopening a mirror's open README.md preview hung the app. Two bugs. Upstream's
+`CloudFilePreviewCache.refresh` replaced the read-only (`0o400`) preview copy with `replaceItemAt`,
+which needs a writable original, so every refresh failed with `NSFileWriteNoPermissionError` (513) —
+for Cloud previews too. And the coordinator reported that failure with `runCmuxModal` from its
+main-actor task: a nested modal session inside a main-queue job, where CFRunLoop does not drain the
+main queue, so every socket request and mirror waited for OK. Fork code:
+`Sources/Supermux/SupermuxAlertPresentation.swift` (also used by `SupermuxDeviceTerminalClosePrompt`).
+
+Re-apply after an upstream merge:
+- **#682** keep the alert's construction upstream's and only swap the presentation call. If upstream
+  presents this alert without a nested modal (a sheet it does not wait on, or outside the task),
+  retire the fence.
+- **#683** keep the `0o400` on the temporary file and swap only the replace. If upstream stops making
+  the copy read-only or replaces it some other way that works on a read-only original, retire it.
+- **#684** re-add the four entries, then
+  `python3 scripts/normalize-pbxproj.py cmux.xcodeproj/project.pbxproj && ./scripts/check-pbxproj.sh`.
+
+Verify: `CMUX_E2E_SUITES="loopback_mirror_files_e2e loopback_mirror_tab_close_e2e" CMUX_TAG=<tag>
+tests/supermux/run_all_loopback_e2e.sh` (`open_file_preview` reopens a changed file; `large_file_capped`
+shows the 8 MB refusal as a sheet while the socket keeps answering).

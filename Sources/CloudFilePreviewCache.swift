@@ -82,11 +82,11 @@ actor CloudFilePreviewCache {
             try await provider.downloadFile(path: path, to: temporary)
             try Task.checkCancellation()
             try FileManager.default.setAttributes([.posixPermissions: 0o400], ofItemAtPath: temporary.path)
-            if FileManager.default.fileExists(atPath: destination.path) {
-                _ = try FileManager.default.replaceItemAt(destination, withItemAt: temporary)
-            } else {
-                try FileManager.default.moveItem(at: temporary, to: destination)
+            // SUPERMUX:begin preview-refresh-readonly-replace (rename(2) swaps in the new copy; upstream's replaceItemAt needs a writable original, so every refresh of the 0o400 copy failed with "permission denied")
+            guard rename(temporary.path, destination.path) == 0 else {
+                throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
             }
+            // SUPERMUX:end preview-refresh-readonly-replace
         }
         refreshTasks[destination] = task
         do {
