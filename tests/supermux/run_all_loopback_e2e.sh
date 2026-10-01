@@ -55,6 +55,7 @@ suite_args() {
   case "$1" in
     loopback_projects_e2e) printf '%s\n' --scratch "$SCRATCH/projects" --projects-file "$SCRATCH/projects.json" ;;
     loopback_new_worktree_picker_e2e) printf '%s\n' --scratch "$SCRATCH/picker" ;;
+    loopback_worktree_disclosure_e2e) printf '%s\n' --scratch "$SCRATCH/disclosure" ;;
     loopback_notifications_e2e) printf '%s\n' --push-state-dir "$SCRATCH/push-state" --work-dir "$SCRATCH/notifications" ;;
     loopback_auto_mirror_e2e) printf '%s\n' --app-path "$APP" --projects-file "$SCRATCH/projects.json" --git-repo "$SCRATCH/auto-mirror-repo" ;;
     loopback_mirror_render_e2e) printf '%s\n' --app-path "$APP" --projects-file "$SCRATCH/projects.json" ;;
@@ -63,7 +64,7 @@ suite_args() {
 }
 
 # The mirror-render and auto-mirror suites run last: they quit and relaunch the app for their restart checks.
-SUITES=(loopback_device_smoke loopback_projects_e2e loopback_new_worktree_picker_e2e loopback_workspace_behaviors_e2e loopback_notifications_e2e loopback_tab_sync_e2e loopback_remote_macs_settings_e2e loopback_sidebar_rows_e2e loopback_mirror_render_e2e loopback_auto_mirror_e2e)
+SUITES=(loopback_device_smoke loopback_projects_e2e loopback_worktree_disclosure_e2e loopback_new_worktree_picker_e2e loopback_workspace_behaviors_e2e loopback_notifications_e2e loopback_tab_sync_e2e loopback_remote_macs_settings_e2e loopback_sidebar_rows_e2e loopback_mirror_render_e2e loopback_auto_mirror_e2e)
 
 status=0
 for name in "${SUITES[@]}"; do

@@ -69,8 +69,9 @@ struct SupermuxRemoteProjectRowView: View {
             if row.isRunning {
                 SupermuxRunIndicator()
             }
-            if isOnline {
-                expandToggle
+            let disclosure = SupermuxWorktreeDisclosure(remoteOnly: row)
+            if disclosure.isShown {
+                expandToggle(count: disclosure.count)
             }
             if isHovered && isOnline {
                 SupermuxSidebarIconButton(
@@ -105,13 +106,13 @@ struct SupermuxRemoteProjectRowView: View {
 
     /// The worktree disclosure: the loaded count, or just a chevron before
     /// the first load (expanding loads that Mac's worktrees).
-    private var expandToggle: some View {
+    private func expandToggle(count: Int) -> some View {
         Button(action: toggleExpanded) {
             HStack(spacing: 3 * fontScale) {
                 Image(systemName: "arrow.triangle.branch")
                     .font(.system(size: 8 * fontScale, weight: .semibold))
-                if !row.worktrees.isEmpty {
-                    Text("\(row.worktrees.count)")
+                if count > 0 {
+                    Text("\(count)")
                         .font(.system(size: 9.5 * fontScale, weight: .semibold).monospacedDigit())
                 }
                 Image(systemName: "chevron.right")
