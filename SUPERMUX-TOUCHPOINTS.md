@@ -622,7 +622,7 @@ Rules for adding a touchpoint:
 | 682 | `Sources/FileExplorerPreviewCoordinator.swift` | `preview-error-alert-nonblocking` | `present(_:window:)` shows the failed-open alert with `SupermuxAlertPresentation.show(alert, preferring: window)` instead of `_ = alert.runCmuxModal(presentingWindow: window)`. It is called from the open's main-actor task, where `runCmuxModal`'s nested modal session starved the main queue: every socket call, mirror and main-actor task waited for OK (the files E2E hung the whole app). Now a sheet on the main window (or an app-modal alert run from a run-loop block outside the job) that nothing waits for |
 | 683 | `Sources/CloudFilePreviewCache.swift` | `preview-refresh-readonly-replace` | In `refresh(_:provider:)`, the new copy replaces the preview's with `rename(2)` (throwing `POSIXError` on failure) instead of `replaceItemAt` / `moveItem`. The preview copy is `0o400` and `replaceItemAt` needs a writable original, so every refresh (reopening an open remote preview, its Refresh button) failed with "permission denied" and raised "Unable to open remote file" — Cloud and device previews alike |
 | 684 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/SupermuxAlertPresentation.swift` (the non-blocking alert presenter for #682 and the busy mirror-tab close prompt) into the cmux target (ids `50BE00170600000000000001`/`…02`, four entries, in the Supermux group) |
-| 685 | `Packages/Shared/CMUXMobileCore/Sources/CMUXMobileCore/MobileTerminalRenderGridReplay.swift` | `replay-mouse-modes-last` | In `fullSnapshotBytes()`, the frame's modes are re-applied disabled first, then enabled (`frame.modes.filter { !$0.on } + frame.modes.filter(\.on)`), instead of in the frame's code order. Ghostty keeps one mouse event mode (?9/?1000/?1002/?1003) and one mouse format (?1005/?1006/?1015/?1016), and resetting any of them clears whichever is on, so `?1003l` after `?1002h` (and `?1015l`/`?1016l` after `?1006h`) left every replayed view (a device mirror after any grid change or reattach, a phone) without mouse reporting: a drag selected text instead of reaching the program |
+| 685 | `Packages/Shared/CMUXMobileCore/Sources/CMUXMobileCore/MobileTerminalRenderGridReplay.swift` | `replay-mouse-modes-last` | In `fullSnapshotBytes()`, the frame's modes are re-applied disabled first, then enabled, and the enabled mouse formats last in preference order 1005, 1015, 1006, 1016, instead of everything in the frame's code order. Ghostty keeps one mouse event mode (?9/?1000/?1002/?1003) and one mouse format (?1005/?1006/?1015/?1016): the last one set wins and resetting any of them clears whichever is on, so `?1003l` after `?1002h` (and `?1015l`/`?1016l` after `?1006h`) left every replayed view (a device mirror after any grid change or reattach, a phone) without mouse reporting, and crossterm's `?1015h ?1006h` replayed as urxvt. Known limit: the frame carries one flag per code, not Ghostty's single event/format value, so a program that turned tracking off with a different code than it set (`?1000h` then only `?1002l`) still has 1000 on in the frame and gets tracking back on replay; with several event modes on, the highest code wins. The real fix is exporting `flags.mouse_event`/`flags.mouse_format` from the ghostty fork's render-grid frame |
 | 686 | `Packages/Shared/CMUXMobileCore/Tests/CMUXMobileCoreTests/SupermuxReplayMouseModeTests.swift` | `replay-mouse-modes-last` | Fork-only test file (the whole body fenced): runs the full snapshot's mode sequences through a model of Ghostty's single mouse event / format state and expects the program's modes to survive, crossterm's `?1015h ?1006h` (SGR wins) included |
 
 ## How to re-apply
@@ -5369,7 +5369,7 @@ Verify: `CMUX_E2E_SUITES="loopback_mirror_files_e2e loopback_mirror_tab_close_e2
 tests/supermux/run_all_loopback_e2e.sh` (`open_file_preview` reopens a changed file; `large_file_capped`
 shows the 8 MB refusal as a sheet while the socket keeps answering).
 
-### 685. A replay keeps the program's mouse modes — `replay-mouse-modes-last`
+### 685–686. A replay keeps the program's mouse modes — `replay-mouse-modes-last`
 
 Found by the input E2E once its key checks pressed each key on the source Mac too: hiding and showing
 the mirror changes the terminal's grid, every grid change replays the mirror, and after a replay a
@@ -5380,9 +5380,15 @@ code order and Ghostty's mouse event and format modes are single settings that a
 them. Upstream bug (phones replay the same way).
 
 Re-apply after an upstream merge: keep the reorder on the full snapshot's mode loop (after the default
-baseline, before the cursor restore). If upstream emits the mouse groups in an order-safe way itself
-(or only the enabled member of each group), retire it.
+baseline, before the cursor restore): disabled modes, then enabled non-format modes, then the enabled
+formats in preference order 1005, 1015, 1006, 1016 (#686 tests this against a model of Ghostty's state).
+If upstream emits the mouse groups in an order-safe way itself (or only the enabled member of each
+group, from Ghostty's real `flags.mouse_event`/`flags.mouse_format`), retire both.
 
-Verify: `swift test --filter MobileTerminalRenderGrid` in `Packages/Shared/CMUXMobileCore`, then
+Known limit (review R2-1 b): per-code flags cannot tell that a program cleared tracking with a
+different code than it set (`?1000h`, later `?1002l`); the frame still has 1000 on, so a replay turns
+tracking back on. Only a ghostty-side export of the single event/format value fixes that.
+
+Verify: `swift test --filter "MobileTerminalRenderGrid|SupermuxReplay"` in `Packages/Shared/CMUXMobileCore`, then
 `CMUX_E2E_SUITES="loopback_terminal_input_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`
 (`mouse_drag_is_mouse_reports` and `mouse_survives_replay`).
