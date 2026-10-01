@@ -48,6 +48,12 @@ final class SupermuxDeviceMirrorCloser {
     var onChange: @MainActor () -> Void = {}
     /// Local closes whose bookkeeping (hide / unbind) is already done.
     private var decided: Set<UUID> = []
+    #if DEBUG
+    /// E2E hook (`supermux.devices.hold_remote_closes`): while true, pending
+    /// closes are kept but not sent, so a test can check that auto-mirror
+    /// leaves a pending ref alone while its record is still there.
+    var debugHoldSends = false
+    #endif
 
     init(
         devices: SupermuxDevices,
@@ -100,6 +106,9 @@ final class SupermuxDeviceMirrorCloser {
     /// forgets those whose remote workspace is gone. Runs on every auto-mirror
     /// pass, so a close made offline goes out once that Mac is back.
     func sendPendingCloses() {
+        #if DEBUG
+        if debugHoldSends { return }
+        #endif
         let now = Date()
         for ref in pending.refs where sends[ref] == nil {
             guard let device = devices.device(for: ref.machine), device.isConnected, device.hasFetchedRecords else { continue }

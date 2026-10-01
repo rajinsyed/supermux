@@ -34,9 +34,21 @@ with every confirmation pre-answered and logged, so no modal shows:
                                                on reconnect the source closes, nothing reopens
   W6. phone_wire_contract                      (guard) workspace.close on a busy workspace answers
                                                confirmation_required without force, closes with it
-  W7. offline_close_survives_relaunch          (with --app-path) link down, close a mirror, quit
-                                               and relaunch -> the source closes once the loopback
-                                               is back, the mirror never reopens
+  W8. pending_close_blocks_reopen              the close is held (sends paused) while the link is
+                                               up and the record still there -> several auto-mirror
+                                               passes reopen nothing; released, the source closes
+  W9. reopened_offline_close_cancels           link down, close a mirror, Reopen Closed Workspace
+                                               (⌘⇧T) -> on reconnect the source is NOT closed, the
+                                               pending close is dropped and the mirror stays
+  W10. delete_group_closes_mirror_on_mac       group a mirror with a local workspace, Delete Group
+                                               (close its workspaces) -> the source closes on its
+                                               Mac, it is not added to the Hide Here set
+  W11. borrowing_workspace_closes_here_only    a local workspace holding only terminals borrowed
+                                               from two remote workspaces is not a mirror: closing
+                                               it closes it here only, both sources keep running
+  W7. offline_close_survives_relaunch          (with --app-path, runs last) link down, close a
+                                               mirror, quit and relaunch -> the source closes once
+                                               the loopback is back, the mirror never reopens
 
 The busy terminal runs a stand-in for Claude Code (alternate screen, kitty
 keyboard flags, a marker line, a sleeping child). Writes a JSON report (default
@@ -204,6 +216,7 @@ class MirrorWorkspaceCloseE2E:
         self.machine = ""
         self.created: List[str] = []
         self.link_stopped = False
+        self.closes_held = False
 
     # -- reads ----------------------------------------------------------------
 
@@ -303,6 +316,37 @@ class MirrorWorkspaceCloseE2E:
     @staticmethod
     def prompts(result: Dict[str, Any], kind: str) -> List[str]:
         return [str(p.get("title")) for p in result.get("prompts") or [] if p.get("kind") == kind]
+
+    def hold_closes(self, enabled: bool) -> None:
+        """Pauses (or resumes) sending the closes that wait for their Mac (DEBUG driver)."""
+        self.sock.call("supermux.devices.hold_remote_closes", {"enabled": enabled})
+        self.closes_held = enabled
+
+    def terminal_resource(self, workspace_id: str) -> str:
+        """The catalog resource of a device terminal shown in a local workspace."""
+        def find() -> Optional[str]:
+            for projection in (self.sock.call("surface.catalog", {}) or {}).get("projections") or []:
+                resource = str(projection.get("resource", ""))
+                if up(projection.get("workspace_id")) == up(workspace_id) and resource.startswith(self.machine):
+                    return resource
+            return None
+
+        return wait_for(f"a device terminal in {workspace_id}", find, self.timeout)
+
+    def projected_count(self, workspace_id: str) -> int:
+        projections = (self.sock.call("surface.catalog", {}) or {}).get("projections") or []
+        return sum(1 for p in projections if up(p.get("workspace_id")) == up(workspace_id)
+                   and str(p.get("resource", "")).startswith(self.machine))
+
+    def is_listed_as_mirror(self, workspace_id: str) -> bool:
+        return any(up(m.get("workspace_id")) == up(workspace_id) for m in self.bindings().get("mirrors") or [])
+
+    def wait_pending_dropped(self, source: str) -> List[str]:
+        try:
+            wait_for("the pending close to be forgotten", lambda: up(source) not in self.pending(), self.timeout)
+            return []
+        except Failure as error:
+            return [str(error)]
 
     def stop_link(self) -> None:
         self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "stop"})
@@ -500,6 +544,135 @@ class MirrorWorkspaceCloseE2E:
             raise Failure("; ".join(problems))
         return {"source": source, "busy_terminal": terminal, "without_force": without, "with_force": forced}
 
+    def pending_close_blocks_reopen(self) -> Dict[str, Any]:
+        """While a close waits to be sent (link up, record still there), the pending
+        set is the only thing that keeps auto-mirror from reopening the mirror."""
+        pair = self.source_and_mirror("held")
+        problems: List[str] = []
+        self.hold_closes(True)
+        try:
+            result = self.user_close([pair["mirror"]])
+            problems += self.closed_here_problems(result, [pair["mirror"]])
+            if not self.is_open(pair["source"]):
+                problems.append("the source closed although its close was held")
+            if up(pair["source"]) not in self.pending():
+                problems.append(f"the held close is not pending: {self.hidden_state()}")
+            if problems:
+                raise Failure("; ".join(problems))
+            self.wait_linked()
+            for _ in range(3):
+                self.sock.call("supermux.devices.reconcile", {})
+                back = holds(lambda: "auto-mirror reopened the mirror while its close was pending"
+                             if self.mirrors_of(pair["source"]) else None, 1.2)
+                if back:
+                    problems.append(back)
+                    break
+        finally:
+            self.hold_closes(False)
+        problems += self.closed_on_mac_problems(pair["source"], self.close_timeout)
+        problems += self.wait_pending_dropped(pair["source"])
+        if problems:
+            raise Failure("; ".join(problems))
+        return pair
+
+    def reopened_offline_close_cancels(self) -> Dict[str, Any]:
+        """Reopen Closed Workspace undoes a close still waiting for its Mac."""
+        pair = self.source_and_mirror("reopen")
+        problems: List[str] = []
+        self.stop_link()
+        try:
+            result = self.user_close([pair["mirror"]])
+            problems += self.closed_here_problems(result, [pair["mirror"]])
+            if up(pair["source"]) not in self.pending():
+                problems.append(f"the offline close is not pending: {self.hidden_state()}")
+            if problems:
+                raise Failure("; ".join(problems))
+            reopened = self.sock.call("supermux.devices.reopen_closed_workspace", {}) or {}
+            self.facts["reopened"] = reopened
+            if not reopened.get("reopened") or not reopened.get("workspace_ids"):
+                raise Failure(f"Reopen Closed Workspace reopened nothing: {reopened}")
+        finally:
+            self.restore_link()
+        killed = holds(lambda: "the source was closed on its Mac although its mirror was reopened"
+                       if not self.is_open(pair["source"]) else None, 5.0)
+        if killed:
+            raise Failure(killed)
+        problems += self.wait_pending_dropped(pair["source"])
+        try:
+            wait_for("a mirror of the source to be open", lambda: self.mirrors_of(pair["source"]), self.timeout)
+        except Failure as error:
+            problems.append(str(error))
+        if up(pair["source"]) in self.hidden():
+            problems.append("the source was added to the Hide Here set")
+        if problems:
+            raise Failure("; ".join(problems))
+        return {**pair, "reopened": self.facts.get("reopened")}
+
+    def delete_group_closes_mirror_on_mac(self) -> Dict[str, Any]:
+        """Delete Group closes its members (the user confirmed it): a mirror closes on its Mac."""
+        pair = self.source_and_mirror("group")
+        local = self.create_workspace("group-local", window_id=pair["window"] or None)
+        wait_for("the local workspace's terminal", lambda: self.surfaces(local), self.timeout)
+        window: Dict[str, Any] = {"window_id": pair["window"]} if pair["window"] else {}
+        created = self.sock.call("workspace.group.create", {
+            "name": f"ws-close-group-{self.nonce}", "child_workspace_ids": [pair["mirror"], local], **window,
+        }) or {}
+        group_id = (created.get("group") or {}).get("id")
+        if not group_id:
+            raise Failure(f"workspace.group.create returned no group: {created}")
+        deleted = self.sock.call("workspace.group.delete",
+                                 {"group_id": group_id, "close_workspaces": True, **window}) or {}
+        problems = [f"{w} is still open after Delete Group" for w in (pair["mirror"], local) if self.is_open(w)]
+        problems += self.closed_on_mac_problems(pair["source"], self.close_timeout)
+        problems += self.wait_pending_dropped(pair["source"])
+        if problems:
+            raise Failure("; ".join(problems))
+        return {**pair, "local": local, "group_id": group_id, "deleted": deleted}
+
+    def borrowing_workspace_closes_here_only(self) -> Dict[str, Any]:
+        """A local workspace holding only terminals borrowed from two remote workspaces
+        (Open in New Pane twice, then its own shell closed) is not a mirror of either."""
+        first = self.source_and_mirror("borrow-a")
+        second = self.source_and_mirror("borrow-b")
+        resources = [self.terminal_resource(pair["mirror"]) for pair in (first, second)]
+        borrower = self.create_workspace("borrow", window_id=first["window"] or None)
+        own = wait_for("the borrowing workspace's own terminal", lambda: self.surfaces(borrower), self.timeout)[0]
+        for resource in resources:
+            self.sock.call("surface.project", {"resource": resource, "workspace_id": borrower,
+                                               "reuse": False, "focus": False}, timeout_s=60)
+        wait_for("both borrowed terminals in the borrowing workspace", lambda: self.projected_count(borrower) >= 2,
+                 self.timeout)
+        self.sock.call("surface.close", {"workspace_id": borrower, "surface_id": own, "force": True})
+        wait_for("the borrowing workspace's own terminal to close", lambda: own not in self.surfaces(borrower),
+                 self.timeout)
+        problems: List[str] = []
+        taken = holds(lambda: None if self.is_open(borrower) and not self.is_listed_as_mirror(borrower)
+                      else f"the borrowing workspace was taken for a mirror (open={self.is_open(borrower)})", 2.0)
+        if taken:
+            problems.append(taken)
+        if not self.is_open(borrower):
+            raise Failure("; ".join(problems))
+        result = self.user_close([borrower])
+        problems += self.closed_here_problems(result, [borrower])
+
+        def remote_intact() -> Optional[str]:
+            for pair in (first, second):
+                if not self.is_open(pair["source"]):
+                    return f"closing the borrowing workspace closed {pair['source']} on its Mac"
+                if not self.is_open(pair["mirror"]):
+                    return f"closing the borrowing workspace closed the mirror {pair['mirror']}"
+            return None
+
+        broken = holds(remote_intact, 3.0)
+        if broken:
+            problems.append(broken)
+        touched = {up(first["source"]), up(second["source"])} & (self.pending() | self.hidden())
+        if touched:
+            problems.append(f"closing the borrowing workspace queued or hid {sorted(touched)}")
+        if problems:
+            raise Failure("; ".join(problems))
+        return {"first": first, "second": second, "borrower": borrower, "prompts": result.get("prompts")}
+
     def offline_close_survives_relaunch(self) -> Dict[str, Any]:
         if not self.args.app_path:
             raise Skipped("pass --app-path to quit and relaunch")
@@ -570,6 +743,11 @@ class MirrorWorkspaceCloseE2E:
 
     def cleanup(self) -> None:
         try:
+            if self.closes_held:
+                self.hold_closes(False)
+        except Failure as error:
+            self.facts.setdefault("cleanup_errors", []).append(str(error))
+        try:
             if self.link_stopped and self.machine:
                 self.restore_link()
         except Failure as error:
@@ -601,6 +779,10 @@ class MirrorWorkspaceCloseE2E:
                 ("pinned_mirror_uses_pinned_prompt", self.pinned_mirror_uses_pinned_prompt),
                 ("offline_mirror_close_lands_on_reconnect", self.offline_mirror_close_lands_on_reconnect),
                 ("phone_wire_contract", self.phone_wire_contract),
+                ("pending_close_blocks_reopen", self.pending_close_blocks_reopen),
+                ("reopened_offline_close_cancels", self.reopened_offline_close_cancels),
+                ("delete_group_closes_mirror_on_mac", self.delete_group_closes_mirror_on_mac),
+                ("borrowing_workspace_closes_here_only", self.borrowing_workspace_closes_here_only),
                 ("offline_close_survives_relaunch", self.offline_close_survives_relaunch),
             ]:
                 ok = self.step(name, check) and ok
