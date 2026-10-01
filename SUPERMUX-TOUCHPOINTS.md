@@ -12,7 +12,7 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **722**. The remote-workspaces work (#517–#599) left
+- Numbering: the highest number in use is **723**. The remote-workspaces work (#517–#599) left
   unassigned gaps it may still grow into: **523–524, 527–529, 539–544, 558–559, 562–569,
   578–579 and 588–589** (never assigned, not retired); #600–#601 came from the 2026-10-01 upstream merge; #620–#622 and
   #630–#639 are the remote-workspaces feedback round (602–619 and 623–629 unassigned). The second
@@ -22,9 +22,10 @@ Rules for adding a touchpoint:
   retired in round 4); 645–649, 654–659, 671–674 are unassigned. The third feedback round (round 4) uses #695–#696 (a mirror
   closes like a local workspace; the phone forces its close), #700–#704 (the iPhone's merged projects list), #715–#718 (Waiting
   keeps the working indicator; tab spinners), #720 (no device avatar on tabs), in its stabilization #721 (a busy
-  host is asked again), and in its review fixes #719 (a tab moved into the Dock keeps its spinner) and #722 (another
-  Mac's read ends the host's focused-pane ring); it retired #453–#457 (focused-pane suppression) and #689; 690–694,
-  697–699, 705–714 and 723–724 are unassigned. Number **351** is unused (the notifications
+  host is asked again) and #723 (a missed reply deadline fails alone while the host answers), and in its review
+  fixes #719 (a tab moved into the Dock keeps its spinner) and #722 (another Mac's read ends the host's focused-pane
+  ring); it retired #453–#457 (focused-pane suppression) and #689; 690–694, 697–699, 705–714 and 724 are
+  unassigned. Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 82, 83, 89, 106, 121, 142, 213, 214,
   220, 229, 237, 250, 251, 252–258, 335, 470, 473–481, 483, 484, and 487** are unused; all are
@@ -641,7 +642,7 @@ Rules for adding a touchpoint:
 | 720 | `Sources/Workspace+TerminalSharing.swift` | `tab-presence-accessory-hidden` | Two fences. In `updateTerminalSharingPresence(panelId:snapshot:)` the tab presence goes through `supermuxTabPresence(_:)`, which (second fence, a private func in the same extension) keeps the presence but empties its `participants`: the tab draws no attached-device avatar (the `laptopcomputer` glyph for another of your Macs), while its context menu keeps the terminal-size section (Size to My Window, Terminal Size ▸, Disconnect Others…), which Bonsplit shows whenever the presence is non-nil. The size panel still lists the attached Macs. `vendor/bonsplit` is untouched; an "On <Mac>" tab-menu row would go in `supermuxTabPresence` if Bonsplit gains a host hook. E2E: `tests/supermux/loopback_terminal_input_e2e.py` (`tabs_draw_no_device_accessory`) |
 | 721 | `Sources/Devices/DeviceLink.swift` | `device-link-busy-retry` | `requestData(_:params:timeoutNanoseconds:)` becomes a call to `supermuxAskingAgainWhileBusy(isCurrent:_:)` (an extension in `Sources/Supermux/Devices/SupermuxDeviceLinkEvents.swift`) around upstream's unchanged body, renamed `supermuxRequestDataOnce`. A request the host answers `server_busy` (its per-connection request quota full, so the request never ran) is sent again after 0.25, 0.5, 1, 2 and 4 s on the same connection (a new link generation cancels it); every other answer and error is unchanged. Every device request goes through it: capabilities, replays, viewports, layout fetches, held tab closes. E2E: `loopback_terminal_input_e2e.py` (`keys_survive_busy_reconnect`), `loopback_mirror_tab_close_e2e.py` (`offline_close_lands_on_a_busy_host`) |
 | 722 | `Sources/TerminalController.swift` | `device-mac-read-clears-host-ring` | In `mobileHostHandleRPC`, the `notification.feed.mark_read` case calls `supermuxNotificationFeedMarkRead(params: request.params, executionContext: executionContext)` instead of `v2MobileNotificationFeedMarkRead(params: request.params)`. The fork wrapper (`Sources/Supermux/Devices/SupermuxDeviceNotificationReadMirror.swift`) runs upstream's handler unchanged; only when the caller is an admitted Mac peer (`SupermuxMobilePeerPolicy.isAdmittedMacPeer`, i.e. another of your Macs acking its mirror copy's read) it also clears the focused-read indicator of each pane whose record that request turned read, unless the pane still has an unread record. So a read on the viewer Mac ends the host's focused-pane ring (and the phone's pane ring, which follows `hasVisibleNotificationIndicator`), the reverse of #548. A phone's read keeps upstream's semantics. E2E: `tests/supermux/loopback_notifications_e2e.py` (`mirror_read_clears_focused_source_ring`) |
-| 723 | `Sources/Devices/DeviceLink.swift` | `device-link-slow-request` | In `supermuxRequestDataOnce` (upstream's `requestData` body, see #721), upstream's `.requestTimedOut` comes out of the `.connectionClosed, .requestTimedOut, .transportWriteTimedOut` case into its own case, which throws `supermuxMissedDeadline(_:client:isCurrent:)` (an extension in `Sources/Supermux/Devices/SupermuxDeviceLinkEvents.swift`). A request whose reply missed its deadline no longer reconnects the link by itself: the link sends `mobile.events.probe` (answered by the host's connection, never by its main actor) with a 10 s deadline; any answer, a refusal included, keeps the link and fails only that request as `hostRejected(code: "timed_out")` with a localized message (`supermux.devices.error.replyTimedOut`); no answer is a dead link and calls upstream's `reportTransportLost`, as before. A closed transport and a stuck write keep upstream's reconnect. E2E: `loopback_device_smoke.py` (`slow_request_keeps_the_link`) |
+| 723 | `Sources/Devices/DeviceLink.swift` | `device-link-slow-request` | In `supermuxRequestDataOnce` (upstream's `requestData` body, see #721), upstream's `.requestTimedOut` comes out of the `.connectionClosed, .requestTimedOut, .transportWriteTimedOut` case into its own case, which throws `supermuxMissedDeadline(_:_:client:isCurrent:)` (an extension in `Sources/Supermux/Devices/SupermuxDeviceLinkEvents.swift`). A request whose reply missed its deadline no longer reconnects the link by itself: the link sends `mobile.events.probe` (answered by the host's connection, never by its main actor) with a 10 s deadline; any answer, a refusal included, keeps the link and fails only that request as `hostRejected(code: "timed_out")` with a localized message (`supermux.devices.error.replyTimedOut`); no answer is a dead link and calls upstream's `reportTransportLost`, as before. A closed transport and a stuck write keep upstream's reconnect. E2E: `loopback_device_smoke.py` (`slow_request_keeps_the_link`) |
 
 ## How to re-apply
 
@@ -5593,8 +5594,8 @@ be able to take the link down.
 
 Re-apply after an upstream merge: in the `catch let error as MobileShellConnectionError` switch of
 `supermuxRequestDataOnce` (upstream's `requestData` body, #721), give `.requestTimedOut` its own case that
-throws `await supermuxMissedDeadline(error, client: client) { !Task.isCancelled && requestGeneration ==
-self.generation }`, and leave `.connectionClosed` and `.transportWriteTimedOut` on upstream's
+throws `await supermuxMissedDeadline(method, error, client: client) { !Task.isCancelled &&
+requestGeneration == self.generation }`, and leave `.connectionClosed` and `.transportWriteTimedOut` on upstream's
 `reportTransportLost` path. If upstream's RPC session gains its own liveness check that tells a slow
 request from a dead transport, or stops failing the link on one timeout, retire this. Keep the probe a
 method the host's connection answers itself (`mobile.events.probe`), so a host whose main actor is busy
