@@ -23,7 +23,11 @@ Mac" = this same app's own mobile host):
                                          and after a fresh replay (the authored-colors sidecar)
   7. authored_reset_restores_translucency  the program's OSC 111 brings the mirror back to the
                                          shared backdrop, live and after a fresh replay
-  8. restored_mirror_matches_local       (with --app-path) quit + relaunch: the restored background
+  8. live_reset_during_gap_settles       a program's OSC 11 reaches the mirror only live (no replay
+                                         carries it); its OSC 111 lands while the link is down, and the
+                                         reconnect replay alone must bring the mirror back to this Mac's
+                                         theme (each replay settles every color, not a delta)
+  9. restored_mirror_matches_local       (with --app-path) quit + relaunch: the restored background
                                          mirror matches the local pane when selected
 
 The hard proof of the fix is the mirror driver's `applied_remote_colors == {}`
@@ -369,8 +373,10 @@ class MirrorAppearanceE2E:
             problems.append(f"last_replay_color_osc={mirror.get('last_replay_color_osc')} (want false: the replay carries no color state)")
         return problems
 
-    def resync(self, surface_id: str) -> Dict[str, Any]:
-        """Forces a fresh replay into the mirror: holds the link down, then redials it."""
+    def resync(self, surface_id: str, during_gap: Optional[Callable[[], Any]] = None) -> Dict[str, Any]:
+        """Forces a fresh replay into the mirror: holds the link down, then redials it.
+        `during_gap` runs while the link is down and the mirror detached, so nothing it
+        does on the source reaches the mirror live; only the reconnect replay can carry it."""
         before = self.background(surface_id).get("replays")
         self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "stop"})
         try:
@@ -379,6 +385,11 @@ class MirrorAppearanceE2E:
                                      lambda: self.background(surface_id).get("mirror_phase") != "attached", 5, interval_s=0.2))
         except Failure:
             detached = False
+        try:
+            if during_gap is not None:
+                if not detached:
+                    raise Failure("the mirror never detached, so the gap's bytes could still reach it live")
+                during_gap()
         finally:
             self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "restore"})
         wait_for("the loopback link to reconnect", lambda: self.device().get("link_state") == "connected", self.timeout)
@@ -517,6 +528,28 @@ class MirrorAppearanceE2E:
         fill = self.sample_fill(mirror, surface, "mirror-after-reset", self.matches_baseline)
         return {"mirror": mirror, "live": live, "resync": resync, "after_resync": after, "fill": fill}
 
+    def live_reset_during_gap_settles(self) -> Dict[str, Any]:
+        source, mirror, surface = self.facts["source"], self.facts["mirror"], self.facts["mirror_surface"]
+        self.run_in(source, f"printf '\\033]11;{AUTHORED_BACKGROUND}\\007'; ", "GAPSET")
+
+        def live_only(payload: Dict[str, Any]) -> List[str]:
+            problems = []
+            override = str(payload.get("background_override") or "").lower()
+            if override != AUTHORED_BACKGROUND:
+                problems.append(f"background_override={payload.get('background_override')} (want {AUTHORED_BACKGROUND}, live)")
+            if payload.get("applied_remote_colors") != {}:
+                problems.append(f"applied_remote_colors={payload.get('applied_remote_colors')} "
+                                "(want {}: the color must have arrived live, not from a replay)")
+            return problems
+
+        live = self.settle("the program's OSC 11 on the mirror, live only", surface, live_only)
+        resync = self.resync(surface, during_gap=lambda: self.run_in(source, "printf '\\033]111\\007'; ", "GAPRESET"))
+        wait_for("the gap's marker after the replay",
+                 lambda: f"LOOK_GAPRESET_42_{self.nonce}" in self.screen_text(mirror, surface), self.timeout)
+        after = self.settle("the reconnect replay to reset the live-set background", surface, self.like_local)
+        fill = self.sample_fill(mirror, surface, "mirror-after-gap-reset", self.matches_baseline)
+        return {"mirror": mirror, "live": live, "resync": resync, "after_resync": after, "fill": fill}
+
     def restored_mirror_matches_local(self) -> Dict[str, Any]:
         app = self.args.app_path
         bundle_id = plistlib.loads((Path(app) / "Contents" / "Info.plist").read_bytes())["CFBundleIdentifier"]
@@ -578,6 +611,7 @@ class MirrorAppearanceE2E:
                 ok = self.step("mirror_after_resync", self.mirror_after_resync) and ok
                 ok = self.step("authored_color_propagates", self.authored_color_propagates) and ok
                 ok = self.step("authored_reset_restores_translucency", self.authored_reset_restores_translucency) and ok
+                ok = self.step("live_reset_during_gap_settles", self.live_reset_during_gap_settles) and ok
             if self.args.app_path:
                 ok = self.step("restored_mirror_matches_local", self.restored_mirror_matches_local) and ok
             else:
