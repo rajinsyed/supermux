@@ -223,6 +223,25 @@ open -g --env SUPERMUX_DEBUG_LOOPBACK_DEVICE=1 --env SUPERMUX_PROJECTS_FILE=/tmp
 CMUX_TAG=<tag> python3 tests/supermux/loopback_new_worktree_picker_e2e.py --scratch /tmp/<tag>
 ```
 
+## Mirror tab close E2E
+
+`tests/supermux/loopback_mirror_tab_close_e2e.py` closes mirror tabs whose terminals run a program.
+Three of a source workspace's five terminals run a Claude Code stand-in (alternate screen, kitty
+keyboard flags, a marker line, a sleeping child; `--claude` runs the real CLI). The DEBUG drivers
+`supermux.devices.terminal_close.{inspect, answer, needs_confirm}` report each mirror pane's
+attachment and overlay plus the workspace's failure card, pre-answer the "Close “X” on <Mac>?"
+prompt so no modal shows (and log every prompt asked), and say whether the source would confirm a
+close. The suite checks that `mobile.terminal.close` without force answers `confirmation_required`
+for a busy terminal; Close on the prompt closes it there and the tab stays gone; Cancel keeps it and
+the re-projected pane attaches and renders (no "Mac disconnected", no card); a terminal projected
+again into another workspace after a close on the same link attaches; Kill Terminal… (`vm.terminal_close`)
+forces without asking; an idle tab closes without asking; and a tab closed while the link is down
+(`supermux.devices.link stop`) disappears with no card and is closed there on reconnect, never coming back.
+
+```bash
+CMUX_TAG=<tag> python3 tests/supermux/loopback_mirror_tab_close_e2e.py [--claude]
+```
+
 Every suite at once: `CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh` (launches, runs and
 quits the tagged app per suite; scratch state in `/tmp/<tag>-e2e`).
 
