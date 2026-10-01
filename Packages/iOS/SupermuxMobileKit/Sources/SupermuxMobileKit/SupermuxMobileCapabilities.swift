@@ -64,4 +64,7 @@ public struct SupermuxMobileCapabilities: Sendable, Equatable {
     /// The Mac takes device-mirror input batches (Mac-to-Mac only; no phone
     /// UI depends on it).
     public var supportsTerminalInput: Bool { contains(.terminalInputV1) }
+    /// The Mac serves read-only file browsing for another Mac's Files panel
+    /// (Mac-to-Mac only; no phone UI depends on it).
+    public var supportsFilesRead: Bool { contains(.filesReadV1) }
 }
