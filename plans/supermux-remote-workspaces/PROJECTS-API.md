@@ -233,7 +233,7 @@ CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.remote_projects '{
 CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.remote_worktrees '{"machine":"device:…","project_id":"<that Mac's id>"}'
 CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.remote_worktree_create '{"machine":"device:…","project_id":"…","workspace_name":"x","branch_name":"y","focus":false}'
 CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.projects_presentation '{}'   # what the window's Projects section receives
-CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.sidebar_rows '{}'           # {projects:[{project_id, font_scale, rows:[{workspace_id,title,device_name,branch,unread_count,accessibility_label,activity,device_icon:{style,symbol,badge_symbol,help,dimmed}|null,device_icon_placement:before_branch|before_title|null}]}], flat:[{workspace_id,title,is_mirror,device_label,subtitle_candidates,branch_directory_lines,activity,device_icon,device_icon_placement:branch_line|title_line|null}]} as drawn
+CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.sidebar_rows '{}'           # {window_id, font_scale, projects:[{project_id, rows:[{workspace_id,title,device_name,branch,unread_count,accessibility_label,activity,device_icon:{style,symbol,badge_symbol,help,dimmed}|null,device_icon_placement:before_branch|before_title|null}]}], flat:[{workspace_id,title,is_mirror,device_label,subtitle_candidates,branch_directory_lines,activity,device_icon,device_icon_placement:branch_line|title_line|null}]} as drawn
 CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.project_sync '{}'            # run a sync pass now → report
 ```
 
