@@ -19,6 +19,15 @@ public struct SupermuxMergedProject: Equatable, Sendable, Identifiable {
     public let id: String
     /// One location per Mac, in Mac display order. Never empty.
     public let locations: [Location]
+    /// Every Mac's copy's row id, including Macs the Mac title picker hides:
+    /// the disclosure is one state across all of them.
+    public let allRowIDs: [String]
+
+    init(id: String, locations: [Location], allRowIDs: [String]? = nil) {
+        self.id = id
+        self.locations = locations
+        self.allRowIDs = allRowIDs ?? locations.map(\.row.id)
+    }
 
     /// The location the row's name, look and primary actions come from.
     public var lead: Location { locations[0] }
@@ -39,7 +48,7 @@ public struct SupermuxMergedProject: Equatable, Sendable, Identifiable {
     func keeping(_ isIncluded: (Location) -> Bool) -> SupermuxMergedProject? {
         let kept = locations.filter(isIncluded)
         guard !kept.isEmpty else { return nil }
-        return SupermuxMergedProject(id: id, locations: kept)
+        return SupermuxMergedProject(id: id, locations: kept, allRowIDs: allRowIDs)
     }
 }
 

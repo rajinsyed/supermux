@@ -200,7 +200,7 @@ public struct SupermuxProjectsListLayout: Sendable {
             fork("p:\(key)", .project(SupermuxMergedProjectRowValue(
                 key: key,
                 display: lead.row.merged(worktreeCount: project.worktreeCount, isExpanded: project.isExpanded),
-                locationRowIDs: project.locations.map(\.row.id),
+                locationRowIDs: project.allRowIDs,
                 showsWorktreeCreation: lead.showsWorktreeCreation
             )))
             for workspace in nested {
