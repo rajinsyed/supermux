@@ -3180,6 +3180,23 @@
         }
       }
     },
+    "supermux.projects.row.detailsOn": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Project Details on"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロジェクトの詳細を表示する Mac"
+          }
+        }
+      }
+    },
     "supermux.projects.row.expandWorktrees": {
       "extractionState": "manual",
       "localizations": {
@@ -3227,6 +3244,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "ローカルワークスペースを開く"
+          }
+        }
+      }
+    },
+    "supermux.projects.row.openOn": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open on"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開く Mac"
           }
         }
       }

@@ -103,7 +103,8 @@ public struct SupermuxProjectsTableRowView: View {
                 toggleExpanded: { _ in actions.toggleProjectsExpanded(locationRowIDs) },
                 openWorkspace: actions.openProjectWorkspace,
                 openDetail: actions.openProjectDetail,
-                newWorktree: project.showsWorktreeCreation ? actions.requestNewWorktree : nil
+                newWorktree: project.showsWorktreeCreation ? actions.requestNewWorktree : nil,
+                copies: project.copies
             )
         }
     }

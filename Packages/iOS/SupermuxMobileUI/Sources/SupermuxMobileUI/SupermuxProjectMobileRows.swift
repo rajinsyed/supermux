@@ -29,6 +29,11 @@ struct SupermuxProjectMobileRow: View {
     /// Opens the New Worktree sheet (m7 sidebar create flow); `nil` hides the
     /// menu entry (no session, or no `supermux.worktrees.v1`).
     var newWorktree: (@MainActor (_ projectID: String) -> Void)?
+    /// Every Mac's copy of a project merged across Macs. With several, the
+    /// menu reaches each copy ("Open on ▸", "Project Details on ▸"), like the
+    /// Mac sidebar's "Open on" submenu; tap and the plain entries act on the
+    /// lead copy (``row``).
+    var copies: [SupermuxProjectCopyChoice] = []
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     // Not `private`: a private stored property suppresses the memberwise
@@ -169,6 +174,17 @@ struct SupermuxProjectMobileRow: View {
                 Image(systemName: "macwindow")
             }
         }
+        if copies.count > 1 {
+            copiesMenu(
+                title: String(
+                    localized: "supermux.projects.row.openOn",
+                    defaultValue: "Open on",
+                    bundle: .module
+                ),
+                systemImage: "macwindow",
+                action: openWorkspace
+            )
+        }
         if let newWorktree {
             Button {
                 newWorktree(row.id)
@@ -207,6 +223,37 @@ struct SupermuxProjectMobileRow: View {
                 ))
             } icon: {
                 Image(systemName: "info.circle")
+            }
+        }
+        if copies.count > 1 {
+            copiesMenu(
+                title: String(
+                    localized: "supermux.projects.row.detailsOn",
+                    defaultValue: "Project Details on",
+                    bundle: .module
+                ),
+                systemImage: "info.circle",
+                action: openDetail
+            )
+        }
+    }
+
+    /// A submenu with one entry per Mac's copy; an offline Mac's is disabled.
+    private func copiesMenu(
+        title: String,
+        systemImage: String,
+        action: @escaping @MainActor (_ projectID: String) -> Void
+    ) -> some View {
+        Menu {
+            ForEach(copies) { copy in
+                Button(copy.macName) { action(copy.rowID) }
+                    .disabled(!copy.isOnline)
+            }
+        } label: {
+            Label {
+                Text(title)
+            } icon: {
+                Image(systemName: systemImage)
             }
         }
     }

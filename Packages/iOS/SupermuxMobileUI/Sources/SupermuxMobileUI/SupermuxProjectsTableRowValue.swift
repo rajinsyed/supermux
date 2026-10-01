@@ -1,5 +1,17 @@
 import Foundation
 
+/// One Mac's copy of a merged project, as the row's per-Mac menu offers it.
+public struct SupermuxProjectCopyChoice: Equatable, Sendable, Identifiable {
+    /// The copy's project ROW id.
+    public var id: String { rowID }
+    /// The copy's project ROW id.
+    public let rowID: String
+    /// The Mac's user-facing name.
+    public let macName: String
+    /// Whether that Mac is connected (an offline Mac's entry is disabled).
+    public let isOnline: Bool
+}
+
 /// One project row in the iPhone's merged list.
 public struct SupermuxMergedProjectRowValue: Equatable, Sendable {
     /// The merged project's key.
@@ -13,6 +25,9 @@ public struct SupermuxMergedProjectRowValue: Equatable, Sendable {
     public let locationRowIDs: [String]
     /// Whether the lead Mac serves worktree creation.
     public let showsWorktreeCreation: Bool
+    /// Every shown Mac's copy, for the "Open on" and "Project Details on"
+    /// menus (drawn only when there are several).
+    public let copies: [SupermuxProjectCopyChoice]
 }
 
 /// One unopened worktree under an expanded merged project.
