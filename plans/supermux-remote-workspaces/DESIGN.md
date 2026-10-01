@@ -81,7 +81,8 @@ the main Mac is closed), and the same on iOS.
    still pushes); Macs can share push credentials + known phone tokens with each other over the
    authenticated same-account link (opt-in setting, default ON for the Supermux identity).
 9. **Notification read-state is shared.** A read/clear on the host marks the viewer's mirrored record
-   read; a focused-arrival on the viewer acknowledges the host.
+   read, and a read on the viewer (a click or typing in the mirror pane) reads the host's. A
+   focused-pane arrival rings until clicked on either Mac, as upstream does (round 4).
 10. **iOS** shows each Mac's projects (grouped per Mac when >1), navigation after Supermux RPCs maps
     Mac-local ids to scoped row ids, New Worktree has a Mac picker, push registration per Mac.
 11. **Enabled by default** for `com.supermux.app`: seed `cloud.beta.machines.enabled`,
