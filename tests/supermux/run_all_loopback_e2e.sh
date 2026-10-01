@@ -64,6 +64,7 @@ suite_args() {
     loopback_sidebar_rows_e2e) printf '%s\n' --scratch "$SCRATCH/rows" ;;
     loopback_terminal_input_e2e) printf '%s\n' --scratch "$SCRATCH/terminal-input" ;;
     loopback_terminal_sizing_policy_e2e) printf '%s\n' --app-path "$APP" --projects-file "$SCRATCH/projects.json" ;;
+    loopback_new_tab_order_e2e) printf '%s\n' --app-path "$APP" --projects-file "$SCRATCH/projects.json" ;;
     loopback_mirror_files_e2e) printf '%s\n' --scratch "$SCRATCH/files" --app-path "$APP" --projects-file "$SCRATCH/projects.json" --push-state-dir "$SCRATCH/push-state" ;;
   esac
 }
