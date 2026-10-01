@@ -38,10 +38,18 @@ enum SupermuxDeviceNotificationReadMirror {
         cmuxDebugLog("supermux.device.notification.hostRead machine=\(machineID) marking=\(ids.count)")
         #endif
         store.markNotificationFeedRead(ids: ids)
-        // A read there also ends the focused pane's ring here, which a feed
-        // read alone keeps (upstream clears it only on a click or typing).
-        for notification in store.notifications where ids.contains(notification.id) {
-            guard let surfaceId = notification.surfaceId else { continue }
+        clearFocusedRings(afterReading: ids, in: store)
+    }
+
+    /// A read on the other Mac also ends the focused pane's ring here, which a
+    /// feed read alone keeps (upstream clears it only on a click or typing).
+    /// A pane that still has an unread record keeps it: that newer record set
+    /// the pane's single indicator, and its own read ends it later. Used in
+    /// both directions (the host side: `supermuxNotificationFeedMarkRead`).
+    static func clearFocusedRings(afterReading readIDs: Set<UUID>, in store: TerminalNotificationStore) {
+        for notification in store.notifications where readIDs.contains(notification.id) {
+            guard let surfaceId = notification.surfaceId,
+                  !store.hasUnreadNotification(forTabId: notification.tabId, surfaceId: surfaceId) else { continue }
             store.clearFocusedReadIndicator(forTabId: notification.tabId, surfaceId: surfaceId)
         }
     }
