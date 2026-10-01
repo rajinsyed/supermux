@@ -1955,6 +1955,7 @@
 		B37A00000000000000000009 /* FileExplorerState.swift in Sources */ = {isa = PBXBuildFile; fileRef = B37A0000000000000000000A /* FileExplorerState.swift */; };
 		B37A0000000000000000000B /* FileExplorerStateModePersistenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B37A0000000000000000000C /* FileExplorerStateModePersistenceTests.swift */; };
 		CFSF00000000000000000008 /* FileExplorerStore+RemoteRoots.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFSR00000000000000000008 /* FileExplorerStore+RemoteRoots.swift */; };
+		50BE00170500000000000010 /* FileExplorerStore+SupermuxDevice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE0017050000000000000F /* FileExplorerStore+SupermuxDevice.swift */; };
 		ECAF5D9819531E51EA9DB681 /* FileExplorerStore+Workspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4C45C476EFD93642E069F38 /* FileExplorerStore+Workspace.swift */; };
 		FE001101 /* FileExplorerStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE001001 /* FileExplorerStore.swift */; };
 		FE002102 /* FileExplorerStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE002002 /* FileExplorerStoreTests.swift */; };
@@ -3402,6 +3403,9 @@
 		50BE000A0000000000000010 /* SupermuxDeviceChangesTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000A000000000000000F /* SupermuxDeviceChangesTransport.swift */; };
 		50BE00040000000000000006 /* SupermuxDeviceError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00040000000000000005 /* SupermuxDeviceError.swift */; };
 		50BE00040000000000000004 /* SupermuxDeviceEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00040000000000000003 /* SupermuxDeviceEvent.swift */; };
+		50BE0017050000000000000A /* SupermuxDeviceFileError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00170500000000000009 /* SupermuxDeviceFileError.swift */; };
+		50BE0017050000000000000E /* SupermuxDeviceFileExplorerProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE0017050000000000000D /* SupermuxDeviceFileExplorerProvider.swift */; };
+		50BE0017050000000000000C /* SupermuxDeviceFileTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE0017050000000000000B /* SupermuxDeviceFileTransport.swift */; };
 		50BE000C0000000000000002 /* SupermuxDeviceLayoutChangeObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000C0000000000000001 /* SupermuxDeviceLayoutChangeObserver.swift */; };
 		50BE00050000000000000018 /* SupermuxDeviceLayoutSurfaceFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00050000000000000017 /* SupermuxDeviceLayoutSurfaceFilter.swift */; };
 		50BE0004000000000000000E /* SupermuxDeviceLinkEvents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE0004000000000000000D /* SupermuxDeviceLinkEvents.swift */; };
@@ -3476,6 +3480,7 @@
 		50BE000A0000000000000024 /* SupermuxMirrorChangesSocket.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000A0000000000000023 /* SupermuxMirrorChangesSocket.swift */; };
 		50BE000A0000000000000012 /* SupermuxMirrorChangesSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000A0000000000000011 /* SupermuxMirrorChangesSource.swift */; };
 		50BE000A000000000000001E /* SupermuxMirrorFileExplorerRoot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000A000000000000001D /* SupermuxMirrorFileExplorerRoot.swift */; };
+		50BE00170500000000000008 /* SupermuxMirrorFileRoot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00170500000000000007 /* SupermuxMirrorFileRoot.swift */; };
 		50BE00170500000000000002 /* SupermuxMirrorFilesSocket.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00170500000000000001 /* SupermuxMirrorFilesSocket.swift */; };
 		50BE000A0000000000000022 /* SupermuxMirrorLocalPathActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000A0000000000000021 /* SupermuxMirrorLocalPathActions.swift */; };
 		50BE00060000000000000008 /* SupermuxMirrorOwnership.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00060000000000000007 /* SupermuxMirrorOwnership.swift */; };
@@ -6398,6 +6403,7 @@
 		B37A0000000000000000000A /* FileExplorerState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileExplorerState.swift; sourceTree = "<group>"; };
 		B37A0000000000000000000C /* FileExplorerStateModePersistenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileExplorerStateModePersistenceTests.swift; sourceTree = "<group>"; };
 		CFSR00000000000000000008 /* FileExplorerStore+RemoteRoots.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FileExplorerStore+RemoteRoots.swift"; sourceTree = "<group>"; };
+		50BE0017050000000000000F /* FileExplorerStore+SupermuxDevice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Mirrors/FileExplorerStore+SupermuxDevice.swift"; sourceTree = "<group>"; };
 		B4C45C476EFD93642E069F38 /* FileExplorerStore+Workspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FileExplorerStore+Workspace.swift"; sourceTree = "<group>"; };
 		FE001001 /* FileExplorerStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileExplorerStore.swift; sourceTree = "<group>"; };
 		FE002002 /* FileExplorerStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileExplorerStoreTests.swift; sourceTree = "<group>"; };
@@ -7821,6 +7827,9 @@
 		50BE000A000000000000000F /* SupermuxDeviceChangesTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mirrors/SupermuxDeviceChangesTransport.swift; sourceTree = "<group>"; };
 		50BE00040000000000000005 /* SupermuxDeviceError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceError.swift; sourceTree = "<group>"; };
 		50BE00040000000000000003 /* SupermuxDeviceEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceEvent.swift; sourceTree = "<group>"; };
+		50BE00170500000000000009 /* SupermuxDeviceFileError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mirrors/SupermuxDeviceFileError.swift; sourceTree = "<group>"; };
+		50BE0017050000000000000D /* SupermuxDeviceFileExplorerProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mirrors/SupermuxDeviceFileExplorerProvider.swift; sourceTree = "<group>"; };
+		50BE0017050000000000000B /* SupermuxDeviceFileTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mirrors/SupermuxDeviceFileTransport.swift; sourceTree = "<group>"; };
 		50BE000C0000000000000001 /* SupermuxDeviceLayoutChangeObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceLayoutChangeObserver.swift; sourceTree = "<group>"; };
 		50BE00050000000000000017 /* SupermuxDeviceLayoutSurfaceFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceLayoutSurfaceFilter.swift; sourceTree = "<group>"; };
 		50BE0004000000000000000D /* SupermuxDeviceLinkEvents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceLinkEvents.swift; sourceTree = "<group>"; };
@@ -7894,6 +7903,7 @@
 		50BE000A0000000000000023 /* SupermuxMirrorChangesSocket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mirrors/SupermuxMirrorChangesSocket.swift; sourceTree = "<group>"; };
 		50BE000A0000000000000011 /* SupermuxMirrorChangesSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mirrors/SupermuxMirrorChangesSource.swift; sourceTree = "<group>"; };
 		50BE000A000000000000001D /* SupermuxMirrorFileExplorerRoot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mirrors/SupermuxMirrorFileExplorerRoot.swift; sourceTree = "<group>"; };
+		50BE00170500000000000007 /* SupermuxMirrorFileRoot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mirrors/SupermuxMirrorFileRoot.swift; sourceTree = "<group>"; };
 		50BE00170500000000000001 /* SupermuxMirrorFilesSocket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mirrors/SupermuxMirrorFilesSocket.swift; sourceTree = "<group>"; };
 		50BE000A0000000000000021 /* SupermuxMirrorLocalPathActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mirrors/SupermuxMirrorLocalPathActions.swift; sourceTree = "<group>"; };
 		50BE00060000000000000007 /* SupermuxMirrorOwnership.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Projects/SupermuxMirrorOwnership.swift; sourceTree = "<group>"; };
@@ -9267,6 +9277,11 @@
 				50BE000A000000000000001F /* SupermuxMirrorSocketCommands.swift */,
 				50BE000A0000000000000021 /* SupermuxMirrorLocalPathActions.swift */,
 				50BE000A0000000000000023 /* SupermuxMirrorChangesSocket.swift */,
+				50BE0017050000000000000F /* FileExplorerStore+SupermuxDevice.swift */,
+				50BE0017050000000000000D /* SupermuxDeviceFileExplorerProvider.swift */,
+				50BE0017050000000000000B /* SupermuxDeviceFileTransport.swift */,
+				50BE00170500000000000009 /* SupermuxDeviceFileError.swift */,
+				50BE00170500000000000007 /* SupermuxMirrorFileRoot.swift */,
 				50BE00170500000000000005 /* SupermuxHostFileSearch.swift */,
 				50BE00170500000000000003 /* SupermuxMobileHost+FilesRead.swift */,
 				50BE00170500000000000001 /* SupermuxMirrorFilesSocket.swift */,
@@ -15258,6 +15273,7 @@
 				FE5996070000000000000002 /* FileExplorerSearchResultsTableView.swift in Sources */,
 				B37A00000000000000000009 /* FileExplorerState.swift in Sources */,
 				CFSF00000000000000000008 /* FileExplorerStore+RemoteRoots.swift in Sources */,
+				50BE00170500000000000010 /* FileExplorerStore+SupermuxDevice.swift in Sources */,
 				ECAF5D9819531E51EA9DB681 /* FileExplorerStore+Workspace.swift in Sources */,
 				FE001101 /* FileExplorerStore.swift in Sources */,
 				FE001104 /* FileExplorerTerminalPathInsertion.swift in Sources */,
@@ -16182,6 +16198,9 @@
 				50BE000A0000000000000010 /* SupermuxDeviceChangesTransport.swift in Sources */,
 				50BE00040000000000000006 /* SupermuxDeviceError.swift in Sources */,
 				50BE00040000000000000004 /* SupermuxDeviceEvent.swift in Sources */,
+				50BE0017050000000000000A /* SupermuxDeviceFileError.swift in Sources */,
+				50BE0017050000000000000E /* SupermuxDeviceFileExplorerProvider.swift in Sources */,
+				50BE0017050000000000000C /* SupermuxDeviceFileTransport.swift in Sources */,
 				50BE000C0000000000000002 /* SupermuxDeviceLayoutChangeObserver.swift in Sources */,
 				50BE00050000000000000018 /* SupermuxDeviceLayoutSurfaceFilter.swift in Sources */,
 				50BE0004000000000000000E /* SupermuxDeviceLinkEvents.swift in Sources */,
@@ -16252,6 +16271,7 @@
 				50BE000A0000000000000024 /* SupermuxMirrorChangesSocket.swift in Sources */,
 				50BE000A0000000000000012 /* SupermuxMirrorChangesSource.swift in Sources */,
 				50BE000A000000000000001E /* SupermuxMirrorFileExplorerRoot.swift in Sources */,
+				50BE00170500000000000008 /* SupermuxMirrorFileRoot.swift in Sources */,
 				50BE00170500000000000002 /* SupermuxMirrorFilesSocket.swift in Sources */,
 				50BE000A0000000000000022 /* SupermuxMirrorLocalPathActions.swift in Sources */,
 				50BE00060000000000000008 /* SupermuxMirrorOwnership.swift in Sources */,

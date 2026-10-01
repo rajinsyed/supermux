@@ -8,8 +8,9 @@ import Foundation
 /// - "Open in <Editor>" / Reveal: the focused pane must allow a local
 ///   directory (`allowsLocalDirectoryFallback`), else the command palette's
 ///   open-directory commands have no target,
-/// - Files panel: `FileExplorerWorkspaceRootResolver` (with the fork's
-///   "On <Mac>" hint for mirrors).
+/// - Files panel: `FileExplorerWorkspaceRootResolver` (a mirror browses the
+///   owning Mac's folder over the device link, `kind: "device"`, or names
+///   that Mac when it cannot).
 @MainActor
 enum SupermuxMirrorLocalPathActions {
     static func describe(_ workspace: Workspace) -> [String: Any] {
@@ -33,6 +34,8 @@ enum SupermuxMirrorLocalPathActions {
             return ["kind": "ssh", "is_available": isAvailable, "display_target": displayTarget, "detail": detail ?? NSNull()]
         case .remoteCloud(_, _, let displayTarget, _, let isAvailable, let detail, _):
             return ["kind": "remote", "is_available": isAvailable, "display_target": displayTarget, "detail": detail ?? NSNull()]
+        case .supermuxDevice(let root):
+            return ["kind": "device", "is_available": true, "display_target": root.deviceName, "root_path": root.rootPath]
         }
     }
 }
