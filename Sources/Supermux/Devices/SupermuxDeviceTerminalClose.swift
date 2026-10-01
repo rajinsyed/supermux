@@ -1,3 +1,4 @@
+import Bonsplit
 import CmuxSurfaceCatalogModel
 import Foundation
 
@@ -61,5 +62,66 @@ enum SupermuxDeviceTerminalClose {
         SupermuxComposition.devices.device(for: machine)?.displayName
             ?? catalog?.machines[machine]?.name
             ?? machine.rawValue
+    }
+}
+
+/// Which other-Mac tabs were selected as they closed, so a close the user
+/// cancels in "Close “X” on <Mac>?" brings the tab back selected (the
+/// `device-close-cancel-restores-tab` touchpoint).
+///
+/// The mirror tab leaves the strip when it is closed, before the other Mac
+/// answers that a program is running there; Cancel then brings the terminal
+/// back as a new pane, which the layout puts back at its place in the strip
+/// but which nothing selected, so the neighbour that took over stayed selected.
+@MainActor
+final class SupermuxDeviceClosedTabs {
+    static let shared = SupermuxDeviceClosedTabs()
+
+    private struct Key: Hashable {
+        let workspaceID: UUID
+        let surfaceKey: String
+    }
+
+    /// Closed device tabs that were selected in their pane, with when they closed.
+    private var selected: [Key: Date] = [:]
+
+    /// A tab is closing: remembers whether it was its pane's selected tab when
+    /// it shows another Mac's terminal.
+    func noteClosing(_ tab: TabID, inPane pane: PaneID, workspace: Workspace) {
+        guard let panelID = workspace.panelIdFromSurfaceId(tab),
+              let projection = SurfaceCatalog.shared.projection(forPanel: panelID),
+              projection.resource.machine.isDevice else { return }
+        let key = Key(workspaceID: workspace.id, surfaceKey: projection.resource.key.lowercased())
+        if workspace.bonsplitController.selectedTab(inPane: pane)?.id == tab {
+            selected[key] = Date()
+        } else {
+            selected[key] = nil
+        }
+    }
+
+    /// The close of `surfaceKey` was cancelled: once the terminal is shown
+    /// again (within a few seconds), selects it if its tab was selected.
+    func closeDeclined(surfaceKey: String, workspaceID: UUID, machine: SurfaceMachineID) {
+        let key = Key(workspaceID: workspaceID, surfaceKey: surfaceKey.lowercased())
+        guard let closedAt = selected.removeValue(forKey: key), Date().timeIntervalSince(closedAt) < 600 else { return }
+        Task { @MainActor in
+            for _ in 0..<50 {
+                if Self.selectRestoredTab(key: key, machine: machine) { return }
+                try? await Task.sleep(nanoseconds: 100_000_000)
+            }
+        }
+    }
+
+    private static func selectRestoredTab(key: Key, machine: SurfaceMachineID) -> Bool {
+        guard let workspace = Workspace.liveWorkspace(id: key.workspaceID),
+              let projection = SurfaceCatalog.shared.projections.first(where: {
+                  $0.workspaceID == key.workspaceID && $0.resource.machine == machine
+                      && $0.resource.key.lowercased() == key.surfaceKey
+              }),
+              let tab = workspace.surfaceIdFromPanelId(projection.panelID),
+              let pane = workspace.paneId(forPanelId: projection.panelID) else { return false }
+        workspace.bonsplitController.focusPane(pane)
+        workspace.bonsplitController.selectTab(tab)
+        return true
     }
 }

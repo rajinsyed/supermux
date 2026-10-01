@@ -367,7 +367,10 @@ final class DeviceWorkspaceLayoutCoordinator {
                 // of treating its missing local pane as a permanent detach.
                 if let id = close.workspaceID { deliveries[id] = nil }
             }
-            // SUPERMUX:begin device-terminal-close-confirm (a declined prompt restores the tab above without a failure card)
+            // SUPERMUX:begin device-terminal-close-confirm (a declined prompt restores the tab above without a failure card, selected again if it was)
+            if error is SupermuxDeviceTerminalClose.Declined, let id = close.workspaceID {
+                SupermuxDeviceClosedTabs.shared.closeDeclined(surfaceKey: close.surfaceID, workspaceID: id, machine: machine)
+            }
             close.fail(error is SupermuxDeviceTerminalClose.Declined ? CancellationError() as any Error : error)
             // SUPERMUX:end device-terminal-close-confirm
         }
