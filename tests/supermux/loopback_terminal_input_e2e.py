@@ -28,7 +28,12 @@ Ghostty view (debug.shortcut.simulate), so they take the same path a keyboard do
   8. hidden_source_pane_does_not_count
                                    the source Mac's hidden pane does not hold the grid
                                    down: the terminal takes the viewing mirror's grid
-  9. hidden_mirror_does_not_count  a mirror that is not on screen stops counting
+                                   (decided AND real PTY grid, read with a capture)
+  9. new_remote_tab_fills_the_mirror
+                                   a tab opened from the mirror (created in the background on
+                                   the source Mac) gets the mirror's full grid, not the size of
+                                   a pane nobody there has seen
+ 10. hidden_mirror_does_not_count  a mirror that is not on screen stops counting
 
 Writes a JSON report (default tests/supermux/artifacts/loopback_terminal_input_e2e-<tag>.json)
 with expected and received hex per key, and exits non-zero on any failure. Stdlib only.
@@ -238,6 +243,39 @@ class TerminalInputE2E:
         payload = self.sock.call("terminal.size_state", {"surface_id": surface_id}) or {}
         return payload.get("size_state") or {}
 
+    def live_grid(self, surface_id: str) -> Optional[tuple]:
+        """The PTY grid the source terminal really has (a capture over the device, not the decided size)."""
+        reply = self.sock.call("supermux.devices.request", {
+            "machine": self.machine, "method": "mobile.terminal.replay",
+            "params": {"workspace_id": self.source_id, "surface_id": surface_id}, "timeout_seconds": 20,
+        }, timeout_s=30) or {}
+        result = reply.get("result") or {}
+        frame = result.get("render_grid") if isinstance(result.get("render_grid"), dict) else result
+        if frame.get("columns") is None or frame.get("rows") is None:
+            return None
+        return (int(frame["columns"]), int(frame["rows"]))
+
+    def follows_viewer(self, surface_id: str) -> Callable[[], Optional[Dict[str, Any]]]:
+        """Probe: the hidden source pane does not count, and the terminal's real
+        PTY grid is the viewing mirror's pane grid."""
+        def probe() -> Optional[Dict[str, Any]]:
+            state = self.size_state(surface_id)
+            rows = self.participants(state)
+            mac = next((r for r in rows if str(r["id"]).startswith("mac:")), None)
+            viewer = next((r for r in rows if str(r["id"]).startswith("mobile:")), None)
+            if not viewer or not viewer.get("viewport"):
+                raise Failure(f"the viewing mirror is not a participant yet: {rows}")
+            want = (int(viewer["viewport"]["cols"]), int(viewer["viewport"]["rows"]))
+            if mac and mac.get("counts"):
+                raise Failure(f"the source Mac's hidden pane still counts: {rows}, grid {self.grid(state)}")
+            if self.grid(state) != want:
+                raise Failure(f"decided grid {self.grid(state)} != the viewer's {want}: {rows}")
+            live = self.live_grid(surface_id)
+            if live != want:
+                raise Failure(f"the terminal's real grid is {live}, not the viewer's {want}")
+            return {"grid": list(want), "live_grid": list(live), "participants": rows}
+        return probe
+
     @staticmethod
     def participants(state: Dict[str, Any]) -> List[Dict[str, Any]]:
         rows = []
@@ -383,22 +421,24 @@ class TerminalInputE2E:
     def hidden_source_pane(self) -> Dict[str, Any]:
         """The mirror is on screen and the source is not: the mirror's grid wins."""
         self.sock.call("workspace.select", {"workspace_id": self.mirror_id})
+        return wait_for("the source terminal to take the viewing mirror's grid",
+                        self.follows_viewer(self.source_surface), self.timeout)
 
-        def follows_viewer() -> Optional[Dict[str, Any]]:
-            state = self.size_state(self.source_surface)
-            rows = self.participants(state)
-            mac = next((r for r in rows if str(r["id"]).startswith("mac:")), None)
-            viewer = next((r for r in rows if str(r["id"]).startswith("mobile:")), None)
-            if not viewer or not viewer.get("viewport"):
-                raise Failure(f"the viewing mirror is not a participant yet: {rows}")
-            want = (int(viewer["viewport"]["cols"]), int(viewer["viewport"]["rows"]))
-            if mac and mac.get("counts"):
-                raise Failure(f"the source Mac's hidden pane still counts: {rows}, grid {self.grid(state)}")
-            if self.grid(state) != want:
-                raise Failure(f"grid {self.grid(state)} != the viewer's {want}: {rows}")
-            return {"grid": list(want), "participants": rows}
-
-        return wait_for("the source terminal to take the viewing mirror's grid", follows_viewer, self.timeout)
+    def new_remote_tab_fills_the_mirror(self) -> Dict[str, Any]:
+        """A tab opened from the mirror is created in the background on the source
+        Mac, in a pane nobody there has seen: it still gets the mirror's full grid."""
+        self.sock.call("workspace.select", {"workspace_id": self.mirror_id})
+        reply = self.sock.call("supermux.devices.request", {
+            "machine": self.machine, "method": "mobile.terminal.create",
+            "params": {"workspace_id": self.source_id}, "timeout_seconds": 30,
+        }, timeout_s=40) or {}
+        terminal = up((reply.get("result") or {}).get("created_terminal_id"))
+        if not terminal:
+            raise Failure(f"mobile.terminal.create returned no created_terminal_id: {reply}")
+        panel = wait_for("the mirror to show the new tab", lambda: self.mirror_panel_for(terminal), self.timeout)
+        self.sock.call("surface.focus", {"workspace_id": self.mirror_id, "surface_id": panel})
+        result = wait_for("the new tab to take the viewing mirror's grid", self.follows_viewer(terminal), self.timeout)
+        return {"terminal": terminal, "mirror_panel": panel, **result}
 
     def hidden_mirror(self) -> Dict[str, Any]:
         """Showing the source instead hides the mirror, which then stops counting."""
@@ -445,6 +485,7 @@ class TerminalInputE2E:
             ok = self.step("mouse_drag_is_mouse_reports", self.mouse_drag) and ok
             ok = self.step("keys_survive_reattach", self.keys_survive_reattach) and ok
             ok = self.step("hidden_source_pane_does_not_count", self.hidden_source_pane) and ok
+            ok = self.step("new_remote_tab_fills_the_mirror", self.new_remote_tab_fills_the_mirror) and ok
             ok = self.step("hidden_mirror_does_not_count", self.hidden_mirror) and ok
         self.facts["received_hex_total"] = self.received_hex()
         self.cleanup()
