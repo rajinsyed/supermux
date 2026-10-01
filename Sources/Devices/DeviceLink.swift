@@ -238,7 +238,14 @@ final class DeviceLink {
             switch error {
             case .rpcError(let code, let message):
                 throw DeviceLinkError.hostRejected(code: code, message: message)
-            case .connectionClosed, .requestTimedOut, .transportWriteTimedOut:
+            // SUPERMUX:begin device-link-slow-request (upstream's `.requestTimedOut` taken out of the next case: a missed deadline fails alone while the host still answers)
+            case .requestTimedOut:
+                let failure = await supermuxMissedDeadline(error, client: client) {
+                    !Task.isCancelled && requestGeneration == self.generation
+                }
+                throw failure
+            case .connectionClosed, .transportWriteTimedOut:
+            // SUPERMUX:end device-link-slow-request
                 reportTransportLost(error)
                 throw DeviceLinkError.notConnected
             default:
