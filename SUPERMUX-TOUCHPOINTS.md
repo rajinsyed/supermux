@@ -12,13 +12,13 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **684**. The remote-workspaces work (#517–#599) left
+- Numbering: the highest number in use is **685**. The remote-workspaces work (#517–#599) left
   unassigned gaps it may still grow into: **523–524, 527–529, 539–544, 558–559, 562–569,
   578–579 and 588–589** (never assigned, not retired); #600–#601 came from the 2026-10-01 upstream merge; #620–#622 and
   #630–#639 are the remote-workspaces feedback round (602–619 and 623–629 unassigned). The second
   feedback round uses #640–#644 (busy mirror tab close), #650–#653 (mirror appearance), #660–#664
   (new tabs append), #665–#670 (terminal size preference) and #675–#681 (a mirror's Files panel);
-  its stabilization uses #682–#684 (preview refresh and its alert);
+  its stabilization uses #682–#684 (preview refresh and its alert) and #685 (replayed mouse modes);
   645–649, 654–659, 671–674 are unassigned. Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 82, 83, 89, 106, 121, 142, 213, 214,
@@ -622,6 +622,7 @@ Rules for adding a touchpoint:
 | 682 | `Sources/FileExplorerPreviewCoordinator.swift` | `preview-error-alert-nonblocking` | `present(_:window:)` shows the failed-open alert with `SupermuxAlertPresentation.show(alert, preferring: window)` instead of `_ = alert.runCmuxModal(presentingWindow: window)`. It is called from the open's main-actor task, where `runCmuxModal`'s nested modal session starved the main queue: every socket call, mirror and main-actor task waited for OK (the files E2E hung the whole app). Now a sheet on the main window (or an app-modal alert run from a run-loop block outside the job) that nothing waits for |
 | 683 | `Sources/CloudFilePreviewCache.swift` | `preview-refresh-readonly-replace` | In `refresh(_:provider:)`, the new copy replaces the preview's with `rename(2)` (throwing `POSIXError` on failure) instead of `replaceItemAt` / `moveItem`. The preview copy is `0o400` and `replaceItemAt` needs a writable original, so every refresh (reopening an open remote preview, its Refresh button) failed with "permission denied" and raised "Unable to open remote file" — Cloud and device previews alike |
 | 684 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/SupermuxAlertPresentation.swift` (the non-blocking alert presenter for #682 and the busy mirror-tab close prompt) into the cmux target (ids `50BE00170600000000000001`/`…02`, four entries, in the Supermux group) |
+| 685 | `Packages/Shared/CMUXMobileCore/Sources/CMUXMobileCore/MobileTerminalRenderGridReplay.swift` | `replay-mouse-modes-last` | In `fullSnapshotBytes()`, the frame's modes are re-applied disabled first, then enabled (`frame.modes.filter { !$0.on } + frame.modes.filter(\.on)`), instead of in the frame's code order. Ghostty keeps one mouse event mode (?9/?1000/?1002/?1003) and one mouse format (?1005/?1006/?1015/?1016), and resetting any of them clears whichever is on, so `?1003l` after `?1002h` (and `?1015l`/`?1016l` after `?1006h`) left every replayed view (a device mirror after any grid change or reattach, a phone) without mouse reporting: a drag selected text instead of reaching the program |
 
 ## How to re-apply
 
@@ -5366,3 +5367,21 @@ Re-apply after an upstream merge:
 Verify: `CMUX_E2E_SUITES="loopback_mirror_files_e2e loopback_mirror_tab_close_e2e" CMUX_TAG=<tag>
 tests/supermux/run_all_loopback_e2e.sh` (`open_file_preview` reopens a changed file; `large_file_capped`
 shows the 8 MB refusal as a sheet while the socket keeps answering).
+
+### 685. A replay keeps the program's mouse modes — `replay-mouse-modes-last`
+
+Found by the input E2E once its key checks pressed each key on the source Mac too: hiding and showing
+the mirror changes the terminal's grid, every grid change replays the mirror, and after a replay a
+drag in the mirror selected text instead of reaching Claude Code as mouse reports. The render-grid
+frame carries the right modes (`1000`, `1002`, `1006` on), but the full snapshot re-applied them in
+code order and Ghostty's mouse event and format modes are single settings that any reset clears
+(`ghostty/src/termio/stream_handler.zig`), so the frame's own `?1003l` and `?1015l`/`?1016l` undid
+them. Upstream bug (phones replay the same way).
+
+Re-apply after an upstream merge: keep the reorder on the full snapshot's mode loop (after the default
+baseline, before the cursor restore). If upstream emits the mouse groups in an order-safe way itself
+(or only the enabled member of each group), retire it.
+
+Verify: `swift test --filter MobileTerminalRenderGrid` in `Packages/Shared/CMUXMobileCore`, then
+`CMUX_E2E_SUITES="loopback_terminal_input_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`
+(`mouse_drag_is_mouse_reports` and `mouse_survives_replay`).

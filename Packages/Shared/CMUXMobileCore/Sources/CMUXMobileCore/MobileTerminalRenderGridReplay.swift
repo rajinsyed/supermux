@@ -273,7 +273,10 @@ public struct MobileTerminalRenderGridReplay: Sendable {
         // The baseline also covers older frames that omitted `modes`, so stale
         // state from a reused surface cannot leak through the full replay.
         appendDefaultModeBaseline(to: &bytes)
-        for mode in frame.modes where !isReplayExcludedMode(mode) {
+        // SUPERMUX:begin replay-mouse-modes-last (Ghostty keeps one mouse event mode (?9/?1000/?1002/?1003) and one mouse format (?1005/?1006/?1015/?1016): a reset of any of them clears whichever is on, so the frame's `?1003l` after `?1002h` left a replayed mirror selecting text instead of reporting the mouse. Disabled modes go first, enabled ones after. Upstream: `for mode in frame.modes where !isReplayExcludedMode(mode) {`)
+        let replayedModes = frame.modes.filter { !$0.on } + frame.modes.filter(\.on)
+        for mode in replayedModes where !isReplayExcludedMode(mode) {
+        // SUPERMUX:end replay-mouse-modes-last
             bytes.append(modeBytes(mode))
         }
 
