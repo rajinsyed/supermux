@@ -26,8 +26,8 @@ public struct SupermuxProjectsPreviewMac: Sendable {
 ///   loose `scratch`.
 /// - Studio (`preview-studio`/`stable`): `cmux` (`https://github.com/acme/cmux`,
 ///   another path) and `infra`; workspaces `cmux-fix` (cmux), `infra-api`
-///   (infra) and `infra-ops`, which infra owns but which sits in the cmux
-///   group "Ops".
+///   (infra), and the cmux group "Ops" (led by `ops-lead`) holding
+///   `infra-ops`, which infra owns.
 /// - Mac mini (`preview-mini`): no Supermux capabilities; one loose workspace.
 public enum SupermuxProjectsPreviewFixture {
     /// The launch-environment switch.
@@ -168,6 +168,7 @@ public enum SupermuxProjectsPreviewFixture {
             row("ws-scratch", "scratch", on: laptop, minutesAgo: 8),
             row("ws-cmux-fix", "cmux-fix", on: studio, project: "proj-b-cmux", minutesAgo: 5),
             row("ws-infra-api", "infra-api", on: studio, project: "proj-b-infra", minutesAgo: 12),
+            row("ws-ops-lead", "ops-lead", on: studio, group: opsGroupID, minutesAgo: 15),
             row("ws-infra-ops", "infra-ops", on: studio, project: "proj-b-infra", group: opsGroupID, minutesAgo: 20),
             row("ws-mini-shell", "mini-shell", on: mini, minutesAgo: 40),
         ]
@@ -181,7 +182,7 @@ public enum SupermuxProjectsPreviewFixture {
                 macDeviceID: studio.macDeviceID,
                 macInstanceTag: studio.instanceTag,
                 name: "Ops",
-                anchorWorkspaceID: "ws-infra-ops"
+                anchorWorkspaceID: "ws-ops-lead"
             ),
         ]
     }
