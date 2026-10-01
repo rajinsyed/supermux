@@ -23,7 +23,8 @@ device, and auto-mirror opens one local mirror workspace per source. Checks:
   d. hide_and_unhide              "Hide Here" (socket close_mirror hide) is never reopened;
                                    a programmatic workspace.close of a mirror hides too;
                                    supermux.devices.unhide brings the mirror back
-  e. close_on_mac                  "Close on <Mac>" (socket close_mirror close_on_mac) closes the
+  e. close_on_mac                  a close on the Mac (socket close_mirror close_on_mac, what a user
+                                   close does once this Mac's confirmations passed) closes the
                                    source and the mirror, and nothing reopens
   f. agent_activity                set_agent_lifecycle on the source -> mirror activity working /
                                    needsInput / ready; the duplicated agent pill is not mirrored

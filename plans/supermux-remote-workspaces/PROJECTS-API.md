@@ -210,8 +210,8 @@ most every 10 min otherwise), for each connected, non-loopback device serving pr
   PR and run badges, the amber working spinner (6·scale, always visible, hover included), the unread
   badge, then the close button while hovered. Remote worktree rows: the PR badge, then the hover
   arrow.
-- A mirror row's menu (nested and flat, #574) offers **Hide Here** and **Close on <Mac>…** (the
-  mirror close prompt); a local row keeps Close Workspace.
+- Every row's menu offers Close Workspace (a mirror closes on its Mac, like a local workspace); a
+  mirror row's menu (nested and flat, #574) also offers **Hide Here**.
 - Local project rows: device worktrees (each with its Mac icon) in the disclosure, "Open on ▸" when
   several Macs have it, remote worktrees in "Worktrees ▸", "Set Up on <Mac>…". Edit/Reveal/Move stay
   local-only.
