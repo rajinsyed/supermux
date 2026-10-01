@@ -55,7 +55,9 @@ public final class SupermuxProjectsModel: SupermuxDirectoryAssociationPersisting
     /// Optional AI branch-name suggester. When `nil`, blank branch fields fall
     /// back to the worktree service's random-name behavior.
     @ObservationIgnored private let branchNamer: (any SupermuxAIBranchNaming)?
-    private var hasLoaded = false
+    /// Whether the projects document was read, so ``projects`` is known. The
+    /// first load's config imports and worktree listing may still be running.
+    public private(set) var hasLoaded = false
     /// The in-flight (or completed) load; concurrent ``loadIfNeeded()`` callers
     /// await this single task instead of re-running the load body.
     @ObservationIgnored private var loadTask: Task<Void, Never>?

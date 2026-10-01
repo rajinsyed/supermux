@@ -106,6 +106,17 @@ public actor SupermuxGitRemoteURLResolver {
         }
     }
 
+    /// Origins for several roots within `timeout` seconds, keyed by each root
+    /// exactly as passed: the roots resolved by then, and for the rest the
+    /// last origin known, however old. The lookups still running end on their
+    /// own and are cached for the next call. The git deadline alone does not
+    /// bound this: git blocked in a folder whose macOS privacy prompt nobody
+    /// answers cannot be killed until the kernel lets it go.
+    public func remoteURLs(forRoots roots: [String], within timeout: TimeInterval) async -> [String: String] {
+        let resolved = await SupermuxBoundedAwait(timeout: timeout).value { await self.remoteURLs(forRoots: roots) }
+        return resolved ?? lastKnownRemoteURLs(forRoots: roots)
+    }
+
     /// Forgets one root's answer; the next request asks git again.
     public func invalidate(root: String) {
         let key = Self.normalizedRoot(root)
@@ -117,6 +128,15 @@ public actor SupermuxGitRemoteURLResolver {
     public func invalidateAll() {
         cache.removeAll()
         inFlight.removeAll()
+    }
+
+    /// The last origin cached for each root, expired or not.
+    private func lastKnownRemoteURLs(forRoots roots: [String]) -> [String: String] {
+        var urls: [String: String] = [:]
+        for root in roots {
+            if let url = cache[Self.normalizedRoot(root)]?.url { urls[root] = url }
+        }
+        return urls
     }
 
     private static func normalizedRoot(_ root: String) -> String {

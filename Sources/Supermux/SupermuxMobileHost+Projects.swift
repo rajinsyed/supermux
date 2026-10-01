@@ -15,28 +15,47 @@ extension TerminalController {
     nonisolated static let supermuxProjectIconReads = SupermuxBoundedLookups<SupermuxProjectIconPayload>()
     /// How long `project.icon` waits for its read.
     nonisolated static let supermuxProjectIconTimeout: TimeInterval = 10
+    /// How long `projects.list` waits for the first load, for the git
+    /// origins and for the file facts, and a project result for its origin:
+    /// the file facts' own bound.
+    nonisolated static let supermuxProjectsLookupBound: TimeInterval = SupermuxProjectFileFacts.timeout
 
     /// `mobile.supermux.projects.list`: the registered projects, the global
     /// terminal presets (the same set the desktop bar shows above every
     /// workspace), and the sidebar section's collapse state, as
     /// `{projects: [SupermuxProjectDTO], presets: [SupermuxTerminalPresetDTO],
     /// section_collapsed}`.
+    ///
+    /// Every wait is bounded (``supermuxProjectsLookupBound`` each), because
+    /// the work behind them is file and git access in each project's folder,
+    /// which blocks in the kernel while a macOS privacy prompt for that folder
+    /// is unanswered (nobody answers it on a headless Mac): one held list
+    /// missed the caller's 20 s reply deadline on every connect. The first
+    /// load also imports each project's `config.json` and lists its
+    /// worktrees, but the projects are known once the projects file is read,
+    /// and the observer pokes the caller again when the imports change them.
     func v2SupermuxProjectsList(params: [String: Any]) async -> V2CallResult {
         let model = SupermuxComposition.projectsModel
-        await model.loadIfNeeded()
+        let bound = Self.supermuxProjectsLookupBound
+        _ = await SupermuxBoundedAwait(timeout: bound).value { await model.loadIfNeeded() }
+        guard model.hasLoaded else {
+            return .err(code: "unavailable", message: "The projects are still loading", data: nil)
+        }
         let projects = model.projects
         let presets = model.presets
         let isSectionCollapsed = model.isSectionCollapsed
-        // Additive `git_remote_url` (cross-Mac repo identity): cached `git
-        // config` lookups on the resolver actor, never on the main actor.
-        let gitRemoteURLs = await SupermuxComposition.gitRemoteResolver.remoteURLs(
-            forRoots: projects.map(\.rootPath)
-        )
-        // has_custom_icon, the icon token and the config marker are file I/O in
-        // each project's folder, which blocks while a macOS privacy prompt for
-        // it is unanswered: probed on bounded lookups off the cooperative pool,
-        // so no project holds the list past the caller's deadline.
-        let fileFacts = await SupermuxProjectFileFacts.shared.facts(for: projects)
+        let roots = projects.map(\.rootPath)
+        let resolver = SupermuxComposition.gitRemoteResolver
+        let facts = SupermuxProjectFileFacts.shared
+        // Additive `git_remote_url` (cross-Mac repo identity): `git config`
+        // on the resolver actor; an origin not found in time keeps the last
+        // one known. has_custom_icon, the icon token and the config marker:
+        // bounded lookups off the cooperative pool, each project keeping its
+        // last facts. Both run at once.
+        async let remoteURLsInTime = resolver.remoteURLs(forRoots: roots, within: bound)
+        async let factsInTime = facts.facts(for: projects)
+        let gitRemoteURLs = await remoteURLsInTime
+        let fileFacts = await factsInTime
         do {
             let payload = try SupermuxMobileProjectsPayloadBuilder().projectsList(
                 projects: projects,
@@ -164,10 +183,13 @@ extension TerminalController {
         return .ok(["section_collapsed": collapsed])
     }
 
-    /// The `{project: SupermuxProjectDTO}` result for one record (its icon and
-    /// config probes are bounded file I/O, as in `projects.list`).
+    /// The `{project: SupermuxProjectDTO}` result for one record (its origin
+    /// lookup and its icon and config probes are bounded, as in `projects.list`).
     func supermuxProjectResult(_ project: SupermuxProject) async -> V2CallResult {
-        let gitRemoteURL = await SupermuxComposition.gitRemoteResolver.remoteURL(forRoot: project.rootPath)
+        let gitRemoteURL = await SupermuxComposition.gitRemoteResolver.remoteURLs(
+            forRoots: [project.rootPath],
+            within: Self.supermuxProjectsLookupBound
+        )[project.rootPath]
         let fileFacts = await SupermuxProjectFileFacts.shared.facts(for: [project])
         do {
             let payload = try SupermuxMobileProjectsPayloadBuilder().projectPayload(
