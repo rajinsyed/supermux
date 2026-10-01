@@ -10,7 +10,15 @@ import Foundation
 /// Cancel is the safe default: Return and Esc both answer it, as in
 /// ``SupermuxDeviceMirrorClosePrompt``, so no key press ends a program on
 /// another Mac. In DEBUG builds `supermux.devices.terminal_close.answer`
-/// pre-answers it without showing anything.
+/// pre-answers it without showing anything, or (`show`) shows it and answers
+/// Cancel a few seconds later.
+///
+/// It is asked from the close's main-actor task, so it never runs a nested
+/// modal session there: CFRunLoop does not drain the main queue inside a
+/// main-queue job, so every other main-actor task, mirror and socket request
+/// would wait for the answer. It is a sheet on the workspace's window that
+/// the task awaits, or, with no window to hold it, an app-modal alert run
+/// from a run-loop block outside the job.
 @MainActor
 enum SupermuxDeviceTerminalClosePrompt {
     /// A second prompt while one is up answers Cancel instead of stacking.
@@ -19,7 +27,7 @@ enum SupermuxDeviceTerminalClosePrompt {
     private static let escapeKeyCode: UInt16 = 53
 
     /// Whether the user chose Close.
-    static func ask(terminalTitle: String, deviceName: String, window: NSWindow?) -> Bool {
+    static func ask(terminalTitle: String, deviceName: String, window: NSWindow?) async -> Bool {
         let title = String(
             format: String(localized: "supermux.devices.terminalClose.prompt.title", defaultValue: "Close “%1$@” on %2$@?"),
             locale: .current, terminalTitle, deviceName
@@ -32,9 +40,12 @@ enum SupermuxDeviceTerminalClosePrompt {
             locale: .current, deviceName
         )
         #if DEBUG
-        if let answer = SupermuxDeviceTerminalCloseDebug.answer {
-            SupermuxDeviceTerminalCloseDebug.asked.append(["title": title, "message": message, "device": deviceName])
-            return answer == .close
+        let debugAnswer = SupermuxDeviceTerminalCloseDebug.answer
+        if let debugAnswer {
+            SupermuxDeviceTerminalCloseDebug.asked.append(
+                ["title": title, "message": message, "device": deviceName, "shown": debugAnswer == .show]
+            )
+            if debugAnswer != .show { return debugAnswer == .close }
         }
         #endif
         guard !isPresenting else { return false }
@@ -57,6 +68,43 @@ enum SupermuxDeviceTerminalClosePrompt {
             return nil
         }
         defer { if let escape { NSEvent.removeMonitor(escape) } }
-        return alert.runCmuxModal(presentingWindow: window) == .alertFirstButtonReturn
+        #if DEBUG
+        if debugAnswer == .show { pressLater(cancel) }
+        #endif
+        return await present(alert, preferring: window) == .alertFirstButtonReturn
     }
+
+    /// Shows `alert` and suspends until it is answered, like
+    /// ``NSAlert/runCmuxModal(presentingWindow:content:willPresent:)`` but
+    /// without blocking the calling job.
+    private static func present(_ alert: NSAlert, preferring window: NSWindow?) async -> NSApplication.ModalResponse {
+        if NSApp.activationPolicy() == .regular {
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        if let host = NSApp.cmuxMainWindowForModalPresentation(preferring: window), host.attachedSheet == nil {
+            return await withCheckedContinuation { continuation in
+                alert.beginSheetModal(for: host) { response in
+                    continuation.resume(returning: response)
+                }
+            }
+        }
+        return await withCheckedContinuation { continuation in
+            RunLoop.main.perform(inModes: [.default]) {
+                MainActor.assumeIsolated {
+                    continuation.resume(returning: alert.runModal())
+                }
+            }
+        }
+    }
+    #if DEBUG
+
+    /// The DEBUG `show` answer: the real prompt, answered Cancel after
+    /// ``SupermuxDeviceTerminalCloseDebug/shownSeconds`` by a run-loop timer.
+    private static func pressLater(_ button: NSButton) {
+        let timer = Timer(timeInterval: SupermuxDeviceTerminalCloseDebug.shownSeconds, repeats: false) { _ in
+            MainActor.assumeIsolated { button.performClick(nil) }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+    }
+    #endif
 }

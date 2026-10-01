@@ -15,11 +15,21 @@ import Foundation
 /// showed "Mac disconnected" for the rest of the link's life. Raising every
 /// viewer to this floor before it reports keeps the generations of one
 /// terminal increasing across its panes.
+///
+/// The host also keeps one viewport per client id, so the pane that reported
+/// its grid last speaks for this Mac on that terminal. Another live pane of
+/// the same terminal only follows: its replays and re-reports leave the grid
+/// out (``defers(_:surfaceID:pane:)``) until its own pane resizes or comes on
+/// screen, instead of taking the size back, which made two panes of
+/// different sizes resize the terminal in turn.
 @MainActor
 final class SupermuxDeviceViewportGenerations {
     static let shared = SupermuxDeviceViewportGenerations()
 
     private var highest: [String: [UUID: UInt64]] = [:]
+    /// The local pane (surface id) whose grid the host holds, per client id
+    /// and remote terminal.
+    private var reporters: [String: [UUID: UUID]] = [:]
 
     /// Raises `viewer` to the floor of its client id and `surfaceID`.
     func raise(_ viewer: inout RemoteMacTerminalViewer?, surfaceID: UUID) {
@@ -27,15 +37,28 @@ final class SupermuxDeviceViewportGenerations {
         viewer?.advanceGeneration(atLeast: floor)
     }
 
-    /// Records the generation `viewer` just reported.
-    func record(_ viewer: RemoteMacTerminalViewer?, surfaceID: UUID) {
+    /// Records the generation `viewer` just reported; with `pane`, that local
+    /// pane's grid is now the one the host holds.
+    func record(_ viewer: RemoteMacTerminalViewer?, surfaceID: UUID, reportedBy pane: UUID? = nil) {
         guard let viewer else { return }
         note(viewer.generation, clientID: viewer.clientID, surfaceID: surfaceID)
+        if let pane { reporters[viewer.clientID, default: [:]][surfaceID] = pane }
     }
 
-    /// Records the generation of the clear `viewer.clearParams()` sends.
-    func recordClear(_ viewer: RemoteMacTerminalViewer, surfaceID: UUID) {
+    /// Records the generation of the clear `viewer.clearParams()` sends from
+    /// `pane`, which then no longer speaks for this Mac.
+    func recordClear(_ viewer: RemoteMacTerminalViewer, surfaceID: UUID, pane: UUID?) {
         note(viewer.generation + 1, clientID: viewer.clientID, surfaceID: surfaceID)
+        if let pane, reporters[viewer.clientID]?[surfaceID] == pane {
+            reporters[viewer.clientID]?[surfaceID] = nil
+        }
+    }
+
+    /// Whether another local pane of the terminal reported its grid on this
+    /// link after `pane` did, so `pane` follows it instead of reporting.
+    func defers(_ viewer: RemoteMacTerminalViewer?, surfaceID: UUID, pane: UUID?) -> Bool {
+        guard let viewer, let pane, let reporter = reporters[viewer.clientID]?[surfaceID] else { return false }
+        return reporter != pane
     }
 
     /// The wait before replaying again after the host's `attempt`-th

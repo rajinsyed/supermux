@@ -342,7 +342,12 @@ final class DeviceTerminalMirrorSession {
         guard !Task.isCancelled, phase != .stopped else { return }
         do {
             var params = surfaceParams
-            if let viewer, viewer.detachment == nil {
+            // SUPERMUX:begin device-mirror-viewport-generations
+            // Only the pane that speaks for this Mac on the terminal registers its
+            // grid, above the link's floor; another pane follows the host's grid.
+            // (upstream: `if let viewer, viewer.detachment == nil {`)
+            if viewer?.detachment == nil, supermuxReportsGrid(), let viewer {
+            // SUPERMUX:end device-mirror-viewport-generations
                 // Register this Mac with its pane grid before the host captures.
                 params.merge(viewer.replayParams()) { _, new in new }
                 // SUPERMUX:begin device-mirror-hidden-counts
@@ -468,12 +473,41 @@ final class DeviceTerminalMirrorSession {
         // Report above every generation the host saw from this link for this
         // terminal, an earlier pane's clear included; the host fences lower ones.
         // (upstream: `return viewer?.paneResized(…)`)
+        // A pane whose grid changed speaks for this Mac on the terminal from now on.
         SupermuxDeviceViewportGenerations.shared.raise(&viewer, surfaceID: remoteSurfaceID)
         let report = viewer?.paneResized(TerminalGridSize(cols: natural.columns, rows: natural.rows))
-        SupermuxDeviceViewportGenerations.shared.record(viewer, surfaceID: remoteSurfaceID)
+        SupermuxDeviceViewportGenerations.shared.record(
+            viewer, surfaceID: remoteSurfaceID, reportedBy: report == nil ? nil : sharingSurfaceID
+        )
         return report
         // SUPERMUX:end device-mirror-viewport-generations
     }
+    // SUPERMUX:begin device-mirror-viewport-generations
+
+    /// Whether this pane's replay, re-report or automatic counts change
+    /// carries its grid: not while another pane of the terminal on this link
+    /// reported after it (this one follows that grid until its own pane
+    /// resizes). When it does, the viewer is raised to the link's floor first,
+    /// so the host does not fence it.
+    private func supermuxReportsGrid() -> Bool {
+        let generations = SupermuxDeviceViewportGenerations.shared
+        guard !generations.defers(viewer, surfaceID: remoteSurfaceID, pane: sharingSurfaceID) else { return false }
+        generations.raise(&viewer, surfaceID: remoteSurfaceID)
+        return true
+    }
+
+    /// A following pane that comes on screen speaks for this Mac from now on:
+    /// the grid the user looks at is the one the other Mac should size for.
+    /// Reported at once when attached; otherwise the next replay carries it.
+    private func supermuxTakeOverGrid() {
+        let generations = SupermuxDeviceViewportGenerations.shared
+        guard generations.defers(viewer, surfaceID: remoteSurfaceID, pane: sharingSurfaceID),
+              viewer?.viewport != nil else { return }
+        generations.raise(&viewer, surfaceID: remoteSurfaceID)
+        generations.record(viewer, surfaceID: remoteSurfaceID, reportedBy: sharingSurfaceID)
+        if phase == .attached, let report = viewer?.viewportParams() { sendSizing("mobile.terminal.viewport", report) }
+    }
+    // SUPERMUX:end device-mirror-viewport-generations
 
     private func paneGridChanged() {
         // SUPERMUX:begin device-mirror-hidden-counts (a pane laid out for the first time just came on screen)
@@ -491,7 +525,9 @@ final class DeviceTerminalMirrorSession {
         publishSharing()
         // The replay's report expires on the host's TTL; the dedicated
         // report keeps this Mac attached for the link's lifetime.
-        if let report = viewer?.viewportParams() { sendSizing("mobile.terminal.viewport", report) }
+        // SUPERMUX:begin device-mirror-viewport-generations (only the pane that speaks for this Mac, above the floor; upstream: `if let report = viewer?.viewportParams() {`)
+        if supermuxReportsGrid(), let report = viewer?.viewportParams() { sendSizing("mobile.terminal.viewport", report) }
+        // SUPERMUX:end device-mirror-viewport-generations
     }
 
     /// Sends one sizing request; failures only log, since the next size
@@ -524,9 +560,15 @@ final class DeviceTerminalMirrorSession {
             TerminalController.shared.terminalSharing.unregister(self, surfaceID: surfaceID)
         }
         surface?.onNaturalGridInputsChanged = nil
-        if viewer.viewport != nil, isConnected() { sendSizing("mobile.terminal.viewport", viewer.clearParams()) }
-        // SUPERMUX:begin device-mirror-viewport-generations (the clear's generation fences this terminal on the host)
-        if viewer.viewport != nil { SupermuxDeviceViewportGenerations.shared.recordClear(viewer, surfaceID: remoteSurfaceID) }
+        // SUPERMUX:begin device-mirror-viewport-generations
+        // A following pane sends no clear: it would drop the grid of the pane
+        // that speaks for this Mac. The clear's generation fences this terminal
+        // on the host. (upstream: `if viewer.viewport != nil, isConnected() { sendSizing(…clearParams()) }`)
+        let supermuxSpeaks = !SupermuxDeviceViewportGenerations.shared.defers(viewer, surfaceID: remoteSurfaceID, pane: sharingSurfaceID)
+        if supermuxSpeaks, viewer.viewport != nil, isConnected() { sendSizing("mobile.terminal.viewport", viewer.clearParams()) }
+        if supermuxSpeaks, viewer.viewport != nil {
+            SupermuxDeviceViewportGenerations.shared.recordClear(viewer, surfaceID: remoteSurfaceID, pane: sharingSurfaceID)
+        }
         // SUPERMUX:end device-mirror-viewport-generations
         sharingSurfaceID = nil
     }
@@ -542,13 +584,16 @@ final class DeviceTerminalMirrorSession {
         supermuxHidden = hidden
         // Shown, this Mac claims the terminal's grid again; hidden, it gives the claim up.
         SupermuxTerminalSizingDefaults.shared.mirrorVisibilityChanged(self)
+        // Shown, this pane's grid is the one this Mac reports for the terminal.
+        if !hidden { supermuxTakeOverGrid() }
         // Not attached yet: the replay, or the reconcile after it, carries it.
         guard phase == .attached else { return }
         supermuxReconcileHiddenCounts()
     }
 
     private func supermuxReconcileHiddenCounts() {
-        guard supermuxHidden != supermuxHostHoldsHiddenCounts, let viewer else { return }
+        // A following pane leaves the counts to the pane that speaks for this Mac.
+        guard supermuxHidden != supermuxHostHoldsHiddenCounts, supermuxReportsGrid(), let viewer else { return }
         if supermuxHidden {
             guard supermuxOwnCountsOverride == nil, let report = viewer.countsParams(false) else { return }
             supermuxHostHoldsHiddenCounts = true
@@ -593,6 +638,9 @@ extension DeviceTerminalMirrorSession: TerminalSharingSurfaceControlling {
 
     /// The host's mobile RPC sets the counts override of this viewer only.
     func sharingSetCountsOverride(participantID: String, value: Bool?) -> Bool {
+        // SUPERMUX:begin device-mirror-viewport-generations (above the link's floor, or the host drops it)
+        SupermuxDeviceViewportGenerations.shared.raise(&viewer, surfaceID: remoteSurfaceID)
+        // SUPERMUX:end device-mirror-viewport-generations
         guard let viewer, participantID == viewer.selfParticipantID,
               let report = viewer.countsParams(value) else { return false }
         // SUPERMUX:begin device-mirror-hidden-counts
@@ -615,6 +663,9 @@ extension DeviceTerminalMirrorSession: TerminalSharingSurfaceControlling {
     func sharingNoteSelfActivity() {}
 
     func sharingReattach(asViewer: Bool) -> Bool {
+        // SUPERMUX:begin device-mirror-viewport-generations (above the link's floor, or the host drops it)
+        SupermuxDeviceViewportGenerations.shared.raise(&viewer, surfaceID: remoteSurfaceID)
+        // SUPERMUX:end device-mirror-viewport-generations
         guard let viewer, viewer.detachment != nil else { return false }
         // SUPERMUX:begin device-mirror-hidden-counts
         supermuxUserChoseCounts()
