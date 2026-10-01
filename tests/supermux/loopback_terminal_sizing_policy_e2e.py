@@ -16,9 +16,11 @@ This suite runs against one tagged DEBUG build with the loopback device ("Loopba
 = this app's own mobile host): a source workspace is the "other Mac" and its auto mirror
 is the viewer. The loopback's mirrors get a distinct sizing device id (DEBUG only), so
 the two "Macs" have distinct priority keys as two real Macs do. A fake phone and a fake
-second Mac report viewports over the device link (`mobile.terminal.viewport`). Panel
-actions are driven by `supermux.devices.terminal_sizing.*` (DEBUG), which run the panel's
-own code path.
+second Mac report viewports (`mobile.terminal.viewport`) on their own connection, this
+control socket, as a real phone or Mac does on its own link: sent over the device link they
+would share the mirror's connection, and the host names one client of a connection as its
+`self_participant_id`, so the mirror could take the phone for itself. Panel actions are
+driven by `supermux.devices.terminal_sizing.*` (DEBUG), which run the panel's own code path.
 
   1. setup                               auto-mirror on, the loopback linked, the preference reset
   2. source_and_mirror                   a background source workspace and its mirror, shown;
@@ -47,7 +49,10 @@ own code path.
  12. reconnect_reclaims                  after the link drops and the other Mac reset the policy, the
                                          reconnected mirror claims it again
  13. priority_order_applies_everywhere   a priority order dragged on one mirror ([phone, this Mac])
-                                         reaches the local terminal as [phone, its own Mac pane]
+                                         is stored as [phone, self] and reaches the local terminal as
+                                         [phone, its own view on this Mac]: its Mac pane, or in the
+                                         loopback its own auto-mirror, whose push of the same order
+                                         lands after the local apply
  14. choice_survives_relaunch            (--app-path) Largest Window, then quit and relaunch: new
                                          and restored terminals start in Largest Window
 
@@ -298,10 +303,10 @@ class SizingPolicyE2E:
 
     def report_viewport(self, workspace_id: str, surface_id: str, client_id: str, kind: str,
                         cols: int, rows: int) -> None:
-        """A fake viewer (phone or second Mac) reports its viewport over the device link."""
+        """A fake viewer (phone or second Mac) reports its viewport on its own connection."""
         key = (workspace_id, surface_id, client_id)
         generation = self.reports.get(key, 0) + 1
-        self.request("mobile.terminal.viewport", {
+        self.sock.call("mobile.terminal.viewport", {
             "workspace_id": workspace_id, "surface_id": surface_id, "client_id": client_id,
             "viewport_columns": cols, "viewport_rows": rows, "viewport_generation": generation,
             "device_kind": kind, "device_id": client_id, "device_name": f"E2E {kind}",
@@ -311,7 +316,7 @@ class SizingPolicyE2E:
     def clear_reports(self) -> None:
         for (workspace_id, surface_id, client_id), generation in self.reports.items():
             try:
-                self.request("mobile.terminal.viewport", {
+                self.sock.call("mobile.terminal.viewport", {
                     "workspace_id": workspace_id, "surface_id": surface_id, "client_id": client_id,
                     "clear": True, "viewport_generation": generation + 1,
                 })
@@ -625,11 +630,23 @@ class SizingPolicyE2E:
                     raise Failure(f"policy is {policy}, expected priority {keys}")
             return check
 
+        preference = self.preference() or {}
+        if preference.get("mode") != "priority" or preference.get("priority") != [phone_key, "self"]:
+            raise Failure(f"the drag was stored as {preference}, expected priority [{phone_key}, self]")
         source = self.wait_state("the dragged order on the source terminal", self.source_surface,
                                  order([phone_key, self.mirror_key]))
-        local = self.wait_state("the same order, relative to its own Mac pane, on the local terminal",
-                                self.local_surface, order([phone_key, self.local_key]))
-        return {"accepted": chosen.get("accepted"), "source": source, "local": local, "preference": self.preference()}
+        # In the loopback the local terminal is also "the other Mac's terminal" for its own
+        # (hidden) auto-mirror. The choice applies to local terminals first, then pushes to
+        # every mirror, so that mirror's push of the same order, relative to itself, lands last.
+        own_view = self.local_key
+        for mirror in (self.sock.call(SIZING + "state", {}) or {}).get("mirrors") or []:
+            if up(mirror.get("remote_surface_id")) == up(self.local_surface) and mirror.get("pushed"):
+                own_view = str(mirror.get("self_key") or "")
+        local = self.wait_state("the same order, relative to its own view on this Mac, on the local terminal",
+                                self.local_surface, order([phone_key, own_view]))
+        return {"accepted": chosen.get("accepted"), "source": source, "local": local,
+                "local_own_view": "auto-mirror" if own_view != self.local_key else "mac pane",
+                "preference": preference}
 
     def choice_survives_relaunch(self) -> Dict[str, Any]:
         self.select_mode(self.mirror_surface, "largest")
