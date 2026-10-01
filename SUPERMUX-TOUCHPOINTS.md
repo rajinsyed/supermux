@@ -12,13 +12,13 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **685**. The remote-workspaces work (#517–#599) left
+- Numbering: the highest number in use is **686**. The remote-workspaces work (#517–#599) left
   unassigned gaps it may still grow into: **523–524, 527–529, 539–544, 558–559, 562–569,
   578–579 and 588–589** (never assigned, not retired); #600–#601 came from the 2026-10-01 upstream merge; #620–#622 and
   #630–#639 are the remote-workspaces feedback round (602–619 and 623–629 unassigned). The second
   feedback round uses #640–#644 (busy mirror tab close), #650–#653 (mirror appearance), #660–#664
   (new tabs append), #665–#670 (terminal size preference) and #675–#681 (a mirror's Files panel);
-  its stabilization uses #682–#684 (preview refresh and its alert) and #685 (replayed mouse modes);
+  its stabilization uses #682–#684 (preview refresh and its alert) and #685–#686 (replayed mouse modes);
   645–649, 654–659, 671–674 are unassigned. Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 82, 83, 89, 106, 121, 142, 213, 214,
@@ -623,6 +623,7 @@ Rules for adding a touchpoint:
 | 683 | `Sources/CloudFilePreviewCache.swift` | `preview-refresh-readonly-replace` | In `refresh(_:provider:)`, the new copy replaces the preview's with `rename(2)` (throwing `POSIXError` on failure) instead of `replaceItemAt` / `moveItem`. The preview copy is `0o400` and `replaceItemAt` needs a writable original, so every refresh (reopening an open remote preview, its Refresh button) failed with "permission denied" and raised "Unable to open remote file" — Cloud and device previews alike |
 | 684 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/SupermuxAlertPresentation.swift` (the non-blocking alert presenter for #682 and the busy mirror-tab close prompt) into the cmux target (ids `50BE00170600000000000001`/`…02`, four entries, in the Supermux group) |
 | 685 | `Packages/Shared/CMUXMobileCore/Sources/CMUXMobileCore/MobileTerminalRenderGridReplay.swift` | `replay-mouse-modes-last` | In `fullSnapshotBytes()`, the frame's modes are re-applied disabled first, then enabled (`frame.modes.filter { !$0.on } + frame.modes.filter(\.on)`), instead of in the frame's code order. Ghostty keeps one mouse event mode (?9/?1000/?1002/?1003) and one mouse format (?1005/?1006/?1015/?1016), and resetting any of them clears whichever is on, so `?1003l` after `?1002h` (and `?1015l`/`?1016l` after `?1006h`) left every replayed view (a device mirror after any grid change or reattach, a phone) without mouse reporting: a drag selected text instead of reaching the program |
+| 686 | `Packages/Shared/CMUXMobileCore/Tests/CMUXMobileCoreTests/SupermuxReplayMouseModeTests.swift` | `replay-mouse-modes-last` | Fork-only test file (the whole body fenced): runs the full snapshot's mode sequences through a model of Ghostty's single mouse event / format state and expects the program's modes to survive, crossterm's `?1015h ?1006h` (SGR wins) included |
 
 ## How to re-apply
 
