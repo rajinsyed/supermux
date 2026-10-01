@@ -21,6 +21,12 @@ socket and checks the whole remote-workspace pipeline inside one app:
   9. Layout, host -> viewer: a split in the SOURCE appears in the MIRROR.
  10. Layout, viewer -> host: a split in the MIRROR creates a real SOURCE
      terminal (device.workspace.terminal.create) that is projected back.
+ 11. A slow host request keeps the link: the loopback host holds one
+     mobile.supermux.projects.list for 30 s (the DEBUG `supermux.devices.link
+     {action: stall}`), past the link's 20 s reply deadline, as a git command in a
+     folder behind an unanswered macOS privacy prompt does. Only that request
+     fails (timed_out); for 60 s the link stays connected and never redials, and
+     the mirror still shows the source's output afterwards.
 
 Prints a JSON report, writes it to tests/supermux/artifacts/, and exits
 non-zero on any failed check. Stdlib only.
@@ -37,6 +43,7 @@ import os
 import re
 import socket
 import sys
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -47,6 +54,11 @@ LOOPBACK_DEVICE_ID = "5e1f10b0-0000-4000-8000-000000000001"
 LOOPBACK_MACHINE_PREFIX = f"device:{LOOPBACK_DEVICE_ID}@"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ARTIFACTS_DIR = REPO_ROOT / "tests" / "supermux" / "artifacts"
+# Step 11: the host call the loopback holds (the one that held the link in the
+# field), how long it holds it, and how long the link is watched from then on.
+SLOW_METHOD = "mobile.supermux.projects.list"
+SLOW_HOLD_S = 30
+SLOW_WATCH_S = 60
 
 
 class SmokeFailure(Exception):
@@ -386,6 +398,64 @@ class LoopbackSmoke:
         wait_for("source output in the MIRROR terminal", lambda: marker in self.read_text(self.mirror_workspace_id, self.facts["mirror_surface_id"]), self.timeout_s)
         return {"marker": marker}
 
+    def link(self, action: str, **extra: Any) -> Dict[str, Any]:
+        params = {"machine": self.facts["machine"], "action": action, **extra}
+        return self.client.call("supermux.devices.link", params) or {}
+
+    def check_slow_request_keeps_link(self) -> Dict[str, Any]:
+        """One host request that misses the link's 20 s reply deadline fails
+        alone: the link stays connected (it never redials) and its mirror
+        keeps working. Upstream took every missed deadline as a dead link."""
+        before = self.link("status")
+        if before.get("phase") != "connected":
+            raise SmokeFailure(f"the link is not connected before the slow request: {before}")
+        self.link("stall", method=SLOW_METHOD, seconds=SLOW_HOLD_S)
+        outcome: Dict[str, Any] = {}
+
+        def send_slow_request() -> None:
+            started = time.monotonic()
+            try:
+                # No timeout_seconds: the method's own deadline, the link's 20 s default.
+                with SocketClient(self.client.path, timeout_s=SLOW_WATCH_S + 30) as other:
+                    other.call("supermux.devices.request", {"machine": self.facts["machine"], "method": SLOW_METHOD})
+                outcome["answer"] = "ok"
+            except (SmokeFailure, OSError) as error:
+                outcome["answer"] = str(error)
+            outcome["seconds"] = round(time.monotonic() - started, 2)
+
+        sender = threading.Thread(target=send_slow_request, daemon=True)
+        sender.start()
+        started = time.monotonic()
+        departure: Optional[Dict[str, Any]] = None
+        polls = 0
+        while time.monotonic() - started < SLOW_WATCH_S:
+            status = self.link("status")
+            polls += 1
+            if status.get("phase") != "connected" or status.get("connections_admitted") != before.get("connections_admitted"):
+                departure = {"after_s": round(time.monotonic() - started, 2), **status}
+                break
+            time.sleep(0.25)
+        sender.join(timeout=SLOW_WATCH_S)
+        after = self.link("status")
+        if departure is not None:
+            raise SmokeFailure(
+                f"the link left 'connected' while one request was slow: {departure}"
+                f" (admitted before: {before.get('connections_admitted')}, slow request: {outcome})"
+            )
+        if after.get("stall_armed"):
+            raise SmokeFailure(f"no {SLOW_METHOD} reached the host during the watch: {after}")
+        if outcome.get("seconds", 0) >= 19 and "timed_out" not in str(outcome.get("answer")):
+            raise SmokeFailure(f"the slow request failed with something other than timed_out: {outcome}")
+        marker = f"LOOPBACK_SLOW_63_{self.nonce}"
+        self.send_text(self.source_workspace_id, self.facts["source_surface_id"], f"echo LOOPBACK_SLOW_$((7*9))_{self.nonce}\n")
+        wait_for("source output in the MIRROR after the slow request", lambda: marker in self.read_text(self.mirror_workspace_id, self.facts["mirror_surface_id"]), self.timeout_s)
+        return {
+            "slow_request": outcome,
+            "connections_admitted": after.get("connections_admitted"),
+            "polls": polls,
+            "watched_s": SLOW_WATCH_S,
+        }
+
     def check_input_reaches_source(self) -> Dict[str, Any]:
         marker = f"LOOPBACK_IN_25_{self.nonce}"
         self.send_text(self.mirror_workspace_id, self.facts["mirror_surface_id"], f"echo LOOPBACK_IN_$((5*5))_{self.nonce}\n")
@@ -437,6 +507,7 @@ class LoopbackSmoke:
             self.step("source_notification_reaches_mirror", self.check_notification_reaches_mirror)
             self.step("source_split_reaches_mirror", self.check_source_split_reaches_mirror)
             self.step("mirror_split_creates_source_terminal", self.check_mirror_split_creates_source_terminal)
+            self.step("slow_request_keeps_the_link", self.check_slow_request_keeps_link)
             return True
         except SmokeFailure:
             return False

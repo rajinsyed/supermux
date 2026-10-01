@@ -51,6 +51,11 @@ Steps:
      listed there, and a removal another build recorded there is honored.
  14. project_sync_skips_loopback: a sync pass never treats the loopback
      device (which shares this app's list) as another Mac.
+14b. projects_list_answers_while_a_folder_blocks: a project whose folder blocks
+     every git command (its .git/config includes a named pipe nobody writes, as
+     a folder behind an unanswered macOS privacy prompt blocks every file
+     access) does not hold projects.list: the host answers within its bound
+     (2 s, checked against 4 s) three times running, and over the link.
  15. sidebar_screenshot: captures the window (nested mirror + device chip) to
      tests/supermux/artifacts/loopback_projects_e2e-<tag>.png.
 
@@ -94,6 +99,10 @@ FAKE_ORIGIN = "git@github.com:supermux-e2e/loopback-app.git"
 # Roots a user removed, shared by every build next to the projects file.
 SUPPRESSION_FILE_NAME = "supermux-project-sync-suppressed.json"
 FAKE_IDENTITY = "github.com/supermux-e2e/loopback-app"
+# Step 14b: the host bounds each lookup projects.list makes at 2 s; this is that
+# bound plus room for the socket and the main actor. A git command it waits for
+# instead runs until the host kills it at 5 s.
+BLOCKED_FOLDER_LIST_BOUND_S = 4.0
 
 WINDOW_ID_SWIFT = r"""
 import CoreGraphics
@@ -157,6 +166,8 @@ class ProjectsE2E:
         self.clone_project_id: Optional[str] = None
         self.readded_project_id: Optional[str] = None
         self.suppressed_root: Optional[str] = None
+        self.blocked_project_id: Optional[str] = None
+        self.blocked_fifo = self.root / "blocked.fifo"
         self.worktree_path: Optional[str] = None
         self.opened_workspaces: List[str] = []
 
@@ -492,6 +503,57 @@ class ProjectsE2E:
             raise SmokeFailure(f"sync registered projects against the loopback: {report}")
         return {"report": report}
 
+    def check_blocked_folder_list(self) -> Dict[str, Any]:
+        repo = self.root / "blocked"
+        repo.mkdir(parents=True)
+        git("init", "-q", "-b", "main", cwd=repo)
+        os.mkfifo(self.blocked_fifo)
+        # From here on every git command in the repo blocks opening the pipe.
+        with open(repo / ".git" / "config", "a") as config:
+            config.write(f"[include]\n\tpath = {self.blocked_fifo}\n")
+        # Registered the way another build adds a project (no git run here first),
+        # so no origin lookup has finished and been cached for it.
+        record_id = str(uuid.uuid4()).upper()
+        record = {"id": record_id, "name": f"blocked-{self.nonce}", "rootPath": str(repo)}
+        update_shared_json(self.projects_file, lambda d: d.setdefault("projects", []).append(record))
+        self.blocked_project_id = record_id
+        self.request("mobile.supermux.project.update", {"project_id": self.project_id, "patch": {"color_hex": "#33AA66"}})
+
+        def hosted_ids() -> List[str]:
+            payload = (self.client.call("supermux.devices.local_projects", {}, timeout_s=60) or {}).get("host_payload") or {}
+            return [norm(p.get("id")) for p in payload.get("projects") or []]
+
+        wait_for("the blocked project in the host's projects list", lambda: norm(record_id) in hosted_ids(), self.timeout_s)
+        timings: List[float] = []
+        for _ in range(3):
+            started = time.monotonic()
+            if norm(record_id) not in hosted_ids():
+                raise SmokeFailure("the blocked project left the host's projects list")
+            timings.append(round(time.monotonic() - started, 2))
+        started = time.monotonic()
+        listed = self.request("mobile.supermux.projects.list", {}).get("projects") or []
+        over_link = round(time.monotonic() - started, 2)
+        if not any(norm(p.get("id")) == norm(record_id) for p in listed):
+            raise SmokeFailure("projects.list over the link lacks the blocked project")
+        slowest = max(timings + [over_link])
+        if slowest > BLOCKED_FOLDER_LIST_BOUND_S:
+            raise SmokeFailure(
+                f"projects.list took {timings} s on the host and {over_link} s over the link while one project's"
+                f" folder blocks (bound {BLOCKED_FOLDER_LIST_BOUND_S} s)"
+            )
+        return {"host_seconds": timings, "link_seconds": over_link, "blocked_project_id": record_id}
+
+    def _unblock_folder(self) -> None:
+        """Lets every git process waiting on the pipe go (an empty include) and
+        removes it, so the blocked project deletes like any other."""
+        if not self.blocked_fifo.exists():
+            return
+        try:
+            os.close(os.open(self.blocked_fifo, os.O_WRONLY | os.O_NONBLOCK))
+        except OSError:
+            pass  # nobody is waiting on it
+        self.blocked_fifo.unlink()
+
     def capture_screenshot(self) -> Dict[str, Any]:
         path = ARTIFACTS_DIR / f"loopback_projects_e2e-{self.tag}.png"
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -518,6 +580,7 @@ class ProjectsE2E:
                 self.client.call("workspace.close", {"workspace_id": workspace_id, "force": True})
             except SmokeFailure as error:
                 self.facts.setdefault("cleanup_errors", []).append(str(error))
+        self._unblock_folder()
         for action in (self._remove_worktree, self._delete_projects):
             try:
                 action()
@@ -534,7 +597,7 @@ class ProjectsE2E:
             )
 
     def _delete_projects(self) -> None:
-        for project_id in (self.clone_project_id, self.readded_project_id, self.project_id):
+        for project_id in (self.blocked_project_id, self.clone_project_id, self.readded_project_id, self.project_id):
             if project_id:
                 self.request("mobile.supermux.project.delete", {"project_id": project_id})
 
@@ -556,6 +619,7 @@ class ProjectsE2E:
             self.step("readd_by_other_build_keeps_suppression", self.check_readd_keeps_suppression)
             self.step("suppression_shared_with_other_builds", self.check_suppression_shared)
             self.step("project_sync_skips_loopback", self.check_sync_skips_loopback)
+            self.step("projects_list_answers_while_a_folder_blocks", self.check_blocked_folder_list)
             self.step("sidebar_screenshot", self.capture_screenshot)
             return True
         except SmokeFailure:
