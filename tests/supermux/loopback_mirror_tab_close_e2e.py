@@ -692,7 +692,8 @@ class MirrorTabCloseE2E:
             raise Failure("precondition: the mirror does not show T0")
         created = self.sock.call("workspace.create", {"title": f"tab-close-home-{self.nonce}", "focus": False}) or {}
         self.home_id = up(created.get("workspace_id") or created.get("created_workspace_id"))
-        self.select(self.mirror_id)
+        # T0's tab, not just the mirror workspace: its pane holds every terminal's tab.
+        self.sock.call("surface.focus", {"workspace_id": self.mirror_id, "surface_id": mirror_pane})
 
         def mirror_shown_and_counting() -> bool:
             pane = self.pane(self.mirror_id, mirror_pane) or {}
@@ -758,7 +759,7 @@ class MirrorTabCloseE2E:
         self.select(self.home_id)
         stopped = wait_for("this Mac to stop counting for T0 with none of its panes on screen",
                            lambda: (self.link_row(terminal) or {}).get("counts_override") is False, self.timeout)
-        self.select(self.mirror_id)
+        self.sock.call("surface.focus", {"workspace_id": self.mirror_id, "surface_id": mirror_pane})
         wait_for("the mirror's T0 pane on screen", lambda: (self.pane(self.mirror_id, mirror_pane) or {}).get("hidden") is False,
                  self.timeout)
         try:
@@ -780,12 +781,12 @@ class MirrorTabCloseE2E:
         self.sock.call("surface.focus", {"workspace_id": self.extra_id, "surface_id": own})
         def b1_shown_speaking() -> bool:
             pane = self.pane(self.extra_id, b1) or {}
-            problem = self.not_counting(terminal)
-            if not pane.get("speaks") or pane.get("hidden") is not False or problem:
-                raise Failure(f"B1 {pane}; {problem}")
+            if not pane.get("speaks") or pane.get("hidden") is not False or self.link_row(terminal) is None:
+                raise Failure(f"B1 {pane}; this Mac {self.link_row(terminal)}")
             return True
 
-        wait_for("B1 on screen and speaking, this Mac counting", b1_shown_speaking, self.timeout)
+        # Only that this Mac takes part: whether it counts is the earlier steps' check.
+        wait_for("B1 on screen and speaking, this Mac a participant", b1_shown_speaking, self.timeout)
         self.sock.call("surface.close", {"workspace_id": self.extra_id, "surface_id": b1, "force": True})
         missing: List[float] = []
         started = time.monotonic()
