@@ -226,7 +226,8 @@ final class SupermuxDeviceMirrorCloser {
             onChange()
         }
         do {
-            _ = try await devices.request("workspace.close", params: ["workspace_id": remoteID], on: ref.machine)
+            // The user already confirmed "Close on <Mac>", which names the running terminals.
+            _ = try await devices.request("workspace.close", params: ["workspace_id": remoteID, "force": true], on: ref.machine)
             heldAfterRemoteClose[ref] = Date().addingTimeInterval(Self.remoteCloseHold)
             mirrorCloseLog.info("closed \(ref.description, privacy: .public) on its Mac")
         } catch {
