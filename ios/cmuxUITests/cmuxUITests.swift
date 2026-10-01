@@ -443,8 +443,13 @@ final class cmuxUITests: XCTestCase {
         // The worktree pill reveals both Macs' worktrees, each with its Mac.
         let pill = elements(prefix: "SupermuxProjectWorktreeDisclosure-").firstMatch
         XCTAssertTrue(pill.waitForExistence(timeout: 5), "cmux shows its worktree pill")
-        tap(pill, in: app)
         let worktrees = elements(prefix: "SupermuxNestedWorktreeRow-")
+        // Expansion persists across launches: start from a closed disclosure.
+        if worktrees.firstMatch.exists {
+            tap(pill, in: app)
+            XCTAssertTrue(worktrees.firstMatch.waitForNonExistence(timeout: 5))
+        }
+        tap(pill, in: app)
         XCTAssertTrue(worktrees.firstMatch.waitForExistence(timeout: 5), "Expanding shows worktree rows")
         XCTAssertEqual(worktrees.count, 2, "One worktree per Mac")
         XCTAssertEqual(elements(prefix: "SupermuxNestedWorktreeMac-").count, 2, "Each worktree names its Mac")
