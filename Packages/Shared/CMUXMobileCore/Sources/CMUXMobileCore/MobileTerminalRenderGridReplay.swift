@@ -273,8 +273,13 @@ public struct MobileTerminalRenderGridReplay: Sendable {
         // The baseline also covers older frames that omitted `modes`, so stale
         // state from a reused surface cannot leak through the full replay.
         appendDefaultModeBaseline(to: &bytes)
-        // SUPERMUX:begin replay-mouse-modes-last (Ghostty keeps one mouse event mode (?9/?1000/?1002/?1003) and one mouse format (?1005/?1006/?1015/?1016): a reset of any of them clears whichever is on, so the frame's `?1003l` after `?1002h` left a replayed mirror selecting text instead of reporting the mouse. Disabled modes go first, enabled ones after. Upstream: `for mode in frame.modes where !isReplayExcludedMode(mode) {`)
-        let replayedModes = frame.modes.filter { !$0.on } + frame.modes.filter(\.on)
+        // SUPERMUX:begin replay-mouse-modes-last (Ghostty keeps one mouse event mode (?9/?1000/?1002/?1003) and one mouse format (?1005/?1006/?1015/?1016): a reset of any of them clears whichever is on, and the last one set wins, so the frame's `?1003l` after `?1002h` left a replayed mirror selecting text instead of reporting the mouse. Disabled modes go first, enabled ones after, and enabled formats last by preference (1005, 1015, 1006, 1016), so crossterm's `?1015h ?1006h` ends on SGR. Upstream: `for mode in frame.modes where !isReplayExcludedMode(mode) {`)
+        let formatPreference = [1005, 1015, 1006, 1016]
+        let enabledModes = frame.modes.filter(\.on)
+        let enabledFormats = formatPreference.flatMap { code in enabledModes.filter { !$0.ansi && $0.code == code } }
+        let replayedModes = frame.modes.filter { !$0.on }
+            + enabledModes.filter { $0.ansi || !formatPreference.contains($0.code) }
+            + enabledFormats
         for mode in replayedModes where !isReplayExcludedMode(mode) {
         // SUPERMUX:end replay-mouse-modes-last
             bytes.append(modeBytes(mode))
