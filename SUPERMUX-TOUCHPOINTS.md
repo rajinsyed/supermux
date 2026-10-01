@@ -12,10 +12,11 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **639**. The remote-workspaces work (#517–#599) left
+- Numbering: the highest number in use is **644**. The remote-workspaces work (#517–#599) left
   unassigned gaps it may still grow into: **523–524, 527–529, 539–544, 558–559, 562–569,
   578–579 and 588–589** (never assigned, not retired); #600–#601 came from the 2026-10-01 upstream merge; #620–#622 and
-  #630–#639 are the remote-workspaces feedback round (602–619 and 623–629 unassigned). Number **351** is unused (the notifications
+  #630–#639 are the remote-workspaces feedback round (602–619 and 623–629 unassigned); #640–#644 are
+  its busy-mirror-tab close fix (645–649 unassigned). Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 82, 83, 89, 106, 121, 142, 213, 214,
   220, 229, 237, 250, 251, 252–258, 335, 470, 473–481, 483, 484, and 487** are unused; all are
@@ -586,6 +587,11 @@ Rules for adding a touchpoint:
 | 637 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/Devices/SupermuxDeviceTerminalInput.swift` and `SupermuxTerminalSizingVisibility.swift` into the cmux target (ids `50BE0016…01`–`…04`, four entries each, `Devices/…` paths in the Supermux group) |
 | 638 | `Packages/macOS/CmuxTerminal/Sources/CmuxTerminal/Surface/TerminalSurface+SupermuxInput.swift` | `unfenced` | Whole fork-owned file in the upstream package: `supermuxDeferInputDuringClipboardRead(estimatedBytes:replay:)`, a public door to the internal `deferInputDuringRuntimeClipboardRead`, so a device mirror's input batch waits behind a paste's clipboard read on this Mac as local typing does. Re-apply: keep it calling whatever upstream names the runtime clipboard-read input deferral |
 | 639 | `Sources/GhosttyTerminalView.swift` | `device-mirror-key-sequence` | In `sendGhosttyKey`, the named-key branch's `if let keyName = terminalSurface?.manualInputKeyName(for:)` also requires `keySequence.isEmpty, keyTables.isEmpty`: while a Ghostty key sequence (leader) or key table is pending, the key stays with this Ghostty, which flushes the leader or matches the binding, instead of being forwarded and leaving the leader stuck. Also fixes the same gap for remote-tmux named keys |
+| 640 | `Sources/TerminalController+MobileTerminalLifecycle.swift` | `mobile-terminal-close-force` | Remote Macs: a busy mirror tab could not be closed. Three fences in `v2MobileTerminalClose`: `let supermuxForce = v2Bool(params, "force") == true`; `controlSurfaceClose(… hasSurfaceIDParam: true, force: supermuxForce)` (upstream's last argument gains a trailing comma); and after the `.lastSurface` check, `.confirmationRequired` answers `confirmation_required` (upstream's `controlSurfaceCloseStrings().confirmationRequired`, `data.surface_id`) instead of falling through to the sanitized `internal_error`. Upstream #15613 added the guard to `controlSurfaceClose` but never updated this caller |
+| 641 | `Sources/Devices/DeviceWorkspaceLayoutCoordinator.swift` | `device-terminal-close-confirm`, `device-terminal-close-deferred` | Confirm: `performClose` sends through `SupermuxDeviceTerminalClose.request` (a mirror tab's close asks without force and shows "Close “X” on <Mac>?" on `confirmation_required`; Kill Terminal…/`vm.terminal_close`/workspace deletion send `force: true`), and its final `close.fail` turns `SupermuxDeviceTerminalClose.Declined` into `CancellationError` (tab restored, no card). Deferred: a `supermuxOfflineDeliveries` property (the deliveries from before the link dropped) set in `connectionChanged`, restored at the top of `projectionDidEnd` for an offline `.paneClosed`; `enqueueClose` offline, `cancelPendingCloses` and the `performClose` catch (link down) hold a mirror-tab close in `SupermuxDeviceHeldCloses` and fail it with `CancellationError`; `connectionChanged(connected)` sends the held closes first through a fenced `supermuxSendHeldClose` before `scheduleReconcile()` |
+| 642 | `Packages/macOS/CmuxTerminalSharing/Sources/CmuxTerminalSharing/RemoteMacTerminalViewer.swift` | `remote-mac-viewer-generation-floor` | Adds `public mutating func advanceGeneration(atLeast:)` (`generation` is `private(set)` in the package) so a device mirror viewer starts above the host's viewport fence for its link's client id |
+| 643 | `Sources/Devices/DeviceTerminalMirrorSession.swift` | `device-mirror-viewport-generations` | `measurePaneGrid` raises the viewer to `SupermuxDeviceViewportGenerations`' floor before `paneResized` and records the generation after it (upstream: `return viewer?.paneResized(…)`); `leaveSharing` records the clear's generation (`generation + 1`); the `viewport_transition` retry branch sleeps 50/100/200 ms before returning. A re-projected, reopened or second pane of a terminal reported below the earlier pane's clear and stayed "Mac disconnected" until the link reconnected |
+| 644 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/Devices/SupermuxDeviceTerminalCloseSocketCommands.swift` (DEBUG drivers), `SupermuxDeviceTerminalClose.swift`, `SupermuxDeviceTerminalClosePrompt.swift`, `SupermuxDeviceViewportGenerations.swift` and `SupermuxDeviceHeldCloses.swift` into the cmux target (file refs `50BE00170100000000000001/3/5/7/9`, build files `…02/4/6/8/0A`, four entries each, `Devices/…` paths in the Supermux group) |
 
 ## How to re-apply
 
@@ -5133,3 +5139,39 @@ Verify: `CMUX_TAG=<tag> python3 tests/supermux/loopback_workspace_behaviors_e2e.
 `new_workspace_shortcut_on_mirror`, `empty_area_on_mirror_creates_local_root`,
 `empty_area_menu_lists_macs`, `empty_area_menu_creates_on_mac_in_home` and
 `empty_area_menu_this_mac_creates_local`).
+
+### 640–644. Remote Macs: a busy mirror tab closes like a local one — `mobile-terminal-close-force`, `device-terminal-close-confirm`, `device-terminal-close-deferred`, `remote-mac-viewer-generation-floor`, `device-mirror-viewport-generations`
+
+User feedback: a mirror tab running Claude Code would not close ("Couldn't update the machine
+workspace / The Cloud operation failed"), came back, then showed "Mac disconnected" and could not be
+closed again. Two upstream bugs: `mobile.terminal.close` never passed `force` to the guarded
+`controlSurfaceClose` (upstream #15613) and reported the refusal as `internal_error`; and every
+mirror pane on one link shares a client id while each viewer counted viewport generations from 0,
+so a pane that re-projected (or reopened) a terminal reported below the earlier pane's clear and the
+host fenced it until the link reconnected. Fork code: `Sources/Supermux/Devices/SupermuxDeviceTerminalClose.swift`,
+`SupermuxDeviceTerminalClosePrompt.swift`, `SupermuxDeviceViewportGenerations.swift`,
+`SupermuxDeviceHeldCloses.swift` (also consulted by `SupermuxDeviceLayoutSurfaceFilter`, fork-owned,
+which leaves a held terminal out of the reconcile through the existing #531 fence), DEBUG drivers in
+`SupermuxDeviceTerminalCloseSocketCommands.swift`.
+
+Re-apply after an upstream merge:
+- **#640**: wherever upstream's `mobile.terminal.close` calls `controlSurfaceClose`, pass
+  `force: v2Bool(params, "force") == true` and answer `.confirmationRequired` with the
+  `confirmation_required` code (never `internal_error`, which `mobileHostResult` sanitizes). Retire
+  the fence if upstream does both itself.
+- **#641 confirm**: the `mobile.terminal.close` request in `performClose` goes through
+  `SupermuxDeviceTerminalClose.request(… asksFirst: close.workspaceID != nil …)`, and the close
+  operation fails with `CancellationError` (not `Declined`) after a declined prompt, so
+  `projectionDidEnd`'s task shows no card while the catch still restores the source layout.
+- **#641 deferred**: keep the four hold sites (offline `enqueueClose` for a close with a local
+  workspace, `cancelPendingCloses` unless `stopped`, the `performClose` catch while disconnected and
+  not declined, the offline delivery restore at the top of `projectionDidEnd`) and send
+  `SupermuxDeviceHeldCloses.shared.take(on: machine)` in `connectionChanged` before
+  `scheduleReconcile()`. If upstream starts deferring closes itself, retire this fence and
+  `SupermuxDeviceHeldCloses`.
+- **#642/#643**: every place a device mirror's `RemoteMacTerminalViewer` reports a viewport
+  generation raises it to `SupermuxDeviceViewportGenerations.shared` first and records what it sent
+  (a clear records `generation + 1`). Retire both if upstream gives each viewer a per-surface client
+  id or seeds the generation itself.
+
+Verify: `CMUX_E2E_SUITES="loopback_mirror_tab_close_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`.
