@@ -87,18 +87,22 @@ extension DeviceLink {
     /// a `projects.list` waiting on git in project folders behind an
     /// unanswered macOS privacy prompt took the link down every ~20 s. So the
     /// link first asks the other Mac whether it still answers
-    /// (`mobile.events.probe`, which its connection answers itself, never
-    /// waiting on the app): any answer, a refusal included, keeps the link and
-    /// fails only this request (`timed_out`); no answer within 10 s is a dead
-    /// link, which reconnects as upstream does. `isCurrent` says the request's
-    /// connection is still the link's; `method` names the request in the log.
+    /// (`mobile.events.probe`): any answer, a refusal included, keeps the link
+    /// and fails only this request (`timed_out`); no answer within 10 s is a
+    /// dead link, which reconnects as upstream does. On an Iroh route the
+    /// other Mac's connection answers the probe without its main thread, so a
+    /// Mac whose main thread is stuck still counts as alive; on a Tailscale
+    /// route its authorization runs on that main thread, so a Mac stuck there
+    /// for 10 s still reads as lost and redials, as upstream did.
+    /// `isCurrent` says the request's connection is still the link's;
+    /// `method` names the request in the log.
     func supermuxMissedDeadline(
         _ method: String,
         _ error: MobileShellConnectionError,
         client: MobileCoreRPCClient,
         isCurrent: () -> Bool
     ) async -> any Error {
-        let answers = await Self.supermuxHostAnswers(client, clientID: clientID)
+        let answers = await Self.supermuxHostAnswers(client)
         guard isCurrent() else { return CancellationError() }
         guard answers else {
             reportTransportLost(error)
@@ -117,11 +121,13 @@ extension DeviceLink {
         )
     }
 
-    /// Whether the other Mac's connection answers a probe in time.
-    private static func supermuxHostAnswers(_ client: MobileCoreRPCClient, clientID: String) async -> Bool {
+    /// Whether the other Mac's connection answers a probe in time. The probe
+    /// carries no `client_id`: the host records one on its main thread before
+    /// answering (the link's own was recorded on this connection when it
+    /// connected), and this probe must not wait on that thread.
+    private static func supermuxHostAnswers(_ client: MobileCoreRPCClient) async -> Bool {
         do {
             let probe = try MobileCoreRPCClient.requestData(method: "mobile.events.probe", params: [
-                "client_id": clientID,
                 "stream_id": "supermux-liveness",
             ])
             #if DEBUG
