@@ -47,7 +47,8 @@ the main Mac is closed), and the same on iOS.
    duplicates (the phone connects to both Macs directly).
 3. **Close = close on the owning Mac**, with this Mac's normal close confirmations only (as for a
    local workspace; no prompt of the fork's). A close while that Mac is offline is kept (persisted)
-   and sent when it reconnects; auto-mirror does not reopen it meanwhile. The row menu's "Hide Here"
+   and sent when it reconnects; auto-mirror does not reopen it meanwhile, and Reopen Closed Workspace
+   cancels it. Delete Group closes member mirrors on their Mac the same way. The row menu's "Hide Here"
    keeps it running there: it detaches and remembers the remote id in a hidden set so auto-mirror
    does not re-open it. A remote workspace that disappears on its host closes its local mirror.
    Closing a mirrored tab ends that terminal there (`force`), like a local tab.

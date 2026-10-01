@@ -9,7 +9,7 @@ private let mirrorCloseLog = Logger(subsystem: "dev.cmux", category: "supermux-m
 /// Close semantics for device mirrors (DESIGN.md decision 3).
 ///
 /// - **User closes** (sidebar ×, context menu Close / Close Others / Below /
-///   Above, ⌘⇧W, closing the last tab, a multi-close): exactly this Mac's own
+///   Above, ⌘⇧W, closing the last tab, a multi-close, Delete Group): exactly this Mac's own
 ///   confirmations, as for a local workspace (pinned, running process,
 ///   settings, the batch "Close workspaces?"), and no prompt of the fork's.
 ///   Once they pass, the mirror closes here at once and its workspace closes
