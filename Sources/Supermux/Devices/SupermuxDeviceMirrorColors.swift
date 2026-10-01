@@ -12,14 +12,36 @@ import Foundation
 /// that looked opaque. Like upstream's Cloud mirror, the replay now carries no
 /// color state (`replay-theme-portable`), and only the colors a program on the
 /// other Mac set itself (OSC 4/10/11/12) travel beside it, as a sparse
-/// ``CloudTuiRemoteColors`` set the mirror applies as a delta
-/// (`device-mirror-viewer-colors`, ``SupermuxDeviceMirrorColorState``).
+/// ``CloudTuiRemoteColors`` set every replay settles in full
+/// (`device-mirror-viewer-colors`, ``settlingBytes(_:)``).
 /// Live PTY bytes still carry a program's color sequences unchanged, as they
 /// would to a local pane.
 enum SupermuxDeviceMirrorColors {
     /// The replay's VT bytes without default colors or palette.
     static func themePortableBytes(_ frame: MobileTerminalRenderGridFrame) -> Data {
         MobileTerminalRenderGridReplay(frame, includesColorState: false).patchBytes()
+    }
+
+    /// The bytes that leave a mirror holding exactly `colors` over this Mac's
+    /// theme, whatever it held before.
+    ///
+    /// Live PTY bytes can set or reset any color between replays, and a
+    /// replay can follow a gap whose bytes never arrived (a lost link, a
+    /// dropped chunk), so nothing this Mac recorded says what the surface
+    /// holds. Each special color the program did not set is reset (OSC
+    /// 110/111/112) and each one it did is set, never reset first, so an
+    /// authored background does not flicker through the default. The palette
+    /// is reset whole (OSC 104), then the authored entries set (OSC 4). A
+    /// reset to this Mac's default is harmless on a mirror:
+    /// ``surfaceBackgroundOverride(for:defaultColor:isMirror:)`` clears the
+    /// pane override, so the pane keeps the shared backdrop.
+    static func settlingBytes(_ colors: CloudTuiRemoteColors) -> Data {
+        var resets = ""
+        if colors.foreground == nil { resets += "\u{1B}]110\u{1B}\\" }
+        if colors.background == nil { resets += "\u{1B}]111\u{1B}\\" }
+        if colors.cursor == nil { resets += "\u{1B}]112\u{1B}\\" }
+        resets += "\u{1B}]104\u{1B}\\"
+        return Data(resets.utf8) + colors.oscBytes
     }
 
     /// The colors a program on the other Mac set: its effective colors that
@@ -77,36 +99,33 @@ enum SupermuxDeviceMirrorColors {
     }
 }
 
-/// The program-authored colors a device mirror's surface holds, so each
-/// replay sends only what changed. The theme-portable replay never resets
-/// colors (it avoids RIS), so an entry that vanished must be reset here.
+/// Applies a device mirror's replays. The theme-portable replay never resets
+/// colors (it avoids RIS), so each one is followed by
+/// ``SupermuxDeviceMirrorColors/settlingBytes(_:)``. Nothing outside DEBUG is
+/// stored: a replay settles every color, so none depends on an earlier one.
 struct SupermuxDeviceMirrorColorState {
-    private(set) var applied = CloudTuiRemoteColors()
-    private var surfaceID: UUID?
     #if DEBUG
-    /// Replays applied so far, and whether the last one's own bytes carried
-    /// any color state (for `supermux.devices.mirror.terminal_background`).
+    /// For `supermux.devices.mirror.terminal_background`: the program-authored
+    /// colors the last replay set, how many replays were applied, and whether
+    /// the last one's own screen bytes (before the settling sequences)
+    /// carried any color state.
+    private(set) var applied = CloudTuiRemoteColors()
     private(set) var replays = 0
     private(set) var lastReplayCarriedColorOSC = false
     #endif
 
-    /// The bytes that apply one replay to `surfaceID`: its screen, then the
-    /// authored-color delta. `colors` is nil for a legacy replay, which starts
-    /// with a full reset (RIS) and so clears every color itself.
-    mutating func bytes(applying replay: Data, colors: CloudTuiRemoteColors?, to surfaceID: UUID?) -> Data {
-        // A surface this state never fed holds no authored colors.
-        let previous = surfaceID == self.surfaceID ? applied : CloudTuiRemoteColors()
-        self.surfaceID = surfaceID
+    /// The bytes that apply one replay: its screen, then the sequences that
+    /// settle every color to this Mac's theme plus `colors`. `colors` is nil
+    /// for a legacy replay, which starts with a full reset (RIS) and so clears
+    /// every color itself.
+    mutating func bytes(applying replay: Data, colors: CloudTuiRemoteColors?) -> Data {
         #if DEBUG
         replays += 1
         lastReplayCarriedColorOSC = Self.colorSequences.contains { replay.range(of: $0) != nil }
+        applied = colors ?? CloudTuiRemoteColors()
         #endif
-        guard let colors else {
-            applied = CloudTuiRemoteColors()
-            return replay
-        }
-        applied = colors
-        return replay + colors.oscDelta(from: previous)
+        guard let colors else { return replay }
+        return replay + SupermuxDeviceMirrorColors.settlingBytes(colors)
     }
 
     #if DEBUG
