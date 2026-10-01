@@ -52,7 +52,7 @@ enum SupermuxMobileAuthorization {
              .changesGenerateCommitMessage, .changesPush, .changesPull,
              .changesStash, .changesStashPop, .changesHistory,
              .filesList, .filesCreate, .filesRename, .filesDuplicate,
-             .filesTrash, .filesRead, .filesSearch, .filesGitStatus,
+             .filesTrash, .filesRead, .filesSearch, .filesGitStatus, .filesWatch,
              .workspaceSelect, .simulatorCreate:
             return .workspaceScopedPermitted
         case .terminalSelect:

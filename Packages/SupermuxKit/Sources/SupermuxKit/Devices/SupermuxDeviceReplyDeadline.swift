@@ -67,7 +67,7 @@ public enum SupermuxDeviceReplyDeadline {
         case .projectClone:
             return clone
         case .projectsList, .projectUpdate, .projectDelete, .projectOpen, .projectIcon,
-             .projectsSetSectionCollapsed, .worktreeOpen, .changesWatch, .runState, .runStart, .runStop,
+             .projectsSetSectionCollapsed, .worktreeOpen, .changesWatch, .filesWatch, .runState, .runStart, .runStop,
              .presetCreate, .presetUpdate, .presetDelete, .presetLaunch, .actionRun,
              .workspaceSelect, .terminalSelect, .panelSelect, .paneClose, .simulatorCreate,
              .usageState, .phonePushRegister, .phonePushStatus, .phonePushShare:

@@ -57,6 +57,7 @@ import Testing
         "mobile.supermux.files.read",
         "mobile.supermux.files.search",
         "mobile.supermux.files.git_status",
+        "mobile.supermux.files.watch",
         // Workspace selection / panes
         "mobile.supermux.workspace.select",
         "mobile.supermux.terminal.select",
@@ -73,7 +74,7 @@ import Testing
 
     @Test func allExposesEveryMethodExactlyOnce() {
         #expect(SupermuxMobileMethod.all.map(\.rawValue) == Self.expectedRawValues)
-        #expect(SupermuxMobileMethod.all.count == 54)
+        #expect(SupermuxMobileMethod.all.count == 55)
         #expect(Set(SupermuxMobileMethod.all).count == SupermuxMobileMethod.all.count)
     }
 
