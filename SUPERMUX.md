@@ -140,7 +140,7 @@ Status per fork feature area:
 | 9 | Worktree setup/teardown scripts | ✅ mac-side execution, phone-triggered | scripts always run on the Mac when worktrees are created/removed from the phone; script lists editable in the phone's project editor (config-imported projects render read-only) |
 | 10 | AI integration | ✅ mac-side only (by design) | the AI key/model never leave the Mac; the phone consumes results (`worktree.suggest_branch`, `changes.generate_commit_message`) and surfaces the `ai_unavailable` error when unconfigured |
 | 11 | Workspace switcher | ✅ covered by existing surface — **deliberate decision** | the existing iOS workspace list already is the mobile switcher; no new switcher UI was built. Workspace selection and the focused panel sync bidirectionally with the Mac: v1 preserves terminal-only compatibility, while `supermux.selection_sync.v2` covers terminals, browser tabs, Simulator tabs, and forward-compatible future panel kinds. Phone-created panels request atomic Mac focus before the create reply, and browser/Simulator streams wait for the ordered focus operation before starting, so a newly opened or selected tab is immediately visible and operable on both devices |
-| 12 | Agent activity indicators | ✅ on iOS | additive `supermux_activity` travels for project-associated and global workspaces; the real iPhone `UITableView` row mounts `SupermuxWorkspaceActivityDot` and shows the amber working spinner whenever any tab's agent is running |
+| 12 | Agent activity indicators | ✅ on iOS | additive `supermux_activity` travels for project-associated and global workspaces; the real iPhone `UITableView` row mounts `SupermuxWorkspaceActivityDot` and shows the amber working spinner whenever any tab's agent is running or waiting on its background work (upstream's "Waiting") |
 | 13 | File explorer ops | ✅ on iOS | `SupermuxFileBrowserScreen` (browse, new file/folder, rename, duplicate, trash — never `rm`) over root-confined `files.*`; doubles as the project editor's folder picker |
 | 14 | Project association / nesting | ✅ on iOS | additive `supermux_project_id` field folds loose project-owned rows under the Projects section; a project's open workspaces are listed in its detail screen |
 | 15 | Empty-home behavior | mac-side only — **deliberate decision** | pure macOS window behavior; the mobile close path is already handled by touchpoint #71. No iOS surface (recorded mission decision) |
@@ -249,6 +249,12 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   close-confirmation setting), the viewer asks "Close “X” on <Mac>?" (Cancel, the Return/Esc default,
   brings the tab back); Kill Terminal… forces. A tab closed while that Mac is unreachable disappears
   at once and its close is sent first when the link is back (#640–#644).
+- **Agent activity** (#715–#718): the amber working spinner shows while an agent runs and while it is
+  "Waiting" (its turn ended with background shells, subagents or crons still running; upstream's grey
+  Waiting pill stays beside it and the done notification still waits for the work to finish), on
+  every row, mirror and the phone. Each terminal tab that is working shows Bonsplit's own tab
+  spinner (in the tab's text colour; the unread dot is unchanged), in workspaces, the Dock and
+  mirrors (the other Mac sends `supermux_working_panel_ids`; an older Mac's mirror tabs show none).
 - **Sidebar rows:** inside a project, this Mac's workspaces come first, then each Mac's mirrors;
   every mirror row (nested or flat) marks its Mac with a small Mac + cloud icon right before its
   branch name (the Mac's name in its tooltip); nested rows show no `cmux set-status` pills or
