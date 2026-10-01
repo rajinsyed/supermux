@@ -71,8 +71,9 @@ enum SupermuxMobileCapabilities {
             // Mac's "New Terminal to the Right" lands right of its tab here too.
             SupermuxMobileCapability.terminalPlacementV1.rawValue,
             // files.list {show_hidden} / files.read / files.search /
-            // files.git_status are served: another Mac's Files panel browses
-            // a workspace's folder here, read-only and root-confined.
+            // files.git_status / files.watch are served: another Mac's Files
+            // panel browses a workspace's folder here, read-only and
+            // root-confined, and refreshes when the folder's entries change.
             SupermuxMobileCapability.filesReadV1.rawValue,
         ]
     }
