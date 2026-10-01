@@ -18,7 +18,7 @@ import Foundation
 /// would to a local pane.
 enum SupermuxDeviceMirrorColors {
     /// The replay's VT bytes without default colors or palette.
-    nonisolated static func themePortableBytes(_ frame: MobileTerminalRenderGridFrame) -> Data {
+    static func themePortableBytes(_ frame: MobileTerminalRenderGridFrame) -> Data {
         MobileTerminalRenderGridReplay(frame, includesColorState: false).patchBytes()
     }
 
@@ -29,7 +29,7 @@ enum SupermuxDeviceMirrorColors {
     /// The frame's default foreground and background are raw (the producer
     /// undoes DEC reverse video, which the replay restores as a mode), so they
     /// compare directly with the configured defaults.
-    nonisolated static func authored(in frame: MobileTerminalRenderGridFrame) -> CloudTuiRemoteColors {
+    static func authored(in frame: MobileTerminalRenderGridFrame) -> CloudTuiRemoteColors {
         guard let config = frame.terminalConfigTheme else { return CloudTuiRemoteColors() }
         var colors = CloudTuiRemoteColors()
         colors.foreground = authored(frame.terminalForeground, configured: config.foreground)
@@ -47,7 +47,7 @@ enum SupermuxDeviceMirrorColors {
     }
 
     /// `value` as lowercase `#rrggbb` when it parses and differs from `configured`.
-    nonisolated private static func authored(_ value: String?, configured: String?) -> String? {
+    private static func authored(_ value: String?, configured: String?) -> String? {
         guard let rgb = TerminalTheme.rgbComponents(value) else { return nil }
         if let configuredRGB = TerminalTheme.rgbComponents(configured),
            configuredRGB.red == rgb.red, configuredRGB.green == rgb.green, configuredRGB.blue == rgb.blue {

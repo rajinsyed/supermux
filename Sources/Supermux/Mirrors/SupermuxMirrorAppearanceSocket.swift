@@ -30,13 +30,13 @@ enum SupermuxMirrorAppearanceSocket {
             throw SupermuxMirrorSocketCommands.InvalidParams(message: "surface_id must name a terminal")
         }
         let hostedView = surface.hostedView
-        let override = hostedView.surfaceView.backgroundColor
+        let surfaceOverride = hostedView.surfaceView.backgroundColor
         let app = GhosttyApp.shared
         var payload: [String: Any] = [
             "surface_id": surfaceID.uuidString,
             "is_mirror": surface.ioMode == .manualMirror,
-            "background_override": override?.hexString() ?? NSNull(),
-            "fill_owner": fillPlan(override: override).logBackdropLabel,
+            "background_override": surfaceOverride?.hexString() ?? NSNull(),
+            "fill_owner": fillPlan(surfaceOverride: surfaceOverride).logBackdropLabel,
             "backdrop_cutout_present": hostedView.subviews.contains { $0.compositingFilter != nil },
             "has_presented_frame": surface.hasPresentedFrame,
             "in_window": hostedView.window != nil,
@@ -44,14 +44,15 @@ enum SupermuxMirrorAppearanceSocket {
             "app_background_opacity": app.defaultBackgroundOpacity,
         ]
         let hostLayer = hostedView.subviews.first { $0 is TerminalPaneBackgroundView }?.layer?.backgroundColor
-        payload["host_layer_hex"] = hostLayer.flatMap { NSColor(cgColor: $0)?.hexString() } ?? NSNull()
+        let hostLayerHex: Any = hostLayer.flatMap { NSColor(cgColor: $0)?.hexString() } ?? NSNull()
+        payload["host_layer_hex"] = hostLayerHex
         payload["host_layer_alpha"] = hostLayer.map { Double($0.alpha) } ?? 0
         payload.merge(mirrorState(surfaceID)) { _, new in new }
         return payload
     }
 
     /// The fill plan `applySurfaceBackground` resolves for this override.
-    private static func fillPlan(override: NSColor?) -> TerminalSurfaceBackgroundFillPlan {
+    private static func fillPlan(surfaceOverride: NSColor?) -> TerminalSurfaceBackgroundFillPlan {
         let app = GhosttyApp.shared
         let renderingMode = WindowAppearanceSnapshot.terminalRenderingMode(
             usesHostLayerBackground: app.usesHostLayerBackground
@@ -59,7 +60,7 @@ enum SupermuxMirrorAppearanceSocket {
         let sharesWindowBackdrop = Workspace.usesWindowRootTerminalBackdrop()
         return TerminalSurfaceBackgroundFillPlan.resolve(
             renderingMode: renderingMode,
-            surfaceBackgroundColor: override,
+            surfaceBackgroundColor: surfaceOverride,
             defaultBackgroundColor: app.defaultBackgroundColor,
             backgroundOpacity: app.defaultBackgroundOpacity,
             sharesWindowBackdrop: sharesWindowBackdrop,
