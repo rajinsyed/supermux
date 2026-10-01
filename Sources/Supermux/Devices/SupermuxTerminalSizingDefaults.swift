@@ -157,19 +157,19 @@ final class SupermuxTerminalSizingDefaults {
         }
     }
 
-    /// The preference on one terminal: a local one's sizing host, or a device
-    /// mirror, which claims its terminal and pushes.
+    /// The preference on one terminal: a device mirror claims its terminal and
+    /// pushes; a local terminal's sizing host takes it.
     private func apply(to surfaceID: UUID) {
         let controller = TerminalController.shared
-        if let host = controller.localSizingHostsBySurfaceID[surfaceID] {
+        if let session = SupermuxTerminalSizingVisibility.shared.trackedMirrorSessions()[surfaceID] {
+            guard let viewer = session.viewer,
+                  viewer.state?.policy != preference.policy(selfKey: Self.selfKey(of: viewer)) else { return }
+            session.supermuxSizingClaim.claimed = !session.supermuxHidden
+            session.supermuxSizingClaim.pushed = push(session)
+        } else if let host = controller.localSizingHostsBySurfaceID[surfaceID] {
             let policy = preference.policy(selfKey: Self.selfKey(of: host))
             guard host.state.policy != policy else { return }
             _ = controller.localSizingSetPolicy(surfaceID: surfaceID, policy: policy)
-        } else if let session = SupermuxTerminalSizingVisibility.shared.trackedMirrorSessions()[surfaceID],
-                  let viewer = session.viewer,
-                  viewer.state?.policy != preference.policy(selfKey: Self.selfKey(of: viewer)) {
-            session.supermuxSizingClaim.claimed = !session.supermuxHidden
-            session.supermuxSizingClaim.pushed = push(session)
         }
     }
 
