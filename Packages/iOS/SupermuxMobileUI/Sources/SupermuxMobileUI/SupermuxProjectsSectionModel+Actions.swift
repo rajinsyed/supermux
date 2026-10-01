@@ -50,7 +50,12 @@ extension SupermuxProjectsSectionModel {
             preparingNewWorktreeProjectID: preparingNewWorktreeProjectID,
             makeAgentLaunchStore: { [weak self] projectID in
                 self?.makeAgentLaunchStore(forProjectID: projectID)
-            }
+            },
+            toggleProjectsExpanded: { [weak self] projectIDs in
+                self?.toggleProjectsExpanded(projectIDs)
+            },
+            openSwipeRowID: { [weak self] in self?.openSwipeRowID },
+            setOpenSwipeRowID: { [weak self] rowID in self?.openSwipeRowID = rowID }
         )
     }
 

@@ -436,8 +436,8 @@ final class WorkspaceListTableCoordinator: NSObject, UITableViewDataSource,
             true
         case .workspace, .groupHeader, .groupFooter, .missing:
             false
-        // SUPERMUX:begin supermux-mobile-projects-table-row (shared-cache measured, keyed on the section's LAYOUT identity — see measuredHeight)
-        case .supermuxProjects:
+        // SUPERMUX:begin supermux-mobile-projects-table-row (shared-cache measured, keyed on the row's LAYOUT identity — see measuredHeight)
+        case .supermux:
             false
         // SUPERMUX:end supermux-mobile-projects-table-row
         }
@@ -466,10 +466,10 @@ final class WorkspaceListTableCoordinator: NSObject, UITableViewDataSource,
         case .groupHeader:
             let key = HeightCacheKey(layout: .groupHeader, metrics: metrics)
             return sharedHeight(for: key, model: model, item: item, in: tableView)
-        // SUPERMUX:begin supermux-mobile-projects-table-row (height keyed on the fork's LAYOUT identity, not its full snapshot: live activity/PR/run repaints must not re-measure the whole section)
-        case .supermuxProjects(let projects):
+        // SUPERMUX:begin supermux-mobile-projects-table-row (height keyed on the fork row's LAYOUT identity, not its value: name, count, PR and run repaints never re-measure)
+        case .supermux(let value):
             let key = HeightCacheKey(
-                layout: .supermuxProjects(projects.heightIdentity),
+                layout: .supermux(value.heightIdentity),
                 metrics: metrics
             )
             return sharedHeight(for: key, model: model, item: item, in: tableView)
@@ -666,8 +666,8 @@ final class WorkspaceListTableCoordinator: NSObject, UITableViewDataSource,
                 .margins(.leading, 12)
                 .margins(.trailing, 12)
                 .minSize(width: 0, height: 0)
-        // SUPERMUX:begin supermux-mobile-projects-table-row (the Projects row owns its own horizontal insets and internal spacing; the banner/status 8/12 margins would double them)
-        case .supermuxProjects:
+        // SUPERMUX:begin supermux-mobile-projects-table-row (fork rows own their insets and spacing; the banner/status 8/12 margins would double them)
+        case .supermux:
             hosting = hosting
                 .margins(.all, 0)
                 .minSize(width: 0, height: 0)
@@ -729,12 +729,11 @@ final class WorkspaceListTableCoordinator: NSObject, UITableViewDataSource,
                 cancelRetryOnDisappear: configuration.cancelRefreshAttemptOnDisappear,
                 guidance: empty.guidance
             )
-        // SUPERMUX:begin supermux-mobile-projects-table-row (hosts the fork's whole Projects subtree in this one row)
-        case .supermuxProjects(let projects):
-            SupermuxProjectsTableSection(
-                section: projects.section,
-                actions: projects.actions
-            )
+        // SUPERMUX:begin supermux-mobile-projects-table-row (one fork row of the merged Projects list)
+        case .supermux(let value):
+            if let actions = configuration.supermuxProjects?.actions {
+                SupermuxProjectsTableRowView(value: value, actions: actions)
+            }
         // SUPERMUX:end supermux-mobile-projects-table-row
         case .missing:
             EmptyView()
@@ -786,6 +785,9 @@ final class WorkspaceListTableCoordinator: NSObject, UITableViewDataSource,
                 }
             }
         }
+        // SUPERMUX:begin supermux-mobile-nested-accessory (after the row's accessibility element, so the accessory is its own element)
+        .supermuxNestedWorkspaceAccessory(row.supermuxAccessory)
+        // SUPERMUX:end supermux-mobile-nested-accessory
     }
 
     private func groupHeaderActions(
@@ -1144,12 +1146,18 @@ final class WorkspaceListTableCoordinator: NSObject, UITableViewDataSource,
     private var chromePrefixCount: Int {
         renderedItems.prefix { item in
             if case .chrome = item { return true }
+            // SUPERMUX:begin supermux-mobile-projects-nested-reorder (workspaces nested under a project belong to the leading run; upstream's grouped output never STARTS with an indented row)
+            if case .workspace(_, indented: true) = item { return true }
+            // SUPERMUX:end supermux-mobile-projects-nested-reorder
             return false
         }.count
     }
 
     private func isMovable(_ item: WorkspaceListTableItem) -> Bool {
-        switch item {
+        // SUPERMUX:begin supermux-mobile-projects-nested-reorder (a workspace nested under a project is not reorderable)
+        if let row = indexPath(forID: item.id)?.row, row < chromePrefixCount { return false }
+        return switch item { // upstream: `switch item {` (implicit return)
+        // SUPERMUX:end supermux-mobile-projects-nested-reorder
         case .workspace(let workspaceID, _):
             configuration.workspacesByID[workspaceID]?
                 .actionCapabilities.supportsMoveActions == true

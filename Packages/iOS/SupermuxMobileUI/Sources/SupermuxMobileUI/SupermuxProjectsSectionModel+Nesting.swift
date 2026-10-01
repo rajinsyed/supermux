@@ -45,6 +45,18 @@ extension SupermuxProjectsSectionModel {
         expansionDefaults.set(expandedProjectIDs.sorted(), forKey: Self.expansionDefaultsKey)
     }
 
+    /// Opens or closes a project merged across Macs: closes it on every Mac
+    /// when any of them has it open, otherwise opens it on all of them, so
+    /// the merged row shows every Mac's worktrees.
+    /// - Parameter projectIDs: The merged project's ROW ids, one per Mac.
+    public func toggleProjectsExpanded(_ projectIDs: [String]) {
+        openSwipeRowID = nil
+        let isOpen = projectIDs.contains(where: isProjectExpanded)
+        for projectID in projectIDs where isProjectExpanded(projectID) == isOpen {
+            toggleProjectExpanded(projectID)
+        }
+    }
+
     /// Routes to the project DETAIL screen, capturing the row as a fallback
     /// so the pushed detail survives its Mac's session going away.
     /// - Parameter projectID: The project ROW id.

@@ -32,6 +32,11 @@ public final class SupermuxProjectsSectionModel {
     /// Local collapse toggle. `nil` follows the lead Mac's `section_collapsed`.
     var collapsedOverride: Bool?
 
+    /// The one list row whose swipe tray is open. Shared by every cell of the
+    /// iPhone's list, so opening one tray closes the others, as in any
+    /// native list.
+    var openSwipeRowID: String?
+
     /// Open inline disclosures, by project ROW id (legacy entries may be
     /// plain project ids, which apply on every Mac). UserDefaults-persisted.
     var expandedProjectIDs: Set<String>
@@ -258,6 +263,7 @@ public final class SupermuxProjectsSectionModel {
             return store
         }
         guard let lead = visible.first else { return }
+        openSwipeRowID = nil
         let collapsed = !(collapsedOverride ?? lead.isSectionCollapsed)
         collapsedOverride = collapsed
         for store in visible {
