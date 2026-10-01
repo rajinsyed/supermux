@@ -31,7 +31,8 @@ import SupermuxKit
 /// - `tab_bar_new_tab`, `tab_context_action` — where a new tab lands, and
 ///   `tab_chrome` — what a tab draws (``SupermuxTabOrderSocketCommands``, DEBUG builds only).
 /// - `tab_indicators {workspace_id}` — each tab's working spinner, unread dot and
-///   agent lifecycle (``SupermuxTabIndicatorSocket``, DEBUG builds only).
+///   agent lifecycle, plus `dock_tab`, `move_into_dock` and `reset_tab_loading`
+///   (``SupermuxTabIndicatorSocket``, DEBUG builds only).
 /// - `files {workspace_id, action: state|expand|open|materialize|search|local_rows|local_git_status|unmount, …}`
 ///   (``SupermuxMirrorFilesSocket``).
 @MainActor
@@ -80,8 +81,8 @@ enum SupermuxMirrorSocketCommands {
             return try SupermuxMirrorAppearanceSocket.terminalBackground(params)
         case let sub where SupermuxTabOrderSocketCommands.methods.contains(sub):
             return try SupermuxTabOrderSocketCommands.handle(sub, params: params)
-        case "tab_indicators":
-            return try SupermuxTabIndicatorSocket.tabIndicators(params)
+        case let sub where SupermuxTabIndicatorSocket.methods.contains(sub):
+            return try SupermuxTabIndicatorSocket.handle(sub, params: params)
         #endif
         case "files":
             return try await SupermuxMirrorFilesSocket.handle(params, workspace: try mirrorWorkspace(params))
