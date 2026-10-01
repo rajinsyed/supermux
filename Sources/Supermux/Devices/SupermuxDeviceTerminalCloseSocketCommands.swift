@@ -20,6 +20,9 @@ import Foundation
 ///   answer and that log (`asked: [{title, message, device, shown}]`).
 /// - `terminal_close.needs_confirm {workspace_id, surface_id}`: whether this Mac
 ///   would ask before closing that terminal of its own (`panelNeedsConfirmClose`).
+/// - `terminal_close.replay {workspace_id, panel_id}`: a fresh replay of that
+///   device-mirror pane (`retry()`), as the owning Mac's resize or a dropped
+///   chunk starts one.
 @MainActor
 enum SupermuxDeviceTerminalCloseSocketCommands {
     static let methodPrefix = "terminal_close."
@@ -39,6 +42,7 @@ enum SupermuxDeviceTerminalCloseSocketCommands {
         case "inspect": return try inspect(params)
         case "answer": return try answer(params)
         case "needs_confirm": return try needsConfirm(params)
+        case "replay": return try replay(params)
         default: throw HookError(message: "unknown terminal_close method \(name)")
         }
     }
@@ -96,6 +100,20 @@ enum SupermuxDeviceTerminalCloseSocketCommands {
             "exists": workspace.panels[surfaceID] != nil,
             "needs_confirm": workspace.panelNeedsConfirmClose(panelId: surfaceID),
         ]
+    }
+
+    private static func replay(_ params: [String: Any]) throws -> [String: Any] {
+        let workspace = try liveWorkspace(params)
+        let catalog = SurfaceCatalog.shared
+        guard let raw = params["panel_id"] as? String, let panelID = UUID(uuidString: raw),
+              let projection = catalog.projections.first(where: {
+                  $0.workspaceID == workspace.id && $0.panelID == panelID && $0.resource.machine.isDevice
+              }),
+              let session = (catalog.provider(for: projection.resource.machine) as? DeviceSurfaceProvider)?.sessions[panelID] else {
+            throw HookError(message: "panel_id does not name a device-mirror pane of that workspace")
+        }
+        session.retry()
+        return ["panel_id": panelID.uuidString]
     }
 
     private static func liveWorkspace(_ params: [String: Any]) throws -> Workspace {
