@@ -22,6 +22,12 @@ import Foundation
 /// out (``defers(_:surfaceID:pane:)``) until its own pane resizes or comes on
 /// screen, instead of taking the size back, which made two panes of
 /// different sizes resize the terminal in turn.
+///
+/// The host keeps one counts override per client id too, so whether it holds
+/// this Mac's automatic `counts_override: false` (a speaking pane went off
+/// screen) is kept here per client id and terminal
+/// (``holdsHiddenCounts(_:surfaceID:)``), not per pane: whichever pane speaks
+/// next lifts it when it is on screen.
 @MainActor
 final class SupermuxDeviceViewportGenerations {
     static let shared = SupermuxDeviceViewportGenerations()
@@ -30,6 +36,9 @@ final class SupermuxDeviceViewportGenerations {
     /// The local pane (surface id) whose grid the host holds, per client id
     /// and remote terminal.
     private var reporters: [String: [UUID: UUID]] = [:]
+    /// The remote terminals, per client id, where the host holds this Mac's
+    /// automatic `counts_override: false`.
+    private var hiddenCounts: [String: Set<UUID>] = [:]
 
     /// Raises `viewer` to the floor of its client id and `surfaceID`.
     func raise(_ viewer: inout RemoteMacTerminalViewer?, surfaceID: UUID) {
@@ -65,6 +74,28 @@ final class SupermuxDeviceViewportGenerations {
     /// (the DEBUG tab-close driver reports it).
     func reporter(clientID: String, surfaceID: UUID) -> UUID? {
         reporters[clientID]?[surfaceID]
+    }
+
+    /// The local pane whose grid the host holds for `viewer`'s link on `surfaceID`.
+    func reporter(of viewer: RemoteMacTerminalViewer?, surfaceID: UUID) -> UUID? {
+        viewer.flatMap { reporters[$0.clientID]?[surfaceID] }
+    }
+
+    /// Whether the host holds this Mac's automatic `counts_override: false`
+    /// for `viewer`'s link on `surfaceID`.
+    func holdsHiddenCounts(_ viewer: RemoteMacTerminalViewer?, surfaceID: UUID) -> Bool {
+        guard let viewer else { return false }
+        return hiddenCounts[viewer.clientID]?.contains(surfaceID) ?? false
+    }
+
+    /// Records whether the host now holds that automatic `counts_override: false`.
+    func setHoldsHiddenCounts(_ holds: Bool, _ viewer: RemoteMacTerminalViewer?, surfaceID: UUID) {
+        guard let viewer else { return }
+        if holds {
+            hiddenCounts[viewer.clientID, default: []].insert(surfaceID)
+        } else {
+            hiddenCounts[viewer.clientID]?.remove(surfaceID)
+        }
     }
 
     /// The wait before replaying again after the host's `attempt`-th
