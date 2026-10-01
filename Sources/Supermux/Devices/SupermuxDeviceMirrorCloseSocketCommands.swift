@@ -12,9 +12,10 @@ import Foundation
 ///   upstream close confirmation it meets takes `answer` (default `close`)
 ///   without showing itself, and "Don't ask again" stays unticked. Returns
 ///   `result` (whether every workspace closed here), `prompts` (each
-///   confirmation it met, in order: `{kind: "upstream" | "mirror", title}`)
-///   and `still_open` (the ids still open here). The workspaces must be in one
-///   window.
+///   confirmation it met, in order: `{kind: "upstream", title}`; builds from
+///   before mirrors closed like local workspaces also logged their own close
+///   prompt as `kind: "mirror"`) and `still_open` (the ids still open here).
+///   The workspaces must be in one window.
 @MainActor
 enum SupermuxDeviceMirrorCloseSocketCommands {
     static let method = "user_close"
@@ -54,7 +55,6 @@ enum SupermuxDeviceMirrorCloseSocketCommands {
         defer {
             manager.confirmCloseHandler = savedHandler
             manager.confirmCloseDontAskAgainHandler = savedDontAskAgain
-            SupermuxDeviceMirrorCloseDebug.end()
         }
 
         if workspaces.count == 1 {
@@ -87,21 +87,13 @@ enum SupermuxDeviceMirrorCloseSocketCommands {
     }
 }
 
-/// The close confirmations one `user_close` met, while it runs.
+/// The close confirmations the last `user_close` met.
 @MainActor
 enum SupermuxDeviceMirrorCloseDebug {
-    /// Whether a `user_close` is running (a fork close prompt then records
-    /// itself and answers Cancel without showing).
-    private(set) static var isRecording = false
     private(set) static var prompts: [[String: Any]] = []
 
     static func begin() {
-        isRecording = true
         prompts = []
-    }
-
-    static func end() {
-        isRecording = false
     }
 
     static func record(kind: String, title: String) {
