@@ -12,7 +12,9 @@ import SupermuxKit
 /// and a Cloud VM placeholder's is its boot, both owned by upstream.
 ///
 /// Driven by ``SupermuxWorkspaceLifecycleRelay``, which fires on every agent
-/// lifecycle change and on every change of a device mirror's overlay. The
+/// lifecycle change and on every change of a device mirror's overlay; each
+/// ``SupermuxDeviceStatusProjector`` pass also syncs every mirror, so a mirror
+/// tab projected after its overlay arrived spins at once. The
 /// changed workspaces are synced together on the next main-actor turn (after
 /// the mutation that fired the relay has finished), walking each one's panels
 /// once; Bonsplit's `updateTab` writes only a value that changed. A tab that
