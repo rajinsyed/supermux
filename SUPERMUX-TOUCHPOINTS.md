@@ -571,6 +571,7 @@ Rules for adding a touchpoint:
 | 598 | `Packages/macOS/CmuxSettingsUI/Sources/CmuxSettingsUI/Environment/SupermuxRemoteMacsSettingsSnapshot.swift` | `unfenced` | Whole fork-owned file in the upstream package: `SupermuxRemoteMacsSettingsSnapshot`, the value the Remote Macs card renders (built app-side by `SupermuxRemoteMacsSettingsFeed`) |
 | 599 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the 4 workstream-X files under `Sources/Supermux/Devices/` into the cmux target (four entries each, `Devices/…` paths inside the `Supermux` group; the `+` path is quoted): `SupermuxDeviceLayoutChangeObserver`, `SupermuxRemoteMacsSettingsFeed`, `HostSettingsActions+SupermuxRemoteMacs`, `SupermuxRemoteMacsSocketCommands`. Ids `50BE000C0000000000000001`–`…0008` (odd = file reference, even = build file, in that order); `grep -c 50BE000C cmux.xcodeproj/project.pbxproj` prints 16 |
 | 620 | `Sources/AppDelegate.swift` | `sidebar-empty-area-local` | Wraps the body of `sidebarEmptyAreaUsesRemoteNewWorkspaceRouting(tabManager:)` (upstream's bare `selectedTab?.isRemoteTmuxMirror == true || selectedWorkspace?.deviceMachineForNewWorkspace != nil`, now with `return`) and puts `if SupermuxNewWorkspaceTarget.isForkDeviceWorkspace(tabManager.selectedWorkspace) { return false }` before it: a double-click on the sidebar's empty area (SwiftUI `SidebarEmptyArea` and the AppKit list's `createWorkspaceAtEndFromSidebar`, which share this helper) with a device mirror selected creates what origin/main did — `addWorkspaceIfActive(placementOverride: .end)`: a local workspace after every row, standalone at the root (#41), in the home / Ghostty-default directory (#80, #577); a configured `ui.newWorkspace.action` still applies with `.end` placement (through #571, local) |
+| 621 | `Sources/TerminalController+WorkspaceCreate.swift` | `device-root-workspace-create` | In `v2MobileWorkspaceCreate`, right after `createParams["auto_refresh_metadata"] = false`: `SupermuxDeviceWorkspaceOpener.applyRootDirectoryRequest(to: &createParams)`. Another Mac's "New Workspace on ▸ <this Mac>" (`SupermuxDeviceWorkspaceOpener.createWorkspace` without a directory) sends the fork-only flag `supermux_root_directory: true`; with it and neither `working_directory` nor `cwd`, the helper sets `working_directory` to this Mac's home folder, so the workspace starts there instead of inheriting the directory of whatever this Mac has selected (usually a worktree). Every other create (the phone's, explicit directories, New Worktree) is untouched; a Mac without the fork ignores the flag and inherits as before. The viewer cannot send `~` itself: the mobile directory check accepts absolute paths only |
 
 ## How to re-apply
 
@@ -5035,18 +5036,25 @@ Verify: `CMUX_TAG=<tag> python3 tests/supermux/loopback_tab_sync_e2e.py` and
 `CMUX_TAG=<tag> python3 tests/supermux/loopback_remote_macs_settings_e2e.py` against a tagged build
 launched with `SUPERMUX_DEBUG_LOOPBACK_DEVICE=1` (both run in `tests/supermux/run_all_loopback_e2e.sh`).
 
-### 620–622. New Workspace stays on this Mac; other Macs on request — `sidebar-empty-area-local`
+### 620–622. New Workspace stays on this Mac; other Macs on request — `sidebar-empty-area-local`, `device-root-workspace-create`
 
 Why: device mirrors made every plain New Workspace entry point follow upstream's device routing, so
 with a mirror selected a double-click on the sidebar's empty area (and `+` / ⌘N) created on the
 other Mac, in whatever directory that Mac had selected. A selected mirror is context, not a target:
-plain New Workspace creates here (#571, #620) and another Mac is an explicit choice. Re-apply:
+plain New Workspace creates here (#571, #620) and another Mac is an explicit choice, which starts
+in that Mac's home folder (#621). Re-apply:
 
 - **#620** in `sidebarEmptyAreaUsesRemoteNewWorkspaceRouting(tabManager:)`, fence the whole body:
   `if SupermuxNewWorkspaceTarget.isForkDeviceWorkspace(tabManager.selectedWorkspace) { return false }`
   then upstream's expression with `return`. If upstream adds terms, keep them after the guard. If
   upstream stops routing device workspaces here (drops the `deviceMachineForNewWorkspace` term),
   retire the fence.
+- **#621** in `v2MobileWorkspaceCreate`, after upstream's `createParams` overrides (`focus`,
+  `eager_load_terminal`, `auto_refresh_metadata`) and before `v2PrepareWorkspaceCreate`, re-add the
+  fenced `SupermuxDeviceWorkspaceOpener.applyRootDirectoryRequest(to: &createParams)`. It must run
+  before the working-directory validation and the idempotency preparation read the params. If
+  upstream moves the mobile create, fence wherever it first reads `working_directory` / `cwd`.
 
 Verify: `CMUX_TAG=<tag> python3 tests/supermux/loopback_workspace_behaviors_e2e.py` (steps
-`new_workspace_shortcut_on_mirror` and `empty_area_on_mirror_creates_local_root`).
+`new_workspace_shortcut_on_mirror`, `empty_area_on_mirror_creates_local_root` and
+`empty_area_menu_creates_on_mac_in_home`).
