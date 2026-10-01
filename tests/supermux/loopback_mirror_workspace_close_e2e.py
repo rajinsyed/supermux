@@ -46,6 +46,10 @@ with every confirmation pre-answered and logged, so no modal shows:
   W11. borrowing_workspace_closes_here_only    a local workspace holding only terminals borrowed
                                                from two remote workspaces is not a mirror: closing
                                                it closes it here only, both sources keep running
+  W12. slow_mirror_close_stays_pending         the Mac holds the workspace.close 30 s (past the 20 s
+                                               reply deadline, link up): the close stays pending,
+                                               auto-mirror reopens nothing, then the source closes
+                                               and the pending close is forgotten
   W7. offline_close_survives_relaunch          (with --app-path, runs last) link down, close a
                                                mirror, quit and relaunch -> the source closes once
                                                the loopback is back, the mirror never reopens
@@ -78,6 +82,10 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 LOOPBACK_DEVICE_ID = "5e1f10b0-0000-4000-8000-000000000001"
+# W12: how long the loopback host holds the close (past the link's 20 s reply
+# deadline), and how long after the user's close the pending state is watched.
+SLOW_CLOSE_HOLD_S = 30
+SLOW_CLOSE_WATCH_S = 26
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ARTIFACTS_DIR = REPO_ROOT / "tests" / "supermux" / "artifacts"
 
@@ -673,6 +681,42 @@ class MirrorWorkspaceCloseE2E:
             raise Failure("; ".join(problems))
         return {"first": first, "second": second, "borrower": borrower, "prompts": result.get("prompts")}
 
+    def slow_mirror_close_stays_pending(self) -> Dict[str, Any]:
+        """A close whose reply misses its deadline while the Mac still answers
+        (`timed_out`) was not refused: the close may still run there. It stays
+        pending (no beep, auto-mirror reopens nothing) until the source is gone."""
+        pair = self.source_and_mirror("slow")
+        self.wait_linked()
+        self.sock.call("supermux.devices.link",
+                       {"machine": self.machine, "action": "stall", "method": "workspace.close", "seconds": SLOW_CLOSE_HOLD_S})
+        result = self.user_close([pair["mirror"]])
+        problems = self.closed_here_problems(result, [pair["mirror"]])
+        if problems:
+            raise Failure("; ".join(problems))
+        started = time.monotonic()
+
+        def still_pending() -> Optional[str]:
+            if not self.is_open(pair["source"]):
+                return None  # the held close already ran there: nothing left to keep pending
+            if up(pair["source"]) not in self.pending():
+                return f"the close was forgotten after {round(time.monotonic() - started, 1)} s: {self.hidden_state()}"
+            self.sock.call("supermux.devices.reconcile", {})
+            if self.mirrors_of(pair["source"]):
+                return f"auto-mirror reopened the mirror after {round(time.monotonic() - started, 1)} s"
+            return None
+
+        problem = holds(still_pending, SLOW_CLOSE_WATCH_S, interval_s=0.5)
+        if problem:
+            raise Failure(problem)
+        link = self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "status"}) or {}
+        if link.get("stall_armed"):
+            raise Failure(f"no workspace.close reached the Mac during the watch: {link}")
+        problems += self.closed_on_mac_problems(pair["source"], SLOW_CLOSE_HOLD_S)
+        problems += self.wait_pending_dropped(pair["source"])
+        if problems:
+            raise Failure("; ".join(problems))
+        return {**pair, "link": link}
+
     def offline_close_survives_relaunch(self) -> Dict[str, Any]:
         if not self.args.app_path:
             raise Skipped("pass --app-path to quit and relaunch")
@@ -783,6 +827,7 @@ class MirrorWorkspaceCloseE2E:
                 ("reopened_offline_close_cancels", self.reopened_offline_close_cancels),
                 ("delete_group_closes_mirror_on_mac", self.delete_group_closes_mirror_on_mac),
                 ("borrowing_workspace_closes_here_only", self.borrowing_workspace_closes_here_only),
+                ("slow_mirror_close_stays_pending", self.slow_mirror_close_stays_pending),
                 ("offline_close_survives_relaunch", self.offline_close_survives_relaunch),
             ]:
                 ok = self.step(name, check) and ok

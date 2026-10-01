@@ -18,6 +18,11 @@ import SupermuxKit
 ///     project's own `rootPath`, or it drops roots that have an origin.
 /// 11. The command is not `git -C <root> config --get remote.origin.url` (e.g. `remote -v`
 ///     parsing, or it runs in the wrong directory).
+/// 12. The bounded batch keeps the last origin known only when the whole batch misses its
+///     bound: a root whose lookup ends in time without an answer (git timed out, a joined
+///     lookup that did) drops an origin still cached, so answers flip between calls.
+/// 13. The bounded batch brings back a cached origin that git, asked again in time, now
+///     says is gone (a removed `origin`).
 struct SupermuxGitRemoteURLResolverTests {
     @Test func trimsGitOutputAndUsesTheOriginConfigCommand() async {
         let runner = ScriptedGitRunner(answers: ["/r/a": .origin("git@github.com:o/a.git\n")])
@@ -108,6 +113,31 @@ struct SupermuxGitRemoteURLResolverTests {
         await runner.setAnswer(.origin("https://github.com/o/fourth\n"), for: "/r/a")
         await resolver.invalidateAll()
         #expect(await resolver.remoteURL(forRoot: "/r/a") == "https://github.com/o/fourth")
+    }
+
+    @Test func boundedBatchKeepsTheLastOriginOfARootWithoutAnAnswerInTime() async {
+        let clock = TestClock()
+        let runner = ScriptedGitRunner(answers: [
+            "/r/a": .origin("https://github.com/o/a\n"),
+            "/r/b": .origin("https://github.com/o/b\n"),
+        ])
+        let resolver = SupermuxGitRemoteURLResolver(runner: runner, timeToLive: 60, now: { clock.now })
+        _ = await resolver.remoteURLs(forRoots: ["/r/a", "/r/b"])
+        clock.advance(by: 61)
+        // Expired, and git in /r/a now times out (its folder hangs), well inside the bound.
+        await runner.setAnswer(.timedOut, for: "/r/a")
+        let urls = await resolver.remoteURLs(forRoots: ["/r/a", "/r/b"], within: 2)
+        #expect(urls == ["/r/a": "https://github.com/o/a", "/r/b": "https://github.com/o/b"])
+    }
+
+    @Test func boundedBatchDropsAnOriginGitNowSaysIsGone() async {
+        let clock = TestClock()
+        let runner = ScriptedGitRunner(answers: ["/r/a": .origin("https://github.com/o/a\n")])
+        let resolver = SupermuxGitRemoteURLResolver(runner: runner, timeToLive: 60, now: { clock.now })
+        _ = await resolver.remoteURL(forRoot: "/r/a")
+        clock.advance(by: 61)
+        await runner.setAnswer(.exit(1), for: "/r/a")
+        #expect(await resolver.remoteURLs(forRoots: ["/r/a"], within: 2) == [:])
     }
 
     @Test func batchResultsAreKeyedByTheCallersRootSpelling() async {
