@@ -16354,8 +16354,14 @@ class TerminalController {
         }
         // A phone someone disconnected stays out until it reattaches.
         if isMobileClientDetached(surfaceID: terminalPanel.id, clientID: clientID) { return nil }
-        let columns = min(max(rawColumns, 20), 300)
-        let rows = min(max(rawRows, 5), 120); let generation = v2Int(params, "viewport_generation").flatMap { $0 >= 0 ? UInt64($0) : nil }
+        // SUPERMUX:begin device-mirror-viewport-limit (a viewing Mac's full-screen pane may be larger than a phone's)
+        let viewportLimit = SupermuxTerminalSizingDefaults.viewportLimit(
+            deviceKind: v2String(params, "device_kind").flatMap(TerminalDeviceKind.init(rawValue:))
+                ?? mobileViewportReportsBySurfaceID[terminalPanel.id]?[clientID]?.deviceKind
+        )
+        let columns = min(max(rawColumns, 20), viewportLimit.cols)
+        let rows = min(max(rawRows, 5), viewportLimit.rows); let generation = v2Int(params, "viewport_generation").flatMap { $0 >= 0 ? UInt64($0) : nil }
+        // SUPERMUX:end device-mirror-viewport-limit
         let now = Date()
         var reports = mobileViewportReportsBySurfaceID[terminalPanel.id] ?? [:]
         reports = reports.filter { _, report in
