@@ -593,11 +593,17 @@ final class DeviceTerminalMirrorSession {
         surface?.onNaturalGridInputsChanged = nil
         // SUPERMUX:begin device-mirror-viewport-generations
         // A following pane sends no clear: it would drop the grid of the pane
-        // that speaks for this Mac. The clear's generation fences this terminal
-        // on the host. (upstream: `if viewer.viewport != nil, isConnected() { sendSizing(…clearParams()) }`)
+        // that speaks for this Mac. The speaking pane hands over to another
+        // open pane of the terminal (one on screen first), which reports its
+        // grid; only the last one clears. The clear's generation fences this
+        // terminal on the host. (upstream: `if viewer.viewport != nil, isConnected() { sendSizing(…clearParams()) }`)
         let supermuxSpeaks = !SupermuxDeviceViewportGenerations.shared.defers(viewer, surfaceID: remoteSurfaceID, pane: sharingSurfaceID)
-        if supermuxSpeaks, viewer.viewport != nil, isConnected() { sendSizing("mobile.terminal.viewport", viewer.clearParams()) }
-        if supermuxSpeaks, viewer.viewport != nil {
+        let supermuxVisibility = SupermuxTerminalSizingVisibility.shared
+        let supermuxHeir = supermuxSpeaks && viewer.viewport != nil
+            ? supermuxVisibility.sibling(of: self, shown: true) ?? supermuxVisibility.sibling(of: self, shown: false)
+            : nil
+        if supermuxSpeaks, viewer.viewport != nil, supermuxHeir?.supermuxSpeakNow() != true {
+            if isConnected() { sendSizing("mobile.terminal.viewport", viewer.clearParams()) }
             SupermuxDeviceViewportGenerations.shared.recordClear(viewer, surfaceID: remoteSurfaceID, pane: sharingSurfaceID)
             // The host drops this Mac from the terminal, its counts override with it.
             supermuxHostHoldsHiddenCounts = false
