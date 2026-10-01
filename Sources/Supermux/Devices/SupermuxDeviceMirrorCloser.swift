@@ -242,8 +242,28 @@ final class SupermuxDeviceMirrorCloser {
 /// ``SupermuxDeviceMirrorCloser``.
 @MainActor
 enum SupermuxDeviceMirrorCloseGate {
+    /// True while the phone's Delete Group runs. The phone never lists mirrors
+    /// (the export filter), so its confirmation never showed them: member
+    /// mirrors take the programmatic path (Hide Here) instead of closing on
+    /// their Mac.
+    private static var phoneGroupDeleteInProgress = false
+
     static func closeOnItsMac(_ workspace: Workspace, in manager: TabManager) -> Bool {
         SupermuxComposition.deviceMirrorCloser.closeOnItsMac(workspace, in: manager)
+    }
+
+    /// Runs the phone's Delete Group (mobile `workspace.group.action delete`).
+    static func phoneGroupDelete<T>(_ body: () -> T) -> T {
+        phoneGroupDeleteInProgress = true
+        defer { phoneGroupDeleteInProgress = false }
+        return body()
+    }
+
+    /// Delete Group's close of one member: a mirror closes on its Mac, except
+    /// during the phone's Delete Group. False when upstream closes it.
+    static func closeGroupMemberOnItsMac(_ workspace: Workspace, in manager: TabManager) -> Bool {
+        guard !phoneGroupDeleteInProgress else { return false }
+        return closeOnItsMac(workspace, in: manager)
     }
 
     static func workspaceWillClose(_ workspace: Workspace, recordHistory: Bool) {

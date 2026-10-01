@@ -2517,8 +2517,9 @@ class TabManager: ObservableObject {
         // SUPERMUX:begin device-mirror-close
         // Delete Group closes its members (the user confirmed it): a device
         // mirror closes here and on its Mac, like a sidebar close, instead of
-        // being hidden. Generated-anchor cleanup (recordHistory false) is untouched.
-        if recordHistory, SupermuxDeviceMirrorCloseGate.closeOnItsMac(tab, in: self) { return }
+        // being hidden. Generated-anchor cleanup (recordHistory false) is untouched,
+        // and the phone's Delete Group (it never listed mirrors) hides them.
+        if recordHistory, SupermuxDeviceMirrorCloseGate.closeGroupMemberOnItsMac(tab, in: self) { return }
         // SUPERMUX:end device-mirror-close
         closeWorkspace(tab, recordHistory: recordHistory)
     }
