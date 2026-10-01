@@ -25,9 +25,12 @@ folder (the loopback's files are on this disk too):
                                      naming the Mac, never /etc's entries)
   7. git_decorations_match_local     the mirror's git colors equal the local panel's
   8. open_file_preview               opening README.md (double-click path) opens a read-only
-                                     preview in the mirror with the file's exact bytes; opening
-                                     it again reuses that preview
-  9. large_file_capped               the 9 MiB file is refused (previews stop at 8 MB)
+                                     preview in the mirror with the file's exact bytes; after
+                                     the file changes there, opening it again reuses that preview,
+                                     which shows the new bytes, and no error alert comes up
+  9. large_file_capped               the 9 MiB file is refused (previews stop at 8 MB); opened
+                                     the double-click way, the refusal is a sheet that names the
+                                     limit while the app keeps answering, and OK dismisses it
  10. search_finds_remote_match       Find searches the other Mac (one hit, src/nested/deep.txt:1);
                                      a query that looks like an rg flag is only a pattern
  11. confinement_probes              raw files.* RPCs: `..`, a symlink escape, a directory read,
@@ -461,11 +464,38 @@ class MirrorFilesE2E:
         surfaces = (self.sock.call("surface.list", {"workspace_id": self.mirror_id}) or {}).get("surfaces") or []
         if up(first.get("panel_id")) not in [up(s.get("id")) for s in surfaces]:
             raise Failure(f"the preview {first.get('panel_id')} is not a tab of the mirror: {[s.get('id') for s in surfaces]}")
+        # The file changes over there; opening it again refreshes the same preview
+        # (the reuse path re-downloads into the read-only copy the panel shows).
+        with (self.root / "README.md").open("a") as handle:
+            handle.write(f"reopened-{self.nonce}\n")
+        changed = hashlib.sha256((self.root / "README.md").read_bytes()).hexdigest()
         again = self.files("open", path=readme["path"])
         if up(again.get("panel_id")) != up(first.get("panel_id")) or again.get("panel_count") != 1:
             raise Failure(f"reopening made another preview: {again}")
+
+        def refreshed() -> Dict[str, Any]:
+            preview = self.files("preview", path=readme["path"])
+            if (preview.get("alert") or {}).get("shown"):
+                raise Failure(f"reopening showed an alert: {preview['alert']}")
+            panels = preview.get("panels") or []
+            if [p.get("sha256") for p in panels] != [changed]:
+                raise Failure(f"the preview does not show the changed bytes yet: {panels} (expected {changed})")
+            return preview
+
+        try:
+            shown = wait_for("the reused preview to show the changed file", refreshed, self.timeout)
+        except Failure:
+            self.dismiss_alert()
+            raise
         time.sleep(1.0)
-        return {"preview": first, "screenshot": self.screenshot("preview")}
+        return {"preview": first, "reopened": shown, "screenshot": self.screenshot("preview")}
+
+    def dismiss_alert(self) -> None:
+        """Best effort: answer an alert a failed step left up, so later steps can run."""
+        try:
+            self.files("dismiss_alert", timeout_s=10)
+        except (Failure, OSError):
+            pass
 
     def large_file_capped(self) -> Dict[str, Any]:
         self.require("mirror_id")
@@ -473,7 +503,33 @@ class MirrorFilesE2E:
         result = self.files("materialize", path=big["path"])
         if result.get("ok") or "8 MB" not in str(result.get("error")):
             raise Failure(f"9 MiB preview: {result}")
-        return {"result": result}
+        # The double-click way the refusal is the coordinator's alert. It must not run
+        # a nested modal session inside the open's main-actor task: that starves the
+        # main queue, so every socket call (and every mirror) would wait for OK.
+        started = self.files("open", path=big["path"], probe=False)
+        if not started.get("started"):
+            raise Failure(f"opening the 9 MiB file did not start: {started}")
+        try:
+            def alert_up() -> Dict[str, Any]:
+                alert = self.files("alert", timeout_s=10)
+                if not alert.get("shown"):
+                    raise Failure(f"no alert yet: {alert}")
+                return alert
+
+            alert = wait_for("the 8 MB alert", alert_up, self.timeout)
+            if "8 MB" not in " ".join(alert.get("texts") or []) or alert.get("presentation") != "sheet":
+                raise Failure(f"the refusal alert: {alert}")
+            answered = time.monotonic()
+            self.sock.call("supermux.devices.list", {}, timeout_s=10)
+            state = self.files("state", timeout_s=10)
+            answered = round(time.monotonic() - answered, 2)
+            if answered > 5 or not state.get("rows"):
+                raise Failure(f"with the alert up the app took {answered}s to answer: {brief(state)}")
+        finally:
+            dismissed = self.files("dismiss_alert", timeout_s=10)
+        if not dismissed.get("dismissed") or (self.files("alert", timeout_s=10) or {}).get("shown"):
+            raise Failure(f"OK did not dismiss the alert: {dismissed}")
+        return {"result": result, "alert": alert, "answered_seconds": answered}
 
     def search_finds_remote_match(self) -> Dict[str, Any]:
         self.require("mirror_id")

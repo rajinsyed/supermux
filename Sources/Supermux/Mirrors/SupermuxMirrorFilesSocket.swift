@@ -14,10 +14,17 @@ import Foundation
 /// - `state` — resolver kind, provider kind, root, header text, status message,
 ///   loaded rows (expanded children nested), git decorations (root-relative).
 /// - `expand {path}` — `store.expand(node:)`, waits for the children or an error.
-/// - `open {path}` — the double-click path (`FileExplorerPreviewCoordinator.open`),
-///   waits for the preview panel of that remote path.
+/// - `open {path, probe?}` — the double-click path (`FileExplorerPreviewCoordinator.open`),
+///   waits for the preview panel of that remote path. With `probe: false` it
+///   neither proves the download first nor waits: `{started}`, and a refusal is
+///   the coordinator's alert (see `alert`).
+/// - `preview {path}` — the open preview panels of that remote path (id and the
+///   sha256 of what each shows) and the alert, if one is up.
+/// - `alert` — the alert up on the workspace's window (a sheet) or app-modal:
+///   `{shown, presentation?, texts?, buttons?}`.
+/// - `dismiss_alert` — presses that alert's first button (OK): `{dismissed}`.
 /// - `materialize {path}` — the preview download alone, so a failure is a
-///   reply, never the coordinator's modal alert.
+///   reply, never the coordinator's alert.
 /// - `search {query}` — the Find tool's controller with the store's scope.
 /// - `local_rows {path}` / `local_git_status {path}` — what THIS Mac's own
 ///   Files panel shows for a folder (the loopback's files are on this disk too).
@@ -55,6 +62,13 @@ enum SupermuxMirrorFilesSocket {
             return ["node": row(node, root: store.rootPath), "state": describe(store, workspace: workspace)]
         case "open":
             return try await open(params, store: mount(workspace), workspace: workspace, timeout: timeout)
+        case "preview":
+            let path = try SupermuxMirrorSocketCommands.string(params, "path")
+            return ["panels": previewPanels(workspace, remotePath: path).map { describe($0) }, "alert": alert(workspace)]
+        case "alert":
+            return alert(workspace)
+        case "dismiss_alert":
+            return ["dismissed": dismissAlert(workspace)]
         case "materialize":
             return await materialize(try SupermuxMirrorSocketCommands.string(params, "path"), store: mount(workspace))
         case "search":
@@ -78,7 +92,7 @@ enum SupermuxMirrorFilesSocket {
             return ["unmounted": stores.removeValue(forKey: workspace.id) != nil]
         default:
             throw SupermuxMirrorSocketCommands.InvalidParams(
-                message: "action must be state, expand, open, materialize, search, local_rows, local_git_status, menu, operation or unmount"
+                message: "action must be state, expand, open, preview, alert, dismiss_alert, materialize, search, local_rows, local_git_status, menu, operation or unmount"
             )
         }
         #else
@@ -190,13 +204,17 @@ enum SupermuxMirrorFilesSocket {
     ) async throws -> [String: Any] {
         await settle(store, timeout: timeout)
         let path = try SupermuxMirrorSocketCommands.string(params, "path")
-        // The coordinator reports a failed download in a modal alert, which
-        // would block the socket: prove the download works first.
-        let probe = await materialize(path, store: store)
-        guard probe["ok"] as? Bool == true else { return ["opened": false, "probe": probe] }
         guard let pane = workspace.bonsplitController.focusedPaneId ?? workspace.bonsplitController.allPaneIds.first else {
             throw SupermuxMirrorSocketCommands.InvalidParams(message: "the workspace has no pane")
         }
+        guard params["probe"] as? Bool ?? true else {
+            FileExplorerPreviewCoordinator(store: store).open(path: path, workspace: workspace, pane: pane, isCurrent: { true })
+            return ["started": true]
+        }
+        // A failed download is the coordinator's alert: prove the download
+        // works first, so this reply says why instead.
+        let probe = await materialize(path, store: store)
+        guard probe["ok"] as? Bool == true else { return ["opened": false, "probe": probe] }
         FileExplorerPreviewCoordinator(store: store).open(path: path, workspace: workspace, pane: pane, isCurrent: { true })
         var panel: FilePreviewPanel?
         try await waitUntil(timeout) {
@@ -204,22 +222,73 @@ enum SupermuxMirrorFilesSocket {
             return panel != nil
         }
         guard let panel else { return ["opened": false] }
-        let data = (try? Data(contentsOf: URL(fileURLWithPath: panel.filePath))) ?? Data()
-        return [
+        return describe(panel).merging([
             "opened": true,
-            "panel_id": panel.id.uuidString,
             "read_only": panel.cloudPreviewLease != nil,
             "provider_identity": panel.cloudPreviewProviderIdentity ?? NSNull(),
-            "sha256": sha256(data),
             "panel_count": previewPanels(workspace, remotePath: path).count,
             "focused_panel_id": workspace.focusedPanelId?.uuidString ?? NSNull(),
-        ]
+        ]) { _, new in new }
     }
 
     private static func previewPanels(_ workspace: Workspace, remotePath: String) -> [FilePreviewPanel] {
         workspace.panels.values
             .compactMap { $0 as? FilePreviewPanel }
             .filter { !$0.isClosed && $0.cloudPreviewRemotePath == remotePath }
+    }
+
+    /// A preview panel's id and the sha256 of the copy it shows.
+    private static func describe(_ panel: FilePreviewPanel) -> [String: Any] {
+        let data = (try? Data(contentsOf: URL(fileURLWithPath: panel.filePath))) ?? Data()
+        return ["panel_id": panel.id.uuidString, "sha256": sha256(data)]
+    }
+
+    // MARK: - Alerts
+
+    /// The alert up for the workspace: a sheet on its window, else an
+    /// app-modal one.
+    private static func alertWindow(_ workspace: Workspace) -> (NSWindow, String)? {
+        let host = AppDelegate.shared?.mainWindowContainingWorkspace(workspace.id)
+            ?? NSApp.cmuxMainWindowForModalPresentation()
+        if let sheet = host?.attachedSheet { return (sheet, "sheet") }
+        if let modal = NSApp.modalWindow { return (modal, "app_modal") }
+        return nil
+    }
+
+    private static func alert(_ workspace: Workspace) -> [String: Any] {
+        guard let (window, presentation) = alertWindow(workspace), let content = window.contentView else {
+            return ["shown": false]
+        }
+        let views = visibleSubviews(of: content)
+        let texts = views.compactMap { ($0 as? NSTextField)?.stringValue ?? ($0 as? NSTextView)?.string }
+        return [
+            "shown": true,
+            "presentation": presentation,
+            "texts": texts.filter { !$0.isEmpty },
+            "buttons": buttons(in: content).map(\.title),
+        ]
+    }
+
+    /// Presses the alert's default button (OK), else its first one.
+    private static func dismissAlert(_ workspace: Workspace) -> Bool {
+        guard let content = alertWindow(workspace)?.0.contentView else { return false }
+        let buttons = buttons(in: content)
+        guard let button = buttons.first(where: { $0.keyEquivalent == "\r" }) ?? buttons.first else { return false }
+        button.performClick(nil)
+        return true
+    }
+
+    private static func buttons(in view: NSView) -> [NSButton] {
+        visibleSubviews(of: view).compactMap { $0 as? NSButton }.filter { !$0.title.isEmpty }
+    }
+
+    private static func visibleSubviews(of view: NSView) -> [NSView] {
+        var found: [NSView] = []
+        for child in view.subviews where !child.isHidden {
+            found.append(child)
+            found += visibleSubviews(of: child)
+        }
+        return found
     }
 
     private static func materialize(_ path: String, store: FileExplorerStore) async -> [String: Any] {
