@@ -11,14 +11,6 @@ import Foundation
 ///   `connecting`, `overlay_title`, `hidden` (off screen here), `speaks` (the
 ///   pane whose grid the other Mac holds for this link)) and the workspace's
 ///   failure card (`title`, `message`, `recovery`) or null.
-/// - `terminal_close.answer {answer?: "close" | "cancel" | "show" | "clear"}`:
-///   sets (or, with `clear`, removes) the answer the "Close “X” on <Mac>?"
-///   prompt takes without showing itself, so no modal blocks a run. `show`
-///   shows the real prompt instead and presses its Cancel after
-///   ``SupermuxDeviceTerminalCloseDebug/shownSeconds``, so a run can check
-///   that the app keeps answering while the prompt is up. Setting an answer
-///   also empties the log of asked prompts; every call returns the current
-///   answer and that log (`asked: [{title, message, device, shown}]`).
 /// - `terminal_close.needs_confirm {workspace_id, surface_id}`: whether this Mac
 ///   would ask before closing that terminal of its own (`panelNeedsConfirmClose`).
 /// - `terminal_close.replay {workspace_id, panel_id}`: a fresh replay of that
@@ -41,7 +33,6 @@ enum SupermuxDeviceTerminalCloseSocketCommands {
     static func handle<S: StringProtocol>(_ name: S, _ params: [String: Any]) throws -> [String: Any] {
         switch String(name.dropFirst(methodPrefix.count)) {
         case "inspect": return try inspect(params)
-        case "answer": return try answer(params)
         case "needs_confirm": return try needsConfirm(params)
         case "replay": return try replay(params)
         default: throw HookError(message: "unknown terminal_close method \(name)")
@@ -81,25 +72,6 @@ enum SupermuxDeviceTerminalCloseSocketCommands {
         return ["workspace_id": workspace.id.uuidString, "panes": panes, "failure_card": card]
     }
 
-    private static func answer(_ params: [String: Any]) throws -> [String: Any] {
-        switch params["answer"] as? String {
-        case nil:
-            break
-        case "clear":
-            SupermuxDeviceTerminalCloseDebug.answer = nil
-        case let raw?:
-            guard let answer = SupermuxDeviceTerminalCloseDebug.Answer(rawValue: raw) else {
-                throw HookError(message: "answer must be close, cancel, show or clear")
-            }
-            SupermuxDeviceTerminalCloseDebug.answer = answer
-            SupermuxDeviceTerminalCloseDebug.asked = []
-        }
-        return [
-            "answer": SupermuxDeviceTerminalCloseDebug.answer?.rawValue ?? NSNull(),
-            "asked": SupermuxDeviceTerminalCloseDebug.asked,
-        ]
-    }
-
     private static func needsConfirm(_ params: [String: Any]) throws -> [String: Any] {
         let workspace = try liveWorkspace(params)
         guard let raw = params["surface_id"] as? String, let surfaceID = UUID(uuidString: raw) else {
@@ -132,24 +104,5 @@ enum SupermuxDeviceTerminalCloseSocketCommands {
         }
         return workspace
     }
-}
-
-/// The device-terminal close prompt's DEBUG pre-answer and the log of the
-/// prompts it answered, so the E2E never shows a modal and can tell whether a
-/// close asked at all.
-@MainActor
-enum SupermuxDeviceTerminalCloseDebug {
-    enum Answer: String {
-        case close
-        case cancel
-        /// Show the real prompt; Cancel is pressed after ``shownSeconds``.
-        case show
-    }
-
-    /// How long a `show` prompt stays up before Cancel is pressed.
-    static let shownSeconds: TimeInterval = 4
-
-    static var answer: Answer?
-    static var asked: [[String: Any]] = []
 }
 #endif
