@@ -617148,6 +617148,23 @@
         }
       }
     },
+    "supermux.mirror.files.error.timedOut" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ did not finish in time. It may still finish there."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@で時間内に完了しませんでした。あちらで引き続き完了する可能性があります。"
+          }
+        }
+      }
+    },
     "supermux.mirror.files.error.tooLarge" : {
       "extractionState" : "manual",
       "localizations" : {

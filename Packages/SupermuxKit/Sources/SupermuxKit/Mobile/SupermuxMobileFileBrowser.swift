@@ -36,6 +36,20 @@ public struct SupermuxMobileFileBrowser: Sendable {
     /// paths resolve relative to this and must stay inside it.
     public let rootPath: String
 
+    // MARK: - Host bounds
+
+    /// How long the host lets one `files.*` call (a listing that stats a
+    /// huge folder, a read from a stalled volume, a create, rename or
+    /// search) run before it answers `timed_out`. The work itself still
+    /// finishes there; ``SupermuxDeviceReplyDeadline`` outlasts the bound.
+    public static let operationTimeout: TimeInterval = 30
+    /// The bound for `files.duplicate` and `files.trash`, which copy or move
+    /// whole trees.
+    public static let copyTimeout: TimeInterval = 300
+    /// The bound for `files.git_status`: up to ``operationTimeout`` waiting
+    /// for git, plus resolving the folder and its repository.
+    public static let gitStatusTimeout: TimeInterval = 2 * operationTimeout
+
     /// Creates a browser confined to `rootPath` (a workspace's current
     /// directory or a project's `root_path`).
     /// - Throws: ``SupermuxMobileFileBrowserError/rootUnavailable(path:)``

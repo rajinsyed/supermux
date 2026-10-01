@@ -12,7 +12,8 @@ internal import SupermuxMobileCore
 /// method's deadline must outlast everything the owning Mac may legitimately
 /// do for it. The host bounds each step itself (30 s per local git command,
 /// 30 s for a background `git fetch`, 120 s for push and pull, 30 s for an AI
-/// request, 600 s for a worktree checkout, 900 s for a clone), and the
+/// request, 600 s for a worktree checkout, 900 s for a clone, 30 s for a
+/// `files.*` call and 300 s for a file duplicate or trash), and the
 /// deadlines below are derived from those bounds. `nil` keeps the link's own
 /// 20 s default, which suits calls the host answers from memory: a dead link
 /// is still noticed quickly there.
@@ -35,6 +36,9 @@ public enum SupermuxDeviceReplyDeadline {
     )
     /// `git clone`, then registering the project.
     public static let clone: Duration = seconds(SupermuxProjectSetupService.cloneTimeout + 4 * git)
+    /// A `files.duplicate` or `files.trash`: the host's bound on copying or
+    /// moving a whole tree.
+    public static let fileCopy: Duration = seconds(SupermuxMobileFileBrowser.copyTimeout + git)
 
     /// The reply deadline for a wire method, or `nil` for the link default
     /// (every method that is not a `mobile.supermux.*` call).
@@ -51,10 +55,13 @@ public enum SupermuxDeviceReplyDeadline {
         case .changesStatus, .changesDiff, .changesStage, .changesUnstage, .changesDiscard,
              .changesCommit, .changesGenerateCommitMessage, .changesStash, .changesStashPop,
              .worktreesList, .worktreeSuggestBranch, .agentOptions, .projectCreate, .projectProbe,
-             .filesSearch, .filesGitStatus:
-            // files.search stops ripgrep at 10 s and files.git_status stops
-            // waiting for git at 30 s on the host.
+             .filesList, .filesRead, .filesCreate, .filesRename, .filesSearch, .filesGitStatus:
+            // The host answers each of these files.* calls within
+            // SupermuxMobileFileBrowser.operationTimeout (gitStatusTimeout
+            // for git_status), timed out or not.
             return localWork
+        case .filesDuplicate, .filesTrash:
+            return fileCopy
         case .worktreeCreate, .worktreeRemove, .agentStart:
             return checkout
         case .projectClone:
@@ -62,7 +69,6 @@ public enum SupermuxDeviceReplyDeadline {
         case .projectsList, .projectUpdate, .projectDelete, .projectOpen, .projectIcon,
              .projectsSetSectionCollapsed, .worktreeOpen, .changesWatch, .runState, .runStart, .runStop,
              .presetCreate, .presetUpdate, .presetDelete, .presetLaunch, .actionRun,
-             .filesList, .filesCreate, .filesRename, .filesDuplicate, .filesTrash, .filesRead,
              .workspaceSelect, .terminalSelect, .panelSelect, .paneClose, .simulatorCreate,
              .usageState, .phonePushRegister, .phonePushStatus, .phonePushShare:
             return nil
