@@ -28,8 +28,8 @@ import SupermuxKit
 /// - `changes {workspace_id, action: status|stage|unstage|diff|fetch, path?, staged?, open_viewer?}`.
 /// - `terminal_background {surface_id}` — how a terminal paints its background
 ///   (``SupermuxMirrorAppearanceSocket``; DEBUG builds only).
-/// - `tab_bar_new_tab`, `tab_context_action` — where a new tab lands
-///   (``SupermuxTabOrderSocketCommands``, DEBUG builds only).
+/// - `tab_bar_new_tab`, `tab_context_action` — where a new tab lands, and
+///   `tab_chrome` — what a tab draws (``SupermuxTabOrderSocketCommands``, DEBUG builds only).
 /// - `files {workspace_id, action: state|expand|open|materialize|search|local_rows|local_git_status|unmount, …}`
 ///   (``SupermuxMirrorFilesSocket``).
 @MainActor

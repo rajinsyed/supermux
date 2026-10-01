@@ -23,10 +23,15 @@ import Foundation
 ///   every failed reserved pane (`retried`: their panel ids). With
 ///   `forget_host_capabilities`, each pane's Mac's capability cache is emptied
 ///   first, as a reconnect does before its capability fetch returns.
+/// - `tab_chrome {workspace_id, surface_id}` — what the surface's tab draws:
+///   `shows_notification_badge`, `is_loading` and `presence` (the shared-terminal
+///   accessory and context-menu size section: `shows_accessory`, `participants`,
+///   `can_disconnect_others`, `size_mode`; null when the tab has none).
 @MainActor
 enum SupermuxTabOrderSocketCommands {
     static let methods: Set<Substring> = [
         "tab_bar_new_tab", "tab_context_action", "lose_next_create_reply", "pending_creations", "retry_pending",
+        "tab_chrome",
     ]
 
     static func handle(_ method: Substring, params: [String: Any]) throws -> [String: Any] {
@@ -54,6 +59,19 @@ enum SupermuxTabOrderSocketCommands {
             return ["workspace_id": workspace.id.uuidString, "pane_id": pane.id.uuidString]
         case "pending_creations":
             return ["workspace_id": workspace.id.uuidString, "pending": pendingCreations(in: workspace)]
+        case "tab_chrome":
+            guard let surfaceID = UUID(uuidString: try SupermuxMirrorSocketCommands.string(params, "surface_id")),
+                  let tabID = workspace.surfaceIdFromPanelId(surfaceID),
+                  let tab = workspace.bonsplitController.tab(tabID) else {
+                throw SupermuxMirrorSocketCommands.InvalidParams(message: "surface_id is not a tab of this workspace")
+            }
+            return [
+                "workspace_id": workspace.id.uuidString,
+                "surface_id": surfaceID.uuidString,
+                "shows_notification_badge": tab.showsNotificationBadge,
+                "is_loading": tab.isLoading,
+                "presence": tab.presence.map { presencePayload($0) as Any } ?? NSNull(),
+            ]
         case "retry_pending":
             let failed = workspace.cloudPendingCreations.values
                 .filter { workspace.cloudMaterializationFailures[$0.panelID] != nil }
@@ -81,6 +99,25 @@ enum SupermuxTabOrderSocketCommands {
                     "failure": workspace.cloudMaterializationFailures[reservation.panelID]?.detail ?? NSNull(),
                 ]
             }
+    }
+
+    /// A tab's shared-terminal presence: its avatar accessory and the size
+    /// section of its context menu.
+    private static func presencePayload(_ presence: TabPresence) -> [String: Any] {
+        [
+            "shows_accessory": presence.showsAccessory,
+            "participants": presence.participants.map { participant -> [String: Any] in
+                [
+                    "id": participant.id,
+                    "initials": participant.initials,
+                    "symbol": participant.symbolName.map { $0 as Any } ?? NSNull(),
+                    "name": participant.accessibilityName,
+                    "is_owner": participant.isOwner,
+                ]
+            },
+            "can_disconnect_others": presence.canDisconnectOthers,
+            "size_mode": presence.sizeMode.rawValue,
+        ]
     }
 
     /// The `pane_id` pane, or the workspace's focused (else first) pane.
