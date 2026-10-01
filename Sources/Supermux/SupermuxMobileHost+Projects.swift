@@ -15,10 +15,29 @@ extension TerminalController {
     nonisolated static let supermuxProjectIconReads = SupermuxBoundedLookups<SupermuxProjectIconPayload>()
     /// How long `project.icon` waits for its read.
     nonisolated static let supermuxProjectIconTimeout: TimeInterval = 10
-    /// How long `projects.list` waits for the first load, for the git
-    /// origins and for the file facts, and a project result for its origin:
-    /// the file facts' own bound.
+    /// How long a host call waits for the projects model's first load, and
+    /// `projects.list` for the git origins and the file facts (a project
+    /// result for its origin): the file facts' own bound.
     nonisolated static let supermuxProjectsLookupBound: TimeInterval = SupermuxProjectFileFacts.timeout
+
+    /// The projects model once its projects are known. Its first load also
+    /// imports each project's `config.json` and lists its worktrees: file and
+    /// git work in every project's folder, which blocks in the kernel while a
+    /// macOS privacy prompt for that folder is unanswered (nobody answers it
+    /// on a headless Mac), and took 31 s here. The projects are known as soon
+    /// as the projects file is read, so a call waits for the load at most
+    /// ``supermuxProjectsLookupBound`` instead of missing its caller's reply
+    /// deadline; `nil` when even the file is not read by then.
+    func supermuxLoadedProjectsModel() async -> SupermuxProjectsModel? {
+        let model = SupermuxComposition.projectsModel
+        _ = await SupermuxBoundedAwait(timeout: Self.supermuxProjectsLookupBound).value { await model.loadIfNeeded() }
+        return model.hasLoaded ? model : nil
+    }
+
+    /// The answer while ``supermuxLoadedProjectsModel()`` is `nil`.
+    func supermuxProjectsStillLoading() -> V2CallResult {
+        .err(code: "unavailable", message: "The projects are still loading on this Mac", data: nil)
+    }
 
     /// `mobile.supermux.projects.list`: the registered projects, the global
     /// terminal presets (the same set the desktop bar shows above every
@@ -29,18 +48,12 @@ extension TerminalController {
     /// Every wait is bounded (``supermuxProjectsLookupBound`` each), because
     /// the work behind them is file and git access in each project's folder,
     /// which blocks in the kernel while a macOS privacy prompt for that folder
-    /// is unanswered (nobody answers it on a headless Mac): one held list
-    /// missed the caller's 20 s reply deadline on every connect. The first
-    /// load also imports each project's `config.json` and lists its
-    /// worktrees, but the projects are known once the projects file is read,
-    /// and the observer pokes the caller again when the imports change them.
+    /// is unanswered: one held list missed the caller's 20 s reply deadline
+    /// on every connect. The first load's config imports may still be
+    /// running; the observer pokes the caller again when they change a project.
     func v2SupermuxProjectsList(params: [String: Any]) async -> V2CallResult {
-        let model = SupermuxComposition.projectsModel
+        guard let model = await supermuxLoadedProjectsModel() else { return supermuxProjectsStillLoading() }
         let bound = Self.supermuxProjectsLookupBound
-        _ = await SupermuxBoundedAwait(timeout: bound).value { await model.loadIfNeeded() }
-        guard model.hasLoaded else {
-            return .err(code: "unavailable", message: "The projects are still loading", data: nil)
-        }
         let projects = model.projects
         let presets = model.presets
         let isSectionCollapsed = model.isSectionCollapsed
@@ -245,8 +258,7 @@ extension TerminalController {
               let projectID = UUID(uuidString: idString) else {
             return .err(code: "invalid_params", message: "project_id must be a project UUID", data: nil)
         }
-        let model = SupermuxComposition.projectsModel
-        await model.loadIfNeeded()
+        guard let model = await supermuxLoadedProjectsModel() else { return supermuxProjectsStillLoading() }
         guard let project = model.projects.first(where: { $0.id == projectID }) else {
             return .err(code: "not_found", message: "Unknown project", data: [
                 "project_id": idString
