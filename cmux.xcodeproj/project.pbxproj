@@ -2025,6 +2025,7 @@
 		F12748000000000000000007 /* FilePreviewWordWrapMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = F12748000000000000000008 /* FilePreviewWordWrapMenu.swift */; };
 		F11E52270000000000005227 /* FilePreviewWordWrapSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11E52270000000000005228 /* FilePreviewWordWrapSettings.swift */; };
 		A5001445A5001445A5001445 /* FilePreviewWorkspaceOpenSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001444A5001444A5001444 /* FilePreviewWorkspaceOpenSupport.swift */; };
+		50BE00170500000000000014 /* FileSearchController+SupermuxDevice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00170500000000000013 /* FileSearchController+SupermuxDevice.swift */; };
 		FE002103 /* FileSearchRipgrepParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE002003 /* FileSearchRipgrepParserTests.swift */; };
 		CFSF00000000000000000005 /* FileSearchScope.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFSR00000000000000000005 /* FileSearchScope.swift */; };
 		C35610000000000000000001 /* FinderFileDropRegressionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C35610000000000000000002 /* FinderFileDropRegressionTests.swift */; };
@@ -6473,6 +6474,7 @@
 		F12748000000000000000008 /* FilePreviewWordWrapMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Panels/FilePreviewWordWrapMenu.swift"; sourceTree = "<group>"; };
 		F11E52270000000000005228 /* FilePreviewWordWrapSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Panels/FilePreviewWordWrapSettings.swift; sourceTree = "<group>"; };
 		A5001444A5001444A5001444 /* FilePreviewWorkspaceOpenSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Panels/FilePreviewWorkspaceOpenSupport.swift; sourceTree = "<group>"; };
+		50BE00170500000000000013 /* FileSearchController+SupermuxDevice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Mirrors/FileSearchController+SupermuxDevice.swift"; sourceTree = "<group>"; };
 		FE002003 /* FileSearchRipgrepParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileSearchRipgrepParserTests.swift; sourceTree = "<group>"; };
 		CFSR00000000000000000005 /* FileSearchScope.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileSearchScope.swift; sourceTree = "<group>"; };
 		C35610000000000000000002 /* FinderFileDropRegressionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinderFileDropRegressionTests.swift; sourceTree = "<group>"; };
@@ -9277,6 +9279,7 @@
 				50BE000A000000000000001F /* SupermuxMirrorSocketCommands.swift */,
 				50BE000A0000000000000021 /* SupermuxMirrorLocalPathActions.swift */,
 				50BE000A0000000000000023 /* SupermuxMirrorChangesSocket.swift */,
+				50BE00170500000000000013 /* FileSearchController+SupermuxDevice.swift */,
 				50BE0017050000000000000F /* FileExplorerStore+SupermuxDevice.swift */,
 				50BE0017050000000000000D /* SupermuxDeviceFileExplorerProvider.swift */,
 				50BE0017050000000000000B /* SupermuxDeviceFileTransport.swift */,
@@ -15331,6 +15334,7 @@
 				F12748000000000000000007 /* FilePreviewWordWrapMenu.swift in Sources */,
 					F11E52270000000000005227 /* FilePreviewWordWrapSettings.swift in Sources */,
 				A5001445A5001445A5001445 /* FilePreviewWorkspaceOpenSupport.swift in Sources */,
+				50BE00170500000000000014 /* FileSearchController+SupermuxDevice.swift in Sources */,
 				CFSF00000000000000000005 /* FileSearchScope.swift in Sources */,
 				F1A0C0DE0000000000000002 /* FindTextFieldSupport.swift in Sources */,
 				F0C05170000000000000002 /* FocusHistory.swift in Sources */,
