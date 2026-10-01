@@ -99,11 +99,14 @@ extension TerminalController {
         guard let patchObject = params["patch"] as? [String: Any] else {
             return .err(code: "invalid_params", message: "patch must be an object", data: nil)
         }
-        // The read-only marker probes the filesystem; keep it off the main actor.
-        let rootPath = project.rootPath
-        let isConfigManaged = await Task.detached(priority: .userInitiated) {
-            SupermuxMobileProjectConfigMarker.managedRelativePath(projectRoot: rootPath) != nil
-        }.value
+        // The read-only marker probes the project's folder: a bounded probe off
+        // the cooperative pool (a pending privacy prompt can block it), and no
+        // patch while it is unknown.
+        let facts = await SupermuxProjectFileFacts.shared.facts(for: [project])
+        guard let projectFacts = facts[SupermuxMobileProjectsPayloadBuilder.fileFactsKey(for: project)] else {
+            return .err(code: "timed_out", message: "The project's folder could not be read on this Mac in time", data: nil)
+        }
+        let isConfigManaged = projectFacts.configPath != nil
         // Re-read the record AFTER the awaited probe: a desktop or other-client
         // edit to a DIFFERENT field during that suspension must survive. The
         // patch replaces only its own keys; writing back the pre-await snapshot
