@@ -628,6 +628,10 @@ class SizingPolicyE2E:
         after = self.preference()
         if after != stored:
             raise Failure(f"re-choosing the stored preference changed it: {stored} -> {after}")
+        # Leave the terminal as the earlier steps did (the second Mac holds it), so the
+        # next step's claim is a change it can wait for.
+        other_mac_sets({"mode": "priority", "priority": [b_key], "fixed": None})
+        self.wait_state("the second Mac to hold the terminal again", self.source_surface, self.expect_first(b_key))
         return {"fit": fit, "mode_accepted": chosen.get("accepted"), "by_mode": by_mode, "claimed": claimed,
                 "drag_accepted": dragged.get("accepted"), "by_drag": by_drag}
 
