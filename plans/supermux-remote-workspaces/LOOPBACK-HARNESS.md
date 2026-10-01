@@ -160,9 +160,14 @@ must read as `working` on S's and its mirror's flat rows, the mirror status and 
 for a mirror tab, the other Mac's terminal id); window screenshots of S and the mirror are kept next
 to the report. The spinner then moves to T_B (per tab) and clears when both are idle. Last, a real
 `cmux claude-hook` turn (prompt-submit, then Stop with a running `background_tasks` entry, through
-`scripts/cmux-debug-cli.sh` with a scratch hook-state file and no agent environment) must show
-upstream's Waiting pill (`work_state: waiting`), deliver no notification while waiting, keep the
-indicators, and on a second Stop with the work done clear them and deliver the notification.
+`scripts/cmux-debug-cli.sh` with a scratch hook-state file) must show upstream's Waiting pill
+(`work_state: waiting`), deliver no notification while waiting, keep the indicators, and on a second
+Stop with the work done clear them and deliver the notification. Its hooks get exactly what cmux's
+`claude` wrapper exports to Claude Code and no other agent environment: `CMUX_CLAUDE_PID` of a
+stand-in running in T_A (it execs a long sleep under its own PID, as the wrapper execs Claude Code)
+and the `CMUX_AGENT_LAUNCH_*` launch capture. Without the PID upstream registers no agent process, so
+it hides the agent's pill; without the launch capture the pane gets no resume binding, so upstream
+drops the completion notification as `session-unbound`.
 
 ```bash
 CMUX_E2E_SUITES="loopback_agent_activity_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
@@ -289,7 +294,8 @@ CMUX_TAG=<tag> python3 tests/supermux/loopback_new_worktree_picker_e2e.py --scra
 ## Mirror tab close E2E
 
 `tests/supermux/loopback_mirror_tab_close_e2e.py` closes mirror tabs whose terminals run a program.
-Three of a source workspace's five terminals run a Claude Code stand-in (alternate screen, kitty
+Three of a source workspace's seven terminals run a Claude Code stand-in (no step closes T5, so every
+close is of a tab beside another; a workspace's last tab cannot be closed on its own) (alternate screen, kitty
 keyboard flags, a marker line, a sleeping child; `--claude` runs the real CLI). The DEBUG drivers
 `supermux.devices.terminal_close.{inspect, needs_confirm, replay}` report each mirror pane's
 attachment and overlay plus the workspace's failure card, say whether the source would confirm a
@@ -299,7 +305,9 @@ there at once with no prompt and the tab stays gone (`busy_tab_close_forces`); a
 again into another workspace after a close on the same link attaches; Kill Terminal…
 (`vm.terminal_close`) forces; an idle tab closes; and a tab closed while the link is down
 (`supermux.devices.link stop`), busy or idle, disappears with no card and is closed there on
-reconnect, never coming back. On builds from before every close forced, the run pre-answers the old
+reconnect, never coming back, also when the other Mac answers that held close `server_busy`
+(`offline_close_lands_on_a_busy_host`, #721: `supermux.devices.link {action: restore, busy:
+"mobile.terminal.close"}` makes the loopback host answer the new connection's first such request so). On builds from before every close forced, the run pre-answers the old
 "Close “X” on <Mac>?" prompt's DEBUG driver (`terminal_close.answer`) with Cancel and fails if it asked.
 
 ```bash
@@ -334,7 +342,11 @@ CMUX_TAG=<tag> python3 tests/supermux/loopback_mirror_workspace_close_e2e.py \
 that, with the mirror attached to the source terminal, neither tab draws the attached-device avatar
 while both keep their presence, which is what gives the tab's context menu its terminal-size section.
 It reads each tab through the DEBUG `supermux.devices.mirror.tab_chrome {workspace_id, surface_id}`
-driver (badge, loading state and presence with its participants).
+driver (badge, loading state and presence with its participants). `keys_survive_busy_reconnect`
+(#721) re-attaches with the loopback host answering this Mac's capability request `server_busy`
+(`supermux.devices.link {action: restore, busy: "mobile.host.status"}`, what a Mac whose request quota
+is full of re-attaching replays answers) and checks that Shift+Enter and a drag still reach the program
+exactly, not through upstream's text path.
 
 ```bash
 CMUX_E2E_SUITES="loopback_terminal_input_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh

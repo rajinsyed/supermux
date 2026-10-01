@@ -290,6 +290,11 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   binding bytes, which reach the PTY exactly; the mirror's own answers to terminal queries are
   dropped. A pending Ghostty key sequence stays local. An older Mac on either side keeps upstream's
   text path.
+- **A busy Mac is asked again** (#721): after a reconnect every mirrored terminal re-attaches at
+  once, and a Mac with many of them answers further requests `server_busy` (its per-connection
+  request quota is full; the request never ran). Every request to another Mac is sent again after
+  0.25, 0.5, 1, 2 and 4 s on the same connection, so the capability request (which keeps typing on
+  the key-forwarding path) and the tab closes held while offline still land.
 - **Terminal size follows the Mac you look from** (upstream's shared sizing, #633, #665–#669): every
   terminal starts as Priority with this Mac first (its own pane for a local terminal, so a phone
   defers to a Mac pane on screen); a mirror claims the other Mac's terminal when it is shown, first
