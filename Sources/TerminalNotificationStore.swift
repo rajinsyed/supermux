@@ -1559,30 +1559,9 @@ final class TerminalNotificationStore: ObservableObject {
         // Only the exact focused pane holds the workspace in place;
         // `suppressWhenAppFocused` withholds the banner without changing
         // sidebar ordering, matching Feed's delivery decision.
-        // SUPERMUX:begin focused-pane-notification-suppression
-        // (upstream: `let effects = ...`; `var` so the fork's focused-pane
-        // policy below can refine the same shadow instead of redeclaring it)
-        var effects = effects.keepingFocusedWorkspaceInPlace(
+        let effects = effects.keepingFocusedWorkspaceInPlace(
             isFocusedPane: isFocusedSurfaceArrival
         )
-        // A pane the user is already watching needs history, not attention UI.
-        // Shadow the hook-resolved effects once at the admission chokepoint so
-        // badges, rings, flashes, native delivery, sound, and workspace reorder
-        // all inherit the same decision. Explicit custom-command automation is
-        // deliberately preserved by the focused-pane policy.
-        let focusedPanePolicy = SupermuxFocusedPaneNotificationPolicy()
-        // The exact focused surface, never `shouldSuppressExternalDelivery`:
-        // with `suppressWhenAppFocused` on that is just "cmux is frontmost".
-        let focusedPaneAlreadyVisible = focusedPanePolicy.targetIsAlreadyVisible(
-            surfaceID: request.surfaceId,
-            exactPaneFocused: isFocusedSurfaceArrival,
-            targetWindowIsKey: targetWindowIsKey(forTabId: request.tabId)
-        )
-        effects = focusedPanePolicy.resolvedEffects(
-            effects,
-            targetIsAlreadyVisible: focusedPaneAlreadyVisible
-        )
-        // SUPERMUX:end focused-pane-notification-suppression
         let notification = TerminalNotification(
             id: notificationID,
             tabId: request.tabId,
@@ -1743,7 +1722,7 @@ final class TerminalNotificationStore: ObservableObject {
         return notificationFocusState(tabId: tabId, surfaceId: surfaceId).isFocusedSurfaceArrival
     }
 
-    // SUPERMUX:begin focused-pane-notification-suppression
+    // SUPERMUX:begin direct-phone-push
     private func targetWindowIsKey(forTabId tabId: UUID) -> Bool {
         guard let context = AppDelegate.shared?.contextContainingTabId(tabId) else {
             // Windowless test contexts and the legacy single-manager fallback use
@@ -1752,7 +1731,7 @@ final class TerminalNotificationStore: ObservableObject {
         }
         return context.window?.isKeyWindow ?? AppFocusState.isAppFocused()
     }
-    // SUPERMUX:end focused-pane-notification-suppression
+    // SUPERMUX:end direct-phone-push
 
     private func deliverNotificationSideEffects(
         _ notification: TerminalNotification,
@@ -1809,11 +1788,12 @@ final class TerminalNotificationStore: ObservableObject {
         }
         // SUPERMUX:end device-mac-phone-forward
         // SUPERMUX:begin direct-phone-push
-        // Match every other alert surface: when the exact target pane is already
-        // focused (by someone at this Mac), the notification remains read
-        // history and no phone banner is forwarded. The direct lane otherwise
-        // follows upstream's admission (enabled + onlyWhenAway), skips records
-        // mirrored from another Mac, and sends the phone-facing badge.
+        // Like upstream's relay (`!isFocusedSurfaceArrival`): when the exact
+        // target pane is already focused by someone at this Mac, no phone
+        // banner is forwarded (the Mac still rings the pane until it is
+        // clicked). The direct lane otherwise follows upstream's admission
+        // (enabled + onlyWhenAway), skips records mirrored from another Mac,
+        // and sends the phone-facing badge.
         let focusedPaneAlreadyVisible = SupermuxFocusedPaneNotificationPolicy()
             .targetIsAlreadyVisible(
                 surfaceID: notification.surfaceId,

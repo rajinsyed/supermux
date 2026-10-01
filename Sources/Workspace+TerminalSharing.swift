@@ -13,9 +13,25 @@ extension Workspace {
     /// Shows or clears the presence accessory on the terminal's tab.
     func updateTerminalSharingPresence(panelId: UUID, snapshot: TerminalSharingSnapshot?) {
         guard let tabId = surfaceIdFromPanelId(panelId) else { return }
-        let presence = snapshot.flatMap { TerminalSharingDisplay(snapshot: $0).tabPresence() }
+        // SUPERMUX:begin tab-presence-accessory-hidden (upstream: `let presence = snapshot.flatMap { TerminalSharingDisplay(snapshot: $0).tabPresence() }`)
+        let presence = supermuxTabPresence(snapshot.flatMap { TerminalSharingDisplay(snapshot: $0).tabPresence() })
+        // SUPERMUX:end tab-presence-accessory-hidden
         bonsplitController.updateTab(tabId, presence: .some(presence))
     }
+
+    // SUPERMUX:begin tab-presence-accessory-hidden
+    /// What a terminal's tab shows of its sharing presence. The attached
+    /// devices' avatar accessory is left off the tab (the size panel still
+    /// lists them), while the presence itself stays, so the tab's context menu
+    /// keeps its Size to My Window / Terminal Size / Disconnect Others section.
+    /// The one place to add a tab-menu row for the attached Macs, should
+    /// Bonsplit gain a host hook for one.
+    private func supermuxTabPresence(_ presence: TabPresence?) -> TabPresence? {
+        guard var presence else { return nil }
+        presence.participants = []
+        return presence
+    }
+    // SUPERMUX:end tab-presence-accessory-hidden
 
     /// Handles a size action from a terminal tab's context menu or accessory.
     ///
