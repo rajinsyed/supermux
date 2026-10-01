@@ -50,7 +50,10 @@ public enum SupermuxDeviceReplyDeadline {
             return network
         case .changesStatus, .changesDiff, .changesStage, .changesUnstage, .changesDiscard,
              .changesCommit, .changesGenerateCommitMessage, .changesStash, .changesStashPop,
-             .worktreesList, .worktreeSuggestBranch, .agentOptions, .projectCreate, .projectProbe:
+             .worktreesList, .worktreeSuggestBranch, .agentOptions, .projectCreate, .projectProbe,
+             .filesSearch, .filesGitStatus:
+            // files.search stops ripgrep at 10 s and files.git_status stops
+            // waiting for git at 30 s on the host.
             return localWork
         case .worktreeCreate, .worktreeRemove, .agentStart:
             return checkout
@@ -59,7 +62,7 @@ public enum SupermuxDeviceReplyDeadline {
         case .projectsList, .projectUpdate, .projectDelete, .projectOpen, .projectIcon,
              .projectsSetSectionCollapsed, .worktreeOpen, .changesWatch, .runState, .runStart, .runStop,
              .presetCreate, .presetUpdate, .presetDelete, .presetLaunch, .actionRun,
-             .filesList, .filesCreate, .filesRename, .filesDuplicate, .filesTrash,
+             .filesList, .filesCreate, .filesRename, .filesDuplicate, .filesTrash, .filesRead,
              .workspaceSelect, .terminalSelect, .panelSelect, .paneClose, .simulatorCreate,
              .usageState, .phonePushRegister, .phonePushStatus, .phonePushShare:
             return nil

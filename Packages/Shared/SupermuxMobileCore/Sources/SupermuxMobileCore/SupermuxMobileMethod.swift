@@ -112,6 +112,14 @@ public enum SupermuxMobileMethod: String, CaseIterable, Codable, Sendable, Equat
     case filesDuplicate = "mobile.supermux.files.duplicate"
     /// Moves a file or folder to the Trash (never a permanent delete).
     case filesTrash = "mobile.supermux.files.trash"
+    /// Reads one bounded chunk of a regular file (base64), for another Mac's
+    /// read-only preview.
+    case filesRead = "mobile.supermux.files.read"
+    /// Searches file contents under the resolved root (ripgrep, fixed
+    /// arguments, bounded results).
+    case filesSearch = "mobile.supermux.files.search"
+    /// Reads the git status the desktop Files panel colors rows with.
+    case filesGitStatus = "mobile.supermux.files.git_status"
 
     // MARK: Workspace selection / panes
 

@@ -15,15 +15,17 @@ import SupermuxMobileCore
 /// requests require a Mac-wide ticket.
 extension TerminalController {
     /// `mobile.supermux.files.list`: children of the directory at
-    /// root-relative `path` (absent = the root). Result:
-    /// `{path, entries: [SupermuxFileEntryDTO]}`.
+    /// root-relative `path` (absent = the root). `show_hidden: true` (another
+    /// Mac's Files panel) lists dotfiles too, like the desktop panel. Result:
+    /// `{path, entries: [SupermuxFileEntryDTO], home}`.
     @MainActor
     func v2SupermuxFilesList(params: [String: Any]) async -> V2CallResult {
         // Extract the Sendable input before the off-actor hop: the operation
         // closure must not capture the non-Sendable `params` dictionary.
         let path = params["path"] as? String
+        let showHidden = params["show_hidden"] as? Bool ?? false
         return await supermuxFilesOperation(params: params) { browser in
-            .ok(try browser.listPayload(path: path))
+            .ok(try browser.listPayload(path: path, showHidden: showHidden))
         }
     }
 
@@ -113,7 +115,7 @@ extension TerminalController {
     /// that would otherwise beachball the whole Mac UI. `work` is `@Sendable`
     /// and captures only Sendable inputs; the browser itself is `Sendable`.
     @MainActor
-    private func supermuxFilesOperation(
+    func supermuxFilesOperation(
         params: [String: Any],
         work: @escaping @Sendable (SupermuxMobileFileBrowser) throws -> V2CallResult
     ) async -> V2CallResult {
@@ -157,7 +159,17 @@ extension TerminalController {
         }
         switch supermuxResolveWorkspaceDirectory(params: params) {
         case let .failure(error): return .failure(error)
-        case let .success(resolved): return .success(resolved.directory)
+        case let .success(resolved):
+            // An SSH, Cloud or mirror workspace's directory is a path on
+            // another machine: never read this disk under it.
+            if Self.supermuxWorkspaceFilesAreElsewhere(resolved.workspaceId) {
+                return .failure(.err(
+                    code: "unavailable",
+                    message: "This workspace's files are not on this Mac",
+                    data: ["workspace_id": resolved.workspaceId]
+                ))
+            }
+            return .success(resolved.directory)
         }
     }
 }
