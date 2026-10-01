@@ -42,8 +42,16 @@ driven by `supermux.devices.terminal_sizing.*` (DEBUG), which run the panel's ow
                                          a viewing Mac's full-screen pane (400x150) is taken as is,
                                          not clamped to a phone's 300x120
  10. reselecting_mode_keeps_claims       picking the mode this Mac already has (Priority, as the
-                                         tab menu does to open the panel) changes nothing: the
-                                         second Mac keeps the terminal it claimed (3 s hold)
+                                         tab menu does to open the panel) on the local terminal
+                                         changes no other terminal: the second Mac keeps the
+                                         terminal it claimed (3 s hold)
+ 10b. stored_choice_applies_to_its_terminal
+                                         the panel's choice reaches the terminal it was made on
+                                         whenever that terminal differs, even when it equals this
+                                         Mac's stored preference: the second Mac set Fit everyone,
+                                         then Priority (already stored) picked on the mirror takes
+                                         it back; the second Mac claimed it, then the stored order
+                                         dragged on the mirror takes it back
  11. showing_again_reclaims              hiding then showing the mirror claims the terminal again,
                                          then stays put (3 s hold)
  12. reconnect_reclaims                  after the link drops and the other Mac reset the policy, the
@@ -574,8 +582,8 @@ class SizingPolicyE2E:
         return self.wait_state("the second Mac's 400x150 viewport", self.source_surface, check)
 
     def reselecting_mode_keeps_claims(self) -> Dict[str, Any]:
-        """Re-picking the stored mode is a no-op, as upstream's setMode: it does not re-apply
-        this Mac's preference over a terminal another Mac claimed."""
+        """Re-picking the stored mode on one terminal is not a sweep: it does not re-apply this
+        Mac's preference over another terminal another Mac claimed."""
         b_key = self.facts.get("mac_b_key")
         if not b_key:
             raise Failure("the second Mac never claimed the source terminal (second_mac_no_ping_pong failed)")
@@ -587,6 +595,41 @@ class SizingPolicyE2E:
         chosen = self.select_mode(self.local_surface, "priority")
         held = self.hold(self.source_surface, self.expect_first(b_key))
         return {"accepted": chosen.get("accepted"), "before": before, **held}
+
+    def stored_choice_applies_to_its_terminal(self) -> Dict[str, Any]:
+        """Re-choosing the stored preference skips only the sweep over every terminal: the
+        terminal the user acted on still takes it when its own policy differs (another Mac, a
+        phone or `terminal.size_policy.set` changed it), as upstream's setMode compares against
+        the terminal's own policy."""
+        b_key = self.facts.get("mac_b_key")
+        if not b_key:
+            raise Failure("the second Mac never joined the source terminal (second_mac_no_ping_pong failed)")
+        self.select(self.mirror_id)
+        stored = self.preference() or {}
+        if stored.get("mode") != "priority" or stored.get("priority") != ["self"]:
+            raise Failure(f"expected the stored preference Priority [self]: {stored}")
+
+        def other_mac_sets(policy: Dict[str, Any]) -> None:
+            self.request("mobile.terminal.size_policy.set", {
+                "workspace_id": self.source_id, "surface_id": self.source_surface, "policy": policy,
+            })
+
+        other_mac_sets({"mode": "smallest", "priority": [b_key], "fixed": None})
+        fit = self.wait_state("the second Mac's Fit everyone", self.source_surface, self.expect_mode("smallest"))
+        chosen = self.select_mode(self.mirror_surface, "priority")
+        by_mode = self.wait_state("Priority picked on the mirror to reach its terminal", self.source_surface,
+                                  self.expect_first(self.mirror_key))
+        other_mac_sets({"mode": "priority", "priority": [b_key], "fixed": None})
+        claimed = self.wait_state("the second Mac to claim the terminal again", self.source_surface,
+                                  self.expect_first(b_key))
+        dragged = self.set_priority(self.mirror_surface, [self.mirror_key])
+        by_drag = self.wait_state("the stored order dragged on the mirror to reach its terminal", self.source_surface,
+                                  self.expect_first(self.mirror_key))
+        after = self.preference()
+        if after != stored:
+            raise Failure(f"re-choosing the stored preference changed it: {stored} -> {after}")
+        return {"fit": fit, "mode_accepted": chosen.get("accepted"), "by_mode": by_mode, "claimed": claimed,
+                "drag_accepted": dragged.get("accepted"), "by_drag": by_drag}
 
     def showing_again_reclaims(self) -> Dict[str, Any]:
         self.select(self.local_id)
@@ -737,6 +780,7 @@ class SizingPolicyE2E:
             ok = self.step("viewing_mac_viewport_up_to_500x200", self.viewing_mac_viewport_up_to_500x200) and ok
             if self.local_surface:
                 ok = self.step("reselecting_mode_keeps_claims", self.reselecting_mode_keeps_claims) and ok
+            ok = self.step("stored_choice_applies_to_its_terminal", self.stored_choice_applies_to_its_terminal) and ok
             if self.local_id:
                 ok = self.step("showing_again_reclaims", self.showing_again_reclaims) and ok
             ok = self.step("reconnect_reclaims", self.reconnect_reclaims) and ok
