@@ -642,6 +642,15 @@ class MirrorTabCloseE2E:
         wait_for("B2 to attach", lambda: (self.pane(self.extra_id, b2) or {}).get("attached"), self.timeout)
         self.select(self.extra_id)
         self.sock.call("surface.focus", {"workspace_id": self.extra_id, "surface_id": b2})
+        # B1 and B2 come on screen together and each reports its grid; the last report
+        # speaks. If that was B1, show B2 again so it reports last and speaks.
+        wait_for("B1 and B2 on screen", lambda: all((self.pane(self.extra_id, p) or {}).get("hidden") is False
+                                                     for p in (b1, b2)), self.timeout)
+        time.sleep(0.5)
+        if not (self.pane(self.extra_id, b2) or {}).get("speaks"):
+            self.sock.call("surface.focus", {"workspace_id": self.extra_id, "surface_id": own})
+            wait_for("B2 off screen", lambda: (self.pane(self.extra_id, b2) or {}).get("hidden") is True, self.timeout)
+            self.sock.call("surface.focus", {"workspace_id": self.extra_id, "surface_id": b2})
 
         def both_shown_b2_speaks() -> bool:
             one, two = self.pane(self.extra_id, b1) or {}, self.pane(self.extra_id, b2) or {}
