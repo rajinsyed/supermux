@@ -60,7 +60,9 @@ the main Mac is closed), and the same on iOS.
 6. **Device picker** in the Mac New Worktree sheet (and iOS sheet): the devices where the unified
    project exists; default = last device used for that project. Remote create runs on the remote
    (`worktree.create{open:true}` / `agent.start`), then the local mirror appears and is selected.
-   "New Workspace on ▸ <Mac>" for global (project-less) workspaces.
+   "New Workspace on ▸ <Mac>" (the `+` menu and the sidebar empty area's context menu) for global
+   (project-less) workspaces, which start in that Mac's home folder. A plain New Workspace (`+`, ⌘N,
+   an empty-area double-click) always creates on this Mac, even with a mirror selected.
 7. **Status parity on mirrors** from the remote record: activity (working / needs input / ready) via
    the fork `SupermuxWorkspaceActivityResolver` overlay; branch/PR in nested rows; additive
    `supermux_status_entries` / `supermux_progress` / `supermux_log` fields so `cmux set-status`,

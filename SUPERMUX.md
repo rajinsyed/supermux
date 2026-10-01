@@ -248,15 +248,20 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   identical name + path. Project sync (setting) registers a Mac's projects on the other Mac when the
   same repo already exists at the same path; it never clones or deletes. "Set Up on <Mac>…" adds an
   existing folder or clones there.
-- **Creating remotely:** the New Worktree sheet's device picker (last device remembered per
-  project, link states live while the sheet is open), "New Workspace on ▸ <Mac>" in every New
-  Workspace menu, and ⌘N inside a mirror. The new workspace's mirror opens and is selected in the
-  clicking window; the owning Mac opens the workspace in the background (`select: false`), so its
-  window never switches under whoever is using it. A link that drops after the create went out says
-  the outcome is unknown and to check that Mac's worktrees, instead of inviting a duplicate. The
-  submenu starts with This Mac (a local workspace even while a mirror is selected) and checks the Mac
-  a plain + / ⌘N would use; the + tooltip names the other Mac while + creates there. A local
-  workspace never inherits a selected mirror's directory (a path on the other Mac, #577).
+- **Creating remotely** is always an explicit choice: the New Worktree sheet's device picker (last
+  device remembered per project, link states live while the sheet is open) and "New Workspace on ▸
+  <Mac>" in every New Workspace menu and in the sidebar empty area's context menu (#622). A workspace
+  created there without a directory starts in that Mac's home folder, not in whatever that Mac has
+  selected (#621). The new workspace's mirror opens and is selected in the clicking window; the
+  owning Mac opens the workspace in the background (`select: false`), so its window never switches
+  under whoever is using it. A link that drops after the create went out says the outcome is unknown
+  and to check that Mac's worktrees, instead of inviting a duplicate. The submenu starts with This
+  Mac.
+- **A selected mirror is context, not a target:** a plain `+`, ⌘N, File > New Workspace and a
+  double-click on the sidebar's empty area create on THIS Mac even while a mirror is selected (#571,
+  #620), exactly as before mirrors existed (the empty area: last row, root of the list, home /
+  Ghostty-default directory), so the `+` menu checks This Mac and the `+` tooltip is upstream's. A
+  local workspace never inherits a selected mirror's directory (a path on the other Mac, #577).
 - **Inside a mirror**, ⌘G/Run, presets, project actions and the Changes panel act on the owning Mac
   over `mobile.supermux.*` (Generate & Commit follows that Mac's own AI-key rule); Finder/editor/
   file-explorer actions and the full diff view, which need a local path, are disabled with an
