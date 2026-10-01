@@ -24,10 +24,17 @@ viewer:
   9. mirror_new_terminal_to_right        the tab menu's "New Terminal to the Right" on the
                                          mirror's 2nd tab: right of it, on both sides
  10. mirror_socket_new_terminal_right    tab.action new_terminal_right on the mirror's 3rd tab
- 11. local_workspace                     a focused local workspace with three tabs, mirrored
- 12. local_cmd_t_appends                 Cmd+T in the local workspace's first tab
- 13. local_plus_button_appends           its tab bar + with the first tab focused
- 14. local_new_terminal_to_right         "New Terminal to the Right" locally still lands
+ 11. mirror_terminal_right_retry_after_lost_reply
+                                         "New Terminal to the Right" whose reply is lost
+                                         after the source placed the tab (DEBUG fault); the
+                                         reserved pane's Retry, with this Mac's capability
+                                         cache cold as after a reconnect, must resend the
+                                         same params and get that terminal back (the source
+                                         answers a changed retry "Request ID was reused")
+ 12. local_workspace                     a focused local workspace with three tabs, mirrored
+ 13. local_cmd_t_appends                 Cmd+T in the local workspace's first tab
+ 14. local_plus_button_appends           its tab bar + with the first tab focused
+ 15. local_new_terminal_to_right         "New Terminal to the Right" locally still lands
                                          right of its tab
 
 After every create the suite waits for exactly one new terminal on the owning
@@ -265,7 +272,23 @@ class NewTabOrderE2E:
     def socket_new_tab(self, workspace_id: str) -> None:
         self.sock.call("surface.create", {"workspace_id": workspace_id, "type": "terminal"})
 
+    def pending_creations(self, workspace_id: str) -> List[Dict[str, Any]]:
+        """Reserved panes still waiting for their terminal (`failure` set once one failed)."""
+        return (self.sock.call("supermux.devices.mirror.pending_creations",
+                               {"workspace_id": workspace_id}) or {}).get("pending") or []
+
     # -- the order check ------------------------------------------------------
+
+    def one_new_terminal(self, pair: Pair, before: List[str]) -> str:
+        """Waits for exactly one terminal more than `before` in the owner."""
+        def one_new() -> Optional[str]:
+            now = self.order(pair.owner)
+            fresh = [s for s in now if s not in before]
+            if len(fresh) > 1:
+                raise Failure(f"{len(fresh)} new terminals: {fresh}")
+            return fresh[0] if fresh and len(now) == len(before) + 1 else None
+
+        return wait_for(f"one new terminal in the {pair.label} owner", one_new, self.timeout)
 
     def new_tab(self, pair: Pair, trigger: Callable[[], None],
                 expected: Callable[[List[str], str], List[str]] = appended) -> Dict[str, Any]:
@@ -286,15 +309,7 @@ class NewTabOrderE2E:
         }
         started = time.monotonic()
         trigger()
-
-        def one_new() -> Optional[str]:
-            now = self.order(pair.owner)
-            fresh = [s for s in now if s not in before]
-            if len(fresh) > 1:
-                raise Failure(f"{len(fresh)} new terminals: {fresh}")
-            return fresh[0] if fresh and len(now) == len(before) + 1 else None
-
-        new = wait_for(f"one new terminal in the {pair.label} owner", one_new, self.timeout)
+        new = self.one_new_terminal(pair, before)
         want = expected(before, new)
         record.update(new_terminal=new, expected=want, new_index_expected=want.index(new))
         owner = self.order(pair.owner)
@@ -437,6 +452,61 @@ class NewTabOrderE2E:
 
         return {"anchor_mirror_panel": anchor, **self.new_tab(pair, action, right_of(2))}
 
+    def mirror_terminal_right_retry_after_lost_reply(self) -> Dict[str, Any]:
+        """A positioned create whose reply is lost; its Retry must get the same terminal back.
+
+        The source stores a receipt per request id and answers a retry whose params
+        differ with "Request ID was reused for another edit". The retry runs with this
+        Mac's capability cache emptied, as right after a reconnect, so a retry that
+        re-decides `after_surface_id` from that cache drops it and fails for good.
+        """
+        pair = self.need(self.remote)
+        self.sock.call("workspace.select", {"workspace_id": pair.mirror})
+        anchor = self.mirror_panel(pair, 1)
+        before = self.order(pair.owner)
+        wait_for(f"the {pair.label} mirror to match its owner before the create",
+                 lambda: self.mirror_order(pair) == before, self.timeout)
+        self.sock.call("supermux.devices.mirror.lose_next_create_reply", {})
+        self.tab_menu_terminal_to_right(pair.mirror, anchor)
+        new = self.one_new_terminal(pair, before)
+        want = right_of(1)(before, new)
+        record: Dict[str, Any] = {"anchor_mirror_panel": anchor, "owner_before": before,
+                                  "new_terminal": new, "expected": want}
+        owner = self.order(pair.owner)
+        if owner != want:
+            raise Failure(f"first attempt: owner order {owner} != expected {want}; record={json.dumps(record)}")
+
+        def failed() -> List[Dict[str, Any]]:
+            return [p for p in self.pending_creations(pair.mirror) if p.get("failure")]
+
+        record["failed_panes"] = wait_for("the reserved pane to show the lost reply's failure", failed, self.timeout)
+        retried = self.sock.call("supermux.devices.mirror.retry_pending", {
+            "workspace_id": pair.mirror, "forget_host_capabilities": True,
+        }) or {}
+        record["retried"] = retried.get("retried")
+        if len(retried.get("retried") or []) != 1:
+            raise Failure(f"expected one failed reserved pane to retry: {retried}; record={json.dumps(record)}")
+
+        def settled() -> bool:
+            pending = self.pending_creations(pair.mirror)
+            if pending:
+                raise Failure(f"reserved pane still pending after Retry: {pending}")
+            owner_now, mirror_now = self.order(pair.owner), self.mirror_order(pair)
+            if owner_now != want or mirror_now != want:
+                raise Failure(f"owner {owner_now}, mirror {mirror_now}, expected {want}")
+            return True
+
+        try:
+            wait_for("the Retry to bring back the terminal the source already made", settled, self.timeout)
+        except Failure as error:
+            raise Failure(f"{error}; record={json.dumps(record)}")
+        time.sleep(SETTLE_SECONDS)
+        record.update(owner_settled=self.order(pair.owner), mirror_settled=self.mirror_order(pair),
+                      pending_settled=self.pending_creations(pair.mirror))
+        if record["owner_settled"] != want or record["mirror_settled"] != want or record["pending_settled"]:
+            raise Failure(f"{SETTLE_SECONDS}s later the retry did not hold; record={json.dumps(record)}")
+        return record
+
     def local_workspace(self) -> Dict[str, Any]:
         """A focused local workspace with three tabs (their order is not checked here)."""
         self.local = self.owner_with_mirror("local", focus=True)
@@ -495,6 +565,7 @@ class NewTabOrderE2E:
                 ("mirror_socket_new_tab_appends", self.mirror_socket_new_tab_appends),
                 ("mirror_new_terminal_to_right", self.mirror_new_terminal_to_right),
                 ("mirror_socket_new_terminal_right", self.mirror_socket_new_terminal_right),
+                ("mirror_terminal_right_retry_after_lost_reply", self.mirror_terminal_right_retry_after_lost_reply),
                 ("local_workspace", self.local_workspace),
                 ("local_cmd_t_appends", self.local_cmd_t_appends),
                 ("local_plus_button_appends", self.local_plus_button_appends),
