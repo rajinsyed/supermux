@@ -277,6 +277,11 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   that is not on screen (a tab never shown on its Mac, a mirror in a background workspace, a hidden
   or fully covered window) does not count, so a tab opened from a mirror takes the mirror's size at
   once; a terminal that starts after its grid was decided gets it when it becomes ready.
+- **New tabs append, on both Macs** (#660–#664): every new tab goes to the end of its tab strip
+  (workspaces and the Dock; upstream inserted after the selected tab, which a Mac hosting a mirrored
+  workspace never moves off its first tab, so tabs opened from a mirror landed second). "New
+  Terminal to the Right" in a mirror lands right of its tab there and on the owning Mac (capability
+  `supermux.terminal_placement.v1`; an older owning Mac appends it).
 - **Inside a mirror**, ⌘G/Run, presets, project actions and the Changes panel act on the owning Mac
   over `mobile.supermux.*` (Generate & Commit follows that Mac's own AI-key rule); Finder/editor/
   file-explorer actions and the full diff view, which need a local path, are disabled with an
