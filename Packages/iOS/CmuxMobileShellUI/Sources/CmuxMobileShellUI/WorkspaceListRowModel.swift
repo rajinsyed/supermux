@@ -20,8 +20,8 @@ enum WorkspaceListRowModel: Equatable {
     case macStatus(WorkspaceListMacStatusRowModel)
     case filterEmpty(MobileWorkspaceListFilter)
     case emptyWorkspaceList(WorkspaceListEmptyRowModel)
-    // SUPERMUX:begin supermux-mobile-projects-table-row (the fork's Projects payload; its Equatable compares the value snapshot and seam presence, never closure identity)
-    case supermuxProjects(SupermuxProjectsTableRowConfiguration)
+    // SUPERMUX:begin supermux-mobile-projects-table-row (one fork row of the merged Projects list; a pure value, never closures)
+    case supermux(SupermuxProjectsTableRowValue)
     // SUPERMUX:end supermux-mobile-projects-table-row
     /// The snapshot names a row whose workspace or group it does not carry.
     case missing
@@ -37,6 +37,9 @@ struct WorkspaceListWorkspaceRowModel: Equatable {
     // SUPERMUX:begin supermux-mobile-row-activity (the activity dot is part of what the row draws, so a status-only change must re-render it)
     var supermuxActivity: String? = nil
     // SUPERMUX:end supermux-mobile-row-activity
+    // SUPERMUX:begin supermux-mobile-nested-accessory (a nested row's Mac marker, PR badge and run indicator are part of what it draws)
+    var supermuxAccessory: SupermuxNestedWorkspaceAccessory? = nil
+    // SUPERMUX:end supermux-mobile-nested-accessory
 }
 
 struct WorkspaceListMacStatusRowModel: Equatable {
@@ -96,7 +99,7 @@ enum WorkspaceListRowLayoutKey: Hashable {
     case workspace(WorkspaceListWorkspaceLayoutKey)
     case groupHeader
     // SUPERMUX:begin supermux-mobile-projects-table-row (fork Projects row height identity)
-    case supermuxProjects(String)
+    case supermux(String)
     // SUPERMUX:end supermux-mobile-projects-table-row
 }
 
@@ -195,8 +198,11 @@ extension WorkspaceListTable {
                     canRename: capabilities.supportsWorkspaceActions && renameRequest != nil,
                     canTogglePin: capabilities.supportsWorkspaceActions && setPinned != nil,
                     // SUPERMUX:begin supermux-mobile-row-activity
-                    supermuxActivity: workspace.supermuxActivity
+                    supermuxActivity: workspace.supermuxActivity,
                     // SUPERMUX:end supermux-mobile-row-activity
+                    // SUPERMUX:begin supermux-mobile-nested-accessory
+                    supermuxAccessory: indented ? supermuxProjects?.layout.accessories[id] : nil
+                    // SUPERMUX:end supermux-mobile-nested-accessory
                 )
             )
         case .groupHeader(let groupID):
@@ -248,10 +254,10 @@ extension WorkspaceListTable {
                     canReconnect: reconnect != nil
                 )
             )
-        // SUPERMUX:begin supermux-mobile-projects-table-row (nil payload = no live session or no supermux.projects.v1; the row then renders nothing at zero height)
-        case .chrome(.supermuxProjects):
-            guard let supermuxProjects else { return .missing }
-            return .supermuxProjects(supermuxProjects)
+        // SUPERMUX:begin supermux-mobile-projects-table-row (a fork row the payload no longer carries renders nothing at zero height)
+        case .chrome(.supermux(let id)):
+            guard let value = supermuxProjects?.layout.forkRows[id] else { return .missing }
+            return .supermux(value)
         // SUPERMUX:end supermux-mobile-projects-table-row
         case .filterEmpty:
             return .filterEmpty(filter)
