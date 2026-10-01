@@ -63,3 +63,22 @@ enum SupermuxDeviceError: Error, LocalizedError, Equatable {
         }
     }
 }
+
+/// What a mirror tab whose terminal another Mac did not make says inside it
+/// (the `device-pane-failure-mac-wording` touchpoint). Upstream's card is
+/// worded for Cloud machines ("The Cloud operation failed…").
+enum SupermuxDevicePaneFailureText {
+    @MainActor
+    static func detail(machine: SurfaceMachineID) -> String {
+        guard let name = SupermuxComposition.devices.device(for: machine)?.displayName else {
+            return String(
+                localized: "supermux.devices.paneFailure.detailOtherMac",
+                defaultValue: "The other Mac couldn’t complete this. Check that it is online and try again."
+            )
+        }
+        return String(
+            localized: "supermux.devices.paneFailure.detail",
+            defaultValue: "\(name) couldn’t complete this. Check that it is online and try again."
+        )
+    }
+}
