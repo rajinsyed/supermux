@@ -101,7 +101,7 @@ final class SupermuxTerminalSizingDefaults {
         var next = preference
         next.mode = mode
         if mode == .fixed, next.fixed == nil { next.fixed = snapshot.state.size }
-        choose(next)
+        choose(next, surfaceID: surfaceID)
         return true
     }
 
@@ -114,7 +114,7 @@ final class SupermuxTerminalSizingDefaults {
         var next = preference
         next.mode = .fixed
         next.fixed = size
-        choose(next)
+        choose(next, surfaceID: surfaceID)
         return true
     }
 
@@ -128,7 +128,7 @@ final class SupermuxTerminalSizingDefaults {
         let selfKey = snapshot.selfParticipant?.priorityKey
         var next = preference
         next.priority = keys.map { $0 == selfKey ? SupermuxTerminalSizingPreference.selfToken : $0 }
-        choose(next)
+        choose(next, surfaceID: surfaceID)
         return true
     }
 
@@ -139,14 +139,38 @@ final class SupermuxTerminalSizingDefaults {
         applyEverywhere()
     }
 
-    /// Re-choosing the current preference stores it and applies nothing, as
-    /// upstream's `setMode`: the tab menu's Priority and Fixed mostly open the
-    /// panel, and re-applying would take back terminals other Macs claimed.
-    private func choose(_ next: SupermuxTerminalSizingPreference) {
+    /// A new preference applies everywhere. Re-choosing the current one applies
+    /// it only to the terminal the user acted on (`surfaceID`), and only when
+    /// that terminal's policy differs, as upstream's `setMode` compares against
+    /// the terminal's own policy: another Mac, a phone, `terminal.size_policy.set`
+    /// or Size to My Window may have changed it. The other terminals are left
+    /// alone, so the tab menu's Priority and Fixed (which mostly open the panel)
+    /// never take back terminals other Macs claimed.
+    private func choose(_ next: SupermuxTerminalSizingPreference, surfaceID: UUID) {
         let changed = next != preference
         preference = next
         if let data = try? JSONEncoder().encode(next) { defaults.set(data, forKey: Self.defaultsKey) }
-        if changed { applyEverywhere() }
+        if changed {
+            applyEverywhere()
+        } else {
+            apply(to: surfaceID)
+        }
+    }
+
+    /// The preference on one terminal: a local one's sizing host, or a device
+    /// mirror, which claims its terminal and pushes.
+    private func apply(to surfaceID: UUID) {
+        let controller = TerminalController.shared
+        if let host = controller.localSizingHostsBySurfaceID[surfaceID] {
+            let policy = preference.policy(selfKey: Self.selfKey(of: host))
+            guard host.state.policy != policy else { return }
+            _ = controller.localSizingSetPolicy(surfaceID: surfaceID, policy: policy)
+        } else if let session = SupermuxTerminalSizingVisibility.shared.trackedMirrorSessions()[surfaceID],
+                  let viewer = session.viewer,
+                  viewer.state?.policy != preference.policy(selfKey: Self.selfKey(of: viewer)) {
+            session.supermuxSizingClaim.claimed = !session.supermuxHidden
+            session.supermuxSizingClaim.pushed = push(session)
+        }
     }
 
     /// Local terminals first, then device mirrors: in the loopback a source
