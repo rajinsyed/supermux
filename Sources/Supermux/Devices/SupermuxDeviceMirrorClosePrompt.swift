@@ -30,6 +30,12 @@ enum SupermuxDeviceMirrorClosePrompt {
 
     static func ask(_ items: [Item], in manager: TabManager) -> SupermuxDeviceMirrorCloser.Decision {
         guard !items.isEmpty, !isPresenting else { return .cancel }
+        #if DEBUG
+        if SupermuxDeviceMirrorCloseDebug.isRecording {
+            SupermuxDeviceMirrorCloseDebug.record(kind: "mirror", title: items.map(\.title).joined(separator: ", "))
+            return .cancel
+        }
+        #endif
         isPresenting = true
         defer { isPresenting = false }
         let alert = makeAlert(items)

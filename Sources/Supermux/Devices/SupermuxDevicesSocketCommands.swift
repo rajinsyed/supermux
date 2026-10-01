@@ -92,6 +92,7 @@ enum SupermuxDevicesSocketCommands {
             case let name where SupermuxDeviceNotificationSocketCommands.handles(name):
                 result = try await SupermuxDeviceNotificationSocketCommands.handle(String(name), params)
             case let name where SupermuxDeviceTerminalCloseSocketCommands.handles(name): result = try SupermuxDeviceTerminalCloseSocketCommands.handle(name, params)
+            case let name where SupermuxDeviceMirrorCloseSocketCommands.handles(name): result = try SupermuxDeviceMirrorCloseSocketCommands.handle(params)
             case let name where SupermuxTerminalSizingSocketCommands.handles(name):
                 result = try SupermuxTerminalSizingSocketCommands.handle(name, params: params)
             #endif
