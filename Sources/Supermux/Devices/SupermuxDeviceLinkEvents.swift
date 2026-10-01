@@ -91,8 +91,9 @@ extension DeviceLink {
     /// waiting on the app): any answer, a refusal included, keeps the link and
     /// fails only this request (`timed_out`); no answer within 10 s is a dead
     /// link, which reconnects as upstream does. `isCurrent` says the request's
-    /// connection is still the link's.
+    /// connection is still the link's; `method` names the request in the log.
     func supermuxMissedDeadline(
+        _ method: String,
         _ error: MobileShellConnectionError,
         client: MobileCoreRPCClient,
         isCurrent: () -> Bool
@@ -104,7 +105,7 @@ extension DeviceLink {
             return DeviceLinkError.notConnected
         }
         #if DEBUG
-        cmuxDebugLog("supermux.deviceLink a reply missed its deadline; the host still answers, so the link stays")
+        cmuxDebugLog("supermux.deviceLink \(method) missed its reply deadline; the host still answers, so the link stays")
         #endif
         let name = record.deviceName
         return DeviceLinkError.hostRejected(

@@ -240,7 +240,7 @@ final class DeviceLink {
                 throw DeviceLinkError.hostRejected(code: code, message: message)
             // SUPERMUX:begin device-link-slow-request (upstream's `.requestTimedOut` taken out of the next case: a missed deadline fails alone while the host still answers)
             case .requestTimedOut:
-                let failure = await supermuxMissedDeadline(error, client: client) {
+                let failure = await supermuxMissedDeadline(method, error, client: client) {
                     !Task.isCancelled && requestGeneration == self.generation
                 }
                 throw failure
