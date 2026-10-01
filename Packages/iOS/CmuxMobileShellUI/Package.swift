@@ -37,6 +37,7 @@ let package = Package(
         .package(path: "../CmuxMobileToast"),
         .package(path: "../CmuxMobileTerminalKit"),
         .package(path: "../CmuxMobileWorkspace"),
+        .package(path: "../../Shared/CmuxTerminalSizing"),
         // SUPERMUX:begin supermux-mobile-shellui-deps (fork package: Projects section mounted in WorkspaceListView)
         .package(path: "../SupermuxMobileUI"),
         // The shared notification-project type: the feed row derives its
@@ -71,6 +72,7 @@ let package = Package(
                 "CmuxMobileTerminalKit",
                 "CmuxMobileToast",
                 "CmuxMobileWorkspace",
+                "CmuxTerminalSizing",
                 // SUPERMUX:begin supermux-mobile-shellui-deps (fork package: Projects section mounted in WorkspaceListView)
                 "SupermuxMobileUI",
                 "SupermuxMobileCore",

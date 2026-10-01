@@ -349,6 +349,9 @@ final class SidebarWorkspaceRowTableCellView: NSTableCellView {
         cloudImageView.setAccessibilityElement(false)
         contentContainer.addSubview(trailingBadge)
         closeButton.onClick = { [weak self] in self?.actions?.commands.closeWorkspace() }
+        closeButton.setAccessibilityRole(.button)
+        closeButton.setAccessibilityIdentifier("sidebarWorkspaceCloseButton")
+        closeButton.setAccessibilityElement(false)
         closeButton.concealImmediately()
         contentContainer.addSubview(closeButton)
 
@@ -399,6 +402,7 @@ final class SidebarWorkspaceRowTableCellView: NSTableCellView {
         // closed). Snap its close button hidden so it cannot fade out on
         // whichever row AppKit hands this cell to next.
         isPointerHovering = false
+        closeButton.setAccessibilityElement(false)
         closeButton.concealImmediately()
         hintPill.resetForReuse()
     }
@@ -654,9 +658,11 @@ final class SidebarWorkspaceRowTableCellView: NSTableCellView {
             systemName: "xmark", pointSize: model.scaled(9), weight: .medium
         )
         closeButton.contentTintColor = palette.secondary(0.7)
-        closeButton.toolTip = snapshot.isPinned
+        let closeButtonTooltip = snapshot.isPinned
             ? String(localized: "sidebar.pinnedWorkspaceProtected.tooltip", defaultValue: "Pinned workspace — protected from Close")
             : String(localized: "sidebar.closeWorkspace.tooltip", defaultValue: "Close workspace")
+        closeButton.toolTip = closeButtonTooltip
+        closeButton.setAccessibilityLabel(closeButtonTooltip)
         updateCloseVisibility()
 
         // Description / subtitle
@@ -745,6 +751,7 @@ final class SidebarWorkspaceRowTableCellView: NSTableCellView {
             text: model.shortcutHintText,
             fontSize: model.scaled(9),
             emphasis: model.isActive ? 1.0 : 0.9,
+            colorScheme: palette.colorScheme,
             representedIdentity: model.workspaceId
         )
         topDropIndicator.accentColor = palette.accent
@@ -894,7 +901,9 @@ final class SidebarWorkspaceRowTableCellView: NSTableCellView {
     }
 
     private func updateCloseVisibility() {
-        closeButton.setRevealed(showsCloseNow)
+        let revealed = showsCloseNow
+        closeButton.setRevealed(revealed)
+        closeButton.setAccessibilityElement(revealed)
     }
 
     /// Authoritative hover enforcement: the controller sweeps visible cells

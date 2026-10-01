@@ -191,6 +191,7 @@ extension Workspace {
         agentPIDs[key] = pid
         agentPIDProcessIdentitiesByKey[key] = processIdentity
         if let panelId { recordAgentPIDOwnership(key: key, panelId: panelId) } else { removeAgentPIDOwnership(key: key) }
+        if let panelId { noteAgentWakeAgentReported(panelId: panelId, statusKey: agentStatusKey(forAgentPIDKey: key)) }
         // SUPERMUX:begin panel-agent-liveness-evidence
         // Shared keys (claude_code) hold one PID workspace-wide, so a stolen
         // panel loses all liveness evidence; keep a panel-scoped copy so the
@@ -601,6 +602,10 @@ extension Workspace {
         agentStatusEntriesByPanelId.removeValue(forKey: panelId)
         restoredPanelTitleBoundariesByPanelId.removeValue(forKey: panelId)
         clearAgentLifecycleStates(panelId: panelId)
+        discardAgentWakeVerification(
+            panelId: panelId,
+            panel: (removedPanel ?? panel) as? TerminalPanel
+        )
         surfaceTTYNames.removeValue(forKey: panelId)
         discardRemotePTYSessionID(panelId: panelId)
         surfaceResumeBindingsByPanelId.removeValue(forKey: panelId)
