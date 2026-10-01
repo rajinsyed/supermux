@@ -83,8 +83,9 @@ final class DeviceTerminalMirrorSession {
     private var supermuxHostHoldsHiddenCounts = false
     // SUPERMUX:end device-mirror-hidden-counts
     // SUPERMUX:begin device-mirror-viewer-colors
-    /// The other Mac's program-authored colors this surface holds; replays
-    /// carry no color state of their own (SupermuxDeviceMirrorColors).
+    /// Replays carry no color state of their own; each is followed by bytes
+    /// that settle every color to this Mac's theme plus the other Mac's
+    /// program-authored ones (SupermuxDeviceMirrorColors).
     private(set) var supermuxColors = SupermuxDeviceMirrorColorState()
     // SUPERMUX:end device-mirror-viewer-colors
     // SUPERMUX:begin device-mirror-sizing-claim
@@ -368,8 +369,8 @@ final class DeviceTerminalMirrorSession {
             viewportTransitionRetries = 0
             receiveReplaySizing(response)
             if let columns = replay.columns, let rows = replay.rows { pin(columns: columns, rows: rows) }
-            // SUPERMUX:begin device-mirror-viewer-colors (the replay, then the authored-color delta)
-            surface?.processRemoteOutput(supermuxColors.bytes(applying: replay.bytes, colors: replay.colors, to: surface?.id))
+            // SUPERMUX:begin device-mirror-viewer-colors (the replay, then every color settled to this Mac's theme plus the authored ones)
+            surface?.processRemoteOutput(supermuxColors.bytes(applying: replay.bytes, colors: replay.colors))
             // SUPERMUX:end device-mirror-viewer-colors
             expectedSequence = replay.sequence
             phase = .attached
