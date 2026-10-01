@@ -199,8 +199,10 @@ CMUX_E2E_SUITES="loopback_mirror_appearance_e2e" CMUX_TAG=<tag> tests/supermux/r
 notifications behave between Macs as they do locally: the mirror copy keeps the remote project,
 the viewer never forwards `.deviceMac` records to the phone (and leaves them out of the phone
 badge), reads travel both ways, Mark as Unread on a host-read mirror copy survives the host's
-next feed, a focused mirror pane acknowledges the host, an away host keeps a focused pane's
-notification unread, `notifications.suppressWhenAppFocused` withholds only the banner (panes the
+next feed, a notification for a focused pane (the mirror's or the source's) stays unread with the
+ring, the tab badge and the workspace badge until a real click in the pane clears it (DEBUG
+`notification_indicators` / `notification_click`, plus a window screenshot of the ring beside the
+report), a present user's focused pane is not pushed to the phone while an away host's is, `notifications.suppressWhenAppFocused` withholds only the banner (panes the
 user is not looking at stay unread on both Macs), a burst over the admission budget is fully
 delivered, and `mobile.supermux.phone_push.status/share` work over the Mac link while `share`
 refuses non-Mac callers. Like the smoke, it pauses auto-mirror for its run so its explicit
@@ -284,6 +286,18 @@ forces without asking; an idle tab closes without asking; and a tab closed while
 
 ```bash
 CMUX_TAG=<tag> python3 tests/supermux/loopback_mirror_tab_close_e2e.py [--claude]
+```
+
+## Terminal input E2E: tab chrome
+
+`tests/supermux/loopback_terminal_input_e2e.py` also checks (`tabs_draw_no_device_accessory`, #720)
+that, with the mirror attached to the source terminal, neither tab draws the attached-device avatar
+while both keep their presence, which is what gives the tab's context menu its terminal-size section.
+It reads each tab through the DEBUG `supermux.devices.mirror.tab_chrome {workspace_id, surface_id}`
+driver (badge, loading state and presence with its participants).
+
+```bash
+CMUX_E2E_SUITES="loopback_terminal_input_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
 ```
 
 ## Terminal size policy E2E
