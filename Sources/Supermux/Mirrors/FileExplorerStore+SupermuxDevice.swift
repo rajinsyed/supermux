@@ -26,8 +26,10 @@ extension FileExplorerStore {
     ///
     /// Rows are rebuilt only when a listing changed. A folder that is loaded
     /// but collapsed forgets its rows, so opening it lists it fresh (as after
-    /// the local panel's reload). A failed listing keeps its rows. Git colors
-    /// follow, as with each local watcher event.
+    /// the local panel's reload). A failed listing keeps its rows, except a
+    /// root that is gone or unreadable there: the tree empties and says why,
+    /// as the local reload does. Git colors follow, as with each local
+    /// watcher event.
     func supermuxRefreshInPlace() async {
         // A first load (or a reload) in flight is upstream's.
         guard let device = provider as? SupermuxDeviceFileExplorerProvider,
@@ -37,7 +39,21 @@ extension FileExplorerStore {
         var pending: [(parent: FileExplorerNode?, path: String)] = [(nil, rootPath)]
         while !pending.isEmpty {
             let (parent, path) = pending.removeFirst()
-            guard let entries = try? await device.listDirectory(path: path, showHidden: showHiddenFiles) else { continue }
+            let entries: [FileExplorerEntry]
+            do {
+                entries = try await device.listDirectory(path: path, showHidden: showHiddenFiles)
+            } catch {
+                guard parent == nil, Self.supermuxFolderIsGone(error) else { continue }
+                // The folder is gone or unreadable there: say so, as the local
+                // panel's reload does. The next listing that works brings the rows back.
+                guard contentRevision == revision, resourceContextID == context, provider === device else { return }
+                if !rootNodes.isEmpty {
+                    rootNodes = []
+                    changed = true
+                }
+                setRootStatusMessage(error.localizedDescription)
+                break
+            }
             // A reload, a re-root or another provider won meanwhile.
             guard contentRevision == revision, resourceContextID == context, provider === device else { return }
             let current = parent?.children ?? rootNodes
@@ -57,6 +73,17 @@ extension FileExplorerStore {
         }
         if changed { supermuxNoteTreeChanged() }
         refreshGitStatus()
+    }
+
+    /// Whether a listing failed because the folder is gone or unreadable on
+    /// that Mac, not because the link or that Mac is busy (`timed_out`,
+    /// `server_busy`, link down), nor because of a `cd` there (the panel
+    /// re-roots on its own).
+    private static func supermuxFolderIsGone(_ error: any Error) -> Bool {
+        switch error as? SupermuxDeviceFileError {
+        case .unavailable?, .missing?: return true
+        default: return false
+        }
     }
 
     /// The listing as nodes, reusing the shown node for every entry that is
