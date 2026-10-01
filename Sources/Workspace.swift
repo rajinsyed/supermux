@@ -14228,9 +14228,6 @@ extension Workspace: BonsplitDelegate {
             }
         }
 
-        // SUPERMUX:begin device-close-cancel-restores-tab (whether another Mac's tab was selected as it closes, so a Cancel in "Close “X” on <Mac>?" selects it again)
-        SupermuxDeviceClosedTabs.shared.noteClosing(tab.id, inPane: pane, workspace: self)
-        // SUPERMUX:end device-close-cancel-restores-tab
         let tabCloseButtonClose = tabStripCloseButtonByTabId.removeValue(forKey: tab.id)
         let tabStripClose = tabCloseButtonClose != nil
         let explicitUserClose = explicitUserCloseTabIds.remove(tab.id) != nil || tabStripClose

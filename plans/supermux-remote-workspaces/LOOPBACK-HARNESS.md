@@ -123,15 +123,13 @@ restore: quit the app, relaunch it with the opt-in, and the mirror reconnects.
   state, tooltip, and placement on the branch line).
   `--screenshot` also opens Settings on Automation and captures the window.
 - `tests/supermux/loopback_sidebar_rows_e2e.py` reads the sidebar rows as drawn
-  (`supermux.devices.sidebar_rows`) and the mirror close prompt without showing it
-  (`supermux.devices.close_prompt`): nested rows list this Mac's workspaces before each Mac's
+  (`supermux.devices.sidebar_rows`): nested rows list this Mac's workspaces before each Mac's
   mirrors, a nested mirror's accessibility label names its Mac, a nested mirror draws the Mac icon
   (no name capsule) before its branch, `set_status` / `set_progress` (Claude's lifecycle-less "Idle"
   pill included) show on no nested row (local or mirror), the working spinner of a nested local row
   and of its mirror is the 6·scale one (measured in a window screenshot), a flat mirror's directory
-  line omits the Mac name and carries its icon, and the prompt is safe (a plain, enabled, visible
-  Close on <Mac>, Cancel as the Return/Esc default, the Mac named once, the worktree outcome and Hide
-  Here explained). Hover behavior and the footer are checked visually.
+  line omits the Mac name and carries its icon. Hover behavior, the footer and the row menus (Close
+  Workspace on every row, Hide Here on mirrors, no "Close on <Mac>…") are checked visually.
 
 ## New tab order E2E
 
@@ -272,18 +270,41 @@ CMUX_TAG=<tag> python3 tests/supermux/loopback_new_worktree_picker_e2e.py --scra
 `tests/supermux/loopback_mirror_tab_close_e2e.py` closes mirror tabs whose terminals run a program.
 Three of a source workspace's five terminals run a Claude Code stand-in (alternate screen, kitty
 keyboard flags, a marker line, a sleeping child; `--claude` runs the real CLI). The DEBUG drivers
-`supermux.devices.terminal_close.{inspect, answer, needs_confirm}` report each mirror pane's
-attachment and overlay plus the workspace's failure card, pre-answer the "Close “X” on <Mac>?"
-prompt so no modal shows (and log every prompt asked), and say whether the source would confirm a
-close. The suite checks that `mobile.terminal.close` without force answers `confirmation_required`
-for a busy terminal; Close on the prompt closes it there and the tab stays gone; Cancel keeps it and
-the re-projected pane attaches and renders (no "Mac disconnected", no card); a terminal projected
-again into another workspace after a close on the same link attaches; Kill Terminal… (`vm.terminal_close`)
-forces without asking; an idle tab closes without asking; and a tab closed while the link is down
-(`supermux.devices.link stop`) disappears with no card and is closed there on reconnect, never coming back.
+`supermux.devices.terminal_close.{inspect, needs_confirm, replay}` report each mirror pane's
+attachment and overlay plus the workspace's failure card, say whether the source would confirm a
+close, and replay a pane. The suite checks that `mobile.terminal.close` without force answers
+`confirmation_required` for a busy terminal (the host contract); closing a busy mirror tab closes it
+there at once with no prompt and the tab stays gone (`busy_tab_close_forces`); a terminal projected
+again into another workspace after a close on the same link attaches; Kill Terminal…
+(`vm.terminal_close`) forces; an idle tab closes; and a tab closed while the link is down
+(`supermux.devices.link stop`), busy or idle, disappears with no card and is closed there on
+reconnect, never coming back. On builds from before every close forced, the run pre-answers the old
+"Close “X” on <Mac>?" prompt's DEBUG driver (`terminal_close.answer`) with Cancel and fails if it asked.
 
 ```bash
 CMUX_TAG=<tag> python3 tests/supermux/loopback_mirror_tab_close_e2e.py [--claude]
+```
+
+## Mirror workspace close E2E
+
+`tests/supermux/loopback_mirror_workspace_close_e2e.py` closes mirror workspaces the way the user
+does: the DEBUG driver `supermux.devices.user_close {workspace_id | workspace_ids, answer}` runs
+upstream's `closeWorkspaceWithConfirmation` (or the batch `closeWorkspacesWithConfirmation`) with
+every close confirmation pre-answered and logged (`prompts: [{kind, title}]`), so no modal shows. It
+checks that an idle mirror closes with no prompt at all and its source closes on the Mac, is not
+hidden and is not reopened (W1); a mirror whose source runs a program closes there too (W2); a
+multi-close of two mirrors and a local workspace asks at most upstream's "Close workspaces?" and
+closes all three plus both sources (W3); a pinned source's mirror asks only "Close pinned
+workspace?" (Cancel keeps both, Close closes both: the other Mac unpins it to close it, W4); a
+mirror closed while the link is down goes at once, is listed in `hidden {}`'s
+`pending_remote_closes`, and its source closes on reconnect without the mirror coming back (W5);
+the host answers `confirmation_required` without force and closes with it (W6, the phone's
+contract); and, with `--app-path`, a close made offline survives a quit and relaunch and lands once
+the loopback is back (W7).
+
+```bash
+CMUX_TAG=<tag> python3 tests/supermux/loopback_mirror_workspace_close_e2e.py \
+  [--app-path "<App path>" --projects-file /tmp/<tag>/projects.json]
 ```
 
 ## Terminal size policy E2E

@@ -138,19 +138,11 @@ struct SupermuxOpenWorkspaceRowView: View {
         Button(String(localized: "supermux.workspace.select", defaultValue: "Focus Workspace"), action: select)
         Button(String(localized: "supermux.workspace.rename", defaultValue: "Rename Workspace…"), action: rename)
         Divider()
-        if let device = workspace.device {
-            // A mirror closes the two ways its close prompt offers: hide it
-            // here (it keeps running there), or close it on its Mac (the
-            // prompt confirms).
+        // Close closes a mirror on its Mac, like a local workspace; Hide Here
+        // keeps it running there and removes it from this sidebar.
+        Button(String(localized: "supermux.workspace.close", defaultValue: "Close Workspace"), role: .destructive, action: close)
+        if workspace.device != nil {
             Button(String(localized: "supermux.devices.close.button.hideHere", defaultValue: "Hide Here"), action: hide)
-            Button(
-                String(localized: "supermux.devices.menu.closeOnMac", defaultValue: "Close on \(device.name)…"),
-                role: .destructive,
-                action: close
-            )
-            .disabled(!device.isOnline)
-        } else {
-            Button(String(localized: "supermux.workspace.close", defaultValue: "Close Workspace"), role: .destructive, action: close)
         }
     }
 }
