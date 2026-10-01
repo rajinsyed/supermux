@@ -27,6 +27,12 @@ enum SupermuxMirrorFileExplorerLiveRefresh {
     private static var running: [ObjectIdentifier: Running] = [:]
     private static let minimumInterval: Duration = .seconds(1)
     private static let checkInterval: Duration = .seconds(5)
+    #if DEBUG
+    /// How many refreshes each store's live refresh ran, changed or not (the
+    /// DEBUG files driver's `counters`: a refresh that changes nothing is
+    /// otherwise invisible).
+    static var refreshRuns: [ObjectIdentifier: Int] = [:]
+    #endif
 
     /// Starts (or restarts) the refresh for the store's device provider.
     static func start(for store: FileExplorerStore) {
@@ -43,6 +49,9 @@ enum SupermuxMirrorFileExplorerLiveRefresh {
                 if wait > .zero { try? await Task.sleep(for: wait) }
                 guard let store, store.provider === provider, !Task.isCancelled else { return }
                 lastRefresh = clock.now
+                #if DEBUG
+                Self.refreshRuns[ObjectIdentifier(store), default: 0] += 1
+                #endif
                 await store.supermuxRefreshInPlace()
             }
         }
