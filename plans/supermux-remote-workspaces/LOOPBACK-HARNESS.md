@@ -330,7 +330,8 @@ the mirror with the file's exact bytes and reopening reuses it; the 9 MiB file i
 Find returns the one nested hit and a query like `--version` is only a pattern; raw `files.*`
 confinement probes (`..`, the symlink, a directory read, a wrong `expected_root`, renaming
 `.git/HEAD`) are refused while chunked reads, `.git/HEAD` reads, hidden listing (with `home`), the
-phone's dotfile-free listing, git status and search answer; `cd src` / `cd ..` in the source
+phone's dotfile-free listing, git status and search answer; a `files.read` of a named pipe in the
+folder is refused at once (it never waits for a writer) and the link stays up; `cd src` / `cd ..` in the source
 terminal re-roots the panel; a new file appears with no action (`--refresh-timeout`, default 6 s);
 the menu offers New File / New Folder / Rename / Duplicate / Move to Trash and each changes the
 disk; with the link held down the panel names the Mac and says it is not connected (no rows), and

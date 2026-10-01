@@ -34,6 +34,8 @@ folder (the loopback's files are on this disk too):
                                      a wrong expected_root and git internals are refused (git
                                      internals are readable, as in the local panel, never mutable);
                                      chunked reads, hidden listing and git status answer
+ 11b. named_pipe_read_refused        files.read of a named pipe in the folder is refused at once
+                                     (it never waits for a writer) and the link stays up
  12. root_follows_remote_cd          `cd src` in the source terminal re-roots the mirror's panel,
                                      `cd ..` brings it back
  13. live_refresh                    a file created in the folder appears with no action
@@ -267,11 +269,11 @@ class MirrorFilesE2E:
     def local_rows(self, path: Path) -> List[Dict[str, Any]]:
         return (self.files("local_rows", path=str(path)) or {}).get("rows") or []
 
-    def remote(self, method: str, params: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]], Optional[str], str]:
+    def remote(self, method: str, params: Dict[str, Any], timeout_s: int = 60) -> Tuple[Optional[Dict[str, Any]], Optional[str], str]:
         """One RPC to the loopback Mac's host over the device link: (result, error code, message)."""
         response = self.sock.raw("supermux.devices.request", {
-            "machine": self.machine, "method": method, "params": params, "timeout_seconds": 60,
-        }, timeout_s=70)
+            "machine": self.machine, "method": method, "params": params, "timeout_seconds": timeout_s,
+        }, timeout_s=timeout_s + 10)
         if response.get("ok") is True:
             return ((response.get("result") or {}).get("result") or {}), None, ""
         error = response.get("error") or {}
@@ -538,6 +540,35 @@ class MirrorFilesE2E:
             raise Failure("; ".join(problems))
         return {"refused": outcomes}
 
+    def named_pipe_read_refused(self) -> Dict[str, Any]:
+        """A named pipe lists as a plain file, and opening it for reading waits for a writer.
+        The host must refuse it at once: a read stuck in `open` misses the reply deadline, the
+        link reconnects (every mirror of the Mac drops) and the host thread stays stuck."""
+        self.require("source_id", "remote_root", "machine")
+        pipe = self.root / f"pipe-{self.nonce}"
+        os.mkfifo(pipe)
+        base = {"workspace_id": self.source_id, "expected_root": self.remote_root}
+        started = time.monotonic()
+        try:
+            _, got, message = self.remote("mobile.supermux.files.read", {**base, "path": pipe.name}, timeout_s=10)
+        finally:
+            seconds = round(time.monotonic() - started, 2)
+            self.release_pipe(pipe)
+        link = self.device().get("link_state")
+        if got != "invalid_params" or seconds > 5 or link != "connected":
+            raise Failure(f"read of a named pipe: {got} {message!r} after {seconds}s, link {link}")
+        return {"code": got, "seconds": seconds}
+
+    def release_pipe(self, pipe: Path) -> None:
+        """Opens the pipe's write end once, freeing a host read stuck in `open`, then removes the
+        pipe and waits for the link (a missed deadline makes it reconnect)."""
+        try:
+            os.close(os.open(pipe, os.O_WRONLY | os.O_NONBLOCK))
+        except OSError:
+            pass  # No reader is waiting, so nothing on the host is stuck.
+        pipe.unlink(missing_ok=True)
+        wait_for("the link to be connected", lambda: self.device().get("link_state") == "connected", self.timeout * 2)
+
     def root_follows_remote_cd(self) -> Dict[str, Any]:
         self.require("mirror_id", "source_id")
         surfaces = (self.sock.call("surface.list", {"workspace_id": self.source_id}) or {}).get("surfaces") or []
@@ -742,6 +773,7 @@ class MirrorFilesE2E:
             ("large_file_capped", self.large_file_capped),
             ("search_finds_remote_match", self.search_finds_remote_match),
             ("confinement_probes", self.confinement_probes),
+            ("named_pipe_read_refused", self.named_pipe_read_refused),
             ("root_follows_remote_cd", self.root_follows_remote_cd),
             ("live_refresh", self.live_refresh),
             ("file_operations_on_the_other_mac", self.file_operations_on_the_other_mac),

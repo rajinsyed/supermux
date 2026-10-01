@@ -74,7 +74,7 @@ extension TerminalController {
         guard let path = params["path"] as? String, !path.isEmpty else {
             return .err(code: "invalid_params", message: "path is required", data: nil)
         }
-        return await supermuxFilesOperation(params: params) { browser in
+        return await supermuxFilesOperation(params: params, timeout: SupermuxMobileFileBrowser.copyTimeout) { browser in
             .ok(["ok": true, "path": try browser.duplicate(path: path)])
         }
     }
@@ -96,7 +96,7 @@ extension TerminalController {
                 code: "invalid_params", message: "paths must be a non-empty array", data: nil
             )
         }
-        return await supermuxFilesOperation(params: params) { browser in
+        return await supermuxFilesOperation(params: params, timeout: SupermuxMobileFileBrowser.copyTimeout) { browser in
             try browser.trash(paths: paths)
             return .ok(["ok": true])
         }
@@ -108,15 +108,21 @@ extension TerminalController {
     /// and maps engine failures onto the wire error shape (package-tested
     /// classification: confinement violations → `invalid_params`).
     ///
-    /// The browser construction and `work` run OFF the main actor: symlink
-    /// resolution of the root (which can stat across the autofs automounter —
-    /// see `SupermuxTabManagerOpener`'s main-actor warning) plus recursive
+    /// The browser construction and `work` run OFF the main actor, on a GCD
+    /// thread rather than the cooperative pool: symlink resolution of the
+    /// root (which can stat across the autofs automounter — see
+    /// `SupermuxTabManagerOpener`'s main-actor warning) plus recursive
     /// duplicate/copy and trash of large trees are unbounded filesystem I/O
-    /// that would otherwise beachball the whole Mac UI. `work` is `@Sendable`
-    /// and captures only Sendable inputs; the browser itself is `Sendable`.
+    /// that would otherwise beachball the whole Mac UI. The answer comes
+    /// within `timeout` (`timed_out` when the work is still running, which
+    /// then finishes on its own), so the caller's reply deadline
+    /// (``SupermuxDeviceReplyDeadline``) is never missed. `work` is
+    /// `@Sendable` and captures only Sendable inputs; the browser itself is
+    /// `Sendable`.
     @MainActor
     func supermuxFilesOperation(
         params: [String: Any],
+        timeout: TimeInterval = SupermuxMobileFileBrowser.operationTimeout,
         work: @escaping @Sendable (SupermuxMobileFileBrowser) throws -> V2CallResult
     ) async -> V2CallResult {
         let root: String
@@ -124,14 +130,16 @@ extension TerminalController {
         case let .failure(error): return error
         case let .success(resolved): root = resolved
         }
-        return await Task.detached(priority: .userInitiated) {
+        return await SupermuxBoundedWork(timeout: timeout).run({
             do {
                 return try work(try SupermuxMobileFileBrowser(rootPath: root))
             } catch {
                 let (code, message) = SupermuxMobileFilesWireFailure.classify(error)
                 return .err(code: code, message: message, data: nil)
             }
-        }.value
+        }, orAfterTimeout: {
+            .err(code: "timed_out", message: "Still running on this Mac after \(Int(timeout)) seconds", data: nil)
+        })
     }
 
     /// Resolves the request's root directory: exactly ONE of `workspace_id`
