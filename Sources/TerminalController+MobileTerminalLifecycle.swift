@@ -24,6 +24,11 @@ extension TerminalController {
         let workspace = resolved.workspace
         let surfaceID = resolved.surfaceID
         var resolution: ControlSurfaceCloseResolution = .closeFailed(surfaceID)
+        // SUPERMUX:begin mobile-terminal-close-force
+        // An explicit `force` ends a terminal that runs a program (the viewer
+        // asked its user first); without it the host refuses, as `surface.close` does.
+        let supermuxForce = v2Bool(params, "force") == true
+        // SUPERMUX:end mobile-terminal-close-force
         v2MainSync {
             resolution = controlSurfaceClose(
                 routing: ControlRoutingSelectors(
@@ -31,12 +36,24 @@ extension TerminalController {
                     workspaceID: workspace.id, surfaceID: surfaceID, paneID: nil
                 ),
                 surfaceID: surfaceID,
-                hasSurfaceIDParam: true
+                // SUPERMUX:begin mobile-terminal-close-force (upstream's last argument gains a trailing comma)
+                hasSurfaceIDParam: true,
+                force: supermuxForce
+                // SUPERMUX:end mobile-terminal-close-force
             )
         }
         if case .lastSurface = resolution {
             return .err(code: "invalid_state", message: String(localized: "devices.host.lastSurface", defaultValue: "Cannot close the last surface"), data: nil)
         }
+        // SUPERMUX:begin mobile-terminal-close-force
+        // The same code `surface.close` and `workspace.close` use, never the
+        // sanitized `internal_error`, so the viewer can ask and retry with force.
+        if case .confirmationRequired = resolution {
+            return .err(code: "confirmation_required", message: controlSurfaceCloseStrings().confirmationRequired, data: [
+                "surface_id": surfaceID.uuidString,
+            ])
+        }
+        // SUPERMUX:end mobile-terminal-close-force
         guard case .closed = resolution else {
             return .err(code: "internal_error", message: String(localized: "devices.host.closeFailed", defaultValue: "Failed to close surface"), data: [
                 "surface_id": surfaceID.uuidString,
