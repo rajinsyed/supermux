@@ -3,13 +3,14 @@ import Combine
 import Foundation
 import SupermuxKit
 
-/// Shows which tabs are working: each terminal tab's built-in Bonsplit
-/// spinner (`isLoading`, drawn in the tab's icon slot) follows its own
-/// panel's agent activity — on while that agent is running or waiting on its
-/// background work, off otherwise.
+/// Shows which tabs are working: each terminal and Claude harness tab's
+/// built-in Bonsplit spinner (`isLoading`, drawn in the tab's icon slot)
+/// follows its own panel's agent activity — on while that agent is running or
+/// waiting on its background work, off otherwise.
 ///
-/// Only terminal tabs are touched. A browser tab's spinner is its page load
-/// and a Cloud VM placeholder's is its boot, both owned by upstream.
+/// Only terminal and Claude harness tabs are touched; nothing upstream writes
+/// `isLoading` for either. A browser tab's spinner is its page load and a
+/// Cloud VM placeholder's is its boot, both owned by upstream.
 ///
 /// Driven by ``SupermuxWorkspaceLifecycleRelay``, which fires on every agent
 /// lifecycle change and on every change of a device mirror's overlay; each
@@ -52,9 +53,10 @@ final class SupermuxTabActivitySync {
         }
     }
 
-    /// Sets every terminal tab of `workspace` to its panel's working state.
+    /// Sets every terminal and Claude harness tab of `workspace` to its
+    /// panel's working state.
     func sync(_ workspace: Workspace) {
-        for (panelID, panel) in workspace.panels where panel.panelType == .terminal {
+        for (panelID, panel) in workspace.panels where panel.panelType == .terminal || panel.panelType == .claudeHarness {
             guard let tab = workspace.surfaceIdFromPanelId(panelID) else { continue }
             let activity = SupermuxWorkspaceActivityResolver.activity(forPanel: panelID, in: workspace)
             Self.setWorking(activity == .working, tab: tab, in: workspace.bonsplitController)
@@ -62,7 +64,8 @@ final class SupermuxTabActivitySync {
     }
 
     /// Sets a Dock terminal tab to its panel's working state (the Dock keeps
-    /// its own agent lifecycle per panel and never fires the relay).
+    /// its own agent lifecycle per panel and never fires the relay). Claude
+    /// harness panels never enter the Dock.
     static func syncDock(_ store: DockSplitStore, panelId: UUID) {
         guard store.panels[panelId]?.panelType == .terminal,
               let tab = store.surfaceId(forPanelId: panelId) else { return }
