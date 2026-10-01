@@ -8,7 +8,8 @@ public struct SupermuxMergedProjectRowValue: Equatable, Sendable {
     /// and disclosure. Its `id` (the lead's row id) is what tap, details and
     /// New Worktree act on.
     public let display: SupermuxProjectRowSnapshot
-    /// Every location's row id, so the disclosure opens on every Mac.
+    /// Every location's row id, so the disclosure opens on every Mac —
+    /// including Macs the Mac title picker currently hides.
     public let locationRowIDs: [String]
     /// Whether the lead Mac serves worktree creation.
     public let showsWorktreeCreation: Bool

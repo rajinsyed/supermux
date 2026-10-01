@@ -57,6 +57,24 @@ extension SupermuxProjectsSectionModel {
         }
     }
 
+    /// Copies still closed inside a merged project another Mac's copy has
+    /// open: a Mac that connected, or a copy that started matching, after
+    /// the user opened it. The driver opens them, so a merged disclosure is
+    /// never half open (its pill counting worktrees it does not list).
+    var closedCopiesOfOpenProjects: [String] {
+        SupermuxPhoneProjectMerge.merge(snapshot.groups)
+            .filter(\.isExpanded)
+            .flatMap { project in project.locations.filter { !$0.row.isExpanded }.map(\.row.id) }
+    }
+
+    /// Opens each listed copy that is still closed.
+    /// - Parameter projectIDs: Project ROW ids.
+    func openClosedCopies(_ projectIDs: [String]) {
+        for projectID in projectIDs where !isProjectExpanded(projectID) {
+            toggleProjectExpanded(projectID)
+        }
+    }
+
     /// Routes to the project DETAIL screen, capturing the row as a fallback
     /// so the pushed detail survives its Mac's session going away.
     /// - Parameter projectID: The project ROW id.
