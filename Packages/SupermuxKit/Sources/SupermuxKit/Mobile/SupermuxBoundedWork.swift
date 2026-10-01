@@ -10,6 +10,10 @@ public import Foundation
 /// end; it only stops holding up the answer. It runs outside Swift's
 /// cooperative pool, so stuck work never starves the app's other tasks.
 ///
+/// The bound is timed on a private serial queue, which gets its own thread
+/// even when stuck calls (a hung network volume) fill GCD's global pool, so
+/// the answer still comes at the bound.
+///
 /// ```swift
 /// let reply = await SupermuxBoundedWork(timeout: 30).run({ browser.list(...) },
 ///                                                         orAfterTimeout: { .timedOut })
@@ -22,6 +26,10 @@ public struct SupermuxBoundedWork: Sendable {
         self.timeout = timeout
     }
 
+    /// Fires the fallbacks. A queue of its own overcommits: it is never left
+    /// waiting for a thread of the global pool the work may have filled.
+    private static let deadlines = DispatchQueue(label: "supermux.bounded-work.deadlines", qos: .userInitiated)
+
     /// The work's value, or `fallback()` once ``timeout`` passes first.
     public func run<Value: Sendable>(
         _ work: @escaping @Sendable () -> Value,
@@ -31,7 +39,7 @@ public struct SupermuxBoundedWork: Sendable {
         return await withCheckedContinuation { (continuation: CheckedContinuation<Value, Never>) in
             let answer = SupermuxFirstAnswer(continuation)
             DispatchQueue.global(qos: .userInitiated).async { answer.give(work()) }
-            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + timeout) {
+            Self.deadlines.asyncAfter(deadline: .now() + timeout) {
                 answer.give(fallback())
             }
         }
