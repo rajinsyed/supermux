@@ -26,9 +26,14 @@ private struct SupermuxIconProbeResult: Sendable {
 /// core ``SupermuxProjectsModel`` so that model stays free of AppKit.
 ///
 /// Filesystem probing (``SupermuxProjectIconResolver``) *and* the image file
-/// reads run off the main actor in one detached hop per refresh; only `Sendable`
-/// `Data` crosses back, and the non-`Sendable` `NSImage` is decoded on the main
-/// actor. The store is read *above* the projects list boundary, and only
+/// reads run off the main actor, one bounded lookup per project
+/// (``SupermuxBoundedLookups``: a thread of its own, never Swift's cooperative
+/// pool, one probe per project at a time), so a project in ~/Documents while
+/// macOS's privacy prompt for it is unanswered neither strands a pool thread
+/// per refresh nor holds the others up. Only `Sendable` `Data` crosses back,
+/// and the non-`Sendable` `NSImage` is decoded on the main actor from those
+/// bytes alone: the main actor never touches the file. The store is read
+/// *above* the projects list boundary, and only
 /// immutable `NSImage` values are handed down to rows — honoring the
 /// snapshot-boundary rule that forbids row subtrees from holding a reference to
 /// an observable store.
@@ -50,6 +55,10 @@ public final class SupermuxProjectIconStore {
     /// newer refresh started meanwhile, so a slow probe can't clobber fresh state.
     @ObservationIgnored private var refreshGeneration = 0
     private let resolver = SupermuxProjectIconResolver()
+    @ObservationIgnored private let probes = SupermuxBoundedLookups<SupermuxIconProbeResult>()
+    /// How long a refresh waits for its probes; a project still probing is
+    /// left as it was and probed again (or joined) by the next refresh.
+    static let probeTimeout: TimeInterval = 10
 
     /// Creates an empty icon store.
     public init() {}
@@ -88,9 +97,13 @@ public final class SupermuxProjectIconStore {
             SupermuxIconProbeInput(projectId: $0.id, rootPath: $0.rootPath, customIconPath: $0.customIconPath)
         }
         let knownKeys = resolvedKeys
-        let results = await Task.detached { () -> [SupermuxIconProbeResult] in
-            inputs.map { Self.probe($0, resolver: resolver, knownKey: knownKeys[$0.projectId]) }
-        }.value
+        var requests: [String: @Sendable () -> SupermuxIconProbeResult] = [:]
+        for input in inputs {
+            let knownKey = knownKeys[input.projectId]
+            let key = [input.projectId.uuidString, input.rootPath, input.customIconPath ?? ""].joined(separator: "\n")
+            requests[key] = { Self.probe(input, resolver: resolver, knownKey: knownKey) }
+        }
+        let results = Array(await probes.values(requests, timeout: Self.probeTimeout).values)
         // A newer refresh superseded this one while we were probing off-actor;
         // drop our now-stale result rather than clobbering the newer state.
         // (resolvedKeys is recorded only after a kept write, so bailing here
@@ -100,8 +113,7 @@ public final class SupermuxProjectIconStore {
             // The custom image overrides detection, but a custom file that fails
             // to decode as an image falls back to the detected logo rather than
             // leaving the avatar blank.
-            images[result.projectId] = Self.decode(result.customData, fallbackURL: result.customURL)
-                ?? Self.decode(result.detectedData, fallbackURL: result.detectedURL)
+            images[result.projectId] = Self.decode(result.customData) ?? Self.decode(result.detectedData)
             resolvedKeys[result.projectId] = result.key
         }
         let live = Set(projects.map(\.id))
@@ -150,17 +162,26 @@ public final class SupermuxProjectIconStore {
             key: key,
             isChanged: true,
             customURL: custom,
-            customData: custom.flatMap { try? Data(contentsOf: $0) },
+            customData: custom.flatMap(decodableData),
             detectedURL: detected,
-            detectedData: detected.flatMap { try? Data(contentsOf: $0) }
+            detectedData: detected.flatMap(decodableData)
         )
     }
 
-    /// Decodes icon bytes into an image; rare formats whose rep needs the file
-    /// URL (rather than sniffing the data) fall back to a direct file load.
-    private static func decode(_ data: Data?, fallbackURL: URL?) -> NSImage? {
-        if let data, let image = NSImage(data: data) { return image }
-        return fallbackURL.flatMap { NSImage(contentsOf: $0) }
+    /// An icon file's bytes in a form `NSImage(data:)` decodes: the file's own
+    /// bytes, or, for the rare formats whose image rep needs the file URL, the
+    /// image loaded from the URL here (off the main actor) as TIFF. `nil` when
+    /// neither decodes.
+    private nonisolated static func decodableData(_ url: URL) -> Data? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        if NSImage(data: data) != nil { return data }
+        return NSImage(contentsOf: url)?.tiffRepresentation
+    }
+
+    /// Decodes icon bytes into an image. Never reads a file: on the main actor
+    /// a read can block for as long as a privacy prompt for it is unanswered.
+    private static func decode(_ data: Data?) -> NSImage? {
+        data.flatMap(NSImage.init(data:))
     }
 
     /// The cache identity for a project's avatar: its root path, custom icon
