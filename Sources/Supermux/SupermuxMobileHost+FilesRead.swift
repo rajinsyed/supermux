@@ -90,20 +90,17 @@ extension TerminalController {
 
     /// The desktop panel's git status for `root`, re-keyed root-relative.
     /// Blocks for at most ``supermuxFilesGitStatusTimeout``; call it off the
-    /// main actor.
+    /// main actor. Joins the folder's `git status` already running, if any
+    /// (``SupermuxGitStatusRuns``), so a git slower than the requests for it
+    /// never piles up git processes.
     nonisolated static func supermuxGitStatus(root: String) -> SupermuxFileGitStatusDTO {
-        let finished = DispatchSemaphore(value: 0)
-        let box = SupermuxGitStatusBox()
-        DispatchQueue.global(qos: .utility).async {
-            box.set(GitStatusProvider().fetchStatus(directory: root))
-            finished.signal()
-        }
+        let run = SupermuxGitStatusRuns.shared.join(root: root)
         let isRepository = supermuxIsInsideRepository(root)
-        guard finished.wait(timeout: .now() + supermuxFilesGitStatusTimeout) == .success else {
+        guard let found = run.wait(seconds: supermuxFilesGitStatusTimeout) else {
             return SupermuxFileGitStatusDTO(isRepository: isRepository, timedOut: true, statuses: [])
         }
         let prefix = root.hasSuffix("/") ? root : root + "/"
-        let statuses = box.get().compactMap { path, status -> SupermuxFileGitStatusEntryDTO? in
+        let statuses = found.compactMap { path, status -> SupermuxFileGitStatusEntryDTO? in
             guard path.hasPrefix(prefix) else { return nil }
             return SupermuxFileGitStatusEntryDTO(path: String(path.dropFirst(prefix.count)), status: String(describing: status))
         }.sorted { $0.path < $1.path }
@@ -127,20 +124,61 @@ extension TerminalController {
     }
 }
 
-/// Hands git's result from its queue to the waiting request.
-private final class SupermuxGitStatusBox: @unchecked Sendable {
+/// The `git status` runs in progress on this Mac, at most one per folder. A
+/// request for a folder whose run is still going waits for that run instead
+/// of starting another git: a request that gives up at its bound leaves its
+/// git running (`GitStatusProvider` cannot stop it), and the next request
+/// must not add a second one.
+private final class SupermuxGitStatusRuns: @unchecked Sendable {
+    static let shared = SupermuxGitStatusRuns()
+
     private let lock = NSLock()
-    private var value: [String: GitFileStatus] = [:]
+    private var running: [String: SupermuxGitStatusRun] = [:]
 
-    func set(_ value: [String: GitFileStatus]) {
-        lock.lock()
-        self.value = value
-        lock.unlock()
-    }
-
-    func get() -> [String: GitFileStatus] {
+    /// The folder's run in progress, or a new one started now.
+    func join(root: String) -> SupermuxGitStatusRun {
         lock.lock()
         defer { lock.unlock() }
-        return value
+        if let run = running[root] { return run }
+        let run = SupermuxGitStatusRun()
+        running[root] = run
+        DispatchQueue.global(qos: .utility).async {
+            let statuses = GitStatusProvider().fetchStatus(directory: root)
+            self.end(run, for: root)
+            run.finish(statuses)
+        }
+        return run
+    }
+
+    private func end(_ run: SupermuxGitStatusRun, for root: String) {
+        lock.lock()
+        if running[root] === run { running[root] = nil }
+        lock.unlock()
+    }
+}
+
+/// One `git status` run; any number of requests wait for it.
+private final class SupermuxGitStatusRun: @unchecked Sendable {
+    private let finished = DispatchGroup()
+    private let lock = NSLock()
+    private var statuses: [String: GitFileStatus] = [:]
+
+    init() {
+        finished.enter()
+    }
+
+    func finish(_ statuses: [String: GitFileStatus]) {
+        lock.lock()
+        self.statuses = statuses
+        lock.unlock()
+        finished.leave()
+    }
+
+    /// The run's result, or `nil` while it is still going after `seconds`.
+    func wait(seconds: TimeInterval) -> [String: GitFileStatus]? {
+        guard finished.wait(timeout: .now() + seconds) == .success else { return nil }
+        lock.lock()
+        defer { lock.unlock() }
+        return statuses
     }
 }
