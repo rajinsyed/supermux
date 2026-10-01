@@ -42,6 +42,10 @@ public enum SupermuxMobileCapability: String, CaseIterable, Codable, Sendable, E
     /// written to the PTY verbatim, and forwarded key presses, encoded by this
     /// Mac's own terminal state (Mac-to-Mac device mirrors).
     case terminalInputV1 = "supermux.terminal_input.v1"
+    /// `device.workspace.terminal.create` takes `after_surface_id`: the new
+    /// tab goes right of that terminal ("New Terminal to the Right" in another
+    /// Mac's device mirror).
+    case terminalPlacementV1 = "supermux.terminal_placement.v1"
 
     /// Every capability, in declaration order (derived from `CaseIterable`).
     public static let all: [SupermuxMobileCapability] = SupermuxMobileCapability.allCases

@@ -601,6 +601,13 @@ Rules for adding a touchpoint:
 | 651 | `Sources/Devices/DeviceTerminalMirrorSession.swift` | `device-mirror-viewer-colors` | `import CmuxCloudTui`; `private(set) var supermuxColors = SupermuxDeviceMirrorColorState()`; `Replay` gains `var colors: CloudTuiRemoteColors?`; `decodeReplay`'s render-grid branch returns `SupermuxDeviceMirrorColors.themePortableBytes(frame)` and `authored(in: frame)` (the program-authored colors, sparse); `attach()` feeds `supermuxColors.bytes(applying:colors:to:)` (the replay, then the authored-color delta) instead of `replay.bytes`. Device mirrors look like local panes with this Mac's appearance, translucency included |
 | 652 | `Sources/GhosttyTerminalView.swift` | `osc-default-bg-clears-override` | In `GHOSTTY_ACTION_COLOR_CHANGE`'s background branch, `surfaceView.backgroundColor = newColor` becomes `SupermuxDeviceMirrorColors.surfaceBackgroundOverride(for:defaultColor:isMirror:)`: on a manual-mirror surface a change back to this Mac's default background (Ghostty reports OSC 111 that way) clears the pane override instead of pinning a pane-local fill, so a program's reset gives the mirror its translucency back. Local panes unchanged |
 | 653 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/Mirrors/SupermuxMirrorAppearanceSocket.swift` (ids `50BE0017020…01`/`…02`, DEBUG driver `supermux.devices.mirror.terminal_background`) and `Sources/Supermux/Devices/SupermuxDeviceMirrorColors.swift` (ids `…03`/`…04`) into the cmux target, four entries each |
+| 660 | `Sources/Workspace.swift` | `new-tab-at-end`, `mirror-terminal-to-right` | Two fences. (1) In `Workspace.init`'s `BonsplitConfiguration(...)`, `newTabPosition: .end` (upstream `.current`): every new tab appends, so a tab opened from a mirror (created unfocused on the owning Mac, whose pane stays on its first tab) no longer lands second on both Macs; explicit placements (to the right, duplicate, fork, restore) still reorder themselves. (2) At the top of `createTerminalToRight(of:inPane:)`: `if SupermuxMirrorTerminalPlacement.createTerminalToRight(of:inPane:in: self, focus: true) != nil { return }`, so a device mirror's tab routes to its Mac with the index right of the anchor |
+| 660b | `Sources/TerminalController+ControlSystemContext2.swift` | `mirror-terminal-to-right` | The `tab.action` twin of #660 (2): in the `new_terminal_right` arm, after the anchor/pane guard, `SupermuxMirrorTerminalPlacement.createTerminalToRight(… focus: focus)`; accepted → `finish(.routedToRemote)`, rejected → `.createFailed` |
+| 661 | `Sources/DockSplitStore+Appearance.swift` | `new-tab-at-end` | `makeConfiguration()`: `newTabPosition: .end` (upstream `.current`), the Dock's tab strip follows the same rule as workspaces |
+| 662 | `Sources/Surfaces/Workspace+CloudTerminalCreation.swift` | `mirror-terminal-to-right` | In `routeCloudPaneTerminalCreate`, right after `let request = CloudTerminalCreationRequest(…)` (before the pane is reserved): `SupermuxMirrorTerminalPlacement.remember(request, destination:, source:, in: self)` notes the device terminal left of an explicit `.tab(index:)` for that request |
+| 663 | `Sources/Devices/DeviceSurfaceProvider+TerminalLayout.swift` | `mirror-terminal-to-right` | In `createTerminal(nearTabID:splitDirection:request:)`, after upstream's `direction` param: a tab create adds `after_surface_id` from `SupermuxMirrorTerminalPlacement.afterSurfaceID(for:remoteWorkspaceID:on:catalog:)` (only when the request remembered one in the same remote workspace and the host advertises `supermux.terminal_placement.v1`) |
+| 663b | `Sources/Devices/DeviceWorkspaceLayoutHost.swift` | `mirror-terminal-to-right` | Three fences in `handle(_:)`'s `device.workspace.terminal.create` path: the allowed-params set also takes `after_surface_id`; before `createTerminal`, `SupermuxMirrorTerminalPlacement.hostAnchor(…)` rejects (`invalid_params`) an anchor that is not a terminal of this workspace or comes with a split direction; after it, `place(terminalID, at:, inWorkspace:)` moves the new tab right of the anchor (selection untouched) before the reply's snapshot is captured |
+| 664 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/Mirrors/SupermuxTabOrderSocketCommands.swift` (DEBUG E2E drivers) and `SupermuxMirrorTerminalPlacement.swift` into the cmux target (ids `50BE00170300…01`–`…04`, four entries each, `Mirrors/…` paths in the Supermux group) |
 
 ## How to re-apply
 
@@ -5117,6 +5124,35 @@ Re-apply after an upstream merge:
   `SupermuxTerminalSizingVisibility` if upstream stops counting off-screen panes itself.
 - **#634/#635**: every device-pane `keyNameResolver` comes from `SupermuxDeviceTerminalInput.keyResolver(for:)`.
 - **#636**: keep the rewritten reservation test in step with #635.
+
+
+### 660–664. New tabs append; New Terminal to the Right keeps its spot in a mirror — `new-tab-at-end`, `mirror-terminal-to-right`
+
+User feedback: every terminal tab opened from a remote workspace (⌘T, `+`, the phone) landed second
+on both Macs. Upstream inserts a new tab after the pane's selected tab; a mirrored workspace's tabs
+are created unfocused on the owning Mac, whose selection never follows the viewer, so on a headless
+Mac it stays on the first tab and the mirror adopts that order. One rule now: new tabs append
+(workspaces, the Dock; browser tabs too). "New Terminal to the Right" in a device mirror sends
+`after_surface_id` with `device.workspace.terminal.create` (capability
+`supermux.terminal_placement.v1`; an older owning Mac gets no new param and appends). Fork code:
+`Sources/Supermux/Mirrors/SupermuxMirrorTerminalPlacement.swift`; DEBUG drivers
+`SupermuxTabOrderSocketCommands.swift` (`supermux.devices.mirror.tab_bar_new_tab`,
+`tab_context_action`). Re-apply after an upstream merge:
+
+- **#660 (1) / #661**: keep `newTabPosition: .end` wherever upstream builds the workspace's and the
+  Dock's `BonsplitConfiguration`. If upstream adds a tab-placement setting, retire both fences and
+  default that setting to "end".
+- **#660 (2) / #660b**: every "New Terminal to the Right" entry point asks
+  `SupermuxMirrorTerminalPlacement.createTerminalToRight` first and stops when it returns non-nil.
+  If upstream routes "to the right" through one shared function, fence that one instead.
+- **#662**: `remember` must run after the request exists and before `reserveCloudTerminalPane`
+  inserts the pane (it reads the tab left of the requested index).
+- **#663 / #663b**: the provider adds `after_surface_id` only for tab creates; the host accepts it,
+  validates it against the captured layout, and places the tab before capturing the reply's
+  snapshot. If upstream adds its own position param, map onto it and retire these fences.
+- **#664**: pbxproj only.
+
+Verify: `CMUX_E2E_SUITES="loopback_new_tab_order_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`.
 
 
 ### 620–622. New Workspace stays on this Mac; other Macs on request — `sidebar-empty-area-local`, `device-root-workspace-create`, `sidebar-empty-area-device-menu`
