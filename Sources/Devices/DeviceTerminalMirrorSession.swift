@@ -89,7 +89,7 @@ final class DeviceTerminalMirrorSession {
             // SUPERMUX:begin device-mirror-input-batch (upstream's viewer argument gains a trailing comma)
             viewer: RemoteMacTerminalViewer(
                 clientID: link.clientID,
-                identity: TerminalController.shared.localSizingIdentity()
+                identity: SupermuxTerminalSizingDefaults.viewerIdentity(for: link.instance)
             ),
             supportsSupermuxInput: { [instance = link.instance] in
                 SupermuxDeviceTerminalInput.supportsForwardedInput(on: .device(instance))
