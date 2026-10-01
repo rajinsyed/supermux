@@ -94,6 +94,19 @@ final class SupermuxTerminalSizingVisibility {
         mirrors.compactMapValues(\.session)
     }
 
+    /// Another live pane of `session`'s terminal on the same link (client id),
+    /// on screen when `shown`: the pane that takes over speaking for this Mac
+    /// when `session`'s pane goes off screen or closes.
+    func sibling(of session: DeviceTerminalMirrorSession, shown: Bool) -> DeviceTerminalMirrorSession? {
+        guard let clientID = session.viewer?.clientID else { return nil }
+        return mirrors.values.lazy.compactMap(\.session).first { other in
+            other !== session && other.phase != .stopped
+                && other.remoteSurfaceID == session.remoteSurfaceID
+                && other.viewer?.clientID == clientID
+                && (!shown || !other.supermuxHidden)
+        }
+    }
+
     // MARK: - Host (local terminals with viewers)
 
     /// Called as a local terminal's sizing host is created: an off-screen
