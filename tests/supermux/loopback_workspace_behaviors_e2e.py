@@ -85,6 +85,9 @@ DEBUG `supermux.devices.mirror.*` socket drivers):
      while a workspace in the repository is selected, creates a workspace on
      that Mac in its home folder (not the selected workspace's directory)
      and opens its mirror here.
+ 17f. empty_area_menu_this_mac_creates_local — its This Mac row, clicked
+     while the mirror is selected, creates a local workspace (not a mirror),
+     selected, after every existing row.
  18. files_panel_names_mac — the Files panel on the mirror is unavailable and
      says the files are on the loopback Mac (screenshot).
  19. file_diff_viewer_opens_for_remote_diff — clicking a file row's diff
@@ -111,7 +114,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Set
 
 LOOPBACK_DEVICE_ID = "5e1f10b0-0000-4000-8000-000000000001"
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -867,7 +870,7 @@ class WorkspaceBehaviorsE2E:
         created = self.mirror("new_workspace_shortcut", {"expect": "local", "timeout_seconds": 20}, timeout_s=30)
         return self.check_created_local(created)
 
-    # -- 17c-17e: the sidebar's empty area --------------------------------------
+    # -- 17c-17f: the sidebar's empty area --------------------------------------
 
     def workspace_rows(self, window_id: Optional[str]) -> List[Dict[str, Any]]:
         """`workspace.list` of a window (the preferred one without an id), in sidebar order."""
@@ -898,6 +901,13 @@ class WorkspaceBehaviorsE2E:
         self.holds("the new local workspace staying selected", selected, 2.0)
         return {"workspace_id": workspace_id, "window_id": window_id, "title": created.get("title")}
 
+    def check_after_every_row(self, workspace_id: str, before: Set[str], window_id: Optional[str]) -> None:
+        """`workspace_id` sits after every row of `before` in its window's sidebar order."""
+        order = [norm(w.get("id")) for w in self.workspace_rows(window_id)]
+        last_existing = max((i for i, w in enumerate(order) if w in before), default=-1)
+        if order.index(workspace_id) < last_existing:
+            raise CheckFailure(f"the new workspace is not after every existing row: {order}")
+
     def empty_area_on_mirror_creates_local_root(self) -> Dict[str, Any]:
         """A double-click on the empty area creates what it did before device
         mirrors existed, even with a mirror selected: a local workspace after
@@ -910,11 +920,7 @@ class WorkspaceBehaviorsE2E:
         }, timeout_s=30)
         result = self.check_created_local(created)
         workspace_id = result["workspace_id"]
-
-        order = [norm(w.get("id")) for w in self.workspace_rows(window_id)]
-        last_existing = max((i for i, w in enumerate(order) if w in before), default=-1)
-        if order.index(workspace_id) < last_existing:
-            raise CheckFailure(f"the new workspace is not after every existing row: {order}")
+        self.check_after_every_row(workspace_id, before, window_id)
 
         rows = self.rpc("supermux.devices.sidebar_rows", {"window_id": window_id}) or {}
         flat = {norm(r.get("workspace_id")) for r in rows.get("flat") or []}
@@ -964,6 +970,20 @@ class WorkspaceBehaviorsE2E:
         if os.path.realpath(os.path.expanduser(cwd)) != home:
             raise CheckFailure(f"the workspace on the other Mac starts in {cwd}, not its home folder {home}")
         return {**result, "remote_directory": cwd}
+
+    def empty_area_menu_this_mac_creates_local(self) -> Dict[str, Any]:
+        """The empty area's This Mac row creates on this Mac whatever is
+        selected (with the mirror selected here), after every row, like the
+        double-click below every row."""
+        self.rpc("workspace.select", {"workspace_id": self.mirror_id})
+        window_id = self.window_of(self.mirror_id)
+        before = {norm(w.get("id")) for w in self.workspace_rows(window_id)}
+        created = self.mirror("empty_area_menu_invoke", {
+            "machine": "this_mac", "window_id": window_id, "timeout_seconds": 20,
+        }, timeout_s=30)
+        result = self.check_created_local(created)
+        self.check_after_every_row(result["workspace_id"], before, window_id)
+        return result
 
     # -- 18-19: viewers (last: they add a local pane to the mirror) ------------
 
@@ -1050,6 +1070,7 @@ class WorkspaceBehaviorsE2E:
             self.step("empty_area_on_mirror_creates_local_root", self.empty_area_on_mirror_creates_local_root)
             self.step("empty_area_menu_lists_macs", self.empty_area_menu_lists_macs)
             self.step("empty_area_menu_creates_on_mac_in_home", self.empty_area_menu_creates_on_mac_in_home)
+            self.step("empty_area_menu_this_mac_creates_local", self.empty_area_menu_this_mac_creates_local)
             self.step("files_panel_names_mac", self.files_panel_names_mac)
             self.step("file_diff_viewer_opens_for_remote_diff", self.file_diff_viewer_opens)
             return True
