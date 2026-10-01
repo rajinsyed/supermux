@@ -99,6 +99,9 @@ extension Workspace {
         for panelId in panels.keys.sorted(by: { $0.uuidString < $1.uuidString }) where seen.insert(panelId).inserted {
             allPanelIds.append(panelId)
         }
+        // SUPERMUX:begin device-reserved-pane-not-saved (a mirror tab still waiting for, or failed to get, its terminal on another Mac is not saved: restored, it came back as a LOCAL shell in the mirror)
+        allPanelIds.removeAll { cloudPendingCreations[$0]?.machine.isDevice == true }
+        // SUPERMUX:end device-reserved-pane-not-saved
         let terminalFontSizeSnapshotProjection =
             terminalFontSizeChangeArbiter?.snapshotProjection(
                 for: self,

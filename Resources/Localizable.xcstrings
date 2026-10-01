@@ -599171,6 +599171,40 @@
         }
       }
     },
+    "supermux.devices.paneFailure.detail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ couldn’t complete this. Check that it is online and try again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ で完了できませんでした。オンラインであることを確認して、もう一度お試しください。"
+          }
+        }
+      }
+    },
+    "supermux.devices.paneFailure.detailOtherMac" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The other Mac couldn’t complete this. Check that it is online and try again."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "もう一方の Mac で完了できませんでした。オンラインであることを確認して、もう一度お試しください。"
+          }
+        }
+      }
+    },
     "supermux.devices.projectOffline" : {
       "extractionState" : "manual",
       "localizations" : {

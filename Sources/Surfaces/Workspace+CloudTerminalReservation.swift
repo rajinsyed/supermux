@@ -228,11 +228,14 @@ extension Workspace {
         guard cloudPendingCreations[reservation.panelID] === reservation else { return }
         reservation.creationReceipt.finish(.failure(error))
         let failure = CloudPaneCreationFailure(machine: reservation.machine, error: error, context: CloudOperationContext.current)
+        // SUPERMUX:begin device-pane-failure-mac-wording (another Mac's tab names that Mac, never "Cloud", and has no Cloud reference; upstream: `detail: failure.errorText, reference: failure.copyableText`)
+        let supermuxIsMac = reservation.machine.isDevice
         setCloudMaterializationFailure(
             surfaceID: reservation.panelID,
-            detail: failure.errorText,
-            reference: failure.copyableText
+            detail: supermuxIsMac ? SupermuxDevicePaneFailureText.detail(machine: reservation.machine) : failure.errorText,
+            reference: supermuxIsMac ? nil : failure.copyableText
         )
+        // SUPERMUX:end device-pane-failure-mac-wording
     }
 
     /// A retry started: the pane is pending again.

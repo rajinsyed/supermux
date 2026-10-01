@@ -12,13 +12,13 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **686**. The remote-workspaces work (#517–#599) left
+- Numbering: the highest number in use is **689**. The remote-workspaces work (#517–#599) left
   unassigned gaps it may still grow into: **523–524, 527–529, 539–544, 558–559, 562–569,
   578–579 and 588–589** (never assigned, not retired); #600–#601 came from the 2026-10-01 upstream merge; #620–#622 and
   #630–#639 are the remote-workspaces feedback round (602–619 and 623–629 unassigned). The second
   feedback round uses #640–#644 (busy mirror tab close), #650–#653 (mirror appearance), #660–#664
   (new tabs append), #665–#670 (terminal size preference) and #675–#681 (a mirror's Files panel);
-  its stabilization uses #682–#684 (preview refresh and its alert) and #685–#686 (replayed mouse modes);
+  its stabilization uses #682–#684 (preview refresh and its alert) and #685–#686 (replayed mouse modes); its second review and visual check use #687–#689 (mirror placeholders after a relaunch, Mac wording, a cancelled close's selection);
   645–649, 654–659, 671–674 are unassigned. Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 82, 83, 89, 106, 121, 142, 213, 214,
@@ -624,6 +624,8 @@ Rules for adding a touchpoint:
 | 684 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/SupermuxAlertPresentation.swift` (the non-blocking alert presenter for #682 and the busy mirror-tab close prompt) into the cmux target (ids `50BE00170600000000000001`/`…02`, four entries, in the Supermux group) |
 | 685 | `Packages/Shared/CMUXMobileCore/Sources/CMUXMobileCore/MobileTerminalRenderGridReplay.swift` | `replay-mouse-modes-last` | In `fullSnapshotBytes()`, the frame's modes are re-applied disabled first, then enabled, and the enabled mouse formats last in preference order 1005, 1015, 1006, 1016, instead of everything in the frame's code order. Ghostty keeps one mouse event mode (?9/?1000/?1002/?1003) and one mouse format (?1005/?1006/?1015/?1016): the last one set wins and resetting any of them clears whichever is on, so `?1003l` after `?1002h` (and `?1015l`/`?1016l` after `?1006h`) left every replayed view (a device mirror after any grid change or reattach, a phone) without mouse reporting, and crossterm's `?1015h ?1006h` replayed as urxvt. Known limit: the frame carries one flag per code, not Ghostty's single event/format value, so a program that turned tracking off with a different code than it set (`?1000h` then only `?1002l`) still has 1000 on in the frame and gets tracking back on replay; with several event modes on, the highest code wins. The real fix is exporting `flags.mouse_event`/`flags.mouse_format` from the ghostty fork's render-grid frame |
 | 686 | `Packages/Shared/CMUXMobileCore/Tests/CMUXMobileCoreTests/SupermuxReplayMouseModeTests.swift` | `replay-mouse-modes-last` | Fork-only test file (the whole body fenced): runs the full snapshot's mode sequences through a model of Ghostty's single mouse event / format state and expects the program's modes to survive, crossterm's `?1015h ?1006h` (SGR wins) included |
+| 687 | `Sources/Workspace.swift` | `device-reserved-pane-not-saved` | In `sessionSnapshot`, after `allPanelIds` is built: `allPanelIds.removeAll { cloudPendingCreations[$0]?.machine.isDevice == true }`. A mirror tab still waiting for (or failed to get) its terminal on another Mac is a reserved pane with no projection; saved like any terminal pane, a relaunch restored it as a LOCAL shell inside the mirror, placed first and looking like the other Mac's tabs. The layout is already pruned to the saved panels (`layoutCodec.pruned`) |
+| 688 | `Sources/Surfaces/Workspace+CloudTerminalReservation.swift` | `device-pane-failure-mac-wording` | In `failReservedCloudTerminalPane`, a device machine's reserved pane gets `SupermuxDevicePaneFailureText.detail(machine:)` ("<Mac> couldn’t complete this. Check that it is online and try again.", `Sources/Supermux/Devices/SupermuxDeviceError.swift`) and no reference, instead of `failure.errorText`/`failure.copyableText` (upstream's Cloud wording: "The Cloud operation failed. Copy the diagnostic reference…") |
 
 ## How to re-apply
 
@@ -5396,3 +5398,23 @@ tracking back on. Only a ghostty-side export of the single event/format value fi
 Verify: `swift test --filter "MobileTerminalRenderGrid|SupermuxReplay"` in `Packages/Shared/CMUXMobileCore`, then
 `CMUX_E2E_SUITES="loopback_terminal_input_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`
 (`mouse_drag_is_mouse_reports` and `mouse_survives_replay`).
+
+### 687–689. A failed mirror tab stays out of the session; Mac wording; Cancel selects the tab again — `device-reserved-pane-not-saved`, `device-pane-failure-mac-wording`, `device-close-cancel-restores-tab`
+
+Found by the round-3 visual check: a mirror tab whose create failed while the link was down read "The
+Cloud operation failed…" and came back after a relaunch as a local shell, first in the mirror; and a
+busy mirror tab's close cancelled in "Close “X” on <Mac>?" came back with its neighbour still
+selected. Fork code: `SupermuxDevicePaneFailureText` (`SupermuxDeviceError.swift`, strings
+`supermux.devices.paneFailure.*`, en + ja) and `SupermuxDeviceClosedTabs` (`SupermuxDeviceTerminalClose.swift`).
+
+Re-apply after an upstream merge:
+- **#687** keep the reserved device panes out of `allPanelIds` before the panel snapshots are taken.
+  Retire it if upstream stops saving reserved Cloud panes itself (or restores them as placeholders).
+- **#688** keep upstream's `CloudPaneCreationFailure` for every other machine; only a device machine
+  gets the Mac text. Retire it if upstream words the card per machine kind.
+- **#689** the call must run before the tab leaves the strip (in `shouldCloseTab`, while
+  `selectedTab(inPane:)` is still the closing tab). Retire it with #641's Declined path if upstream
+  keeps the tab open until the close is confirmed (as its remote-tmux mirror close does).
+
+Verify: `CMUX_E2E_SUITES="loopback_new_tab_order_e2e loopback_mirror_tab_close_e2e" CMUX_TAG=<tag>
+tests/supermux/run_all_loopback_e2e.sh` (`failed_mirror_tab_not_restored_locally`, `busy_tab_close_cancelled`).
