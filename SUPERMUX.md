@@ -304,15 +304,22 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   the method's own is longer) no longer drops the link. This Mac first asks the other Mac's
   connection whether it still answers (`mobile.events.probe`, 10 s); only no answer redials. Otherwise
   that one request fails with "<Mac> did not answer in time. It is still connected; try again." and
-  every mirror, Files panel and held close stays up. The other Mac also bounds what touches project
-  folders, where an unanswered macOS privacy prompt (say for ~/Documents on a headless Mac) blocks
-  every git and file access in the kernel: `projects.list`, `run.state`, `project.icon` and every
-  call that names a project wait at most 2 s for the projects' first load (which imports each
-  project's `config.json` and lists its worktrees; the projects are known once the projects file is
-  read), `projects.list` at most 2 s for the git origins and the file facts (an origin or icon not
-  found in time keeps the last one known), and `files.watch` builds its folder watcher on a thread
-  of its own instead of the main actor. Before this, such a prompt made the link connect and drop
-  every ~20 s.
+  every mirror, Files panel and held close stays up. The probe carries no `client_id`, so on an Iroh
+  route the other Mac answers it even while its main thread is stuck; on a Tailscale route the host
+  authorizes it on its main thread, so there a Mac stuck for 10 s still redials. What the reconnect
+  used to repair recovers on the live link (#690–#692): a mirror whose replay missed its deadline
+  asks again (2 s, up to 3 times), the synced workspace list is fetched again after 2 s, a mirror-tab
+  close answered late succeeds when its terminal is gone there, and a mirror close answered late (or
+  by a Mac that stayed busy) stays pending and is sent again instead of beeping and being forgotten.
+  The other Mac also bounds what touches project folders, where an unanswered macOS privacy prompt
+  (say for ~/Documents on a headless Mac) blocks every git and file access in the kernel:
+  `projects.list`, `run.state`, `project.icon`, the `preset.*` calls and every call that names a
+  project wait at most 2 s for the projects' first load (which imports each project's `config.json`
+  and lists its worktrees; the projects and presets are known once the projects file is read), so a
+  preset launch never misses the 20 s deadline and runs later anyway, `projects.list` at most 2 s for
+  the git origins and the file facts (an origin or icon not found in time keeps the last one known,
+  per project), and `files.watch` builds its folder watcher on a thread of its own instead of the
+  main actor. Before this, such a prompt made the link connect and drop every ~20 s.
 - **Terminal size follows the Mac you look from** (upstream's shared sizing, #633, #665–#669): every
   terminal starts as Priority with this Mac first (its own pane for a local terminal, so a phone
   defers to a Mac pane on screen); a mirror claims the other Mac's terminal when it is shown, first

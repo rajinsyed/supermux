@@ -128,7 +128,6 @@ public final class SupermuxProjectsModel: SupermuxDirectoryAssociationPersisting
         let file = await store.load()
         projects = file.projects
         isSectionCollapsed = file.isSectionCollapsed
-        hasLoaded = true
         // Tell the user when the list was reset because the file was corrupt
         // (with the quarantine backup path) instead of failing silently.
         if let failure = await store.lastLoadFailure {
@@ -160,6 +159,9 @@ public final class SupermuxProjectsModel: SupermuxDirectoryAssociationPersisting
             let seeded = presets
             persist { $0.presets = $0.presets ?? seeded }
         }
+        // Everything the projects file holds is known now; a caller that stops
+        // waiting for the rest of the load (``hasLoaded``) sees all of it.
+        hasLoaded = true
         // Re-import each project's shipped config.json (when present) so a
         // repo's setup/teardown/run/actions stay in sync across launches, then
         // refresh its worktrees — in parallel, so launch time is bounded by the

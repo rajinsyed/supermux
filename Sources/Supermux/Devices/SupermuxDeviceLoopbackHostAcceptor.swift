@@ -26,6 +26,10 @@ final class SupermuxDeviceLoopbackHostAcceptor {
     /// many seconds (see ``holdIfStalled(_:)``); armed by the DEBUG
     /// `supermux.devices.link {action: "stall", method, seconds}`.
     static var stalledRequest: (method: String, seconds: Double)?
+    /// How long the main thread is blocked once the next liveness probe after
+    /// a missed deadline is on its way (see ``blockMainDuringLivenessProbeIfArmed()``);
+    /// armed by the DEBUG `supermux.devices.link {action: "stall", main_seconds}`.
+    static var mainStallDuringNextLivenessProbe: Double?
     /// Connections admitted since launch: a link that redials adds one, which
     /// E2E reads through `supermux.devices.link {action: "status"}`.
     private(set) static var admittedConnections = 0
@@ -97,6 +101,21 @@ final class SupermuxDeviceLoopbackHostAcceptor {
         stalledRequest = nil
         cmuxDebugLog("supermux.loopback host holds \(stall.method) for \(stall.seconds) s")
         try? await Task.sleep(for: .milliseconds(Int(stall.seconds * 1000)))
+    }
+
+    /// Called by the viewer's link as it sends the liveness probe that follows
+    /// a missed deadline: once armed, blocks the main thread for the armed
+    /// seconds from the moment the link awaits the probe's answer, as a host
+    /// whose main thread is stuck (a synchronous file access behind an
+    /// unanswered macOS privacy prompt) is. The loopback host is this same
+    /// app, so this is the host's main thread while the probe is answered.
+    static func blockMainDuringLivenessProbeIfArmed() {
+        guard let seconds = mainStallDuringNextLivenessProbe else { return }
+        mainStallDuringNextLivenessProbe = nil
+        cmuxDebugLog("supermux.loopback host blocks its main thread for \(seconds) s during the liveness probe")
+        // Runs right after the current main-actor job, which ends where the
+        // link starts awaiting the probe's answer.
+        DispatchQueue.main.async { Thread.sleep(forTimeInterval: seconds) }
     }
 }
 

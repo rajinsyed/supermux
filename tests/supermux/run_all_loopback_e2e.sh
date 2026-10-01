@@ -54,7 +54,7 @@ cd "$ROOT"
 # One line per suite: name, then its extra arguments (one per line in the case).
 suite_args() {
   case "$1" in
-    loopback_projects_e2e) printf '%s\n' --scratch "$SCRATCH/projects" --projects-file "$SCRATCH/projects.json" ;;
+    loopback_projects_e2e) printf '%s\n' --scratch "$SCRATCH/projects" --projects-file "$SCRATCH/projects.json" --app-path "$APP" --push-state-dir "$SCRATCH/push-state" ;;
     loopback_new_worktree_picker_e2e) printf '%s\n' --scratch "$SCRATCH/picker" ;;
     loopback_worktree_disclosure_e2e) printf '%s\n' --scratch "$SCRATCH/disclosure" ;;
     loopback_notifications_e2e) printf '%s\n' --push-state-dir "$SCRATCH/push-state" --work-dir "$SCRATCH/notifications" ;;

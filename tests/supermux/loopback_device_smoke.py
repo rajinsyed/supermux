@@ -27,6 +27,15 @@ socket and checks the whole remote-workspace pipeline inside one app:
      folder behind an unanswered macOS privacy prompt does. Only that request
      fails (timed_out); for 60 s the link stays connected and never redials, and
      the mirror still shows the source's output afterwards.
+ 12. The same, while the host's main thread is stuck for 12 s from the moment the
+     liveness probe goes out (`main_seconds`), as a synchronous file access behind
+     a privacy prompt holds it: the probe is answered without the main thread, so
+     the link still stays.
+ 13. A mirror whose replay misses its deadline attaches again: the loopback host
+     holds the mirror pane's next mobile.terminal.replay for 25 s; the replay fails
+     (timed_out) on a live link, and the pane is attached again without a Retry,
+     the link connected throughout. (Before, the reconnect re-attached it; with the
+     link kept it stayed detached.)
 
 Prints a JSON report, writes it to tests/supermux/artifacts/, and exits
 non-zero on any failed check. Stdlib only.
@@ -59,6 +68,15 @@ ARTIFACTS_DIR = REPO_ROOT / "tests" / "supermux" / "artifacts"
 SLOW_METHOD = "mobile.supermux.projects.list"
 SLOW_HOLD_S = 30
 SLOW_WATCH_S = 60
+# Step 12: how long the main thread is blocked once the liveness probe goes out;
+# longer than the probe's own 10 s deadline.
+MAIN_STALL_S = 12
+# Step 13: the mirror call the loopback holds, for how long (past the link's
+# 20 s deadline), and how long the pane gets to be attached again.
+REPLAY_METHOD = "mobile.terminal.replay"
+REPLAY_HOLD_S = 25
+REPLAY_DEADLINE_S = 20
+REPLAY_WATCH_S = 45
 
 
 class SmokeFailure(Exception):
@@ -402,14 +420,19 @@ class LoopbackSmoke:
         params = {"machine": self.facts["machine"], "action": action, **extra}
         return self.client.call("supermux.devices.link", params) or {}
 
-    def check_slow_request_keeps_link(self) -> Dict[str, Any]:
+    def check_slow_request_keeps_link(self, main_seconds: Optional[float] = None) -> Dict[str, Any]:
         """One host request that misses the link's 20 s reply deadline fails
         alone: the link stays connected (it never redials) and its mirror
-        keeps working. Upstream took every missed deadline as a dead link."""
+        keeps working. Upstream took every missed deadline as a dead link.
+        With `main_seconds`, the host's main thread is also stuck while the
+        liveness probe after the missed deadline is answered."""
         before = self.link("status")
         if before.get("phase") != "connected":
             raise SmokeFailure(f"the link is not connected before the slow request: {before}")
-        self.link("stall", method=SLOW_METHOD, seconds=SLOW_HOLD_S)
+        stall: Dict[str, Any] = {"method": SLOW_METHOD, "seconds": SLOW_HOLD_S}
+        if main_seconds:
+            stall["main_seconds"] = main_seconds
+        self.link("stall", **stall)
         outcome: Dict[str, Any] = {}
 
         def send_slow_request() -> None:
@@ -444,6 +467,8 @@ class LoopbackSmoke:
             )
         if after.get("stall_armed"):
             raise SmokeFailure(f"no {SLOW_METHOD} reached the host during the watch: {after}")
+        if after.get("main_stall_armed"):
+            raise SmokeFailure(f"no liveness probe went out, so the main thread was never blocked: {after}")
         if outcome.get("seconds", 0) >= 19 and "timed_out" not in str(outcome.get("answer")):
             raise SmokeFailure(f"the slow request failed with something other than timed_out: {outcome}")
         marker = f"LOOPBACK_SLOW_63_{self.nonce}"
@@ -455,6 +480,61 @@ class LoopbackSmoke:
             "polls": polls,
             "watched_s": SLOW_WATCH_S,
         }
+
+    def check_slow_request_keeps_link_while_main_is_stuck(self) -> Dict[str, Any]:
+        return {"main_stall_s": MAIN_STALL_S, **self.check_slow_request_keeps_link(main_seconds=MAIN_STALL_S)}
+
+    def mirror_pane(self) -> Dict[str, Any]:
+        """The mirror pane step 4 opened, as `terminal_close.inspect` reports it."""
+        inspected = self.client.call("supermux.devices.terminal_close.inspect", {"workspace_id": self.mirror_workspace_id}) or {}
+        for pane in inspected.get("panes") or []:
+            if norm(pane.get("panel_id")) == norm(self.facts["mirror_surface_id"]):
+                return pane
+        raise SmokeFailure(f"the mirror pane {self.facts['mirror_surface_id']} is not in {inspected}")
+
+    def check_slow_replay_reattaches(self) -> Dict[str, Any]:
+        """A mirror replay that misses the link's deadline on a live link is
+        tried again: the pane is attached again, no Retry needed, and the link
+        never redials. Before the link stayed up, its reconnect re-attached
+        every mirror; without that the pane stayed detached."""
+        before = self.link("status")
+        if before.get("phase") != "connected":
+            raise SmokeFailure(f"the link is not connected before the slow replay: {before}")
+        wait_for("the mirror pane to be attached", lambda: self.mirror_pane().get("attached"), self.timeout_s)
+        self.link("stall", method=REPLAY_METHOD, seconds=REPLAY_HOLD_S)
+        self.client.call(
+            "supermux.devices.terminal_close.replay",
+            {"workspace_id": self.mirror_workspace_id, "panel_id": self.facts["mirror_surface_id"]},
+        )
+        started = time.monotonic()
+        timeline: List[Dict[str, Any]] = []
+        left_attached = False
+        reattached_after: Optional[float] = None
+        while time.monotonic() - started < REPLAY_WATCH_S:
+            elapsed = round(time.monotonic() - started, 2)
+            status = self.link("status")
+            if status.get("phase") != "connected" or status.get("connections_admitted") != before.get("connections_admitted"):
+                raise SmokeFailure(f"the link left 'connected' during the slow replay at {elapsed} s: {status}")
+            pane = self.mirror_pane()
+            state = "attached" if pane.get("attached") else ("connecting" if pane.get("connecting") else "detached")
+            if not timeline or timeline[-1]["state"] != state:
+                timeline.append({"after_s": elapsed, "state": state, "overlay_title": pane.get("overlay_title")})
+            if state != "attached":
+                left_attached = True
+            elif left_attached and elapsed >= REPLAY_DEADLINE_S:
+                reattached_after = elapsed
+                break
+            time.sleep(0.25)
+        if not left_attached:
+            raise SmokeFailure(f"the pane never left 'attached', so the held replay was not its own: {timeline}")
+        if self.link("status").get("stall_armed"):
+            raise SmokeFailure(f"no {REPLAY_METHOD} reached the host during the watch: {timeline}")
+        if reattached_after is None:
+            raise SmokeFailure(
+                f"the mirror pane is not attached {REPLAY_WATCH_S} s after its replay missed the deadline"
+                f" on a live link: {timeline}"
+            )
+        return {"reattached_after_s": reattached_after, "timeline": timeline}
 
     def check_input_reaches_source(self) -> Dict[str, Any]:
         marker = f"LOOPBACK_IN_25_{self.nonce}"
@@ -508,6 +588,8 @@ class LoopbackSmoke:
             self.step("source_split_reaches_mirror", self.check_source_split_reaches_mirror)
             self.step("mirror_split_creates_source_terminal", self.check_mirror_split_creates_source_terminal)
             self.step("slow_request_keeps_the_link", self.check_slow_request_keeps_link)
+            self.step("slow_request_keeps_the_link_while_main_is_stuck", self.check_slow_request_keeps_link_while_main_is_stuck)
+            self.step("slow_replay_reattaches_the_mirror", self.check_slow_replay_reattaches)
             return True
         except SmokeFailure:
             return False
