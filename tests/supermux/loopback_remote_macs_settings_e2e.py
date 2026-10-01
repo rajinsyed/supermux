@@ -252,8 +252,8 @@ class RemoteMacsSettingsE2E:
                     self.set_setting(setting, bool(self.initial[setting]))
             for workspace_id in self.created:
                 for mirror in self.mirrors_of(workspace_id):
-                    self.sock.call("workspace.close", {"workspace_id": mirror.get("workspace_id")})
-                self.sock.call("workspace.close", {"workspace_id": workspace_id})
+                    self.sock.call("workspace.close", {"workspace_id": mirror.get("workspace_id"), "force": True})
+                self.sock.call("workspace.close", {"workspace_id": workspace_id, "force": True})
             self.sock.call("supermux.devices.unhide", {})
         except (Failure, OSError) as error:
             self.facts.setdefault("cleanup_errors", []).append(str(error))

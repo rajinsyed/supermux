@@ -387,7 +387,7 @@ class MirrorRenderE2E:
             return
         for workspace_id in self.created:
             try:
-                self.sock.call("workspace.close", {"workspace_id": workspace_id})
+                self.sock.call("workspace.close", {"workspace_id": workspace_id, "force": True})
             except (Failure, OSError) as error:
                 if "not_found" not in str(error):
                     self.facts.setdefault("cleanup_errors", []).append(str(error))

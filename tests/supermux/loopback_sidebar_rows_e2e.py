@@ -477,7 +477,7 @@ class SidebarRowsE2E:
         # afterwards raced that removal and could reopen a mirror.)
         try:
             for workspace_id in self.created:
-                self.sock.call("workspace.close", {"workspace_id": workspace_id})
+                self.sock.call("workspace.close", {"workspace_id": workspace_id, "force": True})
             wait_for("the mirrors to close with their sources",
                      lambda: not any(self.mirror_of(w) for w in self.created), self.timeout)
             if self.project_id:

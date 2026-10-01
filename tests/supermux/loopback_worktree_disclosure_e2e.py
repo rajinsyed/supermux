@@ -182,7 +182,7 @@ class DisclosureE2E:
             record["error"] = str(error)
         record["seconds"] = round(time.monotonic() - started, 2)
         self.steps.append(record)
-        if not record["ok"]:
+        if record["ok"] is False:
             raise SmokeFailure(f"{name}: {record['error']}")
 
     # -- steps ---------------------------------------------------------------
@@ -361,7 +361,7 @@ class DisclosureE2E:
             window_id = window.get("id") or window.get("window_id")
             rows = (self.client.call("workspace.list", {"window_id": window_id}) or {}).get("workspaces") or []
             if any(norm(r.get("id")) == norm(workspace_id) for r in rows):
-                self.client.call("workspace.close", {"workspace_id": workspace_id})
+                self.client.call("workspace.close", {"workspace_id": workspace_id, "force": True})
                 return
 
     def run(self) -> bool:
