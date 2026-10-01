@@ -508,7 +508,7 @@ final class DeviceTerminalMirrorSession {
     func supermuxSetHidden(_ hidden: Bool) {
         guard hidden != supermuxHidden else { return }
         supermuxHidden = hidden
-        // Shown here: this Mac claims the terminal's grid again.
+        // Shown, this Mac claims the terminal's grid again; hidden, it gives the claim up.
         SupermuxTerminalSizingDefaults.shared.mirrorVisibilityChanged(self)
         // Not attached yet: the replay, or the reconcile after it, carries it.
         guard phase == .attached else { return }

@@ -273,8 +273,17 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   binding bytes, which reach the PTY exactly; the mirror's own answers to terminal queries are
   dropped. A pending Ghostty key sequence stays local. An older Mac on either side keeps upstream's
   text path.
-- **Terminal size follows the Mac you look from** (upstream's shared sizing, "Fit everyone"): a pane
-  that is not on screen (a tab never shown on its Mac, a mirror in a background workspace, a hidden
+- **Terminal size follows the Mac you look from** (upstream's shared sizing, #633, #665–#669): every
+  terminal starts as Priority with this Mac first (its own pane for a local terminal, so a phone
+  defers to a Mac pane on screen); a mirror claims the other Mac's terminal when it is shown, first
+  attaches while shown, or reconnects, pushing once per connection and never in answer to that Mac's
+  size events, so of two viewing Macs the one that showed it last wins. The mode, fixed size and
+  priority order chosen in the size panel or the tab menu are one sticky choice per Mac
+  (`supermux.terminalSizing.preference`; the panel says "Applies to all terminals on this Mac."),
+  applied to every local terminal and mirror, now and after a relaunch. Cloud terminals,
+  `terminal.size_policy.set`, a phone's or another Mac's choice, Size to My Window and Don't Resize
+  from This Mac stay per terminal. A viewing Mac's pane counts up to 500x200 (a phone's, 300x120). A
+  pane that is not on screen (a tab never shown on its Mac, a mirror in a background workspace, a hidden
   or fully covered window) does not count, so a tab opened from a mirror takes the mirror's size at
   once; a terminal that starts after its grid was decided gets it when it becomes ready.
 - **Inside a mirror**, ⌘G/Run, presets, project actions and the Changes panel act on the owning Mac
