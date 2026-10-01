@@ -39,13 +39,16 @@ own code path.
   9. viewing_mac_viewport_up_to_500x200
                                          a viewing Mac's full-screen pane (400x150) is taken as is,
                                          not clamped to a phone's 300x120
- 10. showing_again_reclaims              hiding then showing the mirror claims the terminal again,
+ 10. reselecting_mode_keeps_claims       picking the mode this Mac already has (Priority, as the
+                                         tab menu does to open the panel) changes nothing: the
+                                         second Mac keeps the terminal it claimed (3 s hold)
+ 11. showing_again_reclaims              hiding then showing the mirror claims the terminal again,
                                          then stays put (3 s hold)
- 11. reconnect_reclaims                  after the link drops and the other Mac reset the policy, the
+ 12. reconnect_reclaims                  after the link drops and the other Mac reset the policy, the
                                          reconnected mirror claims it again
- 12. priority_order_applies_everywhere   a priority order dragged on one mirror ([phone, this Mac])
+ 13. priority_order_applies_everywhere   a priority order dragged on one mirror ([phone, this Mac])
                                          reaches the local terminal as [phone, its own Mac pane]
- 13. choice_survives_relaunch            (--app-path) Largest Window, then quit and relaunch: new
+ 14. choice_survives_relaunch            (--app-path) Largest Window, then quit and relaunch: new
                                          and restored terminals start in Largest Window
 
 Writes a JSON report (default tests/supermux/artifacts/loopback_terminal_sizing_policy_e2e-<tag>.json)
@@ -565,6 +568,21 @@ class SizingPolicyE2E:
 
         return self.wait_state("the second Mac's 400x150 viewport", self.source_surface, check)
 
+    def reselecting_mode_keeps_claims(self) -> Dict[str, Any]:
+        """Re-picking the stored mode is a no-op, as upstream's setMode: it does not re-apply
+        this Mac's preference over a terminal another Mac claimed."""
+        b_key = self.facts.get("mac_b_key")
+        if not b_key:
+            raise Failure("the second Mac never claimed the source terminal (second_mac_no_ping_pong failed)")
+        sizing = self.sock.call(SIZING + "state", {}) or {}
+        if not sizing.get("stored") or (sizing.get("preference") or {}).get("mode") != "priority":
+            raise Failure(f"expected a stored Priority preference before re-picking it: {sizing}")
+        before = self.wait_state("the second Mac to hold the source terminal", self.source_surface,
+                                 self.expect_first(b_key))
+        chosen = self.select_mode(self.local_surface, "priority")
+        held = self.hold(self.source_surface, self.expect_first(b_key))
+        return {"accepted": chosen.get("accepted"), "before": before, **held}
+
     def showing_again_reclaims(self) -> Dict[str, Any]:
         self.select(self.local_id)
 
@@ -700,6 +718,8 @@ class SizingPolicyE2E:
             ok = self.step("new_terminals_follow_choice", self.new_terminals_follow_choice) and ok
             ok = self.step("second_mac_no_ping_pong", self.second_mac_no_ping_pong) and ok
             ok = self.step("viewing_mac_viewport_up_to_500x200", self.viewing_mac_viewport_up_to_500x200) and ok
+            if self.local_surface:
+                ok = self.step("reselecting_mode_keeps_claims", self.reselecting_mode_keeps_claims) and ok
             if self.local_id:
                 ok = self.step("showing_again_reclaims", self.showing_again_reclaims) and ok
             ok = self.step("reconnect_reclaims", self.reconnect_reclaims) and ok
