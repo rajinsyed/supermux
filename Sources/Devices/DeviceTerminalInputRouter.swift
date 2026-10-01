@@ -6,8 +6,6 @@ import SupermuxKit
 
 /// Delivers keystrokes from a manual-mirror Ghostty surface to another Mac's
 /// terminal in order, one `mobile.terminal.input` request at a time.
-/// (Supermux: a request carries ordered bytes and forwarded key presses; see
-/// `SupermuxDeviceTerminalInput`.)
 ///
 /// Ghostty's I/O thread hands input to `enqueue` off the main actor; the router
 /// serializes it into a queue the main-actor drain reads. Bytes that arrive
@@ -58,8 +56,11 @@ final class DeviceTerminalInputRouter: @unchecked Sendable {
     }
     // SUPERMUX:end device-mirror-input-batch
 
-    /// Safe from Ghostty's I/O thread.
+    /// Safe from Ghostty's I/O thread. Named keys never reach the host: with no
+    /// key-name resolver installed, Ghostty encodes every key to bytes itself.
     // SUPERMUX:begin device-mirror-input-batch (forwarded keys join the bytes in order; the mirror's own terminal replies are dropped)
+    // Supermux installs a resolver (SupermuxDeviceTerminalInput) for a Mac
+    // that takes forwarded keys, so its named keys travel in the batch.
     func enqueue(_ input: TerminalManualInput) {
         guard let item = SupermuxDeviceTerminalInput.batchItem(for: input) else { return }
         queue.async { [self] in

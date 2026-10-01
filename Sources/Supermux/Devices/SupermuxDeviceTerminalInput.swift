@@ -111,8 +111,11 @@ enum SupermuxDeviceTerminalInput {
     }
 
     /// Delivers a batch to this Mac's terminal, in order: bytes exactly,
-    /// keys through Ghostty's key path. A terminal that has not started takes
-    /// the batch's plain text, which queues it and starts the terminal.
+    /// keys through Ghostty's key path. While a paste on this Mac waits for
+    /// its clipboard read, the whole batch waits too, as this Mac's own
+    /// typing does. A terminal that has not started takes the batch's plain
+    /// text, which queues it and starts the terminal. Delivered input counts
+    /// as terminal input for agent hibernation, as upstream's text path did.
     @MainActor
     static func deliver(_ batch: SupermuxTerminalInputBatch, to target: ControlTerminalSocketTarget) -> TerminalSurface.InputSendResult {
         target.resumeAgentHibernationForRemoteAttach()
@@ -122,6 +125,11 @@ enum SupermuxDeviceTerminalInput {
         }
         guard !ghostty_surface_process_exited(live) else { return .processExited }
         surface.didReceiveExplicitInput()
+        if surface.supermuxDeferInputDuringClipboardRead(estimatedBytes: batch.byteCount, replay: {
+            _ = deliver(batch, to: target)
+        }) {
+            return .queued
+        }
         for item in batch.items {
             switch item {
             case .bytes(let data):
@@ -131,6 +139,9 @@ enum SupermuxDeviceTerminalInput {
             }
         }
         surface.didAcceptExplicitInput()
+        if AgentHibernationTrackingGate.isEnabled() {
+            AgentHibernationController.shared.recordTerminalInput(workspaceId: surface.tabId, panelId: surface.id)
+        }
         return .sent
     }
 
