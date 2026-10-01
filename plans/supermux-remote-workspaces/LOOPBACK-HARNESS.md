@@ -182,8 +182,10 @@ Loopback Mac: it shows no pill, and the Loopback Mac's (empty) worktree list loa
 worktree made there with `worktree.create {open: false}` shows "⑂ N ›" from a refresh alone; once
 that worktree and the main checkout are open here and mirrored, the pill is gone again. It never
 expands a row or calls `remote_worktrees` (both load the other Mac's list on their own). Remote-only
-rows are checked against the same rule, though the loopback, sharing this Mac's list, usually has
-none. Best-effort window screenshots land in `tests/supermux/artifacts/`.
+rows are checked against the same rule when there are any; the loopback shares this Mac's project
+list, so it has none and that step is reported as skipped (`ok: null`, listed under `skipped_steps`
+in the run-all summary). The remote-only pill is checked by dogfooding on a real second Mac. Best-effort
+window screenshots land in `tests/supermux/artifacts/`.
 
 ```bash
 CMUX_TAG=<tag> python3 tests/supermux/loopback_worktree_disclosure_e2e.py --scratch /tmp/<tag>

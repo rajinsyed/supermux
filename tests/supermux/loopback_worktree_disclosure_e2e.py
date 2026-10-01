@@ -29,8 +29,10 @@ Steps:
      pill is gone again (count 0).
   6. remote_only_rows_follow_the_rule: every remote-only row shows its pill
      only while its Mac is online and has a worktree to reveal. The loopback
-     shares this Mac's list, so it usually has none (the step says how many
-     it checked).
+     shares this Mac's list, so it has no remote-only rows: the step is then
+     reported as skipped (`ok: null`), never as passed. That rule is checked
+     by dogfooding on a real second Mac (a project only there shows no pill
+     without worktrees, and "⑂ 1 ›" with one).
 
 Steps 3 and 4 also capture the window (best effort, listed under
 `facts.screenshots`: tests/supermux/artifacts/loopback_worktree_disclosure_e2e-<tag>-*.png)
@@ -171,7 +173,8 @@ class DisclosureE2E:
         record: Dict[str, Any] = {"name": name}
         try:
             record.update(action() or {})
-            record["ok"] = True
+            # A step with nothing to check says why under "skipped"; it is not a pass.
+            record["ok"] = None if record.get("skipped") else True
         except SmokeFailure as error:
             record["ok"] = False
             record["error"] = str(error)
@@ -304,8 +307,12 @@ class DisclosureE2E:
 
     def check_remote_only_rows(self) -> Dict[str, Any]:
         """(d) A remote-only row follows the same rule: a pill only while its
-        Mac is online and has an unopened worktree."""
+        Mac is online and has an unopened worktree. Skipped when there is no
+        such row (always on loopback, which shares this Mac's project list)."""
         rows = (self.client.call("supermux.devices.projects_presentation", {}) or {}).get("remote_only_rows") or []
+        if not rows:
+            return {"skipped": "no remote-only project rows (the loopback shares this Mac's project list); "
+                               "check the remote-only pill on a real second Mac"}
         checked = []
         for row in rows:
             disclosure = row.get("worktree_disclosure")

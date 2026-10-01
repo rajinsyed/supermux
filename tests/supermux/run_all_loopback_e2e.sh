@@ -92,7 +92,8 @@ for path in sorted(reports.glob("*.json")):
     summary[path.stem] = {
         "passed": bool(data.get("passed")),
         "steps": len(steps),
-        "failed_steps": [s.get("name") for s in steps if not s.get("ok")],
+        "failed_steps": [s.get("name") for s in steps if not s.get("ok") and not s.get("skipped")],
+        "skipped_steps": [s.get("name") for s in steps if s.get("skipped")],
     }
 out.write_text(json.dumps(summary, indent=2))
 print(json.dumps(summary, indent=2))
