@@ -300,6 +300,19 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   request quota is full; the request never ran). Every request to another Mac is sent again after
   0.25, 0.5, 1, 2 and 4 s on the same connection, so the capability request (which keeps typing on
   the key-forwarding path) and the tab closes held while offline still land.
+- **A slow Mac is not a lost Mac** (#723): a request whose reply misses its deadline (20 s, unless
+  the method's own is longer) no longer drops the link. This Mac first asks the other Mac's
+  connection whether it still answers (`mobile.events.probe`, 10 s); only no answer redials. Otherwise
+  that one request fails with "<Mac> did not answer in time. It is still connected; try again." and
+  every mirror, Files panel and held close stays up. The other Mac also bounds what touches project
+  folders, where an unanswered macOS privacy prompt (say for ~/Documents on a headless Mac) blocks
+  every git and file access in the kernel: `projects.list`, `run.state`, `project.icon` and every
+  call that names a project wait at most 2 s for the projects' first load (which imports each
+  project's `config.json` and lists its worktrees; the projects are known once the projects file is
+  read), `projects.list` at most 2 s for the git origins and the file facts (an origin or icon not
+  found in time keeps the last one known), and `files.watch` builds its folder watcher on a thread
+  of its own instead of the main actor. Before this, such a prompt made the link connect and drop
+  every ~20 s.
 - **Terminal size follows the Mac you look from** (upstream's shared sizing, #633, #665–#669): every
   terminal starts as Priority with this Mac first (its own pane for a local terminal, so a phone
   defers to a Mac pane on screen); a mirror claims the other Mac's terminal when it is shown, first
