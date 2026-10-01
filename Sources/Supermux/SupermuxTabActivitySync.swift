@@ -3,22 +3,27 @@ import Combine
 import Foundation
 import SupermuxKit
 
-/// Shows which tabs are working: each terminal tab's built-in Bonsplit
-/// spinner (`isLoading`, drawn in the tab's icon slot) follows its own
-/// panel's agent activity — on while that agent is running or waiting on its
-/// background work, off otherwise.
+/// Shows which tabs are working: each terminal and Claude harness tab's
+/// built-in Bonsplit spinner (`isLoading`, drawn in the tab's icon slot)
+/// follows its own panel's agent activity — on while that agent is running or
+/// waiting on its background work, off otherwise.
 ///
-/// Only terminal tabs are touched. A browser tab's spinner is its page load
-/// and a Cloud VM placeholder's is its boot, both owned by upstream.
+/// Only terminal and Claude harness tabs are touched; nothing upstream writes
+/// `isLoading` for either. A browser tab's spinner is its page load and a
+/// Cloud VM placeholder's is its boot, both owned by upstream.
 ///
 /// Driven by ``SupermuxWorkspaceLifecycleRelay``, which fires on every agent
-/// lifecycle change and on every change of a device mirror's overlay. The
+/// lifecycle change and on every change of a device mirror's overlay; each
+/// ``SupermuxDeviceStatusProjector`` pass also syncs every mirror, so a mirror
+/// tab projected after its overlay arrived spins at once. The
 /// changed workspaces are synced together on the next main-actor turn (after
 /// the mutation that fired the relay has finished), walking each one's panels
 /// once; Bonsplit's `updateTab` writes only a value that changed. A tab that
 /// upstream rebuilds (respawn, session restore) gets its spinner back on the
-/// next lifecycle event. Dock tabs are synced per panel from the
-/// `dock-tab-agent-working` touchpoint (``syncDock(_:panelId:)``).
+/// next lifecycle event. Dock tabs are synced per panel
+/// (``syncDock(_:panelId:)``) when their lifecycle changes
+/// (`dock-tab-agent-working`) and when a tab moves into the Dock
+/// (`dock-tab-agent-working-attach`).
 @MainActor
 final class SupermuxTabActivitySync {
     static let shared = SupermuxTabActivitySync()
@@ -50,9 +55,10 @@ final class SupermuxTabActivitySync {
         }
     }
 
-    /// Sets every terminal tab of `workspace` to its panel's working state.
+    /// Sets every terminal and Claude harness tab of `workspace` to its
+    /// panel's working state.
     func sync(_ workspace: Workspace) {
-        for (panelID, panel) in workspace.panels where panel.panelType == .terminal {
+        for (panelID, panel) in workspace.panels where panel.panelType == .terminal || panel.panelType == .claudeHarness {
             guard let tab = workspace.surfaceIdFromPanelId(panelID) else { continue }
             let activity = SupermuxWorkspaceActivityResolver.activity(forPanel: panelID, in: workspace)
             Self.setWorking(activity == .working, tab: tab, in: workspace.bonsplitController)
@@ -60,7 +66,8 @@ final class SupermuxTabActivitySync {
     }
 
     /// Sets a Dock terminal tab to its panel's working state (the Dock keeps
-    /// its own agent lifecycle per panel and never fires the relay).
+    /// its own agent lifecycle per panel and never fires the relay). Claude
+    /// harness panels never enter the Dock.
     static func syncDock(_ store: DockSplitStore, panelId: UUID) {
         guard store.panels[panelId]?.panelType == .terminal,
               let tab = store.surfaceId(forPanelId: panelId) else { return }

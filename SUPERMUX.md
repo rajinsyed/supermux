@@ -259,12 +259,14 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   tab closed while that Mac is unreachable disappears at once and its close is sent first when the
   link is back (#530, #640–#644). The phone's workspace close forces too, after its own
   "Delete Workspace?" (#695).
-- **Agent activity** (#715–#718): the amber working spinner shows while an agent runs and while it is
+- **Agent activity** (#715–#719): the amber working spinner shows while an agent runs and while it is
   "Waiting" (its turn ended with background shells, subagents or crons still running; upstream's grey
   Waiting pill stays beside it and the done notification still waits for the work to finish), on
-  every row, mirror and the phone. Each terminal tab that is working shows Bonsplit's own tab
-  spinner (in the tab's text colour; the unread dot is unchanged), in workspaces, the Dock and
-  mirrors (the other Mac sends `supermux_working_panel_ids`; an older Mac's mirror tabs show none).
+  every row, mirror and the phone. Each terminal or Claude harness tab that is working shows
+  Bonsplit's own tab spinner (in the tab's text colour; the unread dot is unchanged), in workspaces,
+  the Dock and mirrors (the other Mac sends `supermux_working_panel_ids`; an older Mac's mirror tabs
+  show none). A working tab keeps spinning when it moves to another workspace, into the Dock, or
+  appears in a mirror after the agent started.
 - **Sidebar rows:** inside a project, this Mac's workspaces come first, then each Mac's mirrors;
   every mirror row (nested or flat) marks its Mac with a small Mac + cloud icon right before its
   branch name (the Mac's name in its tooltip); nested rows show no `cmux set-status` pills or
