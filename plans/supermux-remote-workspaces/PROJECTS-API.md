@@ -212,8 +212,9 @@ most every 10 min otherwise), for each connected, non-loopback device serving pr
   arrow.
 - A mirror row's menu (nested and flat, #574) offers **Hide Here** and **Close on <Mac>…** (the
   mirror close prompt); a local row keeps Close Workspace.
-- Local project rows: device worktrees (chips) in the disclosure (pill shows a bare chevron until they
-  load), "Open on ▸" when several Macs have it, remote worktrees in "Worktrees ▸", "Set Up on <Mac>…".
+- Local project rows: device worktrees (each with its Mac icon) in the disclosure (pill shows a bare
+  chevron until they load), "Open on ▸" when several Macs have it, remote worktrees in "Worktrees ▸",
+  "Set Up on <Mac>…".
   Edit/Reveal/Move stay local-only.
 - Remote-only rows: Mac icon, run indicator, dimmed + "offline" tooltip while the Mac is offline;
   tap = Open on <Mac>; menu: New Worktree… (the device-aware sheet, P2), Worktrees ▸, Actions ▸, Set Up on <Mac>…

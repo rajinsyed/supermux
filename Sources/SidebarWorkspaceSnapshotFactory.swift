@@ -46,7 +46,7 @@ struct SidebarWorkspaceSnapshotFactory {
             }
             // SUPERMUX:begin device-mirror-flatrow-status
             // (upstream: `return cloud?.directoryCandidates ?? …` — a device
-            // mirror's line drops the Mac name its chip already shows)
+            // mirror's line drops the Mac name, which its Mac icon's tooltip names)
             return SupermuxDeviceMirrorSidebar.directoryCandidates(
                 for: workspace, orderedPanelIds: orderedPanelIds, usesLastSegmentPath: settings.usesLastSegmentPath
             ) ?? cloud?.directoryCandidates ?? compactDirectoryCandidatesList(orderedPanelIds: orderedPanelIds)
@@ -63,7 +63,7 @@ struct SidebarWorkspaceSnapshotFactory {
             }
             // SUPERMUX:begin device-mirror-flatrow-status
             // (upstream: `branch: nil` — a device mirror shows its remote branch,
-            // and its directory without the Mac name its chip already shows)
+            // and its directory without the Mac name, which its Mac icon's tooltip names)
             if let cloud {
                 let branch = settings.showsGitBranch ? SupermuxDeviceMirrorSidebar.branch(for: workspace) : nil
                 let directories = SupermuxDeviceMirrorSidebar.directoryCandidates(
