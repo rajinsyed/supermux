@@ -90,9 +90,11 @@ extension TerminalController {
 
     /// The desktop panel's git status for `root`, re-keyed root-relative.
     /// Blocks for at most ``supermuxFilesGitStatusTimeout``; call it off the
-    /// main actor. Joins the folder's `git status` already running, if any
-    /// (``SupermuxGitStatusRuns``), so a git slower than the requests for it
-    /// never piles up git processes.
+    /// main actor. Waits for a `git status` of the folder that starts no
+    /// earlier than this call (``SupermuxGitStatusRuns``): one started now, or
+    /// the one follow-up queued behind a run in progress and shared by every
+    /// request made meanwhile, so a git slower than the requests for it never
+    /// piles up git processes and no client gets colors from before it asked.
     nonisolated static func supermuxGitStatus(root: String) -> SupermuxFileGitStatusDTO {
         let run = SupermuxGitStatusRuns.shared.join(root)
         let isRepository = supermuxIsInsideRepository(root)
