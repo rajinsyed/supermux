@@ -6,8 +6,9 @@ import SupermuxKit
 /// Projects each mirror's remote `WorkspaceSyncRecord` onto its local mirror
 /// `Workspace`, so a mirror row shows what the owning Mac's row shows.
 ///
-/// - **Overlays** (read, never written into the workspace): agent activity,
-///   branch and PR. ``SupermuxWorkspaceActivityResolver/activity(for:)``,
+/// - **Overlays** (read, never written into the workspace): agent activity
+///   (the row's, and each tab's via `workingPanelIDs`), branch and PR.
+///   ``SupermuxWorkspaceActivityResolver/activity(for:)``,
 ///   `Workspace.supermuxSidebarBranch` and ``SupermuxWorkspaceRow`` consult
 ///   ``status(forLocal:)`` first. Activity is deliberately NOT written as an
 ///   agent lifecycle into the mirror panes: an `.idle` lifecycle would make the
@@ -70,6 +71,7 @@ final class SupermuxDeviceStatusProjector {
                 // Record gone (device offline or workspace closing): keep what
                 // the row showed, minus live activity.
                 kept.activity = .idle
+                kept.workingPanelIDs = []
                 status = kept
             } else {
                 continue
@@ -91,6 +93,7 @@ final class SupermuxDeviceStatusProjector {
 
     private static func overlayDiffers(_ previous: SupermuxDeviceMirrorStatus?, _ status: SupermuxDeviceMirrorStatus) -> Bool {
         previous?.activity != status.activity
+            || previous?.workingPanelIDs != status.workingPanelIDs
             || previous?.branch != status.branch
             || previous?.pullRequest != status.pullRequest
     }

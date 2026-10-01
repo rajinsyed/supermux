@@ -3561,6 +3561,8 @@
 		50BE000100000000000000F8 /* SupermuxSidebarAgentStatusRowsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000F7 /* SupermuxSidebarAgentStatusRowsTests.swift */; };
 		50BE000100000000000000C1 /* SupermuxSidebarBranchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000C2 /* SupermuxSidebarBranchTests.swift */; };
 		50BE000100000000000000B9 /* SupermuxSidebarFontScaleStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000B8 /* SupermuxSidebarFontScaleStore.swift */; };
+		50BE00180400000000000006 /* SupermuxTabActivitySync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00180400000000000005 /* SupermuxTabActivitySync.swift */; };
+		50BE00180400000000000002 /* SupermuxTabIndicatorSocket.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00180400000000000001 /* SupermuxTabIndicatorSocket.swift */; };
 		50BE000100000000000000A7 /* SupermuxTabManagerOpener.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000A6 /* SupermuxTabManagerOpener.swift */; };
 		50BE00170300000000000002 /* SupermuxTabOrderSocketCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00170300000000000001 /* SupermuxTabOrderSocketCommands.swift */; };
 		50BE00170400000000000002 /* SupermuxTerminalSizingDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00170400000000000001 /* SupermuxTerminalSizingDefaults.swift */; };
@@ -4327,6 +4329,7 @@
 		92906758EC368F8D8A989601 /* Workspace+SSHTuiStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 938D1CC0FD9AA3B4F32498BD /* Workspace+SSHTuiStatus.swift */; };
 		50BE00010000000000000129 /* Workspace+SupermuxHarness.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00010000000000000128 /* Workspace+SupermuxHarness.swift */; };
 		50BE00030000000000000002 /* Workspace+SupermuxMobileUnread.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00030000000000000001 /* Workspace+SupermuxMobileUnread.swift */; };
+		50BE00180400000000000004 /* Workspace+SupermuxPanelActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00180400000000000003 /* Workspace+SupermuxPanelActivity.swift */; };
 		F9219DE12AF2E4D9CFFC66CF /* Workspace+SurfaceCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47BBA1A8703756FDDFD53CF3 /* Workspace+SurfaceCatalog.swift */; };
 		CA52B0170000000000000000 /* Workspace+SurfaceNavigation.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA52C0170000000000000000 /* Workspace+SurfaceNavigation.swift */; };
 		7DD5BF8AB5B84491BC89EEE9 /* Workspace+SurfaceOwnership.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7305B43543CF4AF29D9966C8 /* Workspace+SurfaceOwnership.swift */; };
@@ -7994,6 +7997,8 @@
 		50BE000100000000000000F7 /* SupermuxSidebarAgentStatusRowsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxSidebarAgentStatusRowsTests.swift; sourceTree = "<group>"; };
 		50BE000100000000000000C2 /* SupermuxSidebarBranchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxSidebarBranchTests.swift; sourceTree = "<group>"; };
 		50BE000100000000000000B8 /* SupermuxSidebarFontScaleStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxSidebarFontScaleStore.swift; sourceTree = "<group>"; };
+		50BE00180400000000000005 /* SupermuxTabActivitySync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxTabActivitySync.swift; sourceTree = "<group>"; };
+		50BE00180400000000000001 /* SupermuxTabIndicatorSocket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mirrors/SupermuxTabIndicatorSocket.swift; sourceTree = "<group>"; };
 		50BE000100000000000000A6 /* SupermuxTabManagerOpener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxTabManagerOpener.swift; sourceTree = "<group>"; };
 		50BE00170300000000000001 /* SupermuxTabOrderSocketCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mirrors/SupermuxTabOrderSocketCommands.swift; sourceTree = "<group>"; };
 		50BE00170400000000000001 /* SupermuxTerminalSizingDefaults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxTerminalSizingDefaults.swift; sourceTree = "<group>"; };
@@ -8757,6 +8762,7 @@
 		938D1CC0FD9AA3B4F32498BD /* Workspace+SSHTuiStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RemoteTui/Workspace+SSHTuiStatus.swift"; sourceTree = "<group>"; };
 		50BE00010000000000000128 /* Workspace+SupermuxHarness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Harness/Workspace+SupermuxHarness.swift"; sourceTree = "<group>"; };
 		50BE00030000000000000001 /* Workspace+SupermuxMobileUnread.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Workspace+SupermuxMobileUnread.swift"; sourceTree = "<group>"; };
+		50BE00180400000000000003 /* Workspace+SupermuxPanelActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Workspace+SupermuxPanelActivity.swift"; sourceTree = "<group>"; };
 		47BBA1A8703756FDDFD53CF3 /* Workspace+SurfaceCatalog.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "Workspace+SurfaceCatalog.swift"; sourceTree = "<group>"; };
 		CA52C0170000000000000000 /* Workspace+SurfaceNavigation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Workspace+SurfaceNavigation.swift"; sourceTree = "<group>"; };
 		7305B43543CF4AF29D9966C8 /* Workspace+SurfaceOwnership.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Workspace+SurfaceOwnership.swift"; sourceTree = "<group>"; };
@@ -9302,6 +9308,7 @@
 				50BE000A000000000000001F /* SupermuxMirrorSocketCommands.swift */,
 				50BE00170300000000000003 /* SupermuxMirrorTerminalPlacement.swift */,
 				50BE00170300000000000001 /* SupermuxTabOrderSocketCommands.swift */,
+				50BE00180400000000000001 /* SupermuxTabIndicatorSocket.swift */,
 				50BE000A0000000000000021 /* SupermuxMirrorLocalPathActions.swift */,
 				50BE000A0000000000000023 /* SupermuxMirrorChangesSocket.swift */,
 				50BE00170500000000000013 /* FileSearchController+SupermuxDevice.swift */,
@@ -9375,6 +9382,8 @@
 				50BE000100000000000000F9 /* SupermuxRowMenuVisibility.swift */,
 				50BE00010000000000000144 /* SupermuxChangesPullRequestSupport.swift */,
 				50BE000100000000000000B6 /* SupermuxWorkspaceActivityResolver.swift */,
+				50BE00180400000000000005 /* SupermuxTabActivitySync.swift */,
+				50BE00180400000000000003 /* Workspace+SupermuxPanelActivity.swift */,
 				50BE000100000000000000FB /* SupermuxWorkspaceReorderStepping.swift */,
 				50BE000100000000000000FD /* SupermuxUsageMenuButton.swift */,
 				50BE00010000000000000101 /* SupermuxPanelAgentEvidence.swift */,
@@ -16379,6 +16388,8 @@
 				50BE000100000000000000FA /* SupermuxRowMenuVisibility.swift in Sources */,
 				50BE000100000000000000B5 /* SupermuxRunSupport.swift in Sources */,
 				50BE000100000000000000B9 /* SupermuxSidebarFontScaleStore.swift in Sources */,
+				50BE00180400000000000006 /* SupermuxTabActivitySync.swift in Sources */,
+				50BE00180400000000000002 /* SupermuxTabIndicatorSocket.swift in Sources */,
 				50BE000100000000000000A7 /* SupermuxTabManagerOpener.swift in Sources */,
 				50BE00170300000000000002 /* SupermuxTabOrderSocketCommands.swift in Sources */,
 				50BE00170400000000000002 /* SupermuxTerminalSizingDefaults.swift in Sources */,
@@ -16985,6 +16996,7 @@
 				92906758EC368F8D8A989601 /* Workspace+SSHTuiStatus.swift in Sources */,
 				50BE00010000000000000129 /* Workspace+SupermuxHarness.swift in Sources */,
 				50BE00030000000000000002 /* Workspace+SupermuxMobileUnread.swift in Sources */,
+				50BE00180400000000000004 /* Workspace+SupermuxPanelActivity.swift in Sources */,
 				F9219DE12AF2E4D9CFFC66CF /* Workspace+SurfaceCatalog.swift in Sources */,
 				CA52B0170000000000000000 /* Workspace+SurfaceNavigation.swift in Sources */,
 				7DD5BF8AB5B84491BC89EEE9 /* Workspace+SurfaceOwnership.swift in Sources */,

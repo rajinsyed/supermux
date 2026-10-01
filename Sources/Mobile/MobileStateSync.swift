@@ -306,7 +306,10 @@ final class MobileStateSyncHost {
             // and latest log (SupermuxMobileWorkspaceStatusFields).
             supermuxStatusEntries: SupermuxMobileWorkspaceStatusFields.statusEntries(for: workspace),
             supermuxProgress: SupermuxMobileWorkspaceStatusFields.progress(for: workspace),
-            supermuxLog: SupermuxMobileWorkspaceStatusFields.log(for: workspace)
+            supermuxLog: SupermuxMobileWorkspaceStatusFields.log(for: workspace),
+            // Which terminals' own agents are working, so another Mac's mirror
+            // spins exactly those tabs (SupermuxTabActivitySync).
+            supermuxWorkingPanelIDs: workspace.supermuxWorkingPanelIDs()
             // SUPERMUX:end supermux-mobile-workspace-fields
         )
     }

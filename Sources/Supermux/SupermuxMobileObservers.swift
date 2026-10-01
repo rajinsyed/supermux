@@ -235,6 +235,9 @@ enum SupermuxMobileHostGlue {
             readSnapshots: { SupermuxComposition.runCoordinator.mobileRunSnapshots }
         )
         sidebarStatusObserver = SupermuxMobileSidebarStatusObserver()
+        // Not a mobile observer, but it needs the same once-per-app start: the
+        // per-tab working spinners follow the lifecycle relay from here on.
+        SupermuxTabActivitySync.shared.start()
         SupermuxDevicesGlue.activateIfNeeded()
     }
 }

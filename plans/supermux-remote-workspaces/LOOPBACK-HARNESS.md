@@ -149,6 +149,25 @@ step records the before/after orders, the owning pane's selected tab and the lat
 CMUX_E2E_SUITES="loopback_new_tab_order_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
 ```
 
+## Agent activity E2E
+
+`tests/supermux/loopback_agent_activity_e2e.py` checks the agent-working indicator while an agent is
+"Waiting" and the per-tab working spinner (#715–#718). A background workspace S gets a second
+terminal; with the lifecycle set over `set_agent_lifecycle`, T_A's agent `backgroundWorkPending`
+must read as `working` on S's and its mirror's flat rows, the mirror status and the phone's
+`mobile.workspace.list`, and only T_A's tab must spin on S and on the mirror
+(`supermux.devices.mirror.tab_indicators`, DEBUG: each tab's `is_loading`, unread dot, lifecycle and,
+for a mirror tab, the other Mac's terminal id); window screenshots of S and the mirror are kept next
+to the report. The spinner then moves to T_B (per tab) and clears when both are idle. Last, a real
+`cmux claude-hook` turn (prompt-submit, then Stop with a running `background_tasks` entry, through
+`scripts/cmux-debug-cli.sh` with a scratch hook-state file and no agent environment) must show
+upstream's Waiting pill (`work_state: waiting`), deliver no notification while waiting, keep the
+indicators, and on a second Stop with the work done clear them and deliver the notification.
+
+```bash
+CMUX_E2E_SUITES="loopback_agent_activity_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
+```
+
 ## Mirror rendering E2E
 
 `tests/supermux/loopback_mirror_render_e2e.py` checks what the user sees, not the buffer: it selects

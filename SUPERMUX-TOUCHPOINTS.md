@@ -628,6 +628,10 @@ Rules for adding a touchpoint:
 | 688 | `Sources/Surfaces/Workspace+CloudTerminalReservation.swift` | `device-pane-failure-mac-wording` | In `failReservedCloudTerminalPane`, a device machine's reserved pane gets `SupermuxDevicePaneFailureText.detail(machine:)` ("<Mac> couldn’t complete this. Check that it is online and try again.", `Sources/Supermux/Devices/SupermuxDeviceError.swift`) and no reference, instead of `failure.errorText`/`failure.copyableText` (upstream's Cloud wording: "The Cloud operation failed. Copy the diagnostic reference…") |
 | 695 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite+WorkspaceActions.swift` | `ios-workspace-close-force` | In `closeWorkspace(id:)`, the `workspace.close` mutation sends `workspaceMutationParams(id:)` plus `force: true` (`supermuxCloseParams`): every phone close first asks "Delete Workspace?", so a workspace running a program closes like on the Mac instead of the host answering `confirmation_required` (shown as "<Mac> rejected the request."). Upstream sends no `force` |
 | 696 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/Devices/SupermuxDeviceMirrorCloseSocketCommands.swift` (DEBUG `supermux.devices.user_close` driver of `tests/supermux/loopback_mirror_workspace_close_e2e.py`) into the cmux target: file ref `50BE00180200000000000001`, build file `50BE00180200000000000002`, four entries (`Devices/…` path in the Supermux group) |
+| 715 | `Sources/DockSplitStore+RestoredAgentLifecycle.swift` | `dock-tab-agent-working` | At the end of `mutateAgentRuntime(panelId:updatesAgentAttention:mutation:)` (after upstream's needs-input attention sync): `SupermuxTabActivitySync.syncDock(self, panelId: panelId)`. The Dock keeps its own per-panel agent lifecycle and never fires `SupermuxWorkspaceLifecycleRelay`, so this one call sets a Dock terminal tab's Bonsplit working spinner (`isLoading`) from that panel's lifecycle (`Sources/Supermux/SupermuxTabActivitySync.swift`) |
+| 716 | `Packages/Shared/CMUXMobileCore/Sources/CMUXMobileCore/MobileStateSyncRecords.swift` | `supermux-mobile-workspace-fields` | Inside the existing fences (#139/#271/#535): additive `supermux_working_panel_ids` (`supermuxWorkingPanelIDs: [String]?`) on `WorkspaceSyncRecord` — stored property, trailing defaulted init param, lenient decode (malformed → nil), CodingKey. The host's terminal ids (`terminals[].id`) whose own agent is working; `nil` = a host that predates per-tab activity, `[]` = supported and nothing working. Another Mac's mirror spins exactly those tabs; the phone ignores it |
+| 717 | `Sources/Mobile/MobileStateSync.swift` | `supermux-mobile-workspace-fields` | Inside the existing `workspaceRow` fence (#140/#272/#536): the trailing `supermuxWorkingPanelIDs: workspace.supermuxWorkingPanelIDs()` argument (`Sources/Supermux/Workspace+SupermuxPanelActivity.swift`: panels in tab order whose own lifecycle resolves to working). Freshness: every lifecycle change already forces a v2 poke (`SupermuxMobileActivityObserver`) |
+| 718 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/Mirrors/SupermuxTabIndicatorSocket.swift` (DEBUG driver `supermux.devices.mirror.tab_indicators`, ids `50BE00180400000000000001`/`…02`), `Workspace+SupermuxPanelActivity.swift` (`…03`/`…04`) and `SupermuxTabActivitySync.swift` (`…05`/`…06`) into the cmux target, four entries each, in the Supermux group |
 
 ## How to re-apply
 
@@ -5460,3 +5464,31 @@ Re-apply after an upstream merge:
 Verify: `CMUX_E2E_SUITES="loopback_mirror_workspace_close_e2e loopback_mirror_tab_close_e2e loopback_auto_mirror_e2e"
 CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`; the phone leg by dogfood (close a Mac workspace running Claude
 Code from the phone: it closes instead of "<Mac> rejected the request.").
+
+### 715–718. A Waiting agent keeps the working indicator; each working tab spins — `dock-tab-agent-working`, `supermux-mobile-workspace-fields`
+
+Found from user feedback: an agent whose turn ended with background shells, subagents or crons still
+running (upstream's grey "Waiting" pill, lifecycle `backgroundWorkPending`) lost the orange spinner
+everywhere, and tabs had only the unread dot. Fork code: `SupermuxWorkspaceActivity.resolve` counts
+`backgroundWorkPending` as working (no touchpoint; every row, the switcher, mirrors and the phone go
+through it), `SupermuxTabActivitySync` drives each terminal tab's built-in Bonsplit `isLoading`
+spinner from its own panel's activity on every `SupermuxWorkspaceLifecycleRelay` event (started from
+`SupermuxMobileHostGlue.activateIfNeeded`, no touchpoint), and a mirror reads the other Mac's
+`supermux_working_panel_ids` through `SupermuxDeviceMirrorStatus.workingPanelIDs`. Browser and Cloud
+VM placeholder tabs keep upstream's own spinner. Bonsplit (an upstream submodule) is not modified,
+so the tab spinner uses Bonsplit's tab text colour; `SupermuxTabActivitySync.setWorking` is the one
+place a tint would be added.
+
+Re-apply after an upstream merge:
+- **#715** keep the call last in `mutateAgentRuntime`, after the runtime is stored, so
+  `syncDock` reads the new lifecycle. Retire it if upstream fires a Dock lifecycle notification the
+  sync can follow instead.
+- **#716/#717** inside the existing `supermux-mobile-workspace-fields` fences: the record field (see
+  the #716 row) and the trailing `supermuxWorkingPanelIDs:` argument in `MobileStateSyncHost.workspaceRow`.
+- **#718 pbxproj.** Re-add the four entries for each file in the #718 row with the `50BE00180400…` ids,
+  then `python3 scripts/normalize-pbxproj.py cmux.xcodeproj/project.pbxproj && scripts/check-pbxproj.sh`.
+- If upstream starts setting `isLoading` on terminal tabs itself, or adds its own per-tab agent
+  indicator, revisit `SupermuxTabActivitySync` (it would fight that writer).
+
+Verify: `swift test` in `Packages/SupermuxKit` and `Packages/Shared/CMUXMobileCore`, then
+`CMUX_E2E_SUITES="loopback_agent_activity_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`.
