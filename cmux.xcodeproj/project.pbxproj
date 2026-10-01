@@ -3420,6 +3420,7 @@
 		50BE00080000000000000006 /* SupermuxDeviceLoopbackTransportFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00080000000000000005 /* SupermuxDeviceLoopbackTransportFactory.swift */; };
 		50BE00050000000000000012 /* SupermuxDeviceMirrorClosePrompt.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00050000000000000011 /* SupermuxDeviceMirrorClosePrompt.swift */; };
 		50BE00050000000000000010 /* SupermuxDeviceMirrorCloser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE0005000000000000000F /* SupermuxDeviceMirrorCloser.swift */; };
+		50BE00180200000000000002 /* SupermuxDeviceMirrorCloseSocketCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00180200000000000001 /* SupermuxDeviceMirrorCloseSocketCommands.swift */; };
 		50BE00170200000000000004 /* SupermuxDeviceMirrorColors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00170200000000000003 /* SupermuxDeviceMirrorColors.swift */; };
 		50BE0005000000000000000C /* SupermuxDeviceMirrorCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE0005000000000000000B /* SupermuxDeviceMirrorCoordinator.swift */; };
 		50BE0005000000000000001A /* SupermuxDeviceMirrorPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00050000000000000019 /* SupermuxDeviceMirrorPalette.swift */; };
@@ -7858,6 +7859,7 @@
 		50BE00080000000000000005 /* SupermuxDeviceLoopbackTransportFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceLoopbackTransportFactory.swift; sourceTree = "<group>"; };
 		50BE00050000000000000011 /* SupermuxDeviceMirrorClosePrompt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceMirrorClosePrompt.swift; sourceTree = "<group>"; };
 		50BE0005000000000000000F /* SupermuxDeviceMirrorCloser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceMirrorCloser.swift; sourceTree = "<group>"; };
+		50BE00180200000000000001 /* SupermuxDeviceMirrorCloseSocketCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceMirrorCloseSocketCommands.swift; sourceTree = "<group>"; };
 		50BE00170200000000000003 /* SupermuxDeviceMirrorColors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceMirrorColors.swift; sourceTree = "<group>"; };
 		50BE0005000000000000000B /* SupermuxDeviceMirrorCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceMirrorCoordinator.swift; sourceTree = "<group>"; };
 		50BE00050000000000000019 /* SupermuxDeviceMirrorPalette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceMirrorPalette.swift; sourceTree = "<group>"; };
@@ -9423,6 +9425,7 @@
 				50BE00170100000000000009 /* SupermuxDeviceHeldCloses.swift */,
 				50BE00170400000000000001 /* SupermuxTerminalSizingDefaults.swift */,
 				50BE00170400000000000003 /* SupermuxTerminalSizingSocketCommands.swift */,
+				50BE00180200000000000001 /* SupermuxDeviceMirrorCloseSocketCommands.swift */,
 				50BE00050000000000000019 /* SupermuxDeviceMirrorPalette.swift */,
 				50BE0005000000000000001B /* SupermuxDeviceMirrorSocketCommands.swift */,
 				50BE0005000000000000001D /* SupermuxDevicesSocketPayloads+MirrorStatus.swift */,
@@ -16257,6 +16260,7 @@
 				50BE00080000000000000006 /* SupermuxDeviceLoopbackTransportFactory.swift in Sources */,
 				50BE00050000000000000012 /* SupermuxDeviceMirrorClosePrompt.swift in Sources */,
 				50BE00050000000000000010 /* SupermuxDeviceMirrorCloser.swift in Sources */,
+				50BE00180200000000000002 /* SupermuxDeviceMirrorCloseSocketCommands.swift in Sources */,
 				50BE00170200000000000004 /* SupermuxDeviceMirrorColors.swift in Sources */,
 				50BE0005000000000000000C /* SupermuxDeviceMirrorCoordinator.swift in Sources */,
 				50BE0005000000000000001A /* SupermuxDeviceMirrorPalette.swift in Sources */,
