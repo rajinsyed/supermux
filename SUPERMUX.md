@@ -93,6 +93,7 @@ building a parallel system.
 | Projects across Macs (merge by git origin, remote-only rows, project sync, Set Up on <Mac>) | ✅ loopback-E2E | `Sources/Supermux/Projects/`, `SupermuxUnifiedProjects`, host RPCs `project.probe`/`project.clone`, `plans/supermux-remote-workspaces/PROJECTS-API.md` |
 | New Worktree device picker + New Workspace on ▸ <Mac> | ✅ loopback-E2E | `SupermuxNewWorktreeSheetModel` over `SupermuxWorktreeCreationTarget` (local / remote), #570/#571, #620–#622 (plain New Workspace stays local; the empty area's menu; another Mac's home folder) |
 | Mirror workspace behaviors (⌘G run, presets, Changes panel, file tools) | ✅ loopback-E2E | `Sources/Supermux/Mirrors/`, `SupermuxChangesBackend` (local / remote over `changes.*`), #572 |
+| Files panel in a mirror browses the other Mac (list, preview, Find, git colors, live refresh, file operations) | ✅ loopback-E2E | `SupermuxDeviceFileExplorerProvider` over `files.*` (`supermux.files_read.v1`), #675–#681, `tests/supermux/loopback_mirror_files_e2e.py` |
 | Background tab sync (tabs added/closed/reordered on the owning Mac reach mirrors) | ✅ loopback-E2E | `SupermuxDeviceLayoutChangeObserver`, #595 |
 | Notification/push parity (no duplicate pushes, shared read state, presence-aware host, push setup shared between Macs) | ✅ loopback-E2E | #545–#550, `SupermuxDeviceNotification*`, `phone_push.status/share` |
 | Remote Macs settings card (Settings › Automation) | ✅ | `SupermuxRemoteMacsSettingsCard` (#596–#598) |
@@ -278,9 +279,19 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   or fully covered window) does not count, so a tab opened from a mirror takes the mirror's size at
   once; a terminal that starts after its grid was decided gets it when it becomes ready.
 - **Inside a mirror**, ⌘G/Run, presets, project actions and the Changes panel act on the owning Mac
-  over `mobile.supermux.*` (Generate & Commit follows that Mac's own AI-key rule); Finder/editor/
-  file-explorer actions and the full diff view, which need a local path, are disabled with an
-  "On <Mac>" hint.
+  over `mobile.supermux.*` (Generate & Commit follows that Mac's own AI-key rule); Finder/editor
+  actions and the full diff view, which need a local path, are disabled with an "On <Mac>" hint.
+- **The Files panel in a mirror is that Mac's folder** (#675–#681, capability
+  `supermux.files_read.v1`): the workspace's current folder there (it follows a `cd`), hidden files
+  listed as the local panel lists them (`.git` included; git internals are readable, never
+  mutable), that Mac's git colors, Find (ripgrep over there), live refresh from that Mac's folder
+  watcher, a read-only preview on double-click/Return/search hit (downloaded, 8 MB cap), and New
+  File/New Folder/Rename/Duplicate/Move to Trash run there. Every call is confined to that folder
+  (`..`, symlinks out of it and a stale folder are refused). Not offered: editing a preview, Open
+  Externally, Reveal in Finder, drag out; a symlink out of the folder lists but does not open; a
+  folder over 10,000 entries lists the first 10,000. The panel names the Mac when it cannot browse:
+  not connected, loading, "Update Supermux on <Mac> to browse its files here." (an older Mac), or no
+  folder reported yet.
 - **Notifications:** the owning Mac pushes to the phone (the viewer never forwards `.deviceMac`
   rows, so no duplicates); the phone badges the total over every pairable Mac build; read state
   flows both ways, and mirrored notifications (read state and Mark as Unread included) survive a
