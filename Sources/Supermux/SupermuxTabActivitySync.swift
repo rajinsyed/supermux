@@ -20,8 +20,10 @@ import SupermuxKit
 /// the mutation that fired the relay has finished), walking each one's panels
 /// once; Bonsplit's `updateTab` writes only a value that changed. A tab that
 /// upstream rebuilds (respawn, session restore) gets its spinner back on the
-/// next lifecycle event. Dock tabs are synced per panel from the
-/// `dock-tab-agent-working` touchpoint (``syncDock(_:panelId:)``).
+/// next lifecycle event. Dock tabs are synced per panel
+/// (``syncDock(_:panelId:)``) when their lifecycle changes
+/// (`dock-tab-agent-working`) and when a tab moves into the Dock
+/// (`dock-tab-agent-working-attach`).
 @MainActor
 final class SupermuxTabActivitySync {
     static let shared = SupermuxTabActivitySync()
