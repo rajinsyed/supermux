@@ -17,7 +17,9 @@ extension SupermuxMobileFileBrowser {
     /// are readable (the desktop panel shows them with hidden files on). The
     /// file actually opened is checked again through its descriptor, so a
     /// symlink swapped in between the check and the open cannot redirect the
-    /// read outside the root.
+    /// read outside the root. The open never blocks: a named pipe (or a
+    /// device) would otherwise wait for a writer forever, so the file is
+    /// opened non-blocking and refused unless it is a regular file.
     /// - Throws: ``SupermuxMobileFileBrowserError/pathOutsideRoot(path:)`` for
     ///   an escape; ``SupermuxMobileFileBrowserError/invalidPath(path:)`` for
     ///   the root, a directory or other non-regular file, or an offset outside
@@ -26,7 +28,7 @@ extension SupermuxMobileFileBrowser {
     public func read(path: String, offset: Int, length: Int) throws -> SupermuxFileReadDTO {
         guard !path.isEmpty else { throw SupermuxMobileFileBrowserError.invalidPath(path: path) }
         let url = try resolveExisting(path, allowRoot: false, allowGitInternals: true)
-        let descriptor = Darwin.open(url.path, O_RDONLY | O_CLOEXEC)
+        let descriptor = Darwin.open(url.path, O_RDONLY | O_NONBLOCK | O_CLOEXEC)
         guard descriptor >= 0 else {
             throw errno == ENOENT
                 ? SupermuxMobileFileBrowserError.notFound(path: path)
@@ -34,7 +36,8 @@ extension SupermuxMobileFileBrowser {
         }
         defer { Darwin.close(descriptor) }
         var info = stat()
-        guard fstat(descriptor, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG else {
+        guard fstat(descriptor, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG,
+              Self.clearNonBlocking(descriptor) else {
             throw SupermuxMobileFileBrowserError.invalidPath(path: path)
         }
         guard let opened = Self.openedPath(descriptor), contains(opened) else {
@@ -62,6 +65,12 @@ extension SupermuxMobileFileBrowser {
     private func contains(_ path: String) -> Bool {
         let canonical = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
         return canonical == rootPath || SupermuxFileSystemOperations.pathIsAncestor(rootPath, of: canonical)
+    }
+
+    /// Makes a regular file's descriptor blocking again for `pread`.
+    private static func clearNonBlocking(_ descriptor: Int32) -> Bool {
+        let flags = Darwin.fcntl(descriptor, F_GETFL)
+        return flags >= 0 && Darwin.fcntl(descriptor, F_SETFL, flags & ~O_NONBLOCK) >= 0
     }
 
     /// The path the kernel opened for a descriptor (`F_GETPATH`).
