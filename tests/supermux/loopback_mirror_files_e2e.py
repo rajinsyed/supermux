@@ -146,6 +146,8 @@ class Socket:
     def raw(self, method: str, params: Optional[Dict[str, Any]] = None, timeout_s: Optional[float] = None) -> Dict[str, Any]:
         """The whole response object (`ok`, `result` or `error`)."""
         for attempt in range(2):
+            if self._sock is None:
+                self.connect()
             try:
                 return self._raw_once(method, params, timeout_s)
             except (BrokenPipeError, ConnectionResetError):
@@ -153,7 +155,11 @@ class Socket:
                     raise
                 # The app drops a connection that sat idle; dial again once.
                 self.close()
-                self.connect()
+            except socket.timeout:
+                # The reply may still come: hang up so it cannot answer the
+                # next call (a "mismatched response id" in every later step).
+                self.close()
+                raise Failure(f"{method}: no reply within {timeout_s or self.timeout_s:.0f}s")
         raise Failure("unreachable")
 
     def call(self, method: str, params: Optional[Dict[str, Any]] = None, timeout_s: Optional[float] = None) -> Any:
@@ -180,7 +186,7 @@ class Socket:
         while b"\n" not in self._buffer:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                raise Failure("socket response timed out")
+                raise socket.timeout("timed out")
             self._sock.settimeout(remaining)
             chunk = self._sock.recv(65536)
             if not chunk:
