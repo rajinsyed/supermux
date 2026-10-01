@@ -228,12 +228,18 @@ extension MobileShellComposite {
             }
             return .failure(.unsupported(hostDisplayName: workspaceHostDisplayName(for: id)))
         }
+        // SUPERMUX:begin ios-workspace-close-force
+        // The phone already asked "Delete Workspace?", so a workspace with a
+        // running program closes too, as on the Mac. (upstream: `params: workspaceMutationParams(id: id)`)
+        var supermuxCloseParams = workspaceMutationParams(id: id)
+        supermuxCloseParams["force"] = true
         let result = await sendWorkspaceMutation(
             method: "workspace.close",
-            params: workspaceMutationParams(id: id),
+            params: supermuxCloseParams,
             id: id,
             actionName: "close"
         )
+        // SUPERMUX:end ios-workspace-close-force
         for terminalID in terminalIDs {
             switch result {
             case .success:
