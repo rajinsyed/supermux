@@ -104,8 +104,18 @@ independently:
                                          port forward nothing; the typed URL does
  17o navigation_spam_bounded_listings    20 typed navigations at once to an unlisted port ask the owner for
                                          its ports at most 4 times
+ 17p restart_listed_as_other_first_recovers  automatic forwarding off: a restarted server the follow-up fetch
+                                         sees as an other port (not yet attributed), a reload meanwhile, then
+                                         listed as the workspace's: the tab ends on http://localhost:P
+ 17q unchecked_alias_tab_gets_forward    a tab opened while that Mac was away (no outcome) gets a same-port
+                                         forward once the link is back and P is listed
+ 17r terminal_link_forwards_other_port   a terminal link Command-clicked in the mirror forwards an owner's other
+                                         port and runs as written (a user action, like a typed URL)
  20 alias_bad_chunk_size_survives        chunk lines that are not plain hex (-5, +5, past Int, an extension)
-                                         pass through; the app keeps running (last: before its fix it crashed)
+                                         pass through; the app keeps running (before its fix it crashed)
+ 21 held_navigation_joins_fetch_in_flight  a URL typed while a listing fetch is in flight (held 2 s by the owner)
+                                         joins it; the app keeps answering and the tab lands as written (last:
+                                         before its fix it froze the app)
  18 proxy_listener_failure_recovers      after the proxy's listener fails, it is replaced on its own (waited
                                          for with a read that starts no listener); then the open mirror tab
                                          and a new one each load the owner's page on the fresh endpoint,
@@ -609,6 +619,8 @@ class MirrorBrowserE2E:
         self.forwarded_ports: List[int] = []
         # Whether a step listed ports as the source's (`tunnel.inject_port`, cleared at the end).
         self.injected = False
+        # Whether a step found the app no longer answering (cleanup then skips its calls).
+        self.app_frozen = False
 
     # -- reads -----------------------------------------------------------------
 
@@ -2090,6 +2102,165 @@ class MirrorBrowserE2E:
         finally:
             server.close()
 
+    def restart_listed_as_other_first_recovers(self) -> Dict[str, Any]:
+        """The owner's server on P restarts (Ctrl-C, run again) with automatic
+        forwarding off, so only the tab's own on-demand forward brings it back.
+        The follow-up fetch finds the restarted server before the owner's sidebar
+        scan has attributed it to the workspace: P is one of its other ports, which
+        a page may not get forwarded, and the page reloads itself meanwhile. Once
+        the owner lists P as the workspace's again (with a poke) the tab must end
+        on http://localhost:P. Before, "not allowed" was taken for "this port
+        cannot be forwarded": nothing tried again and the tab stayed on the alias."""
+        machine = self.pair.machine
+        port = free_dev_port()
+        first = self.server("other-first-before")
+        self.serve_owner_port(port, first.port)
+        self.sock.call("supermux.devices.ports.set_auto", {"enabled": False})
+        self.tunnel("inject_port", workspace_id=self.pair.source_id, port=port)
+        self.injected = True
+        self.sock.call("supermux.devices.ports.refresh", {"machine": machine})
+        tab = self.new_tab(self.pair.mirror_id, self.mirror_terminal(), f"http://localhost:{port}/marker.html")
+        try:
+            self.wait_title(tab, lambda t: t == first.title, "the owner's page as written")
+            self.require_as_written(tab, port, "the tab before the restart")
+            self.owner_server_stops(port, tab)
+            again = self.server("other-first-after")
+            self.serve_owner_port(port, again.port)
+            self.inject_other(port, refresh=False)
+            time.sleep(4.5)  # the follow-up fetches 2 s and 4 s after the forward went see P as an other port
+            self.sock.call("browser.eval", {"surface_id": tab, "script": "location.reload(); true"})
+            time.sleep(2.0)
+            listing = self.viewer_listing()
+            if port in listing["ports"] or port not in (listing["other_ports"] or []):
+                raise Failure(f"precondition: this Mac should see {port} among the owner's other ports: {listing}")
+            # The owner's scan attributes the server to the workspace and pokes.
+            self.inject_other(port, remove=True, refresh=False)
+            self.tunnel("inject_port", workspace_id=self.pair.source_id, port=port)
+            self.sock.call("supermux.devices.ports.refresh", {"machine": machine})
+            back = wait_for("the tab to end on localhost once the owner lists P as the workspace's",
+                            lambda: self.tab_at(tab, f"http://localhost:{port}/"), self.timeout)
+            self.wait_title(tab, lambda t: t == again.title, "the restarted server's page as written")
+            return {"port": port, "back": back, "probe": self.require_as_written(tab, port, "the tab after the restart")}
+        finally:
+            self.sock.call("supermux.devices.ports.set_auto", {"enabled": True})
+            self.sock.call("surface.close", {"surface_id": tab})
+
+    def unchecked_alias_tab_gets_forward(self) -> Dict[str, Any]:
+        """A mirror tab opened on the owner's localhost:P while that Mac was not
+        connected (as a tab restored at launch is) runs at the alias without the
+        gate ever trying P. Once the link is back and the owner lists P as its
+        workspace's (automatic forwarding off), the tab must get a same-port
+        forward and move to http://localhost:P. Before, a tab with no outcome was
+        never tried in the background."""
+        machine = self.pair.machine
+        owner = self.server("unchecked-owner")
+        port = free_dev_port()
+        self.serve_owner_port(port, owner.port)
+        self.sock.call("supermux.devices.ports.set_auto", {"enabled": False})
+        self.tunnel("inject_port", workspace_id=self.pair.source_id, port=port)
+        self.injected = True
+        tab = ""
+        try:
+            self.link("stop")
+            wait_for("the loopback link to drop", lambda: self.pair.device().get("link_state") != "connected", self.timeout)
+            tab = self.new_tab(self.pair.mirror_id, self.mirror_terminal(), f"http://localhost:{port}/marker.html")
+            wait_for("the tab to run at the alias while that Mac is away",
+                     lambda: self.tab_at(tab, f"http://{LOOPBACK_ALIAS}:{port}/"), self.timeout)
+            self.link("restore")
+            self.pair.wait_connected()
+            back = wait_for("the tab to move to localhost once the link is back",
+                            lambda: self.tab_at(tab, f"http://localhost:{port}/"), self.timeout)
+            self.wait_title(tab, lambda t: t == owner.title, "the owner's page as written")
+            return {"port": port, "back": back, "forward": self.wait_forward(port)}
+        finally:
+            self.link("restore")
+            self.sock.call("supermux.devices.ports.set_auto", {"enabled": True})
+            if tab:
+                self.sock.call("surface.close", {"surface_id": tab})
+
+    def terminal_link_forwards_other_port(self) -> Dict[str, Any]:
+        """A localhost link Command-clicked in the mirror's terminal (an agent's dev
+        server prints it) is the user's own choice, as a typed URL is: it opens a
+        cmux browser in the mirror that gets a same-port forward of the owner's
+        other port and runs as written. Before, only a typed URL did; the link ran
+        at the alias, where the server's Turnstile fails."""
+        owner = self.server("terminal-link-owner")
+        port = free_dev_port()
+        self.serve_owner_port(port, owner.port)
+        self.inject_other(port)
+        reply = self.sock.call("supermux.devices.mirror.link_open", {
+            "workspace_id": self.pair.mirror_id, "surface_id": self.mirror_terminal(),
+            "url": f"http://localhost:{port}/marker.html", "destination": "cmux",
+        }) or {}
+        panel = up(reply.get("new_browser_panel_id"))
+        if not panel:
+            raise Failure(f"the link click opened no browser in the mirror: {reply}")
+        try:
+            self.wait_title(panel, lambda t: t == owner.title, "the linked owner page")
+            probe = self.require_as_written(panel, port, "the linked tab")
+            self.forwarded_ports.append(port)
+            return {"port": port, "probe": probe, "forward": self.wait_forward(port)}
+        finally:
+            self.sock.call("surface.close", {"surface_id": panel})
+
+    def held_navigation_joins_fetch_in_flight(self) -> Dict[str, Any]:
+        """A URL typed while a listing fetch is already in flight (a poke's, held 2 s
+        by the owner: `supermux.devices.link {action: stall}`) joins that fetch.
+        The app must keep answering throughout and the tab land as written. Before,
+        the joiner could find the finished fetch still registered and await it
+        again without ever suspending: the main thread spun and the app froze.
+        Runs last: before its fix it froze the app."""
+        machine = self.pair.machine
+        owner = self.server("join-owner")
+        port = free_dev_port()
+        self.serve_owner_port(port, owner.port)
+        self.sock.call("supermux.devices.ports.set_auto", {"enabled": False})
+        self.tunnel("inject_port", workspace_id=self.pair.source_id, port=port)  # this Mac has not fetched it
+        self.injected = True
+        source_owner, source_here = self.owner_and_this_mac("join-source")
+        tab = self.new_tab(self.pair.mirror_id, self.mirror_terminal(), f"http://localhost:{source_here.port}/marker.html")
+        self.wait_owner_page(tab, source_owner, source_here, "the tab before the URL is typed")
+        self.sock.call("supermux.devices.link", {"machine": machine, "action": "stall",
+                                                 "method": "mobile.supermux.ports.list", "seconds": 2})
+        self.sock.call("supermux.devices.ports.refresh", {"machine": machine})
+        time.sleep(0.3)
+
+        def navigate() -> None:
+            client = Socket(self.sock.path, timeout_s=30)
+            try:
+                client.connect()
+                client.call("browser.navigate", {"surface_id": tab, "url": f"http://localhost:{port}/marker.html"}, timeout_s=25)
+            except (Failure, OSError):
+                pass
+            finally:
+                client.close()
+
+        threading.Thread(target=navigate, daemon=True).start()
+        probe = Socket(self.sock.path, timeout_s=5)
+        answers: List[float] = []
+        try:
+            probe.connect()
+            deadline = time.monotonic() + 6.0
+            while time.monotonic() < deadline:
+                started = time.monotonic()
+                try:
+                    probe.call("supermux.devices.list", {}, timeout_s=4)
+                except (Failure, OSError) as error:
+                    self.app_frozen = True
+                    raise Failure(f"the app stopped answering while the typed URL joined the fetch in flight "
+                                  f"(the main thread is stuck): {error}")
+                answers.append(round(time.monotonic() - started, 2))
+                time.sleep(0.4)
+        finally:
+            probe.close()
+        try:
+            back = wait_for("the tab to land as written", lambda: self.tab_at(tab, f"http://localhost:{port}/"), self.timeout)
+            self.wait_title(tab, lambda t: t == owner.title, "the owner's page as written")
+            return {"port": port, "answer_seconds": answers, "page": back}
+        finally:
+            self.sock.call("supermux.devices.ports.set_auto", {"enabled": True})
+            self.sock.call("surface.close", {"surface_id": tab})
+
     def idle_proxy_connections_close(self) -> Dict[str, Any]:
         """Local clients that connect and send nothing cannot hold the proxy's
         connections: past the limit of clients still in their handshake they are
@@ -2267,17 +2438,28 @@ class MirrorBrowserE2E:
                 ("local_server_restart_keeps_its_port", self.local_server_restart_keeps_its_port),
                 ("page_navigation_does_not_forward_other_port", self.page_navigation_does_not_forward_other_port),
                 ("navigation_spam_bounded_listings", self.navigation_spam_bounded_listings),
+                ("restart_listed_as_other_first_recovers", self.restart_listed_as_other_first_recovers),
+                ("unchecked_alias_tab_gets_forward", self.unchecked_alias_tab_gets_forward),
+                ("terminal_link_forwards_other_port", self.terminal_link_forwards_other_port),
                 # Last: they fail the proxy's listener.
                 ("proxy_listener_failure_recovers", self.proxy_listener_failure_recovers),
                 ("restart_keeps_mirror_store_proxied", self.restart_keeps_mirror_store_proxied),
                 # Very last: before its fix it crashed the app.
                 ("alias_bad_chunk_size_survives", self.alias_bad_chunk_size_survives),
+                # After it: before its fix it froze the app.
+                ("held_navigation_joins_fetch_in_flight", self.held_navigation_joins_fetch_in_flight),
             ]:
+                if self.app_frozen:
+                    self.steps.append({"name": name, "ok": False, "error": "skipped: the app is frozen"})
+                    ok = False
+                    continue
                 ok = self.step(name, check) and ok
-        # A step that ended the app (alias_bad_chunk_size_survives before its fix)
-        # leaves nothing to clean up; the report must still be written.
+        # A step that ended or froze the app (alias_bad_chunk_size_survives,
+        # held_navigation_joins_fetch_in_flight before their fixes) leaves
+        # nothing to clean up; the report must still be written.
         try:
-            self.cleanup()
+            if not self.app_frozen:
+                self.cleanup()
         except Exception as error:  # noqa: BLE001
             self.facts["cleanup_error"] = repr(error)
         return ok
