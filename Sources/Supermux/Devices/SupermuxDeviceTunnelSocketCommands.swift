@@ -37,6 +37,8 @@ enum SupermuxDeviceTunnelSocketCommands {
 
     private typealias Stream = SupermuxDeviceLoopbackTunnelLane.ClientHalf
     private static var held: [Stream] = []
+    /// Ports `own_port` registered, so it never unregisters a real listener's.
+    private static var registeredByDriver: Set<Int> = []
 
     struct HookError: LocalizedError {
         let message: String
@@ -177,9 +179,17 @@ enum SupermuxDeviceTunnelSocketCommands {
         ["ports": NSNull()]
     }
 
+    /// Registers a port at most once and unregisters only what it registered,
+    /// so the suite's cleanup never frees a real forward's port.
     private static func ownPort(_ params: [String: Any]) throws -> [String: Any] {
-        _ = try port(params)
-        return ["registered": NSNull()]
+        let target = try port(params)
+        let ports = SupermuxOwnListenerPorts.shared
+        if try flag(params, "registered") {
+            if registeredByDriver.insert(target).inserted { ports.insert(target) }
+        } else if registeredByDriver.remove(target) != nil {
+            ports.remove(target)
+        }
+        return ["registered": ports.contains(target)]
     }
 
     // MARK: - Params

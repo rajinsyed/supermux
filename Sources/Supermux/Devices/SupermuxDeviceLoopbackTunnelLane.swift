@@ -171,10 +171,14 @@ enum SupermuxDeviceLoopbackTunnelLane {
         }
 
         func abort(closing pipes: SupermuxDeviceLoopbackPipe...) async {
-            lock.lock()
-            aborted = true
-            lock.unlock()
+            markAborted()
             for pipe in pipes { await pipe.close() }
+        }
+
+        private func markAborted() {
+            lock.lock()
+            defer { lock.unlock() }
+            aborted = true
         }
     }
 }
