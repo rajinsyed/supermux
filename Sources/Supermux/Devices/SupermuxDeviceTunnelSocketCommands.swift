@@ -110,7 +110,9 @@ enum SupermuxDeviceTunnelSocketCommands {
         } catch {
             return ["status": "connected", "error": "the tunnel ended early: \(error)", "received": response.count]
         }
-        await stream.abort()
+        // The server closed its side (`Connection: close`): close ours too,
+        // so the host's relay ends clean.
+        await stream.finish()
         var result = parse(response)
         result["status"] = "connected"
         return result
