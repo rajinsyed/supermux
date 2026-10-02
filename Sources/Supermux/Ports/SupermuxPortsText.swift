@@ -18,6 +18,11 @@ enum SupermuxPortsText {
                 localized: "supermux.ports.unavailable.directLink",
                 defaultValue: "Port forwarding needs a direct connection to \(macName)."
             )
+        case .unreachable:
+            return String(
+                localized: "supermux.ports.unavailable.unreachable",
+                defaultValue: "Can't reach \(macName) right now. Trying again…"
+            )
         case .offline, nil:
             return String(localized: "supermux.ports.unavailable.offline", defaultValue: "\(macName) is offline.")
         }
