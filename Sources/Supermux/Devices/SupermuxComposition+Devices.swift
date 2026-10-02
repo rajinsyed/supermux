@@ -58,6 +58,7 @@ enum SupermuxDevicesGlue {
         SupermuxDeviceMirrorsGlue.activateIfNeeded()
         SupermuxDeviceNotificationsGlue.activateIfNeeded()
         SupermuxProjectsGlue.activateIfNeeded()
+        SupermuxPortsGlue.activateIfNeeded()
         projectRemotesTask = Task { @MainActor in
             let model = SupermuxComposition.projectsModel
             await model.loadIfNeeded()

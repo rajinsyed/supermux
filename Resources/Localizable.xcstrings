@@ -125369,6 +125369,23 @@
         }
       }
     },
+    "supermux.ports.failed.noFreePort": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No free local port near %lld"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld付近に空いているローカルポートがありません"
+          }
+        }
+      }
+    },
     "supermux.presetEditor.add": {
       "extractionState": "manual",
       "localizations": {
