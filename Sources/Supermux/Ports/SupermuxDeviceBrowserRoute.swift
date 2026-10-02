@@ -11,7 +11,8 @@ import WebKit
 /// `reattachToWorkspace`, every creation path: new tab, split, terminal link,
 /// restore, the Dock, a tab moved in or out) passes its workspace parameters
 /// through ``route(workspaceID:isRemoteWorkspace:proxyEndpoint:dataStoreID:)``.
-/// A bound mirror's browsers then use upstream's remote-workspace mode:
+/// A mirror's browsers (bound, or unbound: the workspaces the ports menu offers
+/// "Open in cmux Browser" in) then use upstream's remote-workspace mode:
 /// navigation waits for, then goes through, the owning Mac's proxy
 /// (``SupermuxDeviceBrowserProxies``), so `localhost` there is that Mac's; and
 /// they keep one persistent website data store per remote app instance
@@ -30,12 +31,11 @@ enum SupermuxDeviceBrowserRoute {
     }
 
     /// The parameters a browser of `workspaceID` is created (or reattached) with.
-    /// Reads only the persisted bindings, so it is safe during session restore.
     static func route(
         workspaceID: UUID, isRemoteWorkspace: Bool,
         proxyEndpoint: BrowserProxyEndpoint?, dataStoreID: UUID?
     ) -> Route {
-        guard !isRemoteWorkspace, let machine = boundMachine(workspaceID: workspaceID),
+        guard !isRemoteWorkspace, let machine = mirroredMachine(workspaceID: workspaceID),
               let store = websiteDataStoreID(for: machine) else {
             return Route(isRemoteWorkspace: isRemoteWorkspace, proxyEndpoint: proxyEndpoint, dataStoreID: dataStoreID)
         }
@@ -71,12 +71,16 @@ enum SupermuxDeviceBrowserRoute {
     /// (and lose its logins). `tests/supermux/loopback_mirror_browser_e2e.py` pins it.
     private static let dataStoreNamespace = UUID(uuidString: "503c7a18-bbc6-4c4b-beca-22549addb0eb")!
 
-    private static func boundMachine(workspaceID: UUID) -> SurfaceMachineID? {
-        // The binding store, never `SupermuxComposition.devices` (not built during restore).
+    /// The Mac whose workspace `workspaceID` mirrors: its persisted binding
+    /// (also a workspace a restore has not added to a window yet), else what
+    /// its panes project, the device index's rule
+    /// (``SupermuxDeviceWorkspaceIndex/ref(forLocalWorkspaceID:)``, live and
+    /// restored projections) that the ports menu and chips use too.
+    private static func mirroredMachine(workspaceID: UUID) -> SurfaceMachineID? {
         let bindings = SupermuxComposition.deviceBindings
-        let ref = Workspace.liveWorkspace(id: workspaceID).flatMap { bindings.ref(forStableID: $0.stableId) }
+        let bound = Workspace.liveWorkspace(id: workspaceID).flatMap { bindings.ref(forStableID: $0.stableId) }
             ?? bindings.ref(forWorkspaceID: workspaceID)
-        return ref?.machine
+        return (bound ?? SupermuxComposition.deviceWorkspaceIndex.ref(forLocalWorkspaceID: workspaceID))?.machine
     }
 }
 
