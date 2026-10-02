@@ -92,65 +92,45 @@ enum SupermuxPortMenusSocketCommands {
 
     // MARK: - Menus
 
-    /// The mirror row's "Ports on <Mac>" as `SupermuxMirrorPortsMenu` builds it.
+    /// The mirror row's "Ports on <Mac>": ``SupermuxMirrorPortsMenuModel``,
+    /// which `SupermuxMirrorPortsMenu` renders.
     private static func mirrorMenu(_ params: [String: Any]) throws -> [String: Any]? {
         guard params["workspace_id"] != nil else { return nil }
         let workspace = try SupermuxMirrorSocketCommands.mirrorWorkspace(params)
-        guard let ref = SupermuxComposition.deviceWorkspaceIndex.ref(forLocalWorkspaceID: workspace.id) else { return nil }
-        let forwards = SupermuxComposition.portForwards
-        let machine = ref.machine
-        let macName = SupermuxComposition.devices.device(for: machine)?.displayName ?? ""
-        let reason = SupermuxPortsText.unavailable(forwards.availability[machine], macName: macName)
+        guard let model = SupermuxMirrorPortsMenuModel(workspaceID: workspace.id) else { return nil }
         var ports: [[String: Any]] = []
-        if reason == nil {
-            let own = Set((forwards.hostPorts[machine]?.ports ?? [])
-                .filter { SupermuxRemoteWorkspaceRef.canonicalWorkspaceID($0.workspaceID) == ref.workspaceID }
-                .map(\.port)).sorted()
-            let other = forwards.forwards.keys
-                .filter { $0.machine == machine && !own.contains($0.remotePort) }
-                .map(\.remotePort)
-                .sorted()
-            for (section, list) in [("own", own), ("other", other)] {
-                for port in list {
-                    let localPort = forwards.localPort(machine: machine, remotePort: port)
-                    let items = localPort != nil
-                        ? ["openInCmuxBrowser", "openInBrowser", "copyLocalURL", "stopForwarding"]
-                        : ["openInCmuxBrowser", "forward"]
-                    ports.append([
-                        "remote_port": port,
-                        "label": SupermuxPortsText.menuLabel(remotePort: port, localPort: localPort),
-                        "section": section,
-                        "items": items,
-                    ])
-                }
+        for (section, list) in [("own", model.ownPorts), ("other", model.otherPorts)] {
+            for port in list {
+                ports.append([
+                    "remote_port": port.remotePort,
+                    "label": port.label,
+                    "section": section,
+                    "items": (port.opensInCmuxBrowser ? ["openInCmuxBrowser"] : []) + port.actions.map(\.rawValue),
+                ])
             }
         }
         return [
             "workspace_id": workspace.id.uuidString,
-            "machine": machine.rawValue,
-            "reason": reason ?? NSNull(),
+            "machine": model.machine.rawValue,
+            "title": model.title,
+            "reason": model.reason ?? NSNull(),
             "ports": ports,
-            "forward_port": reason == nil,
+            "forward_port": model.offersForwardPort,
         ]
     }
 
-    /// Each Mac's Ports… menu as `SupermuxRemoteMacsSettingsCard` builds it.
+    /// Each Mac's Ports… menu in Settings, from the snapshot
+    /// `SupermuxRemoteMacsSettingsCard` renders.
     private static func settingsMenus() -> [[String: Any]] {
         SupermuxComposition.remoteMacsSettings.snapshot().macs.map { mac in
-            let shown = mac.link == .connected && mac.portsNote == nil
-            let ports = shown ? mac.ports : []
+            let shown = mac.showsPortsMenu
             return [
                 "machine": mac.id,
                 "shown": shown,
-                "ports": ports.map { port -> [String: Any] in
-                    [
-                        "remote_port": port.remotePort,
-                        "items": port.localPort != nil
-                            ? ["openInBrowser", "copyLocalURL", "stopForwarding"]
-                            : ["forward"],
-                    ]
+                "ports": (shown ? mac.ports : []).filter { !$0.actions.isEmpty }.map { port -> [String: Any] in
+                    ["remote_port": port.remotePort, "items": port.actions.map(\.rawValue)]
                 },
-                "forward_port": shown,
+                "forward_port": shown && mac.canForwardPorts,
             ]
         }
     }

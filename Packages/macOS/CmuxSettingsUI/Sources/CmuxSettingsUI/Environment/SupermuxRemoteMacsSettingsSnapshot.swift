@@ -19,15 +19,27 @@ public struct SupermuxRemoteMacsSettingsSnapshot: Equatable, Sendable {
         public let lineText: String
         /// Its title in the Ports… menu (`localhost:3000 → here :3001`).
         public let menuLabel: String
+        /// Its Ports… submenu, in order; empty leaves it out of the menu. The
+        /// app decides it as for a mirror row's "Ports on <Mac>" (Stop
+        /// Forwarding for every forward that is not stopped, also a pending one).
+        public let actions: [SupermuxRemoteMacPortAction]
 
         public var id: Int { remotePort }
 
-        public init(remotePort: Int, localPort: Int?, isForwarded: Bool, lineText: String, menuLabel: String) {
+        public init(
+            remotePort: Int,
+            localPort: Int?,
+            isForwarded: Bool,
+            lineText: String,
+            menuLabel: String,
+            actions: [SupermuxRemoteMacPortAction] = []
+        ) {
             self.remotePort = remotePort
             self.localPort = localPort
             self.isForwarded = isForwarded
             self.lineText = lineText
             self.menuLabel = menuLabel
+            self.actions = actions
         }
     }
 
@@ -53,6 +65,14 @@ public struct SupermuxRemoteMacsSettingsSnapshot: Equatable, Sendable {
         /// Why its ports cannot be forwarded right now (an older Supermux, no
         /// direct connection), shown instead of them.
         public let portsNote: String?
+
+        /// Whether its ports can be forwarded now (Forward a Port…).
+        public var canForwardPorts: Bool { link == .connected && portsNote == nil }
+
+        /// Whether its row shows the Ports… menu: while it can forward, and
+        /// while a port still offers something (a pending forward's Stop
+        /// Forwarding, also while it is offline or cannot forward).
+        public var showsPortsMenu: Bool { canForwardPorts || ports.contains { !$0.actions.isEmpty } }
 
         public init(
             id: String,
