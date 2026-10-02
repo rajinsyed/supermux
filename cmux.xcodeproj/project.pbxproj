@@ -3569,6 +3569,7 @@
 		50BE00190200000000000008 /* SupermuxPortForwardPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00190200000000000007 /* SupermuxPortForwardPlan.swift */; };
 		50BE00190200000000000012 /* SupermuxPortForwardPrompt.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00190200000000000011 /* SupermuxPortForwardPrompt.swift */; };
 		50BE0019020000000000000A /* SupermuxPortForwards.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00190200000000000009 /* SupermuxPortForwards.swift */; };
+		50BE00190800000000000002 /* SupermuxPortMenusSocketCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00190800000000000001 /* SupermuxPortMenusSocketCommands.swift */; };
 		50BE00190200000000000014 /* SupermuxPortsText.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00190200000000000013 /* SupermuxPortsText.swift */; };
 		50BE000100000000000000C4 /* SupermuxProjectsSectionHeightPreferenceKey.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000C3 /* SupermuxProjectsSectionHeightPreferenceKey.swift */; };
 		50BE0006000000000000001A /* SupermuxProjectsSocketCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00060000000000000019 /* SupermuxProjectsSocketCommands.swift */; };
@@ -8044,6 +8045,7 @@
 		50BE00190200000000000007 /* SupermuxPortForwardPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ports/SupermuxPortForwardPlan.swift; sourceTree = "<group>"; };
 		50BE00190200000000000011 /* SupermuxPortForwardPrompt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ports/SupermuxPortForwardPrompt.swift; sourceTree = "<group>"; };
 		50BE00190200000000000009 /* SupermuxPortForwards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ports/SupermuxPortForwards.swift; sourceTree = "<group>"; };
+		50BE00190800000000000001 /* SupermuxPortMenusSocketCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ports/SupermuxPortMenusSocketCommands.swift; sourceTree = "<group>"; };
 		50BE00190200000000000013 /* SupermuxPortsText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ports/SupermuxPortsText.swift; sourceTree = "<group>"; };
 		50BE000100000000000000C3 /* SupermuxProjectsSectionHeightPreferenceKey.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxProjectsSectionHeightPreferenceKey.swift; sourceTree = "<group>"; };
 		50BE00060000000000000019 /* SupermuxProjectsSocketCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Projects/SupermuxProjectsSocketCommands.swift; sourceTree = "<group>"; };
@@ -9532,6 +9534,7 @@
 				50BE00190200000000000011 /* SupermuxPortForwardPrompt.swift */,
 				50BE00190200000000000013 /* SupermuxPortsText.swift */,
 				50BE00190200000000000015 /* SupermuxDevicePortLinks.swift */,
+				50BE00190800000000000001 /* SupermuxPortMenusSocketCommands.swift */,
 				50BE00190500000000000011 /* SupermuxRemoteSimulatorSnapshot.swift */,
 				50BE0019050000000000001B /* Workspace+SupermuxRemoteSimulator.swift */,
 				50BE00190500000000000019 /* SupermuxRemoteSimulatorQuality.swift */,
@@ -16520,6 +16523,7 @@
 				50BE00190200000000000008 /* SupermuxPortForwardPlan.swift in Sources */,
 				50BE00190200000000000012 /* SupermuxPortForwardPrompt.swift in Sources */,
 				50BE0019020000000000000A /* SupermuxPortForwards.swift in Sources */,
+				50BE00190800000000000002 /* SupermuxPortMenusSocketCommands.swift in Sources */,
 				50BE00190200000000000014 /* SupermuxPortsText.swift in Sources */,
 				50BE000100000000000000C4 /* SupermuxProjectsSectionHeightPreferenceKey.swift in Sources */,
 				50BE0006000000000000001A /* SupermuxProjectsSocketCommands.swift in Sources */,

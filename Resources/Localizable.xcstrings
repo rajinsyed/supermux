@@ -617114,6 +617114,23 @@
         }
       }
     },
+    "supermux.ports.page.unreachable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can't reach %@ right now. Reload this page in a moment."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "現在%@に接続できません。少し待ってから、このページを再読み込みしてください。"
+          }
+        }
+      }
+    },
     "supermux.ports.failed.noFreePort": {
       "extractionState": "manual",
       "localizations": {
@@ -617552,6 +617569,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@はオフラインです。"
+          }
+        }
+      }
+    },
+    "supermux.ports.unavailable.unreachable": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Can't reach %@ right now. Trying again…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "現在%@に接続できません。再試行しています…"
           }
         }
       }
@@ -618079,6 +618113,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "送信"
+          }
+        }
+      }
+    },
+    "supermux.ports.chip.notForwarded": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Port %1$@ from %2$@ isn't forwarded to this Mac. Forward it with Ports on %3$@ › Forward to This Mac."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%2$@のポート%1$@はこのMacに転送されていません。「%3$@のポート」›「このMacに転送」で転送してください。"
           }
         }
       }

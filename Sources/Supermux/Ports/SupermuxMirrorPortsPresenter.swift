@@ -8,7 +8,9 @@ import SupermuxKit
 /// - upstream's sidebar port chips, filled with the owning Mac's listening
 ///   ports for that workspace (`applyRemoteDetectedSurfacePortsSnapshot`, the
 ///   SSH workspaces' path). A chip opens `http://localhost:<port>` in a cmux
-///   browser in the mirror, which reaches the owning Mac's port.
+///   browser in the mirror, which reaches the owning Mac's port; outside cmux
+///   it opens the forward's local port
+///   (``SupermuxDevicePortLinks/openMirrorChip(_:workspaceID:prefersCmuxBrowser:)``).
 /// - a pill (`supermux.ports.<port>`) when a forward landed on another local
 ///   port, naming where it is reachable here; clicking it opens that URL.
 ///   The status projector writes only `supermux.remote.*`, so the keys never

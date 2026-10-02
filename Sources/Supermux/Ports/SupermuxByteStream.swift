@@ -151,6 +151,15 @@ final class SupermuxNWConnectionStream: SupermuxByteStream, @unchecked Sendable 
         connection.cancel()
     }
 
+    /// Releases the connection once its relay, reply or refusal is over, clean
+    /// or not: Network.framework keeps a started connection (its socket and
+    /// queue) until it is cancelled. Graceful after ``finish()``, whose final
+    /// send has completed, so nothing sent is cut off. Not part of
+    /// ``SupermuxByteStream``: a tunnel lane ends with its two directions.
+    func close() {
+        connection.cancel()
+    }
+
     /// Resumes the start continuation exactly once, from whichever of state
     /// change, deadline or cancellation comes first.
     private final class ReadyOutcome: @unchecked Sendable {

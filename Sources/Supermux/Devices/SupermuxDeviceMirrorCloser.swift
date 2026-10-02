@@ -22,6 +22,12 @@ private let mirrorCloseLog = Logger(subsystem: "dev.cmux", category: "supermux-m
 ///   beeps and auto-mirror shows the workspace again.
 ///   A close not sent yet is cancelled when a local workspace shows that
 ///   remote workspace again (Reopen Closed Workspace, a manual open).
+/// - **The last terminal tab beside the mirror's own tabs** (a browser, a
+///   Files preview, Markdown…): that Mac cannot keep a workspace without a
+///   surface, so its workspace closes there exactly as for a user close
+///   (pending, `force`), while the workspace here stays open with those tabs,
+///   unbound: an ordinary local workspace (``closeOnItsMacKeepingHere(_:ref:)``,
+///   from the `device-layout-local-panels` touchpoint).
 /// - **Hide Here** (the row menus): remembers the ref in the hidden set so
 ///   auto-mirror never reopens it, then closes the mirror here only.
 /// - **Programmatic closes** of a mirror (socket, AppleScript, scripts):
@@ -86,6 +92,21 @@ final class SupermuxDeviceMirrorCloser {
         index.unbind(workspace)
         closeLocally(workspace, in: manager, recordHistory: true)
         mirrorCloseLog.info("closing \(ref.description, privacy: .public) on its Mac")
+        sendPendingCloses()
+        onChange()
+        return true
+    }
+
+    /// The mirror's last terminal tab closed while tabs of its own remain. Its
+    /// workspace closes on its Mac like a user close of the mirror (that Mac
+    /// refuses to close a workspace's last surface), and the workspace here
+    /// stays open with those tabs, unbound, so auto-mirror and the layout sync
+    /// leave it alone. False when `workspace` is not bound as the mirror of `ref`.
+    func closeOnItsMacKeepingHere(_ workspace: Workspace, ref: SupermuxRemoteWorkspaceRef) -> Bool {
+        guard index.boundRef(forLocal: workspace) == ref else { return false }
+        pending.hide(ref)
+        index.unbind(workspace)
+        mirrorCloseLog.info("closing \(ref.description, privacy: .public) on its Mac; its mirror stays here with its own tabs")
         sendPendingCloses()
         onChange()
         return true
@@ -255,7 +276,8 @@ final class SupermuxDeviceMirrorCloser {
 }
 
 /// The static entry points the `device-mirror-close` touchpoints in
-/// `TabManager.swift` call; they forward to the app's
+/// `TabManager.swift` (and the `device-layout-local-panels` one in
+/// `DeviceWorkspaceLayoutCoordinator.swift`) call; they forward to the app's
 /// ``SupermuxDeviceMirrorCloser``.
 @MainActor
 enum SupermuxDeviceMirrorCloseGate {
@@ -267,6 +289,16 @@ enum SupermuxDeviceMirrorCloseGate {
 
     static func closeOnItsMac(_ workspace: Workspace, in manager: TabManager) -> Bool {
         SupermuxComposition.deviceMirrorCloser.closeOnItsMac(workspace, in: manager)
+    }
+
+    /// The `device-layout-local-panels` touchpoint in
+    /// `DeviceWorkspaceLayoutCoordinator.projectionDidEnd`: the mirror's last
+    /// terminal tab closed beside tabs of its own. False when `workspace` is
+    /// not bound as the mirror of that remote workspace.
+    static func closeOnItsMacKeepingHere(_ workspace: Workspace, machine: SurfaceMachineID, remoteWorkspaceID: String) -> Bool {
+        SupermuxComposition.deviceMirrorCloser.closeOnItsMacKeepingHere(
+            workspace, ref: SupermuxRemoteWorkspaceRef(machine: machine, workspaceID: remoteWorkspaceID)
+        )
     }
 
     /// Runs the phone's Delete Group (mobile `workspace.group.action delete`).

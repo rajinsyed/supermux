@@ -153,19 +153,36 @@ restore: quit the app, relaunch it with the opt-in, and the mirror reconnects.
 to this Mac. Viewer and owner are one app, so every remote port is busy here and each forward must
 land on another local port. It starts `python3 -m http.server R` in a background source workspace's
 terminal (`surface.send_text`, then `surface.ports_kick`) and checks: an automatic forward of R
-becomes active on L ≠ R within `--latency` (default 8 s) and serves the owner's page on
+becomes active within `--latency` (default 8 s) on L, neither R nor one of R+1…R+3 (the suite
+listens on those itself), and serves the owner's page on
 `127.0.0.1:L` and `[::1]:L`; a suite-owned dual-stack `[::]` listener plus a host port injected
 with Track A's `supermux.devices.tunnel.inject_port` is forwarded elsewhere while `127.0.0.1:R2`
 still reaches the suite's own listener; the mirror's `supermux.ports.R` pill names L and its port
 chips list R; Forward a Port / Stop / Resume (`supermux.devices.ports.forward|stop|resume`); a
 server that exits removes its forward; a dropped link (`supermux.devices.link stop|restore`) makes
-forwards wait, empties the chips and brings them back on the same L; auto-forward off keeps a
+forwards wait and empties the chips, and the suite frees R+1…R+3 while the link is down, so the
+first free port above R is below L and only the forward's last-local-port preference brings it back
+on L (the step fails rather than pass vacuously when nothing between R and L is free); auto-forward off keeps a
 manual forward; a default-browser link from the mirror's terminal (Track C's
-`supermux.devices.mirror.link_open`) goes to L; and Track A's `pretend_old_host` disables
-forwarding (`needs_update`). The DEBUG driver `supermux.devices.ports.*`
-(`Sources/Supermux/Ports/SupermuxDevicePortsSocketCommands.swift`) answers `list {machine?}` (the
-forwards, availability, host listings, and each mirror's chips and pills), `forward`, `stop`,
-`resume {machine, port}`, `set_auto {enabled}` (the Settings card's action) and `refresh {machine?}`.
+`supermux.devices.mirror.link_open`) goes to L; Track A's `pretend_old_host` disables
+forwarding (`needs_update`); and with `supermux.devices.tunnel.fail_requests` making the loopback
+host answer every `mobile.host.status` after a relink `timed_out`, R comes back once the host answers
+again, with no port change and no relink (`capability_failure_retried`: the forwards ask again after
+1 s, 2 s, 4 s … while the link is up), and with every `ports.list` failing until the reconnect's own
+`supermux.ports.updated` pokes are over (5 s), R comes back the same way (`listing_failure_retried`:
+a failed listing is fetched again by itself); the mirror's chip for R clicked with "Open Sidebar Port Links in cmux
+Browser" off opens `http://localhost:L` in the default browser, never this Mac's own
+`localhost:R` (`chip_default_browser_uses_local_port`); and a manual forward left waiting by a
+dropped link is offered Stop Forwarding in both port menus, goes at once when stopped and never
+listens again once the link is back (`pending_forward_offers_stop`). The DEBUG driver
+`supermux.devices.ports.*` (`Sources/Supermux/Ports/SupermuxDevicePortsSocketCommands.swift`)
+answers `list {machine?}` (the forwards, availability, host listings, and each mirror's chips and
+pills), `forward`, `stop`, `resume {machine, port}`, `set_auto {enabled}` (the Settings card's
+action) and `refresh {machine?}`; `Sources/Supermux/Ports/SupermuxPortMenusSocketCommands.swift`
+answers `chip_open {workspace_id, port, cmux_browser?}` (a sidebar chip click through the
+`device-mirror-port-chip` touchpoint's call; the default browser and the alert are captured:
+`external_url`, `notice`, `new_browser_panel_id`) and `menus {workspace_id?}` (the mirror's
+"Ports on <Mac>" model and each Mac's Settings Ports… menu, every port with its `items`).
 
 ```bash
 CMUX_E2E_SUITES="loopback_port_forward_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
@@ -524,6 +541,14 @@ when S gets T4 in that pane; closing T1 in M closes it on S (the close path's gu
 with only the first fix); closing B and B2 leaves S alone and the pure mirror follows the next split.
 Every expected pair must hold, then stay so for `--settle` seconds. Before the fix the third step
 fails deterministically (the mirror's layout target is nil while B exists, so T2 is never projected).
+The last step uses a second source S2 with ONE terminal, its mirror M2 and a browser B3 in M2: closing
+the terminal's tab in M2 (`surface.close`) closes S2 on its Mac (it cannot keep a workspace without a
+surface), M2 shows no failure card (`supermux.devices.terminal_close.inspect`), stays open holding only
+B3 (`mirror.layout`'s `panel_kinds`) and is no longer a mirror (`supermux.devices.bindings`), S2 is not
+in the Hide Here set and its pending close is forgotten (`supermux.devices.hidden`), and for at least 3
+seconds nothing projects a terminal into M2, closes it or mirrors S2 again. Before that fix the owning
+Mac refused `mobile.terminal.close` ("Cannot close the last surface"): the card showed, S2 kept running
+and auto-mirror closed M2, browser included, as an orphan.
 
 ## Mirror browser E2E
 
@@ -531,23 +556,44 @@ fails deterministically (the mirror's layout target is nil while B exists, so T2
 Mac's `localhost` (#707). In loopback both "Macs" share one loopback, so it checks the route, not
 only that a page loads. Marker servers run in the script, in no workspace, one per step:
 `localhost:P` opened in M loads through the mirror browser proxy and the owner's in-process tunnel
-host (the tunnel journal's `opened` for P), in the loopback device's data store, and the server sees
-`Host: localhost:P`; `127.0.0.1` routes the same way; the same kind of URL in S stays direct (no
+host (the tunnel journal's `opened` for P), in the loopback app instance's data store (the suite
+computes it independently: a v5 UUID of `device:<uuid>@<tag>` in a namespace it pins), and the server
+sees `Host: localhost:P`; `127.0.0.1` routes the same way; the same kind of URL in S stays direct (no
 proxy configuration, the profile store, no tunnel open); this Mac's LAN address in M loads this
 Mac's page with no tunnel open (Network.framework skips the proxy for this Mac's own addresses, as
 for `localhost`, so the browser never asks it), and an authenticated CONNECT to that address, as
 WebKit sends for any other LAN or public host, is dialed directly by the proxy (skipped without a
-LAN address); a closed port shows "localhost:N on <Mac> isn't
-answering"; the proxy refuses SOCKS no-auth (`05 FF`), a wrong password (`01 01`) and a CONNECT
+LAN address); a closed port opened in a new tab of M shows "localhost:N on <Mac> isn't
+answering" within 5 s (its own tab, not the shared one: since WebKit 27 a navigation typed into a
+tab, to plain HTTP on a host that is not loopback by name, as the `localhost` alias and a LAN address
+are, leaves the page's hardened Enhanced Security WebContent process and swaps back at the response,
+and on an affected host a swap into a WebContent process WebKit already had blocks its UI thread
+about 5 s per sandbox extension, 10 s and more per page, in a bare `WKWebView` too); the proxy
+refuses SOCKS no-auth (`05 FF`), a wrong password (`01 01`) and a CONNECT
 without credentials (`407`), and the right credential connects; a terminal link opened in the cmux
 browser from M's terminal opens a routed browser in M; the browser moved into S loses the route and
 store, and moved back gets them again; with the tunnel driver's `pretend_old_host` and a relink the
-page says to update Supermux on that Mac. DEBUG drivers (`SupermuxMirrorBrowserSocket`):
-`supermux.devices.mirror.browser_route {workspace_id}` (per browser: `routes_remotely`,
-`proxy_configs`, `store_identifier`), `.browser_proxy {machine}` (port, credential, `owner_dials`,
-`direct_dials`, `failures`; null until it listens) and `.link_open {workspace_id, surface_id, url,
-destination}` (a terminal link click with the system browser captured). It also reads the tunnel
-drivers `supermux.devices.tunnel.journal` and `.pretend_old_host` of the tunnel lanes work.
+page says to update Supermux on that Mac. Then the proxy's own hygiene: after relayed, refused (SOCKS
+no-auth), failed (`502`), explained and, with a LAN address, direct proxy connections end, `lsof` on
+the app (the pid listening on the proxy's port) shows no socket whose peer is one of the script's
+clients, nor any dial to the LAN server (`proxy_connections_are_released`; before the fix each one
+stayed in the app in `TIME_WAIT`); the route's data store for two machine ids that differ only by
+tag are two stores (`data_store_per_app_instance`); a browser in an unbound mirror (auto-mirror off,
+`vm.workspace_open`) routes like a bound one's (`unbound_mirror_browser_routes`); 72 connections that
+never send a byte are closed, at least the 8 past the 64-handshake limit at once and all by the 10 s
+handshake deadline (`idle_proxy_connections_close`); and after `browser_proxy_fail` M's open tab and
+a new tab both load through a fresh port (`proxy_listener_failure_recovers`, last: no
+`browser_proxy` read before the tabs load, since that read starts a listener itself; the open tab
+must be navigated, so on a host with the WebKit swap delay above this step takes about 11 s of its
+17.5 s `browser.navigate` budget). DEBUG drivers
+(`SupermuxMirrorBrowserSocket`): `supermux.devices.mirror.browser_route {workspace_id}` (per
+browser: `routes_remotely`, `proxy_configs`, `store_identifier`), `.browser_proxy {machine}` (port,
+credential, `owner_dials`, `direct_dials`, `failures`; null until it listens; starts the proxy),
+`.browser_proxy_fail {machine}` (runs the listener's `.failed` path; `failed_port`),
+`.browser_store {machine}` (the store identifier the route gives that app instance, any `device:` id)
+and `.link_open {workspace_id, surface_id, url, destination}` (a terminal link click with the system
+browser captured). It also reads the tunnel drivers `supermux.devices.tunnel.journal` and
+`.pretend_old_host` of the tunnel lanes work.
 
 ```bash
 CMUX_E2E_SUITES="loopback_mirror_local_panels_e2e loopback_mirror_browser_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
@@ -563,8 +609,10 @@ another build does (the shared projects file, then a save that folds it in) whos
 includes a named pipe nobody writes, so every git command there blocks, as in a folder behind an
 unanswered privacy prompt. `projects.list` must answer within 4 s (the host's 2 s bound plus slack)
 three times on the host (`supermux.devices.local_projects`) and once over the link; before the bound
-it waited for git until the 5 s kill. Cleanup opens the pipe for writing to release the waiting git
-processes, then removes it. Each answer must also keep the healthy project's `git_remote_url` (the
+it waited for git until the 5 s kill. Cleanup first ends any git there whose parent is launchd (left
+by an app that quit, which no deadline ends any more), then opens the pipe for writing to release the
+waiting git processes and removes it (a git woken from opening the pipe can still block reading it:
+one ran on for an hour after a run). Each answer must also keep the healthy project's `git_remote_url` (the
 last origin known stands in for a lookup not finished in time).
 
 `first_load_is_bounded_while_a_folder_blocks` (needs `--app-path`; the runner passes it with
@@ -577,6 +625,16 @@ workspace. Each must answer within 8 s (2 s for the load, 2 s more for the origi
 within 25 s of the launch (else the step is vacuous), and the launch must open exactly one terminal.
 Before the bound, `preset.launch` waited for the whole load and missed the 20 s deadline, and the
 terminal still opened later.
+
+`blocked_folder_git_never_outlives_its_bound` (the last step, also `--app-path`) runs before the
+cleanup touches the pipe. A git process in the blocked folder is one named `git` (`lsof -c git`) whose
+command line names the folder (`git -C <folder> …`) or whose working directory is in it (`git worktree
+list`). None may have launchd as its parent (left by step 14c's quit); the origin lookups a
+`projects.list` starts there must be gone 10 s after they were seen (the host kills each at 5 s); then
+it sends `worktrees.list` for the blocked project (a `git worktree list` there, killed at 30 s), waits
+until that git runs, quits the app, and no git process may remain in the folder 5 s after the app is
+gone. It opens the app again for the cleanup. Before `SupermuxGitChildProcesses`, a git still running
+when the app quit was left under launchd for good: the deadline timers die with the app.
 
 ## Tunnel lanes E2E
 
@@ -601,21 +659,40 @@ is advertised; a GET to `localhost:P` returns the marker; 30 GETs to a server th
 `Connection: close` each read the whole page and then a clean end of stream (journal `closed clean`;
 Network.framework's end-of-stream ENODATA used to abort about one in five); a `::1`-only server
 answers `localhost`; the
-host journals `opened {scope: loopback, port}` and never a host name; `169.254.169.254` and
-`example.com` are denied without resolving; a closed port is `refused`; a port registered as this
-app's own listener (`tunnel.own_port`) is denied (the loop guard); a revoked peer is denied
-(`unauthorized`); `mobile.supermux.ports.list` attributes a server started in a workspace's terminal
-to that workspace (after `surface.ports_kick`), lists the suite's own server only under
-`other_ports`, and lists an injected non-listening port (`tunnel.inject_port`) until it is cleared; a
-held tunnel ends when the link drops; and with `tunnel.pretend_old_host` the capability disappears and
-tunnels answer `needs_update`, then come back.
+host journals `opened {scope: loopback, port}` and never a host name; with this build's "iOS Browser
+Reaches Other Hosts" turned on (`tunnel.allow_other_hosts`, read back after the opens so a cmux.json
+that manages the key fails the step instead of turning it off, and put back afterwards), `169.254.169.254`,
+`example.com` and `192.0.2.1` are still denied without resolving (journal `refused {scope: policy}`;
+the phone's policy would resolve the name and try the literal); a closed port is `refused`; a port
+registered as this app's own listener (`tunnel.own_port`) is denied (the loop guard); a revoked peer
+is denied (`unauthorized`); `mobile.supermux.ports.list` attributes a server started in a workspace's
+terminal to that workspace (after `surface.ports_kick`), lists the suite's own server only under
+`other_ports`, and lists an injected non-listening port (`tunnel.inject_port`, which bypasses the
+live-listener check) until it is cleared; a held tunnel ends when the link drops; with
+`tunnel.pretend_old_host` the capability disappears and tunnels answer `needs_update`, then come back;
+and when the workspace's terminal reports its live port plus one nothing serves (the v1
+`report_ports`, no port scan, retried until the workspace still reports it after the listing),
+`ports.list` keeps the live port and drops the dead one: the live-listener filter, not a scan,
+removes it;
+and with `tunnel.fail_requests` failing every
+capability request after a relink (unknown capabilities, not absent ones) a tunnel answers
+`unreachable`, the browser page's reason is `unreachable` and neither it nor the Settings ports note
+asks for an update, the forwards' availability is `unreachable`, and once the host answers again the
+forwards find it available with no relink (`unknown_capabilities_are_retryable`).
+
+`tunnel.fail_requests {method, count}` makes the loopback host answer the next `count` requests for
+`method` with `timed_out` (what the viewer's link reports for a missed reply deadline on a live
+link, #723), counted only after each connection's `mobile.sync.fetch` so the dial's own
+`mobile.host.status` identity check passes; `count: 0` disarms, and without `count` it reports
+`{remaining, failed}`. `tunnel.http_get` answers a failed open with the mirror browser's error page
+reason and headline too (`page_reason`, `page_headline`).
 
 Run it: `CMUX_E2E_SUITES="loopback_device_tunnel_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`.
 The attribution step needs the sidebar's port detection (Settings: show ports, not "hide all
 details"). Not covered here (two Macs only): `IrxTunnelClient` and QUIC flow control,
 `DeviceIrxClient.supermuxTunnelConnection` (#694), the fence's `isMac` directory lookup,
-`stillAuthorized` and `admission.recheck`, lane credit at 48 tunnels, and a Tailscale-only link
-(`no_direct_link`).
+`stillAuthorized` and `admission.recheck`, lane credit at 48 tunnels, a Tailscale-only link
+(`no_direct_link`), and an Iroh link between dials (`unreachable`).
 ## Mirror simulator E2E
 
 `tests/supermux/loopback_mirror_simulator_e2e.py` checks that a device mirror's Simulator runs on the
