@@ -107,12 +107,17 @@ class RateLimited(Exception):
 class Socket:
     """Newline-delimited JSON client for the cmux v2 control socket."""
 
+    # The app drops a client that sent nothing for 30 s (`clientReadTimeout`);
+    # a step that waits on simctl (a slow boot) would find the pipe broken.
+    IDLE_RECONNECT_S = 20.0
+
     def __init__(self, path: str, timeout_s: float = 30.0) -> None:
         self.path = path
         self.timeout_s = timeout_s
         self._sock: Optional[socket.socket] = None
         self._buffer = b""
         self._next_id = 1
+        self._last_used = 0.0
 
     def connect(self) -> "Socket":
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -120,6 +125,7 @@ class Socket:
         sock.connect(self.path)
         self._sock = sock
         self._buffer = b""
+        self._last_used = time.monotonic()
         return self
 
     def close(self) -> None:
@@ -142,6 +148,10 @@ class Socket:
 
     def _call_once(self, method: str, params: Optional[Dict[str, Any]], timeout_s: Optional[float]) -> Any:
         assert self._sock is not None, "not connected"
+        if time.monotonic() - self._last_used > self.IDLE_RECONNECT_S:
+            self.close()  # before sending, so no request is lost or sent twice
+            self.connect()
+        self._last_used = time.monotonic()
         request_id = self._next_id
         self._next_id += 1
         line = json.dumps({"id": request_id, "method": method, "params": params or {}}) + "\n"
@@ -416,7 +426,7 @@ class MirrorSimulatorE2E:
         except Skipped as skipped:
             record["ok"] = None
             record["skipped"] = str(skipped)
-        except Failure as error:
+        except (Failure, OSError) as error:
             record["ok"] = False
             record["error"] = str(error)
         record["seconds"] = round(time.monotonic() - started, 2)
