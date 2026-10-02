@@ -102,7 +102,7 @@ enum SupermuxDevicePortLinks {
         }
         if prefersCmuxBrowser {
             // The user's own click: it may get a same-port forward like a typed URL.
-            SupermuxSamePortForwardGate.noteUserOpen(port: port)
+            SupermuxSamePortForwardGate.noteUserOpen(machine: ref.machine, port: port)
         }
         if prefersCmuxBrowser,
            AppDelegate.shared?.tabManagerFor(tabId: workspaceID)?.openBrowser(

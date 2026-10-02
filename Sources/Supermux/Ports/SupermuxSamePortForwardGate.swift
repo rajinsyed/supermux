@@ -24,7 +24,7 @@ import Foundation
 ///    of its other loopback ports (a Docker API, a database, a server an agent
 ///    started) only for the user's own action, a typed URL, a terminal link they
 ///    Command-clicked or the Ports menu's Open in cmux Browser
-///    (``noteUserOpen(port:)``), or once the user forwarded it that way (a page
+///    (``noteUserOpen(machine:port:)``), or once the user forwarded it that way (a page
 ///    could otherwise make this Mac listen on any of them);
 /// 4. ``SupermuxPortForwards/forwardOnDemand(machine:remotePort:)`` starts the
 ///    forward, or moves one that landed on another port back to P;
@@ -91,22 +91,27 @@ enum SupermuxSamePortForwardGate {
     private static var aliasPasses: [Target: ContinuousClock.Instant] = [:]
     /// Targets ``forwardOpenTabs()`` is starting a forward for.
     private static var starting: Set<Target> = []
-    /// Ports the user opened in a mirror browser just now, other than by typing
-    /// (``noteUserOpen(port:)``).
-    private static var userOpens: [Int: ContinuousClock.Instant] = [:]
+    /// Another Mac's ports the user opened in one of its mirrors just now, other
+    /// than by typing (``noteUserOpen(machine:port:)``).
+    private static var userOpens: [Target: ContinuousClock.Instant] = [:]
     /// How long a noted user open lasts (the browser opens and navigates at once).
     private static let userOpenLasts: Duration = .seconds(5)
 
-    /// The user is opening `localhost:port` in a mirror browser by their own
-    /// action (a terminal link they Command-clicked, the Ports menu's Open in cmux
-    /// Browser, a port chip): its navigation counts as typed.
-    static func noteUserOpen(port: Int) {
-        userOpens[port] = .now
+    /// The user is opening `machine`'s `localhost:port` in a cmux browser of one
+    /// of its mirrors by their own action (the Ports menu's Open in cmux Browser,
+    /// a port chip): the next navigation of a browser of that Mac to that port
+    /// counts as typed, once, within ``userOpenLasts``.
+    static func noteUserOpen(machine: SurfaceMachineID, port: Int) {
+        userOpens[Target(machine: machine, port: port)] = .now
     }
 
-    /// `noteUserOpen(url:)` for a loopback `http` URL; any other URL is ignored.
-    static func noteUserOpen(url: URL) {
-        if let port = loopbackPort(url) { noteUserOpen(port: port) }
+    /// A terminal link the user Command-clicked into a cmux browser of
+    /// `workspace`: noted when `url` is `localhost` and `workspace` is a device
+    /// mirror (its browsers reach that Mac); a no-op for any other workspace or URL.
+    static func noteUserOpen(url: URL, inWorkspace workspace: Workspace) {
+        guard let port = loopbackPort(url),
+              let machine = SupermuxMirrorPortsActions.mirrorRef(workspaceID: workspace.id)?.machine else { return }
+        noteUserOpen(machine: machine, port: port)
     }
 
     /// Whether `request` waits for a same-port forward. True when held:
@@ -129,10 +134,14 @@ enum SupermuxSamePortForwardGate {
         }
         // Cheap first: most navigations are not to a loopback port.
         guard let url = request.url, let port = loopbackPort(url),
-              let machine = dataStoreID.flatMap(SupermuxDeviceBrowserRoute.machine(forDataStore:)),
-              let target = target(url, machine: machine) else { return false }
+              let machine = dataStoreID.flatMap(SupermuxDeviceBrowserRoute.machine(forDataStore:)) else { return false }
+        // A user open counts for this navigation only, whether it is held or not.
         var typed = typed
-        if let opened = userOpens.removeValue(forKey: port), ContinuousClock.now - opened < userOpenLasts { typed = true }
+        if let opened = userOpens.removeValue(forKey: Target(machine: machine, port: port)),
+           ContinuousClock.now - opened < userOpenLasts {
+            typed = true
+        }
+        guard let target = target(url, machine: machine) else { return false }
         let token = UUID()
         let dropped = Flag()
         let task = Task { @MainActor in
