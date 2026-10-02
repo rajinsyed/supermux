@@ -31,11 +31,16 @@ enum SupermuxDeviceBrowserRoute {
     }
 
     /// The parameters a browser of `workspaceID` is created (or reattached) with.
+    /// A browser that bypasses the workspace proxy (the http diff viewer, a
+    /// `local`-context split) keeps upstream's: this Mac's profile store. On the
+    /// mirror's store with no endpoint its loopback navigations were rerouted
+    /// forever (``reroutedURL(_:dataStoreID:)``), and its proxy configuration
+    /// (this Mac's system proxies) replaced the one every mirror tab shares.
     static func route(
         workspaceID: UUID, isRemoteWorkspace: Bool,
-        proxyEndpoint: BrowserProxyEndpoint?, dataStoreID: UUID?
+        proxyEndpoint: BrowserProxyEndpoint?, dataStoreID: UUID?, bypassesProxy: Bool
     ) -> Route {
-        guard !isRemoteWorkspace, let machine = mirroredMachine(workspaceID: workspaceID),
+        guard !bypassesProxy, !isRemoteWorkspace, let machine = mirroredMachine(workspaceID: workspaceID),
               let store = websiteDataStoreID(for: machine) else {
             return Route(isRemoteWorkspace: isRemoteWorkspace, proxyEndpoint: proxyEndpoint, dataStoreID: dataStoreID)
         }
@@ -248,8 +253,8 @@ final class SupermuxDeviceBrowserProxies {
 /// `fetch`, `XMLHttpRequest`, `WebSocket` and `EventSource` send `localhost:Q`
 /// to the alias, which the proxy takes to the owning Mac. On an as-written page
 /// it stands aside, so every `localhost:Q` call went to this Mac's own port Q
-/// (a Supabase on 54321 there, with the page's cookies). This variant, on a
-/// mirror browser's main frame only, sends a cleartext loopback request on to
+/// (a Supabase on 54321 there, with the page's cookies). This variant, in every
+/// loopback frame of a mirror browser, sends a cleartext loopback request on to
 /// `localhost:Q` when Q is an as-written port (same-port forward, so cookies on
 /// `localhost` reach it too) and through the alias otherwise, as upstream does
 /// on an alias page. Like upstream's, it covers script requests, not markup.
@@ -271,7 +276,9 @@ enum SupermuxMirrorLoopbackBridge {
     static func update(_ webView: WKWebView, ports: Set<Int>) {
         let controller = webView.configuration.userContentController
         let previous = objc_getAssociatedObject(controller, &scriptKey) as? WKUserScript
-        let script = WKUserScript(source: scriptSource(ports: ports), injectionTime: .atDocumentStart, forMainFrameOnly: true)
+        // Every frame: a same-origin localhost iframe calls other ports too. The
+        // script stands aside at once in any frame not on a loopback host.
+        let script = WKUserScript(source: scriptSource(ports: ports), injectionTime: .atDocumentStart, forMainFrameOnly: false)
         if let previous {
             let others = controller.userScripts.filter { $0 !== previous }
             controller.removeAllUserScripts()
@@ -280,7 +287,16 @@ enum SupermuxMirrorLoopbackBridge {
         controller.addUserScript(script)
         objc_setAssociatedObject(controller, &scriptKey, script, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
         let list = ports.sorted().map(String.init).joined(separator: ",")
-        webView.evaluateJavaScript("window.__cmuxSetMirrorLoopbackPorts && window.__cmuxSetMirrorLoopbackPorts([\(list)]); true")
+        // Only a page on a loopback host gets them: any other page could define
+        // the setter itself and read the owner's ports.
+        webView.evaluateJavaScript("""
+        (() => {
+          const host = window.location.hostname;
+          if (host !== 'localhost' && host !== '127.0.0.1' && host !== '[::1]' && host !== '::1') return true;
+          if (window.__cmuxSetMirrorLoopbackPorts) window.__cmuxSetMirrorLoopbackPorts([\(list)]);
+          return true;
+        })();
+        """)
     }
 
     static func scriptSource(ports: Set<Int>) -> String {
