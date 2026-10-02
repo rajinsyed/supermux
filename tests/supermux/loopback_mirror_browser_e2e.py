@@ -1023,8 +1023,10 @@ class MirrorBrowserE2E:
         alias, so `fetch('http://localhost:Q')` went to this Mac's Q with the
         page's cookies; and through the alias the proxy rewrote the API's
         `Access-Control-Allow-Origin: http://localhost:P` to the alias, which the
-        page refused."""
+        page refused. A call to an owner port forwarded here on the same port
+        goes to that forward as written."""
         page, port = self.owner_page_forwarded_here("cross-page")
+        other, other_port = self.owner_page_forwarded_here("cross-forwarded")
         owner_api, here_api = self.owner_and_this_mac("cross-api")
         tab = self.new_tab(self.pair.mirror_id, self.mirror_terminal(), f"http://localhost:{port}/marker.html")
         try:
@@ -1042,8 +1044,16 @@ class MirrorBrowserE2E:
             origins = sorted({str(hit.get("origin")) for hit in owner_api.hits})
             if origins != [f"http://localhost:{port}"]:
                 raise Failure(f"the owner's API saw Origin {origins}, want http://localhost:{port}")
+            # A port forwarded here on the same port is called as written (its
+            # forward, with the page's localhost cookies), not through the proxy.
+            dials_before = int(self.require_proxy().get("owner_dials") or 0)
+            forwarded = self.page_fetch(tab, f"http://localhost:{other_port}/api")
+            dials = int(self.require_proxy().get("owner_dials") or 0) - dials_before
+            if not forwarded.startswith("ok:") or other.title not in forwarded or dials:
+                raise Failure(f"the page's call to the forwarded localhost:{other_port} got {forwarded[:60]!r} with "
+                              f"{dials} proxy dials to the owner, want the owner's page through its forward and none")
             return {"page": href, "api_port": here_api.port, "results": {k: v[:40] for k, v in results.items()},
-                    "owner_api_hits": owner_api.hits}
+                    "owner_api_hits": owner_api.hits, "forwarded_port": other_port, "forwarded_hits": other.hits}
         finally:
             self.sock.call("surface.close", {"surface_id": tab})
 

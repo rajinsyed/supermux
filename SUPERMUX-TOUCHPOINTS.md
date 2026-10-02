@@ -12,7 +12,7 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **754**. The remote-workspaces work (#517–#599) left
+- Numbering: the highest number in use is **756**. The remote-workspaces work (#517–#599) left
   unassigned gaps it may still grow into: **523–524, 527–529, 539–544, 558–559, 562–569,
   578–579 and 588–589** (never assigned, not retired); #600–#601 came from the 2026-10-01 upstream merge; #620–#622 and
   #630–#639 are the remote-workspaces feedback round (602–619 and 623–629 unassigned). The second
@@ -33,8 +33,8 @@ Rules for adding a touchpoint:
   owning Mac's) plus, in its stabilization, #735 (a quit that reaches a worker goes to the app); its review fixes use
   #750–#751 (a mirror's port chip opens the forward's local port; the menus' DEBUG driver), its iPhone row fix
   #752–#753 (a nested row's branch line under its title) and its Turnstile fix #754 (a mirror's browser keeps a
-  same-port forward's own `localhost` origin); 709, 713–714, 724, 736, 740–749 and 755–769 are unassigned. The
-  highest number in use is 754. Number **351** is unused (the notifications
+  same-port forward's own `localhost` origin) with its review fixes #755–#756 (an as-written page's bridge, main-frame
+  reroutes); 709, 713–714, 724, 736, 740–749 and 757–769 are unassigned. The highest number in use is 756. Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 82, 83, 89, 106, 121, 142, 213, 214,
   220, 229, 237, 250, 251, 252–258, 335, 470, 473–481, 483, 484, and 487** are unused; all are
@@ -681,6 +681,8 @@ Rules for adding a touchpoint:
 | 752 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceRow.swift` | `supermux-mobile-nested-branch-line` | Three fences: `@Environment(\.supermuxNestedRowAccessory)` on `WorkspaceRow` (set by #701's modifier, `nil` for every row that is not nested); `SupermuxNestedBranchSlot(accessory:)` between the title `HStack` and the description, only when the accessory has a branch line — the line laid out but hidden, so the row makes room for it right under the title and #701 draws the visible line over it as its own accessibility element; and the preview `Text`'s `.lineLimit(…, reservesSpace: true)` taking `accessory.previewLineLimit(content.previewLineLimit)` (one line fewer under a branch line, never none; upstream: `.lineLimit(content.previewLineLimit, reservesSpace: true)`). Without it a real worktree workspace — a shell at its prompt, whose preview line is the terminal's path — showed that path where the Mac sidebar shows the branch, with the branch overlaid at the far end of the line below |
 | 753 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListRowModel.swift` | `supermux-mobile-nested-branch-line` | Two fences in `WorkspaceListWorkspaceLayoutKey`: `var supermuxHasBranchLine = false` after #261's badge-text field, and `supermuxHasBranchLine = model.supermuxAccessory?.hasBranchLine ?? false` at the end of `init(_:)`. Rows sharing a layout key share one measured height, and #752's branch line changes it (one caption line more, one preview line fewer); the line itself is one line high whatever the branch says |
 | 754 | `Sources/Panels/BrowserPanel.swift` | `device-mirror-browser-same-port-forward` | One fenced line in `remoteProxyPreparedRequest(from:logScope:)`, after upstream's two guards and before its alias rewrite (`remoteProxyLoopbackAliasURL`): when `SupermuxDeviceBrowserRoute.loadsAsWritten(url, dataStoreID: websiteDataStore.identifier)` (`Sources/Supermux/Ports/`) says so, the request is returned unchanged. That is an `http` URL on `localhost`, `127.0.0.1` or `[::1]` in a mirror browser (its data store is a device app instance's, #707) whose port P this Mac forwards from that Mac on P itself (an active forward, #699/#705; automatic for a server in a mirrored terminal whenever P is free here): this Mac's `localhost:P` already is that Mac's, and WebKit loads a loopback host without asking the proxy, so the page keeps its own `http://localhost:P` origin. Upstream: every such URL became `http://cmux-loopback.localtest.me:P`, an insecure origin whose hostname no dev sitekey allows, so a Cloudflare Turnstile login in a mirror showed "Unable to connect to website" (110200, Domain not authorized) and `crypto.subtle` was missing. Any other URL (no same-port forward, another host or scheme, an SSH workspace's or a local browser) keeps upstream's path. E2E: `tests/supermux/loopback_mirror_browser_e2e.py` (`owner_localhost_keeps_origin`) |
+| 755 | `Sources/Panels/BrowserPanel.swift` | `device-mirror-browser-bridge` | One fenced line in `bindWebView(_:)`, after `DiffCommentsBridge.associate(…)`: `SupermuxMirrorLoopbackBridge.install(on: webView)` (`Sources/Supermux/Ports/SupermuxDeviceBrowserRoute.swift`), which adds to a mirror browser's web view only (its data store is a device app instance's, #707) a main-frame, document-start user script. On a page loaded as written (`http://localhost:P`, #754) it sends a cleartext loopback `fetch`, XHR, `WebSocket` or `EventSource` to `localhost:Q` when Q is an as-written port (a same-port forward the owner lists) and through the alias otherwise; `SupermuxDeviceBrowserRoute.forwardsChanged()` replaces the script and hands the open page new ports. Upstream: its `RemoteLoopbackRuntimeBridge` stands aside on a page that is not on the alias, so every `localhost:Q` call of an as-written page reached this Mac's own port Q. E2E: `tests/supermux/loopback_mirror_browser_e2e.py` (`as_written_page_reaches_owner_ports`) |
+| 756 | `Sources/Panels/BrowserNavigationDelegate.swift` | `device-mirror-browser-reroute` | One fenced block in `webView(_:decidePolicyFor:decisionHandler:)` for a navigation action, right after upstream's Cloud loopback rewrite and in the same shape: a main-frame navigation whose URL `SupermuxDeviceBrowserRoute.reroutedURL(_:dataStoreID:)` moves (a loopback `http` URL of a mirror browser that is not loaded as written goes back to the panel, which sends it through the alias; an alias URL whose port is now as written becomes `localhost`) is cancelled and handed to `requestNavigation(…, .currentTab, nil)` with the same request. Covers reloads, a page's own `location.reload()`, links, redirects, back and forward and restored history; `forwardsChanged()` moves open pages when a forward starts, stops or moves. Upstream: only typed navigations were routed, so those reused `localhost:P` after its forward was gone (this Mac's own `localhost:P`). E2E: `forward_changes_reroute_open_tab` |
 
 ## How to re-apply
 
@@ -5982,7 +5984,7 @@ tests/supermux/run_all_loopback_e2e.sh` (the browser suite needs Track A's tunne
 driver), and by hand on two Macs: a browser tab in a mirror opens the other Mac's dev server at `localhost:<port>`
 while a local workspace's browser still opens this Mac's.
 
-### 754. A mirror's browser keeps a same-port forward's own origin — `device-mirror-browser-same-port-forward`
+### 754–756. A mirror's browser keeps a same-port forward's own origin — `device-mirror-browser-same-port-forward`, `device-mirror-browser-bridge`, `device-mirror-browser-reroute`
 
 User report (2026-10-02): "the cmux browser for some reason doesnt show cloudflare turnstile so i am not able to login
 to websites because of it." The page was a dev app's login (`next dev` on the owning Mac's `localhost`, a production
@@ -5994,10 +5996,19 @@ drew it. When this Mac forwards that Mac's P on P itself (port forwarding does s
 mirrored terminal whenever P is free here), this Mac's `localhost:P` already is that Mac's, so the mirror browser now
 loads the URL as written: same origin as on the owning Mac, straight to the forward (WebKit never asks a proxy for a
 loopback host). Anything else keeps the alias route, so a port that is not forwarded, or forwarded to another local
-port because P is taken here, still has the alias origin; and a page loaded this way reaches that Mac's other ports
-only through their own same-port forwards (the alias page's runtime bridge rewrote `localhost:<other>` requests to
-that Mac). Fork code: `SupermuxDeviceBrowserRoute.loadsAsWritten(_:dataStoreID:)` (the browser's data store names
-its app instance, #707; the forward is that instance's, `SupermuxPortForwards`). Re-apply:
+port because P is taken here, still has the alias origin. Only a port the owner's latest listing has is loaded as
+written (a manual forward of a port nothing serves there keeps the alias, whose proxy explains it). Fork code:
+`SupermuxDeviceBrowserRoute.loadsAsWritten(_:dataStoreID:)` / `asWrittenPorts(of:)` (the browser's data store names its
+app instance, #707; the forward is that instance's, `SupermuxPortForwards`).
+
+Its review (2026-10-02) found an as-written page's calls to the owner's other ports reaching this Mac (upstream's
+runtime bridge stands aside off the alias), and the route decided once per typed navigation, so a reload, link,
+redirect or back/forward kept `localhost:P` after its forward stopped or moved, and a tab opened before the forward
+was active (a link the dev server prints, a restored tab) stayed on the alias. #755 adds a mirror-only bridge (the
+owner's other ports go to their same-port forward or through the alias), #756 reroutes main-frame navigations, and
+`forwardsChanged()` (`SupermuxPortForwards.onChange`) moves open pages when the as-written ports change. On the alias
+route the proxy keeps the API's `Access-Control-Allow-Origin` when the request's `Origin` is a loopback one
+(`SupermuxAliasRequestOrigin`), so an as-written page's cross-port call is not refused. Re-apply:
 
 - **#754 `BrowserPanel.swift`.** In `remoteProxyPreparedRequest(from:logScope:)`, after the `cloudBrowserMachineID`/
   `remoteProxyEndpoint` guard and `guard let url`, and before the `remoteProxyLoopbackAliasURL` guard, add
@@ -6005,9 +6016,18 @@ its app instance, #707; the forward is that instance's, `SupermuxPortForwards`).
   If upstream moves the loopback alias rewrite (the place a remote browser's `http://localhost:P` becomes the alias),
   put the check right before it there; retire it if upstream stops aliasing loopback hosts that already reach the
   remote machine.
+- **#755 `BrowserPanel.swift`.** In `bindWebView(_:)` (every web view the panel adopts, before it loads), add
+  `SupermuxMirrorLoopbackBridge.install(on: webView)`. If upstream adds a web view adoption path that skips
+  `bindWebView`, call it there too.
+- **#756 `BrowserNavigationDelegate.swift`.** In `webView(_:decidePolicyFor:decisionHandler:)` for a navigation
+  action, after upstream's `cloudAccess.rewrittenLoopbackURL` block, add: for a main-frame action whose URL
+  `SupermuxDeviceBrowserRoute.reroutedURL(url, dataStoreID: webView.configuration.websiteDataStore.identifier)` returns
+  a URL, set it on a copy of the request, `decisionHandler(.cancel)`, `requestNavigation?(request, .currentTab, nil)`
+  and return. Retire #755/#756 with #754.
 
 Verify: `CMUX_E2E_SUITES="loopback_mirror_browser_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`
-(`owner_localhost_keeps_origin`: the loopback owner serves P from another port through the DEBUG driver
+(`as_written_page_reaches_owner_ports`, `forward_changes_reroute_open_tab`, `unlisted_forward_explains`;
+`owner_localhost_keeps_origin`: the loopback owner serves P from another port through the DEBUG driver
 `supermux.devices.tunnel.serve_port`, so a forward of P listens on P here; the mirror tab must run at
 `http://localhost:P`, a secure context, and get a Turnstile token for Cloudflare's test sitekey; it needs
 challenges.cloudflare.com). By hand on two Macs: a Turnstile login started in a mirrored terminal shows its challenge

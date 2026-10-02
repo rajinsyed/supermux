@@ -27,7 +27,10 @@ enum SupermuxPortsGlue {
     /// Starts following other Macs' ports. Idempotent.
     static func activateIfNeeded() {
         let forwards = SupermuxComposition.portForwards
-        forwards.onChange = { SupermuxComposition.mirrorPortsPresenter.apply() }
+        forwards.onChange = {
+            SupermuxComposition.mirrorPortsPresenter.apply()
+            SupermuxDeviceBrowserRoute.forwardsChanged()
+        }
         forwards.start()
     }
 }

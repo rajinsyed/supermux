@@ -368,8 +368,9 @@ struct SupermuxBrowserProxyConnection: Sendable {
             }
             return
         }
-        let aliasRequests: (any SupermuxByteTransform)? = rewritesAlias ? SupermuxAliasRequestTransform() : nil
-        let aliasResponses: (any SupermuxByteTransform)? = rewritesAlias ? SupermuxAliasResponseTransform() : nil
+        let origin = SupermuxAliasRequestOrigin()
+        let aliasRequests: (any SupermuxByteTransform)? = rewritesAlias ? SupermuxAliasRequestTransform(origin: origin) : nil
+        let aliasResponses: (any SupermuxByteTransform)? = rewritesAlias ? SupermuxAliasResponseTransform(origin: origin) : nil
         #if DEBUG
         let requests: (any SupermuxByteTransform)? = SupermuxTracingTransform(aliasRequests, stats: stats, trace: trace, request: true)
         let responses: (any SupermuxByteTransform)? = SupermuxTracingTransform(aliasResponses, stats: stats, trace: trace, request: false)
@@ -446,15 +447,57 @@ struct SupermuxBrowserProxyConnection: Sendable {
     }
 }
 
+/// Whether the first request on an alias connection came from a page on
+/// `localhost` itself (a mirror page loaded as written, whose
+/// `SupermuxMirrorLoopbackBridge` sent another port's request through the
+/// alias): its `Origin` is a loopback one, so the answer's
+/// `Access-Control-Allow-Origin` must stay as the server wrote it; mapped to
+/// the alias it would no longer match the page and the browser would refuse
+/// the response.
+final class SupermuxAliasRequestOrigin: @unchecked Sendable {
+    private let lock = NSLock()
+    private var loopback = false
+
+    var isLoopback: Bool { lock.withLock { loopback } }
+
+    /// Reads the `Origin` header of a request head.
+    func note(requestHead: Data) {
+        let text = String(decoding: requestHead, as: UTF8.self)
+        let origin = text.components(separatedBy: "\r\n").dropFirst().first { $0.lowercased().hasPrefix("origin:") }
+        guard let value = origin?.dropFirst("origin:".count).trimmingCharacters(in: .whitespaces),
+              let host = RemoteLoopbackProxyAlias.normalizeHost(value) else { return }
+        let isLoopback = RemoteLoopbackProxyAlias.isLoopbackHost(host)
+        lock.withLock { loopback = isLoopback }
+    }
+}
+
 /// Browser -> owning Mac on the alias route: the first request's line, `Host`,
 /// `Origin` and `Referer` go back to `localhost` (dev servers' host checks
-/// pass), exactly as upstream's SSH proxy does.
+/// pass), exactly as upstream's SSH proxy does. Its `Origin` is noted first
+/// (``SupermuxAliasRequestOrigin``).
 final class SupermuxAliasRequestTransform: SupermuxByteTransform, @unchecked Sendable {
     private let lock = NSLock()
     private var rewriter = RemoteLoopbackHTTPRequestStreamRewriter(aliasHost: RemoteLoopbackProxyAlias.aliasHost)
+    private let origin: SupermuxAliasRequestOrigin
+    private var head = Data()
+    private var headNoted = false
+
+    init(origin: SupermuxAliasRequestOrigin) {
+        self.origin = origin
+    }
 
     func transform(_ data: Data, eof: Bool) -> Data {
-        lock.withLock { rewriter.rewriteNextChunk(data, eof: eof) }
+        lock.withLock {
+            if !headNoted {
+                head.append(data)
+                if head.range(of: Data([0x0D, 0x0A, 0x0D, 0x0A])) != nil || head.count > 64 * 1024 || eof {
+                    headNoted = true
+                    origin.note(requestHead: head)
+                    head = Data()
+                }
+            }
+            return rewriter.rewriteNextChunk(data, eof: eof)
+        }
     }
 }
 
@@ -465,6 +508,11 @@ final class SupermuxAliasResponseTransform: SupermuxByteTransform, @unchecked Se
     private let lock = NSLock()
     private var pending = Data()
     private var forwardedHeaders = false
+    private let origin: SupermuxAliasRequestOrigin
+
+    init(origin: SupermuxAliasRequestOrigin) {
+        self.origin = origin
+    }
 
     func transform(_ data: Data, eof: Bool) -> Data {
         lock.withLock {
@@ -475,9 +523,25 @@ final class SupermuxAliasResponseTransform: SupermuxByteTransform, @unchecked Se
             forwardedHeaders = true
             let payload = pending
             pending = Data()
-            return headersComplete
-                ? RemoteLoopbackHTTPResponseRewriter.rewriteIfNeeded(data: payload, aliasHost: RemoteLoopbackProxyAlias.aliasHost)
-                : payload
+            guard headersComplete else { return payload }
+            let rewritten = RemoteLoopbackHTTPResponseRewriter.rewriteIfNeeded(data: payload, aliasHost: RemoteLoopbackProxyAlias.aliasHost)
+            return origin.isLoopback ? Self.keepingAllowOrigin(of: payload, in: rewritten) : rewritten
         }
+    }
+
+    /// `rewritten` with the `Access-Control-Allow-Origin` lines of `original`
+    /// (upstream's rewriter keeps the head's lines one for one).
+    static func keepingAllowOrigin(of original: Data, in rewritten: Data) -> Data {
+        let delimiter = Data([0x0D, 0x0A, 0x0D, 0x0A])
+        guard let originalEnd = original.range(of: delimiter), let rewrittenEnd = rewritten.range(of: delimiter),
+              let originalHead = String(data: original[..<originalEnd.lowerBound], encoding: .utf8),
+              let rewrittenHead = String(data: rewritten[..<rewrittenEnd.lowerBound], encoding: .utf8) else { return rewritten }
+        let originalLines = originalHead.components(separatedBy: "\r\n")
+        var lines = rewrittenHead.components(separatedBy: "\r\n")
+        guard lines.count == originalLines.count else { return rewritten }
+        for (index, line) in originalLines.enumerated() where line.lowercased().hasPrefix("access-control-allow-origin:") {
+            lines[index] = line
+        }
+        return Data(lines.joined(separator: "\r\n").utf8) + rewritten[rewrittenEnd.lowerBound...]
     }
 }
