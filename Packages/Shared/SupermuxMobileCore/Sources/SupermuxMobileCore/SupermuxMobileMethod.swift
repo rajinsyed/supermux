@@ -137,6 +137,10 @@ public enum SupermuxMobileMethod: String, CaseIterable, Codable, Sendable, Equat
     case paneClose = "mobile.supermux.pane.close"
     /// Creates a native Simulator panel in a workspace.
     case simulatorCreate = "mobile.supermux.simulator.create"
+    /// Runs one control on a workspace's native Simulator panel: rotate left
+    /// or right, or toggle the software keyboard or the appearance (another
+    /// Mac's simulator viewer).
+    case simulatorControl = "mobile.supermux.simulator.control"
 
     // MARK: Usage
 

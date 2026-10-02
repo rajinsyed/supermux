@@ -52,6 +52,10 @@ public enum SupermuxMobileCapability: String, CaseIterable, Codable, Sendable, E
     /// the workspace's folder, and `files.watch` (`supermux.files.updated`
     /// when the folder's own entries change).
     case filesReadV1 = "supermux.files_read.v1"
+    /// Another Mac can show this Mac's simulators: `simulator.control`
+    /// (rotate, software keyboard, appearance) is served and
+    /// `simulator.create` takes `udid`.
+    case remoteSimulatorV1 = "supermux.remote_simulator.v1"
 
     /// Every capability, in declaration order (derived from `CaseIterable`).
     public static let all: [SupermuxMobileCapability] = SupermuxMobileCapability.allCases
