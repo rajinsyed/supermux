@@ -400,8 +400,8 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   change. **Exposure:** a service here that trusts loopback (an unauthenticated admin page, Docker's
   TCP API, Jupyter) is reachable from your other Macs once it is forwarded; only ports started in
   cmux terminals are offered automatically, and another Mac forwards one of the others only by hand
-  or when you type its `localhost` URL in a mirror tab (#757; stop it in "Ports on <Mac>"); a page
-  cannot. The journal records scope, port and outcome, never host
+  or when you open its `localhost` URL in a mirror tab yourself (typed, a terminal link you
+  Command-click, Open in cmux Browser; #757, #759; stop it in "Ports on <Mac>"); a page cannot. The journal records scope, port and outcome, never host
   names or bytes.
 - **A mirror's own tabs stay on this Mac** (#706): a browser, Files preview, Markdown or any other
   non-terminal tab opened in a mirror is never sent to or closed by the owning Mac, and the mirror
@@ -441,8 +441,9 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   lists P (asked again first when its last listing lacks it; navigations at once share one request) and
   P is free here, it waits up to 3 s for a same-port forward, then loads as written. A port of that
   Mac's workspaces is forwarded so for any navigation; one of its other loopback ports (in no
-  workspace: a server an agent started, but also a Docker API or a database) only for a URL you type,
-  or once you forwarded it that way, so a page cannot make this Mac listen on it. That forward behaves
+  workspace: a server an agent started, but also a Docker API or a database) only when you open it
+  yourself (a URL you type, a terminal link you Command-click, #759, the Ports menu's Open in cmux
+  Browser, a port chip) or once you forwarded it that way, so a page cannot make this Mac listen on it. That forward behaves
   like an automatic one, also with automatic forwarding off: it is in the Ports menus, Stop Forwarding
   stops it (and keeps it stopped across its server's restarts, until Resume), and it goes when the
   server does. While the forward starts, the tab's own navigation is not replaced (a link or form to
@@ -450,7 +451,8 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   Mac's own server, another app, another Mac's forward), when the user stopped P's forward, when that
   Mac does not serve P (nothing listens there: the proxy explains it) or cannot forward right now
   (offline, unreachable, an older Supermux, no direct link), for a port below 1024, for one of that
-  Mac's other ports reached by a page, a link or a new tab rather than a typed URL, for `https`,
+  Mac's other ports reached by a page or a link in it rather than by you (until that Mac lists it as
+  a workspace's: then the tab gets its forward by itself), for `https`,
   `*.localhost` and every other host, and when the forward did not start within 3 s (the tab then moves
   once it is active). After a forward could not start (P in use here, not allowed, not in time), that
   port's alias pages are left alone, reloads stay reloads and nothing retries in the background, until
@@ -467,8 +469,12 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   Mac's own `localhost:3000`. A server that restarts comes back by itself: once a forward's port leaves
   that Mac's listing this Mac asks it again after 2, 4, 8, 15, 30 and 60 s (a quick restart never
   changes that Mac's sidebar ports, which keep a port through two missed scans, so it sends no poke),
-  and an open mirror tab on the alias of a port whose last try found it unlisted gets its same-port
-  forward once it is listed again. A page loaded as written (and its same-origin `localhost` iframes)
+  and an open mirror tab on the alias of a port whose last try found it unlisted, not yet a workspace's
+  (a restarted server that is only one of that Mac's other ports until its sidebar scan attributes it),
+  or that was never tried (a tab restored or opened while that Mac was away) gets its same-port forward
+  once that Mac lists it as a workspace's (or you forwarded it). That Mac also notices a server binding
+  after its terminal's port scans are over: while another Mac follows its ports it compares its
+  loopback listeners every 4 s, scans its terminals again when one appears and pokes. A page loaded as written (and its same-origin `localhost` iframes)
   calls that Mac's other ports with `fetch`, XHR, `WebSocket` and `EventSource` (#755): a port
   forwarded here on the same port goes to its
   forward (with the page's `localhost` cookies), any other port through the alias (its own cookies;
@@ -503,7 +509,7 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   Mac", `supermux.devices.forwardPorts`, default on). Each Mac lists the ports of its own cmux
   workspaces (its sidebar port detection, intersected with live loopback listeners) and, apart, its
   other loopback listeners (asked with `include_other`); ports ≥ 1024 of a mirrored workspace are
-  forwarded automatically, the other ones only by hand or for a mirror tab that opens them (#757). A
+  forwarded automatically, the other ones only by hand or for a mirror tab you open on them (#757). A
   connection refused for a listed port, and a forward whose port left the listing (followed by fetches
   2 s to 60 s later), make this Mac ask for the listing again, since the other ports change without a
   poke. A forward listens on `127.0.0.1` and `::1` at the
