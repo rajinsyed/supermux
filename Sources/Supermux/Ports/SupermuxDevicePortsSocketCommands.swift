@@ -14,7 +14,7 @@ import SupermuxKit
 ///   its `supermux.ports.*` pills).
 /// - `forward`, `stop`, `resume {machine, port}` — the "Ports on <Mac>" menu's
 ///   Forward to This Mac / Stop Forwarding.
-/// - `set_auto {enabled}` — the Settings toggle.
+/// - `set_auto {enabled}` — the Settings toggle (through the card's action).
 /// - `refresh {machine?}` — fetches the Macs' port listings now (a test hook
 ///   for ports injected on the host without a poke).
 @MainActor
@@ -41,7 +41,7 @@ enum SupermuxDevicePortsSocketCommands {
             await forwards.resume(machine: machine, remotePort: port)
         case "set_auto":
             guard let enabled = params["enabled"] as? Bool else { throw invalid("enabled must be a boolean") }
-            forwards.setAutoForward(enabled)
+            SupermuxComposition.remoteMacsSettings.actions().setForwardPorts(enabled)
         case "refresh":
             forwards.refresh(machine: try optionalMachine(params))
         default:

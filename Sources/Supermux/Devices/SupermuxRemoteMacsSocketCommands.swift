@@ -8,7 +8,7 @@ import SupermuxKit
 ///
 /// - `remote_macs_settings {}` — the card's snapshot, plus upstream's
 ///   discoverability preferences it reports.
-/// - `remote_macs_settings_set {setting: auto_mirror|sync_projects|share_push, enabled}`
+/// - `remote_macs_settings_set {setting: auto_mirror|forward_ports|sync_projects|share_push, enabled}`
 ///   or `{action: show_hidden}` — the card's own actions.
 /// - `flat_chips {}` — for every device mirror, the Mac its flat-row icon
 ///   names, the state it renders (`online` / `connecting` / `offline`), and
@@ -37,6 +37,7 @@ enum SupermuxRemoteMacsSocketCommands {
             "auto_mirror": snapshot.autoMirror,
             "sync_projects": snapshot.syncProjects,
             "share_push": snapshot.sharePush,
+            "forward_ports": snapshot.forwardPorts,
             "hidden_workspace_count": snapshot.hiddenWorkspaceCount,
             "discovery_enabled": UserDefaults.standard.bool(forKey: keys.discoveryEnabled.userDefaultsKey),
             "incoming_access_enabled": UserDefaults.standard.bool(forKey: keys.incomingAccessEnabled.userDefaultsKey),
@@ -47,6 +48,16 @@ enum SupermuxRemoteMacsSocketCommands {
                     "link": mac.link.rawValue,
                     "detail": mac.detail ?? NSNull(),
                     "workspace_count": mac.workspaceCount,
+                    "ports": mac.ports.map { port -> [String: Any] in
+                        [
+                            "remote_port": port.remotePort,
+                            "local_port": port.localPort ?? NSNull(),
+                            "is_forwarded": port.isForwarded,
+                            "line_text": port.lineText,
+                            "menu_label": port.menuLabel,
+                        ]
+                    },
+                    "ports_note": mac.portsNote ?? NSNull(),
                 ]
             },
         ]
@@ -63,9 +74,10 @@ enum SupermuxRemoteMacsSocketCommands {
         }
         switch params["setting"] as? String {
         case "auto_mirror": actions.setAutoMirror(enabled)
+        case "forward_ports": actions.setForwardPorts(enabled)
         case "sync_projects": actions.setSyncProjects(enabled)
         case "share_push": actions.setSharePush(enabled)
-        default: throw InvalidParams(message: "setting must be auto_mirror, sync_projects or share_push")
+        default: throw InvalidParams(message: "setting must be auto_mirror, forward_ports, sync_projects or share_push")
         }
         return settingsPayload()
     }

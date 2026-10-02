@@ -3,15 +3,17 @@ import SwiftUI
 
 /// SUPERMUX — "Remote Macs": the fork's controls for other Macs' workspaces.
 ///
-/// - Three fork preferences: show other Macs' workspaces in the sidebar
-///   (`supermux.devices.autoMirror`, live), sync projects across Macs
+/// - Four fork preferences: show other Macs' workspaces in the sidebar
+///   (`supermux.devices.autoMirror`, live), forward their ports to this Mac
+///   (`supermux.devices.forwardPorts`, live), sync projects across Macs
 ///   (`supermux.devices.syncProjects`), share the phone-notifications setup
 ///   (`supermux.devices.sharePush`).
 /// - Whether this Mac is discoverable and whether it discovers other Macs,
 ///   with Turn On buttons that go through upstream's own
 ///   `ComputersSettingsActions` (the `DevicesPreferencesModel` /
 ///   `DevicesAccessCoordinator` path, including its consent sheet).
-/// - Every known Mac with its link state, and Show Hidden Workspaces.
+/// - Every known Mac with its link state, its forwarded ports and a Ports…
+///   menu, and Show Hidden Workspaces.
 ///
 /// Lives in this upstream package for the same reason as
 /// ``SupermuxAISettingsCard`` (the section stack is closed to app injection);
@@ -51,7 +53,7 @@ public struct SupermuxRemoteMacsSettingsCard: View {
                 accessRow(.discovery, enabled: accessSnapshot.discoveryEnabled, managed: discoveryManaged)
                 if let remote {
                     SettingsCardDivider()
-                    macRows
+                    macRows(remote)
                     SettingsCardDivider()
                     hiddenRow(remote)
                 }
@@ -81,9 +83,9 @@ public struct SupermuxRemoteMacsSettingsCard: View {
 
     // MARK: - Fork preferences
 
-    /// The three fork preferences the card toggles.
+    /// The fork preferences the card toggles.
     private enum Preference {
-        case autoMirror, syncProjects, sharePush
+        case autoMirror, forwardPorts, syncProjects, sharePush
     }
 
     @ViewBuilder
@@ -93,6 +95,13 @@ public struct SupermuxRemoteMacsSettingsCard: View {
             String(localized: "supermux.settings.remoteMacs.autoMirror", defaultValue: "Show other Macs' workspaces in the sidebar"),
             subtitle: String(localized: "supermux.settings.remoteMacs.autoMirror.subtitle", defaultValue: "Every workspace on your other Macs appears in the sidebar under its project and stays in sync."),
             identifier: "SupermuxRemoteMacsAutoMirrorToggle"
+        )
+        SettingsCardDivider()
+        toggleRow(
+            .forwardPorts,
+            String(localized: "supermux.ports.settings.forward", defaultValue: "Forward other Macs' ports to this Mac"),
+            subtitle: String(localized: "supermux.ports.settings.forward.subtitle", defaultValue: "Servers you start in another Mac's workspaces open at localhost here, for browsers, the iOS Simulator and other apps. A port already in use here gets the next free one."),
+            identifier: "SupermuxRemoteMacsForwardPortsToggle"
         )
         SettingsCardDivider()
         toggleRow(
@@ -123,6 +132,7 @@ public struct SupermuxRemoteMacsSettingsCard: View {
     private func value(of preference: Preference) -> Bool {
         switch preference {
         case .autoMirror: return snapshot.autoMirror
+        case .forwardPorts: return snapshot.forwardPorts
         case .syncProjects: return snapshot.syncProjects
         case .sharePush: return snapshot.sharePush
         }
@@ -134,6 +144,9 @@ public struct SupermuxRemoteMacsSettingsCard: View {
         case .autoMirror:
             snapshot.autoMirror = enabled
             remote?.setAutoMirror(enabled)
+        case .forwardPorts:
+            snapshot.forwardPorts = enabled
+            remote?.setForwardPorts(enabled)
         case .syncProjects:
             snapshot.syncProjects = enabled
             remote?.setSyncProjects(enabled)
@@ -213,12 +226,12 @@ public struct SupermuxRemoteMacsSettingsCard: View {
     // MARK: - Macs and hidden workspaces
 
     @ViewBuilder
-    private var macRows: some View {
+    private func macRows(_ remote: SupermuxRemoteMacsSettingsActions) -> some View {
         if snapshot.macs.isEmpty {
             SettingsCardNote(String(localized: "supermux.settings.remoteMacs.empty", defaultValue: "No other Macs yet. Sign in to the same account on another Mac and make it discoverable."))
         } else {
             ForEach(snapshot.macs) { mac in
-                SupermuxRemoteMacRow(mac: mac)
+                SupermuxRemoteMacRow(mac: mac, remote: remote)
                 if mac.id != snapshot.macs.last?.id { SettingsCardDivider() }
             }
         }
@@ -247,9 +260,10 @@ public struct SupermuxRemoteMacsSettingsCard: View {
 /// One known Mac in the Remote Macs card, laid out like a row of the
 /// Settings › Devices list (``ComputersSettingsRow``): its name, then its
 /// link state and how many of its workspaces this Mac sees (or why the link
-/// is down).
+/// is down), and while connected its forwarded ports with a Ports… menu.
 private struct SupermuxRemoteMacRow: View {
     let mac: SupermuxRemoteMacsSettingsSnapshot.Mac
+    let remote: SupermuxRemoteMacsSettingsActions
 
     var body: some View {
         HStack(spacing: 12) {
@@ -274,12 +288,65 @@ private struct SupermuxRemoteMacRow: View {
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                if mac.link == .connected {
+                    Text(portsLine)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .accessibilityIdentifier("SupermuxRemoteMacPorts")
+                }
             }
             Spacer(minLength: 8)
+            if mac.link == .connected, mac.portsNote == nil {
+                portsMenu
+            }
         }
         .padding(14)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("SupermuxRemoteMacRow")
+    }
+
+    /// `Ports: :3000 · :8081 → here :8082`, or why there are none.
+    private var portsLine: String {
+        if let note = mac.portsNote { return note }
+        let forwarded = mac.ports.filter(\.isForwarded).map(\.lineText)
+        guard !forwarded.isEmpty else {
+            return String(localized: "supermux.ports.settings.none", defaultValue: "No forwarded ports")
+        }
+        let list = forwarded.joined(separator: " · ")
+        return String(localized: "supermux.ports.settings.line", defaultValue: "Ports: \(list)")
+    }
+
+    private var portsMenu: some View {
+        Menu(String(localized: "supermux.ports.settings.menu", defaultValue: "Ports…")) {
+            ForEach(mac.ports) { port in
+                Menu(port.menuLabel) {
+                    if port.localPort != nil {
+                        portButton(port, .openInBrowser, String(localized: "supermux.ports.menu.openDefault", defaultValue: "Open in Default Browser"))
+                        portButton(port, .copyLocalURL, String(localized: "supermux.ports.menu.copy", defaultValue: "Copy Local URL"))
+                        portButton(port, .stopForwarding, String(localized: "supermux.ports.menu.stop", defaultValue: "Stop Forwarding"))
+                    } else {
+                        portButton(port, .forward, String(localized: "supermux.ports.menu.forward", defaultValue: "Forward to This Mac"))
+                    }
+                }
+            }
+            if !mac.ports.isEmpty { Divider() }
+            Button(String(localized: "supermux.ports.menu.forwardPort", defaultValue: "Forward a Port…")) {
+                remote.forwardPort(mac.id)
+            }
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .font(.system(size: 12))
+        .accessibilityIdentifier("SupermuxRemoteMacPortsMenu")
+    }
+
+    private func portButton(
+        _ port: SupermuxRemoteMacsSettingsSnapshot.Port,
+        _ action: SupermuxRemoteMacPortAction,
+        _ title: String
+    ) -> some View {
+        Button(title) { remote.portAction(mac.id, port.remotePort, action) }
     }
 
     private var detail: String {
