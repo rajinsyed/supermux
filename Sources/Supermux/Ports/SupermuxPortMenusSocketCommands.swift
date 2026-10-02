@@ -10,9 +10,10 @@ import SupermuxKit
 /// ``SupermuxDevicesSocketCommands`` ahead of ``SupermuxDevicePortsSocketCommands``.
 ///
 /// - `chip_open {workspace_id, port, cmux_browser?}` — a sidebar port chip
-///   click on that workspace (a device mirror's through
+///   click on that workspace (a device mirror's chip for one of its Mac's
+///   ports through
 ///   ``SupermuxDevicePortLinks/openMirrorChip(_:workspaceID:prefersCmuxBrowser:)``,
-///   the `device-mirror-port-chip` touchpoint's call), with `cmux_browser`
+///   the `device-mirror-port-chip` touchpoint's call, else upstream's), with `cmux_browser`
 ///   standing for the "Open Sidebar Port Links in cmux Browser" setting
 ///   (default: its value). The default browser and the alert are captured,
 ///   never shown: `external_url`, `notice`, and `new_browser_panel_id` for a
@@ -54,7 +55,7 @@ enum SupermuxPortMenusSocketCommands {
         let panelsBefore = Set(workspace.panels.keys)
         var externalURL: URL?
         var notice: String?
-        let isMirror = SupermuxDevicePortLinks.isMirrorChip(workspaceID: workspace.id)
+        let isMirror = SupermuxDevicePortLinks.isMirrorChip(workspaceID: workspace.id, port: port)
         if isMirror {
             SupermuxDevicePortLinks.openMirrorChip(
                 port,

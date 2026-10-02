@@ -10,8 +10,10 @@ import Foundation
 ///   a link that leaves cmux (the default browser) opens at the local port this
 ///   Mac forwards that port to.
 /// - The `device-mirror-port-chip` touchpoint in upstream's two chip handlers
-///   (`ContentView`) sends a mirror's chip click to ``openMirrorChip(_:workspaceID:prefersCmuxBrowser:)``,
-///   which does the same for a chip.
+///   (`ContentView`) sends a click on a mirror's chip for one of the owning
+///   Mac's ports (``isMirrorChip(workspaceID:port:)``) to
+///   ``openMirrorChip(_:workspaceID:prefersCmuxBrowser:)``, which does the
+///   same for a chip.
 ///
 /// The cmux browser keeps the link as written, since a mirror's browser
 /// reaches the owning Mac itself.
@@ -39,10 +41,19 @@ enum SupermuxDevicePortLinks {
 
     // MARK: - Sidebar port chips
 
-    /// Whether `workspaceID`'s sidebar port chips are another Mac's ports:
-    /// it is a device mirror (``SupermuxMirrorPortsPresenter`` fills them).
-    static func isMirrorChip(workspaceID: UUID) -> Bool {
-        SupermuxMirrorPortsActions.mirrorRef(workspaceID: workspaceID) != nil
+    /// Whether `workspaceID`'s sidebar port chip for `port` is another Mac's
+    /// port: the workspace is a device mirror, `port` is one of the owning
+    /// Mac's ports ``SupermuxMirrorPortsPresenter`` gave it, and no panel of
+    /// this Mac in it listens on `port` (a terminal of this Mac moved into the
+    /// mirror shows its own ports there too). Any other chip is this Mac's own
+    /// port and keeps upstream's `localhost:<port>`.
+    static func isMirrorChip(workspaceID: UUID, port: Int) -> Bool {
+        guard SupermuxMirrorPortsActions.mirrorRef(workspaceID: workspaceID) != nil,
+              let workspace = Workspace.liveWorkspace(id: workspaceID),
+              workspace.remoteDetectedPorts.contains(port) else { return false }
+        let listensHere = workspace.surfaceListeningPorts.values.contains { $0.contains(port) }
+            || workspace.agentListeningPorts.contains(port)
+        return !listensHere
     }
 
     /// A device mirror's port chip click. With "Open Sidebar Port Links in
