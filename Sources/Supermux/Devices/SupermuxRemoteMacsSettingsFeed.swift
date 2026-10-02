@@ -42,20 +42,9 @@ final class SupermuxRemoteMacsSettingsFeed {
         )
     }
 
-    /// A Ports… menu item of one Mac's port.
+    /// A Ports… menu item of one Mac's port (what a mirror row's menu item does).
     func portAction(machineID: String, remotePort: Int, action: SupermuxRemoteMacPortAction) {
-        let machine = SurfaceMachineID(rawValue: machineID)
-        let localPort = forwards.localPort(machine: machine, remotePort: remotePort)
-        switch action {
-        case .openInBrowser:
-            if let localPort { SupermuxMirrorPortsActions.openInDefaultBrowser(localPort: localPort) }
-        case .copyLocalURL:
-            if let localPort { SupermuxMirrorPortsActions.copyLocalURL(localPort: localPort) }
-        case .stopForwarding:
-            Task { await forwards.stop(machine: machine, remotePort: remotePort) }
-        case .forward:
-            Task { await forwards.resume(machine: machine, remotePort: remotePort) }
-        }
+        SupermuxMirrorPortsActions.perform(action, machine: SurfaceMachineID(rawValue: machineID), remotePort: remotePort)
     }
 
     /// Forward a Port… for one Mac.
@@ -102,7 +91,9 @@ final class SupermuxRemoteMacsSettingsFeed {
         )
     }
 
-    /// One Mac's listed and forwarded ports, by port number.
+    /// One Mac's listed and forwarded ports, by port number, each with the
+    /// items its Ports… submenu offers (``SupermuxPortMenuItems``, as on a
+    /// mirror row).
     private func ports(of machine: SurfaceMachineID) -> [SupermuxRemoteMacsSettingsSnapshot.Port] {
         let listed = Set((forwards.hostPorts[machine]?.ports ?? []).map(\.port))
         let forwarded = forwards.forwards.values.filter { $0.key.machine == machine }
@@ -114,7 +105,8 @@ final class SupermuxRemoteMacsSettingsFeed {
                 localPort: forward?.localPort,
                 isForwarded: forward.map { $0.state != .stopped } ?? false,
                 lineText: forward.map { SupermuxPortsText.lineItem($0) } ?? ":\(port)",
-                menuLabel: SupermuxPortsText.menuLabel(remotePort: port, localPort: forward?.localPort)
+                menuLabel: SupermuxPortsText.menuLabel(remotePort: port, localPort: forward?.localPort),
+                actions: SupermuxPortMenuItems.actions(machine: machine, remotePort: port)
             )
         }
     }
