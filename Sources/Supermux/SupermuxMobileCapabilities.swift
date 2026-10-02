@@ -12,6 +12,23 @@ import SupermuxMobileCore
 enum SupermuxMobileCapabilities {
     /// Capabilities whose backing RPC methods are implemented on this host.
     nonisolated static var advertised: [String] {
+        served + (servesPortForward ? [SupermuxMobileCapability.portForwardV1.rawValue] : [])
+    }
+
+    /// Port forwarding (another Mac's `tcp_connect` lanes, `ports.list`,
+    /// `supermux.ports.updated`) is served unless an administrator disabled
+    /// the embedded browser, which also closes the tunnel host
+    /// (`MobileHostBrowserTunnel.isAvailable`), as upstream withholds
+    /// `browser.tunnel.v1`.
+    nonisolated private static var servesPortForward: Bool {
+        #if DEBUG
+        if SupermuxDeviceTunnelSocketCommands.pretendsOldHost { return false }
+        #endif
+        return MobileHostBrowserTunnel.isAvailable
+    }
+
+    /// The capabilities served unconditionally.
+    nonisolated private static var served: [String] {
         [
             SupermuxMobileCapability.projectsV1.rawValue,
             // Workspace-list payloads carry the additive supermux_activity

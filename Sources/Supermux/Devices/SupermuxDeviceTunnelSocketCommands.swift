@@ -180,8 +180,12 @@ enum SupermuxDeviceTunnelSocketCommands {
         return ["events": events]
     }
 
+    /// This Mac's own `ports.list` payload, built locally.
     private static func hostPorts(_ params: [String: Any]) async -> [String: Any] {
-        ["ports": NSNull()]
+        let list = await SupermuxHostPorts.list(includeOther: params["include_other"] as? Bool == true)
+        guard let data = try? JSONEncoder().encode(list),
+              let object = try? JSONSerialization.jsonObject(with: data) else { return ["ports": NSNull()] }
+        return ["ports": object]
     }
 
     /// Registers a port at most once and unregisters only what it registered,
