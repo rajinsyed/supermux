@@ -110,8 +110,16 @@ final class SupermuxPortForwards {
     @ObservationIgnored private var availabilityChecks: [SurfaceMachineID: Task<Void, Never>] = [:]
     /// Each Mac's follow-up fetches after a forward's port left its listing.
     @ObservationIgnored private var followUps: [SurfaceMachineID: Task<Void, Never>] = [:]
-    /// Each Mac's listing fetch in flight (``sharedFetch(_:)``) and when the last one started.
-    @ObservationIgnored private var inFlight: [SurfaceMachineID: Task<Void, Never>] = [:]
+    /// One fetch of a Mac's listing (``startFetch(_:)``).
+    private struct ListingFetch {
+        let generation: Int
+        let started: ContinuousClock.Instant
+        let task: Task<Void, Never>
+    }
+
+    /// Each Mac's listing fetch in flight, how many were started, and when the last one started.
+    @ObservationIgnored private var inFlight: [SurfaceMachineID: ListingFetch] = [:]
+    @ObservationIgnored private var fetchGenerations: [SurfaceMachineID: Int] = [:]
     @ObservationIgnored private var lastFetchStart: [SurfaceMachineID: ContinuousClock.Instant] = [:]
     /// Each Mac's latest fetch, and the latest whose reply was applied: an
     /// older reply is dropped.
@@ -258,27 +266,44 @@ final class SupermuxPortForwards {
     func fetchListingNow(
         _ machine: SurfaceMachineID, since start: ContinuousClock.Instant, while wanted: () -> Bool = { true }
     ) async {
+        // Each fetch is awaited at most once, by its generation: a loop that found
+        // a finished fetch still registered and awaited it again would never
+        // suspend (a finished task's value returns at once) and spin the main actor.
+        var awaited = 0
         while wanted() {
-            let fresh = lastFetchStart[machine].map { $0 >= start } ?? false
-            if let running = inFlight[machine] {
-                await running.value
-                if fresh { return }
+            if let running = inFlight[machine], running.generation > awaited {
+                awaited = running.generation
+                await running.task.value
+                if running.started >= start { return }
                 continue
             }
-            if !fresh { await sharedFetch(machine) }
+            if let last = lastFetchStart[machine], last >= start { return }
+            await startFetch(machine).task.value
             return
         }
     }
 
-    /// The one fetch of `machine`'s listing in flight: a new one starts only
-    /// once it ended, so replies come in order.
+    /// Fetches `machine`'s listing after any fetch in flight (one at a time,
+    /// so replies come in order).
     private func sharedFetch(_ machine: SurfaceMachineID) async {
-        while let running = inFlight[machine] { await running.value }
-        let task: Task<Void, Never> = Task { @MainActor [weak self] in await self?.fetch(machine) }
-        inFlight[machine] = task
-        lastFetchStart[machine] = .now
-        await task.value
-        if inFlight[machine] == task { inFlight[machine] = nil }
+        await fetchListingNow(machine, since: .now)
+    }
+
+    /// Starts a fetch of `machine`'s listing and registers it as the one in
+    /// flight. It unregisters itself as soon as it is done, before anyone
+    /// awaiting it resumes, so no waiter ever finds it finished and registered.
+    private func startFetch(_ machine: SurfaceMachineID) -> ListingFetch {
+        let generation = (fetchGenerations[machine] ?? 0) + 1
+        fetchGenerations[machine] = generation
+        let started = ContinuousClock.now
+        lastFetchStart[machine] = started
+        let task: Task<Void, Never> = Task { @MainActor [weak self] in
+            await self?.fetch(machine)
+            if self?.inFlight[machine]?.generation == generation { self?.inFlight[machine] = nil }
+        }
+        let fetch = ListingFetch(generation: generation, started: started, task: task)
+        inFlight[machine] = fetch
+        return fetch
     }
 
     /// Starts a same-port forward of `remotePort` for a mirror browser's page,
