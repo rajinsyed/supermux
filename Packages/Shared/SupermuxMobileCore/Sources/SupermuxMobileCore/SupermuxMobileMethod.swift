@@ -154,6 +154,14 @@ public enum SupermuxMobileMethod: String, CaseIterable, Codable, Sendable, Equat
     /// Accepted only from an admitted Mac peer, never from a phone.
     case phonePushShare = "mobile.supermux.phone_push.share"
 
+    // MARK: Ports
+
+    /// Lists this Mac's ports for another of the user's Macs (port forwarding):
+    /// the ports its cmux workspaces listen on that loopback reaches, each with
+    /// its workspace; with `include_other`, every other loopback listener's port
+    /// too (for a manual forward). Served only to an admitted Mac peer.
+    case portsList = "mobile.supermux.ports.list"
+
     /// The shared method-name prefix; the Mac router dispatches on it.
     public static let namespacePrefix = "mobile.supermux."
 
