@@ -28,21 +28,29 @@ import Network
 @MainActor
 final class SupermuxDeviceBrowserProxy {
     let machine: SurfaceMachineID
-    /// The endpoint browsers use, once the listener is ready.
+    /// The endpoint browsers use: nil until the first listener is ready. A
+    /// failed listener's endpoint stays until its replacement is ready, so
+    /// every browser of this Mac, open or new, gets that one meanwhile.
     private(set) var endpoint: BrowserProxyEndpoint?
     /// Dial counters for the E2E (``SupermuxMirrorBrowserSocket``).
     let stats = SupermuxBrowserProxyStats()
 
     private let credential = BrowserProxyCredential.random()
     /// Gets the endpoint each time a listener is ready.
-    private let onEndpointChange: @MainActor (BrowserProxyEndpoint?) -> Void
+    private let onEndpointChange: @MainActor (BrowserProxyEndpoint) -> Void
     private var listener: NWListener?
+    #if DEBUG
+    /// E2E (`supermux.devices.mirror.browser_proxy_hold`): while true no new
+    /// listener is made, as when `NWListener(using:)` fails, so a failed one
+    /// stays down.
+    var debugRefusesListener = false
+    #endif
 
     /// The pause before a failed listener is replaced, so a failure that
     /// persists cannot spin.
     private static let restartDelay: Duration = .seconds(1)
 
-    init(machine: SurfaceMachineID, onEndpointChange: @escaping @MainActor (BrowserProxyEndpoint?) -> Void) {
+    init(machine: SurfaceMachineID, onEndpointChange: @escaping @MainActor (BrowserProxyEndpoint) -> Void) {
         self.machine = machine
         self.onEndpointChange = onEndpointChange
     }
@@ -51,6 +59,9 @@ final class SupermuxDeviceBrowserProxy {
     /// failed is replaced after ``restartDelay``, or on an earlier call.
     func start() {
         guard listener == nil else { return }
+        #if DEBUG
+        if debugRefusesListener { return }
+        #endif
         let tcp = NWProtocolTCP.Options()
         tcp.noDelay = true
         let parameters = NWParameters(tls: nil, tcp: tcp)
@@ -87,13 +98,15 @@ final class SupermuxDeviceBrowserProxy {
             self.endpoint = endpoint
             onEndpointChange(endpoint)
         case .failed:
+            // The dead endpoint stays until ready replaces it: the open browsers
+            // keep it, and one made meanwhile gets it too, so a refused load for
+            // a moment, never one that goes direct from this Mac. An endpoint
+            // configures the whole data store this Mac's browsers share, so a
+            // new browser given none would take the proxy away from all of them
+            // and send their `localhost` here. Only its port stops being ours.
             if let port = endpoint?.port { SupermuxOwnListenerPorts.shared.remove(port) }
-            endpoint = nil
             listener?.cancel()
             listener = nil
-            // The browsers keep the dead endpoint until ready hands them the new
-            // one: a refused load for a moment, never one that goes direct from
-            // this Mac (taking the proxy away would send `localhost` here).
             Task { @MainActor [weak self] in
                 try? await Task.sleep(for: Self.restartDelay)
                 self?.start()
