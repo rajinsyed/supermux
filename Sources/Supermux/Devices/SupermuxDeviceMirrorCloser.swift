@@ -28,7 +28,9 @@ private let mirrorCloseLog = Logger(subsystem: "dev.cmux", category: "supermux-m
 ///   workspace closes there exactly as for a user close (pending, `force`),
 ///   while the workspace here stays open with those tabs, unbound: an ordinary
 ///   local workspace (``closeOnItsMacKeepingHere(_:ref:)``, from the
-///   `device-layout-local-panels` touchpoint in `performClose`).
+///   `device-layout-local-panels` touchpoint in `performClose`). While that
+///   close is in flight auto-mirror leaves the mirror alone
+///   (``keepWhileClosingLastTerminal(_:ref:until:)``).
 /// - **Hide Here** (the row menus): remembers the ref in the hidden set so
 ///   auto-mirror never reopens it, then closes the mirror here only.
 /// - **Programmatic closes** of a mirror (socket, AppleScript, scripts):
@@ -59,6 +61,11 @@ final class SupermuxDeviceMirrorCloser {
     var onChange: @MainActor () -> Void = {}
     /// Local closes whose bookkeeping (hide / unbind) is already done.
     private var decided: Set<UUID> = []
+    /// Mirrors whose last terminal's close is in flight, by token: bound with
+    /// nothing projected until that close settles.
+    private var lastTerminalCloses: [UUID: SupermuxRemoteWorkspaceRef] = [:]
+    /// The longest a last terminal's close keeps its mirror, should it never settle.
+    static let lastTerminalCloseLimit: Duration = .seconds(60)
     #if DEBUG
     /// E2E hook (`supermux.devices.hold_remote_closes`): while true, pending
     /// closes are kept but not sent, so a test can check that auto-mirror
@@ -81,6 +88,10 @@ final class SupermuxDeviceMirrorCloser {
     /// Remote workspaces closed here whose close is not done on their Mac yet
     /// (auto-mirror treats them as busy, so it never reopens them).
     var pendingRemoteCloses: Set<SupermuxRemoteWorkspaceRef> { pending.refs }
+
+    /// Remote workspaces whose mirror's last terminal is being closed (auto-mirror
+    /// treats them as busy, so it never takes that mirror for an orphan).
+    var lastTerminalClosesInFlight: Set<SupermuxRemoteWorkspaceRef> { Set(lastTerminalCloses.values) }
 
     // MARK: - Upstream hooks
 
@@ -112,6 +123,32 @@ final class SupermuxDeviceMirrorCloser {
         sendPendingCloses()
         onChange()
         return true
+    }
+
+    /// The mirror's last terminal tab closed beside tabs of its own, and that
+    /// close (`close`) is in flight: the mirror stays bound with nothing
+    /// projected while that Mac answers (the close, its refusal, a layout
+    /// fetch), which on a slow link lasts long enough for auto-mirror to take
+    /// it for an orphan and close it, its tabs included. Until `close` settles
+    /// (or ``lastTerminalCloseLimit`` passes) its ref counts as busy. Nothing
+    /// happens when `workspace` is not bound as the mirror of `ref`.
+    func keepWhileClosingLastTerminal(_ workspace: Workspace, ref: SupermuxRemoteWorkspaceRef, until close: Task<Void, any Error>) {
+        guard index.boundRef(forLocal: workspace) == ref else { return }
+        let token = UUID()
+        lastTerminalCloses[token] = ref
+        Task { @MainActor [weak self] in
+            _ = await close.result
+            self?.endLastTerminalClose(token)
+        }
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: Self.lastTerminalCloseLimit)
+            self?.endLastTerminalClose(token)
+        }
+    }
+
+    private func endLastTerminalClose(_ token: UUID) {
+        guard lastTerminalCloses.removeValue(forKey: token) != nil else { return }
+        onChange()
     }
 
     /// Every `TabManager.closeWorkspace` passes here before teardown.
@@ -293,6 +330,30 @@ enum SupermuxDeviceMirrorCloseGate {
         SupermuxComposition.deviceMirrorCloser.closeOnItsMac(workspace, in: manager)
     }
 
+    /// The `device-layout-local-panels` touchpoints in
+    /// `DeviceWorkspaceLayoutCoordinator.projectionDidEnd` and
+    /// `supermuxSendHeldClose`: the close of the mirror's last terminal beside
+    /// tabs of its own is in flight (`close`), so auto-mirror leaves the mirror
+    /// alone until it settles
+    /// (``SupermuxDeviceMirrorCloser/keepWhileClosingLastTerminal(_:ref:until:)``).
+    static func keepMirrorWhileClosingLastTerminal(
+        _ workspace: Workspace,
+        machine: SurfaceMachineID,
+        remoteWorkspaceID: String,
+        until close: Task<Void, any Error>
+    ) {
+        SupermuxComposition.deviceMirrorCloser.keepWhileClosingLastTerminal(
+            workspace, ref: SupermuxRemoteWorkspaceRef(machine: machine, workspaceID: remoteWorkspaceID), until: close
+        )
+    }
+
+    /// Whether `workspace`, bound as a mirror of `machine`, holds only tabs of
+    /// its own: no terminal of that Mac is projected or being made in it.
+    static func holdsOnlyItsOwnTabs(_ workspace: Workspace, machine: SurfaceMachineID) -> Bool {
+        let ownPanels = SupermuxDeviceLayoutSurfaceFilter.localPanelIDs(in: workspace, machine: machine)
+        return !ownPanels.isEmpty && ownPanels == Set(workspace.panels.keys)
+    }
+
     /// The `device-layout-local-panels` touchpoint in
     /// `DeviceWorkspaceLayoutCoordinator.performClose`: that Mac refused to
     /// close `closedSurfaceID` with `error`. When that is its last-surface
@@ -314,9 +375,8 @@ enum SupermuxDeviceMirrorCloseGate {
     ) -> Bool {
         guard case .hostRejected(let code, _)? = error as? DeviceLinkError, code == "invalid_state",
               ownerSurfaceIDs.count == 1,
-              ownerSurfaceIDs[0].caseInsensitiveCompare(closedSurfaceID) == .orderedSame else { return false }
-        let ownPanels = SupermuxDeviceLayoutSurfaceFilter.localPanelIDs(in: workspace, machine: machine)
-        guard !ownPanels.isEmpty, ownPanels == Set(workspace.panels.keys) else { return false }
+              ownerSurfaceIDs[0].caseInsensitiveCompare(closedSurfaceID) == .orderedSame,
+              holdsOnlyItsOwnTabs(workspace, machine: machine) else { return false }
         return SupermuxComposition.deviceMirrorCloser.closeOnItsMacKeepingHere(
             workspace, ref: SupermuxRemoteWorkspaceRef(machine: machine, workspaceID: remoteWorkspaceID)
         )

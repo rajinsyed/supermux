@@ -234,6 +234,16 @@ final class DeviceWorkspaceLayoutCoordinator {
                   .subtracting(reserved).subtracting(supermuxLocalPanelIDs) else { return }
         // SUPERMUX:end device-layout-local-panels
         let operation = enqueueClose(surfaceID: projection.resource.key, remoteID: remoteID, workspaceID: projection.workspaceID)
+        // SUPERMUX:begin device-layout-local-panels
+        // The mirror's last terminal beside its own tabs: auto-mirror must not
+        // take the mirror (bound, nothing projected now) for an orphan while
+        // that Mac answers this close.
+        if remaining.isEmpty, reserved.isEmpty, !supermuxLocalPanelIDs.isEmpty {
+            SupermuxDeviceMirrorCloseGate.keepMirrorWhileClosingLastTerminal(
+                native, machine: machine, remoteWorkspaceID: remoteID, until: operation.result
+            )
+        }
+        // SUPERMUX:end device-layout-local-panels
         Task { @MainActor [weak self] in
             do {
                 try await operation.result.value
@@ -258,6 +268,14 @@ final class DeviceWorkspaceLayoutCoordinator {
     /// queue and rules as a live one; its failure shows like a live close's.
     private func supermuxSendHeldClose(_ held: SupermuxDeviceHeldCloses.Close) {
         let operation = enqueueClose(surfaceID: held.surfaceID, remoteID: held.remoteWorkspaceID, workspaceID: held.localWorkspaceID)
+        // A mirror left with only its own tabs is kept from auto-mirror's orphan
+        // close while this close (its last terminal's, or one before it) runs.
+        if let native = workspace(held.localWorkspaceID),
+           SupermuxDeviceMirrorCloseGate.holdsOnlyItsOwnTabs(native, machine: machine) {
+            SupermuxDeviceMirrorCloseGate.keepMirrorWhileClosingLastTerminal(
+                native, machine: machine, remoteWorkspaceID: held.remoteWorkspaceID, until: operation.result
+            )
+        }
         Task { @MainActor [weak self] in
             do {
                 try await operation.result.value

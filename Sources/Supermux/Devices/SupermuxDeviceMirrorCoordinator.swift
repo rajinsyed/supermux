@@ -146,13 +146,15 @@ final class SupermuxDeviceMirrorCoordinator {
     #endif
 
     /// Refs whose open is queued, in flight (here or from any other opener
-    /// caller), backing off, or whose close on their Mac is pending.
+    /// caller), backing off, whose close on their Mac is pending, or whose
+    /// mirror's last terminal is being closed.
     var busyRefs: Set<SupermuxRemoteWorkspaceRef> {
         let now = Date()
         let backingOff = retryAfter.filter { $0.value > now }.keys
         return inFlight.union(openQueue).union(backingOff)
             .union(opener.openingRefs)
             .union(closer.pendingRemoteCloses)
+            .union(closer.lastTerminalClosesInFlight)
     }
 
     private func handle(_ note: Notification) {
