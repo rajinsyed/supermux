@@ -28,8 +28,8 @@ independently:
                                          as for localhost); an authenticated CONNECT to it, as WebKit sends for
                                          any other LAN or public host, is dialed directly by the proxy, no
                                          tunnel open (skipped when the Mac has no non-loopback IPv4)
-  5 closed_port_explains                 a closed port in the mirror shows the "localhost:N on <Mac> isn't
-                                         answering" page
+  5 closed_port_explains                 a closed port in a new mirror tab shows the "localhost:N on <Mac> isn't
+                                         answering" page within 5 s
   6 proxy_requires_credential            the proxy refuses SOCKS no-auth (05 FF), a wrong password (01 01)
                                          and CONNECT without credentials (407); the right one connects
   7 terminal_link_opens_routed_browser   a link click in the mirror's terminal (cmux browser) opens a
@@ -101,6 +101,9 @@ DATA_STORE_NAMESPACE = uuid.UUID("503c7a18-bbc6-4c4b-beca-22549addb0eb")
 # The proxy's limit of clients still in their handshake, and its deadline for one.
 HANDSHAKE_LIMIT = 64
 HANDSHAKE_DEADLINE_S = 10.0
+# How long the closed port's explanation page may take in a new mirror tab: the
+# proxy answers in milliseconds (the tunnel's refusal, then the page).
+EXPLAIN_PAGE_S = 5.0
 
 
 class MarkerServer:
@@ -456,14 +459,26 @@ class MirrorBrowserE2E:
         return established, page
 
     def closed_port_explains(self) -> Dict[str, Any]:
+        """The explanation page opens promptly, in a tab of its own. Typing a URL
+        into the shared tab (it shows the previous step's LAN page) would also
+        time WebKit, not the proxy: since WebKit 27 a typed navigation to plain
+        HTTP on a host that is not loopback by name (the localhost alias, a LAN
+        address) leaves the page's hardened Enhanced Security process and comes
+        back once the response arrives, and a swap into a process WebKit
+        already had can take seconds on a busy host."""
         closed = free_port()
         name = self.pair.device_name
-        self.navigate(self.require_mirror_browser(), f"http://localhost:{closed}/")
+        started = time.monotonic()
+        panel = self.new_tab(self.pair.mirror_id, self.mirror_terminal(), f"http://localhost:{closed}/")
         title = self.wait_title(
-            self.mirror_browser, lambda t: f"localhost:{closed}" in t and name in t,
+            panel, lambda t: f"localhost:{closed}" in t and name in t,
             f"the \"localhost:{closed} on {name} isn't answering\" page",
         )
-        return {"port": closed, "title": title}
+        seconds = round(time.monotonic() - started, 2)
+        self.sock.call("surface.close", {"surface_id": panel})
+        if seconds > EXPLAIN_PAGE_S:
+            raise Failure(f"the explanation page took {seconds}s, want at most {EXPLAIN_PAGE_S:.0f}s")
+        return {"port": closed, "title": title, "page_seconds": seconds}
 
     def proxy_requires_credential(self) -> Dict[str, Any]:
         proxy = self.require_proxy()
