@@ -1,6 +1,7 @@
 #if DEBUG
 import CMUXMobileCore
 import CmuxIrohTransport
+import CmuxIrxTransport
 import Foundation
 
 /// The host half of the DEBUG loopback device: admits the server end of each
@@ -33,9 +34,22 @@ final class SupermuxDeviceLoopbackHostAcceptor {
     /// Connections admitted since launch: a link that redials adds one, which
     /// E2E reads through `supermux.devices.link {action: "status"}`.
     private(set) static var admittedConnections = 0
+    /// The loopback tunnel host's own journal (`host-tunnel` events), read by
+    /// the DEBUG `supermux.devices.tunnel.journal` driver.
+    nonisolated static let tunnelJournal = IrxJournal(subsystem: "dev.supermux", category: "loopback-tunnel")
+    /// Stands in for a revoked peer: every tunnel open is refused while set
+    /// (DEBUG `supermux.devices.tunnel.revoke`). Read from the host's
+    /// `@Sendable` authorization check.
+    nonisolated(unsafe) static var tunnelAuthorizationRevoked = false
 
     private let peer: CmxIrohAdmittedPeer
     private let layouts: DeviceWorkspaceLayoutHost
+    /// The newest connection's tunnel host, as `MobileHostIrxRuntime` builds
+    /// one per admitted connection. Kept after its connection ends (stopped)
+    /// so E2E can watch its tunnels drain; the next admission replaces it.
+    private var tunnelHost: IrxTunnelHost?
+    /// Whether ``tunnelHost``'s connection is still open.
+    private var tunnelConnectionLive = false
 
     init(identity: SupermuxDeviceLoopbackIdentity) throws {
         peer = try identity.admittedPeer()
@@ -90,6 +104,32 @@ final class SupermuxDeviceLoopbackHostAcceptor {
             await transport.close()
             cmuxDebugLog("supermux.loopback host connection ended: \(String(describing: exit.lifecycle))")
         }
+    }
+
+    /// Opens one tunnel lane on the newest connection, as `IrxTunnelClient.connect`
+    /// does on a QUIC connection: the tunnel host answers, and a refusal
+    /// throws `IrxTunnelOpenError` with its status. Without a tunnel host the
+    /// lane is reset, as `runLaneLoop` resets a Mac peer's tunnel lanes today,
+    /// which the viewer sees as `.failed`.
+    func openTunnel(host: String, port: Int) async throws -> SupermuxDeviceLoopbackTunnelLane.ClientHalf {
+        let (hostHalf, client) = SupermuxDeviceLoopbackTunnelLane.pair(host: host, port: port)
+        guard let tunnelHost else {
+            await client.abort()
+            throw IrxTunnelOpenError(status: .failed)
+        }
+        await tunnelHost.accept(hostHalf)
+        let reply = try await client.readReply(timeout: .seconds(15))
+        guard reply.status == .connected else {
+            await client.abort()
+            throw IrxTunnelOpenError(status: reply.status)
+        }
+        return client
+    }
+
+    /// The newest connection's tunnel host, for the DEBUG `tunnel.host_state` driver.
+    func tunnelHostState() async -> (hasHost: Bool, connectionLive: Bool, activeTunnels: Int) {
+        guard let tunnelHost else { return (false, false, 0) }
+        return (true, tunnelConnectionLive, await tunnelHost.activeTunnelCount)
     }
 
     /// Holds the first request for the stalled method (any connection) for
