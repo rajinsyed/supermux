@@ -10,7 +10,8 @@ import SupermuxKit
 ///   leaves that Mac's listing.
 /// - Manual: kept until the user stops it, whatever the listing says.
 /// - A Mac with no listing (offline, or not fetched yet) keeps its forwards as
-///   they are, so they come back once it does.
+///   they are, so they come back once it does; one the user stops meanwhile
+///   goes at once (still dismissed, it comes back stopped if listed).
 enum SupermuxPortForwardPlan {
     struct Key: Hashable, Sendable, CustomStringConvertible {
         let machine: SurfaceMachineID
@@ -43,7 +44,8 @@ enum SupermuxPortForwardPlan {
         var run: Set<Key> = []
         /// Automatic forwards the user stopped: kept, not listening.
         var paused: Set<Key> = []
-        /// Existing forwards of Macs without a listing: kept as they are.
+        /// Existing forwards of Macs without a listing that the user did not
+        /// stop: kept as they are.
         var held: Set<Key> = []
         /// The dismissed set, minus ports that left their Mac's listing.
         var dismissed: Set<Key> = []
@@ -74,7 +76,7 @@ enum SupermuxPortForwardPlan {
         var decision = Decision(dismissed: dismissed)
         decision.run = automatic.subtracting(dismissed).union(input.manual)
         decision.paused = automatic.intersection(dismissed).subtracting(input.manual)
-        decision.held = input.existing.filter { input.listings[$0.machine] == nil }
+        decision.held = input.existing.filter { input.listings[$0.machine] == nil && !dismissed.contains($0) }
         return decision
     }
 }

@@ -13,7 +13,8 @@ this same app's own mobile host), so every remote port is also busy here: each
 forward must land on another local port.
 
   0. setup                              auto-mirror and auto-forward on; source S and its mirror M
-  1. auto_forward_busy_port_lands_elsewhere   a server on R in S -> forward R active at L != R;
+  1. auto_forward_busy_port_lands_elsewhere   the suite holds R+1..R+3; a server on R in S -> forward R
+                                        active at L, neither R nor a held port;
                                         127.0.0.1:L and [::1]:L serve the owner's page
   2. dual_stack_busy_not_stolen         the suite's own [::]:R2 listener + an injected host port R2
                                         -> the forward lands elsewhere; 127.0.0.1:R2 still reaches
@@ -26,13 +27,28 @@ forward must land on another local port.
                                         rescan; Resume -> active again
   7. port_disappears_forward_stops      the server on R exits -> the forward goes and L refuses;
                                         restarted -> forwarded again
-  8. disconnect_stops_listeners         link down -> waiting, L refuses, M's chips empty;
-                                        link back -> active on the same L
+  8. disconnect_stops_listeners         link down -> waiting, L refuses, M's chips empty; the suite
+                                        frees R+1..R+3 (the first free port above R is now below L);
+                                        link back -> active on its last local port L
   9. auto_off_keeps_manual              auto-forward off -> automatic forwards go, a manual one stays
  10. external_link_uses_local_port      a localhost:R link in M's terminal opened in the default
                                         browser -> http://localhost:L/... (C's `mirror.link_open`)
  11. old_host_disables                  a host without `supermux.port_forward.v1` -> `needs_update`,
                                         nothing forwarded; then back
+ 12. capability_failure_retried         every capability request after a relink fails (`timed_out`,
+                                        tunnel.fail_requests); once the host answers again R is
+                                        forwarded with no port change and no relink
+ 13. listing_failure_retried            every ports.list after a relink fails until the reconnect's own
+                                        pokes are over; once the host answers again R is forwarded with
+                                        no port change, poke or relink
+ 14. chip_default_browser_uses_local_port  M's sidebar chip for R clicked with "Open Sidebar Port Links
+                                        in cmux Browser" off -> the default browser gets
+                                        http://localhost:L, never this Mac's own localhost:R
+                                        (`ports.chip_open`)
+ 15. pending_forward_offers_stop        a manual forward Q left waiting by a dropped link -> both
+                                        port menus (M's "Ports on <Mac>", Settings' Ports…) offer
+                                        Stop Forwarding (`ports.menus`); Stop -> it goes at once,
+                                        and with the link back it never listens again
 
 Writes a JSON report (default tests/supermux/artifacts/loopback_port_forward_e2e-<tag>.json)
 and exits non-zero on any failure. Stdlib only.
@@ -62,8 +78,21 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 LOOPBACK_DEVICE_ID = "5e1f10b0-0000-4000-8000-000000000001"
+HOST_STATUS = "mobile.host.status"
+PORTS_LIST = "mobile.supermux.ports.list"
+# Armed failures that outlast the step (it disarms them itself).
+UNTIL_DISARMED = 1000
+# How long after the first failed listing the reconnect's own `ports.updated` pokes are over.
+POKES_SETTLE_SECONDS = 5.0
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ARTIFACTS_DIR = REPO_ROOT / "tests" / "supermux" / "artifacts"
+# The suite holds the ports just above R from step 1 until the link is down in
+# step 8, so R's forward listens above them and, once they are freed, the first
+# free port above R is not the forward's last local port.
+HELD_ABOVE_REMOTE = 3
+# The highest R step 1 takes: the held ports and the forward's candidates
+# (R+1 … R+50) must stay valid port numbers.
+MAX_REMOTE_PORT = 65_535 - 50
 
 
 class Failure(Exception):
@@ -209,7 +238,8 @@ def listener_pids(port: int) -> List[int]:
 class MarkerServer:
     """An HTTP server of the suite's own (in no cmux workspace) serving one marker."""
 
-    def __init__(self, body: str, host: str = "127.0.0.1", family: int = socket.AF_INET, dual_stack: bool = False) -> None:
+    def __init__(self, body: str, host: str = "127.0.0.1", family: int = socket.AF_INET, dual_stack: bool = False,
+                 port: int = 0) -> None:
         payload = body.encode("utf-8")
 
         class Handler(http.server.BaseHTTPRequestHandler):
@@ -231,7 +261,7 @@ class MarkerServer:
                     self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
                 super().server_bind()
 
-        self.server = Server((host, 0), Handler)
+        self.server = Server((host, port), Handler)
         self.port = self.server.server_address[1]
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
@@ -259,6 +289,7 @@ class PortForwardE2E:
         self.remote_port = 0
         self.local_port = 0
         self.servers: List[MarkerServer] = []
+        self.held: List[MarkerServer] = []
         self.manual_port = 0
 
     # -- reads ----------------------------------------------------------------
@@ -271,6 +302,9 @@ class PortForwardE2E:
 
     def ports(self) -> Dict[str, Any]:
         return self.sock.call("supermux.devices.ports.list", {"machine": self.machine}) or {}
+
+    def availability(self) -> Optional[str]:
+        return (self.ports().get("availability") or {}).get(self.machine)
 
     def forward(self, port: int) -> Optional[Dict[str, Any]]:
         for row in self.ports().get("forwards") or []:
@@ -326,6 +360,21 @@ class PortForwardE2E:
     def link(self, action: str) -> Dict[str, Any]:
         return self.sock.call("supermux.devices.link", {"machine": self.machine, "action": action}) or {}
 
+    def relink(self) -> None:
+        """Drops the link, waits for the drop, and redials it."""
+        self.link("stop")
+        wait_for("the link to drop", lambda: self.device().get("link_state") != "connected", self.timeout)
+        self.link("restore")
+        self.wait_linked()
+
+    def fail_requests(self, method: str, count: Optional[int] = None) -> Dict[str, Any]:
+        """The loopback host answers the next `count` `method` requests `timed_out` (0 disarms);
+        without `count`, how many it failed so far."""
+        params: Dict[str, Any] = {"method": method}
+        if count is not None:
+            params["count"] = count
+        return self.tunnel("fail_requests", **params) or {}
+
     def wait_linked(self) -> None:
         def ready() -> bool:
             device = self.device()
@@ -342,6 +391,30 @@ class PortForwardE2E:
 
     def wait_refused(self, port: int, seconds: float, description: str) -> None:
         wait_for(description, lambda: not accepts("127.0.0.1", port) and not accepts("::1", port), seconds, interval_s=0.1)
+
+    def owner_port_holding_above(self) -> int:
+        """A free port R; the suite then listens on R+1 … R+HELD_ABOVE_REMOTE (`self.held`)."""
+        for _ in range(20):
+            port = free_port()
+            if port > MAX_REMOTE_PORT:
+                continue
+            held: List[MarkerServer] = []
+            try:
+                for above in range(port + 1, port + 1 + HELD_ABOVE_REMOTE):
+                    if accepts("127.0.0.1", above) or accepts("::1", above):
+                        raise OSError(f"port {above} is in use")
+                    held.append(MarkerServer(f"held-{self.nonce}", port=above))
+            except OSError:
+                for server in held:
+                    server.close()
+                continue
+            self.held = held
+            return port
+        raise Failure(f"no free port with {HELD_ABOVE_REMOTE} free ports above it")
+
+    def release_held(self) -> None:
+        while self.held:
+            self.held.pop().close()
 
     # -- steps ----------------------------------------------------------------
 
@@ -379,7 +452,7 @@ class PortForwardE2E:
         return {"machine": self.machine, "source": self.source_id, "mirror": self.mirror_id}
 
     def auto_forward_busy_port(self) -> Dict[str, Any]:
-        self.remote_port = free_port()
+        self.remote_port = self.owner_port_holding_above()
         self.start_owner_server(self.remote_port)
         started = time.monotonic()
         self.kick()
@@ -391,6 +464,8 @@ class PortForwardE2E:
             raise Failure(f"origin {row.get('origin')}, expected automatic: {row}")
         if self.local_port == self.remote_port:
             raise Failure(f"the forward took {self.remote_port}, which the owner's own server holds here")
+        if self.local_port in {server.port for server in self.held}:
+            raise Failure(f"the forward took {self.local_port}, which the suite's own listener holds")
         expected = f"owner-{self.nonce}"
         v4 = http_get("127.0.0.1", self.local_port, "/marker.html")
         v6 = http_get("::1", self.local_port, "/marker.html")
@@ -400,8 +475,10 @@ class PortForwardE2E:
             self.facts["host_journal_tail"] = (self.tunnel("journal") or {})
         except Failure as error:
             self.facts["host_journal_error"] = str(error)
-        self.facts.update(remote_port=self.remote_port, local_port=self.local_port)
-        return {"remote_port": self.remote_port, "local_port": self.local_port, "latency_seconds": latency}
+        held = [server.port for server in self.held]
+        self.facts.update(remote_port=self.remote_port, local_port=self.local_port, held_ports=held)
+        return {"remote_port": self.remote_port, "local_port": self.local_port, "held_ports": held,
+                "latency_seconds": latency}
 
     def dual_stack_busy(self) -> Dict[str, Any]:
         marker = f"dual-{self.nonce}"
@@ -510,13 +587,22 @@ class PortForwardE2E:
             wait_for(f"forward of {port} to wait", lambda: (self.forward(port) or {}).get("state") == "waiting", self.timeout)
             self.wait_refused(local, 2.0, f"127.0.0.1:{local} to refuse while the link is down")
             wait_for("M's chips to empty", lambda: self.remote_port not in (self.mirror_row().get("listening_ports") or []), self.timeout)
+            # Free the ports held above R since step 1: a forward that took the
+            # first free port above R would now come back below L.
+            self.release_held()
+            first_free = next((p for p in range(port + 1, local)
+                               if not accepts("127.0.0.1", p) and not accepts("::1", p)), None)
+            if first_free is None:
+                raise Failure(f"no free port between {port} and {local}: the step cannot tell "
+                              "the forward's last local port from the first free one")
         finally:
             self.link("restore")
         self.wait_linked()
         row = wait_for(f"forward of {port} to come back", lambda: self.active_forward(port), self.timeout)
         if int(row["local_port"]) != local:
-            raise Failure(f"came back on {row['local_port']}, not the same free {local}")
-        return {"local_port": local}
+            raise Failure(f"came back on {row['local_port']}, not its last local port {local} "
+                          f"(the first free port above {port} was {first_free})")
+        return {"local_port": local, "first_free_above_remote": first_free}
 
     def auto_off(self) -> Dict[str, Any]:
         self.require_forwarded()
@@ -578,9 +664,119 @@ class PortForwardE2E:
         wait_for(f"forward of {self.remote_port} back", lambda: self.active_forward(self.remote_port), self.timeout)
         return {}
 
+    def capability_failure_retried(self) -> Dict[str, Any]:
+        """The capability request fails after a reconnect (a Mac stalled past the reply deadline, or
+        still busy after the link's retries): the capabilities are unknown, not absent, and the
+        forwards ask again by themselves, so R comes back once the host answers."""
+        self.require_forwarded()
+        self.fail_requests(HOST_STATUS, UNTIL_DISARMED)
+        try:
+            self.relink()
+
+            def checked() -> str:
+                reason = self.availability()
+                if not reason or reason == "available":
+                    raise Failure(f"availability {reason!r}")
+                return reason
+
+            reason = wait_for("the forwards to check the Mac while it does not answer", checked, self.timeout)
+        finally:
+            self.fail_requests(HOST_STATUS, 0)
+        row = wait_for(f"forward of {self.remote_port} back once the host answers (no port change, no relink)",
+                       lambda: self.active_forward(self.remote_port), self.timeout)
+        self.local_port = int(row["local_port"])
+        return {"availability_while_failing": reason, "local_port": self.local_port}
+
+    def listing_failure_retried(self) -> Dict[str, Any]:
+        """The port listing fails after a reconnect: the forwards fetch it again by themselves (1 s,
+        2 s, 4 s … while the Mac stays connected) instead of waiting for the owner's next
+        `supermux.ports.updated`, so R comes back once the host answers."""
+        self.require_forwarded()
+        self.fail_requests(PORTS_LIST, UNTIL_DISARMED)
+        try:
+            self.relink()
+            wait_for("the Mac to be available", lambda: self.availability() == "available", self.timeout)
+            wait_for("a failed port listing", lambda: self.fail_requests(PORTS_LIST).get("failed"), self.timeout)
+            # The reconnect's own pokes go by and fail too; afterwards only a retry of the
+            # forwards' own fetches the listing.
+            time.sleep(POKES_SETTLE_SECONDS)
+            state = (self.forward(self.remote_port) or {}).get("state")
+            failed = self.fail_requests(PORTS_LIST).get("failed")
+            if state == "active":
+                raise Failure(f"forward of {self.remote_port} is active although every listing failed ({failed})")
+        finally:
+            self.fail_requests(PORTS_LIST, 0)
+        row = wait_for(f"forward of {self.remote_port} back once the host answers (no port change, no relink)",
+                       lambda: self.active_forward(self.remote_port), self.timeout)
+        self.local_port = int(row["local_port"])
+        return {"state_while_failing": state, "failed_listings": failed, "local_port": self.local_port}
+
+    def chip_default_browser(self) -> Dict[str, Any]:
+        self.require_forwarded()
+        row = wait_for(f"forward of {self.remote_port}", lambda: self.active_forward(self.remote_port), self.timeout)
+        local = int(row["local_port"])
+        # The owner's own server holds R here (one Mac is both ends), so the forward moved.
+        if local == self.remote_port or not accepts("127.0.0.1", self.remote_port):
+            raise Failure(f"precondition: R={self.remote_port} must be busy here and forwarded elsewhere (L={local})")
+        opened = self.ports_call("chip_open", workspace_id=self.mirror_id, port=self.remote_port, cmux_browser=False)
+        expected = f"http://localhost:{local}"
+        got = str(opened.get("external_url") or "").rstrip("/")
+        if got != expected:
+            raise Failure(f"the chip opened {opened.get('external_url')!r} in the default browser, expected {expected!r} "
+                          f"(localhost:{self.remote_port} here is another server): {opened}")
+        if opened.get("new_browser_panel_id"):
+            raise Failure(f"the chip opened a cmux browser with the setting off: {opened}")
+        return {"external_url": got}
+
+    def menu_items(self, port: int) -> Dict[str, Any]:
+        """What both port menus offer for `port` of the loopback Mac right now."""
+        menus = self.ports_call("menus", workspace_id=self.mirror_id)
+        mirror = menus.get("mirror") or {}
+        mirror_items = next((p.get("items") for p in mirror.get("ports") or [] if p.get("remote_port") == port), None)
+        mac = next((m for m in menus.get("settings") or [] if m.get("machine") == self.machine), {})
+        settings_items = next((p.get("items") for p in mac.get("ports") or [] if p.get("remote_port") == port), None)
+        return {"mirror": mirror_items, "settings": settings_items, "reason": mirror.get("reason"),
+                "settings_shown": mac.get("shown")}
+
+    def pending_forward_stop(self) -> Dict[str, Any]:
+        self.require_forwarded()
+        server = MarkerServer(f"pending-{self.nonce}")
+        self.servers.append(server)
+        port = server.port
+        self.ports_call("forward", port=port)
+        local = int(wait_for(f"a manual forward of {port}", lambda: self.active_forward(port), self.timeout)["local_port"])
+        stopped = False
+        self.link("stop")
+        try:
+            wait_for(f"forward of {port} to wait", lambda: (self.forward(port) or {}).get("state") == "waiting", self.timeout)
+            self.wait_refused(local, 2.0, f"127.0.0.1:{local} to refuse while the link is down")
+            items = self.menu_items(port)
+            if "stopForwarding" not in (items["mirror"] or []):
+                raise Failure(f"M's Ports on <Mac> menu offers no Stop Forwarding for the waiting forward of {port}: {items}")
+            if "stopForwarding" not in (items["settings"] or []):
+                raise Failure(f"Settings' Ports… menu offers no Stop Forwarding for the waiting forward of {port}: {items}")
+            self.ports_call("stop", port=port)
+            stopped = True
+            wait_for(f"the stopped forward of {port} to go", lambda: self.forward(port) is None, 5.0)
+        finally:
+            if not stopped:
+                self.ports_call("stop", port=port)
+            self.link("restore")
+        self.wait_linked()
+        wait_for(f"forward of {self.remote_port} back", lambda: self.active_forward(self.remote_port), self.timeout)
+        self.ports_call("refresh")
+        deadline = time.monotonic() + 3.0
+        while time.monotonic() < deadline:
+            row = self.forward(port)
+            if row is not None or accepts("127.0.0.1", local):
+                raise Failure(f"the stopped forward of {port} came back with the link: {row}")
+            time.sleep(0.3)
+        return {"port": port, "local_port": local, "menus": items}
+
     # -- run ------------------------------------------------------------------
 
     def cleanup(self) -> None:
+        self.release_held()
         for server in self.servers:
             server.close()
         if self.remote_port:
@@ -590,6 +786,7 @@ class PortForwardE2E:
                 except OSError:
                     pass
         for step in (lambda: self.tunnel("clear_injected"), lambda: self.tunnel("pretend_old_host", enabled=False),
+                     lambda: self.fail_requests(HOST_STATUS, 0), lambda: self.fail_requests(PORTS_LIST, 0),
                      lambda: self.ports_call("set_auto", enabled=True)):
             try:
                 step()
@@ -622,6 +819,10 @@ class PortForwardE2E:
                 ("auto_off_keeps_manual", self.auto_off),
                 ("external_link_uses_local_port", self.external_link),
                 ("old_host_disables", self.old_host),
+                ("capability_failure_retried", self.capability_failure_retried),
+                ("listing_failure_retried", self.listing_failure_retried),
+                ("chip_default_browser_uses_local_port", self.chip_default_browser),
+                ("pending_forward_offers_stop", self.pending_forward_stop),
             ]:
                 ok = self.step(name, check) and ok
         self.cleanup()

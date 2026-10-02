@@ -322,7 +322,11 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   preset launch never misses the 20 s deadline and runs later anyway, `projects.list` at most 2 s for
   the git origins and the file facts (an origin or icon not found in time keeps the last one known,
   per project), and `files.watch` builds its folder watcher on a thread of its own instead of the
-  main actor. Before this, such a prompt made the link connect and drop every ~20 s.
+  main actor. Before this, such a prompt made the link connect and drop every ~20 s. A git command
+  blocked there ends at its own deadline even when nobody waits for it (`CommandRunner`: SIGTERM,
+  then SIGKILL), and one still running when the app quits ends with the app
+  (`SupermuxGitChildProcesses`: on `willTerminate`, every git child with its process group); before,
+  those were left under launchd and ran for hours.
 - **Terminal size follows the Mac you look from** (upstream's shared sizing, #633, #665–#669): every
   terminal starts as Priority with this Mac first (its own pane for a local terminal, so a phone
   defers to a Mac pane on screen); a mirror claims the other Mac's terminal when it is shown, first
@@ -400,24 +404,37 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   keeps following that Mac's splits and tabs around it in both directions. It keeps its place beside
   its neighbouring terminal tab (or its own split beside the terminals it was split from); if those
   terminals close there, it moves to the end of the last pane. Closing a mirrored terminal tab beside
-  it still closes that terminal on the owning Mac. Only a bound mirror counts (a local workspace that
+  it still closes that terminal on the owning Mac. Closing the mirror's last terminal tab while such
+  tabs stay works like closing a local workspace's last terminal beside a browser: when that terminal
+  is all the workspace holds there, that Mac cannot keep a workspace without a surface, so its
+  workspace closes there (as closing the mirror closes it: no prompt, `force`, held while that Mac is
+  offline), and the mirror stays here with its own tabs as an ordinary local workspace (no longer a
+  mirror; nothing re-projects or closes it; its browsers keep the route they opened with until a
+  relaunch). Only a bound mirror counts (a local workspace that
   borrows terminals stays upstream's mixed workspace). Known gap: ⌘T/⌘D with such a tab selected
   makes a local shell, which stalls the sync again until it closes.
-- **A mirror's browser opens that Mac's localhost** (#707): every browser in a mirror (new tab,
-  split, a terminal link opened in the cmux browser, restore, the Dock, a tab moved in) uses
+- **A mirror's browser opens that Mac's localhost** (#707): every browser in a mirror, bound or not
+  (new tab, split, a terminal link opened in the cmux browser, restore, the Dock, a tab moved in,
+  the ports menu's "Open in cmux Browser" and a port chip) uses
   upstream's remote-workspace browser mode: `localhost`, `127.0.0.1`, `[::1]` and `*.localhost` go to
-  the owning Mac through a per-Mac proxy on this Mac's loopback and the device link's tunnel lanes
+  the owning Mac through a per-app-instance proxy on this Mac's loopback and the device link's tunnel lanes
   (port forwarding's transport; the owning Mac serves only its own loopback), with the page's
   `localhost` origin kept, so `localhost:3000` there is the other Mac's dev server even when this Mac
-  runs its own on 3000. Public sites load from this Mac. Each remote Mac has its own persistent
+  runs its own on 3000. Public sites load from this Mac. Each remote app instance (Mac + tag, so a
+  dogfood build beside that Mac's main app is separate) has its own persistent
   website data store, so a login to its dev app survives the mirror being re-created and never mixes
   with this Mac's `localhost` cookies (and public sites are not signed in with the profile's cookies,
   as in upstream SSH workspaces). When that Mac's `localhost` cannot be reached the page says why:
-  nothing listening there, "Update Supermux on <Mac> to open its localhost here." (no
-  `supermux.port_forward.v1`), offline, no direct connection (a Tailscale-only link), busy or
-  refused. The proxy accepts only its per-launch random credential, so other local processes cannot
-  use it to reach the other Mac. A tab moved out of a mirror goes back to this Mac's profile.
-- **Other Macs' ports open here** (#699, #705; the tunnel is round 5's Track A): a server started in
+  nothing listening there, "Update Supermux on <Mac> to open its localhost here." (only when that
+  Mac's capabilities came back without `supermux.port_forward.v1`), "Can't reach <Mac> right now.
+  Reload this page in a moment." (connected, but its capability request failed, timed out or met a
+  busy Mac, or its Iroh session is between dials), offline, no direct connection (this Mac's links
+  run over the legacy Tailscale route), busy or refused. The proxy accepts only its per-launch random
+  credential, so other local processes cannot use it to reach the other Mac; it closes a client that
+  has not finished its handshake within 10 s and refuses new ones while 64 are still in it, releases
+  every connection's socket when it ends, and replaces its listener if the system fails it (open tabs
+  wait for the new one). A tab moved out of a mirror goes back to this Mac's profile.
+- **Other Macs' ports open here** (#699, #705, #750, #751; the tunnel is round 5's Track A): a server started in
   another Mac's workspace that is mirrored here (`bun run dev` on 3000) opens at `localhost` on this
   Mac, in any browser, the iOS Simulator or any other app (setting "Forward other Macs' ports to this
   Mac", `supermux.devices.forwardPorts`, default on). Each Mac lists the ports of its own cmux
@@ -430,16 +447,29 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   network, nor this Mac's own LAN address, reaches it. When a port lands elsewhere, the flat mirror row shows a pill
   ("Port 3000 from M4 Pro is at localhost:3001", click opens it), and a localhost link in that
   mirror's terminal opened in the default browser goes to the local port. Flat mirror rows also
-  show the owning Mac's port chips (a chip opens the port in a cmux browser in the mirror). Every
-  mirror row's menu (flat and nested) has "Ports on <Mac>": this workspace's ports there, that
-  Mac's other forwards, Open in cmux Browser / Open in Default Browser / Copy Local URL / Stop
-  Forwarding / Forward to This Mac, and Forward a Port… for anything else listening on that Mac's
-  loopback (one started outside cmux). Settings › Remote Macs lists each connected Mac's forwards
-  and has the same Ports… menu. A stopped automatic forward stays stopped until its server goes
-  away; a forward whose server goes away is removed; while a Mac is offline its forwards wait and
-  come back (same local port when still free). Needs that Mac on this build with its sidebar port
-  detection on (else only Forward a Port… works); an older Mac says "Update Supermux on <Mac> to use
-  its ports here.", a link without a direct connection says it needs one. Limits: like `ssh -L`, a
+  show the owning Mac's port chips: a chip opens the port in a cmux browser in the mirror, and with
+  "Open Sidebar Port Links in cmux Browser" off (or no cmux browser) the default browser gets the
+  forward's local port, never this Mac's own `localhost:<port>`; with no active forward nothing
+  opens and an alert says why (#750). Every mirror row's menu (flat and nested) has "Ports on
+  <Mac>": this workspace's ports there, that Mac's other forwards, Open in cmux Browser / Open in
+  Default Browser / Copy Local URL / Stop Forwarding / Forward to This Mac, and Forward a Port… for
+  anything else listening on that Mac's loopback (one started outside cmux). Settings › Remote Macs
+  lists each connected Mac's forwards and has the same Ports… menu (one rule decides both,
+  `SupermuxPortMenuItems`). Stop Forwarding is there for every forward that is not stopped, also a
+  waiting or failed one and while its Mac is offline or cannot forward (the menus then show the
+  reason and the pending forwards, and Settings keeps Ports… for them), so a forward never starts
+  listening later after the user stopped it. The menus and chips exist only on what
+  `SupermuxDeviceWorkspaceIndex.mirrors()` lists, not on a local workspace that borrows a remote
+  terminal. A stopped automatic forward stays stopped until its server goes away; a forward whose
+  server goes away is removed; while a Mac is offline its forwards wait and come back (same local
+  port when still free), except one stopped meanwhile, which goes at once. Needs that Mac on this build with its sidebar port
+  detection on (else only Forward a Port… works); an older Mac (capabilities without
+  `supermux.port_forward.v1`) says "Update Supermux on <Mac> to use its ports here.", a link without
+  a direct connection says it needs one. A connected Mac that does not answer the capability request
+  (a missed reply deadline, still busy after the link's retries) is not taken for an older one: it
+  says "Can't reach <Mac> right now. Trying again…", its forwards wait as they are, and it is asked
+  again after 1 s, 2 s, 4 s … up to 30 s while the link stays up; a port listing that fails is
+  fetched again the same way, without waiting for that Mac's next ports poke. Limits: like `ssh -L`, a
   forward holding a local port makes a server started here later on that port pick another (Stop
   frees it), and any process on this Mac can connect to a forwarded port. Not done: the right
   sidebar's Machines tab ports for devices, a command palette entry, notifications.
@@ -718,6 +748,19 @@ Constraints inherited from upstream that supermux code MUST follow:
   are loopback-verified too: there both "Macs" share one loopback, so the suites check the route
   (proxy, tunnel opens, data store), and the tunnel's QUIC lane, real port collisions, HMR WebSockets
   through the alias and `https://localhost` dev servers need two Macs.
+- **A URL typed into a mirror's browser tab costs two WebKit process swaps (macOS 27).** The tab
+  opens the owning Mac's `localhost` as upstream's `cmux-loopback.localtest.me` alias, plain HTTP to
+  a host that is not loopback by name, so WebKit 27's Enhanced Security heuristic runs its pages in
+  a hardened (JIT-less) WebContent process; a navigation the app or the user starts (typed URL,
+  `browser.navigate`, a link opened into an existing tab) resets that state, leaves the process and
+  swaps back when the response arrives. Link clicks inside the page keep the process, a new tab
+  swaps only into freshly launched processes (quick), and a local tab's real `localhost` is exempt. Normally that is a fraction of a second; on a host where
+  WebKit's sandbox extensions for a reused WebContent process are slow (seen 2026-10-02, about 5 s
+  each, also in a bare `WKWebView`), it is 10–20 s per page. Asking for
+  `WKWebpagePreferences.securityRestrictionMode` up front does not help (WebKit tracks that as a
+  different hardened state and still swaps at the response); the only switch is WebKit's
+  undocumented `EnhancedSecurityHeuristicsEnabled` preference, which would also unharden public
+  HTTP pages in those tabs, so it is left to the fork owner.
 
 ### Open decisions from the 0.64.21 (v0.65) upstream merge
 
