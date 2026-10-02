@@ -30,6 +30,9 @@ independently:
                                          tunnel open (skipped when the Mac has no non-loopback IPv4)
   5 closed_port_explains                 a closed port in a new mirror tab shows the "localhost:N on <Mac> isn't
                                          answering" page within 5 s
+ 5b typed_navigations_are_prompt        URLs typed into the open mirror tab each show the owner's page within
+                                         3 s, 6 times (it waited ~10 s behind a tunnel WebKit opened and never
+                                         sent a request on)
   6 proxy_requires_credential            the proxy refuses SOCKS no-auth (05 FF), a wrong password (01 01)
                                          and CONNECT without credentials (407); the right one connects
   7 terminal_link_opens_routed_browser   a link click in the mirror's terminal (cmux browser) opens a
@@ -125,6 +128,10 @@ HANDSHAKE_DEADLINE_S = 10.0
 # How long the closed port's explanation page may take in a new mirror tab: the
 # proxy answers in milliseconds (the tunnel's refusal, then the page).
 EXPLAIN_PAGE_S = 5.0
+# URLs typed into the open mirror tab, and how long each may take to show the
+# owner's page (the owner answers at once; a new tab takes ~0.15 s).
+TYPED_NAVIGATIONS = 6
+TYPED_NAVIGATION_S = 3.0
 # Cloudflare's dummy Turnstile sitekey that always passes (meant for automated
 # tests; it works on any hostname). A real sitekey also checks the page's
 # hostname against its allowlist, which for a dev app lists `localhost`.
@@ -615,6 +622,39 @@ class MirrorBrowserE2E:
             raise Failure(f"the explanation page took {seconds}s, want at most {EXPLAIN_PAGE_S:.0f}s")
         return {"port": closed, "title": title, "page_seconds": seconds}
 
+    def typed_navigations_are_prompt(self) -> Dict[str, Any]:
+        """A URL typed into the open mirror tab shows the owner's page within
+        TYPED_NAVIGATION_S, each of TYPED_NAVIGATIONS times (a new owner port
+        each). It used to wait ~10 s most times: for such a navigation WebKit
+        opens a tunnel through the proxy at once, sends nothing on it, and sends
+        the request on a new connection only once that tunnel closes (WebKit
+        closed it after ~10.8 s). The proxy's connection traces name it: a
+        tunnel that carried no request, open for the whole wait."""
+        browser = self.require_mirror_browser()
+        owner, here = self.owner_and_this_mac("typed-0")
+        self.navigate_open_tab(browser, f"http://localhost:{here.port}/marker.html")
+        self.wait_owner_page(browser, owner, here, "the open mirror tab to show an owner page")
+        before = self.require_proxy()
+        first_trace = max([int(c.get("id") or 0) for c in before.get("connections") or []] or [0])
+        timings: List[float] = []
+        for index in range(1, TYPED_NAVIGATIONS + 1):
+            owner, here = self.owner_and_this_mac(f"typed-{index}")
+            started = time.monotonic()
+            self.navigate_open_tab(browser, f"http://localhost:{here.port}/marker.html?typed={index}")
+            self.wait_owner_page(browser, owner, here, f"typed navigation {index}")
+            timings.append(round(time.monotonic() - started, 2))
+        after = self.require_proxy()
+        traces = [c for c in after.get("connections") or [] if int(c.get("id") or 0) > first_trace]
+        unused = [round(float(c["ended"]) - float(c["decided"]), 2) for c in traces
+                  if c.get("decided") is not None and c.get("ended") is not None and not c.get("request_bytes")]
+        silent = int(after.get("silent_deadline_closes") or 0) - int(before.get("silent_deadline_closes") or 0)
+        facts = {"seconds": timings, "unused_tunnel_seconds": unused, "silent_deadline_closes": silent}
+        slow = [seconds for seconds in timings if seconds > TYPED_NAVIGATION_S]
+        if slow:
+            raise Failure(f"{len(slow)} of {len(timings)} typed navigations took over {TYPED_NAVIGATION_S:.0f}s: {facts} "
+                          f"(tunnels through the proxy that carried no request, and how long each stayed open)")
+        return facts
+
     def proxy_requires_credential(self) -> Dict[str, Any]:
         proxy = self.require_proxy()
         port = int(proxy["port"])
@@ -1045,6 +1085,7 @@ class MirrorBrowserE2E:
                 ("local_workspace_stays_direct", self.local_stays_direct),
                 ("non_loopback_goes_direct", self.non_loopback_direct),
                 ("closed_port_explains", self.closed_port_explains),
+                ("typed_navigations_are_prompt", self.typed_navigations_are_prompt),
                 ("proxy_requires_credential", self.proxy_requires_credential),
                 ("terminal_link_opens_routed_browser", self.terminal_link_opens_routed_browser),
                 ("moved_tab_swaps_route", self.moved_tab_swaps_route),
