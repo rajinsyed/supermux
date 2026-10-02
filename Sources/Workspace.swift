@@ -15053,7 +15053,11 @@ extension Workspace: BonsplitDelegate {
                     )
                 }
             case .newSimulator:
-                _ = newSimulatorSurface(inPane: pane, focus: true)
+                // SUPERMUX:begin remote-simulator-new-action
+                if !SupermuxRemoteSimulators.shared.openIfDeviceMirror(self, paneId: pane, focus: true) {
+                    _ = newSimulatorSurface(inPane: pane, focus: true)
+                }
+                // SUPERMUX:end remote-simulator-new-action
             // SUPERMUX:begin claude-harness-executor-arm
             case .newClaudeHarness:
                 _ = newSupermuxHarnessSurface(inPane: pane, focus: true)
