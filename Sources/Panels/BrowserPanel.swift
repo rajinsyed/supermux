@@ -3236,6 +3236,9 @@ final class BrowserPanel: Panel, ObservableObject {
             self.scheduleBrowserViewportHostRestoration(reason: "webViewHierarchyChanged")
         }
         DiffCommentsBridge.associate(panelId: id, workspaceId: workspaceId, with: webView)
+        // SUPERMUX:begin device-mirror-browser-bridge
+        SupermuxMirrorLoopbackBridge.install(on: webView)
+        // SUPERMUX:end device-mirror-browser-bridge
         webView.onMouseBackButton = { [weak self] in
             self?.goBack()
         }
