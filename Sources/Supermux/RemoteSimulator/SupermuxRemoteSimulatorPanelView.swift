@@ -30,6 +30,7 @@ struct SupermuxRemoteSimulatorPanelView: View {
             Divider()
             typeTextRow
         }
+        .background(SupermuxRemoteSimulatorFocusArea(panel: panel))
         .background(Color(nsColor: appearance.contentBackgroundColor))
         .environment(\.colorScheme, cmuxReadableColorScheme(for: appearance.backgroundColor))
         .onAppear {
@@ -244,6 +245,27 @@ private struct SupermuxRemoteSimulatorDisplayHost: NSViewRepresentable {
         view.frame = container.bounds
         view.autoresizingMask = [.width, .height]
         container.addSubview(view)
+    }
+}
+
+/// An invisible view over the whole tab that the panel measures focus
+/// against (as upstream's `SimulatorFocusOwnershipBridge` does), so its
+/// type-text field counts as the panel's own focus.
+private struct SupermuxRemoteSimulatorFocusArea: NSViewRepresentable {
+    let panel: SupermuxRemoteSimulatorPanel
+
+    func makeNSView(context: Context) -> NSView {
+        let view = ClickThroughView()
+        panel.focusArea = view
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        panel.focusArea = view
+    }
+
+    private final class ClickThroughView: NSView {
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
     }
 }
 

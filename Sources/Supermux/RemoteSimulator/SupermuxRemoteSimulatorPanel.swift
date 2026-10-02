@@ -58,6 +58,8 @@ final class SupermuxRemoteSimulatorPanel: Panel {
 
     @ObservationIgnored weak var workspace: Workspace?
     @ObservationIgnored let displayView: SupermuxRemoteSimulatorDisplayView
+    /// The tab's whole area (registered by its view), for focus ownership.
+    @ObservationIgnored weak var focusArea: NSView?
     @ObservationIgnored private var presenter: SupermuxRemoteSimulatorPresenter?
     @ObservationIgnored private var isVisible = false
     @ObservationIgnored private var isClosed = false
@@ -392,20 +394,39 @@ final class SupermuxRemoteSimulatorPanel: Panel {
 
     // MARK: - Focus
 
+    /// Keys go to the simulator, as in a local Simulator tab, unless this tab's
+    /// own type-text field already has them.
     func focus() {
-        guard let window = displayView.window, window.firstResponder !== displayView else { return }
+        guard let window = displayView.window else { return }
+        if let responder = window.firstResponder, ownedFocusIntent(for: responder, in: window) != nil { return }
         window.makeFirstResponder(displayView)
     }
 
     func unfocus() {}
 
+    /// The display view, or any control inside the tab's area (the type-text
+    /// field), owns focus for this panel.
     func ownedFocusIntent(for responder: NSResponder, in window: NSWindow) -> PanelFocusIntent? {
-        responder === displayView && displayView.window === window ? .panel : nil
+        if responder === displayView { return displayView.window === window ? .panel : nil }
+        guard let area = focusArea, area.window === window,
+              let view = Self.focusView(for: responder), view.window === window else { return nil }
+        let areaFrame = area.convert(area.bounds, to: nil)
+        let viewFrame = view.convert(view.bounds, to: nil)
+        return areaFrame.contains(NSPoint(x: viewFrame.midX, y: viewFrame.midY)) ? .panel : nil
     }
 
     func yieldFocusIntent(_ intent: PanelFocusIntent, in window: NSWindow) -> Bool {
-        guard intent == .panel, window.firstResponder === displayView else { return false }
+        guard intent == .panel, let responder = window.firstResponder,
+              ownedFocusIntent(for: responder, in: window) == intent else { return false }
         return window.makeFirstResponder(nil)
+    }
+
+    private static func focusView(for responder: NSResponder) -> NSView? {
+        if let fieldEditor = responder as? NSTextView, fieldEditor.isFieldEditor,
+           let control = fieldEditor.delegate as? NSView {
+            return control
+        }
+        return responder as? NSView
     }
 
     func triggerFlash(reason: WorkspaceAttentionFlashReason) {
