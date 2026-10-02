@@ -208,8 +208,8 @@ be forwarded automatically. `late_bind_is_attributed` (third review, red on 1008
 `tunnel.host_ports` must list P as S's within 15 s (3.7 s measured: the owner's check of its loopback listeners, which
 the command's start opened for 2 minutes, re-kicks the scans). `idle_owner_does_not_scan_listeners` (fourth review,
 the suite's first step, before any command runs in a terminal): with the loopback link up, the owner may run no
-loopback listener check for 10 s (DEBUG `tunnel.live_checks` counts them); before the fix it ran one every 4 s for
-as long as any Mac was linked (red and green runs pending: not yet run on a build).
+loopback listener check for 10 s (DEBUG `tunnel.live_checks` counts them); red on 6ba37d7a620 (2 checks in 10 s: one
+every 4 s for as long as any Mac was linked), green on 6e9358fda54 (0; `late_bind_is_attributed` 1.1 s there).
 
 `stop_survives_server_restart` (review of #757): an automatic forward of P (served from another port) is stopped,
 then the owner unlists P and lists it again, each with a poke; the forward must stay stopped and P unbound for 3 s,
@@ -747,7 +747,8 @@ runs with automatic forwarding off, so only the tab's own on-demand forward brin
 
 The fourth review adds two: `local_terminal_link_marks_nothing` (a terminal link opened into a cmux browser of a local
 workspace, `mirror.link_open` on the source, then a mirror page's own `location.href` to the owner's other port P: no
-forward, the page on the alias; before the fix the link marked P for 5 s on every Mac; red and green runs pending) and
+forward, the page on the alias; red on 6ba37d7a620, where the link marked P for 5 s on every Mac and the page got a
+forward; green on 6e9358fda54) and
 `port_chip_opens_as_written` (coverage: `ports.chip_open {cmux_browser: true}` on a workspace port with automatic
 forwarding off opens a cmux browser in the mirror that gets an on-demand forward and runs as written).
 
