@@ -617120,13 +617120,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "No free local port near %lld"
+            "value": "No free local port near %@"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld付近に空いているローカルポートがありません"
+            "value": "%@付近に空いているローカルポートがありません"
           }
         }
       }
@@ -617137,13 +617137,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": ":%lld (no free port)"
+            "value": ":%@ (no free port)"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": ":%lld（空きポートなし）"
+            "value": ":%@（空きポートなし）"
           }
         }
       }
@@ -617154,13 +617154,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": ":%1$lld → here :%2$lld"
+            "value": ":%1$@ → here :%2$@"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": ":%1$lld → このMacの:%2$lld"
+            "value": ":%1$@ → このMacの:%2$@"
           }
         }
       }
@@ -617171,13 +617171,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": ":%lld (stopped)"
+            "value": ":%@ (stopped)"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": ":%lld（停止中）"
+            "value": ":%@（停止中）"
           }
         }
       }
@@ -617239,13 +617239,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "localhost:%1$lld → here :%2$lld"
+            "value": "localhost:%1$@ → here :%2$@"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "localhost:%1$lld → このMacの:%2$lld"
+            "value": "localhost:%1$@ → このMacの:%2$@"
           }
         }
       }
@@ -617358,13 +617358,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Port %1$lld from %2$@ is at localhost:%3$lld"
+            "value": "Port %1$@ from %2$@ is at localhost:%3$@"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "%2$@のポート%1$lldはlocalhost:%3$lldで開けます"
+            "value": "%2$@のポート%1$@はlocalhost:%3$@で開けます"
           }
         }
       }

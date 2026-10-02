@@ -29,7 +29,7 @@ enum SupermuxPortsText {
         guard let localPort, localPort != remotePort else { return "localhost:\(remotePort)" }
         return String(
             localized: "supermux.ports.menu.item.moved",
-            defaultValue: "localhost:\(remotePort) → here :\(localPort)"
+            defaultValue: "localhost:\(String(remotePort)) → here :\(String(localPort))"
         )
     }
 
@@ -39,13 +39,13 @@ enum SupermuxPortsText {
         let remote = forward.key.remotePort
         switch forward.state {
         case .active(let local) where local != remote:
-            return String(localized: "supermux.ports.line.moved", defaultValue: ":\(remote) → here :\(local)")
+            return String(localized: "supermux.ports.line.moved", defaultValue: ":\(String(remote)) → here :\(String(local))")
         case .active, .starting, .waiting:
             return ":\(remote)"
         case .stopped:
-            return String(localized: "supermux.ports.line.stopped", defaultValue: ":\(remote) (stopped)")
+            return String(localized: "supermux.ports.line.stopped", defaultValue: ":\(String(remote)) (stopped)")
         case .failed:
-            return String(localized: "supermux.ports.line.failed", defaultValue: ":\(remote) (no free port)")
+            return String(localized: "supermux.ports.line.failed", defaultValue: ":\(String(remote)) (no free port)")
         }
     }
 }
