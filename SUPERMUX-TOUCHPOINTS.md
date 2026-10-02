@@ -24,8 +24,10 @@ Rules for adding a touchpoint:
   keeps the working indicator; tab spinners), #720 (no device avatar on tabs), in its stabilization #721 (a busy
   host is asked again) and #723 (a missed reply deadline fails alone while the host answers), and in its review
   fixes #719 (a tab moved into the Dock keeps its spinner), #722 (another Mac's read ends the host's focused-pane
-  ring) and #710–#711 (the iPhone list's accessory slot and swipe-tray reset); it retired #453–#457 (focused-pane
-  suppression) and #689; 690–694, 697–699, 705–709, 712–714 and 724 are unassigned. Number **351** is unused (the notifications
+  ring) and #710–#711 (the iPhone list's accessory slot and swipe-tray reset), and in its second review #690–#692 (a
+  missed reply deadline on a live link: replay, tab close and sync fetch recover) and #697 (the phone's Delete Group
+  hides member mirrors); it retired #453–#457 (focused-pane suppression) and #689; 693–694, 698–699, 705–709,
+  712–714 and 724 are unassigned. Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 82, 83, 89, 106, 121, 142, 213, 214,
   220, 229, 237, 250, 251, 252–258, 335, 470, 473–481, 483, 484, and 487** are unused; all are
