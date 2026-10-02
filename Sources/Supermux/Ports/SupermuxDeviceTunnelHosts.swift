@@ -1,5 +1,6 @@
 import CmuxIrxTransport
 import Foundation
+import Network
 
 /// Which tunnel host serves an admitted connection's `tcp_connect` and
 /// `listening_ports` lanes, called from `MobileHostIrxRuntime`'s
@@ -47,6 +48,26 @@ struct SupermuxLoopGuardConnector: IrxTunnelConnecting {
     func connect(to addresses: [IrxTunnelIPAddress], port: Int, timeout: Duration)
         async throws(IrxTunnelOpenError) -> any IrxTunnelByteChannel {
         guard !SupermuxOwnListenerPorts.shared.contains(port) else { throw IrxTunnelOpenError(status: .denied) }
-        return try await base.connect(to: addresses, port: port, timeout: timeout)
+        return SupermuxEndOfStreamChannel(base: try await base.connect(to: addresses, port: port, timeout: timeout))
     }
+}
+
+/// Upstream's channel throws Network.framework's end-of-stream ENODATA
+/// (``NWError/supermuxIsEndOfStream``), so `IrxTunnelHost.relay` aborted the
+/// lane after the server's whole answer and the other Mac read a reset
+/// instead of the end of the stream. This reads it as the end.
+struct SupermuxEndOfStreamChannel: IrxTunnelByteChannel {
+    let base: any IrxTunnelByteChannel
+
+    func receive(maximumByteCount: Int) async throws -> Data? {
+        do {
+            return try await base.receive(maximumByteCount: maximumByteCount)
+        } catch let error as NWError where error.supermuxIsEndOfStream {
+            return nil
+        }
+    }
+
+    func send(_ data: Data) async throws { try await base.send(data) }
+    func finishSending() async { await base.finishSending() }
+    func cancel() { base.cancel() }
 }

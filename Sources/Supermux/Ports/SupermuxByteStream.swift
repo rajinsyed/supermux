@@ -2,6 +2,16 @@ import CmuxIrxTransport
 import Foundation
 import Network
 
+extension NWError {
+    /// Network.framework sometimes reports the end of a stream whose peer
+    /// closed (TCP FIN) as ENODATA, "No message available on STREAM", with no
+    /// data and `isComplete` false. It is the end of the stream, not a
+    /// failure: read as one, a relay aborted both sides after a complete
+    /// response (about one connection in five to an HTTP server that answers
+    /// `Connection: close`).
+    var supermuxIsEndOfStream: Bool { self == .posix(.ENODATA) }
+}
+
 /// One TCP-like byte stream that port forwarding relays: a tunnel lane to
 /// another Mac (`IrxLaneStream`), a local TCP connection
 /// (``SupermuxNWConnectionStream``), or the DEBUG loopback device's in-memory
@@ -110,9 +120,9 @@ final class SupermuxNWConnectionStream: SupermuxByteStream, @unchecked Sendable 
                 data, _, isComplete, error in
                 if let data, !data.isEmpty {
                     continuation.resume(returning: data)
-                } else if let error {
+                } else if let error, !error.supermuxIsEndOfStream {
                     continuation.resume(throwing: error)
-                } else if isComplete {
+                } else if isComplete || error != nil {
                     continuation.resume(returning: nil)
                 } else {
                     continuation.resume(returning: Data())
