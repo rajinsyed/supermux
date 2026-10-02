@@ -33,6 +33,12 @@ forward must land on another local port.
                                         browser -> http://localhost:L/... (C's `mirror.link_open`)
  11. old_host_disables                  a host without `supermux.port_forward.v1` -> `needs_update`,
                                         nothing forwarded; then back
+ 12. capability_failure_retried         every capability request after a relink fails (`timed_out`,
+                                        tunnel.fail_requests); once the host answers again R is
+                                        forwarded with no port change and no relink
+ 13. listing_failure_retried            every ports.list after a relink fails until the reconnect's own
+                                        pokes are over; once the host answers again R is forwarded with
+                                        no port change, poke or relink
 
 Writes a JSON report (default tests/supermux/artifacts/loopback_port_forward_e2e-<tag>.json)
 and exits non-zero on any failure. Stdlib only.
@@ -62,6 +68,12 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 LOOPBACK_DEVICE_ID = "5e1f10b0-0000-4000-8000-000000000001"
+HOST_STATUS = "mobile.host.status"
+PORTS_LIST = "mobile.supermux.ports.list"
+# Armed failures that outlast the step (it disarms them itself).
+UNTIL_DISARMED = 1000
+# How long after the first failed listing the reconnect's own `ports.updated` pokes are over.
+POKES_SETTLE_SECONDS = 5.0
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ARTIFACTS_DIR = REPO_ROOT / "tests" / "supermux" / "artifacts"
 
@@ -272,6 +284,9 @@ class PortForwardE2E:
     def ports(self) -> Dict[str, Any]:
         return self.sock.call("supermux.devices.ports.list", {"machine": self.machine}) or {}
 
+    def availability(self) -> Optional[str]:
+        return (self.ports().get("availability") or {}).get(self.machine)
+
     def forward(self, port: int) -> Optional[Dict[str, Any]]:
         for row in self.ports().get("forwards") or []:
             if row.get("machine") == self.machine and row.get("remote_port") == port:
@@ -325,6 +340,21 @@ class PortForwardE2E:
 
     def link(self, action: str) -> Dict[str, Any]:
         return self.sock.call("supermux.devices.link", {"machine": self.machine, "action": action}) or {}
+
+    def relink(self) -> None:
+        """Drops the link, waits for the drop, and redials it."""
+        self.link("stop")
+        wait_for("the link to drop", lambda: self.device().get("link_state") != "connected", self.timeout)
+        self.link("restore")
+        self.wait_linked()
+
+    def fail_requests(self, method: str, count: Optional[int] = None) -> Dict[str, Any]:
+        """The loopback host answers the next `count` `method` requests `timed_out` (0 disarms);
+        without `count`, how many it failed so far."""
+        params: Dict[str, Any] = {"method": method}
+        if count is not None:
+            params["count"] = count
+        return self.tunnel("fail_requests", **params) or {}
 
     def wait_linked(self) -> None:
         def ready() -> bool:
@@ -578,6 +608,53 @@ class PortForwardE2E:
         wait_for(f"forward of {self.remote_port} back", lambda: self.active_forward(self.remote_port), self.timeout)
         return {}
 
+    def capability_failure_retried(self) -> Dict[str, Any]:
+        """The capability request fails after a reconnect (a Mac stalled past the reply deadline, or
+        still busy after the link's retries): the capabilities are unknown, not absent, and the
+        forwards ask again by themselves, so R comes back once the host answers."""
+        self.require_forwarded()
+        self.fail_requests(HOST_STATUS, UNTIL_DISARMED)
+        try:
+            self.relink()
+
+            def checked() -> str:
+                reason = self.availability()
+                if not reason or reason == "available":
+                    raise Failure(f"availability {reason!r}")
+                return reason
+
+            reason = wait_for("the forwards to check the Mac while it does not answer", checked, self.timeout)
+        finally:
+            self.fail_requests(HOST_STATUS, 0)
+        row = wait_for(f"forward of {self.remote_port} back once the host answers (no port change, no relink)",
+                       lambda: self.active_forward(self.remote_port), self.timeout)
+        self.local_port = int(row["local_port"])
+        return {"availability_while_failing": reason, "local_port": self.local_port}
+
+    def listing_failure_retried(self) -> Dict[str, Any]:
+        """The port listing fails after a reconnect: the forwards fetch it again by themselves (1 s,
+        2 s, 4 s … while the Mac stays connected) instead of waiting for the owner's next
+        `supermux.ports.updated`, so R comes back once the host answers."""
+        self.require_forwarded()
+        self.fail_requests(PORTS_LIST, UNTIL_DISARMED)
+        try:
+            self.relink()
+            wait_for("the Mac to be available", lambda: self.availability() == "available", self.timeout)
+            wait_for("a failed port listing", lambda: self.fail_requests(PORTS_LIST).get("failed"), self.timeout)
+            # The reconnect's own pokes go by and fail too; afterwards only a retry of the
+            # forwards' own fetches the listing.
+            time.sleep(POKES_SETTLE_SECONDS)
+            state = (self.forward(self.remote_port) or {}).get("state")
+            failed = self.fail_requests(PORTS_LIST).get("failed")
+            if state == "active":
+                raise Failure(f"forward of {self.remote_port} is active although every listing failed ({failed})")
+        finally:
+            self.fail_requests(PORTS_LIST, 0)
+        row = wait_for(f"forward of {self.remote_port} back once the host answers (no port change, no relink)",
+                       lambda: self.active_forward(self.remote_port), self.timeout)
+        self.local_port = int(row["local_port"])
+        return {"state_while_failing": state, "failed_listings": failed, "local_port": self.local_port}
+
     # -- run ------------------------------------------------------------------
 
     def cleanup(self) -> None:
@@ -590,6 +667,7 @@ class PortForwardE2E:
                 except OSError:
                     pass
         for step in (lambda: self.tunnel("clear_injected"), lambda: self.tunnel("pretend_old_host", enabled=False),
+                     lambda: self.fail_requests(HOST_STATUS, 0), lambda: self.fail_requests(PORTS_LIST, 0),
                      lambda: self.ports_call("set_auto", enabled=True)):
             try:
                 step()
@@ -622,6 +700,8 @@ class PortForwardE2E:
                 ("auto_off_keeps_manual", self.auto_off),
                 ("external_link_uses_local_port", self.external_link),
                 ("old_host_disables", self.old_host),
+                ("capability_failure_retried", self.capability_failure_retried),
+                ("listing_failure_retried", self.listing_failure_retried),
             ]:
                 ok = self.step(name, check) and ok
         self.cleanup()

@@ -28,6 +28,11 @@ open tunnels the way a forward does; this suite runs its own servers:
   14. link_drop_ends_tunnels               a held tunnel ends when the link drops
   15. old_host_hides_capability            a host that predates port forwarding: no capability, tunnels
                                            answer `needs_update`; back to normal afterwards
+  16. unknown_capabilities_are_retryable   every capability request after a relink fails (`timed_out`,
+                                           tunnel.fail_requests): tunnels answer `unreachable`, never
+                                           `needs_update`; the browser page, the forwards' availability and
+                                           the Settings note do not ask for an update; once the host answers
+                                           again the forwards find it available with no relink
 
 Writes a JSON report (default tests/supermux/artifacts/loopback_device_tunnel_e2e-<tag>.json)
 and exits non-zero on any failure. Stdlib only; shares the socket client with
@@ -66,7 +71,12 @@ from loopback_tab_sync_e2e import (  # noqa: E402
 )
 
 CAPABILITY = "supermux.port_forward.v1"
+HOST_STATUS = "mobile.host.status"
 PORTS_LIST = "mobile.supermux.ports.list"
+# Words of the "Update Supermux on <Mac>" texts (en, ja), which only an older Mac may get.
+UPDATE_WORDS = ("Update Supermux", "アップデート")
+# Armed failures that outlast the step (it disarms them itself).
+UNTIL_DISARMED = 1000
 REPEATED_GETS = 30
 # Host names that must never reach the host's journal.
 HOST_NAMES = ("localhost", "example.com", "127.0.0.1", "169.254", "::1")
@@ -167,6 +177,29 @@ class DeviceTunnelE2E:
     def journal(self) -> List[Dict[str, Any]]:
         return self.tunnel("journal").get("events") or []
 
+    def fail_requests(self, method: str, count: Optional[int] = None) -> Dict[str, Any]:
+        """The loopback host answers the next `count` `method` requests `timed_out` (0 disarms);
+        without `count`, how many it failed so far."""
+        params: Dict[str, Any] = {"method": method}
+        if count is not None:
+            params["count"] = count
+        return self.tunnel("fail_requests", **params)
+
+    def forwards_availability(self) -> Optional[str]:
+        """Whether the port forwards think this Mac can forward (`supermux.devices.ports.list`)."""
+        listing = self.sock.call("supermux.devices.ports.list", {"machine": self.machine}) or {}
+        return (listing.get("availability") or {}).get(self.machine)
+
+    def ports_note(self) -> Optional[str]:
+        """The Settings card's ports note for this Mac (the "Ports on <Mac>" menu says the same)."""
+        settings = self.sock.call("supermux.devices.remote_macs_settings", {}) or {}
+        mac = next((m for m in settings.get("macs") or [] if m.get("machine") == self.machine), {})
+        return mac.get("ports_note")
+
+    def expect_no_update_text(self, text: Any, what: str) -> None:
+        if any(word in str(text or "") for word in UPDATE_WORDS):
+            raise Failure(f"{what} asks for an update: {text!r}")
+
     def loopback_device(self) -> Dict[str, Any]:
         for device in (self.sock.call("supermux.devices.list", {}) or {}).get("devices") or []:
             if device.get("is_loopback") or str(device.get("device_id", "")).lower() == LOOPBACK_DEVICE_ID:
@@ -234,6 +267,7 @@ class DeviceTunnelE2E:
         self.tunnel("revoke", revoked=False)
         self.tunnel("pretend_old_host", enabled=False)
         self.tunnel("clear_injected")
+        self.fail_requests(HOST_STATUS, 0)
         if self.servers.get("guard"):
             self.tunnel("own_port", port=self.servers["guard"].port, registered=False)
 
@@ -446,6 +480,38 @@ class DeviceTunnelE2E:
         self.expect_marker(self.get(self.servers["marker"].port), self.servers["marker"].marker, "after the update")
         return {"old_host_result": result}
 
+    def unknown_capabilities_are_retryable(self) -> Dict[str, Any]:
+        """A capability request that fails (a Mac stalled past the reply deadline, or still busy after
+        the link's retries) leaves the capabilities unknown, not absent: nothing may say "Update
+        Supermux", a tunnel open is retryable, and the forwards ask again by themselves."""
+        marker = self.servers["marker"]
+        self.fail_requests(HOST_STATUS, UNTIL_DISARMED)
+        try:
+            self.relink()
+            result = self.get(marker.port)
+            self.expect_status(result, "unreachable", "a tunnel while the capabilities are unknown")
+            if result.get("page_reason") != "unreachable":
+                raise Failure(f"the browser page's reason is {result.get('page_reason')!r}, not unreachable: {result}")
+            self.expect_no_update_text(result.get("page_headline"), "the browser page")
+            def checked() -> Optional[str]:
+                value = self.forwards_availability()
+                if value == "available":
+                    raise Failure("the forwards still hold 'available' from before the relink")
+                return value
+
+            availability = wait_for("the forwards to check this Mac", checked, self.timeout)
+            if availability != "unreachable":
+                raise Failure(f"the forwards' availability is {availability!r} while the capabilities are unknown")
+            note = self.ports_note()
+            self.expect_no_update_text(note, "the Settings ports note")
+            failed = self.fail_requests(HOST_STATUS).get("failed")
+        finally:
+            self.fail_requests(HOST_STATUS, 0)
+        wait_for("the forwards to find this Mac available again without a relink",
+                 lambda: self.forwards_availability() == "available", self.timeout)
+        self.expect_marker(self.get(marker.port), marker.marker, "once the host answers again")
+        return {"unknown_result": result, "settings_note": note, "failed_status_requests": failed}
+
     # -- run ------------------------------------------------------------------
 
     def cleanup(self) -> None:
@@ -480,6 +546,7 @@ class DeviceTunnelE2E:
                 ("stale_port_dropped", self.stale_port_dropped),
                 ("link_drop_ends_tunnels", self.link_drop_ends_tunnels),
                 ("old_host_hides_capability", self.old_host_hides_capability),
+                ("unknown_capabilities_are_retryable", self.unknown_capabilities_are_retryable),
             ]:
                 ok = self.step(name, check) and ok
         self.cleanup()
