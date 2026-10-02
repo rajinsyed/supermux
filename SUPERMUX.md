@@ -424,7 +424,9 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   a mirrored workspace are forwarded automatically. A forward listens on `127.0.0.1` and `::1` at the
   same port when it is free here, else the next free one (up to +50, then any), and a port in use
   here is never taken (every candidate is probed with a connect on both addresses, so a dual-stack
-  `[::]` server counts as in use). When a port lands elsewhere, the flat mirror row shows a pill
+  `[::]` server counts as in use). It is one dual-stack listener scoped to the loopback interface
+  (Network.framework refuses `[::1]:P` while the same app holds `127.0.0.1:P`), so nothing on the
+  network, nor this Mac's own LAN address, reaches it. When a port lands elsewhere, the flat mirror row shows a pill
   ("Port 3000 from M4 Pro is at localhost:3001", click opens it), and a localhost link in that
   mirror's terminal opened in the default browser goes to the local port. Flat mirror rows also
   show the owning Mac's port chips (a chip opens the port in a cmux browser in the mirror). Every

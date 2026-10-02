@@ -533,8 +533,11 @@ only that a page loads. Marker servers run in the script, in no workspace, one p
 `localhost:P` opened in M loads through the mirror browser proxy and the owner's in-process tunnel
 host (the tunnel journal's `opened` for P), in the loopback device's data store, and the server sees
 `Host: localhost:P`; `127.0.0.1` routes the same way; the same kind of URL in S stays direct (no
-proxy configuration, the profile store, no tunnel open); this Mac's LAN address in M is dialed
-directly by the proxy (skipped without one); a closed port shows "localhost:N on <Mac> isn't
+proxy configuration, the profile store, no tunnel open); this Mac's LAN address in M loads this
+Mac's page with no tunnel open (Network.framework skips the proxy for this Mac's own addresses, as
+for `localhost`, so the browser never asks it), and an authenticated CONNECT to that address, as
+WebKit sends for any other LAN or public host, is dialed directly by the proxy (skipped without a
+LAN address); a closed port shows "localhost:N on <Mac> isn't
 answering"; the proxy refuses SOCKS no-auth (`05 FF`), a wrong password (`01 01`) and a CONNECT
 without credentials (`407`), and the right credential connects; a terminal link opened in the cmux
 browser from M's terminal opens a routed browser in M; the browser moved into S loses the route and
