@@ -253,6 +253,12 @@ final class SupermuxPortForwards {
         return dismissed.contains(key) || forwards[key]?.state == .stopped
     }
 
+    /// Returns once the listener of `remotePort`'s forward that is being
+    /// stopped (if any) has released its local port.
+    func released(machine: SurfaceMachineID, remotePort: Int) async {
+        await stopping[Key(machine: machine, remotePort: remotePort)]?.value
+    }
+
     /// Whether `machine`'s latest listing has `port` as one of its workspaces'.
     func listsInWorkspace(machine: SurfaceMachineID, port: Int) -> Bool {
         hostPorts[machine]?.ports.contains { $0.port == port } ?? false
