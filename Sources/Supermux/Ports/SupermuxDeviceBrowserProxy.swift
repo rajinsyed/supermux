@@ -34,7 +34,7 @@ final class SupermuxDeviceBrowserProxy {
     let stats = SupermuxBrowserProxyStats()
 
     private let credential = BrowserProxyCredential.random()
-    /// Gets the endpoint once the listener is ready, and nil when it failed.
+    /// Gets the endpoint each time a listener is ready.
     private let onEndpointChange: @MainActor (BrowserProxyEndpoint?) -> Void
     private var listener: NWListener?
 
@@ -91,9 +91,9 @@ final class SupermuxDeviceBrowserProxy {
             endpoint = nil
             listener?.cancel()
             listener = nil
-            // The browsers hold the dead endpoint: take it away (their navigations
-            // wait instead of failing), then listen again; ready hands them the new one.
-            onEndpointChange(nil)
+            // The browsers keep the dead endpoint until ready hands them the new
+            // one: a refused load for a moment, never one that goes direct from
+            // this Mac (taking the proxy away would send `localhost` here).
             Task { @MainActor [weak self] in
                 try? await Task.sleep(for: Self.restartDelay)
                 self?.start()
