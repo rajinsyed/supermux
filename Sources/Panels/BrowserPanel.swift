@@ -5772,6 +5772,9 @@ final class BrowserPanel: Panel, ObservableObject {
     private func remoteProxyPreparedRequest(from request: URLRequest, logScope: String) -> URLRequest {
         guard cloudBrowserMachineID == nil, remoteProxyEndpoint != nil else { return request }
         guard let url = request.url else { return request }
+        // SUPERMUX:begin device-mirror-browser-same-port-forward
+        if SupermuxDeviceBrowserRoute.loadsAsWritten(url, dataStoreID: websiteDataStore.identifier) { return request }
+        // SUPERMUX:end device-mirror-browser-same-port-forward
         guard let rewrittenURL = Self.remoteProxyLoopbackAliasURL(for: url) else { return request }
 
         var rewrittenRequest = request

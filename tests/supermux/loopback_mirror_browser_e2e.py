@@ -30,6 +30,9 @@ independently:
                                          tunnel open (skipped when the Mac has no non-loopback IPv4)
   5 closed_port_explains                 a closed port in a new mirror tab shows the "localhost:N on <Mac> isn't
                                          answering" page within 5 s
+ 5b typed_navigations_are_prompt        URLs typed into the open mirror tab, to owner ports forwarded here on
+                                         the same port, each show the owner's page within 3 s, 6 times (through
+                                         the alias each waited ~10.5 s on WebKit's hardened-process swap)
   6 proxy_requires_credential            the proxy refuses SOCKS no-auth (05 FF), a wrong password (01 01)
                                          and CONNECT without credentials (407); the right one connects
   7 terminal_link_opens_routed_browser   a link click in the mirror's terminal (cmux browser) opens a
@@ -45,24 +48,37 @@ independently:
  11 data_store_per_app_instance          the route's data store for two machine ids that differ only by tag
                                          are two stores, each the name-based UUID of its machine id
  12 unbound_mirror_browser_routes        a browser in an unbound mirror (upstream's vm.workspace_open with
-                                         auto-mirror off) routes through the owner like a bound one's
+                                         auto-mirror off) loads the owner's page like a bound one's
  13 idle_proxy_connections_close         connections that never send a byte are closed: the ones past the
                                          limit of clients still in their handshake at once, the rest at the
                                          handshake deadline
- 14 proxy_listener_failure_recovers      after the proxy's listener fails, it is replaced on its own (waited
+ 14 owner_localhost_keeps_origin        a Cloudflare Turnstile login page on the owner's localhost:P, P forwarded
+                                         here on P: the mirror tab runs at http://localhost:P (a secure
+                                         context, the hostname a dev sitekey allows), not the alias, and
+                                         Turnstile hands it a token (test sitekey; a local browser on the
+                                         same page is the control). Loopback: the owner serves P from
+                                         another port (`tunnel.serve_port`), so P is free here
+ 15 proxy_listener_failure_recovers      after the proxy's listener fails, it is replaced on its own (waited
                                          for with a read that starts no listener); then the open mirror tab
-                                         and a new one each load through the owner on the fresh endpoint
-                                         (journal `opened` for the open tab before the new tab exists)
- 15 restart_keeps_mirror_store_proxied   a mirror tab opened while the failed listener is being replaced
+                                         and a new one each load the owner's page on the fresh endpoint,
+                                         never this Mac's own server on the same port
+ 16 restart_keeps_mirror_store_proxied   a mirror tab opened while the failed listener is being replaced
                                          (held down by `browser_proxy_hold`) leaves the app instance's
-                                         data store with its proxy (2 configurations, as the open tab's),
-                                         so no open tab loads from this Mac; once released, that tab
-                                         loads through the owner
+                                         data store with its proxy (2 configurations, as the open tab's);
+                                         a load while it is down fails and reaches nothing; once released,
+                                         that tab loads the owner's page
+
+Steps 12, 15 and 16 run this Mac's own server on the port they open and the
+owner's page on another port that the loopback owner serves as that port
+(`owner_and_this_mac`), as on two Macs: a page with the owner's title came
+through the owner, and a request to this Mac's server means a load went direct.
 
 Uses the DEBUG drivers `supermux.devices.mirror.browser_route`, `.browser_proxy`,
 `.browser_proxy_fail`, `.browser_proxy_hold`, `.browser_store` and `.link_open`
 (SupermuxMirrorBrowserSocket) and the tunnel driver
-`supermux.devices.tunnel.journal` and `.pretend_old_host`. Writes a JSON report
+`supermux.devices.tunnel.journal`, `.pretend_old_host` and `.serve_port`, and the
+port-forward drivers `supermux.devices.ports.forward`, `.list` and `.stop`. Step
+16 needs challenges.cloudflare.com. Writes a JSON report
 (default tests/supermux/artifacts/loopback_mirror_browser_e2e-<tag>.json) and
 exits non-zero on any failure. Stdlib only.
 
@@ -77,6 +93,7 @@ import base64
 import http.server
 import json
 import os
+import random
 import select
 import socket
 import subprocess
@@ -111,15 +128,54 @@ HANDSHAKE_DEADLINE_S = 10.0
 # How long the closed port's explanation page may take in a new mirror tab: the
 # proxy answers in milliseconds (the tunnel's refusal, then the page).
 EXPLAIN_PAGE_S = 5.0
+# URLs typed into the open mirror tab, and how long each may take to show the
+# owner's page (the owner answers at once; a new tab takes ~0.15 s).
+TYPED_NAVIGATIONS = 6
+TYPED_NAVIGATION_S = 3.0
+# Cloudflare's dummy Turnstile sitekey that always passes (meant for automated
+# tests; it works on any hostname). A real sitekey also checks the page's
+# hostname against its allowlist, which for a dev app lists `localhost`.
+TURNSTILE_TEST_SITEKEY = "1x00000000000000000000AA"
+# How long Turnstile (challenges.cloudflare.com) may take to hand a token.
+TURNSTILE_TOKEN_S = 45.0
+# What the page reports about itself and its Turnstile widget.
+TURNSTILE_PROBE = """JSON.stringify({origin: location.origin, hostname: location.hostname,
+  secure: window.isSecureContext, subtle: !!(window.crypto && window.crypto.subtle),
+  turnstile: window.__turnstile || null})"""
+
+
+def turnstile_page(title: str) -> str:
+    """A login-like page with an explicitly rendered Turnstile widget that records
+    its outcome in `window.__turnstile` (state: loading, rendered, token, error,
+    unsupported, threw)."""
+    return f"""<!doctype html>
+<html><head><meta charset="utf-8"><title>{title}</title>
+<script>
+window.__turnstile = {{state: "loading"}};
+window.onTurnstileLoad = function () {{
+  try {{
+    turnstile.render("#widget", {{
+      sitekey: "{TURNSTILE_TEST_SITEKEY}",
+      callback: function (token) {{ window.__turnstile = {{state: "token", length: token.length}}; }},
+      "error-callback": function (code) {{ window.__turnstile = {{state: "error", code: String(code)}}; return true; }},
+      "unsupported-callback": function () {{ window.__turnstile = {{state: "unsupported"}}; }}
+    }});
+    if (window.__turnstile.state === "loading") window.__turnstile = {{state: "rendered"}};
+  }} catch (error) {{ window.__turnstile = {{state: "threw", error: String(error)}}; }}
+}};
+</script>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTurnstileLoad&render=explicit" async defer></script>
+</head><body><form><h1>{title}</h1><div id="widget"></div></form></body></html>
+"""
 
 
 class MarkerServer:
     """A threaded HTTP server for one step: a marker page and every request's headers."""
 
-    def __init__(self, host: str, title: str) -> None:
+    def __init__(self, host: str, title: str, body: Optional[str] = None) -> None:
         self.title = title
         self.hits: List[Dict[str, Any]] = []
-        page = f"<html><head><title>{title}</title></head><body>{title}</body></html>".encode()
+        page = (body or f"<html><head><title>{title}</title></head><body>{title}</body></html>").encode()
         hits = self.hits
 
         class Handler(http.server.BaseHTTPRequestHandler):
@@ -150,6 +206,22 @@ def free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
         probe.bind(("127.0.0.1", 0))
         return probe.getsockname()[1]
+
+
+def free_dev_port() -> int:
+    """A port free on both loopback addresses below the ephemeral range, as a dev
+    server's is: an ephemeral port can be taken meanwhile as the local port of any
+    outgoing connection (the page's own loads), and a forward then lands elsewhere."""
+    for _ in range(200):
+        port = random.randint(20000, 40000)
+        try:
+            for family, host in ((socket.AF_INET, "127.0.0.1"), (socket.AF_INET6, "::1")):
+                with socket.socket(family, socket.SOCK_STREAM) as probe:
+                    probe.bind((host, port))
+        except OSError:
+            continue
+        return port
+    raise Failure("precondition: no free port in 20000-40000")
 
 
 def primary_ipv4() -> Optional[str]:
@@ -231,6 +303,10 @@ class MirrorBrowserE2E:
         self.source_terminal = ""
         self.mirror_browser = ""
         self.owner_server: Optional[MarkerServer] = None
+        # Ports the loopback owner serves from another port (`tunnel.serve_port`).
+        self.served_ports: List[int] = []
+        # Owner ports this suite forwarded here (stopped at the end).
+        self.forwarded_ports: List[int] = []
 
     # -- reads -----------------------------------------------------------------
 
@@ -335,6 +411,49 @@ class MirrorBrowserE2E:
 
     def navigate(self, surface_id: str, url: str) -> None:
         self.sock.call("browser.navigate", {"surface_id": surface_id, "url": url}, timeout_s=self.timeout + 10)
+
+    def navigate_open_tab(self, surface_id: str, url: str) -> None:
+        """`navigate` for a tab that already shows a page, to the localhost alias.
+        WebKit 27 moves such a navigation (plain HTTP to a host that is not
+        loopback by name) into a new hardened WebContent process, and making one
+        blocks its UI thread ~10 s on an affected host (LOOPBACK-HARNESS.md).
+        That can outlast browser.navigate's own 17.5 s wait, so its timeout is not
+        the verdict: the page the caller then waits for is."""
+        try:
+            self.navigate(surface_id, url)
+        except Failure as error:
+            if "navigation_timeout" not in str(error):
+                raise
+
+    def owner_and_this_mac(self, label: str) -> Tuple[MarkerServer, MarkerServer]:
+        """Two servers for one `localhost:P`, as on two Macs: this Mac's own listens
+        on P; the owner's runs on another port that the loopback owner serves as P
+        (`tunnel.serve_port`). A page with the owner's title came through the owner;
+        a request this Mac's server sees went direct. Unlike a count of the owner's
+        tunnel opens, this holds for every request, also one that rides a tunnel
+        opened earlier: WebKit opens one it sends nothing on for a navigation, and
+        may send a later request on it."""
+        owner = self.server(f"{label}-owner")
+        here = self.server(f"{label}-this-mac")
+        self.tunnel("serve_port", port=here.port, **{"from": owner.port})
+        self.served_ports.append(here.port)
+        return owner, here
+
+    def wait_owner_page(self, surface_id: str, owner: MarkerServer, here: MarkerServer, what: str) -> str:
+        """Waits for either server's page; fails at once on this Mac's."""
+        title = self.wait_title(surface_id, lambda t: t in (owner.title, here.title), what)
+        if title != owner.title or here.hits:
+            raise Failure(f"{what}: this Mac's own localhost:{here.port} answered (title {title!r}, "
+                          f"its server saw {here.hits}), not the owner's")
+        return title
+
+    def require_owner_hosts(self, owner: MarkerServer, port: int) -> List[str]:
+        """Every page request reached the owner as `Host: localhost:<port>`: the
+        proxy's alias route rewrote it (a direct load of the alias keeps its name)."""
+        hosts = owner.marker_hosts()
+        if not hosts or any(host != f"localhost:{port}" for host in hosts):
+            raise Failure(f"the owner saw Host {hosts}, want localhost:{port} for each request")
+        return hosts
 
     def server(self, label: str, host: str = "127.0.0.1") -> MarkerServer:
         server = MarkerServer(host, f"marker-{self.nonce}-{label}")
@@ -505,6 +624,59 @@ class MirrorBrowserE2E:
             raise Failure(f"the explanation page took {seconds}s, want at most {EXPLAIN_PAGE_S:.0f}s")
         return {"port": closed, "title": title, "page_seconds": seconds}
 
+    def owner_page_forwarded_here(self, label: str) -> Tuple[MarkerServer, int]:
+        """An owner page at the owner's localhost:P, with P forwarded to this Mac on
+        P itself (what port forwarding does for a server in a mirrored terminal
+        whenever P is free here). The loopback owner serves P from the page
+        server's own port (`tunnel.serve_port`), so P stays free here and only the
+        forward, through the owner, answers on it."""
+        owner = self.server(label)
+        port = free_dev_port()
+        self.tunnel("serve_port", port=port, **{"from": owner.port})
+        self.served_ports.append(port)
+        self.sock.call("supermux.devices.ports.forward", {"machine": self.pair.machine, "port": port})
+        self.forwarded_ports.append(port)
+
+        def active() -> Dict[str, Any]:
+            rows = (self.sock.call("supermux.devices.ports.list", {"machine": self.pair.machine}) or {}).get("forwards") or []
+            row = next((r for r in rows if int(r.get("remote_port") or 0) == port), None)
+            if not row or row.get("state") != "active":
+                raise Failure(f"forward {row}")
+            return row
+
+        row = wait_for(f"a forward of the owner's {port}", active, self.timeout)
+        if int(row.get("local_port") or 0) != port:
+            raise Failure(f"precondition: the forward listens on {row.get('local_port')}, not on {port}: {row}")
+        return owner, port
+
+    def typed_navigations_are_prompt(self) -> Dict[str, Any]:
+        """URLs typed into the open mirror tab, each to an owner port forwarded
+        here on the same port, show the owner's page within TYPED_NAVIGATION_S,
+        TYPED_NAVIGATIONS times. Through the localhost alias each took 10.5-11 s:
+        WebKit 27 moves a typed navigation to plain HTTP on a host that is not
+        loopback by name into a new hardened WebContent process, and making one
+        blocks its UI thread ~10 s here (issuing font sandbox extensions); a
+        local tab typed to the alias or a LAN address waits as long, no proxy
+        involved. Loaded as written (#754), the page is http://localhost:P."""
+        browser = self.require_mirror_browser()
+        owner, port = self.owner_page_forwarded_here("typed-0")
+        self.navigate_open_tab(browser, f"http://localhost:{port}/marker.html")
+        self.wait_title(browser, lambda t: t == owner.title, "the open mirror tab to show an owner page")
+        timings: List[float] = []
+        for index in range(1, TYPED_NAVIGATIONS + 1):
+            owner, port = self.owner_page_forwarded_here(f"typed-{index}")
+            url = f"http://localhost:{port}/marker.html?typed={index}"
+            started = time.monotonic()
+            self.navigate_open_tab(browser, url)
+            self.wait_title(browser, lambda t: t == owner.title, f"typed navigation {index}")
+            timings.append(round(time.monotonic() - started, 2))
+        page = str((self.sock.call("browser.eval", {"surface_id": browser, "script": "location.href"}) or {}).get("value") or "")
+        slow = [seconds for seconds in timings if seconds > TYPED_NAVIGATION_S]
+        if slow:
+            raise Failure(f"{len(slow)} of {len(timings)} typed navigations took over {TYPED_NAVIGATION_S:.0f}s "
+                          f"(seconds {timings}; the last page ran at {page})")
+        return {"navigation_seconds": timings, "last_page": page}
+
     def proxy_requires_credential(self) -> Dict[str, Any]:
         proxy = self.require_proxy()
         port = int(proxy["port"])
@@ -569,7 +741,7 @@ class MirrorBrowserE2E:
             self.tunnel("pretend_old_host", enabled=True)
             relinked = self.relink(expect_capability=False)
             name = self.pair.device_name
-            self.navigate(self.mirror_browser, f"http://localhost:{self.owner_server.port}/marker.html?old=1")
+            self.navigate_open_tab(self.mirror_browser, f"http://localhost:{self.owner_server.port}/marker.html?old=1")
             title = self.wait_title(self.mirror_browser, lambda t: "Supermux" in t and name in t,
                                     "the \"update Supermux\" page")
             return {**relinked, "title": title}
@@ -679,8 +851,7 @@ class MirrorBrowserE2E:
         """A mirror no binding names (upstream's vm.workspace_open with auto-mirror
         off) gets the ports menu's "Open in cmux Browser" like a bound one, so its
         browser takes the same route."""
-        assert self.owner_server is not None
-        server = self.owner_server
+        owner, here = self.owner_and_this_mac("unbound")
         source = mirror = ""
         self.sock.call("supermux.devices.set_auto_mirror", {"enabled": False})
         try:
@@ -705,14 +876,11 @@ class MirrorBrowserE2E:
             if row.get("is_bound"):
                 raise Failure(f"precondition: the opened mirror is bound: {row}")
             terminal = wait_for("the unbound mirror's terminal", lambda: (self.pair.surfaces(mirror) or [None])[0], self.timeout)
-            opens_before = self.journal_opens(server.port)
-            panel = self.new_tab(mirror, terminal, f"http://localhost:{server.port}/marker.html?unbound=1")
-            title = self.wait_title(panel, lambda t: t == server.title, "the marker page in the unbound mirror")
+            panel = self.new_tab(mirror, terminal, f"http://localhost:{here.port}/marker.html?unbound=1")
+            title = self.wait_owner_page(panel, owner, here, "the marker page in the unbound mirror")
             route = self.expect_route(mirror, panel, remote=True)
-            opens = self.journal_opens(server.port)
-            if opens <= opens_before:
-                raise Failure(f"the owner's tunnel journal has no new `opened` for port {server.port}")
-            return {"source": source, "unbound_mirror": mirror, "title": title, "route": route, "journal_opens": opens}
+            hosts = self.require_owner_hosts(owner, here.port)
+            return {"source": source, "unbound_mirror": mirror, "title": title, "route": route, "hosts": hosts}
         finally:
             for workspace_id in (mirror, source):
                 if workspace_id:
@@ -721,6 +889,97 @@ class MirrorBrowserE2E:
                     except Failure:
                         pass
             self.sock.call("supermux.devices.set_auto_mirror", {"enabled": True})
+
+    def turnstile_probe(self, surface_id: str) -> Dict[str, Any]:
+        reply = self.sock.call("browser.eval", {"surface_id": surface_id, "script": TURNSTILE_PROBE}) or {}
+        try:
+            return json.loads(reply.get("value") or "{}")
+        except (TypeError, ValueError):
+            raise Failure(f"the page's probe returned {reply.get('value')!r}")
+
+    def wait_turnstile_token(self, surface_id: str, where: str) -> Dict[str, Any]:
+        def token() -> Dict[str, Any]:
+            probe = self.turnstile_probe(surface_id)
+            if (probe.get("turnstile") or {}).get("state") != "token":
+                raise Failure(f"{probe}")
+            return probe
+
+        return wait_for(f"Turnstile to hand {where} a token", token, TURNSTILE_TOKEN_S, interval_s=0.5)
+
+    def owner_localhost_keeps_origin(self) -> Dict[str, Any]:
+        """The user's case: a dev app's login page with a Cloudflare Turnstile
+        widget, served on the owning Mac's localhost:P and opened in the mirror.
+        P is forwarded to this Mac on P itself (port forwarding does that for a
+        server in a mirrored terminal whenever P is free here), so the mirror tab
+        must run at the page's own origin, http://localhost:P: a secure context,
+        and the hostname a real sitekey's allowlist names. Before the fix the
+        mirror loaded upstream's alias, http://cmux-loopback.localtest.me:P, an
+        insecure origin whose hostname no sitekey allows (Turnstile 110200,
+        "Domain not authorized": no widget, no login). In loopback both "Macs"
+        share one port space, so the owner serves P from another port Q
+        (`tunnel.serve_port`), leaving P free here as on two Macs. A local
+        browser on the same page is the control that Turnstile itself works."""
+        title = f"marker-{self.nonce}-turnstile"
+        server = MarkerServer("127.0.0.1", title, body=turnstile_page(title))
+        self.servers.append(server)
+        owner_port = free_dev_port()
+        tabs: List[str] = []
+        self.tunnel("serve_port", port=owner_port, **{"from": server.port})
+        forwarded = False
+        try:
+            local = self.new_tab(self.pair.source_id, self.source_terminal, f"http://localhost:{server.port}/login")
+            tabs.append(local)
+            self.wait_title(local, lambda t: t == title, "the Turnstile page in a local browser")
+            try:
+                control = self.wait_turnstile_token(local, "a local browser")
+            except Failure as error:
+                raise Failure(f"precondition: Turnstile hands no token in a local cmux browser either "
+                              f"(is challenges.cloudflare.com reachable?): {error}")
+
+            self.sock.call("supermux.devices.ports.forward", {"machine": self.pair.machine, "port": owner_port})
+            forwarded = True
+
+            def same_port_forward() -> Dict[str, Any]:
+                rows = (self.sock.call("supermux.devices.ports.list", {"machine": self.pair.machine}) or {}).get("forwards") or []
+                row = next((r for r in rows if int(r.get("remote_port") or 0) == owner_port), None)
+                if not row or row.get("state") != "active":
+                    raise Failure(f"forward {row}")
+                return row
+
+            row = wait_for(f"a forward of the owner's {owner_port}", same_port_forward, self.timeout)
+            if int(row.get("local_port") or 0) != owner_port:
+                raise Failure(f"precondition: the forward listens on {row.get('local_port')}, not on {owner_port}: {row}")
+
+            opens_before = self.journal_opens(owner_port)
+            url = f"http://localhost:{owner_port}/login"
+            panel = self.new_tab(self.pair.mirror_id, self.mirror_terminal(), url)
+            tabs.append(panel)
+            self.wait_title(panel, lambda t: t == title, "the owner's Turnstile page in the mirror")
+            route = self.expect_route(self.pair.mirror_id, panel, remote=True)
+            opens = self.journal_opens(owner_port)
+            if opens <= opens_before:
+                raise Failure(f"the page did not come from the owner (journal `opened` for {owner_port}: "
+                              f"{opens_before} -> {opens})")
+            probe = self.turnstile_probe(panel)
+            want = f"http://localhost:{owner_port}"
+            if probe.get("origin") != want or probe.get("secure") is not True:
+                raise Failure(f"the mirror tab runs at {probe.get('origin')} (secure context: {probe.get('secure')}, "
+                              f"crypto.subtle: {probe.get('subtle')}), want {want}, a secure context: Turnstile "
+                              f"checks a real sitekey against hostname {probe.get('hostname')!r}, which no dev "
+                              f"sitekey allows (110200); probe {probe}")
+            mirrored = self.wait_turnstile_token(panel, "the mirror tab")
+            return {"owner_port": owner_port, "served_from": server.port, "forward": row, "route": route,
+                    "journal_opens": opens, "hosts": [hit.get("host") for hit in server.hits],
+                    "local_probe": control, "mirror_probe": mirrored}
+        finally:
+            for tab in tabs:
+                try:
+                    self.sock.call("surface.close", {"surface_id": tab})
+                except Failure:
+                    pass
+            if forwarded:
+                self.sock.call("supermux.devices.ports.stop", {"machine": self.pair.machine, "port": owner_port})
+            self.tunnel("serve_port", port=owner_port)
 
     def idle_proxy_connections_close(self) -> Dict[str, Any]:
         """Local clients that connect and send nothing cannot hold the proxy's
@@ -761,49 +1020,46 @@ class MirrorBrowserE2E:
 
     def proxy_listener_failure_recovers(self) -> Dict[str, Any]:
         """A failed proxy listener is replaced on its own, and the mirror's open tab
-        (it held the dead endpoint) and a new tab each load through the owner on the
+        (it held the dead endpoint) and a new tab each load the owner's page on the
         fresh one. The replacement is waited for with a read that starts no listener
         (`start=False`), so the open tab never navigates inside the restart delay,
-        whatever WebKit's speed; with no restart the wait times out. The owner's
-        tunnel journal must show the open tab's own load before the new tab exists:
-        in loopback a direct load would reach the same marker server."""
+        whatever WebKit's speed; with no restart the wait times out. This Mac runs
+        its own server on the same port (`owner_and_this_mac`), so a load that went
+        direct shows this Mac's page and fails the step whatever tunnels were open.
+        (It used to count the owner's tunnel opens instead: a new tab whose request
+        rode a tunnel WebKit had opened during the open tab's load counted none.)"""
         browser = self.require_mirror_browser()
         old = self.require_proxy()
-        server = self.server("recover")
+        owner, here = self.owner_and_this_mac("recover")
         failed = self.sock.call("supermux.devices.mirror.browser_proxy_fail", {"machine": self.pair.machine}) or {}
         if failed.get("failed_port") != old["port"]:
             raise Failure(f"precondition: the driver failed no listener on port {old['port']}: {failed}")
         fresh = self.wait_replacement(old["port"])
-        self.navigate(browser, f"http://localhost:{server.port}/marker.html?tab=open")
-        open_title = self.wait_title(browser, lambda t: t == server.title, "the open mirror tab to load after the failure")
-        open_opens = self.journal_opens(server.port)
-        if not open_opens:
-            raise Failure(f"the open mirror tab's load did not go through the owner (no journal `opened` for {server.port}, "
-                          f"server saw {server.marker_hosts()})")
-        panel = self.new_tab(self.pair.mirror_id, self.mirror_terminal(), f"http://localhost:{server.port}/marker.html?tab=new")
-        new_title = self.wait_title(panel, lambda t: t == server.title, "a new mirror tab to load after the failure")
+        url = f"http://localhost:{here.port}/marker.html"
+        self.navigate_open_tab(browser, url + "?tab=open")
+        open_title = self.wait_owner_page(browser, owner, here, "the open mirror tab to load after the failure")
+        panel = self.new_tab(self.pair.mirror_id, self.mirror_terminal(), url + "?tab=new")
+        new_title = self.wait_owner_page(panel, owner, here, "a new mirror tab to load after the failure")
         route = self.expect_route(self.pair.mirror_id, panel, remote=True)
-        new_opens = self.journal_opens(server.port)
-        if new_opens <= open_opens:
-            raise Failure(f"the new mirror tab's load did not go through the owner (journal `opened` for {server.port}: "
-                          f"{open_opens} -> {new_opens})")
+        hosts = self.require_owner_hosts(owner, here.port)
         proxy = self.require_proxy()
         if int(proxy.get("owner_dials") or 0) <= int(old.get("owner_dials") or 0):
             raise Failure(f"the proxy never dialed the owner ({old.get('owner_dials')} -> {proxy.get('owner_dials')})")
         return {"failed_port": old["port"], "port": fresh["port"], "open_tab": open_title, "new_tab": new_title,
-                "journal_opens": {"open_tab": open_opens, "new_tab": new_opens - open_opens}, "route": route}
+                "hosts": hosts, "owner_dials": proxy.get("owner_dials"), "route": route}
 
     def restart_keeps_mirror_store_proxied(self) -> Dict[str, Any]:
         """A mirror tab opened while a failed proxy listener is replaced gets the
         dead endpoint like the open tabs, never none: an endpoint configures the
         whole data store every mirror tab of that app instance shares, so a tab
         made with none took the proxy away from the open tabs too, and their
-        `localhost` loads went straight to this Mac. Once a listener is ready
-        again, the tab made meanwhile loads through the owner."""
+        `localhost` loads went straight to this Mac. While the listener is down a
+        load fails and nothing reaches this Mac's own server on that port; once a
+        listener is ready again, the tab made meanwhile loads the owner's page."""
         browser = self.require_mirror_browser()
         old = wait_for("the proxy to listen", self.proxy, self.timeout)
-        server = self.server("restart")
-        url = f"http://localhost:{server.port}/marker.html?tab=restart"
+        owner, here = self.owner_and_this_mac("restart")
+        url = f"http://localhost:{here.port}/marker.html?tab=restart"
         self.hold_proxy(True)
         held = True
         try:
@@ -817,18 +1073,23 @@ class MirrorBrowserE2E:
                 raise Failure(f"a mirror tab opened while the listener restarts left the app instance's data store "
                               f"without its proxy (WebKit proxy configurations {configs}, want 2 each): the open "
                               f"tabs' localhost loads go to this Mac")
+            # A load that ends while the listener is down: it must fail, not reach this Mac.
+            try:
+                self.navigate(panel, url + "&down=1")
+                down = str((self.sock.call("browser.get.title", {"surface_id": panel}) or {}).get("title") or "")
+            except Failure as error:
+                down = f"failed: {str(error)[:60]}"
+            if here.hits or down in (owner.title, here.title):
+                raise Failure(f"a load while the listener was down went somewhere (title {down!r}; this Mac's "
+                              f"server saw {here.hits})")
             self.hold_proxy(False)
             held = False
             fresh = self.wait_replacement(old["port"])
-            opens_before = self.journal_opens(server.port)
-            self.navigate(panel, url + "&again=1")
-            title = self.wait_title(panel, lambda t: t == server.title, "the tab made during the restart to load")
-            opens = self.journal_opens(server.port)
-            if opens <= opens_before:
-                raise Failure(f"the tab made during the restart did not load through the owner "
-                              f"(journal `opened` for {server.port}: {opens_before} -> {opens})")
+            self.navigate_open_tab(panel, url + "&again=1")
+            title = self.wait_owner_page(panel, owner, here, "the tab made during the restart to load")
+            hosts = self.require_owner_hosts(owner, here.port)
             return {"failed_port": old["port"], "port": fresh.get("port"), "proxy_configs": configs,
-                    "title": title, "journal_opens": opens}
+                    "while_down": down, "title": title, "hosts": hosts}
         finally:
             if held:
                 self.hold_proxy(False)
@@ -846,6 +1107,7 @@ class MirrorBrowserE2E:
                 ("local_workspace_stays_direct", self.local_stays_direct),
                 ("non_loopback_goes_direct", self.non_loopback_direct),
                 ("closed_port_explains", self.closed_port_explains),
+                ("typed_navigations_are_prompt", self.typed_navigations_are_prompt),
                 ("proxy_requires_credential", self.proxy_requires_credential),
                 ("terminal_link_opens_routed_browser", self.terminal_link_opens_routed_browser),
                 ("moved_tab_swaps_route", self.moved_tab_swaps_route),
@@ -854,11 +1116,22 @@ class MirrorBrowserE2E:
                 ("data_store_per_app_instance", self.data_store_per_app_instance),
                 ("unbound_mirror_browser_routes", self.unbound_mirror_browser_routes),
                 ("idle_proxy_connections_close", self.idle_proxy_connections_close),
+                ("owner_localhost_keeps_origin", self.owner_localhost_keeps_origin),
                 # Last: they fail the proxy's listener.
                 ("proxy_listener_failure_recovers", self.proxy_listener_failure_recovers),
                 ("restart_keeps_mirror_store_proxied", self.restart_keeps_mirror_store_proxied),
             ]:
                 ok = self.step(name, check) and ok
+        for port in self.forwarded_ports:
+            try:
+                self.sock.call("supermux.devices.ports.stop", {"machine": self.pair.machine, "port": port})
+            except Failure:
+                pass
+        for port in self.served_ports:
+            try:
+                self.tunnel("serve_port", port=port)
+            except Failure:
+                pass
         for server in self.servers:
             server.close()
         if not self.keep:
