@@ -3610,6 +3610,7 @@
 		50BE00060000000000000006 /* SupermuxUnifiedProjectsModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00060000000000000005 /* SupermuxUnifiedProjectsModel.swift */; };
 		50BE00010000000000000100 /* SupermuxUsageAnalyticsMenuButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000FF /* SupermuxUsageAnalyticsMenuButton.swift */; };
 		50BE000100000000000000FE /* SupermuxUsageMenuButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000FD /* SupermuxUsageMenuButton.swift */; };
+		50BE0019050000000000001E /* SupermuxWorkerQuitForwarding.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE0019050000000000001D /* SupermuxWorkerQuitForwarding.swift */; };
 		50BE000100000000000000B7 /* SupermuxWorkspaceActivityResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000B6 /* SupermuxWorkspaceActivityResolver.swift */; };
 		50BE000100000000000000FC /* SupermuxWorkspaceReorderStepping.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000FB /* SupermuxWorkspaceReorderStepping.swift */; };
 		50BE000100000000000000E5 /* SupermuxWorkspaceSwitcherCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000D5 /* SupermuxWorkspaceSwitcherCard.swift */; };
@@ -8084,6 +8085,7 @@
 		50BE00060000000000000005 /* SupermuxUnifiedProjectsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Projects/SupermuxUnifiedProjectsModel.swift; sourceTree = "<group>"; };
 		50BE000100000000000000FF /* SupermuxUsageAnalyticsMenuButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxUsageAnalyticsMenuButton.swift; sourceTree = "<group>"; };
 		50BE000100000000000000FD /* SupermuxUsageMenuButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxUsageMenuButton.swift; sourceTree = "<group>"; };
+		50BE0019050000000000001D /* SupermuxWorkerQuitForwarding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxWorkerQuitForwarding.swift; sourceTree = "<group>"; };
 		50BE000100000000000000B6 /* SupermuxWorkspaceActivityResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxWorkspaceActivityResolver.swift; sourceTree = "<group>"; };
 		50BE000100000000000000FB /* SupermuxWorkspaceReorderStepping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxWorkspaceReorderStepping.swift; sourceTree = "<group>"; };
 		50BE000100000000000000D5 /* SupermuxWorkspaceSwitcherCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxWorkspaceSwitcherCard.swift; sourceTree = "<group>"; };
@@ -9542,6 +9544,7 @@
 				50BE00190500000000000007 /* SupermuxRemoteSimulatorPanel.swift */,
 				50BE00190500000000000005 /* SupermuxRemoteSimulators.swift */,
 				50BE00190500000000000013 /* SupermuxMobileHost+Simulator.swift */,
+				50BE0019050000000000001D /* SupermuxWorkerQuitForwarding.swift */,
 				50BE00190500000000000003 /* SupermuxRemoteSimulatorLoopbackLane.swift */,
 				50BE00190500000000000001 /* SupermuxRemoteSimulatorSocketCommands.swift */,
 				50BE00050000000000000019 /* SupermuxDeviceMirrorPalette.swift */,
@@ -16556,6 +16559,7 @@
 				50BE00060000000000000006 /* SupermuxUnifiedProjectsModel.swift in Sources */,
 				50BE00010000000000000100 /* SupermuxUsageAnalyticsMenuButton.swift in Sources */,
 				50BE000100000000000000FE /* SupermuxUsageMenuButton.swift in Sources */,
+				50BE0019050000000000001E /* SupermuxWorkerQuitForwarding.swift in Sources */,
 				50BE000100000000000000B7 /* SupermuxWorkspaceActivityResolver.swift in Sources */,
 				50BE000100000000000000FC /* SupermuxWorkspaceReorderStepping.swift in Sources */,
 				50BE000100000000000000E5 /* SupermuxWorkspaceSwitcherCard.swift in Sources */,
