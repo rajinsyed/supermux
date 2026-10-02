@@ -430,7 +430,7 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   has not finished its handshake within 10 s and refuses new ones while 64 are still in it, releases
   every connection's socket when it ends, and replaces its listener if the system fails it (open tabs
   wait for the new one). A tab moved out of a mirror goes back to this Mac's profile.
-- **Other Macs' ports open here** (#699, #705; the tunnel is round 5's Track A): a server started in
+- **Other Macs' ports open here** (#699, #705, #750, #751; the tunnel is round 5's Track A): a server started in
   another Mac's workspace that is mirrored here (`bun run dev` on 3000) opens at `localhost` on this
   Mac, in any browser, the iOS Simulator or any other app (setting "Forward other Macs' ports to this
   Mac", `supermux.devices.forwardPorts`, default on). Each Mac lists the ports of its own cmux
@@ -443,14 +443,22 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   network, nor this Mac's own LAN address, reaches it. When a port lands elsewhere, the flat mirror row shows a pill
   ("Port 3000 from M4 Pro is at localhost:3001", click opens it), and a localhost link in that
   mirror's terminal opened in the default browser goes to the local port. Flat mirror rows also
-  show the owning Mac's port chips (a chip opens the port in a cmux browser in the mirror). Every
-  mirror row's menu (flat and nested) has "Ports on <Mac>": this workspace's ports there, that
-  Mac's other forwards, Open in cmux Browser / Open in Default Browser / Copy Local URL / Stop
-  Forwarding / Forward to This Mac, and Forward a Port… for anything else listening on that Mac's
-  loopback (one started outside cmux). Settings › Remote Macs lists each connected Mac's forwards
-  and has the same Ports… menu. A stopped automatic forward stays stopped until its server goes
-  away; a forward whose server goes away is removed; while a Mac is offline its forwards wait and
-  come back (same local port when still free). Needs that Mac on this build with its sidebar port
+  show the owning Mac's port chips: a chip opens the port in a cmux browser in the mirror, and with
+  "Open Sidebar Port Links in cmux Browser" off (or no cmux browser) the default browser gets the
+  forward's local port, never this Mac's own `localhost:<port>`; with no active forward nothing
+  opens and an alert says why (#750). Every mirror row's menu (flat and nested) has "Ports on
+  <Mac>": this workspace's ports there, that Mac's other forwards, Open in cmux Browser / Open in
+  Default Browser / Copy Local URL / Stop Forwarding / Forward to This Mac, and Forward a Port… for
+  anything else listening on that Mac's loopback (one started outside cmux). Settings › Remote Macs
+  lists each connected Mac's forwards and has the same Ports… menu (one rule decides both,
+  `SupermuxPortMenuItems`). Stop Forwarding is there for every forward that is not stopped, also a
+  waiting or failed one and while its Mac is offline or cannot forward (the menus then show the
+  reason and the pending forwards, and Settings keeps Ports… for them), so a forward never starts
+  listening later after the user stopped it. The menus and chips exist only on what
+  `SupermuxDeviceWorkspaceIndex.mirrors()` lists, not on a local workspace that borrows a remote
+  terminal. A stopped automatic forward stays stopped until its server goes away; a forward whose
+  server goes away is removed; while a Mac is offline its forwards wait and come back (same local
+  port when still free), except one stopped meanwhile, which goes at once. Needs that Mac on this build with its sidebar port
   detection on (else only Forward a Port… works); an older Mac (capabilities without
   `supermux.port_forward.v1`) says "Update Supermux on <Mac> to use its ports here.", a link without
   a direct connection says it needs one. A connected Mac that does not answer the capability request
