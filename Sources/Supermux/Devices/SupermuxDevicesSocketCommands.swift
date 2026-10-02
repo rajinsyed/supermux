@@ -29,7 +29,8 @@ import SupermuxKit
 /// `notification_records`, `notification_overrides`, `notification_mark_unread`,
 /// `notification_indicators`, `notification_click`, `phone_push_debug`,
 /// `phone_push_probe`, `phone_push_share_now`), the `mirror.*` mirror-behavior drivers
-/// (``SupermuxMirrorSocketCommands``), the `terminal_sizing.*` size preference drivers
+/// (``SupermuxMirrorSocketCommands``), the `mirror.simulator.*` remote-simulator drivers
+/// (``SupermuxRemoteSimulatorSocketCommands``), the `terminal_sizing.*` size preference drivers
 /// (``SupermuxTerminalSizingSocketCommands``), and the `new_worktree.*` New Worktree
 /// sheet drivers (`SupermuxNewWorktreeSocketCommands`).
 @MainActor
@@ -100,6 +101,7 @@ enum SupermuxDevicesSocketCommands {
             case let name where SupermuxDeviceMirrorCloseSocketCommands.handles(name): result = try SupermuxDeviceMirrorCloseSocketCommands.handle(name, params)
             case let name where SupermuxTerminalSizingSocketCommands.handles(name):
                 result = try SupermuxTerminalSizingSocketCommands.handle(name, params: params)
+            case let name where SupermuxRemoteSimulatorSocketCommands.handles(name): result = try await SupermuxRemoteSimulatorSocketCommands.handle(name, params: params)
             #endif
             case let name where SupermuxRemoteMacsSocketCommands.methods.contains(name):
                 // Settings "Remote Macs" card and the flat-row device chip.
