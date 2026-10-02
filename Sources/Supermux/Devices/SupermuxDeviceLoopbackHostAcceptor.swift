@@ -87,6 +87,18 @@ final class SupermuxDeviceLoopbackHostAcceptor {
         let busy = BusyRequest(method: Self.busyMethodForNextConnection)
         Self.busyMethodForNextConnection = nil
         Self.admittedConnections += 1
+        // The same tunnel host a real Mac peer's connection gets; the
+        // authorization stands in for `stillAuthorized` (the harness never
+        // turns on "Make this Mac discoverable").
+        let host = SupermuxDeviceTunnelHosts.makeHost(
+            peerIsMac: true,
+            isAuthorized: {
+                MobileRemoteControlPolicy.isEnabled && !SupermuxDeviceLoopbackHostAcceptor.tunnelAuthorizationRevoked
+            },
+            journal: Self.tunnelJournal
+        )
+        tunnelHost = host
+        tunnelConnectionLive = true
         cmuxDebugLog("supermux.loopback host admitted connection")
         Task {
             let exit = await MobileHostService.acceptTransport(
@@ -102,6 +114,8 @@ final class SupermuxDeviceLoopbackHostAcceptor {
                 isCurrent: { true }
             )
             await transport.close()
+            await host?.stop()
+            if self.tunnelHost === host { self.tunnelConnectionLive = false }
             cmuxDebugLog("supermux.loopback host connection ended: \(String(describing: exit.lifecycle))")
         }
     }
@@ -109,8 +123,7 @@ final class SupermuxDeviceLoopbackHostAcceptor {
     /// Opens one tunnel lane on the newest connection, as `IrxTunnelClient.connect`
     /// does on a QUIC connection: the tunnel host answers, and a refusal
     /// throws `IrxTunnelOpenError` with its status. Without a tunnel host the
-    /// lane is reset, as `runLaneLoop` resets a Mac peer's tunnel lanes today,
-    /// which the viewer sees as `.failed`.
+    /// lane is reset, as `runLaneLoop` does, which the viewer sees as `.failed`.
     func openTunnel(host: String, port: Int) async throws -> SupermuxDeviceLoopbackTunnelLane.ClientHalf {
         let (hostHalf, client) = SupermuxDeviceLoopbackTunnelLane.pair(host: host, port: port)
         guard let tunnelHost else {
