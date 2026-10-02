@@ -413,10 +413,10 @@ class MirrorBrowserE2E:
         self.sock.call("browser.navigate", {"surface_id": surface_id, "url": url}, timeout_s=self.timeout + 10)
 
     def navigate_open_tab(self, surface_id: str, url: str) -> None:
-        """`navigate` for a mirror tab that already shows a page, through the proxy.
-        For such a navigation WebKit can open a connection to the proxy that sends
-        nothing; the proxy closes it at its 10 s handshake deadline, and only then
-        does the request go out on another (about 10 s late; LOOPBACK-HARNESS.md).
+        """`navigate` for a tab that already shows a page, to the localhost alias.
+        WebKit 27 moves such a navigation (plain HTTP to a host that is not
+        loopback by name) into a new hardened WebContent process, and making one
+        blocks its UI thread ~10 s on an affected host (LOOPBACK-HARNESS.md).
         That can outlast browser.navigate's own 17.5 s wait, so its timeout is not
         the verdict: the page the caller then waits for is."""
         try:
@@ -675,7 +675,7 @@ class MirrorBrowserE2E:
         if slow:
             raise Failure(f"{len(slow)} of {len(timings)} typed navigations took over {TYPED_NAVIGATION_S:.0f}s "
                           f"(seconds {timings}; the last page ran at {page})")
-        return {"seconds": timings, "last_page": page}
+        return {"navigation_seconds": timings, "last_page": page}
 
     def proxy_requires_credential(self) -> Dict[str, Any]:
         proxy = self.require_proxy()
