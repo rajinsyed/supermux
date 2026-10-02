@@ -3,11 +3,12 @@ import Foundation
 
 /// Whether something on this Mac already listens on a loopback port.
 ///
-/// A port forward must never take a port in use here. Binding alone cannot
-/// tell: an IPv4-specific bind of `127.0.0.1:P` can succeed while a dual-stack
-/// `[::]:P` listener (Node's default) holds the port, and would then silently
-/// steal that server's `127.0.0.1` traffic. So the probe connects instead, to
-/// `127.0.0.1:P` and `[::1]:P`; a connection on either means the port is taken.
+/// A port forward must never take a port in use here. A bind's own conflict
+/// check depends on how it binds (a BSD IPv4-specific bind of `127.0.0.1:P`
+/// succeeds while a dual-stack `[::]:P` listener, Node's default, holds the
+/// port, and would then silently steal that server's `127.0.0.1` traffic), so
+/// the forward does not rely on it alone: the probe connects to `127.0.0.1:P`
+/// and `[::1]:P` first; a connection on either means the port is taken.
 enum SupermuxLocalPortProbe {
     /// How long one connect may take before the port counts as free (a
     /// loopback refusal is immediate; this bounds a listener that never answers).

@@ -2,16 +2,18 @@ import CmuxSurfaceCatalogModel
 import Foundation
 import Network
 
-/// One forwarded port on this Mac: listeners on `127.0.0.1:L` and `[::1]:L`
-/// that carry every accepted connection through a tunnel to `localhost:P` on
-/// another Mac (``SupermuxDeviceTunnelClient``), the way `ssh -L` does.
+/// One forwarded port on this Mac: a listener on port `L` of the loopback
+/// interface (`127.0.0.1:L` and `[::1]:L`) that carries every accepted
+/// connection through a tunnel to `localhost:P` on another Mac
+/// (``SupermuxDeviceTunnelClient``), the way `ssh -L` does.
 ///
 /// Modelled on `CloudLoopbackPortForward`, with a fixed port: the remote port
 /// itself when it is free here, so a browser, the iOS Simulator or any other
 /// app reaches `localhost:3000` exactly as on the owning Mac. Never sets
 /// `allowLocalEndpointReuse`, and ``open(machine:remotePort:candidates:)``
 /// probes every candidate first (``SupermuxLocalPortProbe``), so a port in use
-/// here is never taken. Binds loopback only: nothing on the network reaches it.
+/// here is never taken. Scoped to the loopback interface: nothing on the
+/// network, nor this Mac's own LAN address, reaches it.
 actor SupermuxLoopbackPortListener {
     /// How a bind attempt on one port ended.
     enum BindOutcome: Equatable {
@@ -25,7 +27,7 @@ actor SupermuxLoopbackPortListener {
     nonisolated let remotePort: Int
     /// The bound local port; 0 until bound.
     private(set) var port = 0
-    private var listeners: [Listener] = []
+    private var listener: Listener?
     private var connections: [UUID: NWConnection] = [:]
     private var stopped = false
     private let queue = DispatchQueue(label: "dev.supermux.ports.forward", qos: .userInitiated)
@@ -53,51 +55,42 @@ actor SupermuxLoopbackPortListener {
         return nil
     }
 
-    /// Binds `127.0.0.1:port` (0 = any), then `[::1]` on the same port. An
-    /// IPv6 side in use gives the port back; a Mac without IPv6 loopback
-    /// keeps the IPv4 side alone.
+    /// Binds `port` (0 = any) on the loopback interface, IPv4 and IPv6 alike.
+    ///
+    /// One dual-stack listener, not one per address: Network.framework
+    /// refuses `[::1]:P` while this process holds `127.0.0.1:P` (and the
+    /// reverse) with EADDRINUSE, so a v4 + v6 pair never binds. This listener
+    /// fails with EADDRINUSE whenever anything here listens on the port: either
+    /// loopback address, a wildcard or dual-stack socket, or a LAN address.
     func bind(port requested: Int) async -> BindOutcome {
-        let v4: Listener
+        let listener: Listener
         do {
-            v4 = try Listener(host: "127.0.0.1", port: requested, queue: queue)
+            listener = try Listener(port: requested, queue: queue)
         } catch {
             return .failed(String(describing: error))
         }
-        v4.onConnection = { [weak self] connection in Task { await self?.accept(connection) } }
-        let bound: Int
-        switch await v4.start() {
-        case .ready(let port): bound = port
-        case .failed(let code): return code == EADDRINUSE ? .inUse : .failed("bind failed (\(code ?? 0))")
+        listener.onConnection = { [weak self] connection in Task { await self?.accept(connection) } }
+        switch await listener.start() {
+        case .ready(let bound):
+            self.listener = listener
+            port = bound
+            SupermuxOwnListenerPorts.shared.insert(bound)
+            return .bound(bound)
+        case .failed(let code):
+            return code == EADDRINUSE ? .inUse : .failed("bind failed (\(code ?? 0))")
         }
-        var listeners = [v4]
-        if let v6 = try? Listener(host: "::1", port: bound, queue: queue) {
-            v6.onConnection = { [weak self] connection in Task { await self?.accept(connection) } }
-            switch await v6.start() {
-            case .ready:
-                listeners.append(v6)
-            case .failed(let code) where code == EADDRNOTAVAIL:
-                break
-            case .failed:
-                await v4.stop()
-                return .inUse
-            }
-        }
-        self.listeners = listeners
-        port = bound
-        SupermuxOwnListenerPorts.shared.insert(bound)
-        return .bound(bound)
     }
 
-    /// Stops accepting and ends every relayed connection. Returns once both
-    /// listeners released the port, so the caller can rely on it being free.
+    /// Stops accepting and ends every relayed connection. Returns once the
+    /// listener released the port, so the caller can rely on it being free.
     func stop() async {
         guard !stopped else { return }
         stopped = true
         for connection in connections.values { connection.cancel() }
         connections.removeAll()
-        let listeners = self.listeners
-        self.listeners = []
-        for listener in listeners { await listener.stop() }
+        let listener = self.listener
+        self.listener = nil
+        await listener?.stop()
         if port != 0 { SupermuxOwnListenerPorts.shared.remove(port) }
     }
 
@@ -147,15 +140,16 @@ extension SupermuxLoopbackPortListener {
         private var endWaiters: [CheckedContinuation<Void, Never>] = []
         var onConnection: (@Sendable (NWConnection) -> Void)?
 
-        init(host: String, port: Int, queue: DispatchQueue) throws {
+        /// A dual-stack listener on `port` (0 = any) of the loopback interface.
+        init(port: Int, queue: DispatchQueue) throws {
             let tcp = NWProtocolTCP.Options()
             tcp.noDelay = true
             let parameters = NWParameters(tls: nil, tcp: tcp)
-            parameters.requiredLocalEndpoint = .hostPort(
-                host: NWEndpoint.Host(host),
-                port: port == 0 ? .any : NWEndpoint.Port(rawValue: UInt16(clamping: port)) ?? .any
+            parameters.requiredInterfaceType = .loopback
+            listener = try NWListener(
+                using: parameters,
+                on: port == 0 ? .any : NWEndpoint.Port(rawValue: UInt16(clamping: port)) ?? .any
             )
-            listener = try NWListener(using: parameters)
             self.queue = queue
         }
 
