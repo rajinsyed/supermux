@@ -31,6 +31,8 @@ session, pump, encoder and worker ring; only QUIC is replaced.
                                             kept next to the report)
   9. device_picker_lists_owner_devices      the picker lists the owner's iPhone/iPad simulators;
                                             choosing another boots it there and the stream follows
+                                            (the owner's tab shows it, then the viewer plays new
+                                            frames; a device of the same size sends no new config)
  10. home_button_reaches_owner              Settings in front, the viewer's Home -> SpringBoard
  11. rotate_via_control                     Rotate Left/Right reach the owner's simulator
  12. quality_cap                            Data Saver -> the next config's long side <= 800
@@ -42,7 +44,9 @@ session, pump, encoder and worker ring; only QUIC is replaced.
                                             ("superseded") without taking it back; Show Here does
  17. owner_close_closes_viewer              closing S's Simulator tab closes the viewer tab
  18. viewer_close_closes_owner_panel        closing the viewer tab closes S's Simulator tab; its
-                                            worker exits; the device stays booted
+                                            worker exits; the device stays booted (the suite's
+                                            device: a new tab showing another booted simulator, the
+                                            owner's first pick, is switched to it first)
  19. new_simulator_tab_bar_runs_on_owner    the pane tab bar's New Simulator button: as step 6
  20. restore_rebinds                        (--app-path) quit and relaunch: the viewer comes back in
                                             M, streams S's restored panel, no second SimulatorPanel
@@ -588,21 +592,53 @@ class MirrorSimulatorE2E:
         simctl("shutdown", other, check=False)
         return {"picker": listed, "other_device": other, "switched": switched, "back": back}
 
+    def host_device(self, state: Optional[Dict[str, Any]] = None) -> Optional[str]:
+        """The device the source's (one) Simulator tab shows on the owning Mac."""
+        panels = self.panels(self.source, "local", state)
+        if len(panels) != 1:
+            return None
+        return up(panels[0].get("selected_device_id")) or None
+
     def select_and_follow(self, udid: str, timeout_s: float) -> Dict[str, Any]:
-        before = self.need_viewer()
-        configs = int(before.get("configs_applied") or 0)
+        """Picks `udid` in the viewer: the owning Mac's Simulator tab switches to
+        it, and the viewer then plays frames that device draws. (A device of the
+        same size brings no new config, so frames are the evidence.)"""
         self.viewer_call("select_device", {"udid": udid})
+        switched: Dict[str, int] = {}
 
         def followed() -> Optional[Dict[str, Any]]:
-            viewer = self.need_viewer(include_devices=True)
+            state = self.sim_state()
+            viewers = self.panels(self.mirror, "viewer", state)
+            if not viewers:
+                raise Failure("precondition: the mirror holds no simulator viewer tab")
+            viewer = viewers[0]
+            frames = int(viewer.get("presented_frames") or 0)
             selected = up((viewer.get("binding") or {}).get("udid"))
-            if selected != udid or int(viewer.get("configs_applied") or 0) <= configs:
+            host = self.host_device(state)
+            if host == udid and selected == udid and "frames" not in switched:
+                switched["frames"] = frames
+            if "frames" not in switched or viewer.get("phase") != "streaming" or frames < switched["frames"] + 3:
                 self.stir_device(udid)
-                raise Failure(f"udid={selected} configs={viewer.get('configs_applied')} phase={viewer.get('phase')}")
+                raise Failure(f"owner shows {host}, viewer udid={selected} phase={viewer.get('phase')} "
+                              f"frames={frames} (at the switch: {switched.get('frames')})")
             return viewer
 
         viewer = wait_for(f"the stream to follow the picker to {udid}", followed, timeout_s, interval_s=2.0)
-        return {"udid": udid, "config": viewer.get("config"), "configs_applied": viewer.get("configs_applied")}
+        return {"udid": udid, "config": viewer.get("config"), "configs_applied": viewer.get("configs_applied"),
+                "frames_at_switch": switched.get("frames"), "frames": viewer.get("presented_frames")}
+
+    def show_suite_device(self) -> Optional[str]:
+        """A new Simulator tab shows the owning Mac's first pick. When that is
+        another booted simulator (an idle one the suite never stirs, which may
+        draw nothing), switch the viewer to the suite's own device so the checks
+        that follow act on it. Returns the device it switched away from."""
+        udid = self.need_udid()
+        shown = wait_for("the owner's Simulator tab to pick a device", self.host_device, self.timeout)
+        if shown == udid:
+            return None
+        self.need_viewer(include_devices=True)  # the picker loads the owner's list
+        self.select_and_follow(udid, 120)
+        return shown
 
     def stir_device(self, udid: str) -> None:
         if device_state(udid) == "Booted":
@@ -670,10 +706,13 @@ class MirrorSimulatorE2E:
             self.viewer_call("quality", {"preset": "auto"})
 
     def pane_count(self, workspace_id: str) -> int:
-        return len((self.sock.call("pane.list", {"workspace_id": workspace_id}) or {}).get("panes") or [])
+        """The workspace's own panes (pane.list also lists the window's Dock pane)."""
+        panes = (self.sock.call("pane.list", {"workspace_id": workspace_id}) or {}).get("panes") or []
+        return len([pane for pane in panes if not pane.get("dock_scope")])
 
     def layout_follows_with_simulator(self) -> Dict[str, Any]:
         self.need_viewer()
+        source_panes = self.pane_count(self.source)
         terminal = self.terminals(self.source)[0]
         split = self.sock.call("surface.split", {"workspace_id": self.source, "surface_id": terminal,
                                                  "direction": "right"}) or {}
@@ -687,9 +726,11 @@ class MirrorSimulatorE2E:
             # The split itself, not only the new terminal (an apply the viewer
             # blocks would leave it as a tab of the old pane).
             wait_for("the mirror to split like the source",
-                     lambda: self.pane_count(self.mirror) == self.pane_count(self.source) == 2, 15)
+                     lambda: self.pane_count(self.source) == source_panes + 1
+                     and self.pane_count(self.mirror) == source_panes + 1, 15)
         except Failure as error:
-            problems.append(f"{error} (panes: source {self.pane_count(self.source)}, mirror {self.pane_count(self.mirror)})")
+            problems.append(f"{error} (panes before the split: {source_panes}; now source "
+                            f"{self.pane_count(self.source)}, mirror {self.pane_count(self.mirror)})")
         title = f"mirror-simulator-renamed-{self.nonce}"
         self.sock.call("workspace.rename", {"workspace_id": self.source, "title": title})
         try:
@@ -699,7 +740,8 @@ class MirrorSimulatorE2E:
             problems.append(str(error))
         if problems:
             raise Failure("; ".join(problems))
-        return {"split_terminal": self.split_terminal, "title": title}
+        return {"split_terminal": self.split_terminal, "title": title, "panes_before": source_panes,
+                "panes_after": self.pane_count(self.mirror)}
 
     def close_mirror_terminal_with_viewer_open(self) -> Dict[str, Any]:
         self.need_viewer()
@@ -762,6 +804,7 @@ class MirrorSimulatorE2E:
             opened = self.one_viewer_on_owner()
         finally:
             self.close_local_simulators_in_mirror()
+        first_pick = self.show_suite_device()
         self.wait_streaming(0, 1, 45)
         viewer = self.need_viewer()
         self.sock.call("surface.close", {"workspace_id": self.mirror, "surface_id": viewer["panel_id"], "force": True})
@@ -771,7 +814,7 @@ class MirrorSimulatorE2E:
         state = device_state(udid)
         if state != "Booted":
             raise Failure(f"closing the viewer left the device {state}, expected Booted")
-        return {"host_panel_id": opened["host_panel_id"], "device_state": state}
+        return {"host_panel_id": opened["host_panel_id"], "device_state": state, "switched_from": first_pick}
 
     def new_simulator_tab_bar_runs_on_owner(self) -> Dict[str, Any]:
         self.need_udid()
@@ -785,6 +828,7 @@ class MirrorSimulatorE2E:
         if not self.args.app_path:
             raise Skipped("pass --app-path to quit and relaunch")
         self.need_viewer()
+        first_pick = self.show_suite_device()  # the restored stream shows a device the suite stirs
         self.sock.call("workspace.select", {"workspace_id": self.mirror})
         time.sleep(2.0)  # let the session autosave see the viewer
         self.relaunch()
@@ -798,7 +842,7 @@ class MirrorSimulatorE2E:
         viewer = self.wait_streaming(0, 3, 90)
         settled = self.one_viewer_on_owner()
         return {"mirror": self.mirror, "frames": viewer.get("presented_frames"),
-                "host_panel_id": settled["host_panel_id"]}
+                "host_panel_id": settled["host_panel_id"], "switched_from": first_pick}
 
     def relaunch(self) -> None:
         app = self.args.app_path
