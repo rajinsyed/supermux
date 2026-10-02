@@ -215,12 +215,22 @@ final class DeviceWorkspaceLayoutCoordinator {
         // A once-synchronized workspace can acquire local or unrelated panes.
         // Its old delivery must not turn closing a preview into a source deletion.
         // A pending or failed creation for the same workspace is not such a pane.
-        let remaining = catalog.projections.filter { $0.workspaceID == projection.workspaceID }
+        // SUPERMUX:begin device-layout-local-panels
+        // A bound mirror's own browsers are not unrelated panes: closing a
+        // mirrored tab beside one still closes its terminal on that Mac.
+        // (upstream: `remaining` kept every projection of the workspace, local
+        // ones included, and the guard compared it with every native panel)
+        let supermuxLocalPanelIDs = SupermuxDeviceLayoutSurfaceFilter.localPanelIDs(in: native, machine: machine)
+        let remaining = catalog.projections.filter {
+            $0.workspaceID == projection.workspaceID && !supermuxLocalPanelIDs.contains($0.panelID)
+        }
         let reserved = native.cloudPendingCreations.values.filter {
             $0.machine == machine && $0.remoteWorkspaceID == remoteID
         }.map(\.panelID)
         guard remaining.allSatisfy({ $0.resource.machine == machine && $0.remoteWorkspaceID == remoteID }),
-              Set(remaining.map(\.panelID)) == Set(native.panels.keys).subtracting([projection.panelID]).subtracting(reserved) else { return }
+              Set(remaining.map(\.panelID)) == Set(native.panels.keys).subtracting([projection.panelID])
+                  .subtracting(reserved).subtracting(supermuxLocalPanelIDs) else { return }
+        // SUPERMUX:end device-layout-local-panels
         let operation = enqueueClose(surfaceID: projection.resource.key, remoteID: remoteID, workspaceID: projection.workspaceID)
         Task { @MainActor [weak self] in
             do {
