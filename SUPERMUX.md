@@ -446,6 +446,10 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   every connection's socket when it ends, and replaces its listener if the system fails it: until the
   new one is ready every tab of that Mac, open or opened meanwhile, keeps the old endpoint and gets a
   refused load, never one that goes direct from this Mac. A tab moved out of a mirror goes back to this Mac's profile.
+  Known gap: a URL typed into a mirror tab that already shows a page sometimes loads about 10 s late:
+  WebKit opens a connection to the proxy and sends nothing on it, and the request goes out only once
+  that 10 s handshake deadline closes it (measured, cause in WebKit not pinned down; nothing goes
+  direct meanwhile; `plans/supermux-remote-workspaces/LOOPBACK-HARNESS.md`).
 - **Other Macs' ports open here** (#699, #705, #750, #751; the tunnel is round 5's Track A): a server started in
   another Mac's workspace that is mirrored here (`bun run dev` on 3000) opens at `localhost` on this
   Mac, in any browser, the iOS Simulator or any other app (setting "Forward other Macs' ports to this
