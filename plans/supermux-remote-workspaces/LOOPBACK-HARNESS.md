@@ -563,8 +563,13 @@ proxy configuration, the profile store, no tunnel open); this Mac's LAN address 
 Mac's page with no tunnel open (Network.framework skips the proxy for this Mac's own addresses, as
 for `localhost`, so the browser never asks it), and an authenticated CONNECT to that address, as
 WebKit sends for any other LAN or public host, is dialed directly by the proxy (skipped without a
-LAN address); a closed port shows "localhost:N on <Mac> isn't
-answering"; the proxy refuses SOCKS no-auth (`05 FF`), a wrong password (`01 01`) and a CONNECT
+LAN address); a closed port opened in a new tab of M shows "localhost:N on <Mac> isn't
+answering" within 5 s (its own tab, not the shared one: since WebKit 27 a navigation typed into a
+tab, to plain HTTP on a host that is not loopback by name, as the `localhost` alias and a LAN address
+are, leaves the page's hardened Enhanced Security WebContent process and swaps back at the response,
+and on an affected host a swap into a WebContent process WebKit already had blocks its UI thread
+about 5 s per sandbox extension, 10 s and more per page, in a bare `WKWebView` too); the proxy
+refuses SOCKS no-auth (`05 FF`), a wrong password (`01 01`) and a CONNECT
 without credentials (`407`), and the right credential connects; a terminal link opened in the cmux
 browser from M's terminal opens a routed browser in M; the browser moved into S loses the route and
 store, and moved back gets them again; with the tunnel driver's `pretend_old_host` and a relink the
@@ -578,7 +583,9 @@ tag are two stores (`data_store_per_app_instance`); a browser in an unbound mirr
 never send a byte are closed, at least the 8 past the 64-handshake limit at once and all by the 10 s
 handshake deadline (`idle_proxy_connections_close`); and after `browser_proxy_fail` M's open tab and
 a new tab both load through a fresh port (`proxy_listener_failure_recovers`, last: no
-`browser_proxy` read before the tabs load, since that read starts a listener itself). DEBUG drivers
+`browser_proxy` read before the tabs load, since that read starts a listener itself; the open tab
+must be navigated, so on a host with the WebKit swap delay above this step takes about 11 s of its
+17.5 s `browser.navigate` budget). DEBUG drivers
 (`SupermuxMirrorBrowserSocket`): `supermux.devices.mirror.browser_route {workspace_id}` (per
 browser: `routes_remotely`, `proxy_configs`, `store_identifier`), `.browser_proxy {machine}` (port,
 credential, `owner_dials`, `direct_dials`, `failures`; null until it listens; starts the proxy),
