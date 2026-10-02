@@ -142,8 +142,9 @@ var storedBindings: [UUID: SupermuxDeviceBindingStore.Binding]
   (Open in New Pane from two of them, its own shell closed), is not a mirror: closing it closes it here
   only. The check is O(1) for local workspaces (it first asks `catalog.projectionMachines(forWorkspace:)`).
 - `ref(forLocal:)`: binding first, else the device workspace most of its panes project (live + pending).
-- `localWorkspace(showing:)`: binding (matched to a live workspace by `stableId`) first, else the local
-  workspace holding most projections of that remote workspace.
+- `localWorkspace(showing:)`: binding (matched to a live workspace by `stableId`) first, else an unbound
+  mirror (the `mirrors()` rule) whose ref is that remote workspace. A local workspace that only borrows
+  some of its terminals does not show it, so auto-mirror and the opener still give it its own mirror.
 - **Identity across restart.** Session restore keeps both `Workspace.id` and `Workspace.stableId`
   (`TabManager` restore uses `WorkspaceSessionRestoreIdentity` with the persisted `workspaceId`;
   `restoreSessionSnapshot` adopts `stableId`); both change only for duplicate reopens. Bindings are keyed
@@ -308,7 +309,8 @@ SupermuxDeviceMirrorsGlue.unhide(machineID:ref:)   // unhide + reconcile
   A close not sent yet is cancelled when a live local mirror shows the ref again (Reopen Closed
   Workspace, a manual open), so ⌘⇧T after an offline close undoes it. Delete Group (sidebar, or socket
   `workspace.group.delete` with `close_workspaces`) closes member mirrors on their Mac the same way (#530
-  fence 3). The sidebar rows' menus also offer Hide Here (no prompt). Other programmatic closes
+  fence 3). The phone's Delete Group (mobile `workspace.group.action delete`) hides them instead (#697):
+  the phone never lists mirrors, so its confirmation never showed them. The sidebar rows' menus also offer Hide Here (no prompt). Other programmatic closes
   (`closeWorkspace(recordHistory: true)`: socket `workspace.close`, AppleScript) hide. Every close unbinds. Window close, quit
   and restore never hide or close remotely. Route any new user close UI through
   `TabManager.closeWorkspaceWithConfirmation` (or the batch variant) so it closes on the Mac.

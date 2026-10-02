@@ -89,20 +89,24 @@ final class SupermuxDeviceWorkspaceIndex {
 
     // MARK: - Remote -> local
 
-    /// The local workspace (in any main window) that mirrors `ref`.
+    /// The local workspace (in any main window) that mirrors `ref`: the bound
+    /// one, else an unbound mirror whose every pane shows `ref` (the rule
+    /// `mirrors()` uses). A workspace that only borrows some of `ref`'s
+    /// terminals does not show it, so auto-mirror and the opener still give
+    /// `ref` its own mirror.
     func localWorkspace(showing ref: SupermuxRemoteWorkspaceRef) -> Workspace? {
         if let stableID = bindings.stableID(for: ref),
            let bound = liveWorkspaces().first(where: { $0.stableId == stableID }) {
             return bound
         }
-        var counts: [UUID: Int] = [:]
-        for projection in deviceProjections(on: ref.machine) where remoteWorkspaceID(of: projection) == ref.workspaceID {
-            counts[projection.workspaceID, default: 0] += 1
-        }
-        let best = counts.max { lhs, rhs in
-            lhs.value != rhs.value ? lhs.value < rhs.value : lhs.key.uuidString > rhs.key.uuidString
-        }
-        return best.flatMap { Workspace.liveWorkspace(id: $0.key) }
+        let candidates = Set(
+            deviceProjections(on: ref.machine)
+                .filter { remoteWorkspaceID(of: $0) == ref.workspaceID }
+                .map(\.workspaceID)
+        )
+        return candidates.sorted { $0.uuidString < $1.uuidString }
+            .compactMap { Workspace.liveWorkspace(id: $0) }
+            .first(where: { self.isDeviceMirror($0) && self.ref(forLocal: $0) == ref })
     }
 
     /// The device's synced record for `ref`.
