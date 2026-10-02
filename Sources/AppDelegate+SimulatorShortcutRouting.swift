@@ -35,6 +35,16 @@ extension AppDelegate {
         context: MainWindowContext,
         onExecuted: (() -> Void)?
     ) -> Bool {
+        // SUPERMUX:begin remote-simulator-new-action
+        // In a device mirror the simulator runs on the Mac that owns the
+        // workspace, shown here in a viewer tab; never a local one.
+        if let workspace = context.tabManager.selectedWorkspace,
+           let pane = workspace.bonsplitController.focusedPaneId,
+           SupermuxRemoteSimulators.shared.openIfDeviceMirror(workspace, paneId: pane, focus: true) {
+            onExecuted?()
+            return true
+        }
+        // SUPERMUX:end remote-simulator-new-action
         guard CmuxFeatureFlags.shared.isSimulatorEnabled,
               let workspace = context.tabManager.selectedWorkspace,
               let pane = workspace.bonsplitController.focusedPaneId,
