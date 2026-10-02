@@ -8,8 +8,8 @@ import SupermuxMobileCore
 /// `MobileHostService.ticketAuthorizationError` delegates the whole namespace
 /// here through the `mobile-supermux-authz` fence. Scoping rules:
 ///
-/// - `changes.*`, `files.*`, workspace selection, and Simulator creation are
-///   **workspace-scoped-permitted**: a ticket pinned to a workspace passes
+/// - `changes.*`, `files.*`, workspace selection, and Simulator creation and
+///   control are **workspace-scoped-permitted**: a ticket pinned to a workspace passes
 ///   when the request's `workspace_id` matches the pin (and no `project_id`
 ///   widens the request to a project root).
 /// - Terminal selection, generic panel selection, and pane close are
@@ -53,7 +53,7 @@ enum SupermuxMobileAuthorization {
              .changesStash, .changesStashPop, .changesHistory,
              .filesList, .filesCreate, .filesRename, .filesDuplicate,
              .filesTrash, .filesRead, .filesSearch, .filesGitStatus, .filesWatch,
-             .workspaceSelect, .simulatorCreate:
+             .workspaceSelect, .simulatorCreate, .simulatorControl:
             return .workspaceScopedPermitted
         case .terminalSelect:
             return .terminalScopedPermitted
