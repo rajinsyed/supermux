@@ -95,6 +95,7 @@ building a parallel system.
 | New Worktree device picker + New Workspace on ▸ <Mac> | ✅ loopback-E2E | `SupermuxNewWorktreeSheetModel` over `SupermuxWorktreeCreationTarget` (local / remote), #570/#571, #620–#622 (plain New Workspace stays local; the empty area's menu; another Mac's home folder) |
 | Mirror workspace behaviors (⌘G run, presets, Changes panel, file tools) | ✅ loopback-E2E | `Sources/Supermux/Mirrors/`, `SupermuxChangesBackend` (local / remote over `changes.*`), #572 |
 | Files panel in a mirror browses the other Mac (list, preview, Find, git colors, live refresh, file operations) | ✅ loopback-E2E | `SupermuxDeviceFileExplorerProvider` over `files.*` (`supermux.files_read.v1`), #675–#681, `tests/supermux/loopback_mirror_files_e2e.py` |
+| A mirror's Simulator runs on the owning Mac (viewer tab streams it; nothing simulator-related runs here) | ✅ loopback-E2E (two real Macs not yet run) | `Sources/Supermux/RemoteSimulator/` (`SupermuxRemoteSimulators`, `SupermuxRemoteSimulatorPanel` over upstream's simulator stream v2 store), host `simulator.control` (`supermux.remote_simulator.v1`), #730–#734, #737–#739, `tests/supermux/loopback_mirror_simulator_e2e.py` |
 | Background tab sync (tabs added/closed/reordered on the owning Mac reach mirrors) | ✅ loopback-E2E | `SupermuxDeviceLayoutChangeObserver`, #595 |
 | Notification/push parity (no duplicate pushes, shared read state, presence-aware host, push setup shared between Macs) | ✅ loopback-E2E | #545–#550, `SupermuxDeviceNotification*`, `phone_push.status/share` |
 | Remote Macs settings card (Settings › Automation) | ✅ | `SupermuxRemoteMacsSettingsCard` (#596–#598) |
@@ -375,6 +376,30 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   edits deeper in the tree (`.git/` included) do not refresh it, so their git colors update on the
   next root-entry change, `cd` or reconnect. Both Macs need this build (an earlier
   `files_read.v1` host refuses `files.watch`; the panel then refreshes only on reconnect and `cd`).
+- **A mirror's Simulator runs on the owning Mac; nothing is booted here** (#730–#734, #737–#739,
+  capability `supermux.remote_simulator.v1`). New Simulator in a mirror (File menu, palette, plus
+  menu, shortcut, tab-bar button) opens a viewer tab that shows the source workspace's first
+  Simulator no viewer here shows yet, or opens a new one there in the background, and plays its
+  simulator stream (upstream's v2 lane, HEVC/H.264, the iPhone's engine; the owning Mac already
+  serves it to Mac peers). Every way of making a local simulator in a mirror (socket, CLI, canvas,
+  restore) does nothing, so no worker, `simctl`, CoreSimulator or Xcode runs on this Mac; a build,
+  `flutter run` or `xcrun simctl boot` in a mirror terminal boots its device on the owning Mac, and
+  a Simulator tab New Simulator opens there shows it (the first booted device). Clicks and trackpad drags are touches, keys
+  are keys (⌘-chords stay with this Mac's menus), ⌘V types this Mac's clipboard; the toolbar has the
+  owning Mac's device menu ("Simulators on <Mac>", choosing one boots it there), Home, App Switcher,
+  Lock, rotate and the software keyboard, quality (Auto follows the tab's pixels; High, Balanced, Data
+  Saver), Recover, and a type-text field. A dropped link resumes by itself; when the phone or another
+  Mac takes the stream the tab says so and waits for Show Here (no taking it back and forth).
+  Closing the tab closes the owning Mac's Simulator tab (the device keeps running); the owning Mac
+  closing it closes the tab; closing the mirror or its window closes only the viewer, and the next
+  New Simulator reuses that Simulator tab there. A relaunch restores the viewer, which finds its
+  simulator again by device after the owning Mac restarts. Not offered: multi-touch, mouse-wheel
+  notches, the Tools sidebar, screenshots to this Mac, non-US text; they work on the owning Mac
+  through `cmux simulator …` in a mirror terminal. An older owning Mac (no
+  `simulator.stream.v2`/`supermux.panes.v1`) gets an alert instead, never a local simulator. The
+  stream over a real Mac-to-Mac link (the device link's irx connection, through the port-forward
+  work's `DeviceIrxClient.supermuxTunnelConnection`) and capture on a headless, locked owning Mac are
+  verified only on the loopback device so far.
 - **Notifications:** the owning Mac pushes to the phone (the viewer never forwards `.deviceMac`
   rows, so no duplicates); the phone badges the total over every pairable Mac build; read state
   flows both ways, and mirrored notifications (read state and Mark as Unread included) survive a

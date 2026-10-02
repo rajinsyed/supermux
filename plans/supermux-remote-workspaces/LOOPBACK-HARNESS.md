@@ -508,6 +508,60 @@ within 25 s of the launch (else the step is vacuous), and the launch must open e
 Before the bound, `preset.launch` waited for the whole load and missed the 20 s deadline, and the
 terminal still opened later.
 
+## Mirror simulator E2E
+
+`tests/supermux/loopback_mirror_simulator_e2e.py` checks that a device mirror's Simulator runs on the
+owning Mac (here the same app's source workspace S) and that the mirror M only shows it. The loopback
+has no irx lanes, so the viewer's stream lane is the DEBUG `SupermuxRemoteSimulatorLoopbackLane`
+(`Sources/Supermux/RemoteSimulator/`): two `SupermuxDeviceLoopbackPipe`s whose far end runs the
+host's real `MobileSimulatorStreamV2Coordinator.handleLane`, so the real session, pump, VideoToolbox
+encoder and worker ring run; only QUIC is replaced. It is chosen when the device `isLoopback`, and the
+viewer owns its life (a link drop tears the stream down and closes it; the host ends `lane_closed`).
+
+DEBUG drivers `supermux.devices.mirror.simulator.*` (`SupermuxRemoteSimulatorSocketCommands.swift`,
+dispatched from `SupermuxDevicesSocketCommands`): `new_action {workspace_id, path: configured |
+tab_bar}` (the configured `cmux.newSimulator` action on the selected workspace, or the pane tab bar's
+button, installed on that workspace's tab bar first), `state {include_devices?}` (every Simulator tab
+in every window: `class` `local` for a `SimulatorPanel`, `viewer` with `phase`, `phase_detail`,
+`host_status`, `presented_frames`, `configs_applied`, `config {codec, width, height, orientation}`,
+`quality`, `binding {machine, remote_workspace_id, host_panel_id, udid}` and, with `include_devices`,
+the owning Mac's `devices`; plus `simulator_panel_count`, `viewer_count` and `app_pid`), the viewer's
+own `input {panel_id, event: {button} | {text} | {key, down} | {touch, x, y}}`, `control {panel_id,
+action}`, `quality {panel_id, preset}`, `select_device {panel_id, udid}`, `show_here {panel_id}`
+(`accepted: false` when the panel is not a viewer), and `steal {host_panel_id}` (a second loopback
+lane sends `start`, as the phone opening the same simulator would).
+
+The suite creates its own simulator (`simctl create supermux-e2e-<tag>-<nonce>`, newest iOS runtime,
+first iPhone type; `--udid` reuses one and never deletes it, `--keep-device` keeps it) and deletes it
+at the end; with no iOS runtime every simulator step is skipped (`no_simulator_runtime`). Steps:
+`xcrun simctl boot` typed into M's terminal boots it (on the owning Mac); `surface.create {type:
+simulator}` on M fails; New Simulator (configured) leaves S with one `SimulatorPanel`, M with one
+viewer bound to it and none of its own, the app with one `SimulatorPanel` more than before; the viewer
+shows the booted device, streams (+10 frames, hevc/h264, long side <= 2000, one simulator worker more
+under the app's PID; the window screenshot is kept as `…-viewer.png`); its picker equals the owner's
+available iPhone/iPad simulators and choosing a second one (made for the step) boots it and the stream
+follows; Home brings SpringBoard back from Settings (`simulator.foreground` on S's panel, or a
+`simctl io screenshot` hash); Rotate Left/Right turn the owner's simulator (`simulator.context`
+orientation); Data Saver caps the next config at 800; with the viewer open a split in S is projected
+into M and M takes S's new name (needs the `device-layout-local-panels` fence and #739); closing a
+mirror terminal tab closes its source terminal; the link held down stops the stream and back up
+resumes it; `steal` leaves the viewer "superseded" for 10 s without taking the stream back, and Show
+Here takes it; closing S's Simulator tab closes the viewer; closing the viewer closes S's tab, its
+worker exits and the device stays booted; the tab bar's button behaves like the configured action;
+with `--app-path`, a relaunch restores the viewer in M, which streams S's restored panel with no second
+`SimulatorPanel`. An idle home screen draws nothing, so the suite makes the simulator draw (launching
+Settings, toggling the appearance) while it waits for frames.
+
+```bash
+CMUX_E2E_SUITES="loopback_mirror_simulator_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
+CMUX_TAG=<tag> python3 tests/supermux/loopback_mirror_simulator_e2e.py --app-path "<App path>" \
+  --projects-file /tmp/<tag>/projects.json
+```
+
+Not covered here (two real Macs): the `simulator_stream` lane over QUIC (direct and relay) through
+`DeviceIrxClient.supermuxTunnelConnection`, capture on a headless or locked owning Mac, frame rate and
+latency, the phone and a Mac taking the stream from each other, and version skew.
+
 ## The ~20 s link flap (round 4) and why E2E did not see it
 
 The round-4 visual check launched `rws-int` without `SUPERMUX_PROJECTS_FILE`, so it read the user's
