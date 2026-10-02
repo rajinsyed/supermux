@@ -49,8 +49,10 @@ independently:
  13 idle_proxy_connections_close         connections that never send a byte are closed: the ones past the
                                          limit of clients still in their handshake at once, the rest at the
                                          handshake deadline
- 14 proxy_listener_failure_recovers      after the proxy's listener fails, an open mirror tab and a new one
-                                         load through a fresh endpoint
+ 14 proxy_listener_failure_recovers      after the proxy's listener fails, it is replaced on its own (waited
+                                         for with a read that starts no listener); then the open mirror tab
+                                         and a new one each load through the owner on the fresh endpoint
+                                         (journal `opened` for the open tab before the new tab exists)
  15 restart_keeps_mirror_store_proxied   a mirror tab opened while the failed listener is being replaced
                                          (held down by `browser_proxy_hold`) leaves the app instance's
                                          data store with its proxy (2 configurations, as the open tab's),
@@ -758,27 +760,38 @@ class MirrorBrowserE2E:
         return facts
 
     def proxy_listener_failure_recovers(self) -> Dict[str, Any]:
-        """A failed proxy listener is replaced: the mirror's open tab (it held the
-        dead endpoint) and a new tab both load through a fresh one."""
+        """A failed proxy listener is replaced on its own, and the mirror's open tab
+        (it held the dead endpoint) and a new tab each load through the owner on the
+        fresh one. The replacement is waited for with a read that starts no listener
+        (`start=False`), so the open tab never navigates inside the restart delay,
+        whatever WebKit's speed; with no restart the wait times out. The owner's
+        tunnel journal must show the open tab's own load before the new tab exists:
+        in loopback a direct load would reach the same marker server."""
         browser = self.require_mirror_browser()
         old = self.require_proxy()
         server = self.server("recover")
         failed = self.sock.call("supermux.devices.mirror.browser_proxy_fail", {"machine": self.pair.machine}) or {}
         if failed.get("failed_port") != old["port"]:
             raise Failure(f"precondition: the driver failed no listener on port {old['port']}: {failed}")
-        # No `browser_proxy` read until both tabs loaded: that read starts a listener itself.
+        fresh = self.wait_replacement(old["port"])
         self.navigate(browser, f"http://localhost:{server.port}/marker.html?tab=open")
         open_title = self.wait_title(browser, lambda t: t == server.title, "the open mirror tab to load after the failure")
+        open_opens = self.journal_opens(server.port)
+        if not open_opens:
+            raise Failure(f"the open mirror tab's load did not go through the owner (no journal `opened` for {server.port}, "
+                          f"server saw {server.marker_hosts()})")
         panel = self.new_tab(self.pair.mirror_id, self.mirror_terminal(), f"http://localhost:{server.port}/marker.html?tab=new")
         new_title = self.wait_title(panel, lambda t: t == server.title, "a new mirror tab to load after the failure")
         route = self.expect_route(self.pair.mirror_id, panel, remote=True)
+        new_opens = self.journal_opens(server.port)
+        if new_opens <= open_opens:
+            raise Failure(f"the new mirror tab's load did not go through the owner (journal `opened` for {server.port}: "
+                          f"{open_opens} -> {new_opens})")
         proxy = self.require_proxy()
-        if proxy["port"] == old["port"]:
-            raise Failure(f"the proxy still reports the failed port {old['port']}")
         if int(proxy.get("owner_dials") or 0) <= int(old.get("owner_dials") or 0):
             raise Failure(f"the proxy never dialed the owner ({old.get('owner_dials')} -> {proxy.get('owner_dials')})")
-        return {"failed_port": old["port"], "port": proxy["port"], "open_tab": open_title, "new_tab": new_title,
-                "route": route}
+        return {"failed_port": old["port"], "port": fresh["port"], "open_tab": open_title, "new_tab": new_title,
+                "journal_opens": {"open_tab": open_opens, "new_tab": new_opens - open_opens}, "route": route}
 
     def restart_keeps_mirror_store_proxied(self) -> Dict[str, Any]:
         """A mirror tab opened while a failed proxy listener is replaced gets the
@@ -841,7 +854,7 @@ class MirrorBrowserE2E:
                 ("data_store_per_app_instance", self.data_store_per_app_instance),
                 ("unbound_mirror_browser_routes", self.unbound_mirror_browser_routes),
                 ("idle_proxy_connections_close", self.idle_proxy_connections_close),
-                # Last: in a red run the mirror's open tab keeps the dead endpoint.
+                # Last: they fail the proxy's listener.
                 ("proxy_listener_failure_recovers", self.proxy_listener_failure_recovers),
                 ("restart_keeps_mirror_store_proxied", self.restart_keeps_mirror_store_proxied),
             ]:
