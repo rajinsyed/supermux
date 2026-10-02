@@ -12801,9 +12801,9 @@ struct VerticalTabsSidebar: View, Equatable {
             },
             onOpenPort: { [prefer = input.settings.openPortLinksInCmuxBrowser] port in
                 // SUPERMUX:begin device-mirror-port-chip
-                // A device mirror's chip names its Mac's port: outside cmux it opens
-                // at the port this Mac forwards it to, never this Mac's own one.
-                if SupermuxDevicePortLinks.isMirrorChip(workspaceID: tab.id) {
+                // A device mirror's chip for its Mac's port: outside cmux it opens at
+                // the port this Mac forwards it to, never this Mac's own one.
+                if SupermuxDevicePortLinks.isMirrorChip(workspaceID: tab.id, port: port) {
                     SupermuxDevicePortLinks.openMirrorChip(port, workspaceID: tab.id, prefersCmuxBrowser: prefer)
                     return
                 }
@@ -15087,9 +15087,9 @@ struct VerticalTabsSidebar: View, Equatable {
         opensInCmuxBrowser: Bool
     ) {
         // SUPERMUX:begin device-mirror-port-chip
-        // A device mirror's chip names its Mac's port: outside cmux it opens
-        // at the port this Mac forwards it to, never this Mac's own one.
-        if SupermuxDevicePortLinks.isMirrorChip(workspaceID: workspace.id) {
+        // A device mirror's chip for its Mac's port: outside cmux it opens at
+        // the port this Mac forwards it to, never this Mac's own one.
+        if SupermuxDevicePortLinks.isMirrorChip(workspaceID: workspace.id, port: port) {
             selectWorkspaceRow(workspace, index: index, modifiers: NSEvent.modifierFlags)
             SupermuxDevicePortLinks.openMirrorChip(port, workspaceID: workspace.id, prefersCmuxBrowser: opensInCmuxBrowser)
             return
