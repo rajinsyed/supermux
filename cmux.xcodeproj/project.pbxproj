@@ -3434,6 +3434,7 @@
 		50BE0009000000000000000E /* SupermuxDeviceNotificationReadMirror.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE0009000000000000000D /* SupermuxDeviceNotificationReadMirror.swift */; };
 		50BE00090000000000000010 /* SupermuxDeviceNotificationRetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE0009000000000000000F /* SupermuxDeviceNotificationRetry.swift */; };
 		50BE00090000000000000016 /* SupermuxDeviceNotificationSocketCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00090000000000000015 /* SupermuxDeviceNotificationSocketCommands.swift */; };
+		50BE00190200000000000002 /* SupermuxDevicePortsSocketCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00190200000000000001 /* SupermuxDevicePortsSocketCommands.swift */; };
 		50BE00060000000000000002 /* SupermuxDeviceProjects.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00060000000000000001 /* SupermuxDeviceProjects.swift */; };
 		50BE0004000000000000000A /* SupermuxDevices+Events.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00040000000000000009 /* SupermuxDevices+Events.swift */; };
 		50BE0004000000000000000C /* SupermuxDevices+RPC.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE0004000000000000000B /* SupermuxDevices+RPC.swift */; };
@@ -7873,6 +7874,7 @@
 		50BE0009000000000000000D /* SupermuxDeviceNotificationReadMirror.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceNotificationReadMirror.swift; sourceTree = "<group>"; };
 		50BE0009000000000000000F /* SupermuxDeviceNotificationRetry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceNotificationRetry.swift; sourceTree = "<group>"; };
 		50BE00090000000000000015 /* SupermuxDeviceNotificationSocketCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceNotificationSocketCommands.swift; sourceTree = "<group>"; };
+		50BE00190200000000000001 /* SupermuxDevicePortsSocketCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ports/SupermuxDevicePortsSocketCommands.swift; sourceTree = "<group>"; };
 		50BE00060000000000000001 /* SupermuxDeviceProjects.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Projects/SupermuxDeviceProjects.swift; sourceTree = "<group>"; };
 		50BE00040000000000000009 /* SupermuxDevices+Events.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Devices/SupermuxDevices+Events.swift"; sourceTree = "<group>"; };
 		50BE0004000000000000000B /* SupermuxDevices+RPC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Devices/SupermuxDevices+RPC.swift"; sourceTree = "<group>"; };
@@ -9426,6 +9428,7 @@
 				50BE00170400000000000001 /* SupermuxTerminalSizingDefaults.swift */,
 				50BE00170400000000000003 /* SupermuxTerminalSizingSocketCommands.swift */,
 				50BE00180200000000000001 /* SupermuxDeviceMirrorCloseSocketCommands.swift */,
+				50BE00190200000000000001 /* SupermuxDevicePortsSocketCommands.swift */,
 				50BE00050000000000000019 /* SupermuxDeviceMirrorPalette.swift */,
 				50BE0005000000000000001B /* SupermuxDeviceMirrorSocketCommands.swift */,
 				50BE0005000000000000001D /* SupermuxDevicesSocketPayloads+MirrorStatus.swift */,
@@ -16274,6 +16277,7 @@
 				50BE0009000000000000000E /* SupermuxDeviceNotificationReadMirror.swift in Sources */,
 				50BE00090000000000000010 /* SupermuxDeviceNotificationRetry.swift in Sources */,
 				50BE00090000000000000016 /* SupermuxDeviceNotificationSocketCommands.swift in Sources */,
+				50BE00190200000000000002 /* SupermuxDevicePortsSocketCommands.swift in Sources */,
 				50BE00060000000000000002 /* SupermuxDeviceProjects.swift in Sources */,
 				50BE0004000000000000000A /* SupermuxDevices+Events.swift in Sources */,
 				50BE0004000000000000000C /* SupermuxDevices+RPC.swift in Sources */,
