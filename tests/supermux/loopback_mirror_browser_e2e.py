@@ -837,6 +837,12 @@ class MirrorBrowserE2E:
     def mirror_terminal(self) -> str:
         return self.pair.require_mirror_panel(self.source_terminal, "the source's first terminal")
 
+    def mirror_terminal_or_none(self) -> Optional[str]:
+        try:
+            return self.mirror_terminal()
+        except Failure:
+            return None
+
     def routes_through_owner(self) -> Dict[str, Any]:
         server = self.owner_server = self.server("owner")
         opens_before = self.journal_opens(server.port)
@@ -2165,11 +2171,12 @@ class MirrorBrowserE2E:
         self.sock.call("supermux.devices.ports.set_auto", {"enabled": False})
         self.tunnel("inject_port", workspace_id=self.pair.source_id, port=port)
         self.injected = True
+        terminal = self.mirror_terminal()  # while the link is up: the mirror shows its terminals again only after the redial
         tab = ""
         try:
             self.link("stop")
             wait_for("the loopback link to drop", lambda: self.pair.device().get("link_state") != "connected", self.timeout)
-            tab = self.new_tab(self.pair.mirror_id, self.mirror_terminal(), f"http://localhost:{port}/marker.html")
+            tab = self.new_tab(self.pair.mirror_id, terminal, f"http://localhost:{port}/marker.html")
             wait_for("the tab to run at the alias while that Mac is away",
                      lambda: self.tab_at(tab, f"http://{LOOPBACK_ALIAS}:{port}/"), self.timeout)
             self.link("restore")
@@ -2180,6 +2187,8 @@ class MirrorBrowserE2E:
             return {"port": port, "back": back, "forward": self.wait_forward(port)}
         finally:
             self.link("restore")
+            self.pair.wait_connected()
+            wait_for("the mirror's terminal after the redial", self.mirror_terminal_or_none, self.timeout)
             self.sock.call("supermux.devices.ports.set_auto", {"enabled": True})
             if tab:
                 self.sock.call("surface.close", {"surface_id": tab})
