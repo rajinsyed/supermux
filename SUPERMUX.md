@@ -322,7 +322,11 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   preset launch never misses the 20 s deadline and runs later anyway, `projects.list` at most 2 s for
   the git origins and the file facts (an origin or icon not found in time keeps the last one known,
   per project), and `files.watch` builds its folder watcher on a thread of its own instead of the
-  main actor. Before this, such a prompt made the link connect and drop every ~20 s.
+  main actor. Before this, such a prompt made the link connect and drop every ~20 s. A git command
+  blocked there ends at its own deadline even when nobody waits for it (`CommandRunner`: SIGTERM,
+  then SIGKILL), and one still running when the app quits ends with the app
+  (`SupermuxGitChildProcesses`: on `willTerminate`, every git child with its process group); before,
+  those were left under launchd and ran for hours.
 - **Terminal size follows the Mac you look from** (upstream's shared sizing, #633, #665–#669): every
   terminal starts as Priority with this Mac first (its own pane for a local terminal, so a phone
   defers to a Mac pane on screen); a mirror claims the other Mac's terminal when it is shown, first
