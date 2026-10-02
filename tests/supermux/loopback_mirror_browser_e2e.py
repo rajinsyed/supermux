@@ -52,23 +52,33 @@ independently:
  13 idle_proxy_connections_close         connections that never send a byte are closed: the ones past the
                                          limit of clients still in their handshake at once, the rest at the
                                          handshake deadline
- 14 owner_localhost_keeps_origin        a Cloudflare Turnstile login page on the owner's localhost:P, P forwarded
-                                         here on P: the mirror tab runs at http://localhost:P (a secure
-                                         context, the hostname a dev sitekey allows), not the alias, and
+ 14 owner_localhost_keeps_origin        a Cloudflare Turnstile login page on the owner's localhost:P, P listed as
+                                         the source workspace's port and so forwarded here on P: the mirror
+                                         tab runs at http://localhost:P (a secure context, the hostname a dev
+                                         sitekey allows), not the alias, and
                                          Turnstile hands it a token (test sitekey; a local browser on the
                                          same page is the control). Loopback: the owner serves P from
                                          another port (`tunnel.serve_port`), so P is free here
- 15 proxy_listener_failure_recovers      after the proxy's listener fails, it is replaced on its own (waited
+ 15 as_written_page_reaches_owner_ports  an as-written mirror page's fetch and XHR to localhost:Q, where this Mac
+                                         runs its own server on Q, reach the owner's Q (alias route, CORS intact)
+                                         and never this Mac's server
+ 16 forward_changes_reroute_open_tab     a mirror tab opened before its port's forward is active moves to
+                                         http://localhost:P once it is; when the forward stops and this Mac
+                                         serves P itself, the tab goes back through the alias and a reload
+                                         still shows the owner's page
+ 17 unlisted_forward_explains            a forward of a port the owner does not list is not loaded as written:
+                                         the proxy's "isn't answering" page, not a bare connection error
+ 18 proxy_listener_failure_recovers      after the proxy's listener fails, it is replaced on its own (waited
                                          for with a read that starts no listener); then the open mirror tab
                                          and a new one each load the owner's page on the fresh endpoint,
                                          never this Mac's own server on the same port
- 16 restart_keeps_mirror_store_proxied   a mirror tab opened while the failed listener is being replaced
+ 19 restart_keeps_mirror_store_proxied   a mirror tab opened while the failed listener is being replaced
                                          (held down by `browser_proxy_hold`) leaves the app instance's
                                          data store with its proxy (2 configurations, as the open tab's);
                                          a load while it is down fails and reaches nothing; once released,
                                          that tab loads the owner's page
 
-Steps 12, 15 and 16 run this Mac's own server on the port they open and the
+Steps 12, 15, 18 and 19 run this Mac's own server on the port they open and the
 owner's page on another port that the loopback owner serves as that port
 (`owner_and_this_mac`), as on two Macs: a page with the owner's title came
 through the owner, and a request to this Mac's server means a load went direct.
@@ -172,7 +182,7 @@ window.onTurnstileLoad = function () {{
 class MarkerServer:
     """A threaded HTTP server for one step: a marker page and every request's headers."""
 
-    def __init__(self, host: str, title: str, body: Optional[str] = None) -> None:
+    def __init__(self, host: str, title: str, body: Optional[str] = None, port: int = 0) -> None:
         self.title = title
         self.hits: List[Dict[str, Any]] = []
         page = (body or f"<html><head><title>{title}</title></head><body>{title}</body></html>").encode()
@@ -180,9 +190,14 @@ class MarkerServer:
 
         class Handler(http.server.BaseHTTPRequestHandler):
             def do_GET(self) -> None:  # noqa: N802 (http.server API)
-                hits.append({"path": self.path, "host": self.headers.get("Host"), "client": self.client_address[0]})
+                origin = self.headers.get("Origin")
+                hits.append({"path": self.path, "host": self.headers.get("Host"), "client": self.client_address[0],
+                             "origin": origin})
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
+                if origin:
+                    # As a dev API that allows the page's origin does.
+                    self.send_header("Access-Control-Allow-Origin", origin)
                 self.send_header("Content-Length", str(len(page)))
                 self.end_headers()
                 self.wfile.write(page)
@@ -190,7 +205,7 @@ class MarkerServer:
             def log_message(self, *_: Any) -> None:
                 pass
 
-        self.server = http.server.ThreadingHTTPServer((host, 0), Handler)
+        self.server = http.server.ThreadingHTTPServer((host, port), Handler)
         self.port = self.server.server_address[1]
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
 
@@ -305,8 +320,10 @@ class MirrorBrowserE2E:
         self.owner_server: Optional[MarkerServer] = None
         # Ports the loopback owner serves from another port (`tunnel.serve_port`).
         self.served_ports: List[int] = []
-        # Owner ports this suite forwarded here (stopped at the end).
+        # Owner ports this suite forwarded here by hand (stopped at the end).
         self.forwarded_ports: List[int] = []
+        # Whether a step listed ports as the source's (`tunnel.inject_port`, cleared at the end).
+        self.injected = False
 
     # -- reads -----------------------------------------------------------------
 
@@ -624,30 +641,47 @@ class MirrorBrowserE2E:
             raise Failure(f"the explanation page took {seconds}s, want at most {EXPLAIN_PAGE_S:.0f}s")
         return {"port": closed, "title": title, "page_seconds": seconds}
 
-    def owner_page_forwarded_here(self, label: str) -> Tuple[MarkerServer, int]:
-        """An owner page at the owner's localhost:P, with P forwarded to this Mac on
-        P itself (what port forwarding does for a server in a mirrored terminal
-        whenever P is free here). The loopback owner serves P from the page
-        server's own port (`tunnel.serve_port`), so P stays free here and only the
-        forward, through the owner, answers on it."""
-        owner = self.server(label)
+    def owner_page_forwarded_here(self, label: str, body: Optional[Callable[[str], str]] = None) -> Tuple[MarkerServer, int]:
+        """An owner page at the owner's localhost:P, listed as the source
+        workspace's port (`tunnel.inject_port`, as a dev server in its terminal
+        is) and so forwarded to this Mac on P itself by automatic forwarding
+        (P is free here). The loopback owner serves P from the page server's own
+        port (`tunnel.serve_port`), so only the forward, through the owner,
+        answers on P here."""
+        owner = MarkerServer("127.0.0.1", f"marker-{self.nonce}-{label}", body=body(f"marker-{self.nonce}-{label}") if body else None)
+        self.servers.append(owner)
         port = free_dev_port()
-        self.tunnel("serve_port", port=port, **{"from": owner.port})
-        self.served_ports.append(port)
-        self.sock.call("supermux.devices.ports.forward", {"machine": self.pair.machine, "port": port})
-        self.forwarded_ports.append(port)
-
-        def active() -> Dict[str, Any]:
-            rows = (self.sock.call("supermux.devices.ports.list", {"machine": self.pair.machine}) or {}).get("forwards") or []
-            row = next((r for r in rows if int(r.get("remote_port") or 0) == port), None)
-            if not row or row.get("state") != "active":
-                raise Failure(f"forward {row}")
-            return row
-
-        row = wait_for(f"a forward of the owner's {port}", active, self.timeout)
+        self.serve_owner_port(port, owner.port)
+        self.list_owner_port(port)
+        row = self.wait_forward(port)
         if int(row.get("local_port") or 0) != port:
             raise Failure(f"precondition: the forward listens on {row.get('local_port')}, not on {port}: {row}")
         return owner, port
+
+    def serve_owner_port(self, port: int, source: int) -> None:
+        """The loopback owner serves its `port` from this machine's `source`."""
+        self.tunnel("serve_port", port=port, **{"from": source})
+        self.served_ports.append(port)
+
+    def list_owner_port(self, port: int) -> None:
+        """The owner lists `port` as the source workspace's (automatic forwarding on)."""
+        self.sock.call("supermux.devices.ports.set_auto", {"enabled": True})
+        self.tunnel("inject_port", workspace_id=self.pair.source_id, port=port)
+        self.injected = True
+        self.sock.call("supermux.devices.ports.refresh", {"machine": self.pair.machine})
+
+    def wait_forward(self, port: int, active: bool = True) -> Dict[str, Any]:
+        def state() -> Dict[str, Any]:
+            rows = (self.sock.call("supermux.devices.ports.list", {"machine": self.pair.machine}) or {}).get("forwards") or []
+            row = next((r for r in rows if int(r.get("remote_port") or 0) == port), None)
+            if active != bool(row and row.get("state") == "active"):
+                raise Failure(f"forward {row}")
+            return row or {"remote_port": port, "state": "gone"}
+
+        return wait_for(f"the owner's {port} to be {'forwarded' if active else 'not forwarded'} here", state, self.timeout)
+
+    def page_href(self, surface_id: str) -> str:
+        return str((self.sock.call("browser.eval", {"surface_id": surface_id, "script": "location.href"}) or {}).get("value") or "")
 
     def typed_navigations_are_prompt(self) -> Dict[str, Any]:
         """URLs typed into the open mirror tab, each to an owner port forwarded
@@ -919,14 +953,10 @@ class MirrorBrowserE2E:
         share one port space, so the owner serves P from another port Q
         (`tunnel.serve_port`), leaving P free here as on two Macs. A local
         browser on the same page is the control that Turnstile itself works."""
-        title = f"marker-{self.nonce}-turnstile"
-        server = MarkerServer("127.0.0.1", title, body=turnstile_page(title))
-        self.servers.append(server)
-        owner_port = free_dev_port()
         tabs: List[str] = []
-        self.tunnel("serve_port", port=owner_port, **{"from": server.port})
-        forwarded = False
         try:
+            server, owner_port = self.owner_page_forwarded_here("turnstile", body=turnstile_page)
+            title = server.title
             local = self.new_tab(self.pair.source_id, self.source_terminal, f"http://localhost:{server.port}/login")
             tabs.append(local)
             self.wait_title(local, lambda t: t == title, "the Turnstile page in a local browser")
@@ -935,21 +965,6 @@ class MirrorBrowserE2E:
             except Failure as error:
                 raise Failure(f"precondition: Turnstile hands no token in a local cmux browser either "
                               f"(is challenges.cloudflare.com reachable?): {error}")
-
-            self.sock.call("supermux.devices.ports.forward", {"machine": self.pair.machine, "port": owner_port})
-            forwarded = True
-
-            def same_port_forward() -> Dict[str, Any]:
-                rows = (self.sock.call("supermux.devices.ports.list", {"machine": self.pair.machine}) or {}).get("forwards") or []
-                row = next((r for r in rows if int(r.get("remote_port") or 0) == owner_port), None)
-                if not row or row.get("state") != "active":
-                    raise Failure(f"forward {row}")
-                return row
-
-            row = wait_for(f"a forward of the owner's {owner_port}", same_port_forward, self.timeout)
-            if int(row.get("local_port") or 0) != owner_port:
-                raise Failure(f"precondition: the forward listens on {row.get('local_port')}, not on {owner_port}: {row}")
-
             opens_before = self.journal_opens(owner_port)
             url = f"http://localhost:{owner_port}/login"
             panel = self.new_tab(self.pair.mirror_id, self.mirror_terminal(), url)
@@ -968,7 +983,7 @@ class MirrorBrowserE2E:
                               f"checks a real sitekey against hostname {probe.get('hostname')!r}, which no dev "
                               f"sitekey allows (110200); probe {probe}")
             mirrored = self.wait_turnstile_token(panel, "the mirror tab")
-            return {"owner_port": owner_port, "served_from": server.port, "forward": row, "route": route,
+            return {"owner_port": owner_port, "served_from": server.port, "route": route,
                     "journal_opens": opens, "hosts": [hit.get("host") for hit in server.hits],
                     "local_probe": control, "mirror_probe": mirrored}
         finally:
@@ -977,9 +992,133 @@ class MirrorBrowserE2E:
                     self.sock.call("surface.close", {"surface_id": tab})
                 except Failure:
                     pass
-            if forwarded:
-                self.sock.call("supermux.devices.ports.stop", {"machine": self.pair.machine, "port": owner_port})
-            self.tunnel("serve_port", port=owner_port)
+
+    def page_fetch(self, surface_id: str, url: str, how: str = "fetch") -> str:
+        """The page's own `fetch` (or XHR) of `url`: its text, or `err:` and why."""
+        key = f"__cmuxE2E{uuid.uuid4().hex[:8]}"
+        if how == "fetch":
+            start = (f"window.{key} = 'pending'; fetch({json.dumps(url)}).then(r => r.text())"
+                     f".then(t => window.{key} = 'ok:' + t, e => window.{key} = 'err:' + e); true")
+        else:
+            start = (f"window.{key} = 'pending'; const x = new XMLHttpRequest(); x.open('GET', {json.dumps(url)});"
+                     f" x.onload = () => window.{key} = 'ok:' + x.responseText;"
+                     f" x.onerror = () => window.{key} = 'err:xhr'; x.send(); true")
+        self.sock.call("browser.eval", {"surface_id": surface_id, "script": start})
+
+        def settled() -> str:
+            value = str((self.sock.call("browser.eval", {"surface_id": surface_id, "script": f"String(window.{key})"}) or {}).get("value"))
+            if value == "pending":
+                raise Failure("pending")
+            return value
+
+        return wait_for(f"the page's {how} of {url}", settled, self.timeout)
+
+    def as_written_page_reaches_owner_ports(self) -> Dict[str, Any]:
+        """A mirror page loaded as written (http://localhost:P, P forwarded here
+        on P) that calls the owner's API on another port Q: the call reaches the
+        owner and never this Mac's own server on Q, with CORS intact. This Mac
+        runs its own server on Q (so Q cannot be forwarded here, as a Postgres or
+        Supabase this Mac also runs); the loopback owner serves its Q from
+        another port. Before, upstream's bridge stood aside on a page not on the
+        alias, so `fetch('http://localhost:Q')` went to this Mac's Q with the
+        page's cookies; and through the alias the proxy rewrote the API's
+        `Access-Control-Allow-Origin: http://localhost:P` to the alias, which the
+        page refused."""
+        page, port = self.owner_page_forwarded_here("cross-page")
+        owner_api, here_api = self.owner_and_this_mac("cross-api")
+        tab = self.new_tab(self.pair.mirror_id, self.mirror_terminal(), f"http://localhost:{port}/marker.html")
+        try:
+            self.wait_title(tab, lambda t: t == page.title, "the as-written owner page in the mirror")
+            href = self.page_href(tab)
+            if not href.startswith(f"http://localhost:{port}/"):
+                raise Failure(f"precondition: the page runs at {href}, not as written")
+            api = f"http://localhost:{here_api.port}/api"
+            results = {how: self.page_fetch(tab, api, how) for how in ("fetch", "xhr")}
+            wrong = {how: value for how, value in results.items()
+                     if not value.startswith("ok:") or owner_api.title not in value}
+            if here_api.hits or wrong:
+                raise Failure(f"the page's calls to localhost:{here_api.port} did not reach the owner: {wrong or results}; "
+                              f"this Mac's own server on that port saw {here_api.hits}")
+            origins = sorted({str(hit.get("origin")) for hit in owner_api.hits})
+            if origins != [f"http://localhost:{port}"]:
+                raise Failure(f"the owner's API saw Origin {origins}, want http://localhost:{port}")
+            return {"page": href, "api_port": here_api.port, "results": {k: v[:40] for k, v in results.items()},
+                    "owner_api_hits": owner_api.hits}
+        finally:
+            self.sock.call("surface.close", {"surface_id": tab})
+
+    def forward_changes_reroute_open_tab(self) -> Dict[str, Any]:
+        """A mirror tab follows its port's forward. Opened before the forward is
+        active (a link the dev server prints, a restored tab) it loads through
+        the alias, and moves to http://localhost:P once the forward is active;
+        when the forward stops and this Mac starts its own server on P, the tab
+        goes back through the alias, and a reload still shows the owner's page,
+        never this Mac's. Before, the route was decided once per typed
+        navigation: the first tab stayed on the alias, the second reloaded this
+        Mac's localhost:P."""
+        owner = self.server("reroute")
+        port = free_dev_port()
+        self.serve_owner_port(port, owner.port)
+        tab = self.new_tab(self.pair.mirror_id, self.mirror_terminal(), f"http://localhost:{port}/marker.html")
+        here: Optional[MarkerServer] = None
+        try:
+            self.wait_title(tab, lambda t: t == owner.title, "the owner page before its forward exists")
+            before = self.page_href(tab)
+            if LOOPBACK_ALIAS not in before:
+                raise Failure(f"precondition: with no forward the tab runs at {before}, not the alias")
+            self.list_owner_port(port)
+            self.wait_forward(port)
+
+            def at(prefix: str) -> str:
+                href = self.page_href(tab)
+                if not href.startswith(prefix):
+                    raise Failure(f"the tab runs at {href}")
+                return href
+
+            forwarded = wait_for(f"the tab to move to localhost:{port} once its forward is active",
+                                 lambda: at(f"http://localhost:{port}/"), self.timeout)
+            self.sock.call("supermux.devices.ports.stop", {"machine": self.pair.machine, "port": port})
+            self.wait_forward(port, active=False)
+            here = wait_for(f"this Mac's own server to take {port}", lambda: self.bind_here(port), self.timeout)
+            back = wait_for("the tab to go back through the alias once the forward stopped",
+                            lambda: at(f"http://{LOOPBACK_ALIAS}:{port}/"), self.timeout)
+            self.sock.call("browser.eval", {"surface_id": tab, "script": "location.reload(); true"})
+            time.sleep(1.0)
+            self.wait_owner_page(tab, owner, here, "the reloaded tab")
+            return {"before_forward": before, "forwarded": forwarded, "after_stop": back, "this_mac_hits": here.hits}
+        finally:
+            self.sock.call("surface.close", {"surface_id": tab})
+            if here:
+                here.close()
+
+    def bind_here(self, port: int) -> Optional[MarkerServer]:
+        """This Mac's own server on `port`, once nothing holds it (None meanwhile)."""
+        try:
+            server = MarkerServer("127.0.0.1", f"marker-{self.nonce}-this-mac-{port}", port=port)
+        except OSError:
+            return None
+        return server
+
+    def unlisted_forward_explains(self) -> Dict[str, Any]:
+        """A forward of a port the owner does not list (a manual one; nothing
+        serves it there) is not loaded as written: the tab goes through the
+        alias, whose proxy says "localhost:P on <Mac> isn't answering". Before,
+        the page loaded as written and WebKit showed a bare connection error."""
+        port, closed = free_dev_port(), free_port()
+        self.serve_owner_port(port, closed)
+        self.sock.call("supermux.devices.ports.forward", {"machine": self.pair.machine, "port": port})
+        self.forwarded_ports.append(port)
+        row = self.wait_forward(port)
+        if int(row.get("local_port") or 0) != port:
+            raise Failure(f"precondition: the forward listens on {row.get('local_port')}, not on {port}")
+        name = self.pair.device_name
+        tab = self.new_tab(self.pair.mirror_id, self.mirror_terminal(), f"http://localhost:{port}/")
+        try:
+            title = self.wait_title(tab, lambda t: f"localhost:{port}" in t and name in t,
+                                    f"the \"localhost:{port} on {name} isn't answering\" page")
+            return {"port": port, "title": title, "page": self.page_href(tab)}
+        finally:
+            self.sock.call("surface.close", {"surface_id": tab})
 
     def idle_proxy_connections_close(self) -> Dict[str, Any]:
         """Local clients that connect and send nothing cannot hold the proxy's
@@ -1117,6 +1256,9 @@ class MirrorBrowserE2E:
                 ("unbound_mirror_browser_routes", self.unbound_mirror_browser_routes),
                 ("idle_proxy_connections_close", self.idle_proxy_connections_close),
                 ("owner_localhost_keeps_origin", self.owner_localhost_keeps_origin),
+                ("as_written_page_reaches_owner_ports", self.as_written_page_reaches_owner_ports),
+                ("forward_changes_reroute_open_tab", self.forward_changes_reroute_open_tab),
+                ("unlisted_forward_explains", self.unlisted_forward_explains),
                 # Last: they fail the proxy's listener.
                 ("proxy_listener_failure_recovers", self.proxy_listener_failure_recovers),
                 ("restart_keeps_mirror_store_proxied", self.restart_keeps_mirror_store_proxied),
@@ -1130,6 +1272,12 @@ class MirrorBrowserE2E:
         for port in self.served_ports:
             try:
                 self.tunnel("serve_port", port=port)
+            except Failure:
+                pass
+        if self.injected:
+            try:
+                self.tunnel("clear_injected")
+                self.sock.call("supermux.devices.ports.refresh", {"machine": self.pair.machine})
             except Failure:
                 pass
         for server in self.servers:
