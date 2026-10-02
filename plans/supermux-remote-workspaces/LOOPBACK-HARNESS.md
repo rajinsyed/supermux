@@ -516,7 +516,7 @@ page says to update Supermux on that Mac. DEBUG drivers (`SupermuxMirrorBrowserS
 `proxy_configs`, `store_identifier`), `.browser_proxy {machine}` (port, credential, `owner_dials`,
 `direct_dials`, `failures`; null until it listens) and `.link_open {workspace_id, surface_id, url,
 destination}` (a terminal link click with the system browser captured). It also reads the tunnel
-driver `supermux.devices.tunnel` (`journal`, `pretend_old_host`) of the tunnel lanes work.
+drivers `supermux.devices.tunnel.journal` and `.pretend_old_host` of the tunnel lanes work.
 
 ```bash
 CMUX_E2E_SUITES="loopback_mirror_local_panels_e2e loopback_mirror_browser_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
