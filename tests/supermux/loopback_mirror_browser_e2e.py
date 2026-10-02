@@ -35,7 +35,7 @@ workspace, each on its own port so tunnel opens are attributed exactly:
 
 Uses the DEBUG drivers `supermux.devices.mirror.browser_route`, `.browser_proxy`
 and `.link_open` (SupermuxMirrorBrowserSocket) and the tunnel driver
-`supermux.devices.tunnel` (`journal`, `pretend_old_host`). Writes a JSON report
+`supermux.devices.tunnel.journal` and `.pretend_old_host`. Writes a JSON report
 (default tests/supermux/artifacts/loopback_mirror_browser_e2e-<tag>.json) and
 exits non-zero on any failure. Stdlib only.
 
@@ -164,13 +164,8 @@ class MirrorBrowserE2E:
     # -- reads -----------------------------------------------------------------
 
     def tunnel(self, action: str, **params: Any) -> Dict[str, Any]:
-        """The tunnel driver; `{action}` form first, `tunnel.<action>` as a fallback."""
-        try:
-            return self.sock.call("supermux.devices.tunnel", {"action": action, **params}) or {}
-        except Failure as error:
-            if "method_not_found" not in str(error):
-                raise
-            return self.sock.call(f"supermux.devices.tunnel.{action}", params) or {}
+        """The tunnel lanes' DEBUG driver (`supermux.devices.tunnel.<action>`)."""
+        return self.sock.call(f"supermux.devices.tunnel.{action}", params) or {}
 
     def journal_opens(self, port: int) -> int:
         """`host-tunnel opened` events for `port` in the owner's tunnel journal."""
