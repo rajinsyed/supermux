@@ -3,6 +3,7 @@ import CmuxSurfaceCatalogModel
 import Foundation
 import SupermuxKit
 import SupermuxMobileCore
+import SwiftUI
 
 /// Builds the Projects section's ``SupermuxRemoteProjectActions`` for one
 /// window: each callback runs ``SupermuxRemoteProjectCommands`` against this
@@ -66,6 +67,9 @@ enum SupermuxRemoteProjectActionsFactory {
             },
             hideMirror: { workspaceID in
                 SupermuxComposition.deviceMirrorCloser.hideHere(workspaceID: workspaceID)
+            },
+            mirrorMenu: { workspaceID in
+                AnyView(SupermuxMirrorPortsMenu(workspaceId: workspaceID))
             }
         )
     }

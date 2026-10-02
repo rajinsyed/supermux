@@ -147,6 +147,34 @@ restore: quit the app, relaunch it with the opt-in, and the mirror reconnects.
   line omits the Mac name and carries its icon. Hover behavior, the footer and the row menus (Close
   Workspace on every row, Hide Here on mirrors, no "Close on <Mac>…") are checked visually.
 
+## Port forward E2E
+
+`tests/supermux/loopback_port_forward_e2e.py` (round 5, Track B) forwards the Loopback Mac's ports
+to this Mac. Viewer and owner are one app, so every remote port is busy here and each forward must
+land on another local port. It starts `python3 -m http.server R` in a background source workspace's
+terminal (`surface.send_text`, then `surface.ports_kick`) and checks: an automatic forward of R
+becomes active on L ≠ R within `--latency` (default 8 s) and serves the owner's page on
+`127.0.0.1:L` and `[::1]:L`; a suite-owned dual-stack `[::]` listener plus a host port injected
+with Track A's `supermux.devices.tunnel.inject_port` is forwarded elsewhere while `127.0.0.1:R2`
+still reaches the suite's own listener; the mirror's `supermux.ports.R` pill names L and its port
+chips list R; Forward a Port / Stop / Resume (`supermux.devices.ports.forward|stop|resume`); a
+server that exits removes its forward; a dropped link (`supermux.devices.link stop|restore`) makes
+forwards wait, empties the chips and brings them back on the same L; auto-forward off keeps a
+manual forward; a default-browser link from the mirror's terminal (Track C's
+`supermux.devices.mirror.link_open`) goes to L; and Track A's `pretend_old_host` disables
+forwarding (`needs_update`). The DEBUG driver `supermux.devices.ports.*`
+(`Sources/Supermux/Ports/SupermuxDevicePortsSocketCommands.swift`) answers `list {machine?}` (the
+forwards, availability, host listings, and each mirror's chips and pills), `forward`, `stop`,
+`resume {machine, port}`, `set_auto {enabled}` (the Settings card's action) and `refresh {machine?}`.
+
+```bash
+CMUX_E2E_SUITES="loopback_port_forward_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
+```
+
+What the loopback cannot show: the same-port path (R is always busy here), real QUIC tunnels and
+their limits, a Tailscale-only link (`no_direct_link`), and iOS Simulator apps. Check those on two
+Macs.
+
 ## New tab order E2E
 
 `tests/supermux/loopback_new_tab_order_e2e.py` checks where a new terminal tab lands, on the

@@ -35,7 +35,8 @@ struct SupermuxRemoteProjectRowView: View {
                     hide: { actions.hideMirror(workspace.id) },
                     rename: { renameWorkspace(workspace.id) },
                     draggingWorkspaceId: .constant(nil),
-                    openPullRequest: { url in openPullRequest(url, workspace.id) }
+                    openPullRequest: { url in openPullRequest(url, workspace.id) },
+                    mirrorMenu: { actions.mirrorMenu(workspace.id) }
                 )
             }
             if isExpanded {
