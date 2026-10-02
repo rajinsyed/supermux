@@ -41,9 +41,17 @@ public final class SupermuxProjectsSectionModel {
     /// plain project ids, which apply on every Mac). UserDefaults-persisted.
     var expandedProjectIDs: Set<String>
 
-    /// Backing store for ``expandedProjectIDs`` (injectable for tests).
+    /// The user's last open/closed choice for each merged project, by its
+    /// merged key (``SupermuxMergedProject/id``). Every copy follows it, so
+    /// a Mac whose copy loads late neither reopens a project the user closed
+    /// nor stays closed inside one they opened. UserDefaults-persisted.
+    var mergedDisclosure: [String: Bool]
+
+    /// Backing store for ``expandedProjectIDs`` and ``mergedDisclosure``
+    /// (injectable for tests).
     @ObservationIgnored let expansionDefaults: UserDefaults
     static let expansionDefaultsKey = "supermux.projects.expandedProjectIDs"
+    static let mergedDisclosureDefaultsKey = "supermux.projects.mergedDisclosure"
 
     /// The project ROW routed to the detail screen; `nil` while none is.
     public internal(set) var detailProjectID: String?
@@ -108,6 +116,7 @@ public final class SupermuxProjectsSectionModel {
     public init(expansionDefaults: UserDefaults = .standard, navigationTimeout: Duration = .seconds(20)) {
         self.expansionDefaults = expansionDefaults
         self.expandedProjectIDs = Set(expansionDefaults.stringArray(forKey: Self.expansionDefaultsKey) ?? [])
+        self.mergedDisclosure = expansionDefaults.dictionary(forKey: Self.mergedDisclosureDefaultsKey) as? [String: Bool] ?? [:]
         self.navigator = SupermuxWorkspaceNavigator(timeout: navigationTimeout)
         navigator.select = { [weak self] rowID in
             self?.navigateToWorkspace(rowID)

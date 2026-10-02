@@ -14,6 +14,10 @@ public struct SupermuxProjectsPreviewMac: Sendable {
     public let client: any SupermuxMacCalling
     /// The capability strings the Mac advertises.
     public let hostCapabilities: Set<String>
+    /// Whether the Mac connects only once the user first opens or closes a
+    /// project's disclosure: a Mac that was asleep, or whose `projects.list`
+    /// was slow, joining a list already on screen.
+    var joinsLate = false
 }
 
 /// DEBUG fixture behind `CMUX_UITEST_WORKSPACE_LIST_PREVIEW_SUPERMUX=1`: three
@@ -30,11 +34,24 @@ public struct SupermuxProjectsPreviewMac: Sendable {
 ///   `infra`; workspaces `cmux-fix` (cmux), `infra-api` (infra), and the cmux
 ///   group "Ops" (led by `ops-lead`) holding `infra-ops`, which infra owns.
 /// - Mac mini (`preview-mini`): no Supermux capabilities; one loose workspace.
+///
+/// With `CMUX_UITEST_WORKSPACE_LIST_PREVIEW_SUPERMUX_LATE_STUDIO=1` the Studio
+/// joins late: it connects only once the user first opens or closes a
+/// project's disclosure.
 public enum SupermuxProjectsPreviewFixture {
     /// The launch-environment switch.
     public static var isEnabled: Bool {
         ProcessInfo.processInfo.environment["CMUX_UITEST_WORKSPACE_LIST_PREVIEW_SUPERMUX"] == "1"
     }
+
+    /// Whether the Studio joins late (see the type's documentation).
+    static var studioJoinsLate: Bool {
+        ProcessInfo.processInfo.environment["CMUX_UITEST_WORKSPACE_LIST_PREVIEW_SUPERMUX_LATE_STUDIO"] == "1"
+    }
+
+    /// Set once the late Mac has been let in, so a later run of the
+    /// sessions (a navigation pop) does not park it again.
+    @MainActor static var lateMacJoined = false
 
     static let laptop = SupermuxMacInfo(
         macDeviceID: "preview-macbook-pro",
@@ -113,7 +130,8 @@ public enum SupermuxProjectsPreviewFixture {
                     ],
                     runs: []
                 ),
-                hostCapabilities: supermuxCapabilities
+                hostCapabilities: supermuxCapabilities,
+                joinsLate: studioJoinsLate
             ),
             SupermuxProjectsPreviewMac(
                 mac: mini,
@@ -298,6 +316,9 @@ extension SupermuxProjectsSectionModel {
     func runPreviewSessions(_ previews: [SupermuxProjectsPreviewMac]) async {
         let runs = previews.map { preview in
             Task { [weak self] in
+                if preview.joinsLate {
+                    await self?.waitForTheFirstDisclosureToggle()
+                }
                 await self?.runSession(
                     mac: preview.mac,
                     client: preview.client,
@@ -314,6 +335,18 @@ extension SupermuxProjectsSectionModel {
             for run in runs {
                 run.cancel()
             }
+        }
+    }
+
+    /// Parks a late-joining preview Mac until the user first opens or
+    /// closes any project's disclosure.
+    private func waitForTheFirstDisclosureToggle() async {
+        let initial = expandedProjectIDs
+        while !SupermuxProjectsPreviewFixture.lateMacJoined, expandedProjectIDs == initial, !Task.isCancelled {
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        if !Task.isCancelled {
+            SupermuxProjectsPreviewFixture.lateMacJoined = true
         }
     }
 }

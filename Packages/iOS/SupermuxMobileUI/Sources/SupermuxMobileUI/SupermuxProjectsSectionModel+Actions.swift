@@ -51,8 +51,8 @@ extension SupermuxProjectsSectionModel {
             makeAgentLaunchStore: { [weak self] projectID in
                 self?.makeAgentLaunchStore(forProjectID: projectID)
             },
-            toggleProjectsExpanded: { [weak self] projectIDs in
-                self?.toggleProjectsExpanded(projectIDs)
+            toggleProjectsExpanded: { [weak self] key, projectIDs in
+                self?.toggleProjectsExpanded(key: key, projectIDs: projectIDs)
             },
             openSwipeRowID: { [weak self] in self?.openSwipeRowID },
             setOpenSwipeRowID: { [weak self] rowID in self?.openSwipeRowID = rowID }
