@@ -49,6 +49,10 @@ forward must land on another local port.
                                         port menus (M's "Ports on <Mac>", Settings' Ports…) offer
                                         Stop Forwarding (`ports.menus`); Stop -> it goes at once,
                                         and with the link back it never listens again
+ 16. local_terminal_chip_opens_this_mac a terminal of this Mac (from a local workspace) serving P,
+                                        moved into M: M's chip for P is this Mac's, so with the
+                                        setting off the default browser gets http://localhost:P, as
+                                        for any local workspace, no alert and no forward
 
 Writes a JSON report (default tests/supermux/artifacts/loopback_port_forward_e2e-<tag>.json)
 and exits non-zero on any failure. Stdlib only.
@@ -291,6 +295,8 @@ class PortForwardE2E:
         self.servers: List[MarkerServer] = []
         self.held: List[MarkerServer] = []
         self.manual_port = 0
+        self.local_workspace_id = ""
+        self.local_server_port = 0
 
     # -- reads ----------------------------------------------------------------
 
@@ -773,14 +779,66 @@ class PortForwardE2E:
             time.sleep(0.3)
         return {"port": port, "local_port": local, "menus": items}
 
+    def terminal_ports(self, terminal: str) -> Dict[str, Any]:
+        """Where a terminal of this app is now and the ports its sidebar scan lists (`debug.terminals`)."""
+        for row in (self.sock.call("debug.terminals", {}) or {}).get("terminals") or []:
+            if up(row.get("surface_id")) == up(terminal):
+                return {"workspace_id": up(row.get("workspace_id")), "ports": [int(p) for p in row.get("listening_ports") or []]}
+        raise Failure(f"no terminal {terminal} in debug.terminals")
+
+    def local_terminal_chip(self) -> Dict[str, Any]:
+        """A terminal of THIS Mac moved into the bound mirror M serves port P: P is this
+        Mac's port, so its chip opens this Mac's own localhost:P, as any local
+        workspace's chip does, never the other Mac's forward or a "not forwarded" alert."""
+        created = self.sock.call("workspace.create", {"title": f"port-forward-local-{self.nonce}", "focus": False}) or {}
+        self.local_workspace_id = up(created.get("workspace_id") or created.get("created_workspace_id"))
+        if not self.local_workspace_id:
+            raise Failure(f"workspace.create returned no id: {created}")
+        first = wait_for("the local workspace's terminal", lambda: (self.terminals(self.local_workspace_id) or [None])[0],
+                         self.timeout)
+        panes = (self.sock.call("pane.list", {"workspace_id": self.local_workspace_id}) or {}).get("panes") or []
+        pane = next((p.get("id") or p.get("pane_id") for p in panes if up(first) in [up(s) for s in p.get("surface_ids") or []]), None)
+        made = self.sock.call("surface.create", {"workspace_id": self.local_workspace_id, "pane_id": pane, "type": "terminal"}) or {}
+        terminal = up(made.get("surface_id"))
+        if not terminal:
+            raise Failure(f"surface.create returned no surface_id: {made}")
+        time.sleep(1.5)  # let the shell reach its prompt (and report its tty) before typing into it
+        self.local_server_port = port = free_port()
+        command = f"python3 -m http.server {port} --bind 127.0.0.1 --directory {shlex.quote(str(self.www))}\n"
+        self.sock.call("surface.send_text", {"workspace_id": self.local_workspace_id, "surface_id": terminal, "text": command})
+        wait_for(f"this Mac's server on {port}", lambda: accepts("127.0.0.1", port), self.timeout)
+
+        def scanned(workspace_id: str) -> Dict[str, Any]:
+            self.sock.call("surface.ports_kick", {"workspace_id": workspace_id, "surface_id": terminal})
+            found = self.terminal_ports(terminal)
+            if found["workspace_id"] != up(workspace_id) or port not in found["ports"]:
+                raise Failure(f"the terminal {found}")
+            return found
+
+        wait_for(f"the local terminal's scan to list {port}", lambda: scanned(self.local_workspace_id), self.timeout)
+        self.sock.call("surface.move", {"surface_id": terminal, "workspace_id": self.mirror_id})
+        wait_for(f"the moved terminal's scan in M to list {port}", lambda: scanned(self.mirror_id), self.timeout)
+        chips = wait_for(f"M's chip for this Mac's {port}",
+                         lambda: port in (self.mirror_row().get("listening_ports") or []) and self.mirror_row()["listening_ports"],
+                         self.timeout)
+        if not self.mirrors_of_source():
+            raise Failure("precondition: M is no longer the bound mirror of S")
+        opened = self.ports_call("chip_open", workspace_id=self.mirror_id, port=port, cmux_browser=False)
+        expected = f"http://localhost:{port}"
+        got = str(opened.get("external_url") or "").rstrip("/")
+        if got != expected or opened.get("notice"):
+            raise Failure(f"the chip of this Mac's own port {port} (a terminal of this Mac in M) opened {got or None!r} "
+                          f"with notice {opened.get('notice')!r}; want this Mac's {expected}: {opened}")
+        return {"port": port, "terminal": terminal, "chips": chips, "chip_open": opened}
+
     # -- run ------------------------------------------------------------------
 
     def cleanup(self) -> None:
         self.release_held()
         for server in self.servers:
             server.close()
-        if self.remote_port:
-            for pid in listener_pids(self.remote_port):
+        for port in (self.remote_port, self.local_server_port):
+            for pid in listener_pids(port) if port else []:
                 try:
                     os.kill(pid, 15)
                 except OSError:
@@ -794,7 +852,12 @@ class PortForwardE2E:
                 pass
         if self.keep:
             return
-        for workspace_id in (self.mirror_id, self.source_id):
+        local_mirrors: List[str] = []
+        if self.local_workspace_id:
+            rows = (self.sock.call("supermux.devices.bindings", {}) or {}).get("mirrors") or []
+            local_mirrors = [up(m.get("workspace_id")) for m in rows
+                             if up(m.get("remote_workspace_id")) == self.local_workspace_id]
+        for workspace_id in (self.mirror_id, self.source_id, *local_mirrors, self.local_workspace_id):
             if not workspace_id:
                 continue
             try:
@@ -823,6 +886,7 @@ class PortForwardE2E:
                 ("listing_failure_retried", self.listing_failure_retried),
                 ("chip_default_browser_uses_local_port", self.chip_default_browser),
                 ("pending_forward_offers_stop", self.pending_forward_stop),
+                ("local_terminal_chip_opens_this_mac", self.local_terminal_chip),
             ]:
                 ok = self.step(name, check) and ok
         self.cleanup()

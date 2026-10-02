@@ -37,6 +37,12 @@ final class SupermuxDeviceBrowserProxy {
     /// Gets the endpoint each time a listener is ready.
     private let onEndpointChange: @MainActor (BrowserProxyEndpoint?) -> Void
     private var listener: NWListener?
+    #if DEBUG
+    /// E2E (`supermux.devices.mirror.browser_proxy_hold`): while true no new
+    /// listener is made, as when `NWListener(using:)` fails, so a failed one
+    /// stays down.
+    var debugRefusesListener = false
+    #endif
 
     /// The pause before a failed listener is replaced, so a failure that
     /// persists cannot spin.
@@ -51,6 +57,9 @@ final class SupermuxDeviceBrowserProxy {
     /// failed is replaced after ``restartDelay``, or on an earlier call.
     func start() {
         guard listener == nil else { return }
+        #if DEBUG
+        if debugRefusesListener { return }
+        #endif
         let tcp = NWProtocolTCP.Options()
         tcp.noDelay = true
         let parameters = NWParameters(tls: nil, tcp: tcp)
