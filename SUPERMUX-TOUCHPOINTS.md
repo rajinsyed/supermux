@@ -12,7 +12,7 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **739**. The remote-workspaces work (#517–#599) left
+- Numbering: the highest number in use is **751**. The remote-workspaces work (#517–#599) left
   unassigned gaps it may still grow into: **523–524, 527–529, 539–544, 558–559, 562–569,
   578–579 and 588–589** (never assigned, not retired); #600–#601 came from the 2026-10-01 upstream merge; #620–#622 and
   #630–#639 are the remote-workspaces feedback round (602–619 and 623–629 unassigned). The second
@@ -30,7 +30,9 @@ Rules for adding a touchpoint:
   (focused-pane suppression) and #689. Round 5 (port forwarding and the mirror browser) uses #693–#694 and #698 (tunnel
   lanes for other Macs), #699 and #705 (forwarded ports) and #706–#708 (a mirror's own tabs keep its layout sync; its
   browser opens the owning Mac's localhost) and #730–#734, #737–#739 (remote simulators: a mirror's Simulator streams the
-  owning Mac's); 709, 713–714, 724 and 735–736 are unassigned. The highest number in use is 739. Number **351** is unused (the notifications
+  owning Mac's); 709, 713–714, 724 and 735–736 are unassigned. Its review fixes use #750–#751 (a mirror's port chip
+  opens the forward's local port; the menus' DEBUG driver); 740–749 and 752–769 are unassigned. The highest number in
+  use is 751. Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 82, 83, 89, 106, 121, 142, 213, 214,
   220, 229, 237, 250, 251, 252–258, 335, 470, 473–481, 483, 484, and 487** are unused; all are
