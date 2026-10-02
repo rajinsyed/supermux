@@ -33,6 +33,8 @@ forward must land on another local port.
  8b. moved_forward_returns_to_remote_port  a forward that landed above P (P busy here) comes back on P once
                                         P is free: on Resume after Stop, and after a relink (the owner
                                         serves P from another port, `tunnel.serve_port`)
+ 8c. stop_survives_server_restart      a stopped automatic forward stays stopped while its server
+                                        restarts (unlisted, then listed again); Resume starts it
   9. auto_off_keeps_manual              auto-forward off -> automatic forwards go, a manual one stays
  10. external_link_uses_local_port      a localhost:R link in M's terminal opened in the default
                                         browser -> http://localhost:L/... (C's `mirror.link_open`)
@@ -686,6 +688,52 @@ class PortForwardE2E:
             self.tunnel("clear_injected")
             self.ports_call("refresh")
 
+    def stop_survives_server_restart(self) -> Dict[str, Any]:
+        """The user stops an automatic forward of P; then the owner's server on P
+        restarts (the owner unlists P, then lists it again, each with a poke). The
+        forward must stay stopped: the stop lasts while the workspace that listed
+        P is mirrored here, until Resume. Before, the stop was forgotten as soon
+        as P left the listing, so the restart forwarded P again."""
+        owner = MarkerServer(f"stop-restart-{self.nonce}")
+        self.servers.append(owner)
+        port = free_port()
+        self.tunnel("serve_port", port=port, **{"from": owner.port})
+        self.tunnel("inject_port", workspace_id=self.source_id, port=port)
+        self.ports_call("refresh")
+
+        def listed() -> bool:
+            rows = (self.ports().get("host_ports") or {}).get(self.machine) or []
+            return any(int(row.get("port") or 0) == port for row in rows)
+
+        try:
+            row = wait_for(f"an automatic forward of {port}", lambda: self.active_forward(port), self.timeout)
+            if int(row["local_port"]) != port:
+                raise Failure(f"precondition: the forward listens on {row['local_port']}, not on {port}")
+            self.ports_call("stop", port=port)
+            wait_for(f"forward of {port} to be stopped", lambda: (self.forward(port) or {}).get("state") == "stopped",
+                     self.timeout)
+            self.tunnel("clear_injected")
+            self.ports_call("refresh")
+            wait_for(f"the owner to unlist {port}", lambda: not listed(), self.timeout)
+            self.tunnel("inject_port", workspace_id=self.source_id, port=port)
+            self.ports_call("refresh")
+            wait_for(f"the owner to list {port} again", listed, self.timeout)
+            deadline = time.monotonic() + 3.0
+            while time.monotonic() < deadline:
+                row = self.forward(port) or {}
+                if row.get("state") != "stopped" or accepts("127.0.0.1", port):
+                    raise Failure(f"after the server's restart the stopped forward of {port} is {row or 'gone'} "
+                                  f"(listening: {accepts('127.0.0.1', port)}): the user's stop was forgotten")
+                time.sleep(0.3)
+            self.ports_call("resume", port=port)
+            resumed = wait_for(f"forward of {port} to resume", lambda: self.active_forward(port), self.timeout)
+            return {"port": port, "resumed_on": resumed.get("local_port")}
+        finally:
+            self.ports_call("stop", port=port)
+            self.tunnel("serve_port", port=port)
+            self.tunnel("clear_injected")
+            self.ports_call("refresh")
+
     def auto_off(self) -> Dict[str, Any]:
         self.require_forwarded()
         self.ports_call("set_auto", enabled=False)
@@ -965,6 +1013,7 @@ class PortForwardE2E:
                 ("port_disappears_forward_stops", self.port_disappears),
                 ("disconnect_stops_listeners", self.disconnect),
                 ("moved_forward_returns_to_remote_port", self.moved_forward_returns),
+                ("stop_survives_server_restart", self.stop_survives_server_restart),
                 ("auto_off_keeps_manual", self.auto_off),
                 ("external_link_uses_local_port", self.external_link),
                 ("old_host_disables", self.old_host),

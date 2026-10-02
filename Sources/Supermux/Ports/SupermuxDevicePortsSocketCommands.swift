@@ -18,6 +18,8 @@ import SupermuxKit
 /// - `set_auto {enabled}` — the Settings toggle (through the card's action).
 /// - `refresh {machine?}` — fetches the Macs' port listings now (a test hook
 ///   for ports injected on the host without a poke).
+/// - `follow_ups {enabled}` — turns the follow-up fetches after a forward's
+///   port left its listing on or off.
 @MainActor
 enum SupermuxDevicePortsSocketCommands {
     static let methodPrefix = "ports."
@@ -45,6 +47,9 @@ enum SupermuxDevicePortsSocketCommands {
             SupermuxComposition.remoteMacsSettings.actions().setForwardPorts(enabled)
         case "refresh":
             forwards.refresh(machine: try optionalMachine(params))
+        case "follow_ups":
+            guard let enabled = params["enabled"] as? Bool else { throw invalid("enabled must be a boolean") }
+            forwards.followUpsEnabled = enabled
         default:
             throw invalid("unknown ports method \(name)")
         }
