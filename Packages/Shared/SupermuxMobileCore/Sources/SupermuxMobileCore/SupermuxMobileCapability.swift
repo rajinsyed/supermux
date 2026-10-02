@@ -52,6 +52,11 @@ public enum SupermuxMobileCapability: String, CaseIterable, Codable, Sendable, E
     /// the workspace's folder, and `files.watch` (`supermux.files.updated`
     /// when the folder's own entries change).
     case filesReadV1 = "supermux.files_read.v1"
+    /// Port forwarding for the user's other Macs: their `tcp_connect` tunnel
+    /// lanes reach this Mac's loopback, and `ports.list` /
+    /// `supermux.ports.updated` are served. Withheld while the embedded
+    /// browser is disabled by policy.
+    case portForwardV1 = "supermux.port_forward.v1"
 
     /// Every capability, in declaration order (derived from `CaseIterable`).
     public static let all: [SupermuxMobileCapability] = SupermuxMobileCapability.allCases
