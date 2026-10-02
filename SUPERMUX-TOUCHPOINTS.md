@@ -652,6 +652,14 @@ Rules for adding a touchpoint:
 | 721 | `Sources/Devices/DeviceLink.swift` | `device-link-busy-retry` | `requestData(_:params:timeoutNanoseconds:)` becomes a call to `supermuxAskingAgainWhileBusy(isCurrent:_:)` (an extension in `Sources/Supermux/Devices/SupermuxDeviceLinkEvents.swift`) around upstream's unchanged body, renamed `supermuxRequestDataOnce`. A request the host answers `server_busy` (its per-connection request quota full, so the request never ran) is sent again after 0.25, 0.5, 1, 2 and 4 s on the same connection (a new link generation cancels it); every other answer and error is unchanged. Every device request goes through it: capabilities, replays, viewports, layout fetches, held tab closes. E2E: `loopback_terminal_input_e2e.py` (`keys_survive_busy_reconnect`), `loopback_mirror_tab_close_e2e.py` (`offline_close_lands_on_a_busy_host`) |
 | 722 | `Sources/TerminalController.swift` | `device-mac-read-clears-host-ring` | In `mobileHostHandleRPC`, the `notification.feed.mark_read` case calls `supermuxNotificationFeedMarkRead(params: request.params, executionContext: executionContext)` instead of `v2MobileNotificationFeedMarkRead(params: request.params)`. The fork wrapper (`Sources/Supermux/Devices/SupermuxDeviceNotificationReadMirror.swift`) runs upstream's handler unchanged; only when the caller is an admitted Mac peer (`SupermuxMobilePeerPolicy.isAdmittedMacPeer`, i.e. another of your Macs acking its mirror copy's read) it also clears the focused-read indicator of each pane whose record that request turned read, unless the pane still has an unread record. So a read on the viewer Mac ends the host's focused-pane ring (and the phone's pane ring, which follows `hasVisibleNotificationIndicator`), the reverse of #548. A phone's read keeps upstream's semantics. E2E: `tests/supermux/loopback_notifications_e2e.py` (`mirror_read_clears_focused_source_ring`) |
 | 723 | `Sources/Devices/DeviceLink.swift` | `device-link-slow-request` | In `supermuxRequestDataOnce` (upstream's `requestData` body, see #721), upstream's `.requestTimedOut` comes out of the `.connectionClosed, .requestTimedOut, .transportWriteTimedOut` case into its own case, which throws `supermuxMissedDeadline(_:_:client:isCurrent:)` (an extension in `Sources/Supermux/Devices/SupermuxDeviceLinkEvents.swift`). A request whose reply missed its deadline no longer reconnects the link by itself: the link sends `mobile.events.probe` without a `client_id` (on an Iroh route the host's connection answers it without its main actor; on a Tailscale route the host authorizes it on its main actor) with a 10 s deadline; any answer, a refusal included, keeps the link and fails only that request as `hostRejected(code: "timed_out")` with a localized message (`supermux.devices.error.replyTimedOut`); no answer is a dead link and calls upstream's `reportTransportLost`, as before. A closed transport and a stuck write keep upstream's reconnect. The callers a reconnect used to recover recover on the live link: #690 (a mirror's replay), #691 (a mirror-tab close), #692 (the sync fetch), and the fork's mirror closer keeps a late close pending. E2E: `loopback_device_smoke.py` (`slow_request_keeps_the_link`, `slow_request_keeps_the_link_while_main_is_stuck`) |
+| 730 | `Sources/Workspace+SimulatorPane.swift` | `remote-simulator-no-local-in-mirror` | Two fences, one in each guard of `newSimulatorSurface(inPane:…)` and `newSimulatorSplit(from:…)`, before upstream's `!isRemoteTmuxMirror` clause: `!SupermuxRemoteSimulators.blocksLocalSimulator(in: self)` (a device mirror, `SupermuxDeviceWorkspaceIndex.isDeviceMirror`). Every way of making a local Simulator in a device mirror (socket `surface.create`/`surface.split`/`pane.create`, CLI, canvas, session restore, the entry points #731/#732 do not catch) returns nil, so nothing simulator-related runs or is stored on the viewing Mac; the mirror's simulators run on the owning Mac |
+| 731 | `Sources/AppDelegate+SimulatorShortcutRouting.swift` | `remote-simulator-new-action` | At the top of `performConfiguredNewSimulatorAction(context:onExecuted:)`, before upstream's feature-flag guard: when the selected workspace is a device mirror, `SupermuxRemoteSimulators.shared.openIfDeviceMirror(_:paneId:focus:)` opens a viewer tab in its focused pane (attach to the source workspace's first Simulator no viewer here shows, else `mobile.supermux.simulator.create` there) and the action counts as executed (also when that Mac is offline or too old: an alert, never a local simulator). Covers the File menu, the command palette, the plus menu and any `cmux.newSimulator` shortcut |
+| 732 | `Sources/Workspace.swift` | `remote-simulator-new-action` | In `executeSurfaceTabBarCommandButton`'s `case .newSimulator:` arm (the pane tab bar's New Simulator button): `if !SupermuxRemoteSimulators.shared.openIfDeviceMirror(self, paneId: pane, focus: true) { _ = newSimulatorSurface(inPane: pane, focus: true) }` |
+| 733 | `Sources/Workspace+SimulatorSessionPersistence.swift` | `remote-simulator-session` | Three fences: `var supermuxRemote: SupermuxRemoteSimulatorSnapshot?` in `SessionSimulatorPanelSnapshot` (synthesized Codable; old JSON decodes nil; the upstream device fields stay empty for a viewer, so an older build boots nothing); `simulatorSessionSnapshot(for:)` returns `viewer.sessionSnapshot()` for a `SupermuxRemoteSimulatorPanel` before upstream's `as? SimulatorPanel`; `restoreSimulatorPanel(from:inPane:)` sends a snapshot with `supermuxRemote`, or any Simulator snapshot restored in a device mirror (an older build's local one), to `SupermuxRemoteSimulators.shared.restore(_:inPane:in:)`, which makes a viewer that rebinds once the link is up |
+| 734 | `Sources/Panels/PanelContentView.swift` | `remote-simulator-panel-view` | In the `.simulator` arm, an `else if let viewer = panel as? SupermuxRemoteSimulatorPanel` after upstream's `if let simulatorPanel = panel as? SimulatorPanel { … }` renders `SupermuxRemoteSimulatorPanelView` (the viewer reuses `PanelType.simulator`, so its tab is titled, iconed, saved and refused by the Dock like a local Simulator) |
+| 737 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/RemoteSimulator/*` into the cmux target, four entries each in the Supermux group (`path = RemoteSimulator/<file>`): `SupermuxRemoteSimulatorSocketCommands.swift` (`50BE00190500000000000001`/`…02`, DEBUG drivers), `SupermuxRemoteSimulatorLoopbackLane.swift` (`…03`/`…04`, DEBUG), `SupermuxRemoteSimulators.swift` (`…05`/`…06`), `SupermuxRemoteSimulatorPanel.swift` (`…07`/`…08`), `SupermuxRemoteSimulatorPanelView.swift` (`…09`/`…0A`), `SupermuxRemoteSimulatorDisplayView.swift` (`…0B`/`…0C`), `SupermuxRemoteSimulatorKeyMap.swift` (`…0D`/`…0E`), `SupermuxRemoteSimulatorLane.swift` (`…0F`/`…10`), `SupermuxRemoteSimulatorSnapshot.swift` (`…11`/`…12`), `SupermuxRemoteSimulatorHostClient.swift` (`…15`/`…16`), `SupermuxRemoteSimulatorPanel+Debug.swift` (`…17`/`…18`), `SupermuxRemoteSimulatorQuality.swift` (`…19`/`…1A`), `Workspace+SupermuxRemoteSimulator.swift` (`…1B`/`…1C`), plus `Sources/Supermux/SupermuxMobileHost+Simulator.swift` (`…13`/`…14`, path at the group root); and links the local package `Packages/iOS/CmuxMobileSimulatorStream` (the iPhone's stream v2 engine and store, which builds for macOS 14) into the cmux and cmuxTests targets like `CmuxMobileRPC`: `XCLocalSwiftPackageReference` `…0101`, product dependency `…0102` (in both targets' `packageProductDependencies`), Frameworks build files `…0103` (cmux) and `…0104` (cmuxTests) |
+| 738 | `cmuxTests/SupermuxMobileAuthorizationTests.swift` | `remote-simulator-authz` | `classificationCoversWorkspacePaneAndMacWideMethods` expects `simulator.control` to be workspace-scoped (like `simulator.create`); the test's `default: .macWide` would otherwise fail it at run time, not at compile time |
+| 739 | `Sources/Devices/SurfaceCatalog+DeviceNames.swift` | `device-names-local-panels` | In `reconcileDeviceNames(on:)`, the guard that renames a mirror after its remote workspace compares the mirror's device members with `Set(workspace.panels.keys).subtracting(SupermuxDeviceLayoutSurfaceFilter.localPanelIDs(in: workspace, machine: machine))` instead of every panel: a bound mirror's own panels (a remote-simulator viewer, a browser) froze its title |
 
 ## How to re-apply
 
@@ -5749,3 +5757,58 @@ Verify: build the iOS app for an isolated simulator and run
 with the same `-testPlan cmux-ui`; the default plan also builds package test targets). Export the
 screenshots with `xcrun xcresulttool export attachments` to
 `tests/supermux/artifacts/ios-merged-projects/`.
+
+### 730–734, 737–739. A device mirror's Simulator runs on the owning Mac — `remote-simulator-no-local-in-mirror`, `remote-simulator-new-action`, `remote-simulator-session`, `remote-simulator-panel-view`, `remote-simulator-authz`, `device-names-local-panels`
+
+User request: simulators should run remotely so they take no space on this Mac, and builds run
+remotely too. "New Simulator" in a device mirror used to make a local `SimulatorPanel` (only tmux
+mirrors were refused), which booted a simulator here. Now a mirror's simulators run in the source
+workspace on the owning Mac and the mirror shows a viewer tab. Fork code: `Sources/Supermux/RemoteSimulator/`
+(`SupermuxRemoteSimulators` facade and alerts, `SupermuxRemoteSimulatorPanel` over upstream's
+`SimulatorStreamV2Store`, `…PanelView`, `…DisplayView` + presenter (`AVSampleBufferDisplayLayer`),
+`…KeyMap` (a copy of upstream's internal `SimulatorHIDKeyMapper` table), `…Lane`, `…HostClient`,
+`…Quality`, `…Snapshot`, `Workspace+SupermuxRemoteSimulator`, DEBUG `…LoopbackLane`,
+`…SocketCommands` and `…Panel+Debug`) and the host RPC `Sources/Supermux/SupermuxMobileHost+Simulator.swift`
+(`mobile.supermux.simulator.control`; `simulator.create` takes `udid`; capability
+`supermux.remote_simulator.v1`). The owning Mac needs no host change for the video: its irx lane loop
+already serves `simulator_stream` lanes to Mac peers. The viewer opens them on the device link's own
+irx connection through `DeviceIrxClient.supermuxTunnelConnection(instance:)`, the accessor the
+port-forward work adds (`device-tunnel-client`); #735, reserved for a second accessor, is not used.
+Mirror layout sync around a viewer tab relies on the port-forward work's `device-layout-local-panels`
+fence (`SupermuxDeviceLayoutSurfaceFilter.localPanelIDs`, every non-terminal panel of a bound mirror);
+#736, reserved for it, is not used. `SupermuxDeviceWorkspaceIndex.isDeviceMirror` (fork) skips viewer
+panels, so an unbound all-projected mirror stays a mirror.
+
+Re-apply after an upstream merge:
+- **#730** keep `!SupermuxRemoteSimulators.blocksLocalSimulator(in: self)` in BOTH guards (tab and
+  split). If upstream adds another way to make a `SimulatorPanel` (a new `Workspace` factory), fence
+  the same clause into it. If upstream ever refuses simulators in device mirrors itself, keep the
+  fork's routing (#731/#732) and retire this.
+- **#731** keep the fence first in `performConfiguredNewSimulatorAction`, before upstream's flag
+  guard: the owning Mac's flag decides, not this Mac's. If upstream moves the configured action
+  elsewhere, follow it; every entry point that reaches `executeConfiguredCmuxAction(id:
+  "cmux.newSimulator")` must go through it.
+- **#732** keep the tab-bar arm's call; upstream's local `newSimulatorSurface` stays the else branch.
+- **#733** keep the field optional and synthesized (no custom `CodingKeys` on either struct), so
+  older and newer session files decode both ways; keep the capture fence before the
+  `as? SimulatorPanel` cast and the restore fence before `newSimulatorSurface`.
+- **#734** keep the `else if` inside the `.simulator` arm. If upstream adds a `PanelType` switch
+  elsewhere that force-casts `.simulator` panels to `SimulatorPanel`, add an `as?` guard there (today
+  every site casts with `as?` and skips the viewer).
+- **#737 pbxproj.** Re-add the four entries for each file in the #737 row with the `50BE00190500…`
+  ids and the package link entries, then `python3 scripts/normalize-pbxproj.py
+  cmux.xcodeproj/project.pbxproj && scripts/check-pbxproj.sh`. `CmuxMobileSimulatorStream` is now
+  app-linked, so it must stay Swift 6.0 compatible (no trailing commas in argument lists).
+- **#738** keep `.simulatorControl` workspace-scoped in the test's switch.
+- **#739** keep the subtraction in the guard's first clause; if upstream stops requiring every panel
+  to be a member before renaming, retire it.
+- If upstream's v2 viewer kit (`CmuxMobileSimulatorStream`) changes `SimulatorStreamV2Store`,
+  `SimStreamFramePresenting` or `SimStreamTouchMapping`, follow it in the panel, presenter and
+  display view (the iPhone's `SimStreamDisplayView` is the reference port). If upstream's host
+  `MobileSimulatorStreamV2Coordinator.handleLane` changes, follow it in the DEBUG loopback lane.
+
+Verify: `swift test` in `Packages/Shared/SupermuxMobileCore`, `Packages/iOS/SupermuxMobileKit` and
+`Packages/iOS/CmuxMobileSimulatorStream`, then
+`CMUX_E2E_SUITES="loopback_mirror_simulator_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`
+(it creates, boots, shuts down and deletes its own simulator; see LOOPBACK-HARNESS.md "Mirror
+simulator E2E"). Two real Macs are still needed for the irx lane and capture on a headless owner.

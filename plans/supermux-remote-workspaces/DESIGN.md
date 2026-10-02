@@ -135,6 +135,9 @@ harness registration (DEBUG); iOS per-Mac seam next to #96.
 ## Non-goals (this pass)
 
 - Syncing pane geometry across devices beyond upstream's existing layout sync.
-- Remote browser/markdown/simulator panels (upstream refuses to materialize them).
+- Remote browser/markdown panels (upstream refuses to materialize them). Simulators are no longer a
+  non-goal: a mirror's New Simulator opens a viewer tab of a Simulator in the source workspace on the
+  owning Mac (simulator stream v2), and a mirror never makes a local simulator (#730–#734, #737–#739;
+  SUPERMUX.md "Remote Macs").
 - Resizing the remote terminal grid to the viewer's pane (upstream pins mirrors to the source grid).
 - Automatic cloning onto a device that lacks a project. Project sync only registers a repo that already exists at the same path; cloning is the explicit "Set Up on <Mac>…" action ([PROJECTS-API.md](PROJECTS-API.md)).
