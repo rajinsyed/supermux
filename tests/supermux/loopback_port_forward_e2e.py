@@ -50,9 +50,10 @@ forward must land on another local port.
                                         Stop Forwarding (`ports.menus`); Stop -> it goes at once,
                                         and with the link back it never listens again
  16. local_terminal_chip_opens_this_mac a terminal of this Mac (from a local workspace) serving P,
-                                        moved into M: M's chip for P is this Mac's, so with the
-                                        setting off the default browser gets http://localhost:P, as
-                                        for any local workspace, no alert and no forward
+                                        moved into M: M's chip for P is this Mac's, so the default
+                                        browser gets http://localhost:P, no alert and no forward, with
+                                        the setting off and also on (a cmux browser in M would reach
+                                        the owning Mac's localhost, not this Mac's server)
 
 Writes a JSON report (default tests/supermux/artifacts/loopback_port_forward_e2e-<tag>.json)
 and exits non-zero on any failure. Stdlib only.
@@ -823,13 +824,22 @@ class PortForwardE2E:
                          self.timeout)
         if not self.mirrors_of_source():
             raise Failure("precondition: M is no longer the bound mirror of S")
-        opened = self.ports_call("chip_open", workspace_id=self.mirror_id, port=port, cmux_browser=False)
         expected = f"http://localhost:{port}"
-        got = str(opened.get("external_url") or "").rstrip("/")
-        if got != expected or opened.get("notice"):
-            raise Failure(f"the chip of this Mac's own port {port} (a terminal of this Mac in M) opened {got or None!r} "
-                          f"with notice {opened.get('notice')!r}; want this Mac's {expected}: {opened}")
-        return {"port": port, "terminal": terminal, "chips": chips, "chip_open": opened}
+        opened = {}
+        # Setting off, then on: a cmux browser in M reaches the owning Mac (its localhost and
+        # 127.0.0.1 are routed there), so this Mac's own port must open outside it either way.
+        for cmux_browser in (False, True):
+            opened[cmux_browser] = reply = self.ports_call("chip_open", workspace_id=self.mirror_id, port=port,
+                                                           cmux_browser=cmux_browser)
+            got = str(reply.get("external_url") or "").rstrip("/")
+            panel = reply.get("new_browser_panel_id")
+            if got != expected or reply.get("notice") or panel:
+                where = f"a cmux browser in M ({panel}), which routes localhost to the owning Mac" if panel else repr(got or None)
+                raise Failure(f"with \"Open Sidebar Port Links in cmux Browser\" {'on' if cmux_browser else 'off'}, the chip "
+                              f"of this Mac's own port {port} (a terminal of this Mac in M) opened {where} with notice "
+                              f"{reply.get('notice')!r}; want this Mac's {expected} in the default browser: {reply}")
+        return {"port": port, "terminal": terminal, "chips": chips,
+                "chip_open_setting_off": opened[False], "chip_open_setting_on": opened[True]}
 
     # -- run ------------------------------------------------------------------
 
