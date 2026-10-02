@@ -597,7 +597,10 @@ discoverable"). The host journals to its own ring (`tunnel.journal`), not the ir
 
 `loopback_device_tunnel_e2e.py` (`supermux.devices.tunnel.*` drivers in
 `SupermuxDeviceTunnelSocketCommands.swift`) runs its own marker servers, then checks: the capability
-is advertised; a GET to `localhost:P` returns the marker; a `::1`-only server answers `localhost`; the
+is advertised; a GET to `localhost:P` returns the marker; 30 GETs to a server that answers
+`Connection: close` each read the whole page and then a clean end of stream (journal `closed clean`;
+Network.framework's end-of-stream ENODATA used to abort about one in five); a `::1`-only server
+answers `localhost`; the
 host journals `opened {scope: loopback, port}` and never a host name; `169.254.169.254` and
 `example.com` are denied without resolving; a closed port is `refused`; a port registered as this
 app's own listener (`tunnel.own_port`) is denied (the loop guard); a revoked peer is denied
