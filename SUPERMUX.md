@@ -405,12 +405,14 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   its neighbouring terminal tab (or its own split beside the terminals it was split from); if those
   terminals close there, it moves to the end of the last pane. Closing a mirrored terminal tab beside
   it still closes that terminal on the owning Mac. Closing the mirror's last terminal tab while such
-  tabs stay works like closing a local workspace's last terminal beside a browser: when that terminal
-  is all the workspace holds there, that Mac cannot keep a workspace without a surface, so its
-  workspace closes there (as closing the mirror closes it: no prompt, `force`, held while that Mac is
-  offline), and the mirror stays here with its own tabs as an ordinary local workspace (no longer a
-  mirror; nothing re-projects or closes it; its browsers keep the route they opened with until a
-  relaunch). Only a bound mirror counts (a local workspace that
+  tabs stay (or its last terminals at once, as Close Other Tabs on a browser does) works like closing
+  a local workspace's last terminal beside a browser: the close goes to that Mac, which cannot keep a
+  workspace without a surface and refuses it; when the layout fetched for that close holds only that
+  terminal, its workspace closes there instead (as closing the mirror closes it: no prompt, `force`,
+  held while that Mac is offline), and the mirror stays here with its own tabs as an ordinary local
+  workspace (no longer a mirror; nothing re-projects or closes it; its browsers keep the route they
+  opened with until a relaunch). A terminal added there meanwhile is in that layout, so it is never
+  closed with the workspace. Only a bound mirror counts (a local workspace that
   borrows terminals stays upstream's mixed workspace). Known gap: ⌘T/⌘D with such a tab selected
   makes a local shell, which stalls the sync again until it closes.
 - **A mirror's browser opens that Mac's localhost** (#707): every browser in a mirror, bound or not
@@ -432,8 +434,9 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   run over the legacy Tailscale route), busy or refused. The proxy accepts only its per-launch random
   credential, so other local processes cannot use it to reach the other Mac; it closes a client that
   has not finished its handshake within 10 s and refuses new ones while 64 are still in it, releases
-  every connection's socket when it ends, and replaces its listener if the system fails it (open tabs
-  wait for the new one). A tab moved out of a mirror goes back to this Mac's profile.
+  every connection's socket when it ends, and replaces its listener if the system fails it: until the
+  new one is ready every tab of that Mac, open or opened meanwhile, keeps the old endpoint and gets a
+  refused load, never one that goes direct from this Mac. A tab moved out of a mirror goes back to this Mac's profile.
 - **Other Macs' ports open here** (#699, #705, #750, #751; the tunnel is round 5's Track A): a server started in
   another Mac's workspace that is mirrored here (`bun run dev` on 3000) opens at `localhost` on this
   Mac, in any browser, the iOS Simulator or any other app (setting "Forward other Macs' ports to this
@@ -450,7 +453,8 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   show the owning Mac's port chips: a chip opens the port in a cmux browser in the mirror, and with
   "Open Sidebar Port Links in cmux Browser" off (or no cmux browser) the default browser gets the
   forward's local port, never this Mac's own `localhost:<port>`; with no active forward nothing
-  opens and an alert says why (#750). Every mirror row's menu (flat and nested) has "Ports on
+  opens and an alert says why (#750). A chip for a port a terminal of this Mac in the mirror listens
+  on (one moved in) is this Mac's own and opens like a local workspace's chip. Every mirror row's menu (flat and nested) has "Ports on
   <Mac>": this workspace's ports there, that Mac's other forwards, Open in cmux Browser / Open in
   Default Browser / Copy Local URL / Stop Forwarding / Forward to This Mac, and Forward a Port… for
   anything else listening on that Mac's loopback (one started outside cmux). Settings › Remote Macs
