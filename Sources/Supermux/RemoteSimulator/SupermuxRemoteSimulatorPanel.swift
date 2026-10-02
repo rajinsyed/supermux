@@ -56,13 +56,16 @@ final class SupermuxRemoteSimulatorPanel: Panel {
     /// Show Here, so the two never take it back and forth on their own.
     private(set) var isSuperseded = false
 
+    /// The workspace the tab was made in; ``owningWorkspace`` follows a move.
     @ObservationIgnored weak var workspace: Workspace?
     @ObservationIgnored let displayView: SupermuxRemoteSimulatorDisplayView
     /// The tab's whole area (registered by its view), for focus ownership.
     @ObservationIgnored weak var focusArea: NSView?
     @ObservationIgnored private var presenter: SupermuxRemoteSimulatorPresenter?
-    @ObservationIgnored private var isVisible = false
-    @ObservationIgnored private var isClosed = false
+    /// The views currently showing the tab; SwiftUI may show a rebuilt view
+    /// before it hides the old one.
+    @ObservationIgnored private var visibleHostIDs: Set<UUID> = []
+    @ObservationIgnored private(set) var isClosed = false
     @ObservationIgnored private var keepsHostPanel = false
     @ObservationIgnored private var linkWasReady = false
     @ObservationIgnored private var needsRebind = false
@@ -97,6 +100,18 @@ final class SupermuxRemoteSimulatorPanel: Panel {
 
     private var isLinkReady: Bool {
         SupermuxComposition.devices.device(for: machine)?.isConnected == true
+    }
+
+    private var isVisible: Bool { !visibleHostIDs.isEmpty }
+
+    /// The workspace that holds the tab now (a tab dragged elsewhere moves
+    /// without closing), else the one it was made in.
+    var owningWorkspace: Workspace? {
+        if let located = AppDelegate.shared?.locateSurface(surfaceId: id),
+           let found = located.tabManager.tabs.first(where: { $0.id == located.workspaceId }) {
+            return found
+        }
+        return workspace
     }
 
     init(
@@ -190,13 +205,17 @@ final class SupermuxRemoteSimulatorPanel: Panel {
 
     // MARK: - Visibility and input
 
-    /// The tab became visible or hidden: a hidden viewer stops its stream, so
-    /// the owning Mac stops encoding.
-    func setVisible(_ visible: Bool) {
-        guard visible != isVisible else { return }
-        isVisible = visible
-        guard let store else { return }
-        if !visible {
+    /// A view showing the tab became visible or hidden: a hidden viewer
+    /// stops its stream, so the owning Mac stops encoding.
+    func setVisible(_ visible: Bool, hostID: UUID) {
+        let wasVisible = isVisible
+        if visible {
+            visibleHostIDs.insert(hostID)
+        } else {
+            visibleHostIDs.remove(hostID)
+        }
+        guard isVisible != wasVisible, let store else { return }
+        if !isVisible {
             store.deactivate()
         } else if !isSuperseded {
             store.activate()
@@ -276,8 +295,8 @@ final class SupermuxRemoteSimulatorPanel: Panel {
     /// resize does not rebuild the owning Mac's encoder on every step.
     private func backingLongSideChanged(_ pixels: CGFloat) {
         let next = SupermuxRemoteSimulatorQuality.autoLongSide(forBackingPixels: pixels)
-        guard next != autoLongSide else { return }
         autoQualityTask?.cancel()
+        guard next != autoLongSide else { return }
         autoQualityTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(500))
             guard let self, !Task.isCancelled else { return }
@@ -363,7 +382,7 @@ final class SupermuxRemoteSimulatorPanel: Panel {
     /// closed it, or cannot stream it here).
     func dismissKeepingHostPanel() {
         keepsHostPanel = true
-        if let workspace, workspace.panels[id] != nil {
+        if let workspace = owningWorkspace, workspace.panels[id] != nil {
             _ = workspace.closePanel(id, force: true)
         }
     }
@@ -374,7 +393,7 @@ final class SupermuxRemoteSimulatorPanel: Panel {
     /// closes only this viewer. A user close has already removed the panel's
     /// Bonsplit tab; a workspace teardown closes panels while their tabs exist.
     private var isClosedByUser: Bool {
-        guard let workspace, let tabID = workspace.surfaceIdFromPanelId(id) else { return false }
+        guard let workspace = owningWorkspace, let tabID = workspace.surfaceIdFromPanelId(id) else { return false }
         return workspace.bonsplitController.tab(tabID) == nil
     }
 
@@ -387,6 +406,10 @@ final class SupermuxRemoteSimulatorPanel: Panel {
         autoQualityTask?.cancel()
         store?.deactivate()
         store = nil
+        // The focus callback holds the workspace's view state, which holds this panel.
+        displayView.onFocusRequest = nil
+        displayView.onInput = nil
+        displayView.onBackingLongSideChange = nil
         guard closesHostPanel, let hostPanelID else { return }
         let host = hostClient
         Task { try? await host.close(panelID: hostPanelID) }

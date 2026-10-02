@@ -69,11 +69,13 @@ final class SupermuxRemoteSimulators {
         guard await checkCapabilities(panel) else { return }
         do {
             let host = panel.hostClient
+            let listed = try await host.panelIDs()
+            // Read after the await, so a viewer that attached meanwhile counts.
             let shown = shownHostPanelIDs(on: panel.machine, besides: panel)
-            if let free = try await host.panelIDs().first(where: { !shown.contains($0) }) {
+            if let free = listed.first(where: { !shown.contains($0) }) {
                 panel.attach(hostPanelID: free, deviceUDID: nil)
             } else {
-                panel.attach(hostPanelID: try await host.create(udid: nil), deviceUDID: nil)
+                attach(panel, toNewPanel: try await host.create(udid: nil), deviceUDID: nil)
             }
         } catch {
             panel.attachFailed(error.localizedDescription)
@@ -93,12 +95,13 @@ final class SupermuxRemoteSimulators {
                 panel.attach(hostPanelID: saved, deviceUDID: nil)
                 return
             }
-            let shown = shownHostPanelIDs(on: panel.machine, besides: panel)
             if let udid = panel.deviceUDID {
-                for candidate in listed where !shown.contains(candidate) {
+                for candidate in listed {
                     let showsDevice = try await host.deviceList(panelID: candidate)
                         .contains { $0.isSelected && $0.udid == udid }
-                    if showsDevice {
+                    // Read after each await, so a viewer that attached meanwhile counts.
+                    let shown = shownHostPanelIDs(on: panel.machine, besides: panel)
+                    if showsDevice, !shown.contains(candidate) {
                         panel.attach(hostPanelID: candidate, deviceUDID: udid)
                         return
                     }
@@ -113,19 +116,43 @@ final class SupermuxRemoteSimulators {
                 // An older owning Mac ignores `udid` on create.
                 try? await host.select(udid: udid, panelID: created)
             }
-            panel.attach(hostPanelID: created, deviceUDID: panel.deviceUDID)
+            attach(panel, toNewPanel: created, deviceUDID: panel.deviceUDID)
         } catch {
             panel.attachFailed(error.localizedDescription)
         }
     }
 
-    /// Whether the owning Mac can stream its simulators here. When it
-    /// cannot, the viewer tab closes and an alert says why.
+    /// Shows a host panel just opened for `panel`, or closes it again there
+    /// when the viewer tab was closed while it was being opened.
+    private func attach(_ panel: SupermuxRemoteSimulatorPanel, toNewPanel created: UUID, deviceUDID: String?) {
+        guard !panel.isClosed else {
+            let host = panel.hostClient
+            Task { try? await host.close(panelID: created) }
+            return
+        }
+        panel.attach(hostPanelID: created, deviceUDID: deviceUDID)
+    }
+
+    /// Whether the owning Mac can stream its simulators here. When it says
+    /// it cannot (too old, or its simulators are turned off), the viewer tab
+    /// closes and an alert says why; when it did not answer, the tab stays
+    /// with Open Again.
     private func checkCapabilities(_ panel: SupermuxRemoteSimulatorPanel) async -> Bool {
-        let capabilities = await devices.hostCapabilities(on: panel.machine) ?? []
-        guard capabilities.contains(SimStreamProtocol().capability),
-              capabilities.contains(SupermuxMobileCapability.panesV1.rawValue) else {
+        guard let capabilities = await devices.hostCapabilities(on: panel.machine) else {
+            panel.attachFailed(String(
+                localized: "supermux.remoteSimulator.state.unreachable",
+                defaultValue: "Couldn’t reach \(panel.macName)"
+            ))
+            return false
+        }
+        guard capabilities.contains(SupermuxMobileCapability.panesV1.rawValue) else {
             SupermuxRemoteSimulatorAlerts.presentNeedsUpdate(panel.macName)
+            panel.dismissKeepingHostPanel()
+            return false
+        }
+        // The owning Mac withholds the stream capability while its simulators are turned off.
+        guard capabilities.contains(SimStreamProtocol().capability) else {
+            SupermuxRemoteSimulatorAlerts.presentTurnedOff(panel.macName)
             panel.dismissKeepingHostPanel()
             return false
         }
@@ -182,6 +209,16 @@ enum SupermuxRemoteSimulatorAlerts {
                 localized: "supermux.remoteSimulator.alert.update.message",
                 defaultValue: "Update Supermux on \(macName) to show its simulators here."
             )
+        )
+    }
+
+    static func presentTurnedOff(_ macName: String) {
+        present(
+            title: String(
+                localized: "supermux.remoteSimulator.state.disabled",
+                defaultValue: "Simulators are turned off on \(macName)"
+            ),
+            message: ""
         )
     }
 

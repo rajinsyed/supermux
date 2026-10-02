@@ -14,6 +14,7 @@ struct SupermuxRemoteSimulatorPanelView: View {
     let appearance: PanelAppearance
     let onRequestPanelFocus: () -> Void
     @State private var typedText = ""
+    @State private var visibilityHostID = UUID()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -35,17 +36,17 @@ struct SupermuxRemoteSimulatorPanelView: View {
         .environment(\.colorScheme, cmuxReadableColorScheme(for: appearance.backgroundColor))
         .onAppear {
             panel.displayView.onFocusRequest = onRequestPanelFocus
-            panel.setVisible(isVisibleInUI)
+            panel.setVisible(isVisibleInUI, hostID: visibilityHostID)
             if isFocused { panel.focus() }
         }
         .onChange(of: isVisibleInUI) { _, visible in
-            panel.setVisible(visible)
+            panel.setVisible(visible, hostID: visibilityHostID)
         }
         .onChange(of: isFocused) { _, focused in
             if focused { panel.focus() }
         }
         .onDisappear {
-            panel.setVisible(false)
+            panel.setVisible(false, hostID: visibilityHostID)
         }
     }
 
@@ -179,6 +180,9 @@ struct SupermuxRemoteSimulatorPanelView: View {
             return Status(text: Strings.superseded, actionTitle: Strings.showHere, action: { panel.showHere() })
         }
         guard let store = panel.store else { return Status(text: Strings.starting(mac)) }
+        if store.hostDetail == "simulator_disabled" {
+            return Status(text: Strings.disabled(mac))
+        }
         switch store.phase {
         case .streaming:
             return needsRecover ? Status(text: Strings.failed(mac), actionTitle: Strings.recover, action: { panel.recover() }) : nil
