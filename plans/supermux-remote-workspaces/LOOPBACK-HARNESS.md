@@ -602,8 +602,10 @@ another build does (the shared projects file, then a save that folds it in) whos
 includes a named pipe nobody writes, so every git command there blocks, as in a folder behind an
 unanswered privacy prompt. `projects.list` must answer within 4 s (the host's 2 s bound plus slack)
 three times on the host (`supermux.devices.local_projects`) and once over the link; before the bound
-it waited for git until the 5 s kill. Cleanup opens the pipe for writing to release the waiting git
-processes, then removes it. Each answer must also keep the healthy project's `git_remote_url` (the
+it waited for git until the 5 s kill. Cleanup first ends any git there whose parent is launchd (left
+by an app that quit, which no deadline ends any more), then opens the pipe for writing to release the
+waiting git processes and removes it (a git woken from opening the pipe can still block reading it:
+one ran on for an hour after a run). Each answer must also keep the healthy project's `git_remote_url` (the
 last origin known stands in for a lookup not finished in time).
 
 `first_load_is_bounded_while_a_folder_blocks` (needs `--app-path`; the runner passes it with
@@ -616,6 +618,16 @@ workspace. Each must answer within 8 s (2 s for the load, 2 s more for the origi
 within 25 s of the launch (else the step is vacuous), and the launch must open exactly one terminal.
 Before the bound, `preset.launch` waited for the whole load and missed the 20 s deadline, and the
 terminal still opened later.
+
+`blocked_folder_git_never_outlives_its_bound` (the last step, also `--app-path`) runs before the
+cleanup touches the pipe. A git process in the blocked folder is one named `git` (`lsof -c git`) whose
+command line names the folder (`git -C <folder> …`) or whose working directory is in it (`git worktree
+list`). None may have launchd as its parent (left by step 14c's quit); the origin lookups a
+`projects.list` starts there must be gone 10 s after they were seen (the host kills each at 5 s); then
+it sends `worktrees.list` for the blocked project (a `git worktree list` there, killed at 30 s), waits
+until that git runs, quits the app, and no git process may remain in the folder 5 s after the app is
+gone. It opens the app again for the cleanup. Before `SupermuxGitChildProcesses`, a git still running
+when the app quit was left under launchd for good: the deadline timers die with the app.
 
 ## Tunnel lanes E2E
 

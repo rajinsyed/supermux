@@ -206,7 +206,8 @@ func openWhenAvailable(_ ref:, in tabManager:, focus:, timeout: Duration = .seco
   `host/owner/repo` key). Omitted when the project has no origin (legacy wire shape).
 - Resolution: `SupermuxGitRemoteURLResolver` (actor) runs `git -C <root> config --get remote.origin.url`,
   caches per standardized root for 10 min (definitive "no origin" cached; transient failures not), coalesces
-  concurrent lookups; `invalidate(root:)` / `invalidateAll()`.
+  concurrent lookups; `invalidate(root:)` / `invalidateAll()`. Each git run is killed at 5 s (SIGTERM,
+  then SIGKILL), and a lookup still running when the app quits ends with it (`SupermuxGitChildProcesses`).
 - Local Mac UI: `SupermuxComposition.projectGitRemotes` (`@Observable`): `urlsByProjectID`,
   `url(for:)`, `identity(for:)` — match a local project with a remote `SupermuxProjectDTO` by
   `projectGitRemotes.identity(for: local.id) == remote.gitRemoteIdentity` (fall back to `name` +
