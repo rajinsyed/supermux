@@ -443,7 +443,7 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   forward holding a local port makes a server started here later on that port pick another (Stop
   frees it), and any process on this Mac can connect to a forwarded port. Not done: the right
   sidebar's Machines tab ports for devices, a command palette entry, notifications.
-- **A mirror's Simulator runs on the owning Mac; nothing is booted here** (#730–#734, #737–#739,
+- **A mirror's Simulator runs on the owning Mac; nothing is booted here** (#730–#735, #737–#739,
   capability `supermux.remote_simulator.v1`). New Simulator in a mirror (File menu, palette, plus
   menu, shortcut, tab-bar button) opens a viewer tab that shows the source workspace's first
   Simulator no viewer here shows yet, or opens a new one there in the background, and plays its
@@ -463,7 +463,9 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   simulator again by device after the owning Mac restarts. Not offered: multi-touch, mouse-wheel
   notches, the Tools sidebar, screenshots to this Mac, non-US text; they work on the owning Mac
   through `cmux simulator …` in a mirror terminal. An older owning Mac (no
-  `simulator.stream.v2`/`supermux.panes.v1`) gets an alert instead, never a local simulator. The
+  `simulator.stream.v2`/`supermux.panes.v1`) gets an alert instead, never a local simulator. A quit
+  sent to the app's bundle id (AppleScript, Shortcuts, a launcher) quits it with a Simulator open: the
+  simulator worker shares that bundle id and hands such a quit to the app (#735). The
   stream over a real Mac-to-Mac link (the device link's irx connection, through the port-forward
   work's `DeviceIrxClient.supermuxTunnelConnection`) and capture on a headless, locked owning Mac are
   verified only on the loopback device so far.
