@@ -208,6 +208,18 @@ def device_state(udid: str) -> Optional[str]:
     return None
 
 
+def newest_booted_phone_or_tablet() -> Optional[str]:
+    """The device a new Simulator panel picks first: booted, iPhone before iPad,
+    most recently booted (`simulatorDeviceOrdering` in CmuxSimulatorUI)."""
+    booted = []
+    for devices in (simctl_json("list", "devices", "available").get("devices") or {}).values():
+        for device in devices:
+            kind = str(device.get("deviceTypeIdentifier") or "")
+            if device.get("state") == "Booted" and ("iPhone" in kind or "iPad" in kind):
+                booted.append(("iPhone" in kind, str(device.get("lastBootedAt") or ""), up(device.get("udid"))))
+    return max(booted)[2] if booted else None
+
+
 def available_phone_and_tablet_udids() -> List[str]:
     """What the owner's picker may list: available iPhone and iPad simulators."""
     udids: List[str] = []
@@ -535,7 +547,15 @@ class MirrorSimulatorE2E:
                 raise Failure(f"viewer udid {selected or None} != {udid}")
             return viewer
 
-        viewer = wait_for("the viewer to show the device the mirror terminal booted", shows_udid, 60, interval_s=2.0)
+        try:
+            viewer = wait_for("the viewer to show the device the mirror terminal booted", shows_udid, 60, interval_s=2.0)
+        except Failure:
+            first_pick = newest_booted_phone_or_tablet()
+            if first_pick and first_pick != udid:
+                # Another simulator outranks ours; show ours so later steps act on it.
+                self.select_and_follow(udid, 120)
+                raise Skipped(f"another booted simulator ({first_pick}) is the owning Mac's first pick, not {udid}")
+            raise
         return {"binding": viewer.get("binding")}
 
     def streams_video(self) -> Dict[str, Any]:
@@ -603,7 +623,9 @@ class MirrorSimulatorE2E:
             evidence["foreground_error"] = str(error)
             uses_foreground = False
         before_hash = screenshot_hash(udid)
-        self.viewer_call("input", {"event": {"button": "home"}})
+        wait_for("the viewer to take Home", lambda: self.sock.call(
+            SIM + "input", {"panel_id": self.need_viewer()["panel_id"], "event": {"button": "home"}}
+        ).get("accepted"), 15, interval_s=1.0)
         if uses_foreground:
             wait_for("SpringBoard in front after the viewer's Home",
                      lambda: self.foreground(host) == "com.apple.springboard", 10, interval_s=0.5)
@@ -647,6 +669,9 @@ class MirrorSimulatorE2E:
         finally:
             self.viewer_call("quality", {"preset": "auto"})
 
+    def pane_count(self, workspace_id: str) -> int:
+        return len((self.sock.call("pane.list", {"workspace_id": workspace_id}) or {}).get("panes") or [])
+
     def layout_follows_with_simulator(self) -> Dict[str, Any]:
         self.need_viewer()
         terminal = self.terminals(self.source)[0]
@@ -659,8 +684,12 @@ class MirrorSimulatorE2E:
         try:
             wait_for("the source's new split in the mirror",
                      lambda: self.split_terminal in self.projected_sources().values(), 15)
+            # The split itself, not only the new terminal (an apply the viewer
+            # blocks would leave it as a tab of the old pane).
+            wait_for("the mirror to split like the source",
+                     lambda: self.pane_count(self.mirror) == self.pane_count(self.source) == 2, 15)
         except Failure as error:
-            problems.append(str(error))
+            problems.append(f"{error} (panes: source {self.pane_count(self.source)}, mirror {self.pane_count(self.mirror)})")
         title = f"mirror-simulator-renamed-{self.nonce}"
         self.sock.call("workspace.rename", {"workspace_id": self.source, "title": title})
         try:
