@@ -73,4 +73,7 @@ public struct SupermuxMobileCapabilities: Sendable, Equatable {
     /// The Mac serves port forwarding to the user's other Macs (Mac-to-Mac
     /// only; no phone UI depends on it).
     public var supportsPortForward: Bool { contains(.portForwardV1) }
+    /// The Mac serves simulator controls for another Mac's simulator viewer
+    /// (Mac-to-Mac only; no phone UI depends on it).
+    public var supportsRemoteSimulator: Bool { contains(.remoteSimulatorV1) }
 }
