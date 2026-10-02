@@ -33,6 +33,10 @@ named by their source id (T1...), the mirror's browsers B and B2:
                                                Tabs on B4 (`tab.action close_others`) closes both
                                                terminal tabs in one go -> as in I: S3 closes on its
                                                Mac, no failure card, M3 stays open holding only B4
+  K slow_last_terminal_close_keeps_mirror      as I with a fourth source S4, but the owning Mac holds
+                                               the `mobile.terminal.close` 3 s before refusing it
+                                               (`supermux.devices.link stall`): the same outcome, and
+                                               auto-mirror never closes M4 as an orphan meanwhile
 
 Every expected pair must hold, then stay so for --settle seconds (nothing pushed
 back, nothing moved); each step records both labelled trees and the latency.
@@ -44,7 +48,9 @@ first fix: T1 stays on the source). Before I's fix the mirror sends
 closes M2 (browser included) as an orphan. Before J's fix the first close
 lands, the second (decided on the layout from before either close, which
 still held two terminals) is refused as S3's last surface, with the same
-card and orphan close. Writes a JSON report (default
+card and orphan close. Before K's fix auto-mirror closed M4, B5 included, as
+an orphan while the close was held (bound, nothing projected for over 1 s),
+and S4 kept running. Writes a JSON report (default
 tests/supermux/artifacts/loopback_mirror_local_panels_e2e-<tag>.json) and exits
 non-zero on any failure. Stdlib only.
 
@@ -67,6 +73,9 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 LOOPBACK_DEVICE_ID = "5e1f10b0-0000-4000-8000-000000000001"
+# How long the owning Mac holds the slow step's terminal close: well past auto-mirror's
+# 1 s orphan confirmation, well inside the link's 20 s reply deadline.
+STALL_SECONDS = 3
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ARTIFACTS_DIR = REPO_ROOT / "tests" / "supermux" / "artifacts"
 
@@ -492,12 +501,14 @@ class LocalPanelsE2E:
             return f"the source is still (or again) mirrored: {json.dumps(mirrors)}"
         return None
 
-    def last_terminal_beside_browser_closes_source(self) -> Dict[str, Any]:
-        pair = MirrorPair(self.sock, self.timeout, f"local-panels-last-{self.nonce}")
+    def one_terminal_beside_browser(self, label: str) -> tuple:
+        """A new source with ONE terminal, its mirror and a browser beside that terminal in
+        the mirror, settled: (pair, source terminal, the mirror's terminal panel, browser)."""
+        pair = MirrorPair(self.sock, self.timeout, f"local-panels-{label}-{self.nonce}")
         self.extra_pairs.append(pair)
         created = pair.create()
         terminal = up(created["first_terminal"])
-        mirror_t1 = pair.require_mirror_panel(terminal, "the second source's only terminal")
+        mirror_t1 = pair.require_mirror_panel(terminal, f"the {label} source's only terminal")
         opened = self.sock.call("browser.tab.new", {"workspace_id": pair.mirror_id, "surface_id": mirror_t1}) or {}
         browser = up(opened.get("surface_id"))
         if not browser:
@@ -509,11 +520,15 @@ class LocalPanelsE2E:
                 return f"mirror {kinds}, source {source}"
             return None
 
-        wait_for("B3 beside the only terminal in the mirror only", lambda: browser_stays_local() is None, self.timeout)
+        wait_for("the browser beside the only terminal in the mirror only", lambda: browser_stays_local() is None,
+                 self.timeout)
         unsettled = holds(browser_stays_local, self.settle)
         if unsettled:
             raise Failure(f"precondition: the mirror and source did not settle: {unsettled}")
+        return pair, terminal, mirror_t1, browser
 
+    def last_terminal_beside_browser_closes_source(self) -> Dict[str, Any]:
+        pair, terminal, mirror_t1, browser = self.one_terminal_beside_browser("last")
         self.sock.call("surface.close", {"workspace_id": pair.mirror_id, "surface_id": mirror_t1, "force": True})
         problems = self.source_closed_keeping_browser_problems(pair, browser)
         if problems:
@@ -592,6 +607,39 @@ class LocalPanelsE2E:
         return {"source": pair.source_id, "mirror": pair.mirror_id, "terminals": [first, second], "browser": browser,
                 "close_others": closed, "kept_panels": self.panel_kinds(pair.mirror_id)}
 
+    def slow_last_terminal_close_keeps_mirror(self) -> Dict[str, Any]:
+        """The last terminal's close beside a browser on a slow link: the owning Mac holds
+        the `mobile.terminal.close` for STALL_SECONDS before refusing it (its last
+        surface). All that time the mirror is bound with nothing projected, which
+        auto-mirror takes for an orphan after 1 s and closes, browser included, unless
+        the close in flight keeps it; the outcome must be as on a fast link."""
+        pair, terminal, mirror_t1, browser = self.one_terminal_beside_browser("slow")
+        stall = self.sock.call("supermux.devices.link", {
+            "machine": pair.machine, "action": "stall", "method": "mobile.terminal.close", "seconds": STALL_SECONDS,
+        }) or {}
+        if not stall.get("stall_armed"):
+            raise Failure(f"precondition: the loopback host did not arm the stall: {stall}")
+        started = time.monotonic()
+        self.sock.call("surface.close", {"workspace_id": pair.mirror_id, "surface_id": mirror_t1, "force": True})
+        # Auto-mirror passes while the close is held, as a real link's device events start them
+        # (an idle loopback sends none): the first notes the mirror, a pass 1 s later confirms it.
+        passes = []
+        for _ in range(2):
+            state = self.sock.call("supermux.devices.reconcile", {}) or {}
+            passes.append({"busy": [up(ref.get("remote_workspace_id")) for ref in state.get("busy") or []],
+                           "closes": len((state.get("last_plan") or {}).get("closes") or [])})
+            time.sleep(1.2)
+        problems = self.source_closed_keeping_browser_problems(pair, browser)
+        seconds = round(time.monotonic() - started, 2)
+        armed = (self.sock.call("supermux.devices.link", {"machine": pair.machine, "action": "status"}) or {}).get("stall_armed")
+        if armed:
+            problems.append("the stall was never used: no `mobile.terminal.close` reached the owning Mac")
+        if problems:
+            raise Failure("; ".join(problems))
+        return {"source": pair.source_id, "mirror": pair.mirror_id, "terminal": terminal, "browser": browser,
+                "stall_seconds": STALL_SECONDS, "chain_seconds": seconds, "auto_mirror_passes": passes,
+                "kept_panels": self.panel_kinds(pair.mirror_id)}
+
     def run(self) -> bool:
         ok = self.step("setup", self.setup)
         if ok:
@@ -605,6 +653,7 @@ class LocalPanelsE2E:
                 ("closing_browsers_leaves_source_alone", self.closing_browsers_leaves_source_alone),
                 ("last_terminal_beside_browser_closes_source", self.last_terminal_beside_browser_closes_source),
                 ("last_two_terminals_beside_browser_close_source", self.last_two_terminals_beside_browser_close_source),
+                ("slow_last_terminal_close_keeps_mirror", self.slow_last_terminal_close_keeps_mirror),
             ]:
                 ok = self.step(name, check) and ok
         self.facts["names"] = {name: identifier for name, identifier in self.ids.items()}
