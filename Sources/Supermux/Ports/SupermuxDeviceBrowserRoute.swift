@@ -3,6 +3,7 @@ import CmuxSurfaceCatalogModel
 import CryptoKit
 import Foundation
 import SupermuxKit
+import WebKit
 
 /// Where a browser in a device mirror sends its requests.
 ///
@@ -38,9 +39,11 @@ enum SupermuxDeviceBrowserRoute {
               let store = websiteDataStoreID(for: machine) else {
             return Route(isRemoteWorkspace: isRemoteWorkspace, proxyEndpoint: proxyEndpoint, dataStoreID: dataStoreID)
         }
+        // The live proxy's endpoint, never the one passed in: a workspace's stored
+        // copy may name a listener that failed since.
         return Route(
             isRemoteWorkspace: true,
-            proxyEndpoint: proxyEndpoint ?? SupermuxDeviceBrowserProxies.shared.endpoint(for: machine),
+            proxyEndpoint: SupermuxDeviceBrowserProxies.shared.endpoint(for: machine),
             dataStoreID: store
         )
     }
@@ -87,7 +90,7 @@ final class SupermuxDeviceBrowserProxies {
 
     /// The proxy endpoint for `machine`'s mirror browsers, or nil while it is
     /// starting: those browsers' navigations wait until it is ready, when every
-    /// bound mirror of that Mac gets it.
+    /// browser on that app instance's data store gets it.
     func endpoint(for machine: SurfaceMachineID) -> BrowserProxyEndpoint? {
         let proxy = proxies[machine] ?? makeProxy(for: machine)
         proxy.start()
@@ -107,14 +110,21 @@ final class SupermuxDeviceBrowserProxies {
         return proxy
     }
 
-    /// Hands a ready endpoint to every bound mirror of `machine`: upstream's
-    /// `applyRemoteProxyEndpointUpdate` reaches its browsers and its Dock, and
-    /// resumes the navigations waiting for it.
-    private static func deliver(_ endpoint: BrowserProxyEndpoint, to machine: SurfaceMachineID) {
-        let bindings = SupermuxComposition.deviceBindings
-        for workspace in SupermuxDeviceWorkspaceIndex.allMainWindowWorkspaces()
-        where bindings.ref(forStableID: workspace.stableId)?.machine == machine {
-            workspace.applyRemoteProxyEndpointUpdate(endpoint)
+    /// Hands `machine`'s endpoint (nil while its listener restarts) to every
+    /// browser on that app instance's data store, in each window's workspaces
+    /// and their Docks: upstream's `setRemoteProxyEndpoint` applies it and
+    /// resumes the navigations waiting for it. Only those browsers, never all of
+    /// a workspace's (`Workspace.applyRemoteProxyEndpointUpdate`): an endpoint
+    /// configures a browser's whole data store, so a local browser (its
+    /// profile's store) must never get one.
+    private static func deliver(_ endpoint: BrowserProxyEndpoint?, to machine: SurfaceMachineID) {
+        guard let store = SupermuxDeviceBrowserRoute.websiteDataStoreID(for: machine) else { return }
+        for workspace in SupermuxDeviceWorkspaceIndex.allMainWindowWorkspaces() {
+            var panels = Array(workspace.panels.values)
+            workspace._dockSplit?.forEachPanel { _, panel in panels.append(panel) }
+            for case let browser as BrowserPanel in panels where browser.websiteDataStore.identifier == store {
+                browser.setRemoteProxyEndpoint(endpoint)
+            }
         }
     }
 }

@@ -34,16 +34,21 @@ final class SupermuxDeviceBrowserProxy {
     let stats = SupermuxBrowserProxyStats()
 
     private let credential = BrowserProxyCredential.random()
-    private let onReady: @MainActor (BrowserProxyEndpoint) -> Void
+    /// Gets the endpoint once the listener is ready, and nil when it failed.
+    private let onEndpointChange: @MainActor (BrowserProxyEndpoint?) -> Void
     private var listener: NWListener?
 
-    init(machine: SurfaceMachineID, onReady: @escaping @MainActor (BrowserProxyEndpoint) -> Void) {
+    /// The pause before a failed listener is replaced, so a failure that
+    /// persists cannot spin.
+    private static let restartDelay: Duration = .seconds(1)
+
+    init(machine: SurfaceMachineID, onEndpointChange: @escaping @MainActor (BrowserProxyEndpoint?) -> Void) {
         self.machine = machine
-        self.onReady = onReady
+        self.onEndpointChange = onEndpointChange
     }
 
     /// Starts listening unless it already is (or is starting). A listener that
-    /// failed is replaced on the next call.
+    /// failed is replaced after ``restartDelay``, or on an earlier call.
     func start() {
         guard listener == nil else { return }
         let tcp = NWProtocolTCP.Options()
@@ -80,12 +85,19 @@ final class SupermuxDeviceBrowserProxy {
             SupermuxOwnListenerPorts.shared.insert(Int(port))
             let endpoint = BrowserProxyEndpoint(host: "127.0.0.1", port: Int(port), credential: credential)
             self.endpoint = endpoint
-            onReady(endpoint)
+            onEndpointChange(endpoint)
         case .failed:
             if let port = endpoint?.port { SupermuxOwnListenerPorts.shared.remove(port) }
             endpoint = nil
             listener?.cancel()
             listener = nil
+            // The browsers hold the dead endpoint: take it away (their navigations
+            // wait instead of failing), then listen again; ready hands them the new one.
+            onEndpointChange(nil)
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: Self.restartDelay)
+                self?.start()
+            }
         default:
             break
         }
