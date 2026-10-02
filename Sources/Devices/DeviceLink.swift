@@ -438,6 +438,13 @@ final class DeviceLink {
         } catch {
             guard generation == self.generation else { return }
             deviceLinkLog.error("device sync fetch failed \(self.instance.wireValue, privacy: .private(mask: .hash)): \(String(describing: error), privacy: .private)")
+            // SUPERMUX:begin device-link-fetch-timed-out
+            // The fetch missed its deadline but the link stayed up; the reconnect
+            // that used to fetch again does not come (SupermuxDeviceLinkEvents.swift).
+            if SupermuxDeviceLinkEvents.isMissedDeadline(error) {
+                supermuxFetchAgain { [weak self] in self?.generation == generation }
+            }
+            // SUPERMUX:end device-link-fetch-timed-out
         }
     }
 

@@ -80,6 +80,9 @@ extension SupermuxDeviceLinkEvents {
     /// The `hostRejected` code of a request whose reply missed its deadline
     /// while the other Mac still answers. The work may still run there.
     nonisolated static let missedDeadlineCode = "timed_out"
+    /// How long a caller waits before asking again after a missed deadline on
+    /// a live link (a mirror's replay, the synced tree's fetch).
+    nonisolated static let missedDeadlineRetryDelayNanoseconds: UInt64 = 2_000_000_000
 
     /// Whether `error` is a missed reply deadline on a link that stays up
     /// (``DeviceLink/supermuxMissedDeadline(_:_:client:isCurrent:)``).
@@ -132,6 +135,20 @@ extension DeviceLink {
                 defaultValue: "\(name) did not answer in time. It is still connected; try again."
             )
         )
+    }
+
+    /// The synced tree's fetch missed its deadline on a link that stays up
+    /// (touchpoint `device-link-fetch-timed-out`). Before #723 the reconnect
+    /// fetched it again; now the workspace list would stay as it was (empty
+    /// after a connect) until that Mac next changed something. So it is
+    /// fetched again shortly, while `isCurrent` says the connection is the
+    /// same one.
+    func supermuxFetchAgain(isCurrent: @escaping @MainActor () -> Bool) {
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: SupermuxDeviceLinkEvents.missedDeadlineRetryDelayNanoseconds)
+            guard let self, isCurrent() else { return }
+            await self.fetchNow()
+        }
     }
 
     /// Whether the other Mac's connection answers a probe in time. The probe
