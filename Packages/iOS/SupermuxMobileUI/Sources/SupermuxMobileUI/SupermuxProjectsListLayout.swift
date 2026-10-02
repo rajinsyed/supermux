@@ -100,12 +100,13 @@ public struct SupermuxProjectsListLayout: Sendable {
             return
         }
         let parsedMachines = MobileWorkspaceListFilter.parsedMachineEntries(scope.activeFilter.machines)
-        let projects = SupermuxPhoneProjectMerge.merge(section.groups).compactMap { project in
-            project.keeping { location in
-                parsedMachines.isEmpty || parsedMachines.contains {
-                    $0.matches(deviceID: location.mac.macDeviceID ?? "", rowTag: location.mac.instanceTag)
-                }
+        func isShown(_ mac: SupermuxProjectsMacHeader) -> Bool {
+            parsedMachines.isEmpty || parsedMachines.contains {
+                $0.matches(deviceID: mac.macDeviceID ?? "", rowTag: mac.instanceTag)
             }
+        }
+        let projects = SupermuxPhoneProjectMerge.merge(section.groups).compactMap { project in
+            project.keeping { isShown($0.mac) }
         }
         // Scoped to one Mac that has no projects: no block at all, rather
         // than a "No projects yet" that is only true of that Mac.
@@ -114,7 +115,12 @@ public struct SupermuxProjectsListLayout: Sendable {
             return
         }
 
-        var builder = Builder()
+        // The list's home Mac, the Mac sidebar's "this Mac": the first Mac in
+        // display order (the foreground Mac when it has projects), which also
+        // leads every project it holds. Rows on any other Mac carry the
+        // cloud-Mac icon; scoped to one Mac, that Mac is home and none do.
+        let homePairingID = section.displayedGroups.first { isShown($0.header) }?.header.pairingID
+        var builder = Builder(homePairingID: homePairingID)
         builder.fork("header", .header(
             isCollapsed: section.isCollapsed,
             projectCount: section.isCollapsed && section.hasLoaded ? projects.count : nil,
@@ -187,6 +193,8 @@ public struct SupermuxProjectsListLayout: Sendable {
 
     /// Accumulates the leading run.
     private struct Builder {
+        /// The list's home Mac, whose rows carry no Mac icon.
+        let homePairingID: String?
         var entries: [Entry] = []
         var nestedWorkspaceIDs = Set<MobileWorkspacePreview.ID>()
         var forkRows: [String: SupermuxProjectsTableRowValue] = [:]
@@ -195,6 +203,12 @@ public struct SupermuxProjectsListLayout: Sendable {
         mutating func fork(_ id: String, _ value: SupermuxProjectsTableRowValue) {
             entries.append(.fork(id))
             forkRows[id] = value
+        }
+
+        /// The Mac a row on `mac` shows the icon for: `nil` on the home Mac.
+        func remoteMac(_ mac: SupermuxProjectsMacHeader?) -> SupermuxRemoteMac? {
+            guard let mac, mac.pairingID != homePairingID else { return nil }
+            return SupermuxRemoteMac(mac: mac)
         }
 
         mutating func add(
@@ -223,7 +237,8 @@ public struct SupermuxProjectsListLayout: Sendable {
                 let snapshot = location?.row.openWorkspaces.first { $0.id == workspace.id.rawValue }
                 accessories[workspace.id] = SupermuxNestedWorkspaceAccessory(
                     workspaceID: workspace.id.rawValue,
-                    macName: project.spansMacs ? location?.mac.displayName : nil,
+                    remoteMac: remoteMac(location?.mac),
+                    branch: workspace.supermuxDisplayedBranch,
                     pullRequest: snapshot?.pullRequest,
                     isRunning: snapshot?.isRunning ?? false
                 )
@@ -252,7 +267,7 @@ public struct SupermuxProjectsListLayout: Sendable {
                         fork("t:\(key):\(location.row.id):\(worktree.id)", .worktree(SupermuxNestedWorktreeRowValue(
                             projectRowID: location.row.id,
                             worktree: worktree,
-                            macName: project.spansMacs ? location.mac.displayName : nil
+                            remoteMac: remoteMac(location.mac)
                         )))
                     }
                 }
