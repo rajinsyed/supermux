@@ -19,7 +19,7 @@ extension TerminalController {
     ///   - params: The request params.
     ///   - executionContext: The caller's transport trust context (`nil` for
     ///     in-process callers). Only methods that must know WHO is calling
-    ///     (`phone_push.share`: Mac peers only) read it.
+    ///     (`phone_push.share`, `ports.list`: Mac peers only) read it.
     /// - Returns: The handler's result, or `method_not_found` for methods this
     ///   host does not serve (yet) — the phone gates each screen on the
     ///   advertised ``SupermuxMobileCapabilities`` instead of probing.
@@ -139,6 +139,8 @@ extension TerminalController {
             return await v2SupermuxPhonePushStatus()
         case .phonePushShare:
             return await v2SupermuxPhonePushShare(params: params, executionContext: executionContext)
+        case .portsList:
+            return await v2SupermuxPortsList(params: params, executionContext: executionContext)
         default:
             return .err(code: "method_not_found", message: "Unknown mobile method", data: [
                 "method": method
