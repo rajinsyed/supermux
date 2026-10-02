@@ -524,6 +524,14 @@ when S gets T4 in that pane; closing T1 in M closes it on S (the close path's gu
 with only the first fix); closing B and B2 leaves S alone and the pure mirror follows the next split.
 Every expected pair must hold, then stay so for `--settle` seconds. Before the fix the third step
 fails deterministically (the mirror's layout target is nil while B exists, so T2 is never projected).
+The last step uses a second source S2 with ONE terminal, its mirror M2 and a browser B3 in M2: closing
+the terminal's tab in M2 (`surface.close`) closes S2 on its Mac (it cannot keep a workspace without a
+surface), M2 shows no failure card (`supermux.devices.terminal_close.inspect`), stays open holding only
+B3 (`mirror.layout`'s `panel_kinds`) and is no longer a mirror (`supermux.devices.bindings`), S2 is not
+in the Hide Here set and its pending close is forgotten (`supermux.devices.hidden`), and for at least 3
+seconds nothing projects a terminal into M2, closes it or mirrors S2 again. Before that fix the owning
+Mac refused `mobile.terminal.close` ("Cannot close the last surface"): the card showed, S2 kept running
+and auto-mirror closed M2, browser included, as an orphan.
 
 ## Mirror browser E2E
 

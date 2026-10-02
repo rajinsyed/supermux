@@ -334,7 +334,11 @@ SupermuxDeviceMirrorsGlue.unhide(machineID:ref:)   // unhide + reconcile
   (`SupermuxMobileSidebarStatusObserver`).
 - **Layout sync** skips remote non-terminal panels (browser/markdown) instead of stalling (#531), and
   a bound mirror's own non-terminal panels stay local (reserved: never pushed, grafted back) instead of
-  stopping it (#706, `SupermuxDeviceLayoutSurfaceFilter.localPanelIDs`).
+  stopping it (#706, `SupermuxDeviceLayoutSurfaceFilter.localPanelIDs`). Closing such a mirror's last
+  terminal tab while its own panels stay sends no `mobile.terminal.close` (the owning Mac refuses a
+  workspace's last surface): when the owner's snapshot holds only that terminal,
+  `SupermuxDeviceMirrorCloser.closeOnItsMacKeepingHere` closes the workspace there as a user close does
+  (pending, `force`) and unbinds the mirror, which stays open with its own panels as a local workspace.
 - **Mirror browsers** use upstream's remote-workspace mode with the owning Mac's proxy and a per-Mac data
   store (#707, `SupermuxDeviceBrowserRoute`, `SupermuxDeviceBrowserProxies`), so their `localhost` is
   that Mac's.
