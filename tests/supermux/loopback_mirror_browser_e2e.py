@@ -30,9 +30,9 @@ independently:
                                          tunnel open (skipped when the Mac has no non-loopback IPv4)
   5 closed_port_explains                 a closed port in a new mirror tab shows the "localhost:N on <Mac> isn't
                                          answering" page within 5 s
- 5b typed_navigations_are_prompt        URLs typed into the open mirror tab each show the owner's page within
-                                         3 s, 6 times (it waited ~10 s behind a tunnel WebKit opened and never
-                                         sent a request on)
+ 5b typed_navigations_are_prompt        URLs typed into the open mirror tab, to owner ports forwarded here on
+                                         the same port, each show the owner's page within 3 s, 6 times (through
+                                         the alias each waited ~10.5 s on WebKit's hardened-process swap)
   6 proxy_requires_credential            the proxy refuses SOCKS no-auth (05 FF), a wrong password (01 01)
                                          and CONNECT without credentials (407); the right one connects
   7 terminal_link_opens_routed_browser   a link click in the mirror's terminal (cmux browser) opens a
@@ -305,6 +305,8 @@ class MirrorBrowserE2E:
         self.owner_server: Optional[MarkerServer] = None
         # Ports the loopback owner serves from another port (`tunnel.serve_port`).
         self.served_ports: List[int] = []
+        # Owner ports this suite forwarded here (stopped at the end).
+        self.forwarded_ports: List[int] = []
 
     # -- reads -----------------------------------------------------------------
 
@@ -622,38 +624,58 @@ class MirrorBrowserE2E:
             raise Failure(f"the explanation page took {seconds}s, want at most {EXPLAIN_PAGE_S:.0f}s")
         return {"port": closed, "title": title, "page_seconds": seconds}
 
+    def owner_page_forwarded_here(self, label: str) -> Tuple[MarkerServer, int]:
+        """An owner page at the owner's localhost:P, with P forwarded to this Mac on
+        P itself (what port forwarding does for a server in a mirrored terminal
+        whenever P is free here). The loopback owner serves P from the page
+        server's own port (`tunnel.serve_port`), so P stays free here and only the
+        forward, through the owner, answers on it."""
+        owner = self.server(label)
+        port = free_dev_port()
+        self.tunnel("serve_port", port=port, **{"from": owner.port})
+        self.served_ports.append(port)
+        self.sock.call("supermux.devices.ports.forward", {"machine": self.pair.machine, "port": port})
+        self.forwarded_ports.append(port)
+
+        def active() -> Dict[str, Any]:
+            rows = (self.sock.call("supermux.devices.ports.list", {"machine": self.pair.machine}) or {}).get("forwards") or []
+            row = next((r for r in rows if int(r.get("remote_port") or 0) == port), None)
+            if not row or row.get("state") != "active":
+                raise Failure(f"forward {row}")
+            return row
+
+        row = wait_for(f"a forward of the owner's {port}", active, self.timeout)
+        if int(row.get("local_port") or 0) != port:
+            raise Failure(f"precondition: the forward listens on {row.get('local_port')}, not on {port}: {row}")
+        return owner, port
+
     def typed_navigations_are_prompt(self) -> Dict[str, Any]:
-        """A URL typed into the open mirror tab shows the owner's page within
-        TYPED_NAVIGATION_S, each of TYPED_NAVIGATIONS times (a new owner port
-        each). It used to wait ~10 s most times: for such a navigation WebKit
-        opens a tunnel through the proxy at once, sends nothing on it, and sends
-        the request on a new connection only once that tunnel closes (WebKit
-        closed it after ~10.8 s). The proxy's connection traces name it: a
-        tunnel that carried no request, open for the whole wait."""
+        """URLs typed into the open mirror tab, each to an owner port forwarded
+        here on the same port, show the owner's page within TYPED_NAVIGATION_S,
+        TYPED_NAVIGATIONS times. Through the localhost alias each took 10.5-11 s:
+        WebKit 27 moves a typed navigation to plain HTTP on a host that is not
+        loopback by name into a new hardened WebContent process, and making one
+        blocks its UI thread ~10 s here (issuing font sandbox extensions); a
+        local tab typed to the alias or a LAN address waits as long, no proxy
+        involved. Loaded as written (#754), the page is http://localhost:P."""
         browser = self.require_mirror_browser()
-        owner, here = self.owner_and_this_mac("typed-0")
-        self.navigate_open_tab(browser, f"http://localhost:{here.port}/marker.html")
-        self.wait_owner_page(browser, owner, here, "the open mirror tab to show an owner page")
-        before = self.require_proxy()
-        first_trace = max([int(c.get("id") or 0) for c in before.get("connections") or []] or [0])
+        owner, port = self.owner_page_forwarded_here("typed-0")
+        self.navigate_open_tab(browser, f"http://localhost:{port}/marker.html")
+        self.wait_title(browser, lambda t: t == owner.title, "the open mirror tab to show an owner page")
         timings: List[float] = []
         for index in range(1, TYPED_NAVIGATIONS + 1):
-            owner, here = self.owner_and_this_mac(f"typed-{index}")
+            owner, port = self.owner_page_forwarded_here(f"typed-{index}")
+            url = f"http://localhost:{port}/marker.html?typed={index}"
             started = time.monotonic()
-            self.navigate_open_tab(browser, f"http://localhost:{here.port}/marker.html?typed={index}")
-            self.wait_owner_page(browser, owner, here, f"typed navigation {index}")
+            self.navigate_open_tab(browser, url)
+            self.wait_title(browser, lambda t: t == owner.title, f"typed navigation {index}")
             timings.append(round(time.monotonic() - started, 2))
-        after = self.require_proxy()
-        traces = [c for c in after.get("connections") or [] if int(c.get("id") or 0) > first_trace]
-        unused = [round(float(c["ended"]) - float(c["decided"]), 2) for c in traces
-                  if c.get("decided") is not None and c.get("ended") is not None and not c.get("request_bytes")]
-        silent = int(after.get("silent_deadline_closes") or 0) - int(before.get("silent_deadline_closes") or 0)
-        facts = {"seconds": timings, "unused_tunnel_seconds": unused, "silent_deadline_closes": silent}
+        page = str((self.sock.call("browser.eval", {"surface_id": browser, "script": "location.href"}) or {}).get("value") or "")
         slow = [seconds for seconds in timings if seconds > TYPED_NAVIGATION_S]
         if slow:
-            raise Failure(f"{len(slow)} of {len(timings)} typed navigations took over {TYPED_NAVIGATION_S:.0f}s: {facts} "
-                          f"(tunnels through the proxy that carried no request, and how long each stayed open)")
-        return facts
+            raise Failure(f"{len(slow)} of {len(timings)} typed navigations took over {TYPED_NAVIGATION_S:.0f}s "
+                          f"(seconds {timings}; the last page ran at {page})")
+        return {"seconds": timings, "last_page": page}
 
     def proxy_requires_credential(self) -> Dict[str, Any]:
         proxy = self.require_proxy()
@@ -1100,6 +1122,11 @@ class MirrorBrowserE2E:
                 ("restart_keeps_mirror_store_proxied", self.restart_keeps_mirror_store_proxied),
             ]:
                 ok = self.step(name, check) and ok
+        for port in self.forwarded_ports:
+            try:
+                self.sock.call("supermux.devices.ports.stop", {"machine": self.pair.machine, "port": port})
+            except Failure:
+                pass
         for port in self.served_ports:
             try:
                 self.tunnel("serve_port", port=port)
