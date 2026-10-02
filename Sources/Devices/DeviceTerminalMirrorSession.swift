@@ -320,6 +320,9 @@ final class DeviceTerminalMirrorSession {
         // SUPERMUX:begin device-mirror-sizing-claim (the next attach is a reconnect: push the claim again)
         SupermuxTerminalSizingDefaults.shared.connectionDropped(self)
         // SUPERMUX:end device-mirror-sizing-claim
+        // SUPERMUX:begin device-mirror-hidden-counts (the other Mac drops this link's counts override with its connection: the re-attach sends it again)
+        supermuxHostHoldsHiddenCounts = false
+        // SUPERMUX:end device-mirror-hidden-counts
     }
 
     /// Single-flight replay of the source screen, followed by sequenced live bytes.
