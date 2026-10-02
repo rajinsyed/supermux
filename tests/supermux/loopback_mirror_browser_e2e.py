@@ -94,6 +94,8 @@ independently:
                                          other ports (no poke) and reloaded by the page, it lands there too
  17j restarted_server_returns_without_poke  the same restart with no poke and no reload: the tab still moves
                                          back to http://localhost:P by itself
+ 17k alias_page_reload_settles           an alias page (this Mac serves P) that reloads itself once, as
+                                         Next.js's dev client does, settles after that one reload
  18 proxy_listener_failure_recovers      after the proxy's listener fails, it is replaced on its own (waited
                                          for with a read that starts no listener); then the open mirror tab
                                          and a new one each load the owner's page on the fresh endpoint,
@@ -1755,6 +1757,44 @@ class MirrorBrowserE2E:
         finally:
             self.sock.call("surface.close", {"surface_id": tab})
 
+    def alias_page_reload_settles(self) -> Dict[str, Any]:
+        """A page on the alias that reloads itself once after it loads, as Next.js's
+        dev client does (it checks the navigation type to reload only once),
+        settles after that one reload. This Mac serves P itself, so a same-port
+        forward cannot start: the reload must stay a reload. Handing it to the
+        panel anyway (to try a forward) made it a new navigation, the page saw no
+        reload and reloaded again, forever (a real Next 16 dev server: about five
+        loads a second, never hydrated)."""
+        def body(title: str) -> str:
+            return (f"<html><head><title>{title}</title><script>window.__navType = "
+                    "(performance.getEntriesByType('navigation')[0] || {}).type;"
+                    "if (window.__navType !== 'reload') setTimeout(() => location.reload(), 200);"
+                    f"</script></head><body>{title}</body></html>")
+
+        owner = MarkerServer("127.0.0.1", f"marker-{self.nonce}-reload-once", body=body(f"marker-{self.nonce}-reload-once"))
+        self.servers.append(owner)
+        here = self.server("reload-once-this-mac")
+        self.serve_owner_port(here.port, owner.port)
+        tab = self.new_tab(self.pair.mirror_id, self.mirror_terminal(), f"http://localhost:{here.port}/marker.html")
+
+        def loads() -> int:
+            return sum(1 for hit in owner.hits if str(hit.get("path", "")).startswith("/marker.html"))
+
+        try:
+            self.wait_owner_page(tab, owner, here, "the self-reloading page through the alias")
+            time.sleep(4.0)
+            first = loads()
+            time.sleep(3.0)
+            second = loads()
+            nav_type = (self.sock.call("browser.eval", {"surface_id": tab, "script": "String(window.__navType)"}) or {}).get("value")
+            href = self.page_href(tab)
+            if first != 2 or second != 2 or nav_type != "reload":
+                raise Failure(f"the page loaded {first} times in 4 s and {second} in 7 s (want 2: the load and its one "
+                              f"reload); its last load's navigation type is {nav_type!r}, want 'reload'; it runs at {href}")
+            return {"loads": second, "navigation_type": nav_type, "page": href}
+        finally:
+            self.sock.call("surface.close", {"surface_id": tab})
+
     def idle_proxy_connections_close(self) -> Dict[str, Any]:
         """Local clients that connect and send nothing cannot hold the proxy's
         connections: past the limit of clients still in their handshake they are
@@ -1903,6 +1943,7 @@ class MirrorBrowserE2E:
                 ("unforwarded_port_forwards_on_demand", self.unforwarded_port_forwards_on_demand),
                 ("restarted_server_recovers_as_written", self.restarted_server_recovers_as_written),
                 ("restarted_server_returns_without_poke", self.restarted_server_returns_without_poke),
+                ("alias_page_reload_settles", self.alias_page_reload_settles),
                 # Last: they fail the proxy's listener.
                 ("proxy_listener_failure_recovers", self.proxy_listener_failure_recovers),
                 ("restart_keeps_mirror_store_proxied", self.restart_keeps_mirror_store_proxied),
