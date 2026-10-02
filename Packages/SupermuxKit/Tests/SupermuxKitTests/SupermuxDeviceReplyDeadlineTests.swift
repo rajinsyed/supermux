@@ -101,7 +101,7 @@ struct SupermuxDeviceReplyDeadlineTests {
     @Test func callsTheHostAnswersFromMemoryKeepTheLinkDefault() {
         for method in [
             "projects.list", "project.icon", "project.open", "run.state", "run.start", "run.stop",
-            "changes.watch", "files.watch", "action.run", "preset.launch", "workspace.select", "usage.state",
+            "changes.watch", "files.watch", "ports.list", "action.run", "preset.launch", "workspace.select", "usage.state",
         ] {
             #expect(deadline(method) == nil, "\(method)")
         }
