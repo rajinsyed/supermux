@@ -808,6 +808,12 @@ class MirrorBrowserE2E:
         except Failure as error:
             record["ok"] = False
             record["error"] = str(error)
+        except OSError as error:
+            # The control socket timed out or closed: the app froze or ended. Later
+            # steps are skipped and the report still lists every step.
+            self.app_frozen = True
+            record["ok"] = False
+            record["error"] = f"the app stopped answering: {error!r}"
         record["seconds"] = round(time.monotonic() - started, 2)
         self.steps.append(record)
         status = "SKIP" if record.get("skipped") else ("PASS" if record["ok"] else "FAIL")
