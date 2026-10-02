@@ -167,6 +167,17 @@ struct PanelContentView: View {
                     )
                 }
             }
+            // SUPERMUX:begin remote-simulator-panel-view
+            else if let viewer = panel as? SupermuxRemoteSimulatorPanel {
+                SupermuxRemoteSimulatorPanelView(
+                    panel: viewer,
+                    isFocused: isFocused,
+                    isVisibleInUI: isVisibleInUI,
+                    appearance: appearance,
+                    onRequestPanelFocus: onRequestPanelFocus
+                )
+            }
+            // SUPERMUX:end remote-simulator-panel-view
         case .agentSession:
             if let agentSessionPanel = panel as? AgentSessionPanel {
                 AgentSessionPanelView(

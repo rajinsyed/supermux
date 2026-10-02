@@ -131,6 +131,8 @@ extension TerminalController {
             return v2SupermuxPaneClose(params: params)
         case .simulatorCreate:
             return v2SupermuxSimulatorCreate(params: params)
+        case .simulatorControl:
+            return await v2SupermuxSimulatorControl(params: params)
         case .usageState:
             return await v2SupermuxUsageState(params: params)
         case .phonePushRegister:
@@ -192,7 +194,9 @@ extension TerminalController {
         ])
     }
 
-    /// Creates a native Simulator panel in the workspace's current pane.
+    /// Creates a native Simulator panel in the workspace's current pane. An
+    /// optional `udid` picks its device (another Mac's viewer reopening the
+    /// simulator it showed before).
     private func v2SupermuxSimulatorCreate(params: [String: Any]) -> V2CallResult {
         guard CmuxFeatureFlags.shared.isSimulatorEnabled else {
             return .err(
@@ -218,7 +222,8 @@ extension TerminalController {
                 ?? workspace.bonsplitController.allPaneIds.first else {
             return .err(code: "not_found", message: "Pane not found", data: nil)
         }
-        guard let panel = workspace.newSimulatorSurface(inPane: paneID, focus: false) else {
+        let udid = v2RawString(params, "udid").flatMap { $0.isEmpty ? nil : $0 }
+        guard let panel = workspace.newSimulatorSurface(inPane: paneID, preferredDeviceID: udid, focus: false) else {
             return .err(
                 code: "unavailable",
                 message: "Simulator creation is unavailable",

@@ -92,6 +92,10 @@ enum SupermuxMobileCapabilities {
             // panel browses a workspace's folder here, read-only and
             // root-confined, and refreshes when the folder's entries change.
             SupermuxMobileCapability.filesReadV1.rawValue,
+            // simulator.control is served and simulator.create takes `udid`:
+            // another Mac's device mirror shows this Mac's simulators (the
+            // video itself is upstream's simulator.stream.v2 lane).
+            SupermuxMobileCapability.remoteSimulatorV1.rawValue,
         ]
     }
 }

@@ -57,6 +57,10 @@ public enum SupermuxMobileCapability: String, CaseIterable, Codable, Sendable, E
     /// `supermux.ports.updated` are served. Withheld while the embedded
     /// browser is disabled by policy.
     case portForwardV1 = "supermux.port_forward.v1"
+    /// Another Mac can show this Mac's simulators: `simulator.control`
+    /// (rotate, software keyboard, appearance) is served and
+    /// `simulator.create` takes `udid`.
+    case remoteSimulatorV1 = "supermux.remote_simulator.v1"
 
     /// Every capability, in declaration order (derived from `CaseIterable`).
     public static let all: [SupermuxMobileCapability] = SupermuxMobileCapability.allCases
