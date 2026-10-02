@@ -19,6 +19,12 @@ import WebKit
 /// - `browser_proxy {machine}` — the mirror browser proxy for that Mac: `port`,
 ///   its credential and its dial counters; `proxy` is null while it is not
 ///   listening (or where no proxy exists).
+/// - `browser_proxy_fail {machine}` — fails that proxy's listener the way the
+///   network stack would; `failed_port` is the port it listened on (null when
+///   it was not listening).
+/// - `browser_store {machine}` — the website data store identifier the route
+///   gives that app instance's mirror browsers (any `device:` machine id, also
+///   one not connected).
 /// - `layout {workspace_id}` — the pane tree as the device layout sync reads it
 ///   (panel ids, tab order, split directions and ratios), and each panel's kind.
 /// - `link_open {workspace_id, surface_id, url, destination: system|cmux|setting}`
@@ -27,12 +33,18 @@ import WebKit
 ///   `external_url`, and `new_browser_panel_id` for a cmux browser open.
 @MainActor
 enum SupermuxMirrorBrowserSocket {
-    static let methods: Set<Substring> = ["browser_route", "browser_proxy", "layout", "link_open"]
+    static let methods: Set<Substring> = [
+        "browser_route", "browser_proxy", "browser_proxy_fail", "browser_store", "layout", "link_open",
+    ]
 
     static func handle(_ method: Substring, params: [String: Any]) async throws -> [String: Any] {
         switch method {
         case "browser_proxy":
             return browserProxy(try machine(params))
+        case "browser_proxy_fail":
+            return browserProxyFail(try machine(params))
+        case "browser_store":
+            return browserStore(try machine(params))
         case "link_open":
             return try await linkOpen(params)
         case "layout":
@@ -95,6 +107,19 @@ enum SupermuxMirrorBrowserSocket {
                 "failures": proxy.stats.failures,
             ] as [String: Any],
         ]
+    }
+
+    private static func browserProxyFail(_ machine: SurfaceMachineID) -> [String: Any] {
+        guard let proxy = SupermuxDeviceBrowserProxies.shared.proxy(for: machine), let port = proxy.endpoint?.port else {
+            return ["machine": machine.rawValue, "failed_port": NSNull()]
+        }
+        proxy.debugFailListener()
+        return ["machine": machine.rawValue, "failed_port": port]
+    }
+
+    /// The route has no per-app-instance store rule yet: null.
+    private static func browserStore(_ machine: SurfaceMachineID) -> [String: Any] {
+        ["machine": machine.rawValue, "store_identifier": NSNull()]
     }
 
     // MARK: - Layout

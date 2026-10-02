@@ -84,6 +84,16 @@ final class SupermuxDeviceBrowserProxy {
     }
 }
 
+#if DEBUG
+extension SupermuxDeviceBrowserProxy {
+    /// E2E (`supermux.devices.mirror.browser_proxy_fail`): runs what the
+    /// network stack failing the listener runs.
+    func debugFailListener() {
+        listenerChanged(.failed(.posix(.ECONNABORTED)), port: nil)
+    }
+}
+#endif
+
 /// Dial counters of one browser proxy (DEBUG E2E evidence; cheap enough to
 /// keep in every build).
 final class SupermuxBrowserProxyStats: @unchecked Sendable {
