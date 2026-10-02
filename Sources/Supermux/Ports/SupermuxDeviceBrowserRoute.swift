@@ -48,6 +48,28 @@ enum SupermuxDeviceBrowserRoute {
         )
     }
 
+    /// Whether a mirror browser loads `url` as written instead of upstream's
+    /// `localhost` alias (`http://cmux-loopback.localtest.me:P`, which the proxy
+    /// sends to the owning Mac): an `http` URL on `localhost`, `127.0.0.1` or
+    /// `[::1]` whose port P this Mac forwards from the browser's Mac on P itself,
+    /// as port forwarding does for a server in a mirrored terminal whenever P is
+    /// free here. This Mac's `localhost:P` then already is that Mac's, so the page
+    /// keeps its own origin: a secure context, and the hostname a dev app's
+    /// Cloudflare Turnstile sitekey, cookies and OAuth redirects name. The alias is
+    /// neither, so a Turnstile login there failed (110200, Domain not authorized).
+    /// WebKit never asks a proxy for a loopback host, so the load goes straight to
+    /// the forward. Nil `dataStoreID` (or a store of no mirror) keeps upstream's.
+    static func loadsAsWritten(_ url: URL, dataStoreID: UUID?) -> Bool {
+        guard let dataStoreID, url.scheme?.lowercased() == "http",
+              let host = RemoteLoopbackProxyAlias.normalizeHost(url.host ?? ""),
+              ["localhost", "127.0.0.1", "::1"].contains(host) else { return false }
+        let port = url.port ?? 80
+        return SupermuxComposition.portForwards.forwards.values.contains { forward in
+            forward.key.remotePort == port && forward.localPort == port
+                && websiteDataStoreID(for: forward.key.machine) == dataStoreID
+        }
+    }
+
     /// The website data store of an app instance's mirror browsers: a
     /// name-based (RFC 4122 v5) UUID of its machine id (`device:<uuid>@<tag>`),
     /// the key its proxy has. One per app instance, because a store's proxy
