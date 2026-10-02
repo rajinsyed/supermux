@@ -200,7 +200,14 @@ answers `chip_open {workspace_id, port, cmux_browser?}` (a sidebar chip click th
 CMUX_E2E_SUITES="loopback_port_forward_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
 ```
 
-What the loopback cannot show: the same-port path (R is always busy here), real QUIC tunnels and
+`moved_forward_returns_to_remote_port` (#757 round) takes a port P the suite holds here, has the loopback owner
+serve it from another port (`tunnel.serve_port`) and lists it as S's (`tunnel.inject_port`): the forward lands
+above P; once the suite frees P, Stop then Resume must bring it back on P, and after it moved again (the suite takes
+P back meanwhile) a relink must too. Red on e0c96de51ff (Resume came back on its last local port, 60919, not 60917):
+a forward tried its last local port first. `disconnect_stops_listeners` still covers keeping the last local port
+while R stays busy here.
+
+What the loopback cannot show: the same-port path for R (R is always busy here), real QUIC tunnels and
 their limits, a Tailscale-only link (`no_direct_link`), and iOS Simulator apps. Check those on two
 Macs.
 
@@ -673,6 +680,30 @@ as-written page's own `location.href` to `localhost:Q`, this Mac serving Q, must
 `public_page_gets_no_ports` (an alias page that defines `__cmuxSetMirrorLoopbackPorts` must be handed nothing when the
 forwards change); `same_origin_iframe_reaches_owner` (a same-origin iframe's `fetch` to `localhost:Q` must reach the
 owner's Q).
+
+The real two-Mac fixes (#757, 2026-10-03) add six steps. `alias_keep_alive_requests_reach_owner`: the owner's
+page comes from a strict HTTP/1.1 keep-alive server (`StrictDevServer`) that answers 403 to a `Host` or `Origin`
+that is not `localhost:P`, as Next.js 16's `blockCrossSiteDEV` does; this Mac serves P itself, so the tab runs at the
+alias; the page loads two scripts and a module (which sends `Origin`), then fetches one after another over the same
+connection (GETs, a chunked answer, a POST with a body, a HEAD, a redirect whose `Location` names localhost, a
+`Set-Cookie` for `Domain=localhost` and a request that needs the cookie). All must succeed and the owner refuse
+nothing; a connection must carry at least 3 requests, else the step cannot tell (red: 9 of 9 fetches answered 403).
+`other_port_forward_loads_as_written`: a port the owner lists only under `other_ports` (DEBUG
+`tunnel.inject_other_port {port, remove?}`; `clear_injected` clears these too), forwarded here by hand on P, loads
+as written (red: the alias; the viewer never asked for other ports). `unforwarded_port_forwards_on_demand`: (a) a
+new mirror tab on such an other port, free here and forwarded nowhere, must run at `http://localhost:P`, a secure
+context, with a same-port forward active and listed in "Ports on <Mac>" and no proxy dial to the owner (it never
+went through the alias); (b) the same for a URL typed into the open tab, P a workspace port with automatic
+forwarding off; (c) after Stop Forwarding a navigation to P runs at the alias and the forward stays stopped; (d)
+once the owner no longer lists P and a connection to the forward is refused there, the forward goes with no poke
+(red: the alias). `restarted_server_recovers_as_written`: the owner's server on P stops (unlisted with a poke: the
+forward goes, the tab moves to the alias) and restarts; (A) re-listed with a poke, the tab moves back by itself
+(#756's activation, green on the red build too); (B) listed only among the owner's other ports, no poke, and the
+page reloads itself: the reload must land at `http://localhost:P` (red: stayed on the alias).
+`restarted_server_returns_without_poke`: the same restart with no poke and no reload: the tab must move back on its
+own within 45 s (red on a3cdb4e4813, which had every other fix: the follow-up fetches after a forward's port left
+the listing and the open-tab forwards were missing). The ports driver's `list` reports each listing's
+`host_other_ports`.
 
 **A URL typed into a tab, to plain HTTP on a host that is not loopback by name, waits ~10 s on this Mac**
 (WebKit and macOS 27, not the proxy; not a fail-open). WebKit 27 moves such a navigation into a new hardened
