@@ -153,13 +153,16 @@ restore: quit the app, relaunch it with the opt-in, and the mirror reconnects.
 to this Mac. Viewer and owner are one app, so every remote port is busy here and each forward must
 land on another local port. It starts `python3 -m http.server R` in a background source workspace's
 terminal (`surface.send_text`, then `surface.ports_kick`) and checks: an automatic forward of R
-becomes active on L ≠ R within `--latency` (default 8 s) and serves the owner's page on
+becomes active within `--latency` (default 8 s) on L, neither R nor one of R+1…R+3 (the suite
+listens on those itself), and serves the owner's page on
 `127.0.0.1:L` and `[::1]:L`; a suite-owned dual-stack `[::]` listener plus a host port injected
 with Track A's `supermux.devices.tunnel.inject_port` is forwarded elsewhere while `127.0.0.1:R2`
 still reaches the suite's own listener; the mirror's `supermux.ports.R` pill names L and its port
 chips list R; Forward a Port / Stop / Resume (`supermux.devices.ports.forward|stop|resume`); a
 server that exits removes its forward; a dropped link (`supermux.devices.link stop|restore`) makes
-forwards wait, empties the chips and brings them back on the same L; auto-forward off keeps a
+forwards wait and empties the chips, and the suite frees R+1…R+3 while the link is down, so the
+first free port above R is below L and only the forward's last-local-port preference brings it back
+on L (the step fails rather than pass vacuously when nothing between R and L is free); auto-forward off keeps a
 manual forward; a default-browser link from the mirror's terminal (Track C's
 `supermux.devices.mirror.link_open`) goes to L; and Track A's `pretend_old_host` disables
 forwarding (`needs_update`). The DEBUG driver `supermux.devices.ports.*`
@@ -601,14 +604,21 @@ is advertised; a GET to `localhost:P` returns the marker; 30 GETs to a server th
 `Connection: close` each read the whole page and then a clean end of stream (journal `closed clean`;
 Network.framework's end-of-stream ENODATA used to abort about one in five); a `::1`-only server
 answers `localhost`; the
-host journals `opened {scope: loopback, port}` and never a host name; `169.254.169.254` and
-`example.com` are denied without resolving; a closed port is `refused`; a port registered as this
-app's own listener (`tunnel.own_port`) is denied (the loop guard); a revoked peer is denied
-(`unauthorized`); `mobile.supermux.ports.list` attributes a server started in a workspace's terminal
-to that workspace (after `surface.ports_kick`), lists the suite's own server only under
-`other_ports`, and lists an injected non-listening port (`tunnel.inject_port`) until it is cleared; a
-held tunnel ends when the link drops; and with `tunnel.pretend_old_host` the capability disappears and
-tunnels answer `needs_update`, then come back.
+host journals `opened {scope: loopback, port}` and never a host name; with this build's "iOS Browser
+Reaches Other Hosts" turned on (`tunnel.allow_other_hosts`, read back after the opens so a cmux.json
+that manages the key fails the step instead of turning it off, and put back afterwards), `169.254.169.254`,
+`example.com` and `192.0.2.1` are still denied without resolving (journal `refused {scope: policy}`;
+the phone's policy would resolve the name and try the literal); a closed port is `refused`; a port
+registered as this app's own listener (`tunnel.own_port`) is denied (the loop guard); a revoked peer
+is denied (`unauthorized`); `mobile.supermux.ports.list` attributes a server started in a workspace's
+terminal to that workspace (after `surface.ports_kick`), lists the suite's own server only under
+`other_ports`, and lists an injected non-listening port (`tunnel.inject_port`, which bypasses the
+live-listener check) until it is cleared; a held tunnel ends when the link drops; with
+`tunnel.pretend_old_host` the capability disappears and tunnels answer `needs_update`, then come back;
+and when the workspace's terminal reports its live port plus one nothing serves (the v1
+`report_ports`, no port scan, retried until the workspace still reports it after the listing),
+`ports.list` keeps the live port and drops the dead one: the live-listener filter, not a scan,
+removes it.
 
 Run it: `CMUX_E2E_SUITES="loopback_device_tunnel_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`.
 The attribution step needs the sidebar's port detection (Settings: show ports, not "hide all
