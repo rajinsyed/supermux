@@ -13,18 +13,20 @@ open tunnels the way a forward does; this suite runs its own servers:
    1. setup                                the loopback linked; marker servers up; driver state reset
    2. capability_advertised                mobile.host.status lists supermux.port_forward.v1
    3. tunnel_reaches_owner_loopback        GET localhost:P through a tunnel returns the marker
-   4. ipv6_only_server                     a ::1-only server answers localhost:Q (v4 refused, then v6)
-   5. journal_scoped                       the host journals `opened {scope: loopback, port: P}`, no host names
-   6. policy_denies                        169.254.169.254:80 and example.com:80 are denied (never resolved)
-   7. closed_port                          a closed port answers `refused`
-   8. loop_guard                           a port this app listens on for forwards is denied
-   9. revoked                              a revoked peer's opens are denied (`unauthorized`)
-  10. ports_list_attributes_workspace_port a server started in a workspace's terminal is listed with
+   4. closing_server_ends_clean            30 GETs to a server that answers and closes each end clean:
+                                           the whole page, then end of stream (host journal `closed clean`)
+   5. ipv6_only_server                     a ::1-only server answers localhost:Q (v4 refused, then v6)
+   6. journal_scoped                       the host journals `opened {scope: loopback, port: P}`, no host names
+   7. policy_denies                        169.254.169.254:80 and example.com:80 are denied (never resolved)
+   8. closed_port                          a closed port answers `refused`
+   9. loop_guard                           a port this app listens on for forwards is denied
+  10. revoked                              a revoked peer's opens are denied (`unauthorized`)
+  11. ports_list_attributes_workspace_port a server started in a workspace's terminal is listed with
                                            that workspace by mobile.supermux.ports.list
-  11. other_ports_lists_unattributed       include_other lists live listeners in no workspace
-  12. stale_port_dropped                   an injected (non-listening) port is listed, then gone
-  13. link_drop_ends_tunnels               a held tunnel ends when the link drops
-  14. old_host_hides_capability            a host that predates port forwarding: no capability, tunnels
+  12. other_ports_lists_unattributed       include_other lists live listeners in no workspace
+  13. stale_port_dropped                   an injected (non-listening) port is listed, then gone
+  14. link_drop_ends_tunnels               a held tunnel ends when the link drops
+  15. old_host_hides_capability            a host that predates port forwarding: no capability, tunnels
                                            answer `needs_update`; back to normal afterwards
 
 Writes a JSON report (default tests/supermux/artifacts/loopback_device_tunnel_e2e-<tag>.json)
@@ -65,6 +67,7 @@ from loopback_tab_sync_e2e import (  # noqa: E402
 
 CAPABILITY = "supermux.port_forward.v1"
 PORTS_LIST = "mobile.supermux.ports.list"
+REPEATED_GETS = 30
 # Host names that must never reach the host's journal.
 HOST_NAMES = ("localhost", "example.com", "127.0.0.1", "169.254", "::1")
 
@@ -245,6 +248,25 @@ class DeviceTunnelE2E:
         result = self.get(server.port)
         self.expect_marker(result, server.marker, f"GET localhost:{server.port}")
         return {"result": result, "server_saw_hosts": server.hosts[-3:]}
+
+    def closing_server_ends_clean(self) -> Dict[str, Any]:
+        """A server that answers `Connection: close` and closes ends every tunnel
+        clean: the viewer reads the whole page and then the end of the stream,
+        never a reset (the host relay must not abort after a complete response)."""
+        server = MarkerServer(f"close-{self.nonce}")
+        self.servers["close"] = server
+        port = str(server.port)
+        early = []
+        for _ in range(REPEATED_GETS):
+            result = self.get(server.port)
+            if result.get("status") != "connected" or result.get("http_status") != 200 or result.get("body") != server.marker:
+                early.append(result)
+        closed = [e for e in self.journal() if e.get("event") == "closed" and (e.get("attributes") or {}).get("port") == port]
+        aborted = [e for e in closed if (e.get("attributes") or {}).get("result") != "clean"]
+        if early or aborted:
+            raise Failure(f"{len(early)} of {REPEATED_GETS} GETs ended early (first: {early[:1]}); "
+                          f"the host journaled {len(aborted)} of {len(closed)} relays as aborted")
+        return {"gets": REPEATED_GETS, "closed_clean": len(closed)}
 
     def ipv6_only_server(self) -> Dict[str, Any]:
         server = self.servers["v6"]
@@ -446,6 +468,7 @@ class DeviceTunnelE2E:
             for name, check in [
                 ("capability_advertised", self.capability_advertised),
                 ("tunnel_reaches_owner_loopback", self.tunnel_reaches_owner_loopback),
+                ("closing_server_ends_clean", self.closing_server_ends_clean),
                 ("ipv6_only_server", self.ipv6_only_server),
                 ("journal_scoped", self.journal_scoped),
                 ("policy_denies", self.policy_denies),
