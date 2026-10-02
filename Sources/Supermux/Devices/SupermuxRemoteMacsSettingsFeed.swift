@@ -1,23 +1,31 @@
 import CmuxSettingsUI
+import CmuxSurfaceCatalogModel
 import Foundation
 import Observation
 import SupermuxKit
 
 /// App side of the Settings "Remote Macs" card (`SupermuxRemoteMacsSettingsCard`
 /// in `CmuxSettingsUI`): builds the card's snapshot from the device facade,
-/// ``SupermuxDevicesSettings`` and the "Hide Here" set, and applies the card's
-/// actions. The socket (`supermux.devices.remote_macs_settings*`) drives the
+/// ``SupermuxDevicesSettings``, the "Hide Here" set and the port forwards
+/// (``SupermuxPortForwards``), and applies the card's actions. The socket (`supermux.devices.remote_macs_settings*`) drives the
 /// same actions, so E2E tests exercise the card's exact write path.
 @MainActor
 final class SupermuxRemoteMacsSettingsFeed {
     private let devices: SupermuxDevices
     private let settings: SupermuxDevicesSettings
     private let hidden: SupermuxHiddenRemoteWorkspaces
+    private let forwards: SupermuxPortForwards
 
-    init(devices: SupermuxDevices, settings: SupermuxDevicesSettings, hidden: SupermuxHiddenRemoteWorkspaces) {
+    init(
+        devices: SupermuxDevices,
+        settings: SupermuxDevicesSettings,
+        hidden: SupermuxHiddenRemoteWorkspaces,
+        forwards: SupermuxPortForwards
+    ) {
         self.devices = devices
         self.settings = settings
         self.hidden = hidden
+        self.forwards = forwards
     }
 
     /// The card's actions.
@@ -27,8 +35,33 @@ final class SupermuxRemoteMacsSettingsFeed {
             setAutoMirror: { [self] in setAutoMirror($0) },
             setSyncProjects: { [self] in setSyncProjects($0) },
             setSharePush: { [self] in settings.sharePush = $0 },
-            showHiddenWorkspaces: { SupermuxDeviceMirrorsGlue.unhide() }
+            showHiddenWorkspaces: { SupermuxDeviceMirrorsGlue.unhide() },
+            setForwardPorts: { [forwards] in forwards.setAutoForward($0) },
+            portAction: { [self] in portAction(machineID: $0, remotePort: $1, action: $2) },
+            forwardPort: { [self] in forwardPort(machineID: $0) }
         )
+    }
+
+    /// A Ports… menu item of one Mac's port.
+    func portAction(machineID: String, remotePort: Int, action: SupermuxRemoteMacPortAction) {
+        let machine = SurfaceMachineID(rawValue: machineID)
+        let localPort = forwards.localPort(machine: machine, remotePort: remotePort)
+        switch action {
+        case .openInBrowser:
+            if let localPort { SupermuxMirrorPortsActions.openInDefaultBrowser(localPort: localPort) }
+        case .copyLocalURL:
+            if let localPort { SupermuxMirrorPortsActions.copyLocalURL(localPort: localPort) }
+        case .stopForwarding:
+            Task { await forwards.stop(machine: machine, remotePort: remotePort) }
+        case .forward:
+            Task { await forwards.resume(machine: machine, remotePort: remotePort) }
+        }
+    }
+
+    /// Forward a Port… for one Mac.
+    func forwardPort(machineID: String) {
+        let machine = SurfaceMachineID(rawValue: machineID)
+        SupermuxPortForwardPrompt.present(machine: machine, macName: devices.device(for: machine)?.displayName ?? "")
     }
 
     /// Auto-mirror on/off, applied at once: the coordinator opens (or stops
@@ -51,22 +84,44 @@ final class SupermuxRemoteMacsSettingsFeed {
             autoMirror: settings.autoMirror,
             syncProjects: settings.syncProjects,
             sharePush: settings.sharePush,
+            forwardPorts: settings.forwardPorts,
             macs: devices.devices.map { device in
                 SupermuxRemoteMacsSettingsSnapshot.Mac(
                     id: device.machine.rawValue,
                     name: device.displayName,
                     link: Self.link(device.linkState),
                     detail: device.linkDetail,
-                    workspaceCount: device.hasFetchedRecords ? devices.records(on: device.machine).count : 0
+                    workspaceCount: device.hasFetchedRecords ? devices.records(on: device.machine).count : 0,
+                    ports: ports(of: device.machine),
+                    portsNote: device.isConnected
+                        ? SupermuxPortsText.unavailable(forwards.availability[device.machine], macName: device.displayName)
+                        : nil
                 )
             },
             hiddenWorkspaceCount: hidden.refs.count
         )
     }
 
+    /// One Mac's listed and forwarded ports, by port number.
+    private func ports(of machine: SurfaceMachineID) -> [SupermuxRemoteMacsSettingsSnapshot.Port] {
+        let listed = Set((forwards.hostPorts[machine]?.ports ?? []).map(\.port))
+        let forwarded = forwards.forwards.values.filter { $0.key.machine == machine }
+        let byPort = Dictionary(forwarded.map { ($0.key.remotePort, $0) }, uniquingKeysWith: { first, _ in first })
+        return listed.union(byPort.keys).sorted().map { port in
+            let forward = byPort[port]
+            return SupermuxRemoteMacsSettingsSnapshot.Port(
+                remotePort: port,
+                localPort: forward?.localPort,
+                isForwarded: forward.map { $0.state != .stopped } ?? false,
+                lineText: forward.map { SupermuxPortsText.lineItem($0) } ?? ":\(port)",
+                menuLabel: SupermuxPortsText.menuLabel(remotePort: port, localPort: forward?.localPort)
+            )
+        }
+    }
+
     /// The current snapshot, then one whenever it changes: any device or
-    /// record change (`devices.revision`) or any defaults write (the three
-    /// settings and the hidden set live in `UserDefaults`).
+    /// record change (`devices.revision`), any port forward change, or any
+    /// defaults write (the settings and the hidden set live in `UserDefaults`).
     func updates() -> AsyncStream<SupermuxRemoteMacsSettingsSnapshot> {
         let (stream, continuation) = AsyncStream.makeStream(
             of: SupermuxRemoteMacsSettingsSnapshot.self,
@@ -88,6 +143,7 @@ final class SupermuxRemoteMacsSettingsFeed {
         private var last: SupermuxRemoteMacsSettingsSnapshot?
         private var observer: (any NSObjectProtocol)?
         private var revisions: Task<Void, Never>?
+        private var portChanges: Task<Void, Never>?
 
         init(feed: SupermuxRemoteMacsSettingsFeed, continuation: AsyncStream<SupermuxRemoteMacsSettingsSnapshot>.Continuation) {
             self.feed = feed
@@ -103,6 +159,13 @@ final class SupermuxRemoteMacsSettingsFeed {
                     self?.emit()
                 }
             }
+            portChanges = Task { @MainActor [weak self] in
+                while !Task.isCancelled {
+                    guard let forwards = self?.feed?.forwards else { return }
+                    await Self.nextChange(of: forwards)
+                    self?.emit()
+                }
+            }
             observer = NotificationCenter.default.addObserver(
                 forName: UserDefaults.didChangeNotification, object: nil, queue: .main
             ) { [weak self] _ in
@@ -113,6 +176,8 @@ final class SupermuxRemoteMacsSettingsFeed {
         func stop() {
             revisions?.cancel()
             revisions = nil
+            portChanges?.cancel()
+            portChanges = nil
             if let observer { NotificationCenter.default.removeObserver(observer) }
             observer = nil
         }
@@ -126,6 +191,16 @@ final class SupermuxRemoteMacsSettingsFeed {
         private static func nextRevision(of devices: SupermuxDevices) async {
             await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
                 withObservationTracking { _ = devices.revision } onChange: { continuation.resume() }
+            }
+        }
+
+        private static func nextChange(of forwards: SupermuxPortForwards) async {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                withObservationTracking {
+                    _ = forwards.forwards
+                    _ = forwards.hostPorts
+                    _ = forwards.availability
+                } onChange: { continuation.resume() }
             }
         }
     }
@@ -145,6 +220,7 @@ extension SupermuxComposition {
     static let remoteMacsSettings = SupermuxRemoteMacsSettingsFeed(
         devices: devices,
         settings: devicesSettings,
-        hidden: hiddenRemoteWorkspaces
+        hidden: hiddenRemoteWorkspaces,
+        forwards: portForwards
     )
 }
