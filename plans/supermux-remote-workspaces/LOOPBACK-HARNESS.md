@@ -621,7 +621,19 @@ down (`browser_proxy_hold`), a mirror tab opened meanwhile leaves the app instan
 its 2 proxy configurations, as the open tab's, and once released loads through the owner
 (`restart_keeps_mirror_store_proxied`; before the fix the new tab got no endpoint and its init wrote
 `[]` onto the store every mirror tab shares, 0 configurations, so the open tabs' `localhost` went to
-this Mac). DEBUG drivers
+this Mac). Last, `owner_localhost_keeps_origin` (#752, the user's Turnstile report): a login page with a
+Cloudflare Turnstile widget (the always-passing test sitekey `1x00000000000000000000AA`) served on the owner's
+`localhost:P`, with P forwarded to this Mac on P (`supermux.devices.ports.forward`), opened in a new mirror tab, must
+run at `http://localhost:P`, a secure context, come from the owner (journal `opened` for P) and get a Turnstile token; the
+same page in a local browser is the control that Turnstile works at all (it needs challenges.cloudflare.com). In
+loopback the owner's P would be busy here too, so the owner serves P from another port Q
+(`supermux.devices.tunnel.serve_port {port: P, from: Q}`, `SupermuxLoopbackServedPorts`: the loopback tunnel host
+dials Q when asked for P), leaving P free for the forward as on two Macs; P is chosen below the ephemeral range, where
+an outgoing connection's local port can take it meanwhile. Red before the fix: the tab ran at
+`http://cmux-loopback.localtest.me:P`, `isSecureContext` false (a real dev sitekey answers 110200 there). It runs after
+the listener-failure steps: with its Cloudflare connections still open through the proxy, `proxy_listener_failure_recovers`
+failed (2 of 2 runs: an open tab's load timed out, or a new tab's marker load had no tunnel open), and passed with the
+same step serving a plain page. DEBUG drivers
 (`SupermuxMirrorBrowserSocket`): `supermux.devices.mirror.browser_route {workspace_id}` (per
 browser: `routes_remotely`, `proxy_configs`, `store_identifier`), `.browser_proxy {machine, start?}`
 (the endpoint it hands out now: port, credential, `owner_dials`, `direct_dials`, `failures`; null
