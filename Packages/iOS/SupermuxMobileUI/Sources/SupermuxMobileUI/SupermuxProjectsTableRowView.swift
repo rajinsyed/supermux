@@ -91,6 +91,7 @@ public struct SupermuxProjectsTableRowView: View {
 
     private func projectRow(_ project: SupermuxMergedProjectRowValue) -> some View {
         let actions = actions
+        let key = project.key
         let locationRowIDs = project.locationRowIDs
         return SupermuxSidebarSwipeRow(
             rowID: value.swipeRowID ?? "",
@@ -100,7 +101,7 @@ public struct SupermuxProjectsTableRowView: View {
             SupermuxProjectMobileRow(
                 row: project.display,
                 iconPNGData: actions.iconPNGData,
-                toggleExpanded: { _ in actions.toggleProjectsExpanded(locationRowIDs) },
+                toggleExpanded: { _ in actions.toggleProjectsExpanded(key, locationRowIDs) },
                 openWorkspace: actions.openProjectWorkspace,
                 openDetail: actions.openProjectDetail,
                 newWorktree: project.showsWorktreeCreation ? actions.requestNewWorktree : nil,
