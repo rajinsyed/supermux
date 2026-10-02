@@ -339,9 +339,11 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   from This Mac stay per terminal. A viewing Mac's pane counts up to 500x200 (a phone's, 300x120). A
   pane that is not on screen (a tab never shown on its Mac, a mirror in a background workspace, a hidden
   or fully covered window) does not count, so a tab opened from a mirror takes the mirror's size at
-  once; a terminal that starts after its grid was decided gets it when it becomes ready. A
-  terminal's tab draws no avatar for the attached Macs (#720); its context menu keeps Size to My
-  Window, Terminal Size and Disconnect Others, and the size panel lists who is attached.
+  once; a mirror still off screen when its link reconnects keeps not counting (the other Mac forgets the
+  override with the connection, and the re-attach sends it again); a terminal that starts after its
+  grid was decided gets it when it becomes ready. A terminal's tab draws no avatar for the attached
+  Macs (#720); its context menu keeps Size to My Window, Terminal Size and Disconnect Others, and the
+  size panel lists who is attached.
 - **A mirror uses this Mac's terminal appearance** (#650–#653): the owning Mac's replay carries no
   theme colors, so a mirror pane shares the window's (translucent) backdrop exactly like a local
   pane; only colors a program on the other Mac set itself (OSC 4/10/11/12) are mirrored, and its
