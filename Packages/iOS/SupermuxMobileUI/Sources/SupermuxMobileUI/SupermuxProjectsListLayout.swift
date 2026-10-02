@@ -105,7 +105,11 @@ public struct SupermuxProjectsListLayout: Sendable {
                 $0.matches(deviceID: mac.macDeviceID ?? "", rowTag: mac.instanceTag)
             }
         }
-        let projects = SupermuxPhoneProjectMerge.merge(section.groups).compactMap { project in
+        // The Macs in the phone's stable order, not foreground first: opening
+        // a workspace on another Mac makes it the shell's foreground, and the
+        // list must not reorder or move its cloud-Mac icons for that.
+        let groups = Self.stableMacOrder(section.groups)
+        let projects = SupermuxPhoneProjectMerge.merge(groups).compactMap { project in
             project.keeping { isShown($0.mac) }
         }
         // Scoped to one Mac that has no projects: no block at all, rather
@@ -115,11 +119,11 @@ public struct SupermuxProjectsListLayout: Sendable {
             return
         }
 
-        // The list's home Mac, the Mac sidebar's "this Mac": the first Mac in
-        // display order (the foreground Mac when it has projects), which also
-        // leads every project it holds. Rows on any other Mac carry the
-        // cloud-Mac icon; scoped to one Mac, that Mac is home and none do.
-        let homePairingID = section.displayedGroups.first { isShown($0.header) }?.header.pairingID
+        // The list's home Mac, the Mac sidebar's "this Mac": the first Mac
+        // with projects in the stable order, which also leads every project it
+        // holds. Rows on any other Mac carry the cloud-Mac icon; scoped to one
+        // Mac, that Mac is home and none do.
+        let homePairingID = groups.first { $0.isDisplayed && isShown($0.header) }?.header.pairingID
         var builder = Builder(homePairingID: homePairingID)
         builder.fork("header", .header(
             isCollapsed: section.isCollapsed,
@@ -149,6 +153,18 @@ public struct SupermuxProjectsListLayout: Sendable {
         )
     }
 
+    /// The Macs in the phone's stable order: by the shell's per-Mac color
+    /// slot, which a Mac keeps for the whole session whichever Mac is the
+    /// foreground, then (for Macs without one) in display order. The
+    /// section's own order puts the foreground Mac first, and the shell makes
+    /// the Mac of every workspace the user opens the foreground.
+    /// - Parameter groups: Every Mac's slice, in display order.
+    static func stableMacOrder(_ groups: [SupermuxProjectsMacGroupSnapshot]) -> [SupermuxProjectsMacGroupSnapshot] {
+        groups.enumerated()
+            .sorted { ($0.element.header.colorIndex ?? .max, $0.offset) < ($1.element.header.colorIndex ?? .max, $1.offset) }
+            .map(\.element)
+    }
+
     /// Loose, project-owned workspaces that pass the active filter, keyed by
     /// owning project row id (`pairing` + project id), in the shell's order.
     private static func ownedWorkspaces(
@@ -175,7 +191,7 @@ public struct SupermuxProjectsListLayout: Sendable {
         return owned
     }
 
-    /// A project's nested workspaces: by Mac in display order, then each
+    /// A project's nested workspaces: by Mac in the stable order, then each
     /// Mac's own order, pinned first (or by recent activity when sorting so).
     private static func nested(
         in project: SupermuxMergedProject,

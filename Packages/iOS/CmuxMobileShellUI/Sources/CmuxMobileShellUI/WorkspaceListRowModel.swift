@@ -126,6 +126,9 @@ struct WorkspaceListWorkspaceLayoutKey: Hashable {
     // drawn text, not the raw count — 100 and 4000 both render "99+".
     let supermuxUnreadBadgeText: String?
     // SUPERMUX:end supermux-mobile-unread-badge
+    // SUPERMUX:begin supermux-mobile-nested-branch-line (a nested row's branch line adds a line under its title and takes one preview line)
+    var supermuxHasBranchLine = false
+    // SUPERMUX:end supermux-mobile-nested-branch-line
 
     init(_ model: WorkspaceListWorkspaceRowModel) {
         let content = model.content
@@ -157,6 +160,9 @@ struct WorkspaceListWorkspaceLayoutKey: Hashable {
             )
             : nil
         // SUPERMUX:end supermux-mobile-unread-badge
+        // SUPERMUX:begin supermux-mobile-nested-branch-line
+        supermuxHasBranchLine = model.supermuxAccessory?.hasBranchLine ?? false
+        // SUPERMUX:end supermux-mobile-nested-branch-line
     }
 }
 
