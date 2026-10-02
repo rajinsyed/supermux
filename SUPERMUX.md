@@ -413,9 +413,12 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   website data store, so a login to its dev app survives the mirror being re-created and never mixes
   with this Mac's `localhost` cookies (and public sites are not signed in with the profile's cookies,
   as in upstream SSH workspaces). When that Mac's `localhost` cannot be reached the page says why:
-  nothing listening there, "Update Supermux on <Mac> to open its localhost here." (no
-  `supermux.port_forward.v1`), offline, no direct connection (a Tailscale-only link), busy or
-  refused. The proxy accepts only its per-launch random credential, so other local processes cannot
+  nothing listening there, "Update Supermux on <Mac> to open its localhost here." (only when that
+  Mac's capabilities came back without `supermux.port_forward.v1`), "Can't reach <Mac> right now.
+  Reload this page in a moment." (connected, but its capability request failed, timed out or met a
+  busy Mac, or its Iroh session is between dials), offline, no direct connection (this Mac's links
+  run over the legacy Tailscale route), busy or refused. The proxy accepts only its per-launch
+  random credential, so other local processes cannot
   use it to reach the other Mac. A tab moved out of a mirror goes back to this Mac's profile.
 - **Other Macs' ports open here** (#699, #705; the tunnel is round 5's Track A): a server started in
   another Mac's workspace that is mirrored here (`bun run dev` on 3000) opens at `localhost` on this
@@ -438,8 +441,13 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   and has the same Ports… menu. A stopped automatic forward stays stopped until its server goes
   away; a forward whose server goes away is removed; while a Mac is offline its forwards wait and
   come back (same local port when still free). Needs that Mac on this build with its sidebar port
-  detection on (else only Forward a Port… works); an older Mac says "Update Supermux on <Mac> to use
-  its ports here.", a link without a direct connection says it needs one. Limits: like `ssh -L`, a
+  detection on (else only Forward a Port… works); an older Mac (capabilities without
+  `supermux.port_forward.v1`) says "Update Supermux on <Mac> to use its ports here.", a link without
+  a direct connection says it needs one. A connected Mac that does not answer the capability request
+  (a missed reply deadline, still busy after the link's retries) is not taken for an older one: it
+  says "Can't reach <Mac> right now. Trying again…", its forwards wait as they are, and it is asked
+  again after 1 s, 2 s, 4 s … up to 30 s while the link stays up; a port listing that fails is
+  fetched again the same way, without waiting for that Mac's next ports poke. Limits: like `ssh -L`, a
   forward holding a local port makes a server started here later on that port pick another (Stop
   frees it), and any process on this Mac can connect to a forwarded port. Not done: the right
   sidebar's Machines tab ports for devices, a command palette entry, notifications.
