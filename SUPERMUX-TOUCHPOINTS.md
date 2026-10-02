@@ -5205,6 +5205,8 @@ Re-apply after an upstream merge:
   closure, build them with `SupermuxDeviceTerminalInput.inputParams(batch, base:, hostTakesBatches:)`
   and keep upstream's later fields (`client_id`). Keep the replay's `counts_override` while
   `supermuxHidden` or while the host still holds it, and the `track`/`untrack` calls in `bind`/`stop`.
+  Keep the `supermuxHostHoldsHiddenCounts = false` reset at the end of `linkDropped()`: the host clears a
+  closed connection's overrides, and without it a mirror off screen across a reconnect counts again.
 - **#632 host**: the `supermux_input` batch must reach `SupermuxDeviceTerminalInput.deliver` inside
   upstream's `MobileTerminalByteTee.performMobileInput` closure, so ordering, admission, viewport
   piggyback and acknowledgements stay upstream's.

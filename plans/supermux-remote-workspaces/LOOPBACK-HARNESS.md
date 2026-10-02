@@ -42,6 +42,11 @@ CMUX_TAG=<tag> python3 tests/supermux/loopback_device_smoke.py
     `defaults write com.cmuxterm.app.debug.<tag-with-dots> supermux.debug.loopbackDevice -bool true`.
     Write it **after** the reload: `--supermux-profile` re-imports the whole defaults domain and
     wipes the key. Delete it afterwards with `defaults delete … supermux.debug.loopbackDevice`.
+- **The window must be on screen.** Many suites check what the user sees. With another app in
+  native full screen on the display, or the screen locked or asleep, the tagged app's window is
+  covered and those suites fail for nothing. `run_all_loopback_e2e.sh` stops after a launch whose
+  window stays covered for 15 s; see
+  [Six suites failed with another app full screen](#six-suites-failed-with-another-app-full-screen-2026-10-02).
 - **Why not `reload.sh --launch`.** That launch runs the app under `env -i`, so the variable never
   reaches the app. It also needs team dev credentials (`~/.secrets/cmuxterm-dev.env`). Use
   `open --env` or the default instead.
@@ -443,6 +448,12 @@ driver (badge, loading state and presence with its participants). `keys_survive_
 (`supermux.devices.link {action: restore, busy: "mobile.host.status"}`, what a Mac whose request quota
 is full of re-attaching replays answers) and checks that Shift+Enter and a drag still reach the program
 exactly, not through upstream's text path.
+`hidden_mirror_survives_reconnect` shows the source and hides its mirror, drops and restores the
+link (`supermux.devices.link stop|restore`), and checks that the re-attached mirror does not count
+toward the terminal's size and still does not 3 s later. The other Mac clears a closed connection's
+viewport reports and counts override; this Mac used to keep its record that the other Mac held the
+override, so the re-attach never sent it again and the hidden mirror counted (red on 3586ec66544 for
+the whole 30 s wait; the fix resets the record in `linkDropped()`, touchpoint #631).
 
 ```bash
 CMUX_E2E_SUITES="loopback_terminal_input_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
@@ -852,6 +863,49 @@ CMUX_TAG=<tag> python3 tests/supermux/loopback_mirror_simulator_e2e.py --app-pat
 Not covered here (two real Macs): the `simulator_stream` lane over QUIC (direct and relay) through
 `DeviceIrxClient.supermuxTunnelConnection`, capture on a headless or locked owning Mac, frame rate and
 latency, the phone and a Mac taking the stream from each other, and version skew.
+
+## Six suites failed with another app full screen (2026-10-02)
+
+After a reboot, the installed Supermux release ran in native full screen on this Mac's only display,
+so its full-screen Space was the one shown (`com.apple.spaces`: current Space type 4, owned by the
+release's pid). `open -g` puts a tagged app's window on the desktop Space, which was not shown. The
+window was visible but covered (`debug.terminals`: `window_occluded: true`,
+`renderer_window_visible: false`; CGWindowList: not on screen). Everything that follows what the
+user sees then failed:
+
+- **Sizing.** A pane counts only on screen (`SupermuxTerminalSizingVisibility.isOnScreen` needs
+  `occlusionState.contains(.visible)`). Every participant reported `counts: false`, a shown mirror
+  never claimed its terminal (`loopback_terminal_sizing_policy_e2e`: `default_policy_is_this_mac_first`,
+  `counting_source_pane_does_not_shrink`, `local_terminal_mac_first_over_phone`,
+  `showing_again_reclaims`, `reconnect_reclaims`), and the mirror pane stayed `hidden: true`
+  (`loopback_mirror_tab_close_e2e`: `pane_opened_off_screen_keeps_counting` and three after it).
+- **Drawing.** The renderer presents nothing in a covered window, so pane ink stayed 0
+  (`loopback_mirror_appearance_e2e`, three steps).
+- **Simulator.** The viewer never streamed and its picker stayed empty (`loopback_mirror_simulator_e2e`).
+- **Screenshots.** `loopback_projects_e2e`'s `sidebar_screenshot` found "no on-screen window".
+
+It was not the seeded profile: neither the tag's defaults nor the release's hold
+`supermux.terminalSizing.preference`, the suite reset it to `["self"]`, and the source's key
+`…/mac/55c63b65f767163a` is this Mac's own sizing id, read from the Mac-wide `mobile-host-device-id`
+file, so every build on this Mac has it. It was not a regression: nothing merged after e1cf813087d
+touches sizing, visibility, rendering or the simulator. Once the desktop Space was shown, the same
+six suites passed on 11edaf432c5 (3586ec66544 plus the hidden-mirror fix above; the Simulator
+suite's `build_booted_simulator_shows_up` skipped as designed, another booted simulator being the owner's
+first pick).
+
+Activating the tagged app does not help: it does not switch Spaces. Neither can the harness move its
+window. Measured on macOS 27, a regular app's window cannot join another app's full-screen Space
+under any collection behavior. An accessory app's window can (`.canJoinAllSpaces`,
+`.fullScreenAuxiliary`). A standalone app moves an existing window there by briefly becoming an
+accessory. In cmux that never worked for a window first shown while the app was regular, while a
+window created as an accessory did. The cause was not found, and the remaining routes (launch-time
+accessory mode with new upstream touchpoints, or private SkyLight calls) are not worth it for a test
+harness.
+
+So the runner checks instead. After each launch it waits up to 15 s for a terminal whose window is
+not occluded, and otherwise stops with the reason. `CMUX_E2E_ALLOW_COVERED_WINDOW=1` runs anyway
+(only for suites that check no pixels). To run, show the desktop Space or take the full-screen app out
+of full screen. **Never do either to the user's own app for them.**
 
 ## The ~20 s link flap (round 4) and why E2E did not see it
 
