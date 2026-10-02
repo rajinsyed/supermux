@@ -50,7 +50,7 @@ enum SupermuxDeviceTunnelClient {
             do {
                 return try await acceptor.openTunnel(host: host, port: port)
             } catch {
-                throw failure(for: error)
+                throw refused(failure(for: error), machine: machine, port: port)
             }
         }
         #endif
@@ -58,8 +58,20 @@ enum SupermuxDeviceTunnelClient {
         do {
             return try await IrxTunnelClient(connection: connection).connect(host: host, port: port)
         } catch {
-            throw failure(for: error)
+            throw refused(failure(for: error), machine: machine, port: port)
         }
+    }
+
+    /// `failure`, after asking `machine` for its ports again when it refused a
+    /// port its last listing has: its server went away (a server outside its
+    /// workspaces' terminals, an agent's, sends no `supermux.ports.updated`),
+    /// so the forward of it goes and its pages leave the as-written route.
+    private static func refused(_ failure: Failure, machine: SurfaceMachineID, port: Int) -> Failure {
+        let forwards = SupermuxComposition.portForwards
+        if failure == .notListening, forwards.lists(machine: machine, port: port) {
+            forwards.refresh(machine: machine)
+        }
+        return failure
     }
 
     /// Why `machine` cannot take a tunnel before any lane is tried, or nil.

@@ -5716,6 +5716,12 @@ final class BrowserPanel: Panel, ObservableObject {
         preserveRestoredSessionHistory: Bool,
         onNavigationStarted: ((WKNavigation?) -> Void)? = nil
     ) -> WKNavigation? {
+        // SUPERMUX:begin device-mirror-browser-on-demand-forward
+        if SupermuxSamePortForwardGate.holds(request, dataStoreID: websiteDataStore.identifier, panel: self, resume: { [weak self] in
+            _ = self?.performNavigation(request: request, originalURL: originalURL, recordTypedNavigation: recordTypedNavigation,
+                                        preserveRestoredSessionHistory: preserveRestoredSessionHistory, onNavigationStarted: onNavigationStarted)
+        }, abandon: { onNavigationStarted?(nil) }) { return nil }
+        // SUPERMUX:end device-mirror-browser-on-demand-forward
         cancelHiddenWebViewDiscard()
         if hasRecoverableWebContentTermination {
             _ = replaceWebViewPreservingState(
