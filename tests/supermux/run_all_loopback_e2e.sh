@@ -39,6 +39,39 @@ launch_app() {
   for _ in $(seq 1 100); do [[ -S "$SOCKET" ]] && break; sleep 0.2; done
   [[ -S "$SOCKET" ]] || { echo "app did not open $SOCKET" >&2; exit 1; }
   sleep 4 # let the loopback link connect and auto-mirror settle
+  require_window_on_screen
+}
+
+# Suites check what the user sees (panes that count, drawn frames, Simulator
+# streams, screenshots), so the app's window must really be on screen. `open -g`
+# puts it on the desktop Space: while another app is in native full screen on
+# the display (its Space is the one shown), or the screen is locked or asleep,
+# the window reports itself covered and every visual check fails for nothing.
+# CMUX_E2E_ALLOW_COVERED_WINDOW=1 runs anyway (for suites that check no pixels).
+require_window_on_screen() {
+  [[ "${CMUX_E2E_ALLOW_COVERED_WINDOW:-}" == "1" ]] && return 0
+  python3 - "$SOCKET" <<'PY' || exit 1
+import json, socket, sys, time
+deadline = time.monotonic() + 15
+while True:
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    s.settimeout(10)
+    s.connect(sys.argv[1])
+    s.sendall(b'{"id":1,"method":"debug.terminals","params":{}}\n')
+    buf = b""
+    while b"\n" not in buf:
+        buf += s.recv(1 << 20)
+    s.close()
+    terminals = (json.loads(buf.split(b"\n", 1)[0]).get("result") or {}).get("terminals") or []
+    if any(t.get("window_visible") and t.get("window_occluded") is False for t in terminals):
+        sys.exit(0)
+    if time.monotonic() > deadline:
+        print("the app's window is not on screen: is another app in native full screen on this display (show the "
+              "desktop Space), or is the screen locked or asleep? CMUX_E2E_ALLOW_COVERED_WINDOW=1 runs anyway.",
+              file=sys.stderr)
+        sys.exit(1)
+    time.sleep(0.5)
+PY
 }
 
 quit_app
