@@ -30,7 +30,8 @@ Rules for adding a touchpoint:
   (focused-pane suppression) and #689. Round 5 (port forwarding and the mirror browser) uses #693–#694 and #698 (tunnel
   lanes for other Macs), #699 and #705 (forwarded ports) and #706–#708 (a mirror's own tabs keep its layout sync; its
   browser opens the owning Mac's localhost) and #730–#734, #737–#739 (remote simulators: a mirror's Simulator streams the
-  owning Mac's); 709, 713–714, 724 and 735–736 are unassigned. The highest number in use is 739. Number **351** is unused (the notifications
+  owning Mac's) plus, in its stabilization, #735 (a quit that reaches a worker goes to the app); 709, 713–714, 724
+  and 736 are unassigned. The highest number in use is 739. Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 82, 83, 89, 106, 121, 142, 213, 214,
   220, 229, 237, 250, 251, 252–258, 335, 470, 473–481, 483, 484, and 487** are unused; all are
@@ -668,7 +669,8 @@ Rules for adding a touchpoint:
 | 732 | `Sources/Workspace.swift` | `remote-simulator-new-action` | In `executeSurfaceTabBarCommandButton`'s `case .newSimulator:` arm (the pane tab bar's New Simulator button): `if !SupermuxRemoteSimulators.shared.openIfDeviceMirror(self, paneId: pane, focus: true) { _ = newSimulatorSurface(inPane: pane, focus: true) }` |
 | 733 | `Sources/Workspace+SimulatorSessionPersistence.swift` | `remote-simulator-session` | Three fences: `var supermuxRemote: SupermuxRemoteSimulatorSnapshot?` in `SessionSimulatorPanelSnapshot` (synthesized Codable; old JSON decodes nil; the upstream device fields stay empty for a viewer, so an older build boots nothing); `simulatorSessionSnapshot(for:)` returns `viewer.sessionSnapshot()` for a `SupermuxRemoteSimulatorPanel` before upstream's `as? SimulatorPanel`; `restoreSimulatorPanel(from:inPane:)` sends a snapshot with `supermuxRemote`, or any Simulator snapshot restored in a device mirror (an older build's local one), to `SupermuxRemoteSimulators.shared.restore(_:inPane:in:)`, which makes a viewer that rebinds once the link is up |
 | 734 | `Sources/Panels/PanelContentView.swift` | `remote-simulator-panel-view` | In the `.simulator` arm, an `else if let viewer = panel as? SupermuxRemoteSimulatorPanel` after upstream's `if let simulatorPanel = panel as? SimulatorPanel { … }` renders `SupermuxRemoteSimulatorPanelView` (the viewer reuses `PanelType.simulator`, so its tab is titled, iconed, saved and refused by the Dock like a local Simulator) |
-| 737 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/RemoteSimulator/*` into the cmux target, four entries each in the Supermux group (`path = RemoteSimulator/<file>`): `SupermuxRemoteSimulatorSocketCommands.swift` (`50BE00190500000000000001`/`…02`, DEBUG drivers), `SupermuxRemoteSimulatorLoopbackLane.swift` (`…03`/`…04`, DEBUG), `SupermuxRemoteSimulators.swift` (`…05`/`…06`), `SupermuxRemoteSimulatorPanel.swift` (`…07`/`…08`), `SupermuxRemoteSimulatorPanelView.swift` (`…09`/`…0A`), `SupermuxRemoteSimulatorDisplayView.swift` (`…0B`/`…0C`), `SupermuxRemoteSimulatorKeyMap.swift` (`…0D`/`…0E`), `SupermuxRemoteSimulatorLane.swift` (`…0F`/`…10`), `SupermuxRemoteSimulatorSnapshot.swift` (`…11`/`…12`), `SupermuxRemoteSimulatorHostClient.swift` (`…15`/`…16`), `SupermuxRemoteSimulatorPanel+Debug.swift` (`…17`/`…18`), `SupermuxRemoteSimulatorQuality.swift` (`…19`/`…1A`), `Workspace+SupermuxRemoteSimulator.swift` (`…1B`/`…1C`), plus `Sources/Supermux/SupermuxMobileHost+Simulator.swift` (`…13`/`…14`, path at the group root); and links the local package `Packages/iOS/CmuxMobileSimulatorStream` (the iPhone's stream v2 engine and store, which builds for macOS 14) into the cmux and cmuxTests targets like `CmuxMobileRPC`: `XCLocalSwiftPackageReference` `…0101`, product dependency `…0102` (in both targets' `packageProductDependencies`), Frameworks build files `…0103` (cmux) and `…0104` (cmuxTests) |
+| 735 | `Sources/CmuxWorkerEntrypoint.swift` | `worker-quit-forwarding` | Two fences, one before `runSimulatorWorker()` and one before `runSidebarRenderWorker()`: `SupermuxWorkerQuitForwarding.install()` (fork, `Sources/Supermux/SupermuxWorkerQuitForwarding.swift`) replaces the worker's quit Apple Event handler: an ordinary quit goes to the app (its parent: `NSRunningApplication.terminate()`) and is answered without an error while the worker keeps running. Those workers re-run the app's executable with an `NSApplication`, so LaunchServices lists them under the app's bundle id and a quit addressed to it (`tell application id … to quit`, Shortcuts, launchers) went to the newest one, a worker: it quit, the app started another, and the app never quit. A logout/restart/shutdown quit (`kAEQuitReason`) or a worker whose app is gone still terminates |
+| 737 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/RemoteSimulator/*` into the cmux target, four entries each in the Supermux group (`path = RemoteSimulator/<file>`): `SupermuxRemoteSimulatorSocketCommands.swift` (`50BE00190500000000000001`/`…02`, DEBUG drivers), `SupermuxRemoteSimulatorLoopbackLane.swift` (`…03`/`…04`, DEBUG), `SupermuxRemoteSimulators.swift` (`…05`/`…06`), `SupermuxRemoteSimulatorPanel.swift` (`…07`/`…08`), `SupermuxRemoteSimulatorPanelView.swift` (`…09`/`…0A`), `SupermuxRemoteSimulatorDisplayView.swift` (`…0B`/`…0C`), `SupermuxRemoteSimulatorKeyMap.swift` (`…0D`/`…0E`), `SupermuxRemoteSimulatorLane.swift` (`…0F`/`…10`), `SupermuxRemoteSimulatorSnapshot.swift` (`…11`/`…12`), `SupermuxRemoteSimulatorHostClient.swift` (`…15`/`…16`), `SupermuxRemoteSimulatorPanel+Debug.swift` (`…17`/`…18`), `SupermuxRemoteSimulatorQuality.swift` (`…19`/`…1A`), `Workspace+SupermuxRemoteSimulator.swift` (`…1B`/`…1C`), plus `Sources/Supermux/SupermuxMobileHost+Simulator.swift` (`…13`/`…14`, path at the group root) and `Sources/Supermux/SupermuxWorkerQuitForwarding.swift` (`…1D`/`…1E`, group root, #735); and links the local package `Packages/iOS/CmuxMobileSimulatorStream` (the iPhone's stream v2 engine and store, which builds for macOS 14) into the cmux and cmuxTests targets like `CmuxMobileRPC`: `XCLocalSwiftPackageReference` `…0101`, product dependency `…0102` (in both targets' `packageProductDependencies`), Frameworks build files `…0103` (cmux) and `…0104` (cmuxTests) |
 | 738 | `cmuxTests/SupermuxMobileAuthorizationTests.swift` | `remote-simulator-authz` | `classificationCoversWorkspacePaneAndMacWideMethods` expects `simulator.control` to be workspace-scoped (like `simulator.create`); the test's `default: .macWide` would otherwise fail it at run time, not at compile time |
 | 739 | `Sources/Devices/SurfaceCatalog+DeviceNames.swift` | `device-names-local-panels` | In `reconcileDeviceNames(on:)`, the guard that renames a mirror after its remote workspace compares the mirror's device members with `Set(workspace.panels.keys).subtracting(SupermuxDeviceLayoutSurfaceFilter.localPanelIDs(in: workspace, machine: machine))` instead of every panel: a bound mirror's own panels (a remote-simulator viewer, a browser) froze its title |
 
@@ -5891,7 +5893,8 @@ workspace on the owning Mac and the mirror shows a viewer tab. Fork code: `Sourc
 `supermux.remote_simulator.v1`). The owning Mac needs no host change for the video: its irx lane loop
 already serves `simulator_stream` lanes to Mac peers. The viewer opens them on the device link's own
 irx connection through `DeviceIrxClient.supermuxTunnelConnection(instance:)`, the accessor the
-port-forward work adds (`device-tunnel-client`); #735, reserved for a second accessor, is not used.
+port-forward work adds (`device-tunnel-client`); #735, reserved for a second accessor, went to the
+stabilization's worker-quit forwarding (next section).
 Mirror layout sync around a viewer tab relies on the port-forward work's `device-layout-local-panels`
 fence (`SupermuxDeviceLayoutSurfaceFilter.localPanelIDs`, every non-terminal panel of a bound mirror);
 #736, reserved for it, is not used. `SupermuxDeviceWorkspaceIndex.isDeviceMirror` (fork) skips viewer
@@ -5928,5 +5931,36 @@ Re-apply after an upstream merge:
 Verify: `swift test` in `Packages/Shared/SupermuxMobileCore`, `Packages/iOS/SupermuxMobileKit` and
 `Packages/iOS/CmuxMobileSimulatorStream`, then
 `CMUX_E2E_SUITES="loopback_mirror_simulator_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`
+
+### 735. A quit that reaches a worker goes to the app — `worker-quit-forwarding`
+
+Found by the simulator suite's restore step: with a Simulator open, `tell application id "<bundle id>" to
+quit` left the app running. The simulator worker (and the sidebar-render worker) re-runs the app's own
+executable with `--cmux-simulator-worker` and runs an `NSApplication` (with `.prohibited` activation), so
+LaunchServices lists it under the app's bundle id (`lsappinfo find bundleid=…` shows two processes) and
+a quit addressed to the bundle id (AppleScript, Shortcuts' Quit App, launchers) goes to the newest
+process, the worker. With no delegate the worker terminated, the app's `SimulatorPanel` started a new
+worker, and the app never got the quit (`appDelegate.shouldTerminate.begin` never logged). A quit sent to
+the app's own pid quits it in about a second with two Simulator panels open: nothing blocks termination.
+Fork code: `Sources/Supermux/SupermuxWorkerQuitForwarding.swift`. On `willFinishLaunching` (AppKit has
+installed its own Apple Event handlers by then, so this replaces its quit handler; the worker's own
+`NSApplication` setup order is untouched) it registers a `kCoreEventClass`/`kAEQuitApplication` handler
+that sends `NSRunningApplication(processIdentifier: getppid()).terminate()` to the app (same bundle id)
+and returns normally, so the script's quit succeeds and the worker keeps running until the app closes
+its pipe. A first version cancelled the worker's termination from `applicationShouldTerminate`, which
+made osascript report "User cancelled" (-128) although the app quit. A quit with `kAEQuitReason`
+(logout, restart, shutdown) or with no app parent calls `NSApp.terminate` as before.
+
+Re-apply after an upstream merge: keep `SupermuxWorkerQuitForwarding.install()` immediately before each
+NSApplication worker's run call in `CmuxWorkerEntrypoint.runIfRequested()` (today `runSimulatorWorker()`
+and `runSidebarRenderWorker()`; not the paste or interpreter workers, which make no `NSApplication`).
+If upstream adds another worker that runs an `NSApplication`, fence the same call before it. If a worker
+installs its own quit Apple Event handler, fold the forwarding into it. If upstream moves workers into a
+helper bundle with its own bundle id, retire this.
+
+Verify: step 20 (`restore_rebinds`) of
+`CMUX_E2E_SUITES="loopback_mirror_simulator_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`
+quits the app with `tell application id … to quit` while a simulator worker runs; the step fails if the
+app does not quit within 60 s or osascript reports an error (its report records `quit_seconds`).
 (it creates, boots, shuts down and deletes its own simulator; see LOOPBACK-HARNESS.md "Mirror
 simulator E2E"). Two real Macs are still needed for the irx lane and capture on a headless owner.

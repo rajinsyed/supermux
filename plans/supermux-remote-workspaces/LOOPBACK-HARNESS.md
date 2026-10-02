@@ -646,19 +646,26 @@ at the end; with no iOS runtime every simulator step is skipped (`no_simulator_r
 simulator}` on M fails; New Simulator (configured) leaves S with one `SimulatorPanel`, M with one
 viewer bound to it and none of its own, the app with one `SimulatorPanel` more than before; the viewer
 shows the booted device (skipped, after switching to it, when another booted simulator on this Mac is
-the owner's first pick: booted, iPhone first, most recently booted), streams (+10 frames, hevc/h264, long side <= 2000, one simulator worker more
+the owner's first pick: booted, iPhone first, most recently booted; a device the suite just created and booted
+has no `lastBootedAt` yet, so any simulator already booted on this Mac wins), streams (+10 frames, hevc/h264, long side <= 2000, one simulator worker more
 under the app's PID; the window screenshot is kept as `…-viewer.png`); its picker equals the owner's
 available iPhone/iPad simulators and choosing a second one (made for the step) boots it and the stream
-follows; Home brings SpringBoard back from Settings (`simulator.foreground` on S's panel, or a
+follows (S's tab shows it, then the viewer plays new frames: two devices of one size bring no new config); Home brings SpringBoard back from Settings (`simulator.foreground` on S's panel, or a
 `simctl io screenshot` hash); Rotate Left/Right turn the owner's simulator (`simulator.context`
 orientation); Data Saver caps the next config at 800; with the viewer open a split in S is projected
-into M, M splits the same way (pane count), and M takes S's new name (needs the `device-layout-local-panels` fence and #739); closing a
+into M, M splits the same way (the workspaces' own pane counts, one more than before; `pane.list` also lists the window's Dock pane), and M takes S's new name (needs the `device-layout-local-panels` fence and #739); closing a
 mirror terminal tab closes its source terminal; the link held down stops the stream and back up
 resumes it; `steal` leaves the viewer "superseded" for 10 s without taking the stream back, and Show
 Here takes it; closing S's Simulator tab closes the viewer; closing the viewer closes S's tab, its
-worker exits and the device stays booted; the tab bar's button behaves like the configured action;
-with `--app-path`, a relaunch restores the viewer in M, which streams S's restored panel with no second
-`SimulatorPanel`. An idle home screen draws nothing, so the suite makes the simulator draw (launching
+worker exits and the device stays booted (a new tab showing another booted simulator, the owner's first pick, is
+first switched to the suite's device: the suite never stirs or touches another simulator, and an idle one may draw nothing); the tab bar's button behaves like the configured action;
+with `--app-path`, the app quits within 60 s of `tell application id … to quit` while a simulator worker runs,
+and osascript reports no error (the worker shares the app's bundle id and forwards the quit, #735; a failure names the
+app pid and the worker pids before and after; the report records `quit_seconds`) and a relaunch restores the viewer in M, which streams S's
+restored panel (on the suite's device) with no second `SimulatorPanel`. After a failed relaunch the suite reconnects
+for its cleanup, so it still closes its workspaces, deletes its simulators and writes its report. The app drops a
+control-socket client that sent nothing for 30 s and step 4 waits on `simctl bootstatus`, so the suite's client
+reconnects before a request after 20 s idle, and a socket error fails its step instead of ending the run. An idle home screen draws nothing, so the suite makes the simulator draw (launching
 Settings, toggling the appearance) while it waits for frames.
 
 ```bash
