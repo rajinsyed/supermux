@@ -375,6 +375,30 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   edits deeper in the tree (`.git/` included) do not refresh it, so their git colors update on the
   next root-entry change, `cd` or reconnect. Both Macs need this build (an earlier
   `files_read.v1` host refuses `files.watch`; the panel then refreshes only on reconnect and `cd`).
+- **Other Macs' ports open here** (#699, #705; the tunnel is round 5's Track A): a server started in
+  another Mac's workspace that is mirrored here (`bun run dev` on 3000) opens at `localhost` on this
+  Mac, in any browser, the iOS Simulator or any other app (setting "Forward other Macs' ports to this
+  Mac", `supermux.devices.forwardPorts`, default on). Each Mac lists the ports of its own cmux
+  workspaces (its sidebar port detection, intersected with live loopback listeners); ports ≥ 1024 of
+  a mirrored workspace are forwarded automatically. A forward listens on `127.0.0.1` and `::1` at the
+  same port when it is free here, else the next free one (up to +50, then any), and a port in use
+  here is never taken (every candidate is probed with a connect on both addresses, so a dual-stack
+  `[::]` server counts as in use). When a port lands elsewhere, the flat mirror row shows a pill
+  ("Port 3000 from M4 Pro is at localhost:3001", click opens it), and a localhost link in that
+  mirror's terminal opened in the default browser goes to the local port. Flat mirror rows also
+  show the owning Mac's port chips (a chip opens the port in a cmux browser in the mirror). Every
+  mirror row's menu (flat and nested) has "Ports on <Mac>": this workspace's ports there, that
+  Mac's other forwards, Open in cmux Browser / Open in Default Browser / Copy Local URL / Stop
+  Forwarding / Forward to This Mac, and Forward a Port… for anything else listening on that Mac's
+  loopback (one started outside cmux). Settings › Remote Macs lists each connected Mac's forwards
+  and has the same Ports… menu. A stopped automatic forward stays stopped until its server goes
+  away; a forward whose server goes away is removed; while a Mac is offline its forwards wait and
+  come back (same local port when still free). Needs that Mac on this build with its sidebar port
+  detection on (else only Forward a Port… works); an older Mac says "Update Supermux on <Mac> to use
+  its ports here.", a link without a direct connection says it needs one. Limits: like `ssh -L`, a
+  forward holding a local port makes a server started here later on that port pick another (Stop
+  frees it), and any process on this Mac can connect to a forwarded port. Not done: the right
+  sidebar's Machines tab ports for devices, a command palette entry, notifications.
 - **Notifications:** the owning Mac pushes to the phone (the viewer never forwards `.deviceMac`
   rows, so no duplicates); the phone badges the total over every pairable Mac build; read state
   flows both ways, and mirrored notifications (read state and Mark as Unread included) survive a
