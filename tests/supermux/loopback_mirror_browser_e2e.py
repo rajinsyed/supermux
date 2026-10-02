@@ -76,6 +76,18 @@ independently:
  17d public_page_gets_no_ports           a non-loopback mirror page that defines the bridge's setter is handed
                                          no ports when the forwards change
  17e same_origin_iframe_reaches_owner    a same-origin iframe's fetch to localhost:Q reaches the owner's Q
+ 17f alias_keep_alive_requests_reach_owner  every request and answer on a kept-alive alias connection is
+                                         rewritten, not only the first: a dev server that answers 403 to a
+                                         Host/Origin that is not localhost (Next.js 16) serves the page's
+                                         scripts and its later fetches (chunked answer, POST body, HEAD,
+                                         redirect, Set-Cookie)
+ 17g other_port_forward_loads_as_written  a manual same-port forward of a port the owner runs outside its
+                                         workspaces (its `other_ports`) loads as written
+ 17h unforwarded_port_forwards_on_demand  a mirror tab opening an owner port listed there and free here, with
+                                         no forward (an other port; a workspace port with automatic forwarding
+                                         off), gets a same-port forward at once and loads as written, never
+                                         through the alias; a stopped forward is respected (alias); the forward
+                                         goes when the owner's server does
  18 proxy_listener_failure_recovers      after the proxy's listener fails, it is replaced on its own (waited
                                          for with a read that starts no listener); then the open mirror tab
                                          and a new one each load the owner's page on the fresh endpoint,
@@ -109,6 +121,7 @@ from __future__ import annotations
 import argparse
 import base64
 import http.server
+import itertools
 import json
 import os
 import random
@@ -219,6 +232,159 @@ class MarkerServer:
 
     def marker_hosts(self) -> List[str]:
         return [str(hit.get("host")) for hit in self.hits if str(hit.get("path", "")).startswith("/marker.html")]
+
+    def close(self) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+
+
+KEEP_ALIVE_PAGE = """<!doctype html>
+<html><head><meta charset="utf-8"><title>{title}</title>
+<script src="/static/a.js"></script>
+<script src="/static/b.js"></script>
+<script type="module" src="/static/m.js"></script>
+<script>
+window.__keepAlive = {{done: false, results: []}};
+async function runKeepAlive() {{
+  const steps = [
+    ["GET /chunk/1.js", () => fetch("/chunk/1.js"), "chunk-1"],
+    ["GET /chunk/2.js", () => fetch("/chunk/2.js"), "chunk-2"],
+    ["GET /chunk/3.js (chunked answer)", () => fetch("/chunk/3.js"), "chunk-3"],
+    ["POST /post (Origin, a body)", () => fetch("/post", {{method: "POST", body: "x".repeat(5000)}}), "posted-5000"],
+    ["HEAD /chunk/1.js", () => fetch("/chunk/1.js", {{method: "HEAD"}}), ""],
+    ["GET /redirect (Location)", () => fetch("/redirect"), "chunk-redirected"],
+    ["GET /set-cookie (Set-Cookie)", () => fetch("/set-cookie"), "cookie-set"],
+    ["GET /needs-cookie", () => fetch("/needs-cookie"), "cookie-ok"],
+    ["GET /chunk/4.js", () => fetch("/chunk/4.js"), "chunk-4"],
+  ];
+  for (const [name, call, want] of steps) {{
+    const entry = {{name, want}};
+    try {{
+      const response = await call();
+      entry.status = response.status;
+      entry.url = response.url;
+      entry.body = await response.text();
+    }} catch (error) {{ entry.error = String(error); }}
+    entry.ok = entry.status === 200 && entry.body === want;
+    window.__keepAlive.results.push(entry);
+  }}
+  window.__keepAlive.done = true;
+}}
+window.addEventListener("load", () => setTimeout(runKeepAlive, 100));
+</script>
+</head><body><h1>{title}</h1></body></html>
+"""
+
+
+class StrictDevServer:
+    """An HTTP/1.1 keep-alive dev server that, like Next.js 16's (`blockCrossSiteDEV`: "Blocked
+    cross-origin request to Next.js dev resource") and other dev servers' host checks, answers 403 to
+    any request whose `Host` is not `localhost:<served_as>` (or 127.0.0.1, [::1]) or whose `Origin`
+    names another origin. It listens on a port of its own, which the loopback owner serves as
+    `served_as` (`tunnel.serve_port`). Records every connection's requests, so a step can tell that
+    the browser reused a connection (keep-alive) and what each request on it carried."""
+
+    def __init__(self, title: str, served_as: int) -> None:
+        self.title = title
+        self.connections: Dict[int, List[Dict[str, Any]]] = {}
+        hosts = {f"localhost:{served_as}", f"127.0.0.1:{served_as}", f"[::1]:{served_as}"}
+        origins = {f"http://{host}" for host in hosts}
+        location = f"http://localhost:{served_as}/chunk/redirected.js"
+        page = KEEP_ALIVE_PAGE.format(title=title).encode()
+        connections = self.connections
+        lock = threading.Lock()
+        counter = itertools.count(1)
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
+            def setup(self) -> None:
+                super().setup()
+                self.connection_number = next(counter)
+
+            def answer(self, status: int, body: bytes = b"", content_type: str = "text/plain",
+                       headers: Tuple[Tuple[str, str], ...] = (), chunked: bool = False, head: bool = False) -> None:
+                self.send_response(status)
+                self.send_header("Content-Type", content_type)
+                for name, value in headers:
+                    self.send_header(name, value)
+                self.send_header("Transfer-Encoding" if chunked else "Content-Length", "chunked" if chunked else str(len(body)))
+                self.end_headers()
+                if head:
+                    return
+                if chunked:
+                    half = len(body) // 2
+                    for piece in (body[:half], body[half:]):
+                        if piece:
+                            self.wfile.write(f"{len(piece):x}\r\n".encode() + piece + b"\r\n")
+                    self.wfile.write(b"0\r\n\r\n")
+                else:
+                    self.wfile.write(body)
+
+            def serve(self, method: str) -> None:
+                length = int(self.headers.get("Content-Length") or 0)
+                body = self.rfile.read(length) if length else b""
+                host, origin = self.headers.get("Host"), self.headers.get("Origin")
+                allowed = host in hosts and (origin is None or origin in origins)
+                path = self.path.split("?", 1)[0]
+                entry = {"method": method, "path": path, "host": host, "origin": origin,
+                         "referer": self.headers.get("Referer"), "body_bytes": len(body)}
+                with lock:
+                    connections.setdefault(self.connection_number, []).append(entry)
+                if not allowed:
+                    entry["status"] = 403
+                    self.answer(403, f"Blocked cross-origin request from {origin or host}".encode())
+                    return
+                entry["status"] = 200
+                head = method == "HEAD"
+                if path == "/page":
+                    self.answer(200, page, "text/html; charset=utf-8", head=head)
+                elif path in ("/static/a.js", "/static/b.js", "/static/m.js"):
+                    name = path.rsplit("/", 1)[1][0]
+                    script = f"window.__scripts = (window.__scripts || []).concat({json.dumps(name)});".encode()
+                    self.answer(200, script, "text/javascript", head=head)
+                elif path.startswith("/chunk/") and path.endswith(".js"):
+                    name = path[len("/chunk/"):-len(".js")]
+                    self.answer(200, f"chunk-{name}".encode(), "text/javascript", chunked=name == "3", head=head)
+                elif path == "/redirect":
+                    entry["status"] = 302
+                    self.answer(302, headers=(("Location", location),))
+                elif path == "/set-cookie":
+                    self.answer(200, b"cookie-set", headers=(("Set-Cookie", "e2e_keep=1; Domain=localhost; Path=/"),))
+                elif path == "/needs-cookie":
+                    ok = "e2e_keep=1" in (self.headers.get("Cookie") or "")
+                    entry["status"] = 200 if ok else 401
+                    self.answer(200 if ok else 401, b"cookie-ok" if ok else b"no-cookie")
+                elif path == "/post":
+                    self.answer(200, f"posted-{len(body)}".encode())
+                else:
+                    entry["status"] = 404
+                    self.answer(404, b"not found")
+
+            def do_GET(self) -> None:  # noqa: N802 (http.server API)
+                self.serve("GET")
+
+            def do_HEAD(self) -> None:  # noqa: N802
+                self.serve("HEAD")
+
+            def do_POST(self) -> None:  # noqa: N802
+                self.serve("POST")
+
+            def log_message(self, *_: Any) -> None:
+                pass
+
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.port = self.server.server_address[1]
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def requests(self) -> List[Dict[str, Any]]:
+        return [entry for entries in self.connections.values() for entry in entries]
+
+    def refused(self) -> List[Dict[str, Any]]:
+        return [entry for entry in self.requests() if entry.get("status") == 403]
+
+    def most_requests_on_one_connection(self) -> int:
+        return max((len(entries) for entries in self.connections.values()), default=0)
 
     def close(self) -> None:
         self.server.shutdown()
@@ -1266,6 +1432,207 @@ class MirrorBrowserE2E:
         finally:
             self.sock.call("surface.close", {"surface_id": tab})
 
+    def alias_keep_alive_requests_reach_owner(self) -> Dict[str, Any]:
+        """Every request on a kept-alive alias connection reaches the owner as
+        `localhost`, and every answer on it comes back for the alias. The owner's
+        dev server answers 403 to a request whose Host or Origin is not localhost
+        (Next.js 16's `blockCrossSiteDEV`), and its page loads two scripts, a
+        module (which sends Origin) and then, one after another, fetches over the
+        same connection: GETs, a chunked answer, a POST with a body, a HEAD, a
+        redirect whose Location names localhost, a Set-Cookie for Domain=localhost
+        and a request that needs that cookie. This Mac serves the port itself, so
+        the tab runs at the alias. Before, the proxy rewrote only the first
+        request and answer of a connection: Next's chunks after the first were
+        refused (403, the user's Turnstile page never hydrated), a later redirect
+        left the alias and a later cookie was dropped."""
+        here = self.server("keep-alive-this-mac")
+        port = here.port
+        owner = StrictDevServer(f"marker-{self.nonce}-keep-alive-owner", served_as=port)
+        self.servers.append(owner)  # type: ignore[arg-type]
+        self.serve_owner_port(port, owner.port)
+        tab = self.new_tab(self.pair.mirror_id, self.mirror_terminal(), f"http://localhost:{port}/page")
+        try:
+            self.wait_owner_page(tab, owner, here, "the owner's dev page through the alias")  # type: ignore[arg-type]
+            href = self.page_href(tab)
+            if LOOPBACK_ALIAS not in href:
+                raise Failure(f"precondition: the page runs at {href}, not the alias (this Mac serves {port})")
+
+            def finished() -> Dict[str, Any]:
+                value = (self.sock.call("browser.eval", {"surface_id": tab, "script":
+                    "JSON.stringify({keepAlive: window.__keepAlive || null, scripts: window.__scripts || []})"}) or {}).get("value")
+                data = json.loads(value or "{}")
+                if not (data.get("keepAlive") or {}).get("done"):
+                    raise Failure(f"the page's requests are not done: {data}")
+                return data
+
+            data = wait_for("the page's requests over its connection", finished, self.timeout)
+            results = data["keepAlive"]["results"]
+            failed = [r for r in results if not r.get("ok")]
+            scripts = sorted(data.get("scripts") or [])
+            refused, reused = owner.refused(), owner.most_requests_on_one_connection()
+            if failed or refused or scripts != ["a", "b", "m"] or here.hits:
+                raise Failure(f"{len(failed)} of {len(results)} requests failed: {failed}; scripts run {scripts}, "
+                              f"want ['a', 'b', 'm']; the owner refused {len(refused)} request(s) as cross-site: "
+                              f"{refused[:4]}; this Mac's own server saw {here.hits}")
+            if reused < 3:
+                raise Failure(f"precondition: WebKit carried at most {reused} request(s) on one connection, so the "
+                              f"step cannot tell a kept-alive connection's later requests from first ones")
+            hosts = sorted({str(entry.get("host")) for entry in owner.requests()})
+            return {"page": href, "requests": len(owner.requests()), "connections": len(owner.connections),
+                    "most_on_one_connection": reused, "hosts": hosts,
+                    "results": [{k: r.get(k) for k in ("name", "status")} for r in results]}
+        finally:
+            self.sock.call("surface.close", {"surface_id": tab})
+
+    def inject_other(self, port: int, remove: bool = False, refresh: bool = True) -> None:
+        """The owner lists `port` under `other_ports`: a server it runs outside its
+        workspaces' terminals (an agent's dev server, `&`-orphaned, Docker).
+        `refresh` fetches the listing at once, as the owner's ports poke would."""
+        self.tunnel("inject_other_port", port=port, remove=remove)
+        self.injected = True
+        if refresh:
+            self.sock.call("supermux.devices.ports.refresh", {"machine": self.pair.machine})
+
+    def forward_row(self, port: int) -> Optional[Dict[str, Any]]:
+        rows = (self.sock.call("supermux.devices.ports.list", {"machine": self.pair.machine}) or {}).get("forwards") or []
+        return next((r for r in rows if int(r.get("remote_port") or 0) == port), None)
+
+    def viewer_listing(self) -> Dict[str, Any]:
+        reply = self.sock.call("supermux.devices.ports.list", {"machine": self.pair.machine}) or {}
+        return {"ports": sorted({int(p.get("port") or 0) for p in (reply.get("host_ports") or {}).get(self.pair.machine) or []}),
+                "other_ports": (reply.get("host_other_ports") or {}).get(self.pair.machine)}
+
+    def require_as_written(self, tab: str, port: int, what: str) -> Dict[str, Any]:
+        """The tab runs at http://localhost:<port>, a secure context (not the alias)."""
+        probe = self.turnstile_probe(tab)
+        want = f"http://localhost:{port}"
+        if probe.get("origin") != want or probe.get("secure") is not True:
+            raise Failure(f"{what} runs at {probe.get('origin')} (secure context: {probe.get('secure')}), want {want}, "
+                          f"a secure context; the viewer's listing of the owner: {self.viewer_listing()}")
+        return probe
+
+    def other_port_forward_loads_as_written(self) -> Dict[str, Any]:
+        """A server the owner runs outside its workspaces' terminals (started by an
+        agent, `&`-orphaned, in Docker) is listed under its `other_ports`. Forwarded
+        here on the same port by hand (Forward a Port…), the mirror tab loads it as
+        written. Before, the viewer never asked for `other_ports`, so only
+        workspace ports counted as listed and the page ran at the alias."""
+        owner = self.server("other-forwarded")
+        port = free_dev_port()
+        self.serve_owner_port(port, owner.port)
+        self.inject_other(port)
+        self.sock.call("supermux.devices.ports.forward", {"machine": self.pair.machine, "port": port})
+        self.forwarded_ports.append(port)
+        row = self.wait_forward(port)
+        if int(row.get("local_port") or 0) != port:
+            raise Failure(f"precondition: the forward listens on {row.get('local_port')}, not on {port}: {row}")
+        tab = self.new_tab(self.pair.mirror_id, self.mirror_terminal(), f"http://localhost:{port}/marker.html")
+        try:
+            self.wait_title(tab, lambda t: t == owner.title, "the owner's other-port page in the mirror")
+            probe = self.require_as_written(tab, port, "the mirror tab")
+            return {"port": port, "served_from": owner.port, "probe": probe, "listing": self.viewer_listing()}
+        finally:
+            self.sock.call("surface.close", {"surface_id": tab})
+
+    def wait_forward_gone(self, port: int, why: str) -> None:
+        def gone() -> bool:
+            row = self.forward_row(port)
+            if row is not None:
+                raise Failure(f"forward {row}")
+            return True
+
+        wait_for(f"the forward of {port} to go ({why})", gone, self.timeout)
+
+    def unforwarded_port_forwards_on_demand(self) -> Dict[str, Any]:
+        """A mirror tab opening the owner's localhost:P, P listed there and free
+        here but forwarded nowhere, gets a same-port forward at once and loads the
+        page as written, never through the alias: (a) a new tab on an other port
+        (in no workspace, so never forwarded automatically); (b) a URL typed into
+        the open tab, P a workspace port with automatic forwarding off. The
+        forward is listed in the mirror's "Ports on <Mac>"; (c) once the user
+        stops it, a navigation to P uses the alias and the forward stays stopped;
+        (d) when the owner's server goes away (it no longer lists P, and a
+        connection through the forward is refused there) the forward goes,
+        without a ports poke. Before, such a tab always ran at the alias: not a
+        secure context, a hostname no dev sitekey allows (the user's Turnstile)."""
+        machine = self.pair.machine
+        report: Dict[str, Any] = {}
+        tab = ""
+        try:
+            # (a) an other port, a new mirror tab
+            owner_a = self.server("on-demand-other")
+            port_a = free_dev_port()
+            self.serve_owner_port(port_a, owner_a.port)
+            self.inject_other(port_a)
+            if self.forward_row(port_a):
+                raise Failure(f"precondition: {port_a} is forwarded already: {self.forward_row(port_a)}")
+            dials_before = int(self.require_proxy().get("owner_dials") or 0)
+            started = time.monotonic()
+            tab = self.new_tab(self.pair.mirror_id, self.mirror_terminal(), f"http://localhost:{port_a}/marker.html")
+            self.wait_title(tab, lambda t: t == owner_a.title, "the owner's other-port page in a new mirror tab")
+            report["new_tab_seconds"] = round(time.monotonic() - started, 2)
+            report["new_tab_probe"] = self.require_as_written(tab, port_a, "the new mirror tab")
+            row = self.wait_forward(port_a)
+            if int(row.get("local_port") or 0) != port_a:
+                raise Failure(f"the on-demand forward of {port_a} listens on {row.get('local_port')}: {row}")
+            dials = int(self.require_proxy().get("owner_dials") or 0) - dials_before
+            if dials:
+                raise Failure(f"the tab went through the alias first ({dials} proxy dials to the owner)")
+            menu = (self.sock.call("supermux.devices.ports.menus", {"workspace_id": self.pair.mirror_id}) or {}).get("mirror") or {}
+            listed = [int(p.get("remote_port") or 0) for p in menu.get("ports") or []]
+            if port_a not in listed:
+                raise Failure(f"the mirror's \"Ports on <Mac>\" does not list the forward of {port_a}: {menu}")
+            report["forward_a"] = row
+            # (b) typed into the open tab: a workspace port, automatic forwarding off
+            self.sock.call("supermux.devices.ports.set_auto", {"enabled": False})
+            owner_b = self.server("on-demand-auto-off")
+            port_b = free_dev_port()
+            self.serve_owner_port(port_b, owner_b.port)
+            self.tunnel("inject_port", workspace_id=self.pair.source_id, port=port_b)
+            self.injected = True
+            self.sock.call("supermux.devices.ports.refresh", {"machine": machine})
+            time.sleep(1.0)
+            if self.forward_row(port_b):
+                raise Failure(f"precondition: with automatic forwarding off {port_b} is forwarded: {self.forward_row(port_b)}")
+            started = time.monotonic()
+            self.navigate_open_tab(tab, f"http://localhost:{port_b}/marker.html")
+            self.wait_title(tab, lambda t: t == owner_b.title, "the typed URL's owner page")
+            report["typed_seconds"] = round(time.monotonic() - started, 2)
+            report["typed_probe"] = self.require_as_written(tab, port_b, "the typed navigation")
+            row_b = self.wait_forward(port_b)
+            if int(row_b.get("local_port") or 0) != port_b:
+                raise Failure(f"the on-demand forward of {port_b} listens on {row_b.get('local_port')}: {row_b}")
+            # (c) stopped by the user: the alias, and the forward stays stopped
+            self.sock.call("supermux.devices.ports.stop", {"machine": machine, "port": port_b})
+            wait_for(f"the forward of {port_b} to be stopped",
+                     lambda: (self.forward_row(port_b) or {}).get("state") == "stopped", self.timeout)
+            self.navigate_open_tab(tab, f"http://localhost:{port_b}/marker.html?again=1")
+            self.wait_title(tab, lambda t: t == owner_b.title, "the owner page of a stopped forward")
+            time.sleep(2.0)
+            stopped = self.forward_row(port_b) or {}
+            href = self.page_href(tab)
+            if stopped.get("state") != "stopped" or LOOPBACK_ALIAS not in href:
+                raise Failure(f"after Stop Forwarding a navigation to {port_b} ran at {href} and the forward is "
+                              f"{stopped}: the user's stop was overridden")
+            report["stopped_page"] = href
+            # (d) the owner's server goes away
+            closed = free_port()
+            self.inject_other(port_a, remove=True, refresh=False)
+            self.serve_owner_port(port_a, closed)
+            try:
+                with socket.create_connection(("127.0.0.1", port_a), timeout=5) as conn:
+                    conn.settimeout(5)
+                    conn.sendall(f"GET / HTTP/1.0\r\nHost: localhost:{port_a}\r\n\r\n".encode())
+                    recv_until_closed(conn, 4096)
+            except OSError:
+                pass
+            self.wait_forward_gone(port_a, "its server went away on the owner")
+            return report
+        finally:
+            self.sock.call("supermux.devices.ports.set_auto", {"enabled": True})
+            if tab:
+                self.sock.call("surface.close", {"surface_id": tab})
+
     def idle_proxy_connections_close(self) -> Dict[str, Any]:
         """Local clients that connect and send nothing cannot hold the proxy's
         connections: past the limit of clients still in their handshake they are
@@ -1409,6 +1776,9 @@ class MirrorBrowserE2E:
                 ("as_written_page_navigation_reroutes", self.as_written_page_navigation_reroutes),
                 ("public_page_gets_no_ports", self.public_page_gets_no_ports),
                 ("same_origin_iframe_reaches_owner", self.same_origin_iframe_reaches_owner),
+                ("alias_keep_alive_requests_reach_owner", self.alias_keep_alive_requests_reach_owner),
+                ("other_port_forward_loads_as_written", self.other_port_forward_loads_as_written),
+                ("unforwarded_port_forwards_on_demand", self.unforwarded_port_forwards_on_demand),
                 # Last: they fail the proxy's listener.
                 ("proxy_listener_failure_recovers", self.proxy_listener_failure_recovers),
                 ("restart_keeps_mirror_store_proxied", self.restart_keeps_mirror_store_proxied),

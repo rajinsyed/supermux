@@ -10,7 +10,8 @@ import SupermuxKit
 /// its UI entry point. Routed from ``SupermuxDevicesSocketCommands``.
 ///
 /// - `list {machine?}` — the forwards, each Mac's availability and port
-///   listing, and what every device mirror shows (its sidebar port chips and
+///   listing (`host_ports`, and `host_other_ports`: its `other_ports`, null
+///   when the listing did not ask for them), and what every device mirror shows (its sidebar port chips and
 ///   its `supermux.ports.*` pills).
 /// - `forward`, `stop`, `resume {machine, port}` — the "Ports on <Mac>" menu's
 ///   Forward to This Mac / Stop Forwarding.
@@ -81,7 +82,9 @@ enum SupermuxDevicePortsSocketCommands {
             availability[key.rawValue] = value.rawValue
         }
         var hostPorts: [String: Any] = [:]
+        var hostOtherPorts: [String: Any] = [:]
         for (key, listing) in forwards.hostPorts where machine == nil || key == machine {
+            hostOtherPorts[key.rawValue] = listing.otherPorts ?? NSNull()
             hostPorts[key.rawValue] = listing.ports.map { port -> [String: Any] in
                 [
                     "port": port.port,
@@ -96,6 +99,7 @@ enum SupermuxDevicePortsSocketCommands {
             "forwards": rows,
             "availability": availability,
             "host_ports": hostPorts,
+            "host_other_ports": hostOtherPorts,
             "mirrors": mirrors,
         ]
     }
