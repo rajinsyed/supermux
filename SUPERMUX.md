@@ -400,7 +400,8 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   change. **Exposure:** a service here that trusts loopback (an unauthenticated admin page, Docker's
   TCP API, Jupyter) is reachable from your other Macs once it is forwarded; only ports started in
   cmux terminals are offered automatically, and another Mac forwards one of the others only by hand
-  or when a mirror tab of it opens that `localhost` port (#757; stop it in "Ports on <Mac>"). The journal records scope, port and outcome, never host
+  or when you type its `localhost` URL in a mirror tab (#757; stop it in "Ports on <Mac>"); a page
+  cannot. The journal records scope, port and outcome, never host
   names or bytes.
 - **A mirror's own tabs stay on this Mac** (#706): a browser, Files preview, Markdown or any other
   non-terminal tab opened in a mirror is never sent to or closed by the owning Mac, and the mirror
@@ -437,17 +438,25 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   showed "Unable to connect to website", 110200 Domain not authorized). With no such forward yet, a
   mirror tab's navigation to `localhost:P` (typed, a new tab, a link, a reload, also the reload of a
   page already on the alias) starts one itself (#757, `SupermuxSamePortForwardGate`): when that Mac
-  lists P (asked again first when its last listing lacks it) and P is free here, it waits up to 3 s for
-  a same-port forward, then loads as written. That forward behaves like an automatic one, also with
-  automatic forwarding off: it is in the Ports menus, Stop Forwarding stops it (and keeps it stopped
-  while the server runs), and it goes when the server does. **The alias is still used** when P is in
-  use on this Mac (this Mac's own server, another app, another Mac's forward), when the user stopped
-  P's forward, when that Mac does not serve P (nothing listens there: the proxy explains it) or cannot
-  forward right now (offline, unreachable, an older Supermux, no direct link), for a port below 1024,
-  for `https`, `*.localhost` and every other host, and when the forward did not start within 3 s (the
-  tab then moves once it is active). After a forward could not start, that port's alias pages reload as
-  reloads for 10 s (a page that reloads itself once, as Next.js's dev client does, would otherwise reload
-  forever). The ports menu ("Ports on <Mac>") shows each forward and the pill
+  lists P (asked again first when its last listing lacks it; navigations at once share one request) and
+  P is free here, it waits up to 3 s for a same-port forward, then loads as written. A port of that
+  Mac's workspaces is forwarded so for any navigation; one of its other loopback ports (in no
+  workspace: a server an agent started, but also a Docker API or a database) only for a URL you type,
+  or once you forwarded it that way, so a page cannot make this Mac listen on it. That forward behaves
+  like an automatic one, also with automatic forwarding off: it is in the Ports menus, Stop Forwarding
+  stops it (and keeps it stopped across its server's restarts, until Resume), and it goes when the
+  server does. While the forward starts, the tab's own navigation is not replaced (a link or form to
+  another path of the port lands there). **The alias is still used** when P is in use on this Mac (this
+  Mac's own server, another app, another Mac's forward), when the user stopped P's forward, when that
+  Mac does not serve P (nothing listens there: the proxy explains it) or cannot forward right now
+  (offline, unreachable, an older Supermux, no direct link), for a port below 1024, for one of that
+  Mac's other ports reached by a page, a link or a new tab rather than a typed URL, for `https`,
+  `*.localhost` and every other host, and when the forward did not start within 3 s (the tab then moves
+  once it is active). After a forward could not start (P in use here, not allowed, not in time), that
+  port's alias pages are left alone, reloads stay reloads and nothing retries in the background, until
+  you navigate to P again: a reload handed back would become a new navigation, so a page that reloads
+  itself once (Next.js's dev client) would reload forever, and a retry on every change could take this
+  Mac's own port while its server restarts. The ports menu ("Ports on <Mac>") shows each forward and the pill
   where a moved one listens. Through the alias every request and answer on a kept-alive connection is
   rewritten to `localhost` and back (`SupermuxAliasHTTPRewrite`), not only the first: Next.js 16's
   dev server refused each later request still naming the alias (403, "Blocked cross-origin request to
@@ -458,7 +467,8 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   Mac's own `localhost:3000`. A server that restarts comes back by itself: once a forward's port leaves
   that Mac's listing this Mac asks it again after 2, 4, 8, 15, 30 and 60 s (a quick restart never
   changes that Mac's sidebar ports, which keep a port through two missed scans, so it sends no poke),
-  and an open mirror tab on the alias of a port it lists again gets its same-port forward. A page loaded as written (and its same-origin `localhost` iframes)
+  and an open mirror tab on the alias of a port whose last try found it unlisted gets its same-port
+  forward once it is listed again. A page loaded as written (and its same-origin `localhost` iframes)
   calls that Mac's other ports with `fetch`, XHR, `WebSocket` and `EventSource` (#755): a port
   forwarded here on the same port goes to its
   forward (with the page's `localhost` cookies), any other port through the alias (its own cookies;
@@ -522,7 +532,10 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   reason and the pending forwards, and Settings keeps Ports… for them), so a forward never starts
   listening later after the user stopped it. The menus and chips exist only on what
   `SupermuxDeviceWorkspaceIndex.mirrors()` lists, not on a local workspace that borrows a remote
-  terminal. A stopped automatic forward stays stopped until its server goes away; a forward whose
+  terminal. A stopped automatic or on-demand forward stays stopped until Resume (Forward to This Mac),
+  also while its server restarts (the port leaves that Mac's listing and comes back); the stop is
+  forgotten only once that Mac no longer lists the port and none of the workspaces that listed it at the
+  stop is mirrored here, and a stop of a port no workspace listed lasts until it is forwarded again; a forward whose
   server goes away is removed; while a Mac is offline its forwards wait and come back (on the remote
   port when it is free here, else the same local port when still free), except one stopped meanwhile,
   which goes at once. Needs that Mac on this build with its sidebar port
