@@ -174,14 +174,21 @@ a failed listing is fetched again by itself); the mirror's chip for R clicked wi
 Browser" off opens `http://localhost:L` in the default browser, never this Mac's own
 `localhost:R` (`chip_default_browser_uses_local_port`); and a manual forward left waiting by a
 dropped link is offered Stop Forwarding in both port menus, goes at once when stopped and never
-listens again once the link is back (`pending_forward_offers_stop`). The DEBUG driver
+listens again once the link is back (`pending_forward_offers_stop`); last, a terminal of this Mac
+(from a local workspace, scanned there first) serving P is moved into M, and M's chip for P, clicked
+with the setting off, opens `http://localhost:P` as any local workspace's chip does
+(`local_terminal_chip_opens_this_mac`; before the per-port rule every chip of a mirror went to the
+owning Mac's forward, so it showed "Port P from <Mac> isn't forwarded"), and clicked with the setting
+on it opens the same URL in the default browser, not a cmux browser in M, which would route
+`localhost` to the owning Mac (`new_browser_panel_id` must be null). The DEBUG driver
 `supermux.devices.ports.*` (`Sources/Supermux/Ports/SupermuxDevicePortsSocketCommands.swift`)
 answers `list {machine?}` (the forwards, availability, host listings, and each mirror's chips and
 pills), `forward`, `stop`, `resume {machine, port}`, `set_auto {enabled}` (the Settings card's
 action) and `refresh {machine?}`; `Sources/Supermux/Ports/SupermuxPortMenusSocketCommands.swift`
 answers `chip_open {workspace_id, port, cmux_browser?}` (a sidebar chip click through the
 `device-mirror-port-chip` touchpoint's call; the default browser and the alert are captured:
-`external_url`, `notice`, `new_browser_panel_id`) and `menus {workspace_id?}` (the mirror's
+`external_url`, `notice`, `new_browser_panel_id`; `is_mirror` when the port is the owning Mac's,
+`in_mirror` when the workspace is a mirror) and `menus {workspace_id?}` (the mirror's
 "Ports on <Mac>" model and each Mac's Settings Ports… menu, every port with its `items`).
 
 ```bash
@@ -541,14 +548,29 @@ when S gets T4 in that pane; closing T1 in M closes it on S (the close path's gu
 with only the first fix); closing B and B2 leaves S alone and the pure mirror follows the next split.
 Every expected pair must hold, then stay so for `--settle` seconds. Before the fix the third step
 fails deterministically (the mirror's layout target is nil while B exists, so T2 is never projected).
-The last step uses a second source S2 with ONE terminal, its mirror M2 and a browser B3 in M2: closing
+The next step uses a second source S2 with ONE terminal, its mirror M2 and a browser B3 in M2: closing
 the terminal's tab in M2 (`surface.close`) closes S2 on its Mac (it cannot keep a workspace without a
 surface), M2 shows no failure card (`supermux.devices.terminal_close.inspect`), stays open holding only
 B3 (`mirror.layout`'s `panel_kinds`) and is no longer a mirror (`supermux.devices.bindings`), S2 is not
 in the Hide Here set and its pending close is forgotten (`supermux.devices.hidden`), and for at least 3
 seconds nothing projects a terminal into M2, closes it or mirrors S2 again. Before that fix the owning
 Mac refused `mobile.terminal.close` ("Cannot close the last surface"): the card showed, S2 kept running
-and auto-mirror closed M2, browser included, as an orphan.
+and auto-mirror closed M2, browser included, as an orphan. The last step
+(`last_two_terminals_beside_browser_close_source`) does the same with a third source S3 holding TWO
+terminals in one pane, its mirror M3 and a browser B4 in that pane: Close Other Tabs on B4
+(`tab.action close_others`) closes both terminal tabs in one main-actor turn, and the outcome must be
+the same as for one terminal. The first close lands; the second is the owner's last surface and is
+refused, and the mirror closes S3 on its Mac only then, on the layout that close fetched. Before
+that fix the decision was taken in `projectionDidEnd` from the last accepted snapshot, which still
+held both terminals, so the refused second close showed the card and auto-mirror orphan-closed M3
+(the red run timed out waiting for S3 to close: "the mirror workspace closed, its browser with it").
+`slow_last_terminal_close_keeps_mirror` repeats the one-terminal case with a fourth source S4 on a slow
+link: the loopback host holds the `mobile.terminal.close` for 3 s (`supermux.devices.link {action:
+"stall", method: "mobile.terminal.close", seconds: 3}`) before refusing it, and the step runs two
+auto-mirror passes 1.2 s apart meanwhile (`supermux.devices.reconcile`, as a real link's device events
+would; an idle loopback sends none). S4 must still close and M4 keep only its browser; the passes report
+S4 in `busy`. Before that fix the first pass noted M4 (bound, nothing projected), the second confirmed it
+as an orphan and closed it, browser included, and S4 kept running.
 
 ## Mirror browser E2E
 
@@ -581,15 +603,26 @@ stayed in the app in `TIME_WAIT`); the route's data store for two machine ids th
 tag are two stores (`data_store_per_app_instance`); a browser in an unbound mirror (auto-mirror off,
 `vm.workspace_open`) routes like a bound one's (`unbound_mirror_browser_routes`); 72 connections that
 never send a byte are closed, at least the 8 past the 64-handshake limit at once and all by the 10 s
-handshake deadline (`idle_proxy_connections_close`); and after `browser_proxy_fail` M's open tab and
-a new tab both load through a fresh port (`proxy_listener_failure_recovers`, last: no
-`browser_proxy` read before the tabs load, since that read starts a listener itself; the open tab
-must be navigated, so on a host with the WebKit swap delay above this step takes about 11 s of its
-17.5 s `browser.navigate` budget). DEBUG drivers
+handshake deadline (`idle_proxy_connections_close`); after `browser_proxy_fail` the proxy replaces
+its listener on its own (waited for with `browser_proxy start: false`, a read that starts no
+listener, so the open tab never navigates inside the 1 s restart delay and with no restart the step
+times out), then M's open tab and a new tab each load through the owner on the fresh port, the open
+tab's journal `opened` counted before the new tab exists, since in loopback a direct load reaches the
+same marker server (`proxy_listener_failure_recovers`; the step it replaced navigated the open tab
+straight after the failure and passed only while WebKit's swap delay above held the request past the
+restart: on a healthy host it got `navigation_failed` in 0.09 s); and with the listener failed and held
+down (`browser_proxy_hold`), a mirror tab opened meanwhile leaves the app instance's data store with
+its 2 proxy configurations, as the open tab's, and once released loads through the owner
+(`restart_keeps_mirror_store_proxied`; before the fix the new tab got no endpoint and its init wrote
+`[]` onto the store every mirror tab shares, 0 configurations, so the open tabs' `localhost` went to
+this Mac). DEBUG drivers
 (`SupermuxMirrorBrowserSocket`): `supermux.devices.mirror.browser_route {workspace_id}` (per
-browser: `routes_remotely`, `proxy_configs`, `store_identifier`), `.browser_proxy {machine}` (port,
-credential, `owner_dials`, `direct_dials`, `failures`; null until it listens; starts the proxy),
+browser: `routes_remotely`, `proxy_configs`, `store_identifier`), `.browser_proxy {machine, start?}`
+(the endpoint it hands out now: port, credential, `owner_dials`, `direct_dials`, `failures`; null
+while it has none; starts the proxy unless `start` is false),
 `.browser_proxy_fail {machine}` (runs the listener's `.failed` path; `failed_port`),
+`.browser_proxy_hold {machine, held}` (while held no new listener is made, as when the system cannot
+make one; releasing starts one),
 `.browser_store {machine}` (the store identifier the route gives that app instance, any `device:` id)
 and `.link_open {workspace_id, surface_id, url, destination}` (a terminal link click with the system
 browser captured). It also reads the tunnel drivers `supermux.devices.tunnel.journal` and
