@@ -200,6 +200,11 @@ answers `chip_open {workspace_id, port, cmux_browser?}` (a sidebar chip click th
 CMUX_E2E_SUITES="loopback_port_forward_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
 ```
 
+`stop_survives_server_restart` (review of #757): an automatic forward of P (served from another port) is stopped,
+then the owner unlists P and lists it again, each with a poke; the forward must stay stopped and P unbound for 3 s,
+and Resume must start it (red on 754e7bc9198: the forward was active again, the stop forgotten when P left the
+listing).
+
 `moved_forward_returns_to_remote_port` (#757 round) takes a port P the suite holds here, has the loopback owner
 serve it from another port (`tunnel.serve_port`) and lists it as S's (`tunnel.inject_port`): the forward lands
 above P; once the suite frees P, Stop then Resume must bring it back on P, and after it moved again (the suite takes
@@ -708,6 +713,26 @@ Mac serves P, so no forward can start) that reloads itself once after loading, a
 4 s and 23 in 7 s, every reload handed to the panel became a new navigation; found with a real Next 16.3.1 dev
 server in a loopback mirror tab, which reloaded about five times a second and never hydrated). The ports
 driver's `list` reports each listing's `host_other_ports`.
+
+Their review (2026-10-03) adds five steps, all red on 754e7bc9198: `held_navigation_lands_on_its_path` (a URL
+typed from alias `/a.html` to `/b.html` on the same port, P listed only once the gate asks, automatic forwarding
+off, must land on `/b.html`; red: the forward's activation moved the tab to `localhost/a.html` and dropped the
+held `/b.html`); `local_server_restart_keeps_its_port` (this Mac's own server holds P, an alias tab of the owner's
+P is open with automatic forwarding off; the server stops, the listing is fetched three times, and no forward may
+take P; red: an `on_demand` forward took P: the background retry probed it on every change);
+`page_navigation_does_not_forward_other_port` (an owner's other port reached by a page's own `location.href` and by
+a new tab stays on the alias with no forward, the typed URL forwards it; red: the page's navigation created an
+`on_demand` forward); `navigation_spam_bounded_listings` (20 `browser.navigate` calls at once, each on its own
+socket, to an unlisted port free here: the host answers at most 4 `ports.list`, counted by the DEBUG
+`tunnel.listings_served`; red: 20, green: 1); and, last because before its fix it ended the app,
+`alias_bad_chunk_size_survives` (a raw server answers through the alias with chunk lines `-5`, `+5`,
+`7fffffffffffffff`, `fffffffffffffffffff` and `5;name=value`; every answer must arrive and the app keep answering;
+red: the app crashed on `-5`). The suite's cleanup survives a dead app so the report is still written.
+`unforwarded_port_forwards_on_demand` now opens a new tab on a workspace port (automatic forwarding off) and
+types the URL of an other port; `restarted_server_recovers_as_written` (B) re-lists P as the workspace's with no
+poke and the follow-up fetches off (DEBUG `ports.follow_ups {enabled}`) and wants the reloaded tab at
+`localhost:P` within 3.5 s (0.11 s measured), so the follow-ups cannot pass it; `restarted_server_returns_without_poke`
+runs with automatic forwarding off, so only the tab's own on-demand forward brings it back.
 
 **A URL typed into a tab, to plain HTTP on a host that is not loopback by name, waits ~10 s on this Mac**
 (WebKit and macOS 27, not the proxy; not a fail-open). WebKit 27 moves such a navigation into a new hardened
