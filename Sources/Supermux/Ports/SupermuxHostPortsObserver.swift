@@ -1,6 +1,7 @@
 import CmuxIrxTransport
 import Combine
 import Foundation
+import Observation
 import SupermuxMobileCore
 
 /// Pokes the user's other Macs (`supermux.ports.updated`) when the ports this
@@ -9,27 +10,26 @@ import SupermuxMobileCore
 ///
 /// Watches every main window's workspaces' `listeningPorts` (the sidebar's
 /// port detection), only while a device link subscribes to the topic, so a
-/// Mac nobody forwards from pays nothing. Meanwhile it also compares this Mac's
-/// loopback listeners every ``liveCheckInterval``: the sidebar scans a terminal
-/// only for about 10 s after a command starts, so a server that binds later (a
-/// dev script that does other work first) would never be a workspace's port.
-/// A new listener re-kicks every terminal's port scan, so attribution catches
-/// up, and any change pokes (the other Macs' "other ports" change too). Pokes are coalesced into one per
-/// ``throttle`` window. Lives for the app's lifetime (owned by
-/// ``SupermuxMobileHostGlue``); the attach/detach pattern is
-/// ``SupermuxMobileSidebarStatusObserver``'s.
+/// Mac nobody forwards from pays nothing. Pokes are coalesced into one per
+/// ``throttle`` window. It also watches its own terminals' commands: the sidebar
+/// scans a terminal only for about 10 s after a command starts, so a server that
+/// binds later (a dev script that does other work first) would never be a
+/// workspace's port; for a while after a command starts,
+/// ``SupermuxLateListenerCheck`` compares the loopback listeners and re-kicks the
+/// terminals' port scans when one appears (the attribution that follows pokes).
+/// Lives for the app's lifetime (owned by ``SupermuxMobileHostGlue``); the
+/// attach/detach pattern is ``SupermuxMobileSidebarStatusObserver``'s.
 @MainActor
 final class SupermuxHostPortsObserver {
     static let throttle: Duration = .milliseconds(500)
-    static let liveCheckInterval: Duration = .seconds(4)
     private static let topic = SupermuxMobileTopic.portsUpdated.rawValue
 
     private var observers: [any NSObjectProtocol] = []
     private var tabsCancellables: [ObjectIdentifier: AnyCancellable] = [:]
     private var workspaceCancellables: [UUID: AnyCancellable] = [:]
     private var pendingPoke: Task<Void, Never>?
-    private var liveCheck: Task<Void, Never>?
-    private var lastLive: Set<Int>?
+    private var commandWatch: Task<Void, Never>?
+    private let lateListeners = SupermuxLateListenerCheck()
 
     init() {
         for name in [Notification.Name.mobileHostEventSubscriptionsDidChange, .mainWindowContextsDidChange] {
@@ -46,12 +46,11 @@ final class SupermuxHostPortsObserver {
         guard MobileHostService.hasEventSubscribers(topic: Self.topic) else {
             tabsCancellables.removeAll()
             workspaceCancellables.removeAll()
-            liveCheck?.cancel()
-            liveCheck = nil
-            lastLive = nil
+            commandWatch?.cancel()
+            commandWatch = nil
+            lateListeners.stop()
             return
         }
-        startLiveCheck()
         let managers = SupermuxMobileSidebarStatusObserver.allTabManagers()
         let live = Set(managers.map(ObjectIdentifier.init))
         tabsCancellables = tabsCancellables.filter { live.contains($0.key) }
@@ -77,39 +76,40 @@ final class SupermuxHostPortsObserver {
         }
         // A workspace that appears or goes may take ports with it.
         schedulePoke()
+        watchCommands()
     }
 
-    private func startLiveCheck() {
-        guard liveCheck == nil else { return }
-        liveCheck = Task { @MainActor [weak self] in
+    /// Follows which of this Mac's own terminals run a command (their shell
+    /// integration's state); a terminal that starts one opens the late listener
+    /// check's window. The terminals running a command when it (re)starts are
+    /// the baseline, not starts. Restarted when the workspaces change.
+    private func watchCommands() {
+        commandWatch?.cancel()
+        commandWatch = Task { @MainActor [weak self] in
+            var running: Set<UUID>?
             while !Task.isCancelled {
-                let live = await Task.detached(priority: .utility) {
-                    Set(IrxListeningPortScanner().loopbackListeningPorts().map(\.port))
-                }.value.subtracting(SupermuxOwnListenerPorts.shared.all)
-                #if DEBUG
-                SupermuxDeviceTunnelSocketCommands.liveChecks.increment()
-                #endif
-                guard let self, !Task.isCancelled else { return }
-                if let last = self.lastLive, last != live {
-                    if !live.subtracting(last).isEmpty { Self.kickTerminalScans() }
-                    self.schedulePoke()
+                await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                    let now = withObservationTracking {
+                        Self.panelsRunningCommands()
+                    } onChange: {
+                        continuation.resume()
+                    }
+                    if let running, !now.subtracting(running).isEmpty { self?.lateListeners.commandStarted() }
+                    running = now
                 }
-                self.lastLive = live
-                try? await Task.sleep(for: Self.liveCheckInterval)
             }
         }
     }
 
-    /// Asks the sidebar's port detection to scan this Mac's own terminals again
-    /// (one burst scans every registered terminal).
-    private static func kickTerminalScans() {
-        for workspace in SupermuxDeviceWorkspaceIndex.allMainWindowWorkspaces()
-        where !workspace.isRemoteWorkspace && !workspace.isRemoteTmuxMirror
-            && !SupermuxDeviceWorkspaceIndex.isDeviceMirror(workspace) {
-            for (panelID, panel) in workspace.panels where panel is TerminalPanel {
-                PortScanner.shared.kick(workspaceId: workspace.id, panelId: panelID)
+    /// The own terminals whose shell runs a command now.
+    private static func panelsRunningCommands() -> Set<UUID> {
+        var panels: Set<UUID> = []
+        for workspace in SupermuxLateListenerCheck.ownWorkspaces() {
+            for (panelID, state) in workspace.panelShellActivityStates where state == .commandRunning {
+                panels.insert(panelID)
             }
         }
+        return panels
     }
 
     private func schedulePoke() {
@@ -119,6 +119,92 @@ final class SupermuxHostPortsObserver {
             guard let self, !Task.isCancelled else { return }
             self.pendingPoke = nil
             MobileHostService.emitEvent(topic: Self.topic, payload: [:])
+        }
+    }
+}
+
+/// Catches a server that binds after its terminal's port scans are over, so it
+/// is still attributed to its workspace: for ``window`` after one of this Mac's
+/// terminals starts a command, it compares the loopback listeners (a full
+/// process and socket scan) and, when one appears, re-kicks every own terminal's
+/// port scan (one burst scans them all). Every ``fastInterval`` for the first
+/// ``fastPeriod`` after the latest command start or new listener, then less often
+/// as it stays quiet, up to ``slowestInterval``. Nothing runs between windows,
+/// and it never pokes: an attribution changes the workspace's ports, which pokes.
+@MainActor
+final class SupermuxLateListenerCheck {
+    static let window: Duration = .seconds(120)
+    static let fastPeriod: Duration = .seconds(20)
+    static let fastInterval: Duration = .seconds(4)
+    static let slowestInterval: Duration = .seconds(30)
+
+    private var task: Task<Void, Never>?
+    private var windowEnds: ContinuousClock.Instant?
+    private var lastActivity = ContinuousClock.now
+
+    /// A terminal of this Mac started a command: (re)opens the window.
+    func commandStarted() {
+        let now = ContinuousClock.now
+        windowEnds = now + Self.window
+        lastActivity = now
+        guard task == nil else { return }
+        task = Task { @MainActor [weak self] in
+            var last: Set<Int>?
+            while !Task.isCancelled {
+                guard let self, let ends = self.windowEnds, ContinuousClock.now < ends else { break }
+                let live = await Self.loopbackListeners()
+                #if DEBUG
+                SupermuxDeviceTunnelSocketCommands.liveChecks.increment()
+                #endif
+                guard !Task.isCancelled else { return }
+                if let last, !live.subtracting(last).isEmpty {
+                    Self.kickTerminalScans()
+                    self.lastActivity = .now
+                }
+                last = live
+                try? await Task.sleep(for: self.interval())
+            }
+            // The window ended (stop() already let go of a cancelled task).
+            if !Task.isCancelled { self?.task = nil }
+        }
+    }
+
+    /// No Mac follows this Mac's ports any more.
+    func stop() {
+        task?.cancel()
+        task = nil
+        windowEnds = nil
+    }
+
+    /// ``fastInterval`` for ``fastPeriod`` after the latest activity, then a
+    /// quarter of the quiet time, at most ``slowestInterval``.
+    private func interval() -> Duration {
+        let quiet = ContinuousClock.now - lastActivity
+        guard quiet > Self.fastPeriod else { return Self.fastInterval }
+        return min(Self.slowestInterval, max(Self.fastInterval, quiet / 4))
+    }
+
+    /// This Mac's loopback listeners, without the ones this app holds for
+    /// forwards and browser proxies.
+    private static func loopbackListeners() async -> Set<Int> {
+        await Task.detached(priority: .utility) {
+            Set(IrxListeningPortScanner().loopbackListeningPorts().map(\.port))
+        }.value.subtracting(SupermuxOwnListenerPorts.shared.all)
+    }
+
+    /// This Mac's own workspaces: not SSH, tmux or another Mac's mirror.
+    static func ownWorkspaces() -> [Workspace] {
+        SupermuxDeviceWorkspaceIndex.allMainWindowWorkspaces().filter {
+            !$0.isRemoteWorkspace && !$0.isRemoteTmuxMirror && !SupermuxDeviceWorkspaceIndex.isDeviceMirror($0)
+        }
+    }
+
+    /// Asks the sidebar's port detection to scan this Mac's own terminals again.
+    private static func kickTerminalScans() {
+        for workspace in ownWorkspaces() {
+            for (panelID, panel) in workspace.panels where panel is TerminalPanel {
+                PortScanner.shared.kick(workspaceId: workspace.id, panelId: panelID)
+            }
         }
     }
 }
