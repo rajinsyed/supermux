@@ -108,7 +108,10 @@ extension SupermuxDevices {
         machine.deviceInstance.flatMap { capabilitiesByInstance[$0] }
     }
 
-    /// Whether the device's host advertises a fork capability.
+    /// Whether the device's host advertises a fork capability. `false` also
+    /// while the capabilities are unknown (the status request failed and is
+    /// asked again next time); a caller that would tell the user to update
+    /// reads ``hostCapabilities(on:)`` and treats `nil` as "try again".
     func supports(_ capability: SupermuxMobileCapability, on machine: SurfaceMachineID) async -> Bool {
         await hostCapabilities(on: machine)?.contains(capability.rawValue) == true
     }

@@ -161,8 +161,13 @@ chips list R; Forward a Port / Stop / Resume (`supermux.devices.ports.forward|st
 server that exits removes its forward; a dropped link (`supermux.devices.link stop|restore`) makes
 forwards wait, empties the chips and brings them back on the same L; auto-forward off keeps a
 manual forward; a default-browser link from the mirror's terminal (Track C's
-`supermux.devices.mirror.link_open`) goes to L; and Track A's `pretend_old_host` disables
-forwarding (`needs_update`). The DEBUG driver `supermux.devices.ports.*`
+`supermux.devices.mirror.link_open`) goes to L; Track A's `pretend_old_host` disables
+forwarding (`needs_update`); and with `supermux.devices.tunnel.fail_requests` making the loopback
+host answer every `mobile.host.status` after a relink `timed_out`, R comes back once the host answers
+again, with no port change and no relink (`capability_failure_retried`: the forwards ask again after
+1 s, 2 s, 4 s … while the link is up), and with every `ports.list` failing until the reconnect's own
+`supermux.ports.updated` pokes are over (5 s), R comes back the same way (`listing_failure_retried`:
+a failed listing is fetched again by itself). The DEBUG driver `supermux.devices.ports.*`
 (`Sources/Supermux/Ports/SupermuxDevicePortsSocketCommands.swift`) answers `list {machine?}` (the
 forwards, availability, host listings, and each mirror's chips and pills), `forward`, `stop`,
 `resume {machine, port}`, `set_auto {enabled}` (the Settings card's action) and `refresh {machine?}`.
@@ -629,15 +634,26 @@ app's own listener (`tunnel.own_port`) is denied (the loop guard); a revoked pee
 (`unauthorized`); `mobile.supermux.ports.list` attributes a server started in a workspace's terminal
 to that workspace (after `surface.ports_kick`), lists the suite's own server only under
 `other_ports`, and lists an injected non-listening port (`tunnel.inject_port`) until it is cleared; a
-held tunnel ends when the link drops; and with `tunnel.pretend_old_host` the capability disappears and
-tunnels answer `needs_update`, then come back.
+held tunnel ends when the link drops; with `tunnel.pretend_old_host` the capability disappears and
+tunnels answer `needs_update`, then come back; and with `tunnel.fail_requests` failing every
+capability request after a relink (unknown capabilities, not absent ones) a tunnel answers
+`unreachable`, the browser page's reason is `unreachable` and neither it nor the Settings ports note
+asks for an update, the forwards' availability is `unreachable`, and once the host answers again the
+forwards find it available with no relink (`unknown_capabilities_are_retryable`).
+
+`tunnel.fail_requests {method, count}` makes the loopback host answer the next `count` requests for
+`method` with `timed_out` (what the viewer's link reports for a missed reply deadline on a live
+link, #723), counted only after each connection's `mobile.sync.fetch` so the dial's own
+`mobile.host.status` identity check passes; `count: 0` disarms, and without `count` it reports
+`{remaining, failed}`. `tunnel.http_get` answers a failed open with the mirror browser's error page
+reason and headline too (`page_reason`, `page_headline`).
 
 Run it: `CMUX_E2E_SUITES="loopback_device_tunnel_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`.
 The attribution step needs the sidebar's port detection (Settings: show ports, not "hide all
 details"). Not covered here (two Macs only): `IrxTunnelClient` and QUIC flow control,
 `DeviceIrxClient.supermuxTunnelConnection` (#694), the fence's `isMac` directory lookup,
-`stillAuthorized` and `admission.recheck`, lane credit at 48 tunnels, and a Tailscale-only link
-(`no_direct_link`).
+`stillAuthorized` and `admission.recheck`, lane credit at 48 tunnels, a Tailscale-only link
+(`no_direct_link`), and an Iroh link between dials (`unreachable`).
 ## Mirror simulator E2E
 
 `tests/supermux/loopback_mirror_simulator_e2e.py` checks that a device mirror's Simulator runs on the

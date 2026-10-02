@@ -12,7 +12,9 @@ import Foundation
 ///   GET through a tunnel to `host:port` (default `localhost`) on that Mac's
 ///   loopback → `{status, http_status?, body?}`. `status` is `connected`, or
 ///   why the open failed (`denied`, `refused`, `busy`, `failed`, or the tunnel's
-///   availability: `offline`, `needs_update`, `no_direct_link`).
+///   availability: `offline`, `needs_update`, `no_direct_link`, …); a failed
+///   open also answers what a mirror's browser would show for it
+///   (`page_reason`, `page_headline` of ``SupermuxBrowserProxyErrorPage``).
 /// - `tunnel.hold {machine, host?, port}`: opens a tunnel and keeps it open →
 ///   `{status, held}`; `tunnel.release_held {}` aborts every held tunnel.
 /// - `tunnel.host_state {machine}`: the newest loopback connection's tunnel host
@@ -26,6 +28,10 @@ import Foundation
 /// - `tunnel.host_ports {include_other?}`: this Mac's `ports.list` payload.
 /// - `tunnel.own_port {port, registered}`: marks a port as one this app
 ///   listens on for forwards (the tunnel host's loop guard refuses it).
+/// - `tunnel.fail_requests {method, count?}`: the loopback host answers the
+///   next `count` requests for `method` (after each connection's sync fetch)
+///   `timed_out`, as a stalled Mac does (0 disarms; arming restarts the tally)
+///   → `{method, remaining, failed}`; without `count` it only reports.
 @MainActor
 enum SupermuxDeviceTunnelSocketCommands {
     static let methodPrefix = "tunnel."
@@ -72,6 +78,7 @@ enum SupermuxDeviceTunnelSocketCommands {
             return ["injected": [Int]()]
         case "host_ports": return await hostPorts(params)
         case "own_port": return try ownPort(params)
+        case "fail_requests": return try failRequests(params)
         default: throw HookError(message: "unknown tunnel method \(name)")
         }
     }
@@ -91,7 +98,13 @@ enum SupermuxDeviceTunnelSocketCommands {
         } catch let error as HookError {
             throw error
         } catch {
-            return ["status": status(of: error)]
+            let reason = SupermuxBrowserProxyErrorPage.Reason(error)
+            let name = SupermuxComposition.devices.device(for: try machine(params))?.displayName ?? ""
+            return [
+                "status": status(of: error),
+                "page_reason": reason.rawValue,
+                "page_headline": SupermuxBrowserProxyErrorPage.headline(reason: reason, machineName: name, port: targetPort),
+            ]
         }
         let path = (params["path"] as? String) ?? "/"
         let seconds = min(max((params["timeout_seconds"] as? NSNumber)?.doubleValue ?? 10, 1), 60)
@@ -201,6 +214,23 @@ enum SupermuxDeviceTunnelSocketCommands {
             ports.remove(target)
         }
         return ["registered": ports.contains(target)]
+    }
+
+    /// Arms (or, without `count`, only reports) the loopback host's failed
+    /// answers for one method (``SupermuxDeviceLoopbackHostAcceptor/failingRequests``).
+    private static func failRequests(_ params: [String: Any]) throws -> [String: Any] {
+        guard let method = params["method"] as? String, !method.isEmpty else {
+            throw HookError(message: "method is required")
+        }
+        if let count = (params["count"] as? NSNumber)?.intValue {
+            SupermuxDeviceLoopbackHostAcceptor.failingRequests[method] = max(count, 0)
+            SupermuxDeviceLoopbackHostAcceptor.failedRequests[method] = 0
+        }
+        return [
+            "method": method,
+            "remaining": SupermuxDeviceLoopbackHostAcceptor.failingRequests[method] ?? 0,
+            "failed": SupermuxDeviceLoopbackHostAcceptor.failedRequests[method] ?? 0,
+        ]
     }
 
     // MARK: - Params
