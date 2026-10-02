@@ -357,8 +357,10 @@ enum SupermuxDeviceMirrorCloseGate {
     /// The `device-layout-local-panels` touchpoint in
     /// `DeviceWorkspaceLayoutCoordinator.performClose`: that Mac refused to
     /// close `closedSurfaceID` with `error`. When that is its last-surface
-    /// refusal (`invalid_state`) on a layout fetched for this close
-    /// (`ownerSurfaceIDs`) that holds only that terminal, and `workspace` now
+    /// refusal (`invalid_state`), or an answer that never came (`timed_out`: a
+    /// reply that missed its deadline; `server_busy` after the link's retries),
+    /// on a layout fetched for this close (`ownerSurfaceIDs`) that holds only
+    /// that terminal, so that Mac refused it or will, and `workspace` now
     /// holds only tabs of its own (no terminal of that Mac is projected or
     /// being made in it), the mirror's last terminal closed: its workspace
     /// closes on its Mac and this one stays here with those tabs
@@ -373,7 +375,8 @@ enum SupermuxDeviceMirrorCloseGate {
         closedSurfaceID: String,
         ownerSurfaceIDs: [String]
     ) -> Bool {
-        guard case .hostRejected(let code, _)? = error as? DeviceLinkError, code == "invalid_state",
+        guard case .hostRejected(let code, _)? = error as? DeviceLinkError,
+              code == "invalid_state" || code == SupermuxDeviceLinkEvents.missedDeadlineCode || code == "server_busy",
               ownerSurfaceIDs.count == 1,
               ownerSurfaceIDs[0].caseInsensitiveCompare(closedSurfaceID) == .orderedSame,
               holdsOnlyItsOwnTabs(workspace, machine: machine) else { return false }
