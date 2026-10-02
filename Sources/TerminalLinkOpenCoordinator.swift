@@ -161,11 +161,16 @@ struct TerminalLinkOpenCoordinator {
         let cloudURL = request.sourcePanelId.flatMap {
             container?.cloudTerminalLinkTarget(url: target.url, sourcePanelId: $0)?.url
         }
-        let destinations = RemoteLinkOpenPolicy().destinations(
-            for: target.url,
-            machineRoute: cloudURL,
-            remoteInitiated: request.isRemoteInitiated
-        )
+        // SUPERMUX:begin device-mirror-link-forward
+        // A loopback link in another Mac's mirrored terminal names that Mac's port:
+        // outside cmux it opens at the port this Mac forwards it to (the cmux browser
+        // routes it to that Mac itself). (upstream: `let destinations =
+        // RemoteLinkOpenPolicy().destinations(for:machineRoute:remoteInitiated:)`)
+        let destinations = SupermuxDevicePortLinks.destinations(
+            RemoteLinkOpenPolicy().destinations(for: target.url, machineRoute: cloudURL,
+                                               remoteInitiated: request.isRemoteInitiated),
+            sourceWorkspaceID: request.sourceWorkspaceId)
+        // SUPERMUX:end device-mirror-link-forward
         guard let browserURL = destinations.browserURL else {
             // Returning false lets a remote requester print the URL instead.
             log("link.openURL refused remote-initiated non-public url=\(target.url)")
