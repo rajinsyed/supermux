@@ -616994,6 +616994,125 @@
           }
         }
       }
+    },
+    "supermux.ports.page.busy" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ has too many connections open. Reload this page in a moment."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@で開いている接続が多すぎます。少し待ってから、このページを再読み込みしてください。"
+          }
+        }
+      }
+    },
+    "supermux.ports.page.denied" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ didn't allow this connection."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@はこの接続を許可しませんでした。"
+          }
+        }
+      }
+    },
+    "supermux.ports.page.needsUpdate" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Update Supermux on %@ to open its localhost here."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ここでlocalhostを開くには、%@のSupermuxをアップデートしてください。"
+          }
+        }
+      }
+    },
+    "supermux.ports.page.noDirectLink" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opening localhost on %@ needs a direct connection to it."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@のlocalhostを開くには、そのMacへの直接接続が必要です。"
+          }
+        }
+      }
+    },
+    "supermux.ports.page.notListening" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing on %@ is listening on that port. Start the server there, then reload this page."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@のそのポートで待ち受けているものがありません。そちらでサーバーを起動してから、このページを再読み込みしてください。"
+          }
+        }
+      }
+    },
+    "supermux.ports.page.offline" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ is offline. Reload this page when it's back."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@はオフラインです。オンラインに戻ったら、このページを再読み込みしてください。"
+          }
+        }
+      }
+    },
+    "supermux.ports.page.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "localhost:%1$lld on %2$@ isn't answering"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$@のlocalhost:%1$lldが応答していません"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
