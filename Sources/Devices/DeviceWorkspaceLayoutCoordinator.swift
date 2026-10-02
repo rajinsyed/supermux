@@ -359,6 +359,18 @@ final class DeviceWorkspaceLayoutCoordinator {
                 return
             }
             // SUPERMUX:end device-terminal-close-deferred
+            // SUPERMUX:begin device-terminal-close-timed-out
+            // A reply that missed its deadline on a live link: the other Mac runs
+            // the close in order before a fresh layout, so that layout says whether
+            // it ran. If it did, the close succeeded and shows no failure card.
+            if SupermuxDeviceLinkEvents.isMissedDeadline(error), !stopped, isConnected(),
+               await supermuxCloseRan(close, remoteID: remoteID) {
+                await refresh()
+                if let id = close.workspaceID { deliveries[id] = nil }
+                close.succeed()
+                return
+            }
+            // SUPERMUX:end device-terminal-close-timed-out
             if !Task.isCancelled, !stopped {
                 try? await fetch(remoteID)
                 await refresh()
@@ -369,6 +381,20 @@ final class DeviceWorkspaceLayoutCoordinator {
             close.fail(error)
         }
     }
+
+    // SUPERMUX:begin device-terminal-close-timed-out
+    /// Whether the terminal `close` names is gone from a freshly fetched
+    /// layout of its remote workspace.
+    private func supermuxCloseRan(_ close: CloseOperation, remoteID: String) async -> Bool {
+        do {
+            try await fetch(remoteID)
+        } catch {
+            return false
+        }
+        guard let ids = try? snapshots[remoteID]?.layout.validatedSurfaceIDs() else { return false }
+        return !ids.contains { $0.caseInsensitiveCompare(close.surfaceID) == .orderedSame }
+    }
+    // SUPERMUX:end device-terminal-close-timed-out
 
     func refreshRequested() {
         fetchRequested.formUnion(snapshots.keys)

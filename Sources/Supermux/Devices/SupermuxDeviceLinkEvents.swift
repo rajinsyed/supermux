@@ -76,6 +76,22 @@ extension DeviceLink {
 
 // MARK: - Missed deadlines (touchpoint `device-link-slow-request`)
 
+extension SupermuxDeviceLinkEvents {
+    /// The `hostRejected` code of a request whose reply missed its deadline
+    /// while the other Mac still answers. The work may still run there.
+    nonisolated static let missedDeadlineCode = "timed_out"
+    /// How long a caller waits before asking again after a missed deadline on
+    /// a live link (a mirror's replay, the synced tree's fetch).
+    nonisolated static let missedDeadlineRetryDelayNanoseconds: UInt64 = 2_000_000_000
+
+    /// Whether `error` is a missed reply deadline on a link that stays up
+    /// (``DeviceLink/supermuxMissedDeadline(_:_:client:isCurrent:)``).
+    nonisolated static func isMissedDeadline(_ error: any Error) -> Bool {
+        guard case let .hostRejected(code, _)? = error as? DeviceLinkError else { return false }
+        return code == missedDeadlineCode
+    }
+}
+
 extension DeviceLink {
     /// How long the liveness check after a missed deadline waits for the other Mac.
     static let supermuxLivenessTimeoutNanoseconds: UInt64 = 10_000_000_000
@@ -87,18 +103,22 @@ extension DeviceLink {
     /// a `projects.list` waiting on git in project folders behind an
     /// unanswered macOS privacy prompt took the link down every ~20 s. So the
     /// link first asks the other Mac whether it still answers
-    /// (`mobile.events.probe`, which its connection answers itself, never
-    /// waiting on the app): any answer, a refusal included, keeps the link and
-    /// fails only this request (`timed_out`); no answer within 10 s is a dead
-    /// link, which reconnects as upstream does. `isCurrent` says the request's
-    /// connection is still the link's; `method` names the request in the log.
+    /// (`mobile.events.probe`): any answer, a refusal included, keeps the link
+    /// and fails only this request (`timed_out`); no answer within 10 s is a
+    /// dead link, which reconnects as upstream does. On an Iroh route the
+    /// other Mac's connection answers the probe without its main thread, so a
+    /// Mac whose main thread is stuck still counts as alive; on a Tailscale
+    /// route its authorization runs on that main thread, so a Mac stuck there
+    /// for 10 s still reads as lost and redials, as upstream did.
+    /// `isCurrent` says the request's connection is still the link's;
+    /// `method` names the request in the log.
     func supermuxMissedDeadline(
         _ method: String,
         _ error: MobileShellConnectionError,
         client: MobileCoreRPCClient,
         isCurrent: () -> Bool
     ) async -> any Error {
-        let answers = await Self.supermuxHostAnswers(client, clientID: clientID)
+        let answers = await Self.supermuxHostAnswers(client)
         guard isCurrent() else { return CancellationError() }
         guard answers else {
             reportTransportLost(error)
@@ -109,7 +129,7 @@ extension DeviceLink {
         #endif
         let name = record.deviceName
         return DeviceLinkError.hostRejected(
-            code: "timed_out",
+            code: SupermuxDeviceLinkEvents.missedDeadlineCode,
             message: String(
                 localized: "supermux.devices.error.replyTimedOut",
                 defaultValue: "\(name) did not answer in time. It is still connected; try again."
@@ -117,13 +137,32 @@ extension DeviceLink {
         )
     }
 
-    /// Whether the other Mac's connection answers a probe in time.
-    private static func supermuxHostAnswers(_ client: MobileCoreRPCClient, clientID: String) async -> Bool {
+    /// The synced tree's fetch missed its deadline on a link that stays up
+    /// (touchpoint `device-link-fetch-timed-out`). Before #723 the reconnect
+    /// fetched it again; now the workspace list would stay as it was (empty
+    /// after a connect) until that Mac next changed something. So it is
+    /// fetched again shortly, while `isCurrent` says the connection is the
+    /// same one.
+    func supermuxFetchAgain(isCurrent: @escaping @MainActor () -> Bool) {
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: SupermuxDeviceLinkEvents.missedDeadlineRetryDelayNanoseconds)
+            guard let self, isCurrent() else { return }
+            await self.fetchNow()
+        }
+    }
+
+    /// Whether the other Mac's connection answers a probe in time. The probe
+    /// carries no `client_id`: the host records one on its main thread before
+    /// answering (the link's own was recorded on this connection when it
+    /// connected), and this probe must not wait on that thread.
+    private static func supermuxHostAnswers(_ client: MobileCoreRPCClient) async -> Bool {
         do {
             let probe = try MobileCoreRPCClient.requestData(method: "mobile.events.probe", params: [
-                "client_id": clientID,
                 "stream_id": "supermux-liveness",
             ])
+            #if DEBUG
+            SupermuxDeviceLoopbackHostAcceptor.blockMainDuringLivenessProbeIfArmed()
+            #endif
             _ = try await client.sendRequest(probe, timeoutNanoseconds: supermuxLivenessTimeoutNanoseconds)
             return true
         } catch let error as MobileShellConnectionError {

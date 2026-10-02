@@ -288,16 +288,19 @@ enum SupermuxDevicesSocketCommands {
     }
 
     /// `link {machine, action: "stop" | "restore" | "stall" | "status", busy?,
-    /// method?, seconds?}`: holds a device link down (tearing down its client
-    /// like a transport loss, but without the immediate redial) or dials it
-    /// again, so E2E can drop the link under an in-flight request and watch
-    /// availability change live. `busy: "<method>"` on a restore makes the
-    /// loopback host answer the new connection's first `<method>` request
-    /// after its sync fetch `server_busy`; `stall` makes it hold its next
-    /// `method` request for `seconds` (default 30) before answering it
+    /// method?, seconds?, main_seconds?}`: holds a device link down (tearing
+    /// down its client like a transport loss, but without the immediate
+    /// redial) or dials it again, so E2E can drop the link under an in-flight
+    /// request and watch availability change live. `busy: "<method>"` on a
+    /// restore makes the loopback host answer the new connection's first
+    /// `<method>` request after its sync fetch `server_busy`; `stall` makes it
+    /// hold its next `method` request for `seconds` (default 30) before
+    /// answering it, and with `main_seconds` also blocks the main thread that
+    /// long while the liveness probe after the missed deadline is answered
     /// (``SupermuxDeviceLoopbackHostAcceptor``). Every action answers the
     /// link's phase, the loopback connections admitted since launch (a redial
-    /// adds one) and whether a stall is still armed.
+    /// adds one) and whether a stall (`stall_armed`) or a main-thread block
+    /// (`main_stall_armed`) is still armed.
     private static func setLink(_ params: [String: Any], devices: SupermuxDevices) throws -> [String: Any] {
         let machine = try machine(params)
         guard let link = devices.provider(for: machine)?.link else {
@@ -313,6 +316,8 @@ enum SupermuxDevicesSocketCommands {
                 method: try required(params, "method"),
                 seconds: min(max(number(params, "seconds") ?? 30, 1), 600)
             )
+            SupermuxDeviceLoopbackHostAcceptor.mainStallDuringNextLivenessProbe =
+                number(params, "main_seconds").map { min(max($0, 1), 60) }
         case "status": break
         default: throw InvalidParams(message: "action must be stop, restore, stall or status")
         }
@@ -321,6 +326,7 @@ enum SupermuxDevicesSocketCommands {
             "phase": String(describing: link.phase),
             "connections_admitted": SupermuxDeviceLoopbackHostAcceptor.admittedConnections,
             "stall_armed": SupermuxDeviceLoopbackHostAcceptor.stalledRequest != nil,
+            "main_stall_armed": SupermuxDeviceLoopbackHostAcceptor.mainStallDuringNextLivenessProbe != nil,
         ]
     }
     #endif
