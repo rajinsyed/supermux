@@ -3566,6 +3566,7 @@
 		50BE0019050000000000000A /* SupermuxRemoteSimulatorPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00190500000000000009 /* SupermuxRemoteSimulatorPanelView.swift */; };
 		50BE0019050000000000001A /* SupermuxRemoteSimulatorQuality.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00190500000000000019 /* SupermuxRemoteSimulatorQuality.swift */; };
 		50BE00190500000000000006 /* SupermuxRemoteSimulators.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00190500000000000005 /* SupermuxRemoteSimulators.swift */; };
+		50BE00190500000000000012 /* SupermuxRemoteSimulatorSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00190500000000000011 /* SupermuxRemoteSimulatorSnapshot.swift */; };
 		50BE00190500000000000002 /* SupermuxRemoteSimulatorSocketCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00190500000000000001 /* SupermuxRemoteSimulatorSocketCommands.swift */; };
 		50BE00040000000000000010 /* SupermuxRemoteWorkspaceRef+Surface.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE0004000000000000000F /* SupermuxRemoteWorkspaceRef+Surface.swift */; };
 		50BE000B0000000000000002 /* SupermuxRemoteWorktreeCreationTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000B0000000000000001 /* SupermuxRemoteWorktreeCreationTarget.swift */; };
@@ -8015,6 +8016,7 @@
 		50BE00190500000000000009 /* SupermuxRemoteSimulatorPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteSimulator/SupermuxRemoteSimulatorPanelView.swift; sourceTree = "<group>"; };
 		50BE00190500000000000019 /* SupermuxRemoteSimulatorQuality.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteSimulator/SupermuxRemoteSimulatorQuality.swift; sourceTree = "<group>"; };
 		50BE00190500000000000005 /* SupermuxRemoteSimulators.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteSimulator/SupermuxRemoteSimulators.swift; sourceTree = "<group>"; };
+		50BE00190500000000000011 /* SupermuxRemoteSimulatorSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteSimulator/SupermuxRemoteSimulatorSnapshot.swift; sourceTree = "<group>"; };
 		50BE00190500000000000001 /* SupermuxRemoteSimulatorSocketCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteSimulator/SupermuxRemoteSimulatorSocketCommands.swift; sourceTree = "<group>"; };
 		50BE0004000000000000000F /* SupermuxRemoteWorkspaceRef+Surface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Devices/SupermuxRemoteWorkspaceRef+Surface.swift"; sourceTree = "<group>"; };
 		50BE000B0000000000000001 /* SupermuxRemoteWorktreeCreationTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Projects/SupermuxRemoteWorktreeCreationTarget.swift; sourceTree = "<group>"; };
@@ -9456,6 +9458,7 @@
 				50BE00170400000000000001 /* SupermuxTerminalSizingDefaults.swift */,
 				50BE00170400000000000003 /* SupermuxTerminalSizingSocketCommands.swift */,
 				50BE00180200000000000001 /* SupermuxDeviceMirrorCloseSocketCommands.swift */,
+				50BE00190500000000000011 /* SupermuxRemoteSimulatorSnapshot.swift */,
 				50BE0019050000000000001B /* Workspace+SupermuxRemoteSimulator.swift */,
 				50BE00190500000000000019 /* SupermuxRemoteSimulatorQuality.swift */,
 				50BE00190500000000000017 /* SupermuxRemoteSimulatorPanel+Debug.swift */,
@@ -16439,6 +16442,7 @@
 				50BE0019050000000000000A /* SupermuxRemoteSimulatorPanelView.swift in Sources */,
 				50BE0019050000000000001A /* SupermuxRemoteSimulatorQuality.swift in Sources */,
 				50BE00190500000000000006 /* SupermuxRemoteSimulators.swift in Sources */,
+				50BE00190500000000000012 /* SupermuxRemoteSimulatorSnapshot.swift in Sources */,
 				50BE00190500000000000002 /* SupermuxRemoteSimulatorSocketCommands.swift in Sources */,
 				50BE00040000000000000010 /* SupermuxRemoteWorkspaceRef+Surface.swift in Sources */,
 				50BE000B0000000000000002 /* SupermuxRemoteWorktreeCreationTarget.swift in Sources */,
