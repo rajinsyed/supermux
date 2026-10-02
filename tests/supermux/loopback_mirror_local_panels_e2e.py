@@ -37,6 +37,11 @@ named by their source id (T1...), the mirror's browsers B and B2:
                                                the `mobile.terminal.close` 3 s before refusing it
                                                (`supermux.devices.link stall`): the same outcome, and
                                                auto-mirror never closes M4 as an orphan meanwhile
+  L late_last_terminal_close_keeps_mirror      as I with a fifth source S5, but the owning Mac's answer
+                                               to the `mobile.terminal.close` misses its reply
+                                               deadline (`timed_out`, `supermux.devices.tunnel.
+                                               fail_requests`; the close never ran there): the same
+                                               outcome, no failure card
 
 Every expected pair must hold, then stay so for --settle seconds (nothing pushed
 back, nothing moved); each step records both labelled trees and the latency.
@@ -640,6 +645,31 @@ class LocalPanelsE2E:
                 "stall_seconds": STALL_SECONDS, "chain_seconds": seconds, "auto_mirror_passes": passes,
                 "kept_panels": self.panel_kinds(pair.mirror_id)}
 
+    def late_last_terminal_close_keeps_mirror(self) -> Dict[str, Any]:
+        """The last terminal's close beside a browser when the owning Mac's answer misses
+        its reply deadline (a Mac whose main thread is stalled past 20 s while its link
+        still answers, #723): the loopback host answers the `mobile.terminal.close`
+        `timed_out` without running it. The re-fetched layout still holds only that
+        terminal, so the owning Mac refused it or will; the outcome must be as when it
+        answered the refusal itself."""
+        pair, terminal, mirror_t1, browser = self.one_terminal_beside_browser("late")
+        method = "mobile.terminal.close"
+        armed = self.sock.call("supermux.devices.tunnel.fail_requests", {"method": method, "count": 1}) or {}
+        if armed.get("remaining") != 1:
+            raise Failure(f"precondition: the loopback host did not arm the failed answer: {armed}")
+        try:
+            self.sock.call("surface.close", {"workspace_id": pair.mirror_id, "surface_id": mirror_t1, "force": True})
+            problems = self.source_closed_keeping_browser_problems(pair, browser)
+            failed = (self.sock.call("supermux.devices.tunnel.fail_requests", {"method": method}) or {}).get("failed")
+        finally:
+            self.sock.call("supermux.devices.tunnel.fail_requests", {"method": method, "count": 0})
+        if failed != 1:
+            problems.append(f"the owning Mac's answer was never failed ({failed} timed-out answers)")
+        if problems:
+            raise Failure("; ".join(problems))
+        return {"source": pair.source_id, "mirror": pair.mirror_id, "terminal": terminal, "browser": browser,
+                "timed_out_answers": failed, "kept_panels": self.panel_kinds(pair.mirror_id)}
+
     def run(self) -> bool:
         ok = self.step("setup", self.setup)
         if ok:
@@ -654,6 +684,7 @@ class LocalPanelsE2E:
                 ("last_terminal_beside_browser_closes_source", self.last_terminal_beside_browser_closes_source),
                 ("last_two_terminals_beside_browser_close_source", self.last_two_terminals_beside_browser_close_source),
                 ("slow_last_terminal_close_keeps_mirror", self.slow_last_terminal_close_keeps_mirror),
+                ("late_last_terminal_close_keeps_mirror", self.late_last_terminal_close_keeps_mirror),
             ]:
                 ok = self.step(name, check) and ok
         self.facts["names"] = {name: identifier for name, identifier in self.ids.items()}

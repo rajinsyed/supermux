@@ -571,6 +571,12 @@ auto-mirror passes 1.2 s apart meanwhile (`supermux.devices.reconcile`, as a rea
 would; an idle loopback sends none). S4 must still close and M4 keep only its browser; the passes report
 S4 in `busy`. Before that fix the first pass noted M4 (bound, nothing projected), the second confirmed it
 as an orphan and closed it, browser included, and S4 kept running.
+`late_last_terminal_close_keeps_mirror` repeats it with a fifth source S5 whose owning Mac's answer to
+the `mobile.terminal.close` misses its reply deadline: `supermux.devices.tunnel.fail_requests {method:
+"mobile.terminal.close", count: 1}` makes the loopback host answer it `timed_out` without running it, as
+a viewer's link reports a reply that missed its 20 s deadline while that Mac still answers (#723). The
+re-fetched layout still holds only that terminal, so S5 must still close and M5 keep only its browser,
+with no failure card.
 
 ## Mirror browser E2E
 
