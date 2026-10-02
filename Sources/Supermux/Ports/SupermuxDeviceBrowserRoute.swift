@@ -11,8 +11,8 @@ import WebKit
 /// `reattachToWorkspace`, every creation path: new tab, split, terminal link,
 /// restore, the Dock, a tab moved in or out) passes its workspace parameters
 /// through ``route(workspaceID:isRemoteWorkspace:proxyEndpoint:dataStoreID:)``.
-/// A mirror's browsers (bound, or unbound: the workspaces the ports menu offers
-/// "Open in cmux Browser" in) then use upstream's remote-workspace mode:
+/// A mirror's browsers (a bound mirror's, and an unbound one's by the rule the
+/// ports menu and chips use) then use upstream's remote-workspace mode:
 /// navigation waits for, then goes through, the owning Mac's proxy
 /// (``SupermuxDeviceBrowserProxies``), so `localhost` there is that Mac's; and
 /// they keep one persistent website data store per remote app instance
@@ -72,15 +72,19 @@ enum SupermuxDeviceBrowserRoute {
     private static let dataStoreNamespace = UUID(uuidString: "503c7a18-bbc6-4c4b-beca-22549addb0eb")!
 
     /// The Mac whose workspace `workspaceID` mirrors: its persisted binding
-    /// (also a workspace a restore has not added to a window yet), else what
-    /// its panes project, the device index's rule
-    /// (``SupermuxDeviceWorkspaceIndex/ref(forLocalWorkspaceID:)``, live and
-    /// restored projections) that the ports menu and chips use too.
+    /// (also a workspace a restore has not added to a window yet), else, for an
+    /// unbound mirror, the rule of ``SupermuxDeviceWorkspaceIndex/mirrors()``
+    /// that the ports menu and chips use too: every pane projects a terminal of
+    /// that one remote workspace. A local workspace that only borrows a remote
+    /// terminal keeps this Mac's browsers.
     private static func mirroredMachine(workspaceID: UUID) -> SurfaceMachineID? {
         let bindings = SupermuxComposition.deviceBindings
-        let bound = Workspace.liveWorkspace(id: workspaceID).flatMap { bindings.ref(forStableID: $0.stableId) }
-            ?? bindings.ref(forWorkspaceID: workspaceID)
-        return (bound ?? SupermuxComposition.deviceWorkspaceIndex.ref(forLocalWorkspaceID: workspaceID))?.machine
+        let live = Workspace.liveWorkspace(id: workspaceID)
+        let bound = live.flatMap { bindings.ref(forStableID: $0.stableId) } ?? bindings.ref(forWorkspaceID: workspaceID)
+        if let bound { return bound.machine }
+        let index = SupermuxComposition.deviceWorkspaceIndex
+        guard let workspace = live, index.isDeviceMirror(workspace) else { return nil }
+        return index.ref(forLocal: workspace)?.machine
     }
 }
 
