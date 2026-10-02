@@ -200,6 +200,14 @@ answers `chip_open {workspace_id, port, cmux_browser?}` (a sidebar chip click th
 CMUX_E2E_SUITES="loopback_port_forward_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
 ```
 
+`stop_forgotten_with_its_workspace` (third review): a second source S2 serves P2 (automatic forward); the stop of
+P2 must record S2 (`ports.list`'s `stops`); once the owner unlists P2 and S2's mirror is hidden here
+(`close_mirror {action: hide}`) the stop must be gone, and with S2 shown again (`unhide`) and P2 listed again P2 must
+be forwarded automatically. `late_bind_is_attributed` (third review, red on 100859b1f2e): a new terminal in S runs
+`sleep 12; python3 -m http.server P`, so the server binds after the ~10 s of port scans the command's kick starts;
+`tunnel.host_ports` must list P as S's within 15 s (3.7 s measured: the owner's 4 s check of its loopback listeners
+re-kicks the scans).
+
 `stop_survives_server_restart` (review of #757): an automatic forward of P (served from another port) is stopped,
 then the owner unlists P and lists it again, each with a poke; the forward must stay stopped and P unbound for 3 s,
 and Resume must start it (red on 754e7bc9198: the forward was active again, the stop forgotten when P left the
@@ -733,6 +741,20 @@ types the URL of an other port; `restarted_server_recovers_as_written` (B) re-li
 poke and the follow-up fetches off (DEBUG `ports.follow_ups {enabled}`) and wants the reloaded tab at
 `localhost:P` within 3.5 s (0.11 s measured), so the follow-ups cannot pass it; `restarted_server_returns_without_poke`
 runs with automatic forwarding off, so only the tab's own on-demand forward brings it back.
+
+The third review (2026-10-03) adds four (red on 3f1b3ca9b69, the last three on 100859b1f2e, which fixed only the
+first): `restart_listed_as_other_first_recovers` (automatic forwarding off; the owner's server on P restarts and the
+follow-up fetches see it only among its other ports, the page reloads meanwhile, then the owner lists it as the
+workspace's with a poke: the tab must end on `localhost:P`; red on 3f1b3ca9b69: the app froze, the main thread spinning
+in `SupermuxPortForwards.fetchListingNow` at 98 % CPU, sample kept beside the reports; red on 100859b1f2e: stuck on
+the alias, "not allowed" stored as for good); `unchecked_alias_tab_gets_forward` (a tab opened while the link is down,
+so the gate never tried its port, must get a same-port forward once the link is back and P is listed; red: stayed on
+the alias); `terminal_link_forwards_other_port` (`supermux.devices.mirror.link_open` with `destination: cmux`, the
+real Command-click path, to an owner's other port must run as written; red: the alias); and, last, after the chunk
+step, `held_navigation_joins_fetch_in_flight` (the owner holds the next `ports.list` 2 s, `supermux.devices.link
+{action: stall}`, a refresh starts it, a URL is typed into a tab meanwhile: the app must answer a socket call every
+0.4 s for 6 s and the tab land as written; green: every answer within 0.02 s). A step whose socket call times out
+now fails as "the app stopped answering", the later steps are listed as skipped and the report keeps every result.
 
 **A URL typed into a tab, to plain HTTP on a host that is not loopback by name, waits ~10 s on this Mac**
 (WebKit and macOS 27, not the proxy; not a fail-open). WebKit 27 moves such a navigation into a new hardened
