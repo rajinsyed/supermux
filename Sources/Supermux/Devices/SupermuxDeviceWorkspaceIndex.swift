@@ -81,6 +81,12 @@ final class SupermuxDeviceWorkspaceIndex {
         return projectedRef(inWorkspace: workspace.id)
     }
 
+    /// The remote workspace a persisted binding names for `workspace`, ignoring
+    /// what its panes project (the fork's opener binds every mirror it opens).
+    func boundRef(forLocal workspace: Workspace) -> SupermuxRemoteWorkspaceRef? {
+        bindings.ref(forStableID: workspace.stableId)
+    }
+
     /// The remote workspace a local workspace id mirrors, if any.
     func ref(forLocalWorkspaceID workspaceID: UUID) -> SupermuxRemoteWorkspaceRef? {
         if let workspace = Workspace.liveWorkspace(id: workspaceID) { return ref(forLocal: workspace) }

@@ -505,8 +505,17 @@ final class DeviceWorkspaceLayoutCoordinator {
         }
         let pendingPanelIDs = Set(pending.map(\.panelID))
         let nativePanelIDs = Set(native.panels.keys)
+        // SUPERMUX:begin device-layout-local-panels
+        // A bound mirror's own browsers (any non-terminal panel) live only on
+        // this Mac. They join `reserved` below: left out of the layout sent to
+        // the owning Mac and grafted back where they sit here, so the mirror
+        // keeps following that Mac's splits and tabs. (upstream: the guard's
+        // second clause is `nativePanelIDs.subtracting(projectedPanelIDs).isSubset(of: pendingPanelIDs)`)
+        let supermuxLocalPanelIDs = SupermuxDeviceLayoutSurfaceFilter.localPanelIDs(in: native, machine: machine)
         guard projectedPanelIDs.isSubset(of: nativePanelIDs),
-              nativePanelIDs.subtracting(projectedPanelIDs).isSubset(of: pendingPanelIDs) else { return nil }
+              nativePanelIDs.subtracting(projectedPanelIDs).subtracting(supermuxLocalPanelIDs)
+                  .isSubset(of: pendingPanelIDs) else { return nil }
+        // SUPERMUX:end device-layout-local-panels
         let remoteIDs = Set(projections.compactMap(\.remoteWorkspaceID))
             .union(pending.compactMap(\.remoteWorkspaceID))
         guard remoteIDs.count == 1, let remoteID = remoteIDs.first,
