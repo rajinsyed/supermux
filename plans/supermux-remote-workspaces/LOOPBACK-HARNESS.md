@@ -483,6 +483,45 @@ CMUX_TAG=<tag> python3 tests/supermux/loopback_mirror_files_e2e.py --scratch /tm
   --app-path "<App path>" --projects-file /tmp/<tag>/projects.json
 ```
 
+## Mirror local panels E2E
+
+`tests/supermux/loopback_mirror_local_panels_e2e.py` checks that a mirror's own browser tabs keep the
+mirror following its Mac (#706). On a background source S and its auto-mirror M it compares both
+pane trees after every change, read through `supermux.devices.mirror.layout` (DEBUG: the tree the
+device layout sync reads, plus each panel's kind; terminals are labelled by their source id T1…, the
+mirror's browsers B and B2). A blank browser tab B joins M beside T1 (S unchanged); a split on S
+reaches M with B kept beside T1; with M on screen, T2 moved after B in M reaches S without B; a
+browser split B2 in M stays local while T2's split on S wraps it; B2 moved after T3 keeps its place
+when S gets T4 in that pane; closing T1 in M closes it on S (the close path's guard, which still fails
+with only the first fix); closing B and B2 leaves S alone and the pure mirror follows the next split.
+Every expected pair must hold, then stay so for `--settle` seconds. Before the fix the third step
+fails deterministically (the mirror's layout target is nil while B exists, so T2 is never projected).
+
+## Mirror browser E2E
+
+`tests/supermux/loopback_mirror_browser_e2e.py` checks that a mirror's browser opens the owning
+Mac's `localhost` (#707). In loopback both "Macs" share one loopback, so it checks the route, not
+only that a page loads. Marker servers run in the script, in no workspace, one per step:
+`localhost:P` opened in M loads through the mirror browser proxy and the owner's in-process tunnel
+host (the tunnel journal's `opened` for P), in the loopback device's data store, and the server sees
+`Host: localhost:P`; `127.0.0.1` routes the same way; the same kind of URL in S stays direct (no
+proxy configuration, the profile store, no tunnel open); this Mac's LAN address in M is dialed
+directly by the proxy (skipped without one); a closed port shows "localhost:N on <Mac> isn't
+answering"; the proxy refuses SOCKS no-auth (`05 FF`), a wrong password (`01 01`) and a CONNECT
+without credentials (`407`), and the right credential connects; a terminal link opened in the cmux
+browser from M's terminal opens a routed browser in M; the browser moved into S loses the route and
+store, and moved back gets them again; with the tunnel driver's `pretend_old_host` and a relink the
+page says to update Supermux on that Mac. DEBUG drivers (`SupermuxMirrorBrowserSocket`):
+`supermux.devices.mirror.browser_route {workspace_id}` (per browser: `routes_remotely`,
+`proxy_configs`, `store_identifier`), `.browser_proxy {machine}` (port, credential, `owner_dials`,
+`direct_dials`, `failures`; null until it listens) and `.link_open {workspace_id, surface_id, url,
+destination}` (a terminal link click with the system browser captured). It also reads the tunnel
+driver `supermux.devices.tunnel` (`journal`, `pretend_old_host`) of the tunnel lanes work.
+
+```bash
+CMUX_E2E_SUITES="loopback_mirror_local_panels_e2e loopback_mirror_browser_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
+```
+
 Every suite at once: `CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh` (launches, runs and
 quits the tagged app per suite; scratch state in `/tmp/<tag>-e2e`).
 
