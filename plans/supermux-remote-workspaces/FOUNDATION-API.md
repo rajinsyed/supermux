@@ -341,7 +341,9 @@ SupermuxDeviceMirrorsGlue.unhide(machineID:ref:)   // unhide + reconcile
   close holds only that terminal, `SupermuxDeviceMirrorCloseGate.closeOnItsMacAfterLastSurfaceRefusal`
   has `SupermuxDeviceMirrorCloser.closeOnItsMacKeepingHere` close the workspace there as a user close
   does (pending, `force`) and unbind the mirror, which stays open with its own panels as a local
-  workspace; the close succeeds with no failure card.
+  workspace; the close succeeds with no failure card. While such a close is in flight
+  (`SupermuxDeviceMirrorCloser.lastTerminalClosesInFlight`) auto-mirror counts the ref as busy, so a slow
+  link never gets the mirror closed as an orphan.
 - **Mirror browsers** (bound or unbound mirrors) use upstream's remote-workspace mode with the owning
   app instance's proxy and a per-instance data store (#707, `SupermuxDeviceBrowserRoute`,
   `SupermuxDeviceBrowserProxies`), so their `localhost` is that Mac's.
