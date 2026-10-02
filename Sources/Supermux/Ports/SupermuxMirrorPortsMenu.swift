@@ -83,9 +83,27 @@ struct SupermuxMirrorPortsMenu: View {
     }
 }
 
-/// What the port menus (a mirror row's and Settings') do with one port.
+/// What the port menus (a mirror row's and Settings') and a mirror's port
+/// chips do with one port.
 @MainActor
 enum SupermuxMirrorPortsActions {
+    /// The remote workspace `workspaceID` mirrors, by the rule of
+    /// `SupermuxDeviceWorkspaceIndex.mirrors()` (the workspaces whose chips
+    /// show another Mac's ports and whose browsers reach that Mac); nil for
+    /// any other workspace, also a local one that borrows a remote terminal.
+    static func mirrorRef(workspaceID: UUID) -> SupermuxRemoteWorkspaceRef? {
+        let index = SupermuxComposition.deviceWorkspaceIndex
+        guard let workspace = Workspace.liveWorkspace(id: workspaceID), index.isDeviceMirror(workspace) else { return nil }
+        return index.ref(forLocal: workspace)
+    }
+
+    /// Says why a port does not open here (an OK-only alert).
+    static func showNotice(_ message: String) {
+        let alert = NSAlert()
+        alert.messageText = message
+        SupermuxAlertPresentation.show(alert, preferring: NSApp.keyWindow)
+    }
+
     /// The owning Mac's `localhost:<port>` in a cmux browser in the mirror
     /// (its browser reaches that Mac).
     static func openInCmuxBrowser(workspaceID: UUID, remotePort: Int) {

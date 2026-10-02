@@ -23,6 +23,15 @@ enum SupermuxPortsText {
         }
     }
 
+    /// Why a mirror's port chip opens nothing outside cmux: the port has no
+    /// active forward on this Mac.
+    static func notForwarded(remotePort: Int, macName: String) -> String {
+        String(
+            localized: "supermux.ports.chip.notForwarded",
+            defaultValue: "Port \(String(remotePort)) from \(macName) isn't forwarded to this Mac. Forward it with Ports on \(macName) › Forward to This Mac."
+        )
+    }
+
     /// A port in a menu: `localhost:3000`, or `localhost:3000 → here :3001`
     /// when it landed on another local port.
     static func menuLabel(remotePort: Int, localPort: Int?) -> String {

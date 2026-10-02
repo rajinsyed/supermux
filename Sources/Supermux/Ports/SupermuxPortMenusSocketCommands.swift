@@ -10,10 +10,13 @@ import SupermuxKit
 /// ``SupermuxDevicesSocketCommands`` ahead of ``SupermuxDevicePortsSocketCommands``.
 ///
 /// - `chip_open {workspace_id, port, cmux_browser?}` — a sidebar port chip
-///   click on that workspace, with `cmux_browser` standing for the "Open
-///   Sidebar Port Links in cmux Browser" setting (default: its value). The
-///   default browser is captured, never opened: `external_url`, and
-///   `new_browser_panel_id` for a cmux browser open.
+///   click on that workspace (a device mirror's through
+///   ``SupermuxDevicePortLinks/openMirrorChip(_:workspaceID:prefersCmuxBrowser:)``,
+///   the `device-mirror-port-chip` touchpoint's call), with `cmux_browser`
+///   standing for the "Open Sidebar Port Links in cmux Browser" setting
+///   (default: its value). The default browser and the alert are captured,
+///   never shown: `external_url`, `notice`, and `new_browser_panel_id` for a
+///   cmux browser open.
 /// - `menus {workspace_id?}` — the port menus as they render now: `mirror`,
 ///   that workspace's "Ports on <Mac>" (null when it is not a device mirror),
 ///   and `settings`, each Mac's Ports… menu in Settings › Remote Macs. Each
@@ -50,16 +53,30 @@ enum SupermuxPortMenusSocketCommands {
             ?? BrowserLinkOpenSettings.openSidebarPortLinksInCmuxBrowser()
         let panelsBefore = Set(workspace.panels.keys)
         var externalURL: URL?
-        upstreamChipOpen(port, workspaceID: workspace.id, prefersCmuxBrowser: prefersCmuxBrowser) { externalURL = $0 }
+        var notice: String?
+        let isMirror = SupermuxDevicePortLinks.isMirrorChip(workspaceID: workspace.id)
+        if isMirror {
+            SupermuxDevicePortLinks.openMirrorChip(
+                port,
+                workspaceID: workspace.id,
+                prefersCmuxBrowser: prefersCmuxBrowser,
+                openExternally: { externalURL = $0 },
+                explain: { notice = $0 }
+            )
+        } else {
+            upstreamChipOpen(port, workspaceID: workspace.id, prefersCmuxBrowser: prefersCmuxBrowser) { externalURL = $0 }
+        }
         let newPanel = workspace.panels.keys.first { !panelsBefore.contains($0) }
         return [
+            "is_mirror": isMirror,
             "external_url": externalURL?.absoluteString ?? NSNull(),
+            "notice": notice ?? NSNull(),
             "new_browser_panel_id": newPanel?.uuidString ?? NSNull(),
         ]
     }
 
     /// Upstream's chip click (`onOpenPort` / `openWorkspaceRowPort` in
-    /// `ContentView`), with the default browser injected.
+    /// `ContentView`) for any other workspace, with the default browser injected.
     private static func upstreamChipOpen(
         _ port: Int, workspaceID: UUID, prefersCmuxBrowser: Bool, openExternally: (URL) -> Void
     ) {
