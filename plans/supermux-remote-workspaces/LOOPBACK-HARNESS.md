@@ -161,11 +161,20 @@ chips list R; Forward a Port / Stop / Resume (`supermux.devices.ports.forward|st
 server that exits removes its forward; a dropped link (`supermux.devices.link stop|restore`) makes
 forwards wait, empties the chips and brings them back on the same L; auto-forward off keeps a
 manual forward; a default-browser link from the mirror's terminal (Track C's
-`supermux.devices.mirror.link_open`) goes to L; and Track A's `pretend_old_host` disables
-forwarding (`needs_update`). The DEBUG driver `supermux.devices.ports.*`
-(`Sources/Supermux/Ports/SupermuxDevicePortsSocketCommands.swift`) answers `list {machine?}` (the
-forwards, availability, host listings, and each mirror's chips and pills), `forward`, `stop`,
-`resume {machine, port}`, `set_auto {enabled}` (the Settings card's action) and `refresh {machine?}`.
+`supermux.devices.mirror.link_open`) goes to L; Track A's `pretend_old_host` disables
+forwarding (`needs_update`); the mirror's chip for R clicked with "Open Sidebar Port Links in cmux
+Browser" off opens `http://localhost:L` in the default browser, never this Mac's own
+`localhost:R` (`chip_default_browser_uses_local_port`); and a manual forward left waiting by a
+dropped link is offered Stop Forwarding in both port menus, goes at once when stopped and never
+listens again once the link is back (`pending_forward_offers_stop`). The DEBUG driver
+`supermux.devices.ports.*` (`Sources/Supermux/Ports/SupermuxDevicePortsSocketCommands.swift`)
+answers `list {machine?}` (the forwards, availability, host listings, and each mirror's chips and
+pills), `forward`, `stop`, `resume {machine, port}`, `set_auto {enabled}` (the Settings card's
+action) and `refresh {machine?}`; `Sources/Supermux/Ports/SupermuxPortMenusSocketCommands.swift`
+answers `chip_open {workspace_id, port, cmux_browser?}` (a sidebar chip click through the
+`device-mirror-port-chip` touchpoint's call; the default browser and the alert are captured:
+`external_url`, `notice`, `new_browser_panel_id`) and `menus {workspace_id?}` (the mirror's
+"Ports on <Mac>" model and each Mac's Settings Ports… menu, every port with its `items`).
 
 ```bash
 CMUX_E2E_SUITES="loopback_port_forward_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
