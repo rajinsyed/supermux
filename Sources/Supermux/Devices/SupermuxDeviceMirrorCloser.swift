@@ -23,11 +23,12 @@ private let mirrorCloseLog = Logger(subsystem: "dev.cmux", category: "supermux-m
 ///   A close not sent yet is cancelled when a local workspace shows that
 ///   remote workspace again (Reopen Closed Workspace, a manual open).
 /// - **The last terminal tab beside the mirror's own tabs** (a browser, a
-///   Files preview, Markdown…): that Mac cannot keep a workspace without a
-///   surface, so its workspace closes there exactly as for a user close
-///   (pending, `force`), while the workspace here stays open with those tabs,
-///   unbound: an ordinary local workspace (``closeOnItsMacKeepingHere(_:ref:)``,
-///   from the `device-layout-local-panels` touchpoint).
+///   Files preview, Markdown…; also several closed at once): that Mac refuses
+///   to close its workspace's last surface, so after that refusal its
+///   workspace closes there exactly as for a user close (pending, `force`),
+///   while the workspace here stays open with those tabs, unbound: an ordinary
+///   local workspace (``closeOnItsMacKeepingHere(_:ref:)``, from the
+///   `device-layout-local-panels` touchpoint in `performClose`).
 /// - **Hide Here** (the row menus): remembers the ref in the hidden set so
 ///   auto-mirror never reopens it, then closes the mirror here only.
 /// - **Programmatic closes** of a mirror (socket, AppleScript, scripts):
@@ -97,11 +98,12 @@ final class SupermuxDeviceMirrorCloser {
         return true
     }
 
-    /// The mirror's last terminal tab closed while tabs of its own remain. Its
-    /// workspace closes on its Mac like a user close of the mirror (that Mac
-    /// refuses to close a workspace's last surface), and the workspace here
-    /// stays open with those tabs, unbound, so auto-mirror and the layout sync
-    /// leave it alone. False when `workspace` is not bound as the mirror of `ref`.
+    /// The mirror's last terminal tab closed while tabs of its own remain, and
+    /// its Mac refused that close as its workspace's last surface. That
+    /// workspace closes on its Mac like a user close of the mirror, and the
+    /// workspace here stays open with those tabs, unbound, so auto-mirror and
+    /// the layout sync leave it alone. False when `workspace` is not bound as
+    /// the mirror of `ref`.
     func closeOnItsMacKeepingHere(_ workspace: Workspace, ref: SupermuxRemoteWorkspaceRef) -> Bool {
         guard index.boundRef(forLocal: workspace) == ref else { return false }
         pending.hide(ref)
@@ -292,11 +294,30 @@ enum SupermuxDeviceMirrorCloseGate {
     }
 
     /// The `device-layout-local-panels` touchpoint in
-    /// `DeviceWorkspaceLayoutCoordinator.projectionDidEnd`: the mirror's last
-    /// terminal tab closed beside tabs of its own. False when `workspace` is
-    /// not bound as the mirror of that remote workspace.
-    static func closeOnItsMacKeepingHere(_ workspace: Workspace, machine: SurfaceMachineID, remoteWorkspaceID: String) -> Bool {
-        SupermuxComposition.deviceMirrorCloser.closeOnItsMacKeepingHere(
+    /// `DeviceWorkspaceLayoutCoordinator.performClose`: that Mac refused to
+    /// close `closedSurfaceID` with `error`. When that is its last-surface
+    /// refusal (`invalid_state`) on a layout fetched for this close
+    /// (`ownerSurfaceIDs`) that holds only that terminal, and `workspace` now
+    /// holds only tabs of its own (no terminal of that Mac is projected or
+    /// being made in it), the mirror's last terminal closed: its workspace
+    /// closes on its Mac and this one stays here with those tabs
+    /// (``SupermuxDeviceMirrorCloser/closeOnItsMacKeepingHere(_:ref:)``). False
+    /// when the refusal stands (also when `workspace` is not bound as the
+    /// mirror of that remote workspace).
+    static func closeOnItsMacAfterLastSurfaceRefusal(
+        _ error: any Error,
+        workspace: Workspace,
+        machine: SurfaceMachineID,
+        remoteWorkspaceID: String,
+        closedSurfaceID: String,
+        ownerSurfaceIDs: [String]
+    ) -> Bool {
+        guard case .hostRejected(let code, _)? = error as? DeviceLinkError, code == "invalid_state",
+              ownerSurfaceIDs.count == 1,
+              ownerSurfaceIDs[0].caseInsensitiveCompare(closedSurfaceID) == .orderedSame else { return false }
+        let ownPanels = SupermuxDeviceLayoutSurfaceFilter.localPanelIDs(in: workspace, machine: machine)
+        guard !ownPanels.isEmpty, ownPanels == Set(workspace.panels.keys) else { return false }
+        return SupermuxComposition.deviceMirrorCloser.closeOnItsMacKeepingHere(
             workspace, ref: SupermuxRemoteWorkspaceRef(machine: machine, workspaceID: remoteWorkspaceID)
         )
     }
