@@ -746,6 +746,19 @@ Constraints inherited from upstream that supermux code MUST follow:
   are loopback-verified too: there both "Macs" share one loopback, so the suites check the route
   (proxy, tunnel opens, data store), and the tunnel's QUIC lane, real port collisions, HMR WebSockets
   through the alias and `https://localhost` dev servers need two Macs.
+- **A URL typed into a mirror's browser tab costs two WebKit process swaps (macOS 27).** The tab
+  opens the owning Mac's `localhost` as upstream's `cmux-loopback.localtest.me` alias, plain HTTP to
+  a host that is not loopback by name, so WebKit 27's Enhanced Security heuristic runs its pages in
+  a hardened (JIT-less) WebContent process; a navigation the app or the user starts (typed URL,
+  `browser.navigate`, a link opened into an existing tab) resets that state, leaves the process and
+  swaps back when the response arrives. Link clicks inside the page keep the process, a new tab
+  swaps only into freshly launched processes (quick), and a local tab's real `localhost` is exempt. Normally that is a fraction of a second; on a host where
+  WebKit's sandbox extensions for a reused WebContent process are slow (seen 2026-10-02, about 5 s
+  each, also in a bare `WKWebView`), it is 10–20 s per page. Asking for
+  `WKWebpagePreferences.securityRestrictionMode` up front does not help (WebKit tracks that as a
+  different hardened state and still swaps at the response); the only switch is WebKit's
+  undocumented `EnhancedSecurityHeuristicsEnabled` preference, which would also unharden public
+  HTTP pages in those tabs, so it is left to the fork owner.
 
 ### Open decisions from the 0.64.21 (v0.65) upstream merge
 
