@@ -86,6 +86,9 @@ final class SupermuxHostPortsObserver {
                 let live = await Task.detached(priority: .utility) {
                     Set(IrxListeningPortScanner().loopbackListeningPorts().map(\.port))
                 }.value.subtracting(SupermuxOwnListenerPorts.shared.all)
+                #if DEBUG
+                SupermuxDeviceTunnelSocketCommands.liveChecks.increment()
+                #endif
                 guard let self, !Task.isCancelled else { return }
                 if let last = self.lastLive, last != live {
                     if !live.subtracting(last).isEmpty { Self.kickTerminalScans() }

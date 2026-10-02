@@ -111,6 +111,10 @@ independently:
                                          forward once the link is back and P is listed
  17r terminal_link_forwards_other_port   a terminal link Command-clicked in the mirror forwards an owner's other
                                          port and runs as written (a user action, like a typed URL)
+ 17s local_terminal_link_marks_nothing   a terminal link in a local workspace does not make a mirror page's own
+                                         navigation to the owner's other port count as the user's
+ 17t port_chip_opens_as_written          a mirror's port chip opened in a cmux browser runs as written
+                                         (automatic forwarding off: an on-demand forward)
  20 alias_bad_chunk_size_survives        chunk lines that are not plain hex (-5, +5, past Int, an extension)
                                          pass through; the app keeps running (before its fix it crashed)
  21 held_navigation_joins_fetch_in_flight  a URL typed while a listing fetch is in flight (held 2 s by the owner)
@@ -2218,6 +2222,74 @@ class MirrorBrowserE2E:
         finally:
             self.sock.call("surface.close", {"surface_id": panel})
 
+    def local_terminal_link_marks_nothing(self) -> Dict[str, Any]:
+        """A terminal link Command-clicked into a cmux browser of a local workspace
+        (this Mac's own) is not the user opening another Mac's port: a mirror page
+        that navigates itself to the owner's other port P right after gets no
+        forward. Before, the link marked P as opened by the user for 5 s for every
+        mirror browser of every Mac, and P then counted as the user's for good."""
+        owner = self.server("local-link-target")
+        port = free_dev_port()
+        self.serve_owner_port(port, owner.port)
+        self.inject_other(port)
+        source_owner, source_here = self.owner_and_this_mac("local-link-source")
+        tab = self.new_tab(self.pair.mirror_id, self.mirror_terminal(), f"http://localhost:{source_here.port}/marker.html")
+        tabs = [tab]
+        try:
+            self.wait_owner_page(tab, source_owner, source_here, "the mirror page that will navigate itself")
+            reply = self.sock.call("supermux.devices.mirror.link_open", {
+                "workspace_id": self.pair.source_id, "surface_id": self.source_terminal,
+                "url": f"http://localhost:{port}/marker.html", "destination": "cmux",
+            }) or {}
+            if up(reply.get("new_browser_panel_id")):
+                tabs.append(up(reply.get("new_browser_panel_id")))
+            target = f"http://localhost:{port}/marker.html?page=1"
+            self.sock.call("browser.eval", {"surface_id": tab, "script": f"location.href = {json.dumps(target)}; true"})
+            self.wait_title(tab, lambda t: t == owner.title, "the mirror page's own navigation to the owner's other port")
+            time.sleep(3.0)
+            row, href = self.forward_row(port), self.page_href(tab)
+            if row or LOOPBACK_ALIAS not in href:
+                raise Failure(f"after a terminal link in a local workspace, a mirror page's own navigation to the "
+                              f"owner's other port {port} got forward {row} and runs at {href}")
+            return {"port": port, "page": href, "local_link": reply}
+        finally:
+            for t in tabs:
+                self.sock.call("surface.close", {"surface_id": t})
+
+    def port_chip_opens_as_written(self) -> Dict[str, Any]:
+        """A mirror's sidebar port chip clicked with "Open Sidebar Port Links in cmux
+        Browser" on (`ports.chip_open`) opens the owner's workspace port in a cmux
+        browser in the mirror that gets a same-port forward (automatic forwarding
+        off) and runs as written."""
+        machine = self.pair.machine
+        owner = self.server("chip-owner")
+        port = free_dev_port()
+        self.serve_owner_port(port, owner.port)
+        self.sock.call("supermux.devices.ports.set_auto", {"enabled": False})
+        self.tunnel("inject_port", workspace_id=self.pair.source_id, port=port)
+        self.injected = True
+        self.sock.call("supermux.devices.ports.refresh", {"machine": machine})
+        panel = ""
+        try:
+            def chip() -> bool:
+                rows = (self.sock.call("supermux.devices.ports.list", {"machine": machine}) or {}).get("mirrors") or []
+                return any(up(r.get("workspace_id")) == up(self.pair.mirror_id) and port in (r.get("listening_ports") or [])
+                           for r in rows)
+
+            wait_for(f"the mirror's chip for {port}", chip, self.timeout)
+            reply = self.sock.call("supermux.devices.ports.chip_open",
+                                   {"workspace_id": self.pair.mirror_id, "port": port, "cmux_browser": True}) or {}
+            panel = up(reply.get("new_browser_panel_id"))
+            if not panel:
+                raise Failure(f"the chip opened no cmux browser in the mirror: {reply}")
+            self.wait_title(panel, lambda t: t == owner.title, "the chip's owner page")
+            probe = self.require_as_written(panel, port, "the chip's tab")
+            return {"port": port, "probe": probe, "forward": self.wait_forward(port)}
+        finally:
+            self.sock.call("supermux.devices.ports.set_auto", {"enabled": True})
+            if panel:
+                self.sock.call("surface.close", {"surface_id": panel})
+
     def held_navigation_joins_fetch_in_flight(self) -> Dict[str, Any]:
         """A URL typed while a listing fetch is already in flight (a poke's, held 2 s
         by the owner: `supermux.devices.link {action: stall}`) joins that fetch.
@@ -2456,6 +2528,8 @@ class MirrorBrowserE2E:
                 ("restart_listed_as_other_first_recovers", self.restart_listed_as_other_first_recovers),
                 ("unchecked_alias_tab_gets_forward", self.unchecked_alias_tab_gets_forward),
                 ("terminal_link_forwards_other_port", self.terminal_link_forwards_other_port),
+                ("local_terminal_link_marks_nothing", self.local_terminal_link_marks_nothing),
+                ("port_chip_opens_as_written", self.port_chip_opens_as_written),
                 # Last: they fail the proxy's listener.
                 ("proxy_listener_failure_recovers", self.proxy_listener_failure_recovers),
                 ("restart_keeps_mirror_store_proxied", self.restart_keeps_mirror_store_proxied),

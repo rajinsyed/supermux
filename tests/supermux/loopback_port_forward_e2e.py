@@ -13,6 +13,8 @@ this same app's own mobile host), so every remote port is also busy here: each
 forward must land on another local port.
 
   0. setup                              auto-mirror and auto-forward on; source S and its mirror M
+ 0b. idle_owner_does_not_scan_listeners  with no command started in a terminal, the owner runs no
+                                        loopback listener check for 10 s (`tunnel.live_checks`)
   1. auto_forward_busy_port_lands_elsewhere   the suite holds R+1..R+3; a server on R in S -> forward R
                                         active at L, neither R nor a held port;
                                         127.0.0.1:L and [::1]:L serve the owner's page
@@ -111,6 +113,8 @@ HELD_ABOVE_REMOTE = 3
 MAX_REMOTE_PORT = 65_535 - 50
 # How long after a late server binds the owner may take to attribute it to its workspace.
 LATE_BIND_ATTRIBUTION_S = 15.0
+# How long idle_owner_does_not_scan_listeners watches for listener checks.
+IDLE_CHECK_SECONDS = 10.0
 
 
 class Failure(Exception):
@@ -470,6 +474,20 @@ class PortForwardE2E:
         time.sleep(1.5)  # let S's shell reach its prompt before typing into it
         self.facts.update(machine=self.machine, source_workspace_id=self.source_id, mirror_workspace_id=self.mirror_id)
         return {"machine": self.machine, "source": self.source_id, "mirror": self.mirror_id}
+
+    def idle_owner_does_not_scan_listeners(self) -> Dict[str, Any]:
+        """With another Mac linked but no command started in this Mac's terminals,
+        the owner does not scan its loopback listeners at all (the check that
+        catches a server binding after its terminal's port scans runs only for a
+        while after a command starts). Before, every linked Mac ran a full
+        process scan every 4 s for as long as the link lived."""
+        before = int((self.tunnel("live_checks") or {}).get("count") or 0)
+        time.sleep(IDLE_CHECK_SECONDS)
+        checks = int((self.tunnel("live_checks") or {}).get("count") or 0) - before
+        if checks:
+            raise Failure(f"the owner checked its loopback listeners {checks} times in {IDLE_CHECK_SECONDS:.0f} s "
+                          f"with no command started")
+        return {"checks": checks, "seconds": IDLE_CHECK_SECONDS}
 
     def auto_forward_busy_port(self) -> Dict[str, Any]:
         self.remote_port = self.owner_port_holding_above()
@@ -1107,6 +1125,8 @@ class PortForwardE2E:
         ok = self.step("setup", self.setup)
         if ok:
             for name, check in [
+                # First: no command has run in this Mac's terminals yet.
+                ("idle_owner_does_not_scan_listeners", self.idle_owner_does_not_scan_listeners),
                 ("auto_forward_busy_port_lands_elsewhere", self.auto_forward_busy_port),
                 ("dual_stack_busy_not_stolen", self.dual_stack_busy),
                 ("pill_names_local_port", self.pill),
