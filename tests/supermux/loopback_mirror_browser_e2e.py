@@ -88,6 +88,10 @@ independently:
                                          off), gets a same-port forward at once and loads as written, never
                                          through the alias; a stopped forward is respected (alias); the forward
                                          goes when the owner's server does
+ 17i restarted_server_recovers_as_written  the owner's server on P stops (unlisted: the forward goes, the tab
+                                         moves to the alias) and restarts: re-listed with a poke, the tab moves
+                                         back to http://localhost:P by itself; listed only among the owner's
+                                         other ports (no poke) and reloaded by the page, it lands there too
  18 proxy_listener_failure_recovers      after the proxy's listener fails, it is replaced on its own (waited
                                          for with a read that starts no listener); then the open mirror tab
                                          and a new one each load the owner's page on the fresh endpoint,
@@ -1633,6 +1637,74 @@ class MirrorBrowserE2E:
             if tab:
                 self.sock.call("surface.close", {"surface_id": tab})
 
+    def restarted_server_recovers_as_written(self) -> Dict[str, Any]:
+        """The user's restart: a dev server on the owner's P, listed as the source's
+        workspace port and forwarded here on P, its page as written in a mirror
+        tab; the server stops (the owner unlists P and pokes), so the forward goes
+        and the tab moves to the alias; then it starts again on P.
+        (A) The owner lists P again as the workspace's and pokes: the forward comes
+        back on P and the tab moves back to http://localhost:P by itself (#756's
+        activation path), no reload. (B) Stopped again; this time the restarted
+        server is not re-listed as the workspace's yet (a headless owner's port
+        detection lags; an agent's server is never a workspace's): the owner only
+        lists it among its other ports, with no poke, and the page reloads itself
+        on the alias (Next's dev client after reconnecting, or the user): the
+        reload starts or waits for a same-port forward and lands at
+        http://localhost:P. Before, (B) stayed on the alias, where Next's later
+        chunks were refused and Turnstile could not run."""
+        port = free_dev_port()
+        first = self.server("restart-first")
+        self.serve_owner_port(port, first.port)
+        self.list_owner_port(port)
+        row = self.wait_forward(port)
+        if int(row.get("local_port") or 0) != port:
+            raise Failure(f"precondition: the forward listens on {row.get('local_port')}, not on {port}: {row}")
+        tab = self.new_tab(self.pair.mirror_id, self.mirror_terminal(), f"http://localhost:{port}/marker.html")
+        report: Dict[str, Any] = {"port": port}
+
+        def at(prefix: str) -> str:
+            href = self.page_href(tab)
+            if not href.startswith(prefix):
+                raise Failure(f"the tab runs at {href}")
+            return href
+
+        def server_stops() -> None:
+            self.serve_owner_port(port, free_port())
+            self.tunnel("clear_injected")
+            self.sock.call("supermux.devices.ports.refresh", {"machine": self.pair.machine})
+            self.wait_forward_gone(port, "the owner no longer lists it")
+            wait_for("the tab to move to the alias once the forward is gone",
+                     lambda: at(f"http://{LOOPBACK_ALIAS}:{port}/"), self.timeout)
+
+        try:
+            self.wait_title(tab, lambda t: t == first.title, "the owner's page as written")
+            self.require_as_written(tab, port, "the tab before the restart")
+            # (A) restarted and re-listed as the workspace's, with a poke: no reload.
+            server_stops()
+            again = self.server("restart-again")
+            self.serve_owner_port(port, again.port)
+            self.list_owner_port(port)
+            report["a_back"] = wait_for("the tab to move back to localhost once the forward is active again",
+                                        lambda: at(f"http://localhost:{port}/"), self.timeout)
+            self.wait_title(tab, lambda t: t == again.title, "the restarted server's page as written")
+            self.facts["restart_activation_moves_tab"] = True
+            # (B) restarted, listed only among the owner's other ports (no poke); the page reloads itself.
+            server_stops()
+            third = self.server("restart-unlisted")
+            self.serve_owner_port(port, third.port)
+            self.inject_other(port, refresh=False)
+            self.sock.call("browser.eval", {"surface_id": tab, "script": "location.reload(); true"})
+            report["b_back"] = wait_for("the reloaded tab to land at localhost through a same-port forward",
+                                        lambda: at(f"http://localhost:{port}/"), self.timeout)
+            self.wait_title(tab, lambda t: t == third.title, "the restarted server's page after the reload")
+            report["b_probe"] = self.require_as_written(tab, port, "the reloaded tab")
+            row = self.wait_forward(port)
+            if int(row.get("local_port") or 0) != port:
+                raise Failure(f"the forward listens on {row.get('local_port')}, not on {port}: {row}")
+            return report
+        finally:
+            self.sock.call("surface.close", {"surface_id": tab})
+
     def idle_proxy_connections_close(self) -> Dict[str, Any]:
         """Local clients that connect and send nothing cannot hold the proxy's
         connections: past the limit of clients still in their handshake they are
@@ -1779,6 +1851,7 @@ class MirrorBrowserE2E:
                 ("alias_keep_alive_requests_reach_owner", self.alias_keep_alive_requests_reach_owner),
                 ("other_port_forward_loads_as_written", self.other_port_forward_loads_as_written),
                 ("unforwarded_port_forwards_on_demand", self.unforwarded_port_forwards_on_demand),
+                ("restarted_server_recovers_as_written", self.restarted_server_recovers_as_written),
                 # Last: they fail the proxy's listener.
                 ("proxy_listener_failure_recovers", self.proxy_listener_failure_recovers),
                 ("restart_keeps_mirror_store_proxied", self.restart_keeps_mirror_store_proxied),
