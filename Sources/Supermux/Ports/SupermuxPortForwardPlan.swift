@@ -6,14 +6,18 @@ import SupermuxKit
 /// again on every change (``SupermuxPortForwards`` executes it).
 ///
 /// - Automatic: with the setting on, every listed port ≥ 1024 of a workspace
-///   mirrored here. A port the user stopped stays stopped (dismissed) until it
-///   leaves that Mac's listing.
+///   mirrored here.
 /// - On demand: a same-port forward a mirror browser started for a page
 ///   (``SupermuxPortForwards/forwardOnDemand(machine:remotePort:)``), also of a
 ///   port in no workspace there (its other loopback ports) and with the setting
-///   off. Like an automatic one it stays stopped once the user stops it, and
-///   goes when the port leaves that Mac's listing.
+///   off. It goes when the port leaves that Mac's listing.
 /// - Manual: kept until the user stops it, whatever the listing says.
+/// - Stopped (dismissed): a port the user stopped stays stopped until Resume or
+///   Forward to This Mac, also while its server restarts (it leaves the listing
+///   and comes back): it is forgotten only once that Mac no longer lists it and
+///   none of the workspaces that listed it when it was stopped is mirrored here
+///   any more. A stop of a port no workspace listed (an other port, a manual
+///   forward) lasts until the user forwards it again.
 /// - A Mac with no listing (offline, or not fetched yet) keeps its forwards as
 ///   they are, so they come back once it does; one the user stops meanwhile
 ///   goes at once (still dismissed, it comes back stopped if listed).
@@ -49,6 +53,9 @@ enum SupermuxPortForwardPlan {
         /// Same-port forwards mirror browsers asked for.
         var onDemand: Set<Key> = []
         var dismissed: Set<Key>
+        /// The workspaces (canonical ids) that listed each dismissed port when the
+        /// user stopped it.
+        var stoppedWorkspaces: [Key: Set<String>] = [:]
         /// The forwards that exist now.
         var existing: Set<Key>
     }
@@ -61,7 +68,7 @@ enum SupermuxPortForwardPlan {
         /// Existing forwards of Macs without a listing that the user did not
         /// stop: kept as they are.
         var held: Set<Key> = []
-        /// The dismissed set, minus ports that left their Mac's listing.
+        /// The dismissed set, minus stops that are over (see the type's doc).
         var dismissed: Set<Key> = []
         /// The on-demand set, minus ports that left their Mac's listing.
         var onDemand: Set<Key> = []
@@ -91,7 +98,14 @@ enum SupermuxPortForwardPlan {
         func stillListed(_ key: Key) -> Bool {
             input.listings[key.machine]?.lists(key.remotePort) ?? true
         }
-        let dismissed = input.dismissed.filter(stillListed)
+        func stopHolds(_ key: Key) -> Bool {
+            if stillListed(key) { return true }
+            let workspaces = input.stoppedWorkspaces[key] ?? []
+            return workspaces.isEmpty || workspaces.contains {
+                input.mirrored.contains(SupermuxRemoteWorkspaceRef(machine: key.machine, workspaceID: $0))
+            }
+        }
+        let dismissed = input.dismissed.filter(stopHolds)
         let onDemand = input.onDemand.filter(stillListed)
         let wanted = automatic.union(onDemand)
         var decision = Decision(dismissed: dismissed, onDemand: onDemand, automatic: automatic)

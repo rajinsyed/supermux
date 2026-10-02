@@ -9,41 +9,42 @@ import Foundation
 /// cookies and OAuth settings name, instead of upstream's alias.
 ///
 /// BrowserPanel's `device-mirror-browser-on-demand-forward` fence asks
-/// ``holds(_:dataStoreID:panel:resume:abandon:)`` before every navigation it
-/// performs: typed, `browser.navigate`, a new tab, a link, redirect or reload
-/// the `device-mirror-browser-reroute` fence hands back (also an alias page's
-/// own reload, ``mayForward(_:machine:)``), a restore. A navigation is held when
-/// its URL is `http` on `localhost`, `127.0.0.1` or `[::1]` in a mirror browser,
-/// not loaded as written yet, its port P ≥ 1024, the owning Mac can forward,
-/// and the user did not stop P's forward. Then, for at most ``wait``:
+/// ``holds(_:dataStoreID:typed:panel:resume:abandon:)`` before every navigation
+/// it performs: typed, `browser.navigate`, a new tab, a link, redirect or reload
+/// the `device-mirror-browser-reroute` fence hands back (also an alias page's own
+/// reload, ``mayForward(_:machine:)``), a restore. A navigation is held when its
+/// URL is `http` on `localhost`, `127.0.0.1` or `[::1]` in a mirror browser, not
+/// loaded as written yet, its port P ≥ 1024, the owning Mac can forward, and the
+/// user did not stop P's forward. Then, for at most ``wait``:
 /// 1. P in use here (by anything but its own forward) keeps the alias;
-/// 2. P missing from that Mac's latest listing is asked for again: its other
-///    loopback ports change without a poke (a server an agent started), and a
-///    headless Mac's sidebar port detection can lag behind a restart;
-/// 3. ``SupermuxPortForwards/forwardOnDemand(machine:remotePort:)`` starts the
+/// 2. P missing from that Mac's latest listing is asked for again (one shared
+///    fetch per Mac, ``SupermuxPortForwards/fetchListingNow(_:)``): a headless
+///    Mac's sidebar port detection can lag behind a restart;
+/// 3. only a port of that Mac's workspaces is forwarded for any navigation; one
+///    of its other loopback ports (a Docker API, a database, a server an agent
+///    started) only for a URL the user typed, or once the user forwarded it that
+///    way (a page could otherwise make this Mac listen on any of them);
+/// 4. ``SupermuxPortForwards/forwardOnDemand(machine:remotePort:)`` starts the
 ///    forward, or moves one that landed on another port back to P;
-/// 4. the navigation resumes once the forward listens on P, else at the end of
+/// 5. the navigation resumes once the forward listens on P, else at the end of
 ///    the wait through the alias as before (the forward's later activation
-///    still moves the tab, ``SupermuxDeviceBrowserRoute/forwardsChanged()``).
-/// A newer navigation of the same panel drops the held one. The alias load a
-/// held navigation resumes into is not handed back again (``mayForward``
-/// lets it pass once), so it is not rerouted in a loop. When the forward
-/// cannot start (P in use here, the start refused, or not active in time),
-/// the alias page's reloads are left alone for ``standAside``: handed to the
-/// panel they would become new navigations, and a page that reloads itself
-/// once (Next.js's dev client checks the navigation type) would reload
-/// forever. Only a port the owner did not list (its server is down) is tried
-/// again on the next reload, which may come once it is up.
+///    still moves the tab, ``SupermuxDeviceBrowserRoute/forwardsChanged()``,
+///    which leaves a tab whose navigation is held alone).
+/// A newer navigation of the same panel drops the held one and cancels its
+/// wait. The alias load a held navigation resumes into is not handed back
+/// again (``mayForward`` lets it pass once). A port whose forward could not
+/// start (in use here, not allowed, not in time) is not tried again, by a reload
+/// of its alias page or in the background, until the user navigates to it
+/// again: a reload handed to the panel becomes a new navigation, and a page that
+/// reloads itself once (Next.js's dev client checks the navigation type) would
+/// reload forever. Only a port the owner did not list (its server is down) is
+/// tried again, on the next reload or once it is listed (``forwardOpenTabs()``).
 @MainActor
 enum SupermuxSamePortForwardGate {
     /// The longest a navigation waits for its forward.
     static let wait: Duration = .seconds(3)
-    /// How long ``forwardOpenTabs()`` leaves a port it gave up on, and how
-    /// long the pass for a resumed alias load lasts.
-    static let retryAfter: Duration = .seconds(2)
-    /// How long an alias page's reloads stay reloads after a forward could
-    /// not start for its port.
-    static let standAside: Duration = .seconds(10)
+    /// How long the pass for a resumed alias load lasts.
+    static let passLasts: Duration = .seconds(2)
     private static let poll: Duration = .milliseconds(50)
 
     private struct Target: Hashable {
@@ -57,33 +58,39 @@ enum SupermuxSamePortForwardGate {
         case asWritten
         /// That Mac does not list the port (nothing serves it there).
         case unlisted
-        /// The port is in use here, the forward did not start, or not in time.
+        /// The port is in use here, may not be forwarded for this navigation,
+        /// or its forward did not start (in time).
         case unavailable
     }
 
     private struct Hold {
         let token: UUID
+        let task: Task<Void, Never>
+        /// Set when a newer navigation drops this one (its wait and any
+        /// listing fetch it would start end).
+        let dropped: Flag
         let abandon: @MainActor () -> Void
     }
 
     private static var held: [ObjectIdentifier: Hold] = [:]
     /// The panel whose held navigation is resuming: its next check passes.
     private static var resuming: ObjectIdentifier?
-    /// When ``forwardOpenTabs()`` last gave a port up.
-    private static var gaveUp: [Target: ContinuousClock.Instant] = [:]
+    /// Each port's last outcome.
+    private static var outcomes: [Target: Outcome] = [:]
+    /// Other ports (in no workspace there) the user forwarded with a typed URL.
+    private static var userForwarded: Set<Target> = []
     /// Ports whose held navigation just resumed onto the alias: the policy
     /// check of that load passes once (``mayForward``).
     private static var aliasPasses: [Target: ContinuousClock.Instant] = [:]
-    /// Ports whose forward could not start: their alias pages' reloads stay
-    /// reloads for ``standAside``.
-    private static var unavailable: [Target: ContinuousClock.Instant] = [:]
+    /// Targets ``forwardOpenTabs()`` is starting a forward for.
+    private static var starting: Set<Target> = []
 
     /// Whether `request` waits for a same-port forward. True when held:
     /// `resume` runs the navigation later (it asks again and passes),
     /// `abandon` reports that it never started (a newer navigation of the
-    /// panel came first).
+    /// panel came first). `typed`: the user typed the URL.
     static func holds(
-        _ request: URLRequest, dataStoreID: UUID?, panel: AnyObject,
+        _ request: URLRequest, dataStoreID: UUID?, typed: Bool, panel: AnyObject,
         resume: @escaping @MainActor () -> Void, abandon: @escaping @MainActor () -> Void
     ) -> Bool {
         let id = ObjectIdentifier(panel)
@@ -91,58 +98,61 @@ enum SupermuxSamePortForwardGate {
             resuming = nil
             return false
         }
-        held.removeValue(forKey: id)?.abandon()
+        if let previous = held.removeValue(forKey: id) {
+            previous.dropped.isSet = true
+            previous.task.cancel()
+            previous.abandon()
+        }
         // Cheap first: most navigations are not to a loopback port.
         guard let url = request.url, loopbackPort(url) != nil,
               let machine = dataStoreID.flatMap(SupermuxDeviceBrowserRoute.machine(forDataStore:)),
               let target = target(url, machine: machine) else { return false }
         let token = UUID()
-        held[id] = Hold(token: token, abandon: abandon)
-        Task { @MainActor in
-            let outcome = await prepare(target)
-            guard held[id]?.token == token else { return }
+        let dropped = Flag()
+        let task = Task { @MainActor in
+            let outcome = await prepare(target, typed: typed, dropped: dropped)
+            guard !dropped.isSet, held[id]?.token == token else { return }
             held[id] = nil
-            note(outcome, for: target)
+            outcomes[target] = outcome
             if outcome != .asWritten { aliasPasses[target] = .now }
             #if DEBUG
-            cmuxDebugLog("supermux.ports.onDemand port=\(target.port) outcome=\(outcome)")
+            cmuxDebugLog("supermux.ports.onDemand port=\(target.port) typed=\(typed) outcome=\(outcome)")
             #endif
             resuming = id
             resume()
             if resuming == id { resuming = nil }
         }
+        held[id] = Hold(token: token, task: task, dropped: dropped, abandon: abandon)
         return true
     }
 
-    /// Targets ``forwardOpenTabs()`` is starting a forward for.
-    private static var starting: Set<Target> = []
+    /// Whether `panel`'s navigation is held: ``SupermuxDeviceBrowserRoute/forwardsChanged()``
+    /// must not move it (the held navigation resumes there itself).
+    static func isHolding(_ panel: AnyObject) -> Bool {
+        held[ObjectIdentifier(panel)] != nil
+    }
 
     /// After a change of the forwards or the Macs' listings
-    /// (``SupermuxPortForwards/onChange``): every open mirror tab on the alias
-    /// of a port its Mac lists now gets a same-port forward, as a navigation
-    /// to it would (no wait: the tab is not navigating). Once the forward is
-    /// active ``SupermuxDeviceBrowserRoute/forwardsChanged()`` moves the tab to
-    /// `localhost`. So a tab that landed on the alias while its server
-    /// restarted comes back on its own once this Mac sees the server again
-    /// (the follow-up fetches of ``SupermuxPortForwards/followUpDelays``), also
-    /// when the owner lists it only among its other ports.
+    /// (``SupermuxPortForwards/onChange``): an open mirror tab on the alias of a
+    /// port the gate last found unlisted (its server was down there) gets a
+    /// same-port forward once its Mac lists the port again, as a navigation to it
+    /// would; ``SupermuxDeviceBrowserRoute/forwardsChanged()`` then moves it to
+    /// `localhost`. So a tab that landed on the alias while its server restarted
+    /// comes back on its own (the follow-up fetches of
+    /// ``SupermuxPortForwards/followUpDelays``). Never a port last found in use
+    /// here or not allowed: probing it on every change could take this Mac's
+    /// own port while its server restarts.
     static func forwardOpenTabs() {
         let forwards = SupermuxComposition.portForwards
         for machine in SupermuxDeviceBrowserProxies.shared.machines {
-            for browser in SupermuxDeviceBrowserProxies.browsers(of: machine) {
-                guard let url = browser.webView.url, url.scheme?.lowercased() == "http",
-                      RemoteLoopbackProxyAlias.normalizeHost(url.host ?? "") == RemoteLoopbackProxyAlias.aliasHost,
-                      var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { continue }
-                components.host = RemoteLoopbackProxyAlias.canonicalLoopbackHost
-                guard let local = components.url, let target = target(local, machine: machine),
+            for browser in SupermuxDeviceBrowserProxies.browsers(of: machine) where !isHolding(browser) {
+                guard let url = browser.webView.url, let local = localURL(ofAlias: url),
+                      let target = target(local, machine: machine), outcomes[target] == .unlisted,
                       !starting.contains(target), forwards.lists(machine: machine, port: target.port) else { continue }
-                if let last = gaveUp[target], ContinuousClock.now - last < retryAfter { continue }
                 starting.insert(target)
                 Task { @MainActor in
-                    let outcome = await prepare(target)
+                    outcomes[target] = await prepare(target, typed: false, dropped: Flag())
                     starting.remove(target)
-                    note(outcome, for: target)
-                    if outcome != .asWritten { gaveUp[target] = .now }
                 }
             }
         }
@@ -151,20 +161,21 @@ enum SupermuxSamePortForwardGate {
     /// Whether an alias page of `url`'s port (`url` on `localhost`) may go back
     /// to the panel to start a same-port forward (the reroute fence, for a
     /// reload or a link on the alias page): what ``holds`` would hold, except
-    /// the one alias load a held navigation just resumed into.
+    /// the one alias load a held navigation just resumed into and a port whose
+    /// forward could not start (until the user navigates to it again).
     static func mayForward(_ url: URL, machine: SurfaceMachineID) -> Bool {
         guard let target = target(url, machine: machine) else { return false }
-        if let resumed = aliasPasses.removeValue(forKey: target), ContinuousClock.now - resumed < retryAfter { return false }
-        if let last = unavailable[target], ContinuousClock.now - last < standAside { return false }
-        return true
+        if let resumed = aliasPasses.removeValue(forKey: target), ContinuousClock.now - resumed < passLasts { return false }
+        return outcomes[target] != .unavailable
     }
 
-    private static func note(_ outcome: Outcome, for target: Target) {
-        if outcome == .unavailable {
-            unavailable[target] = .now
-        } else {
-            unavailable[target] = nil
-        }
+    /// `url` on the alias, as `localhost`; nil for any other URL.
+    private static func localURL(ofAlias url: URL) -> URL? {
+        guard url.scheme?.lowercased() == "http",
+              RemoteLoopbackProxyAlias.normalizeHost(url.host ?? "") == RemoteLoopbackProxyAlias.aliasHost,
+              var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
+        components.host = RemoteLoopbackProxyAlias.canonicalLoopbackHost
+        return components.url
     }
 
     /// The port a navigation to `url` in `machine`'s mirror browser may get a
@@ -187,27 +198,35 @@ enum SupermuxSamePortForwardGate {
         return url.port ?? 80
     }
 
-    /// Starts or waits for the forward, within ``wait``.
-    private static func prepare(_ target: Target) async -> Outcome {
+    /// Starts or waits for the forward, within ``wait``; ends early once the
+    /// navigation is `dropped`.
+    private static func prepare(_ target: Target, typed: Bool, dropped: Flag) async -> Outcome {
         let forwards = SupermuxComposition.portForwards
-        let deadline = ContinuousClock.now + wait
+        let start = ContinuousClock.now
+        let deadline = start + wait
         let (machine, port) = (target.machine, target.port)
         if forwards.localPort(machine: machine, remotePort: port) != port,
            await SupermuxLocalPortProbe.isInUse(port) {
             return .unavailable
         }
-        if !forwards.lists(machine: machine, port: port) {
+        if !forwards.lists(machine: machine, port: port), !dropped.isSet {
+            // Not awaited here: the reply may take longer than the wait.
             let fetched = Flag()
             Task { @MainActor in
-                await forwards.fetchListingNow(machine)
+                await forwards.fetchListingNow(machine, since: start) { !dropped.isSet }
                 fetched.isSet = true
             }
-            await waitUntil(deadline) { fetched.isSet || forwards.lists(machine: machine, port: port) }
+            await waitUntil(deadline, dropped) { fetched.isSet || forwards.lists(machine: machine, port: port) }
             guard forwards.lists(machine: machine, port: port) else { return .unlisted }
+        }
+        guard !dropped.isSet else { return .unavailable }
+        if !forwards.listsInWorkspace(machine: machine, port: port) {
+            guard typed || userForwarded.contains(target) else { return .unavailable }
+            userForwarded.insert(target)
         }
         guard forwards.localPort(machine: machine, remotePort: port) == port
             || forwards.forwardOnDemand(machine: machine, remotePort: port) else { return .unavailable }
-        await waitUntil(deadline) {
+        await waitUntil(deadline, dropped) {
             switch forwards.forwards[SupermuxPortForwards.Key(machine: machine, remotePort: port)]?.state {
             case .starting?, .waiting?: return false
             default: return true
@@ -216,8 +235,9 @@ enum SupermuxSamePortForwardGate {
         return SupermuxDeviceBrowserRoute.asWrittenPorts(of: machine).contains(port) ? .asWritten : .unavailable
     }
 
-    private static func waitUntil(_ deadline: ContinuousClock.Instant, _ done: () -> Bool) async {
-        while !done(), ContinuousClock.now < deadline {
+    /// Polls `done` until it holds, `deadline` passes or the navigation is `dropped`.
+    private static func waitUntil(_ deadline: ContinuousClock.Instant, _ dropped: Flag, _ done: () -> Bool) async {
+        while !done(), ContinuousClock.now < deadline, !dropped.isSet {
             try? await Task.sleep(for: poll)
         }
     }
