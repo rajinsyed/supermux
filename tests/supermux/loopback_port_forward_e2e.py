@@ -30,6 +30,9 @@ forward must land on another local port.
   8. disconnect_stops_listeners         link down -> waiting, L refuses, M's chips empty; the suite
                                         frees R+1..R+3 (the first free port above R is now below L);
                                         link back -> active on its last local port L
+ 8b. moved_forward_returns_to_remote_port  a forward that landed above P (P busy here) comes back on P once
+                                        P is free: on Resume after Stop, and after a relink (the owner
+                                        serves P from another port, `tunnel.serve_port`)
   9. auto_off_keeps_manual              auto-forward off -> automatic forwards go, a manual one stays
  10. external_link_uses_local_port      a localhost:R link in M's terminal opened in the default
                                         browser -> http://localhost:L/... (C's `mirror.link_open`)
@@ -611,6 +614,78 @@ class PortForwardE2E:
                           f"(the first free port above {port} was {first_free})")
         return {"local_port": local, "first_free_above_remote": first_free}
 
+    def moved_forward_returns(self) -> Dict[str, Any]:
+        """A forward that landed above its port P because P was busy here comes back
+        to P once P is free: on Resume after Stop, and after a relink. Before, a
+        forward tried its last local port first, so it stayed on P+1 for good, and
+        a mirror tab of P kept the alias (the user's Turnstile login failed there).
+        The owner serves P from another port (`tunnel.serve_port`), so P is free
+        here once this Mac's own server on it goes, as between two Macs. A forward
+        whose P is still busy here keeps its last local port
+        (disconnect_stops_listeners)."""
+        owner = MarkerServer(f"moved-owner-{self.nonce}")
+        self.servers.append(owner)
+        here: Optional[MarkerServer] = MarkerServer(f"moved-here-{self.nonce}")
+        port = here.port
+        self.tunnel("serve_port", port=port, **{"from": owner.port})
+        self.tunnel("inject_port", workspace_id=self.source_id, port=port)
+        self.ports_call("refresh")
+        report: Dict[str, Any] = {"port": port}
+
+        def take_port_here() -> MarkerServer:
+            return MarkerServer(f"moved-here-{self.nonce}", port=port)
+
+        def free_port_here() -> None:
+            nonlocal here
+            if here:
+                here.close()
+                here = None
+            wait_for(f"{port} to be free here", lambda: not accepts("127.0.0.1", port) and not accepts("::1", port),
+                     self.timeout)
+
+        def stopped() -> None:
+            self.ports_call("stop", port=port)
+            wait_for(f"forward of {port} to be stopped", lambda: (self.forward(port) or {}).get("state") == "stopped",
+                     self.timeout)
+
+        try:
+            row = wait_for(f"a forward of {port}", lambda: self.active_forward(port), self.timeout)
+            report["moved_to"] = moved = int(row["local_port"])
+            if moved == port:
+                raise Failure(f"precondition: the forward took {port}, which this Mac's own server holds")
+            free_port_here()
+            stopped()
+            self.ports_call("resume", port=port)
+            row = wait_for(f"forward of {port} to resume", lambda: self.active_forward(port), self.timeout)
+            report["after_resume"] = int(row["local_port"])
+            if int(row["local_port"]) != port:
+                raise Failure(f"Resume brought the forward back on {row['local_port']} (its last local port), not on "
+                              f"{port}, which is free here now")
+            if http_get("127.0.0.1", port, "/") != f"moved-owner-{self.nonce}":
+                raise Failure(f"127.0.0.1:{port} does not serve the owner's page")
+            # Moved again (this Mac takes P back meanwhile), then a relink after P is free.
+            stopped()
+            here = take_port_here()
+            self.ports_call("resume", port=port)
+            row = wait_for(f"forward of {port} to resume elsewhere", lambda: self.active_forward(port), self.timeout)
+            report["moved_again_to"] = int(row["local_port"])
+            if int(row["local_port"]) == port:
+                raise Failure(f"precondition: the forward took {port}, which this Mac's own server holds")
+            free_port_here()
+            self.relink()
+            row = wait_for(f"forward of {port} back after the relink", lambda: self.active_forward(port), self.timeout)
+            report["after_relink"] = int(row["local_port"])
+            if int(row["local_port"]) != port:
+                raise Failure(f"after a relink the forward came back on {row['local_port']} (its last local port), not "
+                              f"on {port}, which is free here")
+            return report
+        finally:
+            if here:
+                here.close()
+            self.tunnel("serve_port", port=port)
+            self.tunnel("clear_injected")
+            self.ports_call("refresh")
+
     def auto_off(self) -> Dict[str, Any]:
         self.require_forwarded()
         self.ports_call("set_auto", enabled=False)
@@ -889,6 +964,7 @@ class PortForwardE2E:
                 ("paused_auto_stays_paused", self.paused_auto),
                 ("port_disappears_forward_stops", self.port_disappears),
                 ("disconnect_stops_listeners", self.disconnect),
+                ("moved_forward_returns_to_remote_port", self.moved_forward_returns),
                 ("auto_off_keeps_manual", self.auto_off),
                 ("external_link_uses_local_port", self.external_link),
                 ("old_host_disables", self.old_host),
