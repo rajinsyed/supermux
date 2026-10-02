@@ -681,7 +681,7 @@ as-written page's own `location.href` to `localhost:Q`, this Mac serving Q, must
 forwards change); `same_origin_iframe_reaches_owner` (a same-origin iframe's `fetch` to `localhost:Q` must reach the
 owner's Q).
 
-The real two-Mac fixes (#757, 2026-10-03) add six steps. `alias_keep_alive_requests_reach_owner`: the owner's
+The real two-Mac fixes (#757, 2026-10-03) add seven steps. `alias_keep_alive_requests_reach_owner`: the owner's
 page comes from a strict HTTP/1.1 keep-alive server (`StrictDevServer`) that answers 403 to a `Host` or `Origin`
 that is not `localhost:P`, as Next.js 16's `blockCrossSiteDEV` does; this Mac serves P itself, so the tab runs at the
 alias; the page loads two scripts and a module (which sends `Origin`), then fetches one after another over the same
@@ -702,8 +702,12 @@ forward goes, the tab moves to the alias) and restarts; (A) re-listed with a pok
 page reloads itself: the reload must land at `http://localhost:P` (red: stayed on the alias).
 `restarted_server_returns_without_poke`: the same restart with no poke and no reload: the tab must move back on its
 own within 45 s (red on a3cdb4e4813, which had every other fix: the follow-up fetches after a forward's port left
-the listing and the open-tab forwards were missing). The ports driver's `list` reports each listing's
-`host_other_ports`.
+the listing and the open-tab forwards were missing). `alias_page_reload_settles`: a page on the alias (this
+Mac serves P, so no forward can start) that reloads itself once after loading, as Next.js's dev client does
+(it checks the navigation type), must load exactly twice and end as a `reload` (red on 95356a7a629: 14 loads in
+4 s and 23 in 7 s, every reload handed to the panel became a new navigation; found with a real Next 16.3.1 dev
+server in a loopback mirror tab, which reloaded about five times a second and never hydrated). The ports
+driver's `list` reports each listing's `host_other_ports`.
 
 **A URL typed into a tab, to plain HTTP on a host that is not loopback by name, waits ~10 s on this Mac**
 (WebKit and macOS 27, not the proxy; not a fail-open). WebKit 27 moves such a navigation into a new hardened

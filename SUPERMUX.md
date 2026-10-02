@@ -445,7 +445,9 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   P's forward, when that Mac does not serve P (nothing listens there: the proxy explains it) or cannot
   forward right now (offline, unreachable, an older Supermux, no direct link), for a port below 1024,
   for `https`, `*.localhost` and every other host, and when the forward did not start within 3 s (the
-  tab then moves once it is active). The ports menu ("Ports on <Mac>") shows each forward and the pill
+  tab then moves once it is active). After a forward could not start, that port's alias pages reload as
+  reloads for 10 s (a page that reloads itself once, as Next.js's dev client does, would otherwise reload
+  forever). The ports menu ("Ports on <Mac>") shows each forward and the pill
   where a moved one listens. Through the alias every request and answer on a kept-alive connection is
   rewritten to `localhost` and back (`SupermuxAliasHTTPRewrite`), not only the first: Next.js 16's
   dev server refused each later request still naming the alias (403, "Blocked cross-origin request to
