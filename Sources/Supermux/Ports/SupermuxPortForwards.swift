@@ -378,7 +378,7 @@ final class SupermuxPortForwards {
     }
 
     static func noFreePortMessage(near port: Int) -> String {
-        String(localized: "supermux.ports.failed.noFreePort", defaultValue: "No free local port near \(port)")
+        String(localized: "supermux.ports.failed.noFreePort", defaultValue: "No free local port near \(String(port))")
     }
 }
 

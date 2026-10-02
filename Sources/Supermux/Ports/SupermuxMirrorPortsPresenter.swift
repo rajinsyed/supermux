@@ -75,7 +75,7 @@ final class SupermuxMirrorPortsPresenter {
                 key: key,
                 value: String(
                     localized: "supermux.ports.pill",
-                    defaultValue: "Port \(remote) from \(macName) is at localhost:\(local)"
+                    defaultValue: "Port \(String(remote)) from \(macName) is at localhost:\(String(local))"
                 ),
                 icon: "arrow.left.arrow.right.circle",
                 url: URL(string: "http://localhost:\(local)"),
