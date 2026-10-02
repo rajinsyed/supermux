@@ -78,8 +78,23 @@ enum SupermuxMirrorBrowserSocket {
 
     // MARK: - Browser proxy
 
+    /// Starts the proxy when no mirror browser has yet.
     private static func browserProxy(_ machine: SurfaceMachineID) -> [String: Any] {
-        ["machine": machine.rawValue, "proxy": NSNull()]
+        let proxies = SupermuxDeviceBrowserProxies.shared
+        guard let endpoint = proxies.endpoint(for: machine), let proxy = proxies.proxy(for: machine) else {
+            return ["machine": machine.rawValue, "proxy": NSNull()]
+        }
+        return [
+            "machine": machine.rawValue,
+            "proxy": [
+                "port": endpoint.port,
+                "username": endpoint.credential.username,
+                "password": endpoint.credential.password,
+                "owner_dials": proxy.stats.ownerDials,
+                "direct_dials": proxy.stats.directDials,
+                "failures": proxy.stats.failures,
+            ] as [String: Any],
+        ]
     }
 
     // MARK: - Layout
