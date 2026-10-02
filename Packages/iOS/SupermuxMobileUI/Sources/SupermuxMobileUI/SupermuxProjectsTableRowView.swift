@@ -166,19 +166,12 @@ public struct SupermuxProjectsTableRowView: View {
             ]
         ) {
             SupermuxNestedRowContainer(symbol: "arrow.triangle.branch") {
-                HStack(spacing: 6) {
-                    SupermuxNestedWorktreeRow(
-                        worktree: value.worktree,
-                        open: { tapped in actions.openNestedWorktree(projectRowID, tapped) },
-                        requestRemoval: { tapped in actions.requestNestedWorktreeRemoval(projectRowID, tapped) }
-                    )
-                    if let macName = value.macName {
-                        SupermuxNestedMacMarker(name: macName)
-                            .padding(.trailing, SupermuxProjectRowMetrics.rowHorizontalPadding)
-                            .accessibilityElement(children: .combine)
-                            .accessibilityIdentifier("SupermuxNestedWorktreeMac-\(value.worktree.id)")
-                    }
-                }
+                SupermuxNestedWorktreeRow(
+                    worktree: value.worktree,
+                    open: { tapped in actions.openNestedWorktree(projectRowID, tapped) },
+                    requestRemoval: { tapped in actions.requestNestedWorktreeRemoval(projectRowID, tapped) },
+                    remoteMac: value.remoteMac
+                )
             }
         }
     }

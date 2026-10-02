@@ -32,9 +32,6 @@ public struct SupermuxMergedProject: Equatable, Sendable, Identifiable {
     /// The location the row's name, look and primary actions come from.
     public var lead: Location { locations[0] }
 
-    /// Whether the project lives on more than one Mac (rows then name theirs).
-    public var spansMacs: Bool { locations.count > 1 }
-
     /// Whether the merged disclosure is open: any location's is.
     public var isExpanded: Bool { locations.contains { $0.row.isExpanded } }
 

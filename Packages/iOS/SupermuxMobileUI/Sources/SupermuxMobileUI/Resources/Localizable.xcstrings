@@ -936,6 +936,57 @@
         }
       }
     },
+    "supermux.devices.chip.connecting": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On %@ — Connecting…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 上 — 接続中…"
+          }
+        }
+      }
+    },
+    "supermux.devices.chip.offline": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On %@ — Offline"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 上 — オフライン"
+          }
+        }
+      }
+    },
+    "supermux.devices.chip.online": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 上"
+          }
+        }
+      }
+    },
     "supermux.diff.binary": {
       "extractionState": "manual",
       "localizations": {

@@ -35,6 +35,9 @@ public struct SupermuxProjectsPreviewMac: Sendable {
 ///   group "Ops" (led by `ops-lead`) holding `infra-ops`, which infra owns.
 /// - Mac mini (`preview-mini`): no Supermux capabilities; one loose workspace.
 ///
+/// Every project workspace but `docs-notes` reports a branch, so nested rows
+/// show it, with the cloud-Mac icon on the Studio's (not the list's first Mac).
+///
 /// With `CMUX_UITEST_WORKSPACE_LIST_PREVIEW_SUPERMUX_LATE_STUDIO=1` the Studio
 /// joins late: it connects only once the user first opens or closes a
 /// project's disclosure.
@@ -152,6 +155,7 @@ public enum SupermuxProjectsPreviewFixture {
             _ name: String,
             on mac: SupermuxMacInfo,
             project: String? = nil,
+            branch: String? = nil,
             group: MobileWorkspaceGroupPreview.ID? = nil,
             pinned: Bool = false,
             minutesAgo: Double
@@ -172,6 +176,7 @@ public enum SupermuxProjectsPreviewFixture {
             workspace.macInstanceTag = mac.instanceTag
             workspace.machineColorIndex = mac.colorIndex
             workspace.supermuxProjectID = project
+            workspace.supermuxBranch = branch
             workspace.actionCapabilities.supportsMoveActions = true
             workspace.actionCapabilities.supportsWorkspaceActions = true
             workspace.actionCapabilities.supportsWorkspaceMetadata = true
@@ -180,16 +185,18 @@ public enum SupermuxProjectsPreviewFixture {
             workspace.actionCapabilities.supportsGroupActions = true
             return workspace
         }
-        var featX = row("ws-feat-x", "feat-x", on: laptop, project: "proj-a-cmux", pinned: true, minutesAgo: 3)
+        var featX = row("ws-feat-x", "feat-x", on: laptop, project: "proj-a-cmux", branch: "feature/x", pinned: true, minutesAgo: 3)
         featX.supermuxPullRequestNumber = 123
         featX.supermuxPullRequestState = "open"
         return [
-            row("ws-cmux-main", "cmux-main", on: laptop, project: "proj-a-cmux", minutesAgo: 1),
+            row("ws-cmux-main", "cmux-main", on: laptop, project: "proj-a-cmux", branch: "main", minutesAgo: 1),
             featX,
+            // No branch, PR or run: a nested row with nothing to add.
             row("ws-docs-notes", "docs-notes", on: laptop, project: "proj-a-docs", minutesAgo: 30),
             row("ws-scratch", "scratch", on: laptop, minutesAgo: 8),
-            row("ws-cmux-fix", "cmux-fix", on: studio, project: "proj-b-cmux", minutesAgo: 5),
-            row("ws-infra-api", "infra-api", on: studio, project: "proj-b-infra", minutesAgo: 12),
+            // Long on purpose: the nested row truncates it in the middle.
+            row("ws-cmux-fix", "cmux-fix", on: studio, project: "proj-b-cmux", branch: "fix/studio-sidebar-sync", minutesAgo: 5),
+            row("ws-infra-api", "infra-api", on: studio, project: "proj-b-infra", branch: "main", minutesAgo: 12),
             row("ws-ops-lead", "ops-lead", on: studio, group: opsGroupID, minutesAgo: 15),
             row("ws-infra-ops", "infra-ops", on: studio, project: "proj-b-infra", group: opsGroupID, minutesAgo: 20),
             row("ws-mini-shell", "mini-shell", on: mini, minutesAgo: 40),
