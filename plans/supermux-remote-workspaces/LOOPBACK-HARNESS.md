@@ -640,24 +640,33 @@ an outgoing connection's local port can take it meanwhile. Red before the fix: t
 `http://cmux-loopback.localtest.me:P`, `isSecureContext` false (a real dev sitekey answers 110200 there). The suite
 passes with it anywhere in the order (checked first, before and after the listener-failure steps).
 
-**A navigation typed into an open mirror tab can wait ~10 s** (pre-existing, round 5; not a fail-open).
-For such a navigation WebKit sometimes opens a connection to the mirror's proxy and sends nothing on it;
-the proxy closes it at its 10 s handshake deadline (`clientDeadline`), and only then does the request go
-out on another connection. Measured 2026-10-02 on one app session: 19 of 23 timed open-tab navigations
-reached the owner's server 10.2–11.0 s after `browser.navigate` (after a marker page, the old-host page or
-another owner page alike; no listener restart, Turnstile or `serve_port` needed), the other 4 in 0.2–0.3 s,
-so it depends on state not yet pinned down; new tabs loaded in ~0.15 s and the main thread answered socket
-calls throughout. Network.framework's log of one stall shows the proxy accepting WebKit's connection, no
-handshake on it for 10.0 s, the proxy closing it, and the tunnel's dial to the server 37 ms later. It is why `proxy_listener_failure_recovers` takes ~12 s and once ran past
-`browser.navigate`'s own 17.5 s wait (`navigation_timeout`); open-tab navigations in the suite
-(`navigate_open_tab`) let that wait run out and still require the owner's page. With the listener down
-and a Turnstile tab live in the mirror, 4 of 4 rounds sent nothing to this Mac's own server. A shorter
-deadline for a client's first byte would shorten the wait; not done.
+**A URL typed into a tab, to plain HTTP on a host that is not loopback by name, waits ~10 s on this Mac**
+(WebKit and macOS 27, not the proxy; not a fail-open). WebKit 27 moves such a navigation into a new hardened
+WebContent process (`triggerProcessSwapForEnhancedSecurity`, `continueNavigationInNewProcess`), and making one
+blocks its UI thread in the kernel issuing font sandbox extensions (`registerUserInstalledFonts` ->
+`_sandbox_extension_issue`, 759 of 1285 samples of one stall; only 1 font is installed here). Measured
+2026-10-02 in a local tab with no proxy: typed navigations to the alias resolved directly took 10.76, 11.18
+and 10.87 s and to this Mac's LAN address 10.47, 11.18 and 10.87 s (the first from a new tab 0.32 s), to
+`localhost` 0.02–0.04 s. A mirror tab met it on every typed `localhost` URL, which became the alias: the
+proxy's DEBUG connection traces (`browser_proxy` `connections`: accept, first byte, decision, tunnel open,
+request/response bytes, end) showed WebKit's preconnect (its `PreconnectTask` has a 10 s timeout) completing
+the SOCKS5 handshake at once, its tunnel open (main actor) waiting for the blocked main thread 11–13 s, no
+request on it, and the real request on a new connection once the main thread was free; no connection
+reached the proxy's handshake deadline. A deadline in the proxy could not help. A port forwarded here on the
+same port loads as written (#754), so WebKit keeps the process: `typed_navigations_are_prompt` types 6
+such URLs into the open mirror tab and wants each within 3 s (red on the pre-#754 build: 10.82–11.28 s,
+the page at the alias; green: 0.03–0.06 s). Still slow: a mirror URL whose port is not forwarded on the
+same port (the alias), and in any tab a plain-HTTP page on a LAN address or another non-localhost host.
+That wait is why `proxy_listener_failure_recovers` once ran past `browser.navigate`'s own 17.5 s wait
+(`navigation_timeout`); navigations of an open tab to the alias in the suite (`navigate_open_tab`) let that
+wait run out and still require the owner's page. With the listener down and a Turnstile tab live in the
+mirror, 4 of 4 rounds sent nothing to this Mac's own server.
 
 DEBUG drivers
 (`SupermuxMirrorBrowserSocket`): `supermux.devices.mirror.browser_route {workspace_id}` (per
 browser: `routes_remotely`, `proxy_configs`, `store_identifier`), `.browser_proxy {machine, start?}`
-(the endpoint it hands out now: port, credential, `owner_dials`, `direct_dials`, `failures`; null
+(the endpoint it hands out now: port, credential, `owner_dials`, `direct_dials`, `failures`, `connections`
+(its newest 64 connections' timelines); null
 while it has none; starts the proxy unless `start` is false),
 `.browser_proxy_fail {machine}` (runs the listener's `.failed` path; `failed_port`),
 `.browser_proxy_hold {machine, held}` (while held no new listener is made, as when the system cannot
