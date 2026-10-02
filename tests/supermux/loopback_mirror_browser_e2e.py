@@ -20,8 +20,11 @@ workspace, each on its own port so tunnel opens are attributed exactly:
   2 literal_127_routes                   http://127.0.0.1:P2 in the mirror routes the same way
   3 local_workspace_stays_direct         the same kind of URL in the source workspace: no proxy, the
                                          profile store, no tunnel open (control)
-  4 non_loopback_goes_direct             this Mac's LAN address in the mirror: dialed directly by the proxy,
-                                         no tunnel open (skipped when the Mac has no non-loopback IPv4)
+  4 non_loopback_goes_direct             this Mac's LAN address in the mirror loads this Mac's page, no tunnel
+                                         open (Network.framework skips the proxy for this Mac's own addresses,
+                                         as for localhost); an authenticated CONNECT to it, as WebKit sends for
+                                         any other LAN or public host, is dialed directly by the proxy, no
+                                         tunnel open (skipped when the Mac has no non-loopback IPv4)
   5 closed_port_explains                 a closed port in the mirror shows the "localhost:N on <Mac> isn't
                                          answering" page
   6 proxy_requires_credential            the proxy refuses SOCKS no-auth (05 FF), a wrong password (01 01)
@@ -360,13 +363,38 @@ class MirrorBrowserE2E:
         url = f"http://{address}:{server.port}/marker.html"
         self.navigate(self.require_mirror_browser(), url)
         title = self.wait_title(self.mirror_browser, lambda t: t == server.title, "the LAN marker page in the mirror")
+        # The browser does not consult the proxy for this Mac's own address,
+        # so whether it dialed is a fact, not a check.
+        browser_dials = int(self.require_proxy().get("direct_dials") or 0) - dials_before
+        target = f"{address}:{server.port}"
+        established, page = self.proxy_connect(target, "/marker.html")
+        if not established.startswith(b"HTTP/1.1 200") or server.title not in page:
+            raise Failure(f"an authenticated CONNECT to {target} got {established[:40]!r} and no marker")
         proxy = self.require_proxy()
-        if int(proxy.get("direct_dials") or 0) <= dials_before:
-            raise Failure(f"the proxy never dialed {address} directly ({dials_before} -> {proxy.get('direct_dials')})")
+        if int(proxy.get("direct_dials") or 0) <= dials_before + browser_dials:
+            raise Failure(f"the proxy never dialed {target} directly ({dials_before} -> {proxy.get('direct_dials')})")
         opens = self.journal_opens(server.port)
         if opens:
             raise Failure(f"a LAN request went through the owner's tunnel ({opens} opens)")
-        return {"url": url, "title": title, "direct_dials": proxy.get("direct_dials")}
+        return {"url": url, "title": title, "browser_direct_dials": browser_dials, "direct_dials": proxy.get("direct_dials")}
+
+    def proxy_connect(self, target: str, path: str) -> tuple[bytes, str]:
+        """An authenticated HTTP CONNECT to `target` through the mirror's proxy, then
+        `GET path`: the CONNECT reply head and the page."""
+        proxy = self.require_proxy()
+        token = base64.b64encode(f"{proxy['username']}:{proxy['password']}".encode()).decode()
+        with socket.create_connection(("127.0.0.1", int(proxy["port"])), timeout=10) as conn:
+            conn.settimeout(10)
+            conn.sendall(f"CONNECT {target} HTTP/1.1\r\nHost: {target}\r\nProxy-Authorization: Basic {token}\r\n\r\n".encode())
+            established = b""
+            while b"\r\n\r\n" not in established:
+                chunk = conn.recv(4096)
+                if not chunk:
+                    break
+                established += chunk
+            conn.sendall(f"GET {path} HTTP/1.0\r\nHost: {target}\r\n\r\n".encode())
+            page = recv_until_closed(conn).decode(errors="replace")
+        return established, page
 
     def closed_port_explains(self) -> Dict[str, Any]:
         closed = free_port()
@@ -407,17 +435,7 @@ class MirrorBrowserE2E:
         if not bare.startswith("HTTP/1.1 407"):
             raise Failure(f"CONNECT without credentials got {bare.splitlines()[:1]}, want 407")
         # The right credential connects (HTTP CONNECT) and reaches the marker.
-        token = base64.b64encode(f"{proxy['username']}:{proxy['password']}".encode()).decode()
-        with connect() as conn:
-            conn.sendall(f"CONNECT {target} HTTP/1.1\r\nHost: {target}\r\nProxy-Authorization: Basic {token}\r\n\r\n".encode())
-            established = b""
-            while b"\r\n\r\n" not in established:
-                chunk = conn.recv(4096)
-                if not chunk:
-                    break
-                established += chunk
-            conn.sendall(f"GET /marker.html HTTP/1.0\r\nHost: {target}\r\n\r\n".encode())
-            page = recv_until_closed(conn).decode(errors="replace")
+        established, page = self.proxy_connect(target, "/marker.html")
         if not established.startswith(b"HTTP/1.1 200") or self.owner_server.title not in page:
             raise Failure(f"an authenticated CONNECT got {established[:40]!r} and no marker")
         return {"no_auth": no_auth.hex(), "wrong_password": wrong.hex(), "bare_connect": bare.splitlines()[0]}
