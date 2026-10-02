@@ -178,14 +178,17 @@ listens again once the link is back (`pending_forward_offers_stop`); last, a ter
 (from a local workspace, scanned there first) serving P is moved into M, and M's chip for P, clicked
 with the setting off, opens `http://localhost:P` as any local workspace's chip does
 (`local_terminal_chip_opens_this_mac`; before the per-port rule every chip of a mirror went to the
-owning Mac's forward, so it showed "Port P from <Mac> isn't forwarded"). The DEBUG driver
+owning Mac's forward, so it showed "Port P from <Mac> isn't forwarded"), and clicked with the setting
+on it opens the same URL in the default browser, not a cmux browser in M, which would route
+`localhost` to the owning Mac (`new_browser_panel_id` must be null). The DEBUG driver
 `supermux.devices.ports.*` (`Sources/Supermux/Ports/SupermuxDevicePortsSocketCommands.swift`)
 answers `list {machine?}` (the forwards, availability, host listings, and each mirror's chips and
 pills), `forward`, `stop`, `resume {machine, port}`, `set_auto {enabled}` (the Settings card's
 action) and `refresh {machine?}`; `Sources/Supermux/Ports/SupermuxPortMenusSocketCommands.swift`
 answers `chip_open {workspace_id, port, cmux_browser?}` (a sidebar chip click through the
 `device-mirror-port-chip` touchpoint's call; the default browser and the alert are captured:
-`external_url`, `notice`, `new_browser_panel_id`) and `menus {workspace_id?}` (the mirror's
+`external_url`, `notice`, `new_browser_panel_id`; `is_mirror` when the port is the owning Mac's,
+`in_mirror` when the workspace is a mirror) and `menus {workspace_id?}` (the mirror's
 "Ports on <Mac>" model and each Mac's Settings Ports… menu, every port with its `items`).
 
 ```bash
@@ -561,6 +564,13 @@ refused, and the mirror closes S3 on its Mac only then, on the layout that close
 that fix the decision was taken in `projectionDidEnd` from the last accepted snapshot, which still
 held both terminals, so the refused second close showed the card and auto-mirror orphan-closed M3
 (the red run timed out waiting for S3 to close: "the mirror workspace closed, its browser with it").
+`slow_last_terminal_close_keeps_mirror` repeats the one-terminal case with a fourth source S4 on a slow
+link: the loopback host holds the `mobile.terminal.close` for 3 s (`supermux.devices.link {action:
+"stall", method: "mobile.terminal.close", seconds: 3}`) before refusing it, and the step runs two
+auto-mirror passes 1.2 s apart meanwhile (`supermux.devices.reconcile`, as a real link's device events
+would; an idle loopback sends none). S4 must still close and M4 keep only its browser; the passes report
+S4 in `busy`. Before that fix the first pass noted M4 (bound, nothing projected), the second confirmed it
+as an orphan and closed it, browser included, and S4 kept running.
 
 ## Mirror browser E2E
 
