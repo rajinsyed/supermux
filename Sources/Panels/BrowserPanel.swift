@@ -3671,6 +3671,17 @@ final class BrowserPanel: Panel, ObservableObject {
         remoteWebsiteDataStoreIdentifier: UUID? = nil,
         websiteDataStore explicitWebsiteDataStore: WKWebsiteDataStore? = nil
     ) {
+        // SUPERMUX:begin device-mirror-browser-route
+        // A device mirror's browser reaches the owning Mac's localhost through that
+        // Mac's proxy, in that Mac's data store, never this Mac's local services
+        // (navigation waits for the proxy). (upstream: the parameters used as passed)
+        let supermuxRoute = SupermuxDeviceBrowserRoute.route(
+            workspaceID: workspaceId, isRemoteWorkspace: isRemoteWorkspace,
+            proxyEndpoint: proxyEndpoint, dataStoreID: remoteWebsiteDataStoreIdentifier)
+        let isRemoteWorkspace = supermuxRoute.isRemoteWorkspace
+        let proxyEndpoint = supermuxRoute.proxyEndpoint
+        let remoteWebsiteDataStoreIdentifier = supermuxRoute.dataStoreID
+        // SUPERMUX:end device-mirror-browser-route
         // Register fallback defaults and normalize legacy/out-of-range settings once
         // per process, before any setting is read below or by the SwiftUI view.
         Self.bootstrapBrowserDefaultsIfNeeded()
@@ -4426,6 +4437,16 @@ final class BrowserPanel: Panel, ObservableObject {
         proxyEndpoint: BrowserProxyEndpoint?,
         remoteStatus: BrowserRemoteWorkspaceStatus?
     ) {
+        // SUPERMUX:begin device-mirror-browser-route
+        // A tab moved into or out of a device mirror swaps to or from that Mac's
+        // proxy and data store. (upstream: the parameters used as passed)
+        let supermuxRoute = SupermuxDeviceBrowserRoute.route(
+            workspaceID: newWorkspaceId, isRemoteWorkspace: isRemoteWorkspace,
+            proxyEndpoint: proxyEndpoint, dataStoreID: remoteWebsiteDataStoreIdentifier)
+        let isRemoteWorkspace = supermuxRoute.isRemoteWorkspace
+        let proxyEndpoint = supermuxRoute.proxyEndpoint
+        let remoteWebsiteDataStoreIdentifier = supermuxRoute.dataStoreID
+        // SUPERMUX:end device-mirror-browser-route
         workspaceId = newWorkspaceId
         usesRemoteWorkspaceProxy = isRemoteWorkspace && !bypassesRemoteWorkspaceProxy
         let targetStore = cloudBrowserMachineID != nil ? websiteDataStore : preservesExplicitEphemeralWebsiteDataStore
