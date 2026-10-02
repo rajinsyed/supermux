@@ -408,11 +408,11 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   tabs stay (or its last terminals at once, as Close Other Tabs on a browser does) works like closing
   a local workspace's last terminal beside a browser: the close goes to that Mac, which cannot keep a
   workspace without a surface and refuses it; when the layout fetched for that close holds only that
-  terminal, its workspace closes there instead (as closing the mirror closes it: no prompt, `force`,
+  terminal (or that Mac's answer never came: a missed reply deadline, or still busy), its workspace closes there instead (as closing the mirror closes it: no prompt, `force`,
   held while that Mac is offline), and the mirror stays here with its own tabs as an ordinary local
   workspace (no longer a mirror; nothing re-projects or closes it; its browsers keep the route they
-  opened with until a relaunch). A terminal added there meanwhile is in that layout, so it is never
-  closed with the workspace. While that close is in flight (on a slow link it can take seconds)
+  opened with until a relaunch). A terminal added there before that layout is fetched is in it, so the
+  workspace is not closed (only one added in the round trip between that fetch and the close would go with it). While that close is in flight (on a slow link it can take seconds)
   auto-mirror does not take the mirror, bound with nothing projected, for an orphan. Only a bound mirror counts (a local workspace that
   borrows terminals stays upstream's mixed workspace). Known gap: ⌘T/⌘D with such a tab selected
   makes a local shell, which stalls the sync again until it closes.
