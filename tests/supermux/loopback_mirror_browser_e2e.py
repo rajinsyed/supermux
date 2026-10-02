@@ -92,6 +92,8 @@ independently:
                                          moves to the alias) and restarts: re-listed with a poke, the tab moves
                                          back to http://localhost:P by itself; listed only among the owner's
                                          other ports (no poke) and reloaded by the page, it lands there too
+ 17j restarted_server_returns_without_poke  the same restart with no poke and no reload: the tab still moves
+                                         back to http://localhost:P by itself
  18 proxy_listener_failure_recovers      after the proxy's listener fails, it is replaced on its own (waited
                                          for with a read that starts no listener); then the open mirror tab
                                          and a new one each load the owner's page on the fresh endpoint,
@@ -173,6 +175,9 @@ TYPED_NAVIGATION_S = 3.0
 TURNSTILE_TEST_SITEKEY = "1x00000000000000000000AA"
 # How long Turnstile (challenges.cloudflare.com) may take to hand a token.
 TURNSTILE_TOKEN_S = 45.0
+# How long a mirror tab may take to return to a restarted server's localhost:P when
+# nothing tells this Mac about the restart (it asks the owner again by itself).
+RESTART_RETURN_S = 45.0
 # What the page reports about itself and its Turnstile widget.
 TURNSTILE_PROBE = """JSON.stringify({origin: location.origin, hostname: location.hostname,
   secure: window.isSecureContext, subtle: !!(window.crypto && window.crypto.subtle),
@@ -1637,6 +1642,22 @@ class MirrorBrowserE2E:
             if tab:
                 self.sock.call("surface.close", {"surface_id": tab})
 
+    def tab_at(self, tab: str, prefix: str) -> str:
+        href = self.page_href(tab)
+        if not href.startswith(prefix):
+            raise Failure(f"the tab runs at {href}")
+        return href
+
+    def owner_server_stops(self, port: int, tab: str) -> None:
+        """The owner's server on `port` stops and the owner unlists it with a poke:
+        the forward goes and the mirror tab moves to the alias."""
+        self.serve_owner_port(port, free_port())
+        self.tunnel("clear_injected")
+        self.sock.call("supermux.devices.ports.refresh", {"machine": self.pair.machine})
+        self.wait_forward_gone(port, "the owner no longer lists it")
+        wait_for("the tab to move to the alias once the forward is gone",
+                 lambda: self.tab_at(tab, f"http://{LOOPBACK_ALIAS}:{port}/"), self.timeout)
+
     def restarted_server_recovers_as_written(self) -> Dict[str, Any]:
         """The user's restart: a dev server on the owner's P, listed as the source's
         workspace port and forwarded here on P, its page as written in a mirror
@@ -1663,18 +1684,10 @@ class MirrorBrowserE2E:
         report: Dict[str, Any] = {"port": port}
 
         def at(prefix: str) -> str:
-            href = self.page_href(tab)
-            if not href.startswith(prefix):
-                raise Failure(f"the tab runs at {href}")
-            return href
+            return self.tab_at(tab, prefix)
 
         def server_stops() -> None:
-            self.serve_owner_port(port, free_port())
-            self.tunnel("clear_injected")
-            self.sock.call("supermux.devices.ports.refresh", {"machine": self.pair.machine})
-            self.wait_forward_gone(port, "the owner no longer lists it")
-            wait_for("the tab to move to the alias once the forward is gone",
-                     lambda: at(f"http://{LOOPBACK_ALIAS}:{port}/"), self.timeout)
+            self.owner_server_stops(port, tab)
 
         try:
             self.wait_title(tab, lambda t: t == first.title, "the owner's page as written")
@@ -1702,6 +1715,43 @@ class MirrorBrowserE2E:
             if int(row.get("local_port") or 0) != port:
                 raise Failure(f"the forward listens on {row.get('local_port')}, not on {port}: {row}")
             return report
+        finally:
+            self.sock.call("surface.close", {"surface_id": tab})
+
+    def restarted_server_returns_without_poke(self) -> Dict[str, Any]:
+        """The real two-Mac failure: the viewer learned that the owner's server on P
+        stopped (here a poke; there a fetch while the owner's sidebar still kept P
+        through its missed scans), so the forward went and the mirror tab moved to
+        the alias. The server starts again on P, but nothing tells the viewer: a
+        quick restart never changes the owner's sidebar ports (no poke), or the
+        owner lists P only among its other ports. Nobody reloads. The tab must
+        still move back to http://localhost:P on its own: after a forward's port
+        left the listing the viewer asks the owner again for a while, and an open
+        mirror tab of a listed port gets a same-port forward. Before, the tab
+        stayed on the alias for good."""
+        port = free_dev_port()
+        first = self.server("quiet-first")
+        self.serve_owner_port(port, first.port)
+        self.list_owner_port(port)
+        row = self.wait_forward(port)
+        if int(row.get("local_port") or 0) != port:
+            raise Failure(f"precondition: the forward listens on {row.get('local_port')}, not on {port}: {row}")
+        tab = self.new_tab(self.pair.mirror_id, self.mirror_terminal(), f"http://localhost:{port}/marker.html")
+        try:
+            self.wait_title(tab, lambda t: t == first.title, "the owner's page as written")
+            self.require_as_written(tab, port, "the tab before the restart")
+            self.owner_server_stops(port, tab)
+            again = self.server("quiet-again")
+            self.serve_owner_port(port, again.port)
+            self.inject_other(port, refresh=False)
+            started = time.monotonic()
+            back = wait_for("the tab to move back to localhost by itself (no poke, no reload)",
+                            lambda: self.tab_at(tab, f"http://localhost:{port}/"), RESTART_RETURN_S)
+            seconds = round(time.monotonic() - started, 2)
+            self.wait_title(tab, lambda t: t == again.title, "the restarted server's page as written")
+            probe = self.require_as_written(tab, port, "the tab after the restart")
+            return {"port": port, "back": back, "seconds_to_return": seconds, "probe": probe,
+                    "forward": self.wait_forward(port)}
         finally:
             self.sock.call("surface.close", {"surface_id": tab})
 
@@ -1852,6 +1902,7 @@ class MirrorBrowserE2E:
                 ("other_port_forward_loads_as_written", self.other_port_forward_loads_as_written),
                 ("unforwarded_port_forwards_on_demand", self.unforwarded_port_forwards_on_demand),
                 ("restarted_server_recovers_as_written", self.restarted_server_recovers_as_written),
+                ("restarted_server_returns_without_poke", self.restarted_server_returns_without_poke),
                 # Last: they fail the proxy's listener.
                 ("proxy_listener_failure_recovers", self.proxy_listener_failure_recovers),
                 ("restart_keeps_mirror_store_proxied", self.restart_keeps_mirror_store_proxied),
