@@ -9,7 +9,8 @@ import SupermuxKit
 /// (`tests/supermux/loopback_port_forward_e2e.py`). Each runs the code path of
 /// its UI entry point. Routed from ``SupermuxDevicesSocketCommands``.
 ///
-/// - `list {machine?}` — the forwards, each Mac's availability and port
+/// - `list {machine?}` — the forwards, the user's stops (`stops`, each with the
+///   workspaces that listed its port at the stop), each Mac's availability and port
 ///   listing (`host_ports`, and `host_other_ports`: its `other_ports`, null
 ///   when the listing did not ask for them), and what every device mirror shows (its sidebar port chips and
 ///   its `supermux.ports.*` pills).
@@ -101,6 +102,9 @@ enum SupermuxDevicePortsSocketCommands {
         }
         return [
             "auto": SupermuxComposition.devicesSettings.forwardPorts,
+            "stops": forwards.debugStops
+                .filter { machine == nil || $0.key.machine == machine }
+                .map { ["machine": $0.key.machine.rawValue, "remote_port": $0.key.remotePort, "workspaces": $0.workspaces] },
             "forwards": rows,
             "availability": availability,
             "host_ports": hostPorts,

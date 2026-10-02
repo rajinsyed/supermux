@@ -231,8 +231,15 @@ final class SupermuxPortForwards {
         return listing.ports.contains { $0.port == port } || (listing.otherPorts ?? []).contains(port)
     }
 
+    #if DEBUG
+    /// The user's stops and the workspaces each recorded (E2E, `ports.list`).
+    var debugStops: [(key: Key, workspaces: [String])] {
+        dismissed.sorted { $0.description < $1.description }.map { ($0, (stoppedWorkspaces[$0] ?? []).sorted()) }
+    }
+    #endif
+
     /// Whether the user stopped the forward of `remotePort` (it stays stopped
-    /// while that Mac lists the port; Resume starts it again).
+    /// until Resume, across its server's restarts).
     func isStoppedByUser(machine: SurfaceMachineID, remotePort: Int) -> Bool {
         let key = Key(machine: machine, remotePort: remotePort)
         return dismissed.contains(key) || forwards[key]?.state == .stopped
