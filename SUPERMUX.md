@@ -403,20 +403,25 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   it still closes that terminal on the owning Mac. Only a bound mirror counts (a local workspace that
   borrows terminals stays upstream's mixed workspace). Known gap: ⌘T/⌘D with such a tab selected
   makes a local shell, which stalls the sync again until it closes.
-- **A mirror's browser opens that Mac's localhost** (#707): every browser in a mirror (new tab,
-  split, a terminal link opened in the cmux browser, restore, the Dock, a tab moved in) uses
+- **A mirror's browser opens that Mac's localhost** (#707): every browser in a mirror, bound or not
+  (new tab, split, a terminal link opened in the cmux browser, restore, the Dock, a tab moved in,
+  the ports menu's "Open in cmux Browser" and a port chip) uses
   upstream's remote-workspace browser mode: `localhost`, `127.0.0.1`, `[::1]` and `*.localhost` go to
-  the owning Mac through a per-Mac proxy on this Mac's loopback and the device link's tunnel lanes
+  the owning Mac through a per-app-instance proxy on this Mac's loopback and the device link's tunnel lanes
   (port forwarding's transport; the owning Mac serves only its own loopback), with the page's
   `localhost` origin kept, so `localhost:3000` there is the other Mac's dev server even when this Mac
-  runs its own on 3000. Public sites load from this Mac. Each remote Mac has its own persistent
+  runs its own on 3000. Public sites load from this Mac. Each remote app instance (Mac + tag, so a
+  dogfood build beside that Mac's main app is separate) has its own persistent
   website data store, so a login to its dev app survives the mirror being re-created and never mixes
   with this Mac's `localhost` cookies (and public sites are not signed in with the profile's cookies,
   as in upstream SSH workspaces). When that Mac's `localhost` cannot be reached the page says why:
   nothing listening there, "Update Supermux on <Mac> to open its localhost here." (no
   `supermux.port_forward.v1`), offline, no direct connection (a Tailscale-only link), busy or
   refused. The proxy accepts only its per-launch random credential, so other local processes cannot
-  use it to reach the other Mac. A tab moved out of a mirror goes back to this Mac's profile.
+  use it to reach the other Mac; it closes a client that has not finished its handshake within 10 s
+  and refuses new ones while 64 are still in it, releases every connection's socket when it ends, and
+  replaces its listener if the system fails it (open tabs wait for the new one). A tab moved out of a
+  mirror goes back to this Mac's profile.
 - **Other Macs' ports open here** (#699, #705; the tunnel is round 5's Track A): a server started in
   another Mac's workspace that is mirrored here (`bun run dev` on 3000) opens at `localhost` on this
   Mac, in any browser, the iOS Simulator or any other app (setting "Forward other Macs' ports to this
