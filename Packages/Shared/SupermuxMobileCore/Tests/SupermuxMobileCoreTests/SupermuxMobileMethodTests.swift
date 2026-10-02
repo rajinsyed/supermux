@@ -70,11 +70,13 @@ import Testing
         "mobile.supermux.phone_push.register",
         "mobile.supermux.phone_push.status",
         "mobile.supermux.phone_push.share",
+        // Ports
+        "mobile.supermux.ports.list",
     ]
 
     @Test func allExposesEveryMethodExactlyOnce() {
         #expect(SupermuxMobileMethod.all.map(\.rawValue) == Self.expectedRawValues)
-        #expect(SupermuxMobileMethod.all.count == 55)
+        #expect(SupermuxMobileMethod.all.count == 56)
         #expect(Set(SupermuxMobileMethod.all).count == SupermuxMobileMethod.all.count)
     }
 

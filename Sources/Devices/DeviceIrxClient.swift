@@ -350,4 +350,20 @@ actor DeviceIrxClient {
             throw error
         }
     }
+
+    // SUPERMUX:begin device-tunnel-client
+    /// The live, verified connection to `instance`, for port-forward tunnel lanes
+    /// (`SupermuxDeviceTunnelClient`). Never dials: a tunnel lives only as long as
+    /// the link's own session, and a link reconnect simply fails the next open.
+    func supermuxTunnelConnection(instance: SurfaceDeviceInstanceID) async throws -> IrxConnection {
+        guard !stopped, let match = sessions.first(where: { $0.value.instance == instance }) else {
+            throw DeviceLinkError.notConnected
+        }
+        let borrowed = try await context()
+        guard await borrowed.isCurrent(),
+              await permitsIO(context: borrowed, endpoint: match.key, owner: match.value.owner),
+              let session = await match.value.engine.currentSession() else { throw DeviceLinkError.notConnected }
+        return session.connection
+    }
+    // SUPERMUX:end device-tunnel-client
 }
