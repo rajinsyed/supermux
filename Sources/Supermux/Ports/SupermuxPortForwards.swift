@@ -86,6 +86,8 @@ final class SupermuxPortForwards {
     @ObservationIgnored private var fetchAgain: Set<SurfaceMachineID> = []
     /// Listing fetches that failed in a row, per Mac (the next retry's delay).
     @ObservationIgnored private var fetchFailures: [SurfaceMachineID: Int] = [:]
+    /// Each Mac's pending retry of a failed listing; any other fetch request replaces it.
+    @ObservationIgnored private var fetchRetries: [SurfaceMachineID: Task<Void, Never>] = [:]
     /// Each connected Mac's availability check (it repeats while unreachable).
     @ObservationIgnored private var availabilityChecks: [SurfaceMachineID: Task<Void, Never>] = [:]
     @ObservationIgnored private var started = false
@@ -208,6 +210,7 @@ final class SupermuxPortForwards {
 
     private func linkLost(_ machine: SurfaceMachineID) {
         availabilityChecks.removeValue(forKey: machine)?.cancel()
+        fetchRetries.removeValue(forKey: machine)?.cancel()
         fetchFailures[machine] = nil
         availability[machine] = nil
         hostPorts[machine] = nil
@@ -223,7 +226,8 @@ final class SupermuxPortForwards {
         availabilityChecks[machine] = Task { @MainActor [weak self] in
             var failures = 0
             while true {
-                if failures > 0 { try? await Task.sleep(for: Self.retryDelay(after: failures)) }
+                // Cancelled while waiting: a newer check runs, or the link went.
+                if failures > 0, (try? await Task.sleep(for: Self.retryDelay(after: failures))) == nil { return }
                 let availability = await SupermuxDeviceTunnelClient.availability(of: machine)
                 // The link dropped (its linkLost ran) or connected again (a newer check runs).
                 guard let self, !Task.isCancelled, self.devices.device(for: machine)?.isConnected == true else { return }
@@ -263,18 +267,30 @@ final class SupermuxPortForwards {
             fetchAgain.insert(machine)
             return
         }
+        fetchRetries.removeValue(forKey: machine)?.cancel()
         fetching.insert(machine)
         Task { @MainActor [weak self] in
             if delay > .zero { try? await Task.sleep(for: delay) }
             guard let self else { return }
             await self.fetch(machine)
             self.fetching.remove(machine)
-            let poked = self.fetchAgain.remove(machine) != nil
-            if let failures = self.fetchFailures[machine], self.availability[machine] == .available {
-                self.requestFetch(machine, after: Self.retryDelay(after: failures))
-            } else if poked {
+            if self.fetchAgain.remove(machine) != nil {
                 self.requestFetch(machine, after: Self.fetchThrottle)
+            } else if let failures = self.fetchFailures[machine], self.availability[machine] == .available {
+                self.retryFetch(machine, after: Self.retryDelay(after: failures))
             }
+        }
+    }
+
+    /// Fetches a listing that failed again after `delay`. The wait holds no
+    /// fetch slot: a poke, a new availability verdict or a reconnect fetches
+    /// at once instead (``requestFetch(_:after:)`` replaces it), and a link
+    /// loss ends it.
+    private func retryFetch(_ machine: SurfaceMachineID, after delay: Duration) {
+        fetchRetries[machine] = Task { @MainActor [weak self] in
+            guard (try? await Task.sleep(for: delay)) != nil, !Task.isCancelled, let self else { return }
+            self.fetchRetries[machine] = nil
+            self.requestFetch(machine, after: .zero)
         }
     }
 
