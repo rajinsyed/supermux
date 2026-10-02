@@ -39,6 +39,10 @@ final class SupermuxDeviceBrowserProxy {
     /// Gets the endpoint each time a listener is ready.
     private let onEndpointChange: @MainActor (BrowserProxyEndpoint) -> Void
     private var listener: NWListener?
+    /// The port registered in ``SupermuxOwnListenerPorts`` for the listener
+    /// that became ready, until it fails. Not the kept endpoint's: after a
+    /// failure that port may be another listener's.
+    private var registeredPort: Int?
     #if DEBUG
     /// E2E (`supermux.devices.mirror.browser_proxy_hold`): while true no new
     /// listener is made, as when `NWListener(using:)` fails, so a failed one
@@ -94,6 +98,7 @@ final class SupermuxDeviceBrowserProxy {
         case .ready:
             guard let port, port != 0 else { return }
             SupermuxOwnListenerPorts.shared.insert(Int(port))
+            registeredPort = Int(port)
             let endpoint = BrowserProxyEndpoint(host: "127.0.0.1", port: Int(port), credential: credential)
             self.endpoint = endpoint
             onEndpointChange(endpoint)
@@ -104,7 +109,10 @@ final class SupermuxDeviceBrowserProxy {
             // configures the whole data store this Mac's browsers share, so a
             // new browser given none would take the proxy away from all of them
             // and send their `localhost` here. Only its port stops being ours.
-            if let port = endpoint?.port { SupermuxOwnListenerPorts.shared.remove(port) }
+            if let port = registeredPort {
+                SupermuxOwnListenerPorts.shared.remove(port)
+                registeredPort = nil
+            }
             listener?.cancel()
             listener = nil
             Task { @MainActor [weak self] in
