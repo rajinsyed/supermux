@@ -193,6 +193,11 @@ struct SupermuxHTTPMessageStream {
                 out.append(buffer[cursor..<end])
                 cursor = end
             case .body(let remaining), .chunkData(let remaining):
+                // Never negative (sizes are checked), but a slice must not trap.
+                guard remaining > 0 else {
+                    state = .opaque
+                    continue scan
+                }
                 let take = min(remaining, end - cursor)
                 out.append(buffer[cursor..<cursor + take])
                 cursor += take
@@ -271,14 +276,20 @@ struct SupermuxHTTPMessageStream {
         }
     }
 
-    /// The size on a chunk line (hex, before any `;` extension), or nil when
-    /// it is not one.
-    private static func chunkSize(_ line: Data) -> Int? {
+    /// The size on a chunk line (before any `;` extension), or nil when it
+    /// is not one: 1 to 15 ASCII hex digits only, so never negative (`Int(_:radix:)`
+    /// takes a sign) and never near `Int.max` (the stream adds the CRLF after
+    /// the data to it).
+    static func chunkSize(_ line: Data) -> Int? {
         let text = String(decoding: line, as: UTF8.self)
-        let digits = text.split(separator: ";", maxSplits: 1, omittingEmptySubsequences: false).first ?? ""
-        let trimmed = digits.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty, trimmed.count <= 15 else { return nil }
-        return Int(trimmed, radix: 16)
+        let digits = (text.split(separator: ";", maxSplits: 1, omittingEmptySubsequences: false).first ?? "")
+            .trimmingCharacters(in: .whitespaces)
+        guard (1...15).contains(digits.utf8.count), digits.utf8.allSatisfy(Self.isHexDigit) else { return nil }
+        return Int(digits, radix: 16)
+    }
+
+    private static func isHexDigit(_ byte: UInt8) -> Bool {
+        (0x30...0x39).contains(byte) || (0x41...0x46).contains(byte) || (0x61...0x66).contains(byte)
     }
 }
 
