@@ -128,6 +128,7 @@ extension TerminalController {
                         method: authorizedRequest.method,
                         params: authorizedRequest.params
                     )
+                    await SupermuxDevicesSocketCommands.republishReadSnapshot(of: self)
                     return Self.v2Encoder.response(id: authorizedRequest.id, result)
                 }
                 // SUPERMUX:end supermux-devices-socket
