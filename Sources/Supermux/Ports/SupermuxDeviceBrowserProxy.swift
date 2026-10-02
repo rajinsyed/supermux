@@ -139,18 +139,15 @@ extension SupermuxDeviceBrowserProxy {
 /// keep in every build).
 final class SupermuxBrowserProxyStats: @unchecked Sendable {
     private let lock = NSLock()
-    private var counts = (ownerDials: 0, directDials: 0, failures: 0, silentDeadlines: 0)
+    private var counts = (ownerDials: 0, directDials: 0, failures: 0)
 
     var ownerDials: Int { lock.withLock { counts.ownerDials } }
     var directDials: Int { lock.withLock { counts.directDials } }
     var failures: Int { lock.withLock { counts.failures } }
-    /// Connections closed at a handshake deadline without having sent a byte.
-    var silentDeadlines: Int { lock.withLock { counts.silentDeadlines } }
 
     func noteOwnerDial() { lock.withLock { counts.ownerDials += 1 } }
     func noteDirectDial() { lock.withLock { counts.directDials += 1 } }
     func noteFailure() { lock.withLock { counts.failures += 1 } }
-    func noteSilentDeadline() { lock.withLock { counts.silentDeadlines += 1 } }
 
     #if DEBUG
     /// The newest connections' timelines (E2E evidence, `browser_proxy`).
@@ -194,6 +191,7 @@ struct SupermuxBrowserProxyTrace: Sendable {
     var target = ""
     var ended: Double?
     var outcome = ""
+    var tunnelOpened: Double?
     var firstRequestByte: Double?
     var requestBytes = 0
     var firstResponseByte: Double?
@@ -308,13 +306,11 @@ struct SupermuxBrowserProxyConnection: Sendable {
     /// the connection was refused, ended or ran out of time (it is then aborted).
     private func handshake(_ local: SupermuxNWConnectionStream, trace: Int) async -> SupermuxBrowserProxyHandshake.Target? {
         var handshake = SupermuxBrowserProxyHandshake(credential: credential)
-        let started = ContinuousClock.now
+        #if DEBUG
         var received = 0
+        #endif
         let watchdog = closeAfterDeadline(local)
-        defer {
-            watchdog.cancel()
-            if received == 0, ContinuousClock.now - started >= Self.clientDeadline { stats.noteSilentDeadline() }
-        }
+        defer { watchdog.cancel() }
         do {
             while let bytes = try await local.readRaw(maximumByteCount: 16 * 1024) {
                 #if DEBUG
@@ -322,8 +318,8 @@ struct SupermuxBrowserProxyConnection: Sendable {
                     let hex = bytes.prefix(3).map { String(format: "%02x", $0) }.joined()
                     stats.trace(trace) { $0.firstByte = $1; $0.firstBytes = hex }
                 }
-                #endif
                 received += bytes.count
+                #endif
                 let step = handshake.consume(bytes)
                 if !step.reply.isEmpty { try await local.write(step.reply) }
                 switch step.decision {
@@ -359,6 +355,9 @@ struct SupermuxBrowserProxyConnection: Sendable {
         let remote: any SupermuxByteStream
         do {
             remote = try await SupermuxDeviceTunnelClient.open(machine: machine, host: host, port: target.port)
+            #if DEBUG
+            stats.trace(trace) { $0.tunnelOpened = $1 }
+            #endif
         } catch {
             stats.noteFailure()
             if rewritesAlias {
