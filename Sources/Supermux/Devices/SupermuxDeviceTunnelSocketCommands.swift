@@ -1,5 +1,6 @@
 #if DEBUG
 import CmuxIrxTransport
+import CmuxSettings
 import CmuxSurfaceCatalogModel
 import Foundation
 
@@ -32,6 +33,10 @@ import Foundation
 ///   next `count` requests for `method` (after each connection's sync fetch)
 ///   `timed_out`, as a stalled Mac does (0 disarms; arming restarts the tally)
 ///   → `{method, remaining, failed}`; without `count` it only reports.
+/// - `tunnel.allow_other_hosts {enabled?}`: turns this build's iPhone-labelled
+///   `mobile.browserTunnel.allowOtherHosts` on; off puts back what was stored
+///   before the driver turned it on; without `enabled` it changes nothing
+///   → `{enabled}` (the setting's value now).
 @MainActor
 enum SupermuxDeviceTunnelSocketCommands {
     static let methodPrefix = "tunnel."
@@ -45,6 +50,15 @@ enum SupermuxDeviceTunnelSocketCommands {
     private static var held: [Stream] = []
     /// Ports `own_port` registered, so it never unregisters a real listener's.
     private static var registeredByDriver: Set<Int> = []
+
+    /// A setting's stored value (nil: none was stored) before a driver changed it.
+    private struct SavedSetting {
+        let stored: Bool?
+    }
+
+    /// `allowOtherHosts` before `allow_other_hosts` turned it on; nil while the
+    /// driver has not changed it, so turning it off never touches a user's value.
+    private static var allowOtherHostsSaved: SavedSetting?
 
     struct HookError: LocalizedError {
         let message: String
@@ -69,6 +83,7 @@ enum SupermuxDeviceTunnelSocketCommands {
         case "pretend_old_host":
             pretendsOldHost = try flag(params, "enabled")
             return ["enabled": pretendsOldHost]
+        case "allow_other_hosts": return try allowOtherHosts(params)
         case "inject_port":
             let workspaceID = try uuid(params, "workspace_id")
             injectedHostPorts[workspaceID, default: []].append(try port(params))
@@ -231,6 +246,31 @@ enum SupermuxDeviceTunnelSocketCommands {
             "remaining": SupermuxDeviceLoopbackHostAcceptor.failingRequests[method] ?? 0,
             "failed": SupermuxDeviceLoopbackHostAcceptor.failedRequests[method] ?? 0,
         ]
+    }
+
+    /// Turns "iOS Browser Reaches Other Hosts" on, which must not widen what
+    /// another Mac reaches (``SupermuxDeviceTunnelHosts``). Off puts back the
+    /// value stored before (or none), and does nothing unless this turned it on.
+    /// Without `enabled` it only reports the value (a cmux.json that manages
+    /// the key puts its own value back after every defaults change).
+    private static func allowOtherHosts(_ params: [String: Any]) throws -> [String: Any] {
+        let key = SettingCatalog().mobile.browserTunnelAllowOtherHosts
+        let defaults = UserDefaults.standard
+        guard params["enabled"] != nil else { return ["enabled": key.value(in: defaults)] }
+        if try flag(params, "enabled") {
+            if allowOtherHostsSaved == nil {
+                allowOtherHostsSaved = SavedSetting(stored: key.hasStoredValue(in: defaults) ? key.value(in: defaults) : nil)
+            }
+            key.set(true, in: defaults)
+        } else if let saved = allowOtherHostsSaved {
+            allowOtherHostsSaved = nil
+            if let stored = saved.stored {
+                key.set(stored, in: defaults)
+            } else {
+                key.removeValue(in: defaults)
+            }
+        }
+        return ["enabled": key.value(in: defaults)]
     }
 
     // MARK: - Params
