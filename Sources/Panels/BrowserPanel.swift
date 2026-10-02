@@ -3680,7 +3680,8 @@ final class BrowserPanel: Panel, ObservableObject {
         // (navigation waits for the proxy). (upstream: the parameters used as passed)
         let supermuxRoute = SupermuxDeviceBrowserRoute.route(
             workspaceID: workspaceId, isRemoteWorkspace: isRemoteWorkspace,
-            proxyEndpoint: proxyEndpoint, dataStoreID: remoteWebsiteDataStoreIdentifier)
+            proxyEndpoint: proxyEndpoint, dataStoreID: remoteWebsiteDataStoreIdentifier,
+            bypassesProxy: bypassRemoteProxy)
         let isRemoteWorkspace = supermuxRoute.isRemoteWorkspace
         let proxyEndpoint = supermuxRoute.proxyEndpoint
         let remoteWebsiteDataStoreIdentifier = supermuxRoute.dataStoreID
@@ -4445,7 +4446,8 @@ final class BrowserPanel: Panel, ObservableObject {
         // proxy and data store. (upstream: the parameters used as passed)
         let supermuxRoute = SupermuxDeviceBrowserRoute.route(
             workspaceID: newWorkspaceId, isRemoteWorkspace: isRemoteWorkspace,
-            proxyEndpoint: proxyEndpoint, dataStoreID: remoteWebsiteDataStoreIdentifier)
+            proxyEndpoint: proxyEndpoint, dataStoreID: remoteWebsiteDataStoreIdentifier,
+            bypassesProxy: bypassesRemoteWorkspaceProxy)
         let isRemoteWorkspace = supermuxRoute.isRemoteWorkspace
         let proxyEndpoint = supermuxRoute.proxyEndpoint
         let remoteWebsiteDataStoreIdentifier = supermuxRoute.dataStoreID
