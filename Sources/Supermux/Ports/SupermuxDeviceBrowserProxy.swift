@@ -124,6 +124,8 @@ struct SupermuxBrowserProxyConnection: Sendable {
             accepted.cancel()
             return
         }
+        // On every exit below, clean or not: an uncancelled connection keeps its socket.
+        defer { local.close() }
         guard let target = await handshake(local) else { return }
         switch SupermuxBrowserProxyDestination(host: target.host) {
         case .owner(let host, let rewritesAlias):
@@ -186,6 +188,7 @@ struct SupermuxBrowserProxyConnection: Sendable {
             await local.finish()
             return
         }
+        defer { remote.close() }
         await relay(local, remote, target: target, requests: nil, responses: nil)
     }
 
