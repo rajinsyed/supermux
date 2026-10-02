@@ -36,8 +36,9 @@ public struct SupermuxNestedWorktreeRowValue: Equatable, Sendable {
     public let projectRowID: String
     /// The worktree.
     public let worktree: SupermuxWorktreeRowSnapshot
-    /// The owning Mac's name, only when the project spans several Macs.
-    public let macName: String?
+    /// The Mac the worktree lives on, unless it is the list's home Mac
+    /// (drawn as the cloud-Mac icon before the branch).
+    public let remoteMac: SupermuxRemoteMac?
 }
 
 /// What one fork-owned row of the iPhone's merged workspace list draws.
