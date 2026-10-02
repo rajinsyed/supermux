@@ -34,6 +34,9 @@ import Foundation
 /// - `tunnel.host_ports {include_other?}`: this Mac's `ports.list` payload.
 /// - `tunnel.listings_served {}`: how many `mobile.supermux.ports.list` requests
 ///   this Mac's host answered since launch → `{count}`.
+/// - `tunnel.live_checks {}`: how many times this Mac compared its loopback
+///   listeners for its ports' late attribution (`SupermuxHostPortsObserver`)
+///   → `{count}`.
 /// - `tunnel.own_port {port, registered}`: marks a port as one this app
 ///   listens on for forwards (the tunnel host's loop guard refuses it).
 /// - `tunnel.serve_port {port, from?}`: the loopback owner's tunnel host serves
@@ -60,6 +63,8 @@ enum SupermuxDeviceTunnelSocketCommands {
     static var injectedOtherPorts: Set<Int> = []
     /// `mobile.supermux.ports.list` requests the host answered.
     nonisolated static let listingsServed = SupermuxDebugCounter()
+    /// Loopback listener checks `SupermuxHostPortsObserver` ran.
+    nonisolated static let liveChecks = SupermuxDebugCounter()
 
     private typealias Stream = any SupermuxByteStream
     private static var held: [Stream] = []
@@ -116,6 +121,7 @@ enum SupermuxDeviceTunnelSocketCommands {
             return ["injected": [Int]()]
         case "host_ports": return await hostPorts(params)
         case "listings_served": return ["count": listingsServed.value]
+        case "live_checks": return ["count": liveChecks.value]
         case "own_port": return try ownPort(params)
         case "serve_port": return try servePort(params)
         case "fail_requests": return try failRequests(params)
