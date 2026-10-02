@@ -425,7 +425,7 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   there is the other Mac's dev server even when this Mac runs its own on 3000. The omnibar and the
   server's `Host` say `localhost`, but the page runs at upstream's alias origin,
   `http://cmux-loopback.localtest.me:3000`: not a secure context, and a hostname a dev app's sitekeys
-  and OAuth settings do not name. So when this Mac forwards that Mac's port on the same port (#752;
+  and OAuth settings do not name. So when this Mac forwards that Mac's port on the same port (#754;
   port forwarding does that automatically for a server in a mirrored terminal whenever the port is
   free here), the mirror's browser loads `http://localhost:3000` as written, straight to the
   forward, and the page keeps its own origin, as on that Mac: a Cloudflare Turnstile login works

@@ -628,7 +628,7 @@ owner and a request to this Mac's server fails the step. A count was not a proof
 navigations of the open tab WebKit opened 2 tunnels for its 1 request, and a request that rides a tunnel
 opened earlier opens none, the likely cause of the one run where `proxy_listener_failure_recovers` saw no
 `opened` for the new tab (both tabs had asked for the alias, per the app log, and no run ever sent a request
-to this Mac's own server). Then `owner_localhost_keeps_origin` (#752, the user's Turnstile report): a login page with a
+to this Mac's own server). Then `owner_localhost_keeps_origin` (#754, the user's Turnstile report): a login page with a
 Cloudflare Turnstile widget (the always-passing test sitekey `1x00000000000000000000AA`) served on the owner's
 `localhost:P`, with P forwarded to this Mac on P (`supermux.devices.ports.forward`), opened in a new mirror tab, must
 run at `http://localhost:P`, a secure context, come from the owner (journal `opened` for P) and get a Turnstile token; the
