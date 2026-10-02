@@ -72,6 +72,12 @@ final class SupermuxPortForwards {
     nonisolated static let nearbyPortRange = 50
     /// The longest wait before a Mac that did not answer is asked again.
     nonisolated static let longestRetryDelay = 30
+    /// When a Mac is asked for its ports again after a forward's port left its
+    /// listing (its server went away): a restart may never be announced. A
+    /// quick one keeps the owner's sidebar ports as they were (it keeps a port
+    /// through two missed scans), so it sends no `supermux.ports.updated`, and a
+    /// server outside its workspaces' terminals never does.
+    nonisolated static let followUpDelays: [Duration] = [.seconds(2), .seconds(4), .seconds(8), .seconds(15), .seconds(30), .seconds(60)]
 
     private(set) var forwards: [Key: Forward] = [:]
     /// Each available Mac's last port listing.
@@ -99,6 +105,8 @@ final class SupermuxPortForwards {
     @ObservationIgnored private var fetchRetries: [SurfaceMachineID: Task<Void, Never>] = [:]
     /// Each connected Mac's availability check (it repeats while unreachable).
     @ObservationIgnored private var availabilityChecks: [SurfaceMachineID: Task<Void, Never>] = [:]
+    /// Each Mac's follow-up fetches after a forward's port left its listing.
+    @ObservationIgnored private var followUps: [SurfaceMachineID: Task<Void, Never>] = [:]
     @ObservationIgnored private var started = false
     @ObservationIgnored private var scheduled: Task<Void, Never>?
     @ObservationIgnored private var eventsTask: Task<Void, Never>?
@@ -273,6 +281,7 @@ final class SupermuxPortForwards {
     private func linkLost(_ machine: SurfaceMachineID) {
         availabilityChecks.removeValue(forKey: machine)?.cancel()
         fetchRetries.removeValue(forKey: machine)?.cancel()
+        followUps.removeValue(forKey: machine)?.cancel()
         fetchFailures[machine] = nil
         availability[machine] = nil
         hostPorts[machine] = nil
@@ -378,6 +387,20 @@ final class SupermuxPortForwards {
         reconcile()
     }
 
+    /// Asks `machine` for its ports again after each of ``followUpDelays``
+    /// (a newer call starts over), so a restarted server is found without a
+    /// poke: its forward comes back, and an open mirror tab of it gets one
+    /// (``SupermuxSamePortForwardGate/forwardOpenTabs()``).
+    private func followUp(_ machine: SurfaceMachineID) {
+        followUps[machine]?.cancel()
+        followUps[machine] = Task { @MainActor [weak self] in
+            for delay in Self.followUpDelays {
+                guard (try? await Task.sleep(for: delay)) != nil, let self else { return }
+                self.requestFetch(machine, after: .zero)
+            }
+        }
+    }
+
     /// How long the `failures`-th failed check or fetch in a row waits before
     /// the next: 1 s, doubling, at most ``longestRetryDelay``.
     nonisolated static func retryDelay(after failures: Int) -> Duration {
@@ -413,10 +436,13 @@ final class SupermuxPortForwards {
         ))
         dismissed = decision.dismissed
         onDemand = decision.onDemand
+        var serverWentAway: Set<SurfaceMachineID> = []
         for key in forwards.keys where !decision.kept.contains(key) {
+            if listings[key.machine]?.lists(key.remotePort) == false { serverWentAway.insert(key.machine) }
             forwards[key] = nil
             stopListenerLater(key)
         }
+        serverWentAway.forEach(followUp)
         for key in decision.kept {
             var forward = forwards[key] ?? Forward(
                 key: key, origin: .automatic, state: .waiting, lastLocalPort: nil, workspaceIDs: [], terminalTitle: nil
@@ -559,6 +585,10 @@ private struct MachineListing {
             entry.terminalTitle = entry.terminalTitle ?? port.terminalTitle
             detail[port.port] = entry
         }
+    }
+
+    func lists(_ port: Int) -> Bool {
+        detail[port] != nil || otherPorts.contains(port)
     }
 
     var plan: SupermuxPortForwardPlan.Listing {

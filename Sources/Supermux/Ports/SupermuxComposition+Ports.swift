@@ -30,6 +30,7 @@ enum SupermuxPortsGlue {
         forwards.onChange = {
             SupermuxComposition.mirrorPortsPresenter.apply()
             SupermuxDeviceBrowserRoute.forwardsChanged()
+            SupermuxSamePortForwardGate.forwardOpenTabs()
         }
         forwards.start()
     }
