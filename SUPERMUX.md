@@ -442,8 +442,9 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   P is free here, it waits up to 3 s for a same-port forward, then loads as written. A port of that
   Mac's workspaces is forwarded so for any navigation; one of its other loopback ports (in no
   workspace: a server an agent started, but also a Docker API or a database) only when you open it
-  yourself (a URL you type, a terminal link you Command-click, #759, the Ports menu's Open in cmux
-  Browser, a port chip) or once you forwarded it that way, so a page cannot make this Mac listen on it. That forward behaves
+  yourself (a URL you type, a terminal link you Command-click in that mirror, #759, the Ports menu's
+  Open in cmux Browser, a port chip: each marks that Mac's port for the next navigation to it, within
+  5 s) or once you forwarded it that way, so a page cannot make this Mac listen on it. That forward behaves
   like an automatic one, also with automatic forwarding off: it is in the Ports menus, Stop Forwarding
   stops it (and keeps it stopped across its server's restarts, until Resume), and it goes when the
   server does. While the forward starts, the tab's own navigation is not replaced (a link or form to
@@ -473,8 +474,11 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   (a restarted server that is only one of that Mac's other ports until its sidebar scan attributes it),
   or that was never tried (a tab restored or opened while that Mac was away) gets its same-port forward
   once that Mac lists it as a workspace's (or you forwarded it). That Mac also notices a server binding
-  after its terminal's port scans are over: while another Mac follows its ports it compares its
-  loopback listeners every 4 s, scans its terminals again when one appears and pokes. A page loaded as written (and its same-origin `localhost` iframes)
+  after its terminal's port scans are over (a dev script doing other work first): for 2 minutes after one
+  of its terminals starts a command, while another Mac follows its ports, it compares its loopback
+  listeners (every 4 s for the first 20 s after the command or a new listener, then less often, up to
+  30 s; never otherwise) and scans its terminals again when one appears; the attribution that follows
+  pokes. A page loaded as written (and its same-origin `localhost` iframes)
   calls that Mac's other ports with `fetch`, XHR, `WebSocket` and `EventSource` (#755): a port
   forwarded here on the same port goes to its
   forward (with the page's `localhost` cookies), any other port through the alias (its own cookies;

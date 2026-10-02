@@ -205,8 +205,11 @@ P2 must record S2 (`ports.list`'s `stops`); once the owner unlists P2 and S2's m
 (`close_mirror {action: hide}`) the stop must be gone, and with S2 shown again (`unhide`) and P2 listed again P2 must
 be forwarded automatically. `late_bind_is_attributed` (third review, red on 100859b1f2e): a new terminal in S runs
 `sleep 12; python3 -m http.server P`, so the server binds after the ~10 s of port scans the command's kick starts;
-`tunnel.host_ports` must list P as S's within 15 s (3.7 s measured: the owner's 4 s check of its loopback listeners
-re-kicks the scans).
+`tunnel.host_ports` must list P as S's within 15 s (3.7 s measured: the owner's check of its loopback listeners, which
+the command's start opened for 2 minutes, re-kicks the scans). `idle_owner_does_not_scan_listeners` (fourth review,
+the suite's first step, before any command runs in a terminal): with the loopback link up, the owner may run no
+loopback listener check for 10 s (DEBUG `tunnel.live_checks` counts them); before the fix it ran one every 4 s for
+as long as any Mac was linked (red and green runs pending: not yet run on a build).
 
 `stop_survives_server_restart` (review of #757): an automatic forward of P (served from another port) is stopped,
 then the owner unlists P and lists it again, each with a poke; the forward must stay stopped and P unbound for 3 s,
@@ -741,6 +744,12 @@ types the URL of an other port; `restarted_server_recovers_as_written` (B) re-li
 poke and the follow-up fetches off (DEBUG `ports.follow_ups {enabled}`) and wants the reloaded tab at
 `localhost:P` within 3.5 s (0.11 s measured), so the follow-ups cannot pass it; `restarted_server_returns_without_poke`
 runs with automatic forwarding off, so only the tab's own on-demand forward brings it back.
+
+The fourth review adds two: `local_terminal_link_marks_nothing` (a terminal link opened into a cmux browser of a local
+workspace, `mirror.link_open` on the source, then a mirror page's own `location.href` to the owner's other port P: no
+forward, the page on the alias; before the fix the link marked P for 5 s on every Mac; red and green runs pending) and
+`port_chip_opens_as_written` (coverage: `ports.chip_open {cmux_browser: true}` on a workspace port with automatic
+forwarding off opens a cmux browser in the mirror that gets an on-demand forward and runs as written).
 
 The third review (2026-10-03) adds four (red on 3f1b3ca9b69, the last three on 100859b1f2e, which fixed only the
 first): `restart_listed_as_other_first_recovers` (automatic forwarding off; the owner's server on P restarts and the
