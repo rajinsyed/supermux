@@ -35,7 +35,7 @@ enum SupermuxDeviceTunnelSocketCommands {
     /// Ports reported as a workspace's by `ports.list`, live or not.
     static var injectedHostPorts: [UUID: [Int]] = [:]
 
-    private typealias Stream = SupermuxDeviceLoopbackTunnelLane.ClientHalf
+    private typealias Stream = any SupermuxByteStream
     private static var held: [Stream] = []
     /// Ports `own_port` registered, so it never unregisters a real listener's.
     private static var registeredByDriver: Set<Int> = []
@@ -78,13 +78,9 @@ enum SupermuxDeviceTunnelSocketCommands {
 
     // MARK: - Tunnels
 
-    /// One tunnel the way the viewer opens it.
+    /// One tunnel the way a forward or a mirror's browser opens it.
     private static func open(_ params: [String: Any]) async throws -> Stream {
-        let machine = try machine(params)
-        guard let acceptor = SupermuxDeviceLoopbackHarness.tunnelAcceptor(for: machine) else {
-            throw HookError(message: "machine is not the loopback device")
-        }
-        return try await acceptor.openTunnel(host: host(params), port: try port(params))
+        try await SupermuxDeviceTunnelClient.open(machine: try machine(params), host: host(params), port: try port(params))
     }
 
     private static func httpGet(_ params: [String: Any]) async throws -> [String: Any] {
@@ -138,10 +134,19 @@ enum SupermuxDeviceTunnelSocketCommands {
         return ["released": streams.count]
     }
 
-    /// The tunnel failure as the suite names it.
+    /// The tunnel failure as the suite names it: the host's answer
+    /// (`IrxTunnelOpenReply.Status` names), or why no tunnel could be opened.
     private static func status(of error: any Error) -> String {
-        if let error = error as? IrxTunnelOpenError { return error.status.rawValue }
-        return "failed"
+        guard let failure = error as? SupermuxDeviceTunnelClient.Failure else {
+            return IrxTunnelOpenReply.Status.failed.rawValue
+        }
+        switch failure {
+        case .unavailable(let availability): return availability.rawValue
+        case .notListening: return IrxTunnelOpenReply.Status.refused.rawValue
+        case .denied: return IrxTunnelOpenReply.Status.denied.rawValue
+        case .busy: return IrxTunnelOpenReply.Status.busy.rawValue
+        case .failed: return IrxTunnelOpenReply.Status.failed.rawValue
+        }
     }
 
     /// `{http_status, body}` of a whole HTTP/1.x response (the suite's
