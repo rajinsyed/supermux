@@ -117,9 +117,11 @@ enum SupermuxMirrorBrowserSocket {
         return ["machine": machine.rawValue, "failed_port": port]
     }
 
-    /// The route has no per-app-instance store rule yet: null.
     private static func browserStore(_ machine: SurfaceMachineID) -> [String: Any] {
-        ["machine": machine.rawValue, "store_identifier": NSNull()]
+        [
+            "machine": machine.rawValue,
+            "store_identifier": SupermuxDeviceBrowserRoute.websiteDataStoreID(for: machine)?.uuidString ?? NSNull(),
+        ]
     }
 
     // MARK: - Layout
