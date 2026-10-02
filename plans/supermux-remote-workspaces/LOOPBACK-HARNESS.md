@@ -739,7 +739,10 @@ first switched to the suite's device: the suite never stirs or touches another s
 with `--app-path`, the app quits within 60 s of `tell application id … to quit` while a simulator worker runs,
 and osascript reports no error (the worker shares the app's bundle id and forwards the quit, #735; a failure names the
 app pid and the worker pids before and after; the report records `quit_seconds`) and a relaunch restores the viewer in M, which streams S's
-restored panel (on the suite's device) with no second `SimulatorPanel`. After a failed relaunch the suite reconnects
+restored panel (on the suite's device) with no second `SimulatorPanel` (S's restored Simulator tab starts hidden, from
+the stream; its first worker is replaced as the device attaches and the panel reports "worker stopped" until the
+viewer asks it to recover after 5 s; a viewer that never streams reports the owner's status and its attachment).
+After a failed relaunch the suite reconnects
 for its cleanup, so it still closes its workspaces, deletes its simulators and writes its report. The app drops a
 control-socket client that sent nothing for 30 s and step 4 waits on `simctl bootstatus`, so the suite's client
 reconnects before a request after 20 s idle, and a socket error fails its step instead of ending the run. An idle home screen draws nothing, so the suite makes the simulator draw (launching

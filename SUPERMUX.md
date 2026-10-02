@@ -490,7 +490,9 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   Closing the tab closes the owning Mac's Simulator tab (the device keeps running); the owning Mac
   closing it closes the tab; closing the mirror or its window closes only the viewer, and the next
   New Simulator reuses that Simulator tab there. A relaunch restores the viewer, which finds its
-  simulator again by device after the owning Mac restarts. Not offered: multi-touch, mouse-wheel
+  simulator again by device after the owning Mac restarts; when that Mac's restored Simulator tab
+  reports its worker stopped for 5 s (its first start, from the stream, in a background workspace),
+  the viewer asks it to recover once, as Recover does. Not offered: multi-touch, mouse-wheel
   notches, the Tools sidebar, screenshots to this Mac, non-US text; they work on the owning Mac
   through `cmux simulator …` in a mirror terminal. An older owning Mac (no
   `simulator.stream.v2`/`supermux.panes.v1`) gets an alert instead, never a local simulator. A quit
