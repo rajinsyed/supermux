@@ -125386,6 +125386,23 @@
         }
       }
     },
+    "supermux.ports.pill": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Port %1$lld from %2$@ is at localhost:%3$lld"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%2$@のポート%1$lldはlocalhost:%3$lldで開けます"
+          }
+        }
+      }
+    },
     "supermux.presetEditor.add": {
       "extractionState": "manual",
       "localizations": {
