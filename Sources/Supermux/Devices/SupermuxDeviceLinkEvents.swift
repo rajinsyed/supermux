@@ -124,6 +124,9 @@ extension DeviceLink {
                 "client_id": clientID,
                 "stream_id": "supermux-liveness",
             ])
+            #if DEBUG
+            SupermuxDeviceLoopbackHostAcceptor.blockMainDuringLivenessProbeIfArmed()
+            #endif
             _ = try await client.sendRequest(probe, timeoutNanoseconds: supermuxLivenessTimeoutNanoseconds)
             return true
         } catch let error as MobileShellConnectionError {
