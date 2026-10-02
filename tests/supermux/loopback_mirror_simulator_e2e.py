@@ -48,8 +48,10 @@ session, pump, encoder and worker ring; only QUIC is replaced.
                                             device: a new tab showing another booted simulator, the
                                             owner's first pick, is switched to it first)
  19. new_simulator_tab_bar_runs_on_owner    the pane tab bar's New Simulator button: as step 6
- 20. restore_rebinds                        (--app-path) quit and relaunch: the viewer comes back in
-                                            M, streams S's restored panel, no second SimulatorPanel
+ 20. restore_rebinds                        (--app-path) quit (`tell application id … to quit`, as
+                                            scripts and launchers do, with a simulator worker
+                                            running) within 60s and relaunch: the viewer comes back
+                                            in M, streams S's restored panel, no second SimulatorPanel
 
 Writes a JSON report (default tests/supermux/artifacts/loopback_mirror_simulator_e2e-<tag>.json)
 and a window screenshot next to it (`…-viewer.png`), and exits non-zero on any failure. The
@@ -124,6 +126,10 @@ class Socket:
         if self._sock is not None:
             self._sock.close()
             self._sock = None
+
+    @property
+    def connected(self) -> bool:
+        return self._sock is not None
 
     def call(self, method: str, params: Optional[Dict[str, Any]] = None, timeout_s: Optional[float] = None) -> Any:
         """One request; waits out the socket's per-connection polling limit."""
@@ -320,14 +326,7 @@ class MirrorSimulatorE2E:
 
     def workers(self) -> int:
         """Simulator worker processes this app started (its direct children)."""
-        app_pid = int(self.sim_state().get("app_pid") or 0)
-        listing = subprocess.run(["ps", "-axo", "pid=,ppid=,command="], capture_output=True, text=True).stdout
-        count = 0
-        for line in listing.splitlines():
-            parts = line.split(None, 2)
-            if len(parts) == 3 and int(parts[1]) == app_pid and WORKER_ARGUMENT in parts[2]:
-                count += 1
-        return count
+        return len(self.worker_pids(int(self.sim_state().get("app_pid") or 0)))
 
     def host_context(self, panel_id: str) -> Dict[str, Any]:
         return self.sock.call("simulator.context", {"workspace_id": self.source, "surface_id": panel_id}, timeout_s=60) or {}
@@ -842,20 +841,60 @@ class MirrorSimulatorE2E:
         viewer = self.wait_streaming(0, 3, 90)
         settled = self.one_viewer_on_owner()
         return {"mirror": self.mirror, "frames": viewer.get("presented_frames"),
-                "host_panel_id": settled["host_panel_id"], "switched_from": first_pick}
+                "host_panel_id": settled["host_panel_id"], "switched_from": first_pick,
+                "quit_seconds": self.facts.get("quit_seconds")}
+
+    @staticmethod
+    def worker_pids(app_pid: int) -> List[int]:
+        """The simulator worker processes `app_pid` started (its direct children)."""
+        listing = subprocess.run(["ps", "-axo", "pid=,ppid=,command="], capture_output=True, text=True).stdout
+        pids = []
+        for line in listing.splitlines():
+            parts = line.split(None, 2)
+            if len(parts) == 3 and int(parts[1]) == app_pid and WORKER_ARGUMENT in parts[2]:
+                pids.append(int(parts[0]))
+        return sorted(pids)
+
+    @staticmethod
+    def pid_alive(pid: int) -> bool:
+        try:
+            os.kill(pid, 0)
+            return True
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
 
     def relaunch(self) -> None:
         app = self.args.app_path
         bundle_id = plistlib.loads((Path(app) / "Contents" / "Info.plist").read_bytes())["CFBundleIdentifier"]
+        app_pid = int(self.sim_state().get("app_pid") or 0)
+        workers_before = self.worker_pids(app_pid)
         self.sock.close()
-        subprocess.run(["osascript", "-e", f'tell application id "{bundle_id}" to quit'], check=False, capture_output=True)
+        # The way a script or launcher quits an app: an Apple Event to its bundle id.
+        quit_request = subprocess.run(["osascript", "-e", f'tell application id "{bundle_id}" to quit'],
+                                      check=False, capture_output=True, text=True)
+        asked = time.monotonic()
+        try:
+            wait_for("the app to quit", lambda: not self.pid_alive(app_pid), 60, interval_s=0.5)
+        except Failure:
+            workers_after = self.worker_pids(app_pid)
+            gone = sorted(set(workers_before) - set(workers_after))
+            raise Failure(
+                f"the app (pid {app_pid}) did not quit within 60s of `tell application id \"{bundle_id}\" to quit` "
+                f"(osascript exit {quit_request.returncode} {quit_request.stderr.strip()[:120]}); its simulator "
+                f"workers before the quit {workers_before}, after {workers_after}"
+                + (f": the quit went to worker {gone}, which exited (the app started another), not to the app"
+                   if gone else ""))
+        self.facts["quit_seconds"] = round(time.monotonic() - asked, 2)
 
         def quit_done() -> bool:
             result = subprocess.run(["osascript", "-e", f'application id "{bundle_id}" is running'],
                                     check=False, capture_output=True, text=True)
             return result.stdout.strip() != "true"
 
-        wait_for("the app to quit", quit_done, 60, interval_s=0.5)
+        # Its workers share the bundle id: `open` would reuse a lingering one.
+        wait_for("the app's workers to exit with it", quit_done, 15, interval_s=0.5)
         env_args = ["--env", "SUPERMUX_DEBUG_LOOPBACK_DEVICE=1"]
         if self.args.projects_file:
             env_args += ["--env", f"SUPERMUX_PROJECTS_FILE={self.args.projects_file}"]
@@ -901,26 +940,34 @@ class MirrorSimulatorE2E:
     def cleanup(self) -> None:
         if not self.args.keep:
             try:
-                state = self.sim_state()
-                for kind in ("viewer", "local"):
-                    for panel in self.panels(self.mirror, kind, state):
-                        self.sock.call("surface.close", {"workspace_id": self.mirror, "surface_id": panel["panel_id"],
-                                                         "force": True})
-            except Failure as error:
+                if not self.sock.connected:  # a relaunch that failed left it closed
+                    self.sock.connect()
+                self.close_test_workspaces()
+            except (Failure, OSError) as error:
                 self.facts.setdefault("cleanup_errors", []).append(str(error))
-            for workspace_id in (self.mirror, self.source):
-                if not workspace_id:
-                    continue
-                try:
-                    self.sock.call("workspace.close", {"workspace_id": workspace_id, "force": True})
-                except Failure as error:
-                    if "not_found" not in str(error):
-                        self.facts.setdefault("cleanup_errors", []).append(str(error))
         if not self.args.keep_device:
             for udid in self.created_udids:
                 simctl("shutdown", udid, check=False)
                 simctl("delete", udid, check=False)
             self.facts["deleted_devices"] = self.created_udids
+
+    def close_test_workspaces(self) -> None:
+        try:
+            state = self.sim_state()
+            for kind in ("viewer", "local"):
+                for panel in self.panels(self.mirror, kind, state):
+                    self.sock.call("surface.close", {"workspace_id": self.mirror, "surface_id": panel["panel_id"],
+                                                     "force": True})
+        except Failure as error:
+            self.facts.setdefault("cleanup_errors", []).append(str(error))
+        for workspace_id in (self.mirror, self.source):
+            if not workspace_id:
+                continue
+            try:
+                self.sock.call("workspace.close", {"workspace_id": workspace_id, "force": True})
+            except Failure as error:
+                if "not_found" not in str(error):
+                    self.facts.setdefault("cleanup_errors", []).append(str(error))
 
     def run(self) -> bool:
         ok = self.step("setup", self.setup, needs_simulator=False)
