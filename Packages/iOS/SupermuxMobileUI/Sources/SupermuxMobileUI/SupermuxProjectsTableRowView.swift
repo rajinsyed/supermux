@@ -93,7 +93,7 @@ public struct SupermuxProjectsTableRowView: View {
         let actions = actions
         let locationRowIDs = project.locationRowIDs
         return SupermuxSidebarSwipeRow(
-            rowID: "project:\(project.key)",
+            rowID: value.swipeRowID ?? "",
             openRowID: openSwipeRowID,
             actions: projectSwipeActions(for: project)
         ) {
@@ -103,7 +103,8 @@ public struct SupermuxProjectsTableRowView: View {
                 toggleExpanded: { _ in actions.toggleProjectsExpanded(locationRowIDs) },
                 openWorkspace: actions.openProjectWorkspace,
                 openDetail: actions.openProjectDetail,
-                newWorktree: project.showsWorktreeCreation ? actions.requestNewWorktree : nil
+                newWorktree: project.showsWorktreeCreation ? actions.requestNewWorktree : nil,
+                copies: project.copies
             )
         }
     }
@@ -150,7 +151,7 @@ public struct SupermuxProjectsTableRowView: View {
         let actions = actions
         let projectRowID = value.projectRowID
         return SupermuxSidebarSwipeRow(
-            rowID: "worktree:\(projectRowID):\(value.worktree.id)",
+            rowID: self.value.swipeRowID ?? "",
             openRowID: openSwipeRowID,
             actions: [
                 SupermuxSwipeAction(

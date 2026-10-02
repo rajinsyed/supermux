@@ -680,6 +680,12 @@ public struct WorkspaceListLayoutPreviewView: View {
             selectedWorkspaceID: selectedWorkspaceID,
             host: "Visual Mock Mac",
             connectionStatus: fixtureConnectionStatus,
+            // SUPERMUX:begin supermux-mobile-merged-projects-fixture (feat-x carries a changes chip, so the nested row's accessory must stay clear of it)
+            workspaceChangesCapable: SupermuxProjectsPreviewFixture.isEnabled,
+            workspaceChangeChipsByWorkspaceID: SupermuxProjectsPreviewFixture.isEnabled
+                ? ["ws-feat-x": MobileWorkspaceChangesChip(filesChanged: 3, additions: 12, deletions: 3)]
+                : [:],
+            // SUPERMUX:end supermux-mobile-merged-projects-fixture
             navigationStyle: usesSidebarSelectionFixture ? .sidebar : .push,
             wrapWorkspaceTitles: false,
             previewLineLimit: MobileDisplaySettings.defaultWorkspacePreviewLineCount,

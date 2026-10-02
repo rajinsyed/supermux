@@ -59,6 +59,13 @@ public struct SupermuxProjectsListLayout: Sendable {
     /// What each nested workspace row adds, by workspace id.
     public let accessories: [MobileWorkspacePreview.ID: SupermuxNestedWorkspaceAccessory]
 
+    /// The swipe-tray ids of the rows on screen. A tray whose row left the
+    /// list is closed (``SupermuxProjectsSectionModel/closeSwipeTray(unlessAmong:)``),
+    /// so a row that comes back never reappears with its actions revealed.
+    public var swipeableRowIDs: Set<String> {
+        Set(forkRows.values.compactMap(\.swipeRowID))
+    }
+
     /// No project block: the list is exactly the shell's own.
     public static let empty = SupermuxProjectsListLayout(entries: [], nestedWorkspaceIDs: [], forkRows: [:], accessories: [:])
 
@@ -200,8 +207,15 @@ public struct SupermuxProjectsListLayout: Sendable {
             fork("p:\(key)", .project(SupermuxMergedProjectRowValue(
                 key: key,
                 display: lead.row.merged(worktreeCount: project.worktreeCount, isExpanded: project.isExpanded),
-                locationRowIDs: project.locations.map(\.row.id),
-                showsWorktreeCreation: lead.showsWorktreeCreation
+                locationRowIDs: project.allRowIDs,
+                showsWorktreeCreation: lead.showsWorktreeCreation,
+                copies: project.locations.map { location in
+                    SupermuxProjectCopyChoice(
+                        rowID: location.row.id,
+                        macName: location.mac.displayName,
+                        isOnline: location.mac.status == .connected
+                    )
+                }
             )))
             for workspace in nested {
                 entries.append(.workspace(workspace.id))

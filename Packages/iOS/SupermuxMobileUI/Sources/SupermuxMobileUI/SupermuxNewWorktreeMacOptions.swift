@@ -85,9 +85,15 @@ enum SupermuxNewWorktreeMacOptions {
         in candidates: [SupermuxProjectDTO]
     ) -> SupermuxProjectDTO? {
         let own = facts(project, among: ownProjects)
-        return candidates.first { candidate in
-            SupermuxPhoneProjectMerge.sameProject(own, facts(candidate, among: candidates))
+        let theirs = candidates.map { facts($0, among: candidates) }
+        // Rule by rule, like the merge: a unique-origin match anywhere on
+        // that Mac wins over a name-and-root match it happens to list first.
+        for rule in SupermuxPhoneProjectMerge.rules {
+            if let index = theirs.firstIndex(where: { rule(own, $0) }) {
+                return candidates[index]
+            }
         }
+        return nil
     }
 
     private static func facts(
