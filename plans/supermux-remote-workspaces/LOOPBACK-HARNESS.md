@@ -508,6 +508,42 @@ within 25 s of the launch (else the step is vacuous), and the launch must open e
 Before the bound, `preset.launch` waited for the whole load and missed the 20 s deadline, and the
 terminal still opened later.
 
+## Tunnel lanes E2E
+
+Port forwarding and a mirror's browser reach the owning Mac's loopback through upstream's irx
+`tcp_connect` lanes on the device link's connection. The loopback link has no irx connection, so the
+acceptor builds the real tunnel host for every admitted connection
+(`SupermuxDeviceTunnelHosts.makeHost(peerIsMac: true, …)`, the decision `MobileHostIrxRuntime`'s
+#693 fence makes for a real Mac peer) and serves it in-memory lanes
+(`SupermuxDeviceLoopbackTunnelLane`: two pipes, the `IrxTunnelOpenReply` frame first, then raw bytes;
+an abort on either half fails the other half's reads as a QUIC reset does). The viewer's
+`SupermuxDeviceTunnelClient.open` takes that lane instead of an `IrxTunnelClient` lane when the
+machine is the loopback device (`SupermuxDeviceLoopbackHarness.tunnelAcceptor(for:)`), after the same
+availability checks (connected, `supermux.port_forward.v1`). So the real `IrxTunnelHost`, the
+Mac-peer policy and limits, the loop guard, the MDM browser lock and Network.framework connects run;
+the "owner" is this app's own loopback. The acceptor's authorization stands in for `stillAuthorized`:
+managed policy plus the DEBUG revoke switch (the harness never turns on "Make this Mac
+discoverable"). The host journals to its own ring (`tunnel.journal`), not the irx journal file.
+
+`loopback_device_tunnel_e2e.py` (`supermux.devices.tunnel.*` drivers in
+`SupermuxDeviceTunnelSocketCommands.swift`) runs its own marker servers, then checks: the capability
+is advertised; a GET to `localhost:P` returns the marker; a `::1`-only server answers `localhost`; the
+host journals `opened {scope: loopback, port}` and never a host name; `169.254.169.254` and
+`example.com` are denied without resolving; a closed port is `refused`; a port registered as this
+app's own listener (`tunnel.own_port`) is denied (the loop guard); a revoked peer is denied
+(`unauthorized`); `mobile.supermux.ports.list` attributes a server started in a workspace's terminal
+to that workspace (after `surface.ports_kick`), lists the suite's own server only under
+`other_ports`, and lists an injected non-listening port (`tunnel.inject_port`) until it is cleared; a
+held tunnel ends when the link drops; and with `tunnel.pretend_old_host` the capability disappears and
+tunnels answer `needs_update`, then come back.
+
+Run it: `CMUX_E2E_SUITES="loopback_device_tunnel_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`.
+The attribution step needs the sidebar's port detection (Settings: show ports, not "hide all
+details"). Not covered here (two Macs only): `IrxTunnelClient` and QUIC flow control,
+`DeviceIrxClient.supermuxTunnelConnection` (#694), the fence's `isMac` directory lookup,
+`stillAuthorized` and `admission.recheck`, lane credit at 48 tunnels, and a Tailscale-only link
+(`no_direct_link`).
+
 ## The ~20 s link flap (round 4) and why E2E did not see it
 
 The round-4 visual check launched `rws-int` without `SUPERMUX_PROJECTS_FILE`, so it read the user's
@@ -549,7 +585,8 @@ DeviceSurfaceProvider ── DeviceLink ── MobileCoreRPCClient
 |---|---|
 | `SupermuxDeviceLoopbackHarness.swift` | Opt-in gate. Builds the record, runtime, `DeviceLink` and real `DeviceSurfaceProvider`, then calls `SurfaceCatalog.shared.register`. |
 | `SupermuxDeviceLoopbackIdentity.swift` | Fixed device id `5e1f10b0-0000-4000-8000-000000000001`, synthetic Iroh endpoint and route, directory record, and the admitted Mac peer. |
-| `SupermuxDeviceLoopbackHostAcceptor.swift` | Admits each server end as an Iroh Mac peer, with the same layout-host closures `MobileHostIrxRuntime` uses. |
+| `SupermuxDeviceLoopbackHostAcceptor.swift` | Admits each server end as an Iroh Mac peer, with the same layout-host closures `MobileHostIrxRuntime` uses, and builds the connection's tunnel host. |
+| `SupermuxDeviceLoopbackTunnelLane.swift` | In-memory `tcp_connect` lanes for that tunnel host (see "Tunnel lanes E2E"). |
 | `SupermuxDeviceLoopbackTransport(Factory).swift`, `…Pipe.swift` | In-memory duplex byte stream with socket semantics: FIFO, EOF after close, and cancellable reads. |
 
 - **Startup.** `SupermuxMobileHostGlue.activateIfNeeded()` starts the harness. It is a fork-owned

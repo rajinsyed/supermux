@@ -375,6 +375,24 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   edits deeper in the tree (`.git/` included) do not refresh it, so their git colors update on the
   next root-entry change, `cd` or reconnect. Both Macs need this build (an earlier
   `files_read.v1` host refuses `files.watch`; the panel then refreshes only on reconnect and `cd`).
+- **Your other Macs reach this Mac's loopback** (#693, #694, capability `supermux.port_forward.v1`):
+  the transport under port forwarding and a mirror's browser. A Mac opens one upstream irx
+  `tcp_connect` lane per TCP connection on the device link's own connection (no new protocol), and
+  this Mac serves it like the phone's "On iPhone" browser tunnel, except that another Mac reaches only
+  this Mac's loopback (`127/8`, `::1`, `localhost`; names are never resolved, whatever "iOS Browser
+  Reaches Other Hosts" says), gets its own limits (48 tunnels per connection, 96 opens at once, 48/s),
+  and never reaches a port this app itself listens on for a forward or a browser proxy (the loop
+  guard). Every open re-checks that the Mac is still let in ("Make this Mac discoverable", not
+  revoked) and that the embedded browser is not disabled by policy (`DisableEmbeddedBrowser` also
+  withholds the capability); tunnels end with the link. `mobile.supermux.ports.list` (other Macs
+  only) lists the ports this Mac's own workspaces listen on while a loopback listener really serves
+  them, with the workspace and terminal title: the sidebar's port detection, so it needs ports shown
+  in the sidebar; SSH, tmux and mirror workspaces are never listed; with `include_other`, every other
+  loopback listener (for a manual forward). `supermux.ports.updated` tells the other Macs when they
+  change. **Exposure:** a service here that trusts loopback (an unauthenticated admin page, Docker's
+  TCP API, Jupyter) is reachable from your other Macs once it is forwarded; only ports started in
+  cmux terminals are offered automatically. The journal records scope, port and outcome, never host
+  names or bytes.
 - **Notifications:** the owning Mac pushes to the phone (the viewer never forwards `.deviceMac`
   rows, so no duplicates); the phone badges the total over every pairable Mac build; read state
   flows both ways, and mirrored notifications (read state and Mark as Unread included) survive a
