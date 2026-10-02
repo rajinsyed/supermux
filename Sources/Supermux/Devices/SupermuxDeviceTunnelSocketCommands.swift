@@ -26,6 +26,11 @@ import Foundation
 ///   `supermux.port_forward.v1`, as a host that predates port forwarding.
 /// - `tunnel.inject_port {workspace_id, port}` / `tunnel.clear_injected {}`:
 ///   a port reported as that workspace's, without the live-listener check.
+/// - `tunnel.inject_other_port {port, remove?}`: a port `ports.list` reports under
+///   `other_ports` when asked for them (a server this Mac runs outside its
+///   workspaces' terminals: started by an agent, orphaned, in Docker), without
+///   the live-listener check (`remove: true` takes it back); `clear_injected`
+///   clears these too.
 /// - `tunnel.host_ports {include_other?}`: this Mac's `ports.list` payload.
 /// - `tunnel.own_port {port, registered}`: marks a port as one this app
 ///   listens on for forwards (the tunnel host's loop guard refuses it).
@@ -49,6 +54,8 @@ enum SupermuxDeviceTunnelSocketCommands {
     nonisolated(unsafe) static var pretendsOldHost = false
     /// Ports reported as a workspace's by `ports.list`, live or not.
     static var injectedHostPorts: [UUID: [Int]] = [:]
+    /// Ports reported under `other_ports` by `ports.list`, live or not.
+    static var injectedOtherPorts: Set<Int> = []
 
     private typealias Stream = any SupermuxByteStream
     private static var held: [Stream] = []
@@ -92,8 +99,16 @@ enum SupermuxDeviceTunnelSocketCommands {
             let workspaceID = try uuid(params, "workspace_id")
             injectedHostPorts[workspaceID, default: []].append(try port(params))
             return ["injected": injectedHostPorts[workspaceID] ?? []]
+        case "inject_other_port":
+            if params["remove"] as? Bool == true {
+                injectedOtherPorts.remove(try port(params))
+            } else {
+                injectedOtherPorts.insert(try port(params))
+            }
+            return ["injected_other": injectedOtherPorts.sorted()]
         case "clear_injected":
             injectedHostPorts = [:]
+            injectedOtherPorts = []
             return ["injected": [Int]()]
         case "host_ports": return await hostPorts(params)
         case "own_port": return try ownPort(params)
