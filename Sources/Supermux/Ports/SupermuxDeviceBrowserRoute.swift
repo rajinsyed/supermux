@@ -72,14 +72,15 @@ enum SupermuxDeviceBrowserRoute {
 
     /// The owning Mac's ports this Mac's `localhost` reaches as they are: each
     /// forwarded here on the same port, by an active forward, while that Mac's
-    /// latest port listing still has it (so a port nothing serves there keeps
-    /// the alias, whose proxy explains why it does not answer).
+    /// latest port listing still has it, as a workspace's port or one of its
+    /// other loopback ports (a server an agent started, in Docker): a port
+    /// nothing serves there keeps the alias, whose proxy explains why it does
+    /// not answer.
     static func asWrittenPorts(of machine: SurfaceMachineID) -> Set<Int> {
         let forwards = SupermuxComposition.portForwards
-        let listed = Set(forwards.hostPorts[machine]?.ports.map(\.port) ?? [])
         return Set(forwards.forwards.values.compactMap { forward in
             guard forward.key.machine == machine, forward.localPort == forward.key.remotePort,
-                  listed.contains(forward.key.remotePort) else { return nil }
+                  forwards.lists(machine: machine, port: forward.key.remotePort) else { return nil }
             return forward.key.remotePort
         })
     }
@@ -88,13 +89,23 @@ enum SupermuxDeviceBrowserRoute {
     /// (the panel's own navigation then routes it), or nil when `url` already
     /// is where the route sends it: a loopback `http` URL that is not loaded as
     /// written would reach this Mac, so it goes back to the panel, which sends
-    /// it through the alias; an alias URL whose port is now loaded as written
-    /// becomes `localhost` again. Checked on every main-frame navigation
+    /// it through the alias unless a same-port forward can start for it
+    /// (``SupermuxSamePortForwardGate``); an alias URL whose port is now loaded
+    /// as written, or may get a same-port forward (a reload of a page that
+    /// landed on the alias while its server restarted), becomes `localhost`
+    /// again. Checked on every main-frame navigation
     /// (`device-mirror-browser-reroute`: reloads, links, redirects, back and
-    /// forward) and on every change of the forwards (``forwardsChanged()``).
+    /// forward).
     static func reroutedURL(_ url: URL, dataStoreID: UUID?) -> URL? {
+        guard let machine = dataStoreID.flatMap(machine(forDataStore:)) else { return nil }
+        return reroutedURL(url, machine: machine, startsForwards: true)
+    }
+
+    /// ``reroutedURL(_:dataStoreID:)`` for `machine`'s browsers. With
+    /// `startsForwards` false (``forwardsChanged()``, which runs for every open
+    /// tab), an alias page moves only once its port is loaded as written.
+    private static func reroutedURL(_ url: URL, machine: SurfaceMachineID, startsForwards: Bool) -> URL? {
         guard url.scheme?.lowercased() == "http",
-              let machine = dataStoreID.flatMap(machine(forDataStore:)),
               let host = RemoteLoopbackProxyAlias.normalizeHost(url.host ?? "") else { return nil }
         if RemoteLoopbackProxyAlias.isLoopbackHost(host) {
             return loadsAsWritten(url, machine: machine) ? nil : url
@@ -102,8 +113,9 @@ enum SupermuxDeviceBrowserRoute {
         guard host == RemoteLoopbackProxyAlias.aliasHost,
               var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
         components.host = RemoteLoopbackProxyAlias.canonicalLoopbackHost
-        guard let local = components.url, loadsAsWritten(local, machine: machine) else { return nil }
-        return local
+        guard let local = components.url else { return nil }
+        if loadsAsWritten(local, machine: machine) { return local }
+        return startsForwards && SupermuxSamePortForwardGate.mayForward(local, machine: machine) ? local : nil
     }
 
     /// The as-written ports last handed to each Mac's mirror browsers.
@@ -123,8 +135,7 @@ enum SupermuxDeviceBrowserRoute {
             deliveredPorts[machine] = ports
             for browser in SupermuxDeviceBrowserProxies.browsers(of: machine) {
                 SupermuxMirrorLoopbackBridge.update(browser.webView, ports: ports)
-                let store = browser.webView.configuration.websiteDataStore.identifier
-                if let url = browser.webView.url, let target = reroutedURL(url, dataStoreID: store) {
+                if let url = browser.webView.url, let target = reroutedURL(url, machine: machine, startsForwards: false) {
                     browser.navigateWithoutInsecureHTTPPrompt(to: target, recordTypedNavigation: false)
                 }
             }

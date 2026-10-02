@@ -3395,6 +3395,7 @@
 		C0DE70530000000000000002 /* submit-cmux-profile in Copy CLI */ = {isa = PBXBuildFile; fileRef = C0DE70530000000000000001 /* submit-cmux-profile */; };
 		50BE0001000000000000012D /* supermux-harness in Resources */ = {isa = PBXBuildFile; fileRef = 50BE0001000000000000012C /* supermux-harness */; };
 		50BE00170600000000000002 /* SupermuxAlertPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00170600000000000001 /* SupermuxAlertPresentation.swift */; };
+		50BE00190900000000000002 /* SupermuxAliasHTTPRewrite.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00190900000000000001 /* SupermuxAliasHTTPRewrite.swift */; };
 		50BE000100000000000000B2 /* SupermuxAppGlue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000B1 /* SupermuxAppGlue.swift */; };
 		50BE00010000000000000108 /* SupermuxBannerProjectDecorator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00010000000000000107 /* SupermuxBannerProjectDecorator.swift */; };
 		50BE00190300000000000008 /* SupermuxBrowserProxyErrorPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00190300000000000007 /* SupermuxBrowserProxyErrorPage.swift */; };
@@ -3598,6 +3599,7 @@
 		50BE00140000000000000006 /* SupermuxRestoredMirrorNotifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00140000000000000005 /* SupermuxRestoredMirrorNotifications.swift */; };
 		50BE000100000000000000FA /* SupermuxRowMenuVisibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000F9 /* SupermuxRowMenuVisibility.swift */; };
 		50BE000100000000000000B5 /* SupermuxRunSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000B4 /* SupermuxRunSupport.swift */; };
+		50BE00190900000000000004 /* SupermuxSamePortForwardGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00190900000000000003 /* SupermuxSamePortForwardGate.swift */; };
 		50BE000100000000000000F8 /* SupermuxSidebarAgentStatusRowsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000F7 /* SupermuxSidebarAgentStatusRowsTests.swift */; };
 		50BE000100000000000000C1 /* SupermuxSidebarBranchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000C2 /* SupermuxSidebarBranchTests.swift */; };
 		50BE000100000000000000B9 /* SupermuxSidebarFontScaleStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000B8 /* SupermuxSidebarFontScaleStore.swift */; };
@@ -7874,6 +7876,7 @@
 		C0DE70530000000000000001 /* submit-cmux-profile */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = "Resources/bin/submit-cmux-profile"; sourceTree = SOURCE_ROOT; };
 		50BE0001000000000000012C /* supermux-harness */ = {isa = PBXFileReference; lastKnownFileType = folder; path = "supermux-harness"; sourceTree = "<group>"; };
 		50BE00170600000000000001 /* SupermuxAlertPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxAlertPresentation.swift; sourceTree = "<group>"; };
+		50BE00190900000000000001 /* SupermuxAliasHTTPRewrite.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ports/SupermuxAliasHTTPRewrite.swift; sourceTree = "<group>"; };
 		50BE000100000000000000B1 /* SupermuxAppGlue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxAppGlue.swift; sourceTree = "<group>"; };
 		50BE00010000000000000107 /* SupermuxBannerProjectDecorator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxBannerProjectDecorator.swift; sourceTree = "<group>"; };
 		50BE00190300000000000007 /* SupermuxBrowserProxyErrorPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ports/SupermuxBrowserProxyErrorPage.swift; sourceTree = "<group>"; };
@@ -8074,6 +8077,7 @@
 		50BE00140000000000000005 /* SupermuxRestoredMirrorNotifications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxRestoredMirrorNotifications.swift; sourceTree = "<group>"; };
 		50BE000100000000000000F9 /* SupermuxRowMenuVisibility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxRowMenuVisibility.swift; sourceTree = "<group>"; };
 		50BE000100000000000000B4 /* SupermuxRunSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxRunSupport.swift; sourceTree = "<group>"; };
+		50BE00190900000000000003 /* SupermuxSamePortForwardGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ports/SupermuxSamePortForwardGate.swift; sourceTree = "<group>"; };
 		50BE000100000000000000F7 /* SupermuxSidebarAgentStatusRowsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxSidebarAgentStatusRowsTests.swift; sourceTree = "<group>"; };
 		50BE000100000000000000C2 /* SupermuxSidebarBranchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxSidebarBranchTests.swift; sourceTree = "<group>"; };
 		50BE000100000000000000B8 /* SupermuxSidebarFontScaleStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxSidebarFontScaleStore.swift; sourceTree = "<group>"; };
@@ -9535,6 +9539,8 @@
 				50BE00190200000000000013 /* SupermuxPortsText.swift */,
 				50BE00190200000000000015 /* SupermuxDevicePortLinks.swift */,
 				50BE00190800000000000001 /* SupermuxPortMenusSocketCommands.swift */,
+				50BE00190900000000000001 /* SupermuxAliasHTTPRewrite.swift */,
+				50BE00190900000000000003 /* SupermuxSamePortForwardGate.swift */,
 				50BE00190500000000000011 /* SupermuxRemoteSimulatorSnapshot.swift */,
 				50BE0019050000000000001B /* Workspace+SupermuxRemoteSimulator.swift */,
 				50BE00190500000000000019 /* SupermuxRemoteSimulatorQuality.swift */,
@@ -16360,6 +16366,7 @@
 				A5C017000000000000000005 /* StackAccountAvatarView.swift in Sources */,
 				D35B71010000000000000001 /* StartupBreadcrumbLog.swift in Sources */,
 				50BE00170600000000000002 /* SupermuxAlertPresentation.swift in Sources */,
+				50BE00190900000000000002 /* SupermuxAliasHTTPRewrite.swift in Sources */,
 				50BE000100000000000000B2 /* SupermuxAppGlue.swift in Sources */,
 				50BE00010000000000000108 /* SupermuxBannerProjectDecorator.swift in Sources */,
 				50BE00190300000000000008 /* SupermuxBrowserProxyErrorPage.swift in Sources */,
@@ -16552,6 +16559,7 @@
 				50BE00140000000000000006 /* SupermuxRestoredMirrorNotifications.swift in Sources */,
 				50BE000100000000000000FA /* SupermuxRowMenuVisibility.swift in Sources */,
 				50BE000100000000000000B5 /* SupermuxRunSupport.swift in Sources */,
+				50BE00190900000000000004 /* SupermuxSamePortForwardGate.swift in Sources */,
 				50BE000100000000000000B9 /* SupermuxSidebarFontScaleStore.swift in Sources */,
 				50BE00180400000000000006 /* SupermuxTabActivitySync.swift in Sources */,
 				50BE00180400000000000002 /* SupermuxTabIndicatorSocket.swift in Sources */,
