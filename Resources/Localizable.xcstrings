@@ -599936,6 +599936,23 @@
         }
       }
     },
+    "supermux.remoteSimulator.state.unreachable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t reach %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ に接続できませんでした"
+          }
+        }
+      }
+    },
     "supermux.remoteSimulator.state.waiting" : {
       "extractionState" : "manual",
       "localizations" : {
