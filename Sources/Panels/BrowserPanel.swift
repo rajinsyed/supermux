@@ -5717,7 +5717,7 @@ final class BrowserPanel: Panel, ObservableObject {
         onNavigationStarted: ((WKNavigation?) -> Void)? = nil
     ) -> WKNavigation? {
         // SUPERMUX:begin device-mirror-browser-on-demand-forward
-        if SupermuxSamePortForwardGate.holds(request, dataStoreID: websiteDataStore.identifier, panel: self, resume: { [weak self] in
+        if SupermuxSamePortForwardGate.holds(request, dataStoreID: websiteDataStore.identifier, typed: recordTypedNavigation, panel: self, resume: { [weak self] in
             _ = self?.performNavigation(request: request, originalURL: originalURL, recordTypedNavigation: recordTypedNavigation,
                                         preserveRestoredSessionHistory: preserveRestoredSessionHistory, onNavigationStarted: onNavigationStarted)
         }, abandon: { onNavigationStarted?(nil) }) { return nil }

@@ -135,6 +135,9 @@ enum SupermuxDeviceBrowserRoute {
             deliveredPorts[machine] = ports
             for browser in SupermuxDeviceBrowserProxies.browsers(of: machine) {
                 SupermuxMirrorLoopbackBridge.update(browser.webView, ports: ports)
+                // A held navigation (waiting for this very forward) resumes by
+                // itself; moving its old page would drop it.
+                guard !SupermuxSamePortForwardGate.isHolding(browser) else { continue }
                 if let url = browser.webView.url, let target = reroutedURL(url, machine: machine, startsForwards: false) {
                     browser.navigateWithoutInsecureHTTPPrompt(to: target, recordTypedNavigation: false)
                 }
