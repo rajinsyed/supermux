@@ -11,6 +11,13 @@ extension SupermuxComposition {
         index: deviceWorkspaceIndex,
         settings: devicesSettings
     )
+
+    /// The owning Mac's port chips and the moved-port pills on mirrors.
+    static let mirrorPortsPresenter = SupermuxMirrorPortsPresenter(
+        forwards: portForwards,
+        index: deviceWorkspaceIndex,
+        devices: devices
+    )
 }
 
 /// Launch-time activation of port forwarding, called from
@@ -19,6 +26,8 @@ extension SupermuxComposition {
 enum SupermuxPortsGlue {
     /// Starts following other Macs' ports. Idempotent.
     static func activateIfNeeded() {
-        SupermuxComposition.portForwards.start()
+        let forwards = SupermuxComposition.portForwards
+        forwards.onChange = { SupermuxComposition.mirrorPortsPresenter.apply() }
+        forwards.start()
     }
 }
