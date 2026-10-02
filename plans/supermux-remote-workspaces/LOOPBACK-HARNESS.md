@@ -630,7 +630,8 @@ opened earlier opens none, the likely cause of the one run where `proxy_listener
 `opened` for the new tab (both tabs had asked for the alias, per the app log, and no run ever sent a request
 to this Mac's own server). Then `owner_localhost_keeps_origin` (#754, the user's Turnstile report): a login page with a
 Cloudflare Turnstile widget (the always-passing test sitekey `1x00000000000000000000AA`) served on the owner's
-`localhost:P`, with P forwarded to this Mac on P (`supermux.devices.ports.forward`), opened in a new mirror tab, must
+`localhost:P`, with P listed as the source workspace's port (`supermux.devices.tunnel.inject_port`, as a dev server in
+its terminal is) and so forwarded to this Mac on P by automatic forwarding, opened in a new mirror tab, must
 run at `http://localhost:P`, a secure context, come from the owner (journal `opened` for P) and get a Turnstile token; the
 same page in a local browser is the control that Turnstile works at all (it needs challenges.cloudflare.com). In
 loopback the owner's P would be busy here too, so the owner serves P from another port Q
@@ -639,6 +640,19 @@ dials Q when asked for P), leaving P free for the forward as on two Macs; P is c
 an outgoing connection's local port can take it meanwhile. Red before the fix: the tab ran at
 `http://cmux-loopback.localtest.me:P`, `isSecureContext` false (a real dev sitekey answers 110200 there). The suite
 passes with it anywhere in the order (checked first, before and after the listener-failure steps).
+
+The review fixes (#755–#756) add three steps, red on the build before them (2026-10-02):
+`as_written_page_reaches_owner_ports`: an as-written page (P listed and forwarded on P) whose `fetch` and XHR call
+`localhost:Q`, where this Mac runs its own server on Q and the owner serves Q from another port, must get the owner's
+answer, with `Origin: http://localhost:P` and the API's `Access-Control-Allow-Origin` kept, and this Mac's server no
+request (red: both calls answered by this Mac's server); a call to another listed, same-port forwarded port F must
+reach the owner with no proxy dial (its forward, as written). `forward_changes_reroute_open_tab`: a mirror tab opened
+on `localhost:P` before P is listed or forwarded runs on the alias; once the forward is active it must move to
+`http://localhost:P` (red: still on the alias after 20 s); after `ports.stop` and this Mac binding its own server on
+P it must go back to the alias, and a page `location.reload()` must show the owner's page with this Mac's server seeing
+nothing. `unlisted_forward_explains`: a manual forward of P (not listed; the owner serves P from a closed port) must
+show "localhost:P on <Mac> isn't answering" (red: WebKit's bare error, the title the URL). The suite clears the
+listed ports (`tunnel.clear_injected`) and stops its manual forwards at the end.
 
 **A URL typed into a tab, to plain HTTP on a host that is not loopback by name, waits ~10 s on this Mac**
 (WebKit and macOS 27, not the proxy; not a fail-open). WebKit 27 moves such a navigation into a new hardened
