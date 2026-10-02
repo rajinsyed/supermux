@@ -537,13 +537,14 @@ at the end; with no iOS runtime every simulator step is skipped (`no_simulator_r
 `xcrun simctl boot` typed into M's terminal boots it (on the owning Mac); `surface.create {type:
 simulator}` on M fails; New Simulator (configured) leaves S with one `SimulatorPanel`, M with one
 viewer bound to it and none of its own, the app with one `SimulatorPanel` more than before; the viewer
-shows the booted device, streams (+10 frames, hevc/h264, long side <= 2000, one simulator worker more
+shows the booted device (skipped, after switching to it, when another booted simulator on this Mac is
+the owner's first pick: booted, iPhone first, most recently booted), streams (+10 frames, hevc/h264, long side <= 2000, one simulator worker more
 under the app's PID; the window screenshot is kept as `…-viewer.png`); its picker equals the owner's
 available iPhone/iPad simulators and choosing a second one (made for the step) boots it and the stream
 follows; Home brings SpringBoard back from Settings (`simulator.foreground` on S's panel, or a
 `simctl io screenshot` hash); Rotate Left/Right turn the owner's simulator (`simulator.context`
 orientation); Data Saver caps the next config at 800; with the viewer open a split in S is projected
-into M and M takes S's new name (needs the `device-layout-local-panels` fence and #739); closing a
+into M, M splits the same way (pane count), and M takes S's new name (needs the `device-layout-local-panels` fence and #739); closing a
 mirror terminal tab closes its source terminal; the link held down stops the stream and back up
 resumes it; `steal` leaves the viewer "superseded" for 10 s without taking the stream back, and Show
 Here takes it; closing S's Simulator tab closes the viewer; closing the viewer closes S's tab, its
