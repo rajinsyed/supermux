@@ -1,13 +1,16 @@
 public import SwiftUI
 
-/// What a workspace row nested under a project adds to the shell's own row:
-/// the PR badge, the run indicator and — only when the project spans several
-/// Macs — the Mac it lives on. The Mac sidebar's nested row shows the same.
+/// What a workspace row nested under a project adds to the shell's own row,
+/// as the Mac sidebar's nested row shows it: the branch — after the small
+/// cloud-Mac icon when the workspace lives on another Mac than the list's
+/// home Mac — then the PR badge and the run indicator.
 public struct SupermuxNestedWorkspaceAccessory: Equatable, Sendable {
     /// The workspace's row id.
     public let workspaceID: String
-    /// The owning Mac's name, when the project spans several Macs.
-    public let macName: String?
+    /// The Mac the workspace lives on, unless it is the list's home Mac.
+    public let remoteMac: SupermuxRemoteMac?
+    /// The workspace's branch, if the Mac reported one.
+    public let branch: String?
     /// The branch's PR badge, if any.
     public let pullRequest: SupermuxPullRequestBadgeSnapshot?
     /// Whether the project's run command runs in this workspace.
@@ -16,13 +19,15 @@ public struct SupermuxNestedWorkspaceAccessory: Equatable, Sendable {
     /// The accessory, or `nil` when it would draw nothing.
     init?(
         workspaceID: String,
-        macName: String?,
+        remoteMac: SupermuxRemoteMac?,
+        branch: String?,
         pullRequest: SupermuxPullRequestBadgeSnapshot?,
         isRunning: Bool
     ) {
-        guard macName != nil || pullRequest != nil || isRunning else { return nil }
+        guard remoteMac != nil || branch != nil || pullRequest != nil || isRunning else { return nil }
         self.workspaceID = workspaceID
-        self.macName = macName
+        self.remoteMac = remoteMac
+        self.branch = branch
         self.pullRequest = pullRequest
         self.isRunning = isRunning
     }
@@ -41,6 +46,10 @@ private struct SupermuxNestedAccessorySlotKey: PreferenceKey {
 /// How far from the row's trailing edge the accessory stays, clear of the
 /// activity dot drawn there.
 private let supermuxNestedAccessoryDotClearance: CGFloat = 20
+
+/// The widest the accessory gets; a longer branch truncates in the middle,
+/// so the accessory never covers most of the preview line.
+private let supermuxNestedAccessoryMaxWidth: CGFloat = 200
 
 extension View {
     /// Marks the shell row's preview-line text as the accessory's slot. The
@@ -67,8 +76,10 @@ extension View {
                     // keeps the accessory clear of the activity dot there.
                     let dotClearance = max(0, supermuxNestedAccessoryDotClearance - (proxy.size.width - frame.maxX))
                     // Padding, not an offset, so the accessibility frame
-                    // follows the drawn one.
+                    // follows the drawn one. The width cap only bounds what
+                    // the accessory is offered: it still hugs its content.
                     SupermuxNestedWorkspaceAccessoryView(accessory: accessory)
+                        .frame(maxWidth: supermuxNestedAccessoryMaxWidth, alignment: .trailing)
                         .padding(.trailing, dotClearance)
                         .padding(.bottom, 2)
                         .frame(width: frame.width, height: frame.height, alignment: .bottomTrailing)
@@ -86,8 +97,21 @@ private struct SupermuxNestedWorkspaceAccessoryView: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            if let macName = accessory.macName {
-                SupermuxNestedMacMarker(name: macName)
+            if accessory.remoteMac != nil || accessory.branch != nil {
+                HStack(spacing: 3) {
+                    // The Mac it lives on, right before its branch, as on the
+                    // Mac (the name is only the icon's VoiceOver label).
+                    if let remoteMac = accessory.remoteMac {
+                        SupermuxMobileRemoteMacIcon(mac: remoteMac, pointSize: 10, relativeTo: .caption)
+                    }
+                    if let branch = accessory.branch {
+                        Text(branch)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
             }
             if let pullRequest = accessory.pullRequest {
                 SupermuxMobilePullRequestBadge(pullRequest: pullRequest)
@@ -102,26 +126,5 @@ private struct SupermuxNestedWorkspaceAccessoryView: View {
         .allowsHitTesting(false)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("SupermuxNestedWorkspaceAccessory-\(accessory.workspaceID)")
-    }
-}
-
-/// A small "on this Mac" marker for rows of a project that spans several
-/// Macs — the phone twin of the Mac sidebar's device icon on a mirror row.
-struct SupermuxNestedMacMarker: View {
-    let name: String
-
-    var body: some View {
-        HStack(spacing: 3) {
-            Image(systemName: "laptopcomputer")
-                .font(.system(.caption2))
-                .accessibilityHidden(true)
-            Text(name)
-                .font(.system(.caption2))
-                .lineLimit(1)
-                .truncationMode(.tail)
-        }
-        .foregroundStyle(.secondary)
-        .frame(maxWidth: 120, alignment: .trailing)
-        .fixedSize(horizontal: false, vertical: true)
     }
 }
