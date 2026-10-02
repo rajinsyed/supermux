@@ -76,7 +76,13 @@ private struct SupermuxProjectsSectionDriver: ViewModifier {
         }
         #if DEBUG
         if !previewMacs.isEmpty {
-            let previews = previewMacs
+            // Like the shell, opening a workspace on another Mac makes that
+            // Mac the foreground.
+            let previews = SupermuxProjectsPreviewFixture.foregroundFirst(
+                previewMacs,
+                opened: selectedWorkspaceID,
+                in: workspaces
+            )
             macInfos = previews.map(\.mac)
             keys = Set(previews.map { SupermuxProjectsConnectionKey(previewPairingID: $0.mac.pairingID) })
             run = { [model] in await model.runPreviewSessions(previews) }
