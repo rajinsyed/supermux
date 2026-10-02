@@ -16,12 +16,18 @@ import WebKit
 ///   remote-workspace mode), `proxy_configs` (its WebKit proxy configurations)
 ///   and `store_identifier` (its website data store; null for the profile's
 ///   default store).
-/// - `browser_proxy {machine}` — the mirror browser proxy for that Mac: `port`,
-///   its credential and its dial counters; `proxy` is null while it is not
-///   listening (or where no proxy exists).
+/// - `browser_proxy {machine, start?}` — the mirror browser proxy for that Mac:
+///   the endpoint it hands browsers now (`port`, its credential) and its dial
+///   counters; `proxy` is null while it has no endpoint (or where no proxy
+///   exists). Starts the proxy's listener when it has none, unless `start` is
+///   false: then it only reads, so a listener that restarts on its own can be
+///   waited for.
 /// - `browser_proxy_fail {machine}` — fails that proxy's listener the way the
 ///   network stack would; `failed_port` is the port it listened on (null when
 ///   it was not listening).
+/// - `browser_proxy_hold {machine, held}` — while held, that proxy makes no new
+///   listener (as when the system cannot make one), so a failed listener stays
+///   down; releasing it starts one. `held` is null where no proxy exists.
 /// - `browser_store {machine}` — the website data store identifier the route
 ///   gives that app instance's mirror browsers (any `device:` machine id, also
 ///   one not connected).
@@ -34,15 +40,17 @@ import WebKit
 @MainActor
 enum SupermuxMirrorBrowserSocket {
     static let methods: Set<Substring> = [
-        "browser_route", "browser_proxy", "browser_proxy_fail", "browser_store", "layout", "link_open",
+        "browser_route", "browser_proxy", "browser_proxy_fail", "browser_proxy_hold", "browser_store", "layout", "link_open",
     ]
 
     static func handle(_ method: Substring, params: [String: Any]) async throws -> [String: Any] {
         switch method {
         case "browser_proxy":
-            return browserProxy(try machine(params))
+            return browserProxy(try machine(params), starts: params["start"] as? Bool ?? true)
         case "browser_proxy_fail":
             return browserProxyFail(try machine(params))
+        case "browser_proxy_hold":
+            return browserProxyHold(try machine(params), held: params["held"] as? Bool ?? true)
         case "browser_store":
             return browserStore(try machine(params))
         case "link_open":
@@ -90,10 +98,12 @@ enum SupermuxMirrorBrowserSocket {
 
     // MARK: - Browser proxy
 
-    /// Starts the proxy when no mirror browser has yet.
-    private static func browserProxy(_ machine: SurfaceMachineID) -> [String: Any] {
+    /// Starts the proxy's listener when it has none (as a mirror browser's
+    /// route does), unless `starts` is false.
+    private static func browserProxy(_ machine: SurfaceMachineID, starts: Bool) -> [String: Any] {
         let proxies = SupermuxDeviceBrowserProxies.shared
-        guard let endpoint = proxies.endpoint(for: machine), let proxy = proxies.proxy(for: machine) else {
+        let endpoint = starts ? proxies.endpoint(for: machine) : proxies.proxy(for: machine)?.endpoint
+        guard let endpoint, let proxy = proxies.proxy(for: machine) else {
             return ["machine": machine.rawValue, "proxy": NSNull()]
         }
         return [
@@ -115,6 +125,15 @@ enum SupermuxMirrorBrowserSocket {
         }
         proxy.debugFailListener()
         return ["machine": machine.rawValue, "failed_port": port]
+    }
+
+    private static func browserProxyHold(_ machine: SurfaceMachineID, held: Bool) -> [String: Any] {
+        guard let proxy = SupermuxDeviceBrowserProxies.shared.proxy(for: machine) else {
+            return ["machine": machine.rawValue, "held": NSNull()]
+        }
+        proxy.debugRefusesListener = held
+        if !held { proxy.start() }
+        return ["machine": machine.rawValue, "held": held]
     }
 
     private static func browserStore(_ machine: SurfaceMachineID) -> [String: Any] {

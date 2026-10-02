@@ -27,6 +27,12 @@ named by their source id (T1...), the mirror's browsers B and B2:
                                                local workspace (no longer a mirror, nothing hidden),
                                                and for a few seconds nothing projects a terminal
                                                into it, closes it or mirrors S2 again
+  J last_two_terminals_beside_browser_close_source
+                                               a third source S3 with TWO terminals in one pane, its
+                                               mirror M3 and a browser B4 in that pane; Close Other
+                                               Tabs on B4 (`tab.action close_others`) closes both
+                                               terminal tabs in one go -> as in I: S3 closes on its
+                                               Mac, no failure card, M3 stays open holding only B4
 
 Every expected pair must hold, then stay so for --settle seconds (nothing pushed
 back, nothing moved); each step records both labelled trees and the latency.
@@ -35,7 +41,10 @@ layout target is nil while B exists), so D-H fail too (G even with only the
 first fix: T1 stays on the source). Before I's fix the mirror sends
 `mobile.terminal.close`, the owning Mac refuses its last surface, M2 shows
 "Couldn't update the machine workspace", S2 keeps running and auto-mirror
-closes M2 (browser included) as an orphan. Writes a JSON report (default
+closes M2 (browser included) as an orphan. Before J's fix the first close
+lands, the second (decided on the layout from before either close, which
+still held two terminals) is refused as S3's last surface, with the same
+card and orphan close. Writes a JSON report (default
 tests/supermux/artifacts/loopback_mirror_local_panels_e2e-<tag>.json) and exits
 non-zero on any failure. Stdlib only.
 
@@ -506,9 +515,19 @@ class LocalPanelsE2E:
             raise Failure(f"precondition: the mirror and source did not settle: {unsettled}")
 
         self.sock.call("surface.close", {"workspace_id": pair.mirror_id, "surface_id": mirror_t1, "force": True})
+        problems = self.source_closed_keeping_browser_problems(pair, browser)
+        if problems:
+            raise Failure("; ".join(problems))
+        return {"source": pair.source_id, "mirror": pair.mirror_id, "terminal": terminal, "browser": browser,
+                "kept_panels": self.panel_kinds(pair.mirror_id)}
+
+    def source_closed_keeping_browser_problems(self, pair: MirrorPair, browser: str) -> List[str]:
+        """What is wrong once the mirror's last terminals closed beside `browser`: the source
+        must close on its Mac, and the mirror stay open holding only `browser` as a plain
+        local workspace (no card, not mirrored, nothing hidden, no close left pending)."""
         problems: List[str] = []
         try:
-            wait_for("the second source to close on its Mac", lambda: not self.is_open(pair.source_id), self.timeout)
+            wait_for("the source to close on its Mac", lambda: not self.is_open(pair.source_id), self.timeout)
         except Failure as error:
             problems.append(str(error))
         kept = self.kept_browser_problem(pair, browser) \
@@ -517,16 +536,61 @@ class LocalPanelsE2E:
             problems.append(kept)
         if not problems:
             if pair.source_id in self.remote_close_refs("hidden"):
-                problems.append("the second source was added to the Hide Here set")
+                problems.append("the source was added to the Hide Here set")
             try:
                 wait_for("the source's pending close to be forgotten",
                          lambda: pair.source_id not in self.remote_close_refs("pending_remote_closes"), self.timeout)
             except Failure as error:
                 problems.append(str(error))
+        return problems
+
+    def last_two_terminals_beside_browser_close_source(self) -> Dict[str, Any]:
+        """Close Other Tabs on the mirror's browser closes its last TWO terminals in one
+        go. The first close lands on the owning Mac; the second then names that
+        workspace's last surface, which the owner refuses, so the source must close
+        there instead (decided on the layout that close fetched, not on the one from
+        before either close), exactly as for one terminal."""
+        pair = MirrorPair(self.sock, self.timeout, f"local-panels-two-{self.nonce}")
+        self.extra_pairs.append(pair)
+        created = pair.create()
+        first = up(created["first_terminal"])
+        made = self.sock.call("surface.create", {
+            "workspace_id": pair.source_id, "pane_id": pair.pane_of(pair.source_id, first), "type": "terminal",
+        }) or {}
+        second = up(made.get("surface_id"))
+        if not second:
+            raise Failure(f"surface.create returned no surface_id: {made}")
+        mirror_first = pair.require_mirror_panel(first, "the third source's first terminal")
+        mirror_second = wait_for("the mirror to project the second terminal", lambda: pair.mirror_panel(second), self.timeout)
+        opened = self.sock.call("browser.tab.new", {"workspace_id": pair.mirror_id, "surface_id": mirror_first}) or {}
+        browser = up(opened.get("surface_id"))
+        if not browser:
+            raise Failure(f"browser.tab.new returned no surface_id: {opened}")
+
+        def settled() -> Optional[str]:
+            kinds, source = self.panel_kinds(pair.mirror_id), sorted(pair.surfaces(pair.source_id))
+            want = {mirror_first: "terminal", mirror_second: "terminal", browser: "browser"}
+            if kinds != want or source != sorted([first, second]):
+                return f"mirror {kinds}, source {source}"
+            panes = {pair.pane_of(pair.mirror_id, panel) for panel in want}
+            if len(panes) != 1:
+                return f"the mirror's two terminals and its browser are in {len(panes)} panes"
+            return None
+
+        wait_for("both terminals and the browser in one pane of the mirror", lambda: settled() is None, self.timeout)
+        unsettled = holds(settled, self.settle)
+        if unsettled:
+            raise Failure(f"precondition: the mirror and source did not settle: {unsettled}")
+
+        # One main-actor turn closes both terminal tabs, as the tab menu's Close Other Tabs does.
+        closed = self.sock.call("tab.action", {
+            "workspace_id": pair.mirror_id, "surface_id": browser, "action": "close_others", "force": True,
+        }) or {}
+        problems = self.source_closed_keeping_browser_problems(pair, browser)
         if problems:
             raise Failure("; ".join(problems))
-        return {"source": pair.source_id, "mirror": pair.mirror_id, "terminal": terminal, "browser": browser,
-                "kept_panels": self.panel_kinds(pair.mirror_id)}
+        return {"source": pair.source_id, "mirror": pair.mirror_id, "terminals": [first, second], "browser": browser,
+                "close_others": closed, "kept_panels": self.panel_kinds(pair.mirror_id)}
 
     def run(self) -> bool:
         ok = self.step("setup", self.setup)
@@ -540,6 +604,7 @@ class LocalPanelsE2E:
                 ("mirror_tab_close_beside_browsers_closes_its_terminal", self.mirror_tab_close_closes_its_terminal),
                 ("closing_browsers_leaves_source_alone", self.closing_browsers_leaves_source_alone),
                 ("last_terminal_beside_browser_closes_source", self.last_terminal_beside_browser_closes_source),
+                ("last_two_terminals_beside_browser_close_source", self.last_two_terminals_beside_browser_close_source),
             ]:
                 ok = self.step(name, check) and ok
         self.facts["names"] = {name: identifier for name, identifier in self.ids.items()}
