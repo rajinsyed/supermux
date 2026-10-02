@@ -115,6 +115,11 @@ final class SupermuxPortForwards {
     @ObservationIgnored private var lastAutoForward: Bool?
     /// Called after every change of forwards or listings (the mirror chips and pills).
     @ObservationIgnored var onChange: (@MainActor () -> Void)?
+    #if DEBUG
+    /// E2E (`supermux.devices.ports.follow_ups`): false skips the follow-up
+    /// fetches, so a step can tell another path from them.
+    @ObservationIgnored var followUpsEnabled = true
+    #endif
 
     init(devices: SupermuxDevices, index: SupermuxDeviceWorkspaceIndex, settings: SupermuxDevicesSettings) {
         self.devices = devices
@@ -392,6 +397,9 @@ final class SupermuxPortForwards {
     /// poke: its forward comes back, and an open mirror tab of it gets one
     /// (``SupermuxSamePortForwardGate/forwardOpenTabs()``).
     private func followUp(_ machine: SurfaceMachineID) {
+        #if DEBUG
+        guard followUpsEnabled else { return }
+        #endif
         followUps[machine]?.cancel()
         followUps[machine] = Task { @MainActor [weak self] in
             for delay in Self.followUpDelays {

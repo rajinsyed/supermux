@@ -32,6 +32,8 @@ import Foundation
 ///   the live-listener check (`remove: true` takes it back); `clear_injected`
 ///   clears these too.
 /// - `tunnel.host_ports {include_other?}`: this Mac's `ports.list` payload.
+/// - `tunnel.listings_served {}`: how many `mobile.supermux.ports.list` requests
+///   this Mac's host answered since launch → `{count}`.
 /// - `tunnel.own_port {port, registered}`: marks a port as one this app
 ///   listens on for forwards (the tunnel host's loop guard refuses it).
 /// - `tunnel.serve_port {port, from?}`: the loopback owner's tunnel host serves
@@ -56,6 +58,8 @@ enum SupermuxDeviceTunnelSocketCommands {
     static var injectedHostPorts: [UUID: [Int]] = [:]
     /// Ports reported under `other_ports` by `ports.list`, live or not.
     static var injectedOtherPorts: Set<Int> = []
+    /// `mobile.supermux.ports.list` requests the host answered.
+    nonisolated static let listingsServed = SupermuxDebugCounter()
 
     private typealias Stream = any SupermuxByteStream
     private static var held: [Stream] = []
@@ -111,6 +115,7 @@ enum SupermuxDeviceTunnelSocketCommands {
             injectedOtherPorts = []
             return ["injected": [Int]()]
         case "host_ports": return await hostPorts(params)
+        case "listings_served": return ["count": listingsServed.value]
         case "own_port": return try ownPort(params)
         case "serve_port": return try servePort(params)
         case "fail_requests": return try failRequests(params)
@@ -332,5 +337,14 @@ enum SupermuxDeviceTunnelSocketCommands {
         guard let value = params[key] as? Bool else { throw HookError(message: "\(key) must be true or false") }
         return value
     }
+}
+/// A thread-safe count (DEBUG E2E evidence).
+final class SupermuxDebugCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+
+    var value: Int { lock.withLock { count } }
+
+    func increment() { lock.withLock { count += 1 } }
 }
 #endif
