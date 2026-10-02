@@ -39,6 +39,14 @@ forward must land on another local port.
  13. listing_failure_retried            every ports.list after a relink fails until the reconnect's own
                                         pokes are over; once the host answers again R is forwarded with
                                         no port change, poke or relink
+ 14. chip_default_browser_uses_local_port  M's sidebar chip for R clicked with "Open Sidebar Port Links
+                                        in cmux Browser" off -> the default browser gets
+                                        http://localhost:L, never this Mac's own localhost:R
+                                        (`ports.chip_open`)
+ 15. pending_forward_offers_stop        a manual forward Q left waiting by a dropped link -> both
+                                        port menus (M's "Ports on <Mac>", Settings' Ports…) offer
+                                        Stop Forwarding (`ports.menus`); Stop -> it goes at once,
+                                        and with the link back it never listens again
 
 Writes a JSON report (default tests/supermux/artifacts/loopback_port_forward_e2e-<tag>.json)
 and exits non-zero on any failure. Stdlib only.
@@ -655,6 +663,68 @@ class PortForwardE2E:
         self.local_port = int(row["local_port"])
         return {"state_while_failing": state, "failed_listings": failed, "local_port": self.local_port}
 
+    def chip_default_browser(self) -> Dict[str, Any]:
+        self.require_forwarded()
+        row = wait_for(f"forward of {self.remote_port}", lambda: self.active_forward(self.remote_port), self.timeout)
+        local = int(row["local_port"])
+        # The owner's own server holds R here (one Mac is both ends), so the forward moved.
+        if local == self.remote_port or not accepts("127.0.0.1", self.remote_port):
+            raise Failure(f"precondition: R={self.remote_port} must be busy here and forwarded elsewhere (L={local})")
+        opened = self.ports_call("chip_open", workspace_id=self.mirror_id, port=self.remote_port, cmux_browser=False)
+        expected = f"http://localhost:{local}"
+        got = str(opened.get("external_url") or "").rstrip("/")
+        if got != expected:
+            raise Failure(f"the chip opened {opened.get('external_url')!r} in the default browser, expected {expected!r} "
+                          f"(localhost:{self.remote_port} here is another server): {opened}")
+        if opened.get("new_browser_panel_id"):
+            raise Failure(f"the chip opened a cmux browser with the setting off: {opened}")
+        return {"external_url": got}
+
+    def menu_items(self, port: int) -> Dict[str, Any]:
+        """What both port menus offer for `port` of the loopback Mac right now."""
+        menus = self.ports_call("menus", workspace_id=self.mirror_id)
+        mirror = menus.get("mirror") or {}
+        mirror_items = next((p.get("items") for p in mirror.get("ports") or [] if p.get("remote_port") == port), None)
+        mac = next((m for m in menus.get("settings") or [] if m.get("machine") == self.machine), {})
+        settings_items = next((p.get("items") for p in mac.get("ports") or [] if p.get("remote_port") == port), None)
+        return {"mirror": mirror_items, "settings": settings_items, "reason": mirror.get("reason"),
+                "settings_shown": mac.get("shown")}
+
+    def pending_forward_stop(self) -> Dict[str, Any]:
+        self.require_forwarded()
+        server = MarkerServer(f"pending-{self.nonce}")
+        self.servers.append(server)
+        port = server.port
+        self.ports_call("forward", port=port)
+        local = int(wait_for(f"a manual forward of {port}", lambda: self.active_forward(port), self.timeout)["local_port"])
+        stopped = False
+        self.link("stop")
+        try:
+            wait_for(f"forward of {port} to wait", lambda: (self.forward(port) or {}).get("state") == "waiting", self.timeout)
+            self.wait_refused(local, 2.0, f"127.0.0.1:{local} to refuse while the link is down")
+            items = self.menu_items(port)
+            if "stopForwarding" not in (items["mirror"] or []):
+                raise Failure(f"M's Ports on <Mac> menu offers no Stop Forwarding for the waiting forward of {port}: {items}")
+            if "stopForwarding" not in (items["settings"] or []):
+                raise Failure(f"Settings' Ports… menu offers no Stop Forwarding for the waiting forward of {port}: {items}")
+            self.ports_call("stop", port=port)
+            stopped = True
+            wait_for(f"the stopped forward of {port} to go", lambda: self.forward(port) is None, 5.0)
+        finally:
+            if not stopped:
+                self.ports_call("stop", port=port)
+            self.link("restore")
+        self.wait_linked()
+        wait_for(f"forward of {self.remote_port} back", lambda: self.active_forward(self.remote_port), self.timeout)
+        self.ports_call("refresh")
+        deadline = time.monotonic() + 3.0
+        while time.monotonic() < deadline:
+            row = self.forward(port)
+            if row is not None or accepts("127.0.0.1", local):
+                raise Failure(f"the stopped forward of {port} came back with the link: {row}")
+            time.sleep(0.3)
+        return {"port": port, "local_port": local, "menus": items}
+
     # -- run ------------------------------------------------------------------
 
     def cleanup(self) -> None:
@@ -702,6 +772,8 @@ class PortForwardE2E:
                 ("old_host_disables", self.old_host),
                 ("capability_failure_retried", self.capability_failure_retried),
                 ("listing_failure_retried", self.listing_failure_retried),
+                ("chip_default_browser_uses_local_port", self.chip_default_browser),
+                ("pending_forward_offers_stop", self.pending_forward_stop),
             ]:
                 ok = self.step(name, check) and ok
         self.cleanup()

@@ -618116,6 +618116,23 @@
           }
         }
       }
+    },
+    "supermux.ports.chip.notForwarded": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Port %1$@ from %2$@ isn't forwarded to this Mac. Forward it with Ports on %3$@ › Forward to This Mac."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%2$@のポート%1$@はこのMacに転送されていません。「%3$@のポート」›「このMacに転送」で転送してください。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

@@ -260,7 +260,8 @@ public struct SupermuxRemoteMacsSettingsCard: View {
 /// One known Mac in the Remote Macs card, laid out like a row of the
 /// Settings › Devices list (``ComputersSettingsRow``): its name, then its
 /// link state and how many of its workspaces this Mac sees (or why the link
-/// is down), and while connected its forwarded ports with a Ports… menu.
+/// is down), and while connected its forwarded ports, with a Ports… menu
+/// while it can forward or a forward is still pending.
 private struct SupermuxRemoteMacRow: View {
     let mac: SupermuxRemoteMacsSettingsSnapshot.Mac
     let remote: SupermuxRemoteMacsSettingsActions
@@ -297,7 +298,7 @@ private struct SupermuxRemoteMacRow: View {
                 }
             }
             Spacer(minLength: 8)
-            if mac.link == .connected, mac.portsNote == nil {
+            if mac.showsPortsMenu {
                 portsMenu
             }
         }
@@ -317,22 +318,24 @@ private struct SupermuxRemoteMacRow: View {
         return String(localized: "supermux.ports.settings.line", defaultValue: "Ports: \(list)")
     }
 
+    /// Each port's items as the app decides them (a pending forward offers
+    /// Stop Forwarding even while the Mac cannot forward), then Forward a
+    /// Port… while it can.
     private var portsMenu: some View {
-        Menu(String(localized: "supermux.ports.settings.menu", defaultValue: "Ports…")) {
-            ForEach(mac.ports) { port in
+        let ports = mac.ports.filter { !$0.actions.isEmpty }
+        return Menu(String(localized: "supermux.ports.settings.menu", defaultValue: "Ports…")) {
+            ForEach(ports) { port in
                 Menu(port.menuLabel) {
-                    if port.localPort != nil {
-                        portButton(port, .openInBrowser, String(localized: "supermux.ports.menu.openDefault", defaultValue: "Open in Default Browser"))
-                        portButton(port, .copyLocalURL, String(localized: "supermux.ports.menu.copy", defaultValue: "Copy Local URL"))
-                        portButton(port, .stopForwarding, String(localized: "supermux.ports.menu.stop", defaultValue: "Stop Forwarding"))
-                    } else {
-                        portButton(port, .forward, String(localized: "supermux.ports.menu.forward", defaultValue: "Forward to This Mac"))
+                    ForEach(port.actions, id: \.self) { action in
+                        Button(Self.title(of: action)) { remote.portAction(mac.id, port.remotePort, action) }
                     }
                 }
             }
-            if !mac.ports.isEmpty { Divider() }
-            Button(String(localized: "supermux.ports.menu.forwardPort", defaultValue: "Forward a Port…")) {
-                remote.forwardPort(mac.id)
+            if mac.canForwardPorts {
+                if !ports.isEmpty { Divider() }
+                Button(String(localized: "supermux.ports.menu.forwardPort", defaultValue: "Forward a Port…")) {
+                    remote.forwardPort(mac.id)
+                }
             }
         }
         .menuStyle(.borderlessButton)
@@ -341,12 +344,17 @@ private struct SupermuxRemoteMacRow: View {
         .accessibilityIdentifier("SupermuxRemoteMacPortsMenu")
     }
 
-    private func portButton(
-        _ port: SupermuxRemoteMacsSettingsSnapshot.Port,
-        _ action: SupermuxRemoteMacPortAction,
-        _ title: String
-    ) -> some View {
-        Button(title) { remote.portAction(mac.id, port.remotePort, action) }
+    private static func title(of action: SupermuxRemoteMacPortAction) -> String {
+        switch action {
+        case .openInBrowser:
+            return String(localized: "supermux.ports.menu.openDefault", defaultValue: "Open in Default Browser")
+        case .copyLocalURL:
+            return String(localized: "supermux.ports.menu.copy", defaultValue: "Copy Local URL")
+        case .stopForwarding:
+            return String(localized: "supermux.ports.menu.stop", defaultValue: "Stop Forwarding")
+        case .forward:
+            return String(localized: "supermux.ports.menu.forward", defaultValue: "Forward to This Mac")
+        }
     }
 
     private var detail: String {
