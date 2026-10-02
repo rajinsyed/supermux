@@ -230,6 +230,15 @@ final class DeviceWorkspaceLayoutCoordinator {
         guard remaining.allSatisfy({ $0.resource.machine == machine && $0.remoteWorkspaceID == remoteID }),
               Set(remaining.map(\.panelID)) == Set(native.panels.keys).subtracting([projection.panelID])
                   .subtracting(reserved).subtracting(supermuxLocalPanelIDs) else { return }
+        // That Mac refuses to close its workspace's last surface. When this was
+        // the mirror's last terminal and only its own tabs stay, that workspace
+        // closes there instead and this one stays here with those tabs, as a
+        // local workspace: no close is sent that could only fail with a card.
+        let supermuxOwnerSurfaceCount = (try? snapshots[remoteID]?.layout.validatedSurfaceIDs())?.count
+        if remaining.isEmpty, reserved.isEmpty, !supermuxLocalPanelIDs.isEmpty, supermuxOwnerSurfaceCount == 1,
+           SupermuxDeviceMirrorCloseGate.closeOnItsMacKeepingHere(native, machine: machine, remoteWorkspaceID: remoteID) {
+            return
+        }
         // SUPERMUX:end device-layout-local-panels
         let operation = enqueueClose(surfaceID: projection.resource.key, remoteID: remoteID, workspaceID: projection.workspaceID)
         Task { @MainActor [weak self] in

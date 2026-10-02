@@ -400,7 +400,13 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   keeps following that Mac's splits and tabs around it in both directions. It keeps its place beside
   its neighbouring terminal tab (or its own split beside the terminals it was split from); if those
   terminals close there, it moves to the end of the last pane. Closing a mirrored terminal tab beside
-  it still closes that terminal on the owning Mac. Only a bound mirror counts (a local workspace that
+  it still closes that terminal on the owning Mac. Closing the mirror's last terminal tab while such
+  tabs stay works like closing a local workspace's last terminal beside a browser: when that terminal
+  is all the workspace holds there, that Mac cannot keep a workspace without a surface, so its
+  workspace closes there (as closing the mirror closes it: no prompt, `force`, held while that Mac is
+  offline), and the mirror stays here with its own tabs as an ordinary local workspace (no longer a
+  mirror; nothing re-projects or closes it; its browsers keep the route they opened with until a
+  relaunch). Only a bound mirror counts (a local workspace that
   borrows terminals stays upstream's mixed workspace). Known gap: ⌘T/⌘D with such a tab selected
   makes a local shell, which stalls the sync again until it closes.
 - **A mirror's browser opens that Mac's localhost** (#707): every browser in a mirror, bound or not
