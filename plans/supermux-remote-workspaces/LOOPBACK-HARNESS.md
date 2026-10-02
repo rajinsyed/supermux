@@ -352,7 +352,13 @@ reconnect does not close the source and drops the pending close. W10 groups a mi
 workspace and deletes the group with `workspace.group.delete {close_workspaces: true}`: the source
 closes on its Mac and is not hidden. W11 builds a local workspace holding only terminals borrowed
 (`surface.project`) from two sources, closes its own shell, and checks it is not taken for a mirror
-and that closing it leaves both sources, their mirrors and the pending/hidden sets alone.
+and that closing it leaves both sources, their mirrors and the pending/hidden sets alone. W12
+deletes the same kind of group from the phone (mobile `workspace.group.action {action: delete}` sent
+over the loopback link with `supermux.devices.request`): the phone never listed the mirror member,
+so its source stays open, is hidden here and is not queued for a close. W13 borrows one terminal of
+a source into a local workspace (keeping its own shell), hides the source's mirror and unhides it:
+the source gets its own mirror again, and auto-mirror runs at most a few passes in 3 s (the skip
+loop ran ~15).
 
 ```bash
 CMUX_TAG=<tag> python3 tests/supermux/loopback_mirror_workspace_close_e2e.py \
