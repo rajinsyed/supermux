@@ -3521,6 +3521,7 @@
 		50BE00060000000000000012 /* SupermuxMobileHost+ProjectSetup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00060000000000000011 /* SupermuxMobileHost+ProjectSetup.swift */; };
 		50BE000200000000000000D6 /* SupermuxMobileHost+Run.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000200000000000000D5 /* SupermuxMobileHost+Run.swift */; };
 		50BE000A0000000000000026 /* SupermuxMobileHost+RunWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000A0000000000000025 /* SupermuxMobileHost+RunWorkspace.swift */; };
+		50BE00190500000000000014 /* SupermuxMobileHost+Simulator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00190500000000000013 /* SupermuxMobileHost+Simulator.swift */; };
 		50BE000200000000000000E2 /* SupermuxMobileHost+Usage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000200000000000000E1 /* SupermuxMobileHost+Usage.swift */; };
 		50BE000200000000000000C8 /* SupermuxMobileHost+Worktrees.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000200000000000000C7 /* SupermuxMobileHost+Worktrees.swift */; };
 		50BE000200000000000000BA /* SupermuxMobileObservers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000200000000000000B9 /* SupermuxMobileObservers.swift */; };
@@ -7959,6 +7960,7 @@
 		50BE00060000000000000011 /* SupermuxMobileHost+ProjectSetup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Projects/SupermuxMobileHost+ProjectSetup.swift"; sourceTree = "<group>"; };
 		50BE000200000000000000D5 /* SupermuxMobileHost+Run.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SupermuxMobileHost+Run.swift"; sourceTree = "<group>"; };
 		50BE000A0000000000000025 /* SupermuxMobileHost+RunWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SupermuxMobileHost+RunWorkspace.swift"; sourceTree = "<group>"; };
+		50BE00190500000000000013 /* SupermuxMobileHost+Simulator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SupermuxMobileHost+Simulator.swift"; sourceTree = "<group>"; };
 		50BE000200000000000000E1 /* SupermuxMobileHost+Usage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SupermuxMobileHost+Usage.swift"; sourceTree = "<group>"; };
 		50BE000200000000000000C7 /* SupermuxMobileHost+Worktrees.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SupermuxMobileHost+Worktrees.swift"; sourceTree = "<group>"; };
 		50BE000200000000000000B9 /* SupermuxMobileObservers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxMobileObservers.swift; sourceTree = "<group>"; };
@@ -9430,6 +9432,7 @@
 				50BE00170400000000000001 /* SupermuxTerminalSizingDefaults.swift */,
 				50BE00170400000000000003 /* SupermuxTerminalSizingSocketCommands.swift */,
 				50BE00180200000000000001 /* SupermuxDeviceMirrorCloseSocketCommands.swift */,
+				50BE00190500000000000013 /* SupermuxMobileHost+Simulator.swift */,
 				50BE00190500000000000003 /* SupermuxRemoteSimulatorLoopbackLane.swift */,
 				50BE00190500000000000001 /* SupermuxRemoteSimulatorSocketCommands.swift */,
 				50BE00050000000000000019 /* SupermuxDeviceMirrorPalette.swift */,
@@ -16359,6 +16362,7 @@
 				50BE00060000000000000012 /* SupermuxMobileHost+ProjectSetup.swift in Sources */,
 				50BE000200000000000000D6 /* SupermuxMobileHost+Run.swift in Sources */,
 				50BE000A0000000000000026 /* SupermuxMobileHost+RunWorkspace.swift in Sources */,
+				50BE00190500000000000014 /* SupermuxMobileHost+Simulator.swift in Sources */,
 				50BE000200000000000000E2 /* SupermuxMobileHost+Usage.swift in Sources */,
 				50BE000200000000000000C8 /* SupermuxMobileHost+Worktrees.swift in Sources */,
 				50BE000200000000000000BA /* SupermuxMobileObservers.swift in Sources */,
