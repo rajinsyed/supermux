@@ -58,11 +58,19 @@ independently:
                                          data store with its proxy (2 configurations, as the open tab's),
                                          so no open tab loads from this Mac; once released, that tab
                                          loads through the owner
+ 16 owner_localhost_keeps_origin        a Cloudflare Turnstile login page on the owner's localhost:P, P forwarded
+                                         here on P: the mirror tab runs at http://localhost:P (a secure
+                                         context, the hostname a dev sitekey allows), not the alias, and
+                                         Turnstile hands it a token (test sitekey; a local browser on the
+                                         same page is the control). Loopback: the owner serves P from
+                                         another port (`tunnel.serve_port`), so P is free here
 
 Uses the DEBUG drivers `supermux.devices.mirror.browser_route`, `.browser_proxy`,
 `.browser_proxy_fail`, `.browser_proxy_hold`, `.browser_store` and `.link_open`
 (SupermuxMirrorBrowserSocket) and the tunnel driver
-`supermux.devices.tunnel.journal` and `.pretend_old_host`. Writes a JSON report
+`supermux.devices.tunnel.journal`, `.pretend_old_host` and `.serve_port`, and the
+port-forward drivers `supermux.devices.ports.forward`, `.list` and `.stop`. Step
+16 needs challenges.cloudflare.com. Writes a JSON report
 (default tests/supermux/artifacts/loopback_mirror_browser_e2e-<tag>.json) and
 exits non-zero on any failure. Stdlib only.
 
@@ -77,6 +85,7 @@ import base64
 import http.server
 import json
 import os
+import random
 import select
 import socket
 import subprocess
@@ -111,15 +120,50 @@ HANDSHAKE_DEADLINE_S = 10.0
 # How long the closed port's explanation page may take in a new mirror tab: the
 # proxy answers in milliseconds (the tunnel's refusal, then the page).
 EXPLAIN_PAGE_S = 5.0
+# Cloudflare's dummy Turnstile sitekey that always passes (meant for automated
+# tests; it works on any hostname). A real sitekey also checks the page's
+# hostname against its allowlist, which for a dev app lists `localhost`.
+TURNSTILE_TEST_SITEKEY = "1x00000000000000000000AA"
+# How long Turnstile (challenges.cloudflare.com) may take to hand a token.
+TURNSTILE_TOKEN_S = 45.0
+# What the page reports about itself and its Turnstile widget.
+TURNSTILE_PROBE = """JSON.stringify({origin: location.origin, hostname: location.hostname,
+  secure: window.isSecureContext, subtle: !!(window.crypto && window.crypto.subtle),
+  turnstile: window.__turnstile || null})"""
+
+
+def turnstile_page(title: str) -> str:
+    """A login-like page with an explicitly rendered Turnstile widget that records
+    its outcome in `window.__turnstile` (state: loading, rendered, token, error,
+    unsupported, threw)."""
+    return f"""<!doctype html>
+<html><head><meta charset="utf-8"><title>{title}</title>
+<script>
+window.__turnstile = {{state: "loading"}};
+window.onTurnstileLoad = function () {{
+  try {{
+    turnstile.render("#widget", {{
+      sitekey: "{TURNSTILE_TEST_SITEKEY}",
+      callback: function (token) {{ window.__turnstile = {{state: "token", length: token.length}}; }},
+      "error-callback": function (code) {{ window.__turnstile = {{state: "error", code: String(code)}}; return true; }},
+      "unsupported-callback": function () {{ window.__turnstile = {{state: "unsupported"}}; }}
+    }});
+    if (window.__turnstile.state === "loading") window.__turnstile = {{state: "rendered"}};
+  }} catch (error) {{ window.__turnstile = {{state: "threw", error: String(error)}}; }}
+}};
+</script>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTurnstileLoad&render=explicit" async defer></script>
+</head><body><form><h1>{title}</h1><div id="widget"></div></form></body></html>
+"""
 
 
 class MarkerServer:
     """A threaded HTTP server for one step: a marker page and every request's headers."""
 
-    def __init__(self, host: str, title: str) -> None:
+    def __init__(self, host: str, title: str, body: Optional[str] = None) -> None:
         self.title = title
         self.hits: List[Dict[str, Any]] = []
-        page = f"<html><head><title>{title}</title></head><body>{title}</body></html>".encode()
+        page = (body or f"<html><head><title>{title}</title></head><body>{title}</body></html>").encode()
         hits = self.hits
 
         class Handler(http.server.BaseHTTPRequestHandler):
@@ -150,6 +194,22 @@ def free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
         probe.bind(("127.0.0.1", 0))
         return probe.getsockname()[1]
+
+
+def free_dev_port() -> int:
+    """A port free on both loopback addresses below the ephemeral range, as a dev
+    server's is: an ephemeral port can be taken meanwhile as the local port of any
+    outgoing connection (the page's own loads), and a forward then lands elsewhere."""
+    for _ in range(200):
+        port = random.randint(20000, 40000)
+        try:
+            for family, host in ((socket.AF_INET, "127.0.0.1"), (socket.AF_INET6, "::1")):
+                with socket.socket(family, socket.SOCK_STREAM) as probe:
+                    probe.bind((host, port))
+        except OSError:
+            continue
+        return port
+    raise Failure("precondition: no free port in 20000-40000")
 
 
 def primary_ipv4() -> Optional[str]:
@@ -722,6 +782,97 @@ class MirrorBrowserE2E:
                         pass
             self.sock.call("supermux.devices.set_auto_mirror", {"enabled": True})
 
+    def turnstile_probe(self, surface_id: str) -> Dict[str, Any]:
+        reply = self.sock.call("browser.eval", {"surface_id": surface_id, "script": TURNSTILE_PROBE}) or {}
+        try:
+            return json.loads(reply.get("value") or "{}")
+        except (TypeError, ValueError):
+            raise Failure(f"the page's probe returned {reply.get('value')!r}")
+
+    def wait_turnstile_token(self, surface_id: str, where: str) -> Dict[str, Any]:
+        def token() -> Dict[str, Any]:
+            probe = self.turnstile_probe(surface_id)
+            if (probe.get("turnstile") or {}).get("state") != "token":
+                raise Failure(f"{probe}")
+            return probe
+
+        return wait_for(f"Turnstile to hand {where} a token", token, TURNSTILE_TOKEN_S, interval_s=0.5)
+
+    def owner_localhost_keeps_origin(self) -> Dict[str, Any]:
+        """The user's case: a dev app's login page with a Cloudflare Turnstile
+        widget, served on the owning Mac's localhost:P and opened in the mirror.
+        P is forwarded to this Mac on P itself (port forwarding does that for a
+        server in a mirrored terminal whenever P is free here), so the mirror tab
+        must run at the page's own origin, http://localhost:P: a secure context,
+        and the hostname a real sitekey's allowlist names. Before the fix the
+        mirror loaded upstream's alias, http://cmux-loopback.localtest.me:P, an
+        insecure origin whose hostname no sitekey allows (Turnstile 110200,
+        "Domain not authorized": no widget, no login). In loopback both "Macs"
+        share one port space, so the owner serves P from another port Q
+        (`tunnel.serve_port`), leaving P free here as on two Macs. A local
+        browser on the same page is the control that Turnstile itself works."""
+        title = f"marker-{self.nonce}-turnstile"
+        server = MarkerServer("127.0.0.1", title, body=turnstile_page(title))
+        self.servers.append(server)
+        owner_port = free_dev_port()
+        tabs: List[str] = []
+        self.tunnel("serve_port", port=owner_port, **{"from": server.port})
+        forwarded = False
+        try:
+            local = self.new_tab(self.pair.source_id, self.source_terminal, f"http://localhost:{server.port}/login")
+            tabs.append(local)
+            self.wait_title(local, lambda t: t == title, "the Turnstile page in a local browser")
+            try:
+                control = self.wait_turnstile_token(local, "a local browser")
+            except Failure as error:
+                raise Failure(f"precondition: Turnstile hands no token in a local cmux browser either "
+                              f"(is challenges.cloudflare.com reachable?): {error}")
+
+            self.sock.call("supermux.devices.ports.forward", {"machine": self.pair.machine, "port": owner_port})
+            forwarded = True
+
+            def same_port_forward() -> Dict[str, Any]:
+                rows = (self.sock.call("supermux.devices.ports.list", {"machine": self.pair.machine}) or {}).get("forwards") or []
+                row = next((r for r in rows if int(r.get("remote_port") or 0) == owner_port), None)
+                if not row or row.get("state") != "active":
+                    raise Failure(f"forward {row}")
+                return row
+
+            row = wait_for(f"a forward of the owner's {owner_port}", same_port_forward, self.timeout)
+            if int(row.get("local_port") or 0) != owner_port:
+                raise Failure(f"precondition: the forward listens on {row.get('local_port')}, not on {owner_port}: {row}")
+
+            opens_before = self.journal_opens(owner_port)
+            url = f"http://localhost:{owner_port}/login"
+            panel = self.new_tab(self.pair.mirror_id, self.mirror_terminal(), url)
+            tabs.append(panel)
+            self.wait_title(panel, lambda t: t == title, "the owner's Turnstile page in the mirror")
+            route = self.expect_route(self.pair.mirror_id, panel, remote=True)
+            opens = self.journal_opens(owner_port)
+            if opens <= opens_before:
+                raise Failure(f"the page did not come from the owner (journal `opened` for {owner_port}: "
+                              f"{opens_before} -> {opens})")
+            probe = self.turnstile_probe(panel)
+            want = f"http://localhost:{owner_port}"
+            if probe.get("origin") != want or probe.get("secure") is not True:
+                raise Failure(f"the mirror tab runs at {probe.get('origin')} (secure context: {probe.get('secure')}, "
+                              f"crypto.subtle: {probe.get('subtle')}), want {want}, a secure context: Turnstile "
+                              f"checks a real sitekey against hostname {probe.get('hostname')!r}, which no dev "
+                              f"sitekey allows (110200); probe {probe}")
+            mirrored = self.wait_turnstile_token(panel, "the mirror tab")
+            return {"owner_port": owner_port, "served_from": server.port, "forward": row, "route": route,
+                    "journal_opens": opens, "hosts": [hit.get("host") for hit in server.hits],
+                    "local_probe": control, "mirror_probe": mirrored}
+        finally:
+            for tab in tabs:
+                try:
+                    self.sock.call("surface.close", {"surface_id": tab})
+                except Failure:
+                    pass
+            if forwarded:
+                self.sock.call("supermux.devices.ports.stop", {"machine": self.pair.machine, "port": owner_port})
+            self.tunnel("serve_port", port=owner_port)
+
     def idle_proxy_connections_close(self) -> Dict[str, Any]:
         """Local clients that connect and send nothing cannot hold the proxy's
         connections: past the limit of clients still in their handshake they are
@@ -854,9 +1005,13 @@ class MirrorBrowserE2E:
                 ("data_store_per_app_instance", self.data_store_per_app_instance),
                 ("unbound_mirror_browser_routes", self.unbound_mirror_browser_routes),
                 ("idle_proxy_connections_close", self.idle_proxy_connections_close),
-                # Last: they fail the proxy's listener.
+                # They fail the proxy's listener.
                 ("proxy_listener_failure_recovers", self.proxy_listener_failure_recovers),
                 ("restart_keeps_mirror_store_proxied", self.restart_keeps_mirror_store_proxied),
+                # After them: its Cloudflare connections through the proxy, still
+                # open when a listener fails, made the step above fail (a tab's
+                # load timed out, or went to the alias directly, no tunnel open).
+                ("owner_localhost_keeps_origin", self.owner_localhost_keeps_origin),
             ]:
                 ok = self.step(name, check) and ok
         for server in self.servers:
