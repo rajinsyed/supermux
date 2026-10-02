@@ -115,6 +115,16 @@ enum SupermuxMirrorBrowserSocket {
                 "owner_dials": proxy.stats.ownerDials,
                 "direct_dials": proxy.stats.directDials,
                 "failures": proxy.stats.failures,
+                "silent_deadline_closes": proxy.stats.silentDeadlines,
+                "connections": proxy.stats.recentTraces.map { trace -> [String: Any] in
+                    [
+                        "id": trace.id, "accepted": trace.accepted, "first_byte": trace.firstByte ?? NSNull(),
+                        "first_bytes": trace.firstBytes, "decided": trace.decided ?? NSNull(),
+                        "target": trace.target, "ended": trace.ended ?? NSNull(), "outcome": trace.outcome,
+                        "first_request_byte": trace.firstRequestByte ?? NSNull(), "request_bytes": trace.requestBytes,
+                        "first_response_byte": trace.firstResponseByte ?? NSNull(), "response_bytes": trace.responseBytes,
+                    ]
+                },
             ] as [String: Any],
         ]
     }
