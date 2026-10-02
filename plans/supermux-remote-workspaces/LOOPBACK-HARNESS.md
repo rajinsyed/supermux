@@ -961,6 +961,18 @@ CMUX_TAG=<tag> python3 tests/supermux/loopback_mirror_simulator_e2e.py --app-pat
   --projects-file /tmp/<tag>/projects.json
 ```
 
+**A slow `simctl` fails eight steps (2026-10-03).** `streams_video`, `device_picker_lists_owner_devices` (picker
+`[]`), `quality_cap`, `link_drop_reconnects`, `superseded_no_ping_pong`, `viewer_close_closes_owner_panel` ("the
+owner's Simulator tab never picks a device"), `new_simulator_tab_bar_runs_on_owner` and `restore_rebinds` failed on
+c745a6c9fdb, 6ba37d7a620 and 6e9358fda54 alike, so not the owner's listener check (c745a6c9fdb has none). Every `simctl`
+launch on this Mac took 20–22 s, also `simctl help` from a plain shell with no tagged app running, while `ls`,
+`python3` and `xcrun --find` started at once; a sample of a waiting `simctl` had 875 of 881 main-thread samples in
+`_dyld_start`, in `dyld4::RemoteNotificationResponder::blockOnSynchronousEvent` (dyld waiting on an image-load
+observer before `main`; `spindump` and `sysdiagnosed` had been running for hours, cause not confirmed). The owner's
+`mobile.simulator.devices.list` runs a fresh `simctl list` and missed its 20 s reply deadline every time
+(`supermux.deviceLink mobile.simulator.devices.list missed its reply deadline` in the app log). Before blaming a
+change, time `$(xcrun --find simctl) help`: well under a second on a healthy Mac.
+
 Not covered here (two real Macs): the `simulator_stream` lane over QUIC (direct and relay) through
 `DeviceIrxClient.supermuxTunnelConnection`, capture on a headless or locked owning Mac, frame rate and
 latency, the phone and a Mac taking the stream from each other, and version skew.
