@@ -74,6 +74,9 @@ struct WorkspaceRow: View {
     /// Opens this workspace's changes without selecting the row. Ignored unless
     /// ``WorkspaceRowContent/opensChanges`` is set.
     let onOpenChanges: (@MainActor () -> Void)?
+    // SUPERMUX:begin supermux-mobile-nested-branch-line (a nested row's accessory, set by the table's #701 modifier)
+    @Environment(\.supermuxNestedRowAccessory) private var supermuxNestedRowAccessory
+    // SUPERMUX:end supermux-mobile-nested-branch-line
 
     init(content: WorkspaceRowContent, onOpenChanges: (@MainActor () -> Void)? = nil) {
         self.content = content
@@ -155,6 +158,12 @@ struct WorkspaceRow: View {
                         .lineLimit(1)
                 }
 
+                // SUPERMUX:begin supermux-mobile-nested-branch-line (a nested row's branch, right under its title as on the Mac sidebar)
+                if let supermuxNestedRowAccessory, supermuxNestedRowAccessory.hasBranchLine {
+                    SupermuxNestedBranchSlot(accessory: supermuxNestedRowAccessory)
+                }
+                // SUPERMUX:end supermux-mobile-nested-branch-line
+
                 if let description = content.description {
                     Text(description)
                         .font(.subheadline)
@@ -166,7 +175,12 @@ struct WorkspaceRow: View {
                     Text(content.previewLine)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                        .lineLimit(content.previewLineLimit, reservesSpace: true)
+                        // SUPERMUX:begin supermux-mobile-nested-branch-line (the branch line takes one preview line; upstream: `.lineLimit(content.previewLineLimit, reservesSpace: true)`)
+                        .lineLimit(
+                            supermuxNestedRowAccessory?.previewLineLimit(content.previewLineLimit) ?? content.previewLineLimit,
+                            reservesSpace: true
+                        )
+                        // SUPERMUX:end supermux-mobile-nested-branch-line
                         // SUPERMUX:begin supermux-mobile-nested-accessory (a nested row's accessory ends where this text slot ends, before the changes chip)
                         .supermuxNestedAccessorySlot()
                         // SUPERMUX:end supermux-mobile-nested-accessory
