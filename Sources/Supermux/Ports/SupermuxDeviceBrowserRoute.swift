@@ -96,9 +96,11 @@ final class SupermuxDeviceBrowserProxies {
 
     private var proxies: [SurfaceMachineID: SupermuxDeviceBrowserProxy] = [:]
 
-    /// The proxy endpoint for `machine`'s mirror browsers, or nil while it is
-    /// starting: those browsers' navigations wait until it is ready, when every
-    /// browser on that app instance's data store gets it.
+    /// The proxy endpoint for `machine`'s mirror browsers, or nil while its
+    /// first listener starts: those browsers' navigations wait until it is
+    /// ready, when every browser on that app instance's data store gets it.
+    /// While a failed listener is replaced it is the dead endpoint (never nil),
+    /// so a new browser cannot clear the proxy of the store the open ones share.
     func endpoint(for machine: SurfaceMachineID) -> BrowserProxyEndpoint? {
         let proxy = proxies[machine] ?? makeProxy(for: machine)
         proxy.start()
@@ -118,14 +120,14 @@ final class SupermuxDeviceBrowserProxies {
         return proxy
     }
 
-    /// Hands `machine`'s endpoint (nil while its listener restarts) to every
-    /// browser on that app instance's data store, in each window's workspaces
-    /// and their Docks: upstream's `setRemoteProxyEndpoint` applies it and
-    /// resumes the navigations waiting for it. Only those browsers, never all of
-    /// a workspace's (`Workspace.applyRemoteProxyEndpointUpdate`): an endpoint
-    /// configures a browser's whole data store, so a local browser (its
-    /// profile's store) must never get one.
-    private static func deliver(_ endpoint: BrowserProxyEndpoint?, to machine: SurfaceMachineID) {
+    /// Hands `machine`'s new endpoint to every browser on that app instance's
+    /// data store, in each window's workspaces and their Docks: upstream's
+    /// `setRemoteProxyEndpoint` applies it and resumes the navigations waiting
+    /// for it. Only those browsers, never all of a workspace's
+    /// (`Workspace.applyRemoteProxyEndpointUpdate`): an endpoint configures a
+    /// browser's whole data store, so a local browser (its profile's store)
+    /// must never get one.
+    private static func deliver(_ endpoint: BrowserProxyEndpoint, to machine: SurfaceMachineID) {
         guard let store = SupermuxDeviceBrowserRoute.websiteDataStoreID(for: machine) else { return }
         for workspace in SupermuxDeviceWorkspaceIndex.allMainWindowWorkspaces() {
             var panels = Array(workspace.panels.values)
