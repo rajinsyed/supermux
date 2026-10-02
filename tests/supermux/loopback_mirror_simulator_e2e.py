@@ -50,8 +50,9 @@ session, pump, encoder and worker ring; only QUIC is replaced.
  19. new_simulator_tab_bar_runs_on_owner    the pane tab bar's New Simulator button: as step 6
  20. restore_rebinds                        (--app-path) quit (`tell application id … to quit`, as
                                             scripts and launchers do, with a simulator worker
-                                            running) within 60s and relaunch: the viewer comes back
-                                            in M, streams S's restored panel, no second SimulatorPanel
+                                            running) within 60s, the script seeing no error, and
+                                            relaunch: the viewer comes back in M, streams S's
+                                            restored panel, no second SimulatorPanel
 
 Writes a JSON report (default tests/supermux/artifacts/loopback_mirror_simulator_e2e-<tag>.json)
 and a window screenshot next to it (`…-viewer.png`), and exits non-zero on any failure. The
@@ -850,6 +851,10 @@ class MirrorSimulatorE2E:
         wait_for("the restored viewer tab", lambda: self.viewer() is not None, 60)
         viewer = self.wait_streaming(0, 3, 90)
         settled = self.one_viewer_on_owner()
+        quit_error = self.facts.get("quit_error")
+        if quit_error:
+            # The app quit, but a script quitting it would have stopped on this error.
+            raise Failure(f"the app quit, but `tell application id … to quit` reported an error: {quit_error}")
         return {"mirror": self.mirror, "frames": viewer.get("presented_frames"),
                 "host_panel_id": settled["host_panel_id"], "switched_from": first_pick,
                 "quit_seconds": self.facts.get("quit_seconds")}
@@ -897,6 +902,8 @@ class MirrorSimulatorE2E:
                 + (f": the quit went to worker {gone}, which exited (the app started another), not to the app"
                    if gone else ""))
         self.facts["quit_seconds"] = round(time.monotonic() - asked, 2)
+        if quit_request.returncode != 0:
+            self.facts["quit_error"] = f"osascript exit {quit_request.returncode}: {quit_request.stderr.strip()[:200]}"
 
         def quit_done() -> bool:
             result = subprocess.run(["osascript", "-e", f'application id "{bundle_id}" is running'],
