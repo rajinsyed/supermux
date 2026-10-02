@@ -654,6 +654,15 @@ nothing. `unlisted_forward_explains`: a manual forward of P (not listed; the own
 show "localhost:P on <Mac> isn't answering" (red: WebKit's bare error, the title the URL). The suite clears the
 listed ports (`tunnel.clear_injected`) and stops its manual forwards at the end.
 
+Their second review adds four: `bypass_browser_stays_local` (a `browser.open_split` with `bypass_remote_proxy` in the
+mirror must load this Mac's `localhost` page, with neither the mirror's store nor a reroute loop, while the open mirror
+tab keeps the store's 2 proxy configurations and the owner's page); `as_written_page_navigation_reroutes` (an
+as-written page's own `location.href` to `localhost:Q`, this Mac serving Q, must show the owner's Q: it exercises the
+#756 navigation policy, without which WebKit loads the loopback URL itself, straight to this Mac);
+`public_page_gets_no_ports` (an alias page that defines `__cmuxSetMirrorLoopbackPorts` must be handed nothing when the
+forwards change); `same_origin_iframe_reaches_owner` (a same-origin iframe's `fetch` to `localhost:Q` must reach the
+owner's Q).
+
 **A URL typed into a tab, to plain HTTP on a host that is not loopback by name, waits ~10 s on this Mac**
 (WebKit and macOS 27, not the proxy; not a fail-open). WebKit 27 moves such a navigation into a new hardened
 WebContent process (`triggerProcessSwapForEnhancedSecurity`, `continueNavigationInNewProcess`), and making one

@@ -435,12 +435,16 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   before the forward is up (a link the dev server prints, a restored tab) it moves to `localhost:3000`
   once it is; when the forward stops or moves it goes back through the alias, and every main-frame
   navigation (reload, link, redirect, back and forward) is routed the same way, so none lands on this
-  Mac's own `localhost:3000`. A page loaded as written calls that Mac's other ports with `fetch`,
-  XHR, `WebSocket` and `EventSource` (#755): a port forwarded here on the same port goes to its
+  Mac's own `localhost:3000`. A page loaded as written (and its same-origin `localhost` iframes)
+  calls that Mac's other ports with `fetch`, XHR, `WebSocket` and `EventSource` (#755): a port
+  forwarded here on the same port goes to its
   forward (with the page's `localhost` cookies), any other port through the alias (its own cookies;
   the proxy keeps the API's `Access-Control-Allow-Origin` for the page), so a Supabase on 54321 there
   is reached even when this Mac runs its own. Markup (`<img>`, `<script>`, `<iframe>`, forms) pointing
-  at another `localhost` port is not rerouted, as on an alias page. Public sites load from this Mac. Each remote app instance (Mac + tag, so a
+  at another `localhost` port is not rerouted, as on an alias page; only a page on a loopback host is
+  told which ports are forwarded. A browser opened in a mirror that bypasses the workspace proxy (the
+  http diff viewer, a `local`-context split) is an ordinary browser of this Mac (this Mac's profile,
+  its `localhost`). Public sites load from this Mac. Each remote app instance (Mac + tag, so a
   dogfood build beside that Mac's main app is separate) has its own persistent
   website data store, so a login to its dev app survives the mirror being re-created and never mixes
   with this Mac's `localhost` cookies (and public sites are not signed in with the profile's cookies,
