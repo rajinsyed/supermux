@@ -5929,8 +5929,9 @@ Re-apply after an upstream merge:
   close. The owning Mac refuses `mobile.terminal.close` on a workspace's last surface (`ws.panels.count <= 1`,
   `invalid_state`), so without this, closing the mirror's last terminal beside its browser (alone, or with others in
   one go) shows "Couldn't update the machine workspace", the source keeps running and auto-mirror later closes the
-  mirror (browser included) as an orphan. The gate (only on that refusal, with that layout holding just the closed
-  surface and the mirror holding only its own panels) has the closer pend a `workspace.close` (`force`) like a user
+  mirror (browser included) as an orphan. The gate (only on that refusal, or on an answer that never came: `timed_out`, whose
+  missed-deadline fence just re-fetched that layout, or `server_busy` after the link's retries; with that layout holding
+  just the closed surface and the mirror holding only its own panels) has the closer pend a `workspace.close` (`force`) like a user
   close of the mirror and unbind the mirror, which keeps its tabs. Do not decide this earlier (in `projectionDidEnd`,
   from the last accepted snapshot): closes queued or held meanwhile are not in it. If upstream lets a device
   workspace's last surface close, or keeps empty workspaces, retire only this site (and site 4).
