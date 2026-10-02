@@ -425,13 +425,22 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   there is the other Mac's dev server even when this Mac runs its own on 3000. The omnibar and the
   server's `Host` say `localhost`, but the page runs at upstream's alias origin,
   `http://cmux-loopback.localtest.me:3000`: not a secure context, and a hostname a dev app's sitekeys
-  and OAuth settings do not name. So when this Mac forwards that Mac's port on the same port (#754;
-  port forwarding does that automatically for a server in a mirrored terminal whenever the port is
-  free here), the mirror's browser loads `http://localhost:3000` as written, straight to the
-  forward, and the page keeps its own origin, as on that Mac: a Cloudflare Turnstile login works
-  (on the alias it showed "Unable to connect to website", 110200 Domain not authorized). A port
-  forwarded elsewhere (taken here) or not forwarded keeps the alias, and a page loaded through a
-  forward reaches that Mac's other ports only through their own same-port forwards. Public sites load from this Mac. Each remote app instance (Mac + tag, so a
+  and OAuth settings do not name. So when this Mac forwards that Mac's port on the same port while
+  that Mac lists the port (#754; port forwarding does that automatically for a server in a mirrored
+  terminal whenever the port is free here), the mirror's browser loads `http://localhost:3000` as
+  written, straight to the forward, and the page keeps its own origin, as on that Mac: a Cloudflare
+  Turnstile login works (on the alias it showed "Unable to connect to website", 110200 Domain not
+  authorized). A port forwarded elsewhere (taken here), not forwarded, or not listed there (a manual
+  forward of a port nothing serves) keeps the alias. The tab follows its forward (#756): opened
+  before the forward is up (a link the dev server prints, a restored tab) it moves to `localhost:3000`
+  once it is; when the forward stops or moves it goes back through the alias, and every main-frame
+  navigation (reload, link, redirect, back and forward) is routed the same way, so none lands on this
+  Mac's own `localhost:3000`. A page loaded as written calls that Mac's other ports with `fetch`,
+  XHR, `WebSocket` and `EventSource` (#755): a port forwarded here on the same port goes to its
+  forward (with the page's `localhost` cookies), any other port through the alias (its own cookies;
+  the proxy keeps the API's `Access-Control-Allow-Origin` for the page), so a Supabase on 54321 there
+  is reached even when this Mac runs its own. Markup (`<img>`, `<script>`, `<iframe>`, forms) pointing
+  at another `localhost` port is not rerouted, as on an alias page. Public sites load from this Mac. Each remote app instance (Mac + tag, so a
   dogfood build beside that Mac's main app is separate) has its own persistent
   website data store, so a login to its dev app survives the mirror being re-created and never mixes
   with this Mac's `localhost` cookies (and public sites are not signed in with the profile's cookies,
