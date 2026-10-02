@@ -29,8 +29,12 @@ public struct SupermuxMergedProject: Equatable, Sendable, Identifiable {
         self.allRowIDs = allRowIDs ?? locations.map(\.row.id)
     }
 
-    /// The location the row's name, look and primary actions come from.
-    public var lead: Location { locations[0] }
+    /// The location the row's name, look and primary actions (the tap, New
+    /// Worktree) come from: the first one whose Mac is connected, else the
+    /// first. The locations keep the stable Mac order, so a Mac that went to
+    /// sleep in the background (its seam stays, offline, with cached rows)
+    /// still lists first without taking a tap it cannot answer.
+    public var lead: Location { locations.first { $0.mac.status == .connected } ?? locations[0] }
 
     /// Whether the merged disclosure is open: any location's is.
     public var isExpanded: Bool { locations.contains { $0.row.isExpanded } }
