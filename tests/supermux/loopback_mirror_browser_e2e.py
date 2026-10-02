@@ -68,6 +68,14 @@ independently:
                                          still shows the owner's page
  17 unlisted_forward_explains            a forward of a port the owner does not list is not loaded as written:
                                          the proxy's "isn't answering" page, not a bare connection error
+ 17b bypass_browser_stays_local          a browser opened in the mirror with bypass_remote_proxy loads this Mac's
+                                         page (no reroute loop, not the mirror's store) and the other mirror
+                                         tabs keep routing through the owner
+ 17c as_written_page_navigation_reroutes an as-written page's own navigation to localhost:Q (this Mac serves Q)
+                                         shows the owner's Q (the #756 navigation policy), never this Mac's
+ 17d public_page_gets_no_ports           a non-loopback mirror page that defines the bridge's setter is handed
+                                         no ports when the forwards change
+ 17e same_origin_iframe_reaches_owner    a same-origin iframe's fetch to localhost:Q reaches the owner's Q
  18 proxy_listener_failure_recovers      after the proxy's listener fails, it is replaced on its own (waited
                                          for with a read that starts no listener); then the open mirror tab
                                          and a new one each load the owner's page on the fresh endpoint,
@@ -1130,6 +1138,134 @@ class MirrorBrowserE2E:
         finally:
             self.sock.call("surface.close", {"surface_id": tab})
 
+    def bypass_browser_stays_local(self) -> Dict[str, Any]:
+        """A browser opened in the mirror with `bypass_remote_proxy` (the http
+        diff viewer, a `local`-context split) is a local browser: it loads this
+        Mac's localhost page, and the mirror's other tabs keep routing through
+        the owner. Before, it got the mirror's data store with no proxy endpoint:
+        every main-frame navigation to a loopback URL was rerouted to the panel,
+        which handed it back unchanged, forever; and its init wrote this Mac's
+        system proxies (none: no configuration) onto the store every mirror tab
+        of that Mac shares, so their alias loads went nowhere."""
+        here = self.server("bypass-here")
+        reply = self.sock.call("browser.open_split", {
+            "workspace_id": self.pair.mirror_id, "surface_id": self.mirror_terminal(),
+            "url": f"http://localhost:{here.port}/marker.html", "bypass_remote_proxy": True,
+        }) or {}
+        panel = up(reply.get("surface_id"))
+        if not panel:
+            raise Failure(f"browser.open_split opened no browser: {reply}")
+        try:
+            # The open mirror tab, beside it, keeps the store's proxy (no new tab
+            # re-applies it first) and still loads the owner's page.
+            mirror_route = self.expect_route(self.pair.mirror_id, self.require_mirror_browser(), remote=True)
+            owner, this_mac = self.owner_and_this_mac("bypass-owner")
+            self.navigate_open_tab(self.mirror_browser, f"http://localhost:{this_mac.port}/marker.html")
+            self.wait_owner_page(self.mirror_browser, owner, this_mac, "the open mirror tab beside the bypassing browser")
+            title = self.wait_title(panel, lambda t: t == here.title, "the bypassing browser to load this Mac's page")
+            route = self.route(self.pair.mirror_id, panel)
+            if route.get("routes_remotely") or up(route.get("store_identifier")) == data_store_id(self.pair.machine):
+                raise Failure(f"the bypassing browser routes like a mirror tab: {route}")
+            return {"title": title, "bypass_route": route, "mirror_route": mirror_route, "hits_here": len(here.hits)}
+        finally:
+            self.sock.call("surface.close", {"surface_id": panel})
+
+    def as_written_page_navigation_reroutes(self) -> Dict[str, Any]:
+        """A page loaded as written that navigates itself to another loopback port
+        (`location.href = 'http://localhost:Q/'`, Q neither forwarded nor listed;
+        this Mac serves its own Q) shows the owner's Q, never this Mac's: the
+        navigation policy (#756) hands the main-frame navigation back to the
+        panel, which sends it through the alias. Without that fence WebKit loads
+        the loopback URL itself, straight to this Mac's Q (it never asks a proxy
+        for a loopback host), and the step sees this Mac's page."""
+        page, port = self.owner_page_forwarded_here("self-nav")
+        owner, here = self.owner_and_this_mac("self-nav-target")
+        tab = self.new_tab(self.pair.mirror_id, self.mirror_terminal(), f"http://localhost:{port}/marker.html")
+        try:
+            self.wait_title(tab, lambda t: t == page.title, "the as-written page")
+            if not self.page_href(tab).startswith(f"http://localhost:{port}/"):
+                raise Failure(f"precondition: the page is not loaded as written ({self.page_href(tab)})")
+            target = f"http://localhost:{here.port}/marker.html?self=1"
+            self.sock.call("browser.eval", {"surface_id": tab, "script": f"location.href = {json.dumps(target)}; true"})
+            title = self.wait_owner_page(tab, owner, here, "the page's own navigation to another loopback port")
+            return {"from": f"localhost:{port}", "to": target, "title": title, "page": self.page_href(tab)}
+        finally:
+            self.sock.call("surface.close", {"surface_id": tab})
+
+    def public_page_gets_no_ports(self) -> Dict[str, Any]:
+        """A mirror page that is not on a loopback host cannot learn the owner's
+        as-written ports: it defines the bridge's setter itself, and a change of
+        the forwards (a new listed, forwarded port) hands it nothing. Before,
+        every mirror tab's page world was called with the ports."""
+        owner, here = self.owner_and_this_mac("no-ports")
+        tab = self.new_tab(self.pair.mirror_id, self.mirror_terminal(), f"http://localhost:{here.port}/marker.html")
+        try:
+            self.wait_owner_page(tab, owner, here, "an alias page in the mirror")
+            if LOOPBACK_ALIAS not in self.page_href(tab):
+                raise Failure(f"precondition: the page is not on the alias ({self.page_href(tab)})")
+            self.sock.call("browser.eval", {"surface_id": tab, "script":
+                "window.__cmuxE2ELeak = null; window.__cmuxSetMirrorLoopbackPorts = (p) => { window.__cmuxE2ELeak = p; }; true"})
+            _, forwarded = self.owner_page_forwarded_here("no-ports-new")
+
+            def delivered() -> str:
+                value = str((self.sock.call("browser.eval", {"surface_id": tab, "script":
+                    "JSON.stringify(window.__cmuxE2ELeak)"}) or {}).get("value"))
+                if value in ("null", "None", ""):
+                    raise Failure("nothing handed yet")
+                return value
+
+            try:
+                leak = wait_for("the forwards change to reach the page", delivered, 3.0)
+            except Failure:
+                return {"page": self.page_href(tab), "new_forward": forwarded, "leaked": None}
+            raise Failure(f"a page on {self.page_href(tab)} was handed the owner's as-written ports: {leak}")
+        finally:
+            self.sock.call("surface.close", {"surface_id": tab})
+
+    def same_origin_iframe_reaches_owner(self) -> Dict[str, Any]:
+        """A same-origin iframe of an as-written page (localhost:P inside
+        localhost:P) calls the owner's other port Q like its parent: the owner
+        answers, never this Mac's own server on Q. Before, the bridge ran in the
+        main frame only, so the iframe's own `fetch` went to this Mac."""
+        body = (lambda title: f"<html><head><title>{title}</title></head><body>{title}<script>"
+                "if (window === window.top) { const f = document.createElement('iframe'); f.src = '/frame.html';"
+                " document.body.appendChild(f); }</script></body></html>")
+        page, port = self.owner_page_forwarded_here("iframe-page", body=body)
+        owner_api, here_api = self.owner_and_this_mac("iframe-api")
+        tab = self.new_tab(self.pair.mirror_id, self.mirror_terminal(), f"http://localhost:{port}/marker.html")
+        try:
+            self.wait_title(tab, lambda t: t == page.title, "the as-written page with its iframe")
+            key = f"__cmuxE2E{uuid.uuid4().hex[:8]}"
+            api = f"http://localhost:{here_api.port}/api"
+            script = (f"(() => {{ const w = document.querySelector('iframe').contentWindow; window.{key} = 'pending';"
+                      f" w.fetch({json.dumps(api)}).then(r => r.text()).then(t => window.{key} = 'ok:' + t,"
+                      f" e => window.{key} = 'err:' + e); return true; }})()")
+
+            def framed() -> bool:
+                ready = (self.sock.call("browser.eval", {"surface_id": tab, "script":
+                    "(() => { const f = document.querySelector('iframe'); return !!(f && f.contentDocument && "
+                    "f.contentDocument.readyState === 'complete'); })()"}) or {}).get("value")
+                if ready is not True:
+                    raise Failure("iframe not loaded")
+                return True
+
+            wait_for("the same-origin iframe to load", framed, self.timeout)
+            self.sock.call("browser.eval", {"surface_id": tab, "script": script})
+
+            def settled() -> str:
+                value = str((self.sock.call("browser.eval", {"surface_id": tab, "script": f"String(window.{key})"}) or {}).get("value"))
+                if value == "pending":
+                    raise Failure("pending")
+                return value
+
+            result = wait_for("the iframe's fetch", settled, self.timeout)
+            if here_api.hits or not result.startswith("ok:") or owner_api.title not in result:
+                raise Failure(f"the iframe's call to localhost:{here_api.port} did not reach the owner: {result[:80]!r}; "
+                              f"this Mac's own server on that port saw {here_api.hits}")
+            return {"result": result[:40], "owner_api_hits": owner_api.hits}
+        finally:
+            self.sock.call("surface.close", {"surface_id": tab})
+
     def idle_proxy_connections_close(self) -> Dict[str, Any]:
         """Local clients that connect and send nothing cannot hold the proxy's
         connections: past the limit of clients still in their handshake they are
@@ -1269,6 +1405,10 @@ class MirrorBrowserE2E:
                 ("as_written_page_reaches_owner_ports", self.as_written_page_reaches_owner_ports),
                 ("forward_changes_reroute_open_tab", self.forward_changes_reroute_open_tab),
                 ("unlisted_forward_explains", self.unlisted_forward_explains),
+                ("bypass_browser_stays_local", self.bypass_browser_stays_local),
+                ("as_written_page_navigation_reroutes", self.as_written_page_navigation_reroutes),
+                ("public_page_gets_no_ports", self.public_page_gets_no_ports),
+                ("same_origin_iframe_reaches_owner", self.same_origin_iframe_reaches_owner),
                 # Last: they fail the proxy's listener.
                 ("proxy_listener_failure_recovers", self.proxy_listener_failure_recovers),
                 ("restart_keeps_mirror_store_proxied", self.restart_keeps_mirror_store_proxied),
