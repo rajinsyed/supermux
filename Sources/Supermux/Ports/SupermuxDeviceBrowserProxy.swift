@@ -148,7 +148,88 @@ final class SupermuxBrowserProxyStats: @unchecked Sendable {
     func noteOwnerDial() { lock.withLock { counts.ownerDials += 1 } }
     func noteDirectDial() { lock.withLock { counts.directDials += 1 } }
     func noteFailure() { lock.withLock { counts.failures += 1 } }
+
+    #if DEBUG
+    /// The newest connections' timelines (E2E evidence, `browser_proxy`).
+    private var traces: [SupermuxBrowserProxyTrace] = []
+    private var nextTraceID = 0
+    private let traceStart = ContinuousClock.now
+
+    func beginTrace() -> Int {
+        lock.withLock {
+            nextTraceID += 1
+            traces.append(SupermuxBrowserProxyTrace(id: nextTraceID, accepted: elapsed()))
+            if traces.count > 64 { traces.removeFirst(traces.count - 64) }
+            return nextTraceID
+        }
+    }
+
+    func trace(_ id: Int, _ update: (inout SupermuxBrowserProxyTrace, Double) -> Void) {
+        lock.withLock {
+            guard let index = traces.firstIndex(where: { $0.id == id }) else { return }
+            update(&traces[index], elapsed())
+        }
+    }
+
+    var recentTraces: [SupermuxBrowserProxyTrace] { lock.withLock { traces } }
+
+    private func elapsed() -> Double {
+        let duration = ContinuousClock.now - traceStart
+        return Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
+    }
+    #endif
 }
+
+#if DEBUG
+/// One proxy connection's timeline in seconds since its proxy started.
+struct SupermuxBrowserProxyTrace: Sendable {
+    let id: Int
+    let accepted: Double
+    var firstByte: Double?
+    var firstBytes = ""
+    var decided: Double?
+    var target = ""
+    var ended: Double?
+    var outcome = ""
+    var tunnelOpened: Double?
+    var firstRequestByte: Double?
+    var requestBytes = 0
+    var firstResponseByte: Double?
+    var responseBytes = 0
+}
+
+/// Counts one relay direction's bytes into a trace, around the route's own transform.
+final class SupermuxTracingTransform: SupermuxByteTransform, @unchecked Sendable {
+    private let base: (any SupermuxByteTransform)?
+    private let stats: SupermuxBrowserProxyStats
+    private let trace: Int
+    private let request: Bool
+
+    init(_ base: (any SupermuxByteTransform)?, stats: SupermuxBrowserProxyStats, trace: Int, request: Bool) {
+        self.base = base
+        self.stats = stats
+        self.trace = trace
+        self.request = request
+    }
+
+    func transform(_ data: Data, eof: Bool) -> Data {
+        let count = data.count
+        let request = request
+        if count > 0 {
+            stats.trace(trace) { trace, now in
+                if request {
+                    if trace.firstRequestByte == nil { trace.firstRequestByte = now }
+                    trace.requestBytes += count
+                } else {
+                    if trace.firstResponseByte == nil { trace.firstResponseByte = now }
+                    trace.responseBytes += count
+                }
+            }
+        }
+        return base?.transform(data, eof: eof) ?? data
+    }
+}
+#endif
 
 /// The connections of one proxy listener still in their handshake. Any local
 /// process can connect to the proxy, so past ``limit`` (far more than a
@@ -199,14 +280,23 @@ struct SupermuxBrowserProxyConnection: Sendable {
             accepted.cancel()
             return
         }
+        #if DEBUG
+        let trace = stats.beginTrace()
+        defer { stats.trace(trace) { $0.ended = $1 } }
+        #else
+        let trace = 0
+        #endif
         // On every exit below, clean or not: an uncancelled connection keeps its socket.
         defer { local.close() }
-        let target = await handshake(local)
+        let target = await handshake(local, trace: trace)
         admission.release()
         guard let target else { return }
+        #if DEBUG
+        stats.trace(trace) { $0.decided = $1; $0.target = "\(target.kind == .socks5 ? "socks5" : "connect") \(target.host):\(target.port)" }
+        #endif
         switch SupermuxBrowserProxyDestination(host: target.host) {
         case .owner(let host, let rewritesAlias):
-            await relayToOwner(local, target: target, host: host, rewritesAlias: rewritesAlias)
+            await relayToOwner(local, target: target, host: host, rewritesAlias: rewritesAlias, trace: trace)
         case .direct:
             await relayDirect(local, target: target)
         }
@@ -214,12 +304,22 @@ struct SupermuxBrowserProxyConnection: Sendable {
 
     /// Reads until the handshake decides, within ``clientDeadline``; nil when
     /// the connection was refused, ended or ran out of time (it is then aborted).
-    private func handshake(_ local: SupermuxNWConnectionStream) async -> SupermuxBrowserProxyHandshake.Target? {
+    private func handshake(_ local: SupermuxNWConnectionStream, trace: Int) async -> SupermuxBrowserProxyHandshake.Target? {
         var handshake = SupermuxBrowserProxyHandshake(credential: credential)
+        #if DEBUG
+        var received = 0
+        #endif
         let watchdog = closeAfterDeadline(local)
         defer { watchdog.cancel() }
         do {
             while let bytes = try await local.readRaw(maximumByteCount: 16 * 1024) {
+                #if DEBUG
+                if received == 0 {
+                    let hex = bytes.prefix(3).map { String(format: "%02x", $0) }.joined()
+                    stats.trace(trace) { $0.firstByte = $1; $0.firstBytes = hex }
+                }
+                received += bytes.count
+                #endif
                 let step = handshake.consume(bytes)
                 if !step.reply.isEmpty { try await local.write(step.reply) }
                 switch step.decision {
@@ -231,6 +331,9 @@ struct SupermuxBrowserProxyConnection: Sendable {
                 }
             }
         } catch {}
+        #if DEBUG
+        stats.trace(trace) { trace, _ in trace.outcome = received == 0 ? "silent" : "no-handshake" }
+        #endif
         await local.abort()
         return nil
     }
@@ -245,12 +348,16 @@ struct SupermuxBrowserProxyConnection: Sendable {
     }
 
     private func relayToOwner(
-        _ local: SupermuxNWConnectionStream, target: SupermuxBrowserProxyHandshake.Target, host: String, rewritesAlias: Bool
+        _ local: SupermuxNWConnectionStream, target: SupermuxBrowserProxyHandshake.Target, host: String, rewritesAlias: Bool,
+        trace: Int
     ) async {
         stats.noteOwnerDial()
         let remote: any SupermuxByteStream
         do {
             remote = try await SupermuxDeviceTunnelClient.open(machine: machine, host: host, port: target.port)
+            #if DEBUG
+            stats.trace(trace) { $0.tunnelOpened = $1 }
+            #endif
         } catch {
             stats.noteFailure()
             if rewritesAlias {
@@ -261,8 +368,15 @@ struct SupermuxBrowserProxyConnection: Sendable {
             }
             return
         }
-        let requests: (any SupermuxByteTransform)? = rewritesAlias ? SupermuxAliasRequestTransform() : nil
-        let responses: (any SupermuxByteTransform)? = rewritesAlias ? SupermuxAliasResponseTransform() : nil
+        let aliasRequests: (any SupermuxByteTransform)? = rewritesAlias ? SupermuxAliasRequestTransform() : nil
+        let aliasResponses: (any SupermuxByteTransform)? = rewritesAlias ? SupermuxAliasResponseTransform() : nil
+        #if DEBUG
+        let requests: (any SupermuxByteTransform)? = SupermuxTracingTransform(aliasRequests, stats: stats, trace: trace, request: true)
+        let responses: (any SupermuxByteTransform)? = SupermuxTracingTransform(aliasResponses, stats: stats, trace: trace, request: false)
+        #else
+        let requests = aliasRequests
+        let responses = aliasResponses
+        #endif
         await relay(local, remote, target: target, requests: requests, responses: responses)
     }
 

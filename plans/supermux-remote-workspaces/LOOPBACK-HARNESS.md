@@ -607,32 +607,74 @@ the app (the pid listening on the proxy's port) shows no socket whose peer is on
 clients, nor any dial to the LAN server (`proxy_connections_are_released`; before the fix each one
 stayed in the app in `TIME_WAIT`); the route's data store for two machine ids that differ only by
 tag are two stores (`data_store_per_app_instance`); a browser in an unbound mirror (auto-mirror off,
-`vm.workspace_open`) routes like a bound one's (`unbound_mirror_browser_routes`); 72 connections that
+`vm.workspace_open`) loads the owner's page like a bound one's (`unbound_mirror_browser_routes`); 72 connections that
 never send a byte are closed, at least the 8 past the 64-handshake limit at once and all by the 10 s
 handshake deadline (`idle_proxy_connections_close`); after `browser_proxy_fail` the proxy replaces
 its listener on its own (waited for with `browser_proxy start: false`, a read that starts no
 listener, so the open tab never navigates inside the 1 s restart delay and with no restart the step
-times out), then M's open tab and a new tab each load through the owner on the fresh port, the open
-tab's journal `opened` counted before the new tab exists, since in loopback a direct load reaches the
-same marker server (`proxy_listener_failure_recovers`; the step it replaced navigated the open tab
-straight after the failure and passed only while WebKit's swap delay above held the request past the
-restart: on a healthy host it got `navigation_failed` in 0.09 s); and with the listener failed and held
-down (`browser_proxy_hold`), a mirror tab opened meanwhile leaves the app instance's data store with
-its 2 proxy configurations, as the open tab's, and once released loads through the owner
-(`restart_keeps_mirror_store_proxied`; before the fix the new tab got no endpoint and its init wrote
-`[]` onto the store every mirror tab shares, 0 configurations, so the open tabs' `localhost` went to
-this Mac). DEBUG drivers
+times out), then M's open tab and a new tab each load the owner's page on the fresh port
+(`proxy_listener_failure_recovers`; the step it replaced navigated the open tab straight after the
+failure and passed only while WebKit's swap delay above held the request past the restart: on a healthy
+host it got `navigation_failed` in 0.09 s); and with the listener failed and held down
+(`browser_proxy_hold`), a mirror tab opened meanwhile leaves the app instance's data store with its 2
+proxy configurations, as the open tab's, a load in it while the listener is down fails and reaches
+nothing, and once released it loads the owner's page (`restart_keeps_mirror_store_proxied`; before the
+fix the new tab got no endpoint and its init wrote `[]` onto the store every mirror tab shares, 0
+configurations, so the open tabs' `localhost` went to this Mac). Those three steps prove the route per
+page, not by counting the owner's tunnel opens: this Mac runs its own server on the port they open and
+the owner's page is served from another port that the loopback owner serves as that one
+(`owner_and_this_mac`, `tunnel.serve_port`), so the owner's title proves the load came through the
+owner and a request to this Mac's server fails the step. A count was not a proof: for 28 of 31 measured
+navigations of the open tab WebKit opened 2 tunnels for its 1 request, and a request that rides a tunnel
+opened earlier opens none, the likely cause of the one run where `proxy_listener_failure_recovers` saw no
+`opened` for the new tab (both tabs had asked for the alias, per the app log, and no run ever sent a request
+to this Mac's own server). Then `owner_localhost_keeps_origin` (#754, the user's Turnstile report): a login page with a
+Cloudflare Turnstile widget (the always-passing test sitekey `1x00000000000000000000AA`) served on the owner's
+`localhost:P`, with P forwarded to this Mac on P (`supermux.devices.ports.forward`), opened in a new mirror tab, must
+run at `http://localhost:P`, a secure context, come from the owner (journal `opened` for P) and get a Turnstile token; the
+same page in a local browser is the control that Turnstile works at all (it needs challenges.cloudflare.com). In
+loopback the owner's P would be busy here too, so the owner serves P from another port Q
+(`supermux.devices.tunnel.serve_port {port: P, from: Q}`, `SupermuxLoopbackServedPorts`: the loopback tunnel host
+dials Q when asked for P), leaving P free for the forward as on two Macs; P is chosen below the ephemeral range, where
+an outgoing connection's local port can take it meanwhile. Red before the fix: the tab ran at
+`http://cmux-loopback.localtest.me:P`, `isSecureContext` false (a real dev sitekey answers 110200 there). The suite
+passes with it anywhere in the order (checked first, before and after the listener-failure steps).
+
+**A URL typed into a tab, to plain HTTP on a host that is not loopback by name, waits ~10 s on this Mac**
+(WebKit and macOS 27, not the proxy; not a fail-open). WebKit 27 moves such a navigation into a new hardened
+WebContent process (`triggerProcessSwapForEnhancedSecurity`, `continueNavigationInNewProcess`), and making one
+blocks its UI thread in the kernel issuing font sandbox extensions (`registerUserInstalledFonts` ->
+`_sandbox_extension_issue`, 759 of 1285 samples of one stall; only 1 font is installed here). Measured
+2026-10-02 in a local tab with no proxy: typed navigations to the alias resolved directly took 10.76, 11.18
+and 10.87 s and to this Mac's LAN address 10.47, 11.18 and 10.87 s (the first from a new tab 0.32 s), to
+`localhost` 0.02–0.04 s. A mirror tab met it on every typed `localhost` URL, which became the alias: the
+proxy's DEBUG connection traces (`browser_proxy` `connections`: accept, first byte, decision, tunnel open,
+request/response bytes, end) showed WebKit's preconnect (its `PreconnectTask` has a 10 s timeout) completing
+the SOCKS5 handshake at once, its tunnel open (main actor) waiting for the blocked main thread 11–13 s, no
+request on it, and the real request on a new connection once the main thread was free; no connection
+reached the proxy's handshake deadline. A deadline in the proxy could not help. A port forwarded here on the
+same port loads as written (#754), so WebKit keeps the process: `typed_navigations_are_prompt` types 6
+such URLs into the open mirror tab and wants each within 3 s (red on the pre-#754 build: 10.82–11.28 s,
+the page at the alias; green: 0.03–0.06 s). Still slow: a mirror URL whose port is not forwarded on the
+same port (the alias), and in any tab a plain-HTTP page on a LAN address or another non-localhost host.
+That wait is why `proxy_listener_failure_recovers` once ran past `browser.navigate`'s own 17.5 s wait
+(`navigation_timeout`); navigations of an open tab to the alias in the suite (`navigate_open_tab`) let that
+wait run out and still require the owner's page. With the listener down and a Turnstile tab live in the
+mirror, 4 of 4 rounds sent nothing to this Mac's own server.
+
+DEBUG drivers
 (`SupermuxMirrorBrowserSocket`): `supermux.devices.mirror.browser_route {workspace_id}` (per
 browser: `routes_remotely`, `proxy_configs`, `store_identifier`), `.browser_proxy {machine, start?}`
-(the endpoint it hands out now: port, credential, `owner_dials`, `direct_dials`, `failures`; null
+(the endpoint it hands out now: port, credential, `owner_dials`, `direct_dials`, `failures`, `connections`
+(its newest 64 connections' timelines); null
 while it has none; starts the proxy unless `start` is false),
 `.browser_proxy_fail {machine}` (runs the listener's `.failed` path; `failed_port`),
 `.browser_proxy_hold {machine, held}` (while held no new listener is made, as when the system cannot
 make one; releasing starts one),
 `.browser_store {machine}` (the store identifier the route gives that app instance, any `device:` id)
 and `.link_open {workspace_id, surface_id, url, destination}` (a terminal link click with the system
-browser captured). It also reads the tunnel drivers `supermux.devices.tunnel.journal` and
-`.pretend_old_host` of the tunnel lanes work.
+browser captured). It also uses the tunnel drivers `supermux.devices.tunnel.journal`,
+`.pretend_old_host` and `.serve_port` of the tunnel lanes work.
 
 ```bash
 CMUX_E2E_SUITES="loopback_mirror_local_panels_e2e loopback_mirror_browser_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh

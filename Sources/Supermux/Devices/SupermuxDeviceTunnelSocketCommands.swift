@@ -29,6 +29,10 @@ import Foundation
 /// - `tunnel.host_ports {include_other?}`: this Mac's `ports.list` payload.
 /// - `tunnel.own_port {port, registered}`: marks a port as one this app
 ///   listens on for forwards (the tunnel host's loop guard refuses it).
+/// - `tunnel.serve_port {port, from?}`: the loopback owner's tunnel host serves
+///   its `port` from this machine's `from` (as itself again without `from`),
+///   so `port` stays free here and a forward of it can listen on it
+///   (``SupermuxLoopbackServedPorts``) → `{port, from}`.
 /// - `tunnel.fail_requests {method, count?}`: the loopback host answers the
 ///   next `count` requests for `method` (after each connection's sync fetch)
 ///   `timed_out`, as a stalled Mac does (0 disarms; arming restarts the tally)
@@ -93,6 +97,7 @@ enum SupermuxDeviceTunnelSocketCommands {
             return ["injected": [Int]()]
         case "host_ports": return await hostPorts(params)
         case "own_port": return try ownPort(params)
+        case "serve_port": return try servePort(params)
         case "fail_requests": return try failRequests(params)
         default: throw HookError(message: "unknown tunnel method \(name)")
         }
@@ -229,6 +234,14 @@ enum SupermuxDeviceTunnelSocketCommands {
             ports.remove(target)
         }
         return ["registered": ports.contains(target)]
+    }
+
+    private static func servePort(_ params: [String: Any]) throws -> [String: Any] {
+        let target = try port(params)
+        var source: Int?
+        if let from = params["from"] as? NSNumber { source = try port(["port": from]) }
+        SupermuxLoopbackServedPorts.shared.serve(target, from: source)
+        return ["port": target, "from": source ?? NSNull()]
     }
 
     /// Arms (or, without `count`, only reports) the loopback host's failed
