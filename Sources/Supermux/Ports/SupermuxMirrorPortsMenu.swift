@@ -222,7 +222,9 @@ enum SupermuxMirrorPortsActions {
     static func openInCmuxBrowser(workspaceID: UUID, remotePort: Int) {
         guard let url = URL(string: "http://localhost:\(remotePort)") else { return }
         // The user's own choice: it may forward one of that Mac's other ports.
-        SupermuxSamePortForwardGate.noteUserOpen(port: remotePort)
+        if let machine = mirrorRef(workspaceID: workspaceID)?.machine {
+            SupermuxSamePortForwardGate.noteUserOpen(machine: machine, port: remotePort)
+        }
         AppDelegate.shared?.tabManagerFor(tabId: workspaceID)?.openBrowser(inWorkspace: workspaceID, url: url)
     }
 
