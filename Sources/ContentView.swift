@@ -12800,6 +12800,14 @@ struct VerticalTabsSidebar: View, Equatable {
                 openInBrowser(url, prefer)
             },
             onOpenPort: { [prefer = input.settings.openPortLinksInCmuxBrowser] port in
+                // SUPERMUX:begin device-mirror-port-chip
+                // A device mirror's chip names its Mac's port: outside cmux it opens
+                // at the port this Mac forwards it to, never this Mac's own one.
+                if SupermuxDevicePortLinks.isMirrorChip(workspaceID: tab.id) {
+                    SupermuxDevicePortLinks.openMirrorChip(port, workspaceID: tab.id, prefersCmuxBrowser: prefer)
+                    return
+                }
+                // SUPERMUX:end device-mirror-port-chip
                 guard let url = URL(string: "http://localhost:\(port)") else { return }
                 openInBrowser(url, prefer)
             },
@@ -15078,6 +15086,15 @@ struct VerticalTabsSidebar: View, Equatable {
         index: Int,
         opensInCmuxBrowser: Bool
     ) {
+        // SUPERMUX:begin device-mirror-port-chip
+        // A device mirror's chip names its Mac's port: outside cmux it opens
+        // at the port this Mac forwards it to, never this Mac's own one.
+        if SupermuxDevicePortLinks.isMirrorChip(workspaceID: workspace.id) {
+            selectWorkspaceRow(workspace, index: index, modifiers: NSEvent.modifierFlags)
+            SupermuxDevicePortLinks.openMirrorChip(port, workspaceID: workspace.id, prefersCmuxBrowser: opensInCmuxBrowser)
+            return
+        }
+        // SUPERMUX:end device-mirror-port-chip
         guard let url = URL(string: "http://localhost:\(port)") else { return }
         openWorkspaceRowPullRequest(
             url,
