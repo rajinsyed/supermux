@@ -23,7 +23,10 @@ app_running() {
 }
 
 quit_app() {
-  osascript -e "tell application id \"$BUNDLE_ID\" to quit" >/dev/null 2>&1 || true
+  # Do not wait for the quit's reply: a hung app never answers, and AppleScript would wait out its 120 s reply
+  # timeout before the 30 s wait below even starts.
+  osascript -e "ignoring application responses" -e "tell application id \"$BUNDLE_ID\" to quit" \
+    -e "end ignoring" >/dev/null 2>&1 || true
   # Quit defers for the session save and agent-process scan (often ~10 s), and
   # the socket goes before the process: relaunching then makes `open` reuse the
   # dying app without the environment. Wait for the process itself.
