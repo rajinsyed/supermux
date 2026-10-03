@@ -705,6 +705,9 @@ Rules for adding a touchpoint:
 | 771 | `Packages/macOS/CmuxTerminalCore/Sources/CmuxTerminalCore/SurfaceCallbacks/GhosttySurfaceCallbackContext.swift` | `terminal-user-copy-intent` | Adds `public var isDispatchingRuntimeInput: Bool`: whether this surface's native input dispatch (the paste-intent marker `withRuntimeClipboardPasteIntent` sets around keys, pointer buttons and binding actions) is running on the calling thread, which a program's OSC 52 never is |
 | 772 | `Sources/GhosttyTerminalView.swift` | `terminal-user-copy-intent` | Two fences. In `write_clipboard_cb`'s guard, upstream's `terminalSurface.allowsAutomaticClipboardWrite` becomes `SupermuxTerminalClipboardWrites.allows(terminalSurface, context: callbackContext, location: location)` (`Sources/Supermux/SupermuxTerminalClipboardWrites.swift`: upstream's check OR this Mac's own input is dispatching, so a user's copy lands from any remote projection; DEBUG builds record each decision). In `copyKeyboardCopyModeSelectionToClipboard`, `ghostty_surface_copy_selection_to_clipboard_bounded` runs inside `withPotentialClipboardPasteIntent`, so keyboard copy mode's yank counts as that input instead of being dropped while the method reported success |
 | 773 | `cmuxTests/SupermuxMobileAuthorizationTests.swift` | `device-terminal-upload-authz` | `classificationCoversWorkspacePaneAndMacWideMethods` expects `terminal.attachment.upload` to be workspace-scoped (the upload names the mirrored `workspace_id`); the test's `default: .macWide` would otherwise fail it |
+| 774 | `Sources/TerminalController+SharedSizing.swift` | `sizing-mac-pane-recheck` | At the top of `applyLocalSizing(surfaceID:previous:immediate:reason:)`: `SupermuxTerminalSizingVisibility.shared.hostWillApply(surfaceID:)`, a set lookup unless #633's rule marked the Mac pane off screen; then a pane on screen again gets its automatic `counts_override: false` lifted before the decision applies. Nobody counting holds the grid (`TerminalSizingEngine`, reason `held`) and `applyTarget` pinned the pane to it, so a shown pane still marked off screen kept a departed phone's or mirror's size (99x38) |
+| 775 | `Sources/TerminalController+SharedSizing.swift` | `sizing-mac-pane-input-recheck` | At the top of `noteLocalTerminalSizingActivity(surfaceID:)`: `SupermuxTerminalSizingVisibility.shared.macPaneInput(surfaceID)`, a set lookup unless the pane is marked off screen, then a visibility re-check (input on a pane shows it is in view; a missed reveal must not keep it from counting) |
+| 776 | `Sources/TerminalWindowPortal.swift` | `sizing-portal-reveal` | In `synchronizeHostedView`'s reveal branch, right after `hostedView.isHidden = false`: `SupermuxTerminalSizingVisibility.shared.paneRevealed(hostedView.surfaceView.terminalSurface?.id)`. The portal hides a pane during layout, split and remount churn and reveals it with no visibility notification and often no frame change, so a pane found off screen meanwhile (any window's occlusion change re-checks every pane) stayed "off screen" and stopped counting while shown |
 | 790 | `Sources/TerminalController+SharedSizing.swift` | `sizing-auto` | Three fences calling `SupermuxTerminalSizingAuto` (`Sources/Supermux/Devices/`). In `resolveSharedSizing`, after `syncPhones` and the explicit `counts_override`: `viewersReported(&host, surfaceID:, previous:, explicitParticipantID:)` (in Auto a viewer whose viewport changed or whose `counts_override` false was lifted gets `noteActivity`, and a phone without an override of its own gets `counts_override: true`). In `localSizingSetPolicy`, after `setPolicy`: `policyChanged(&host, surfaceID:)` (Auto's overrides follow the mode, cleared when it leaves Auto). In `localSizingSetCountsOverride`, before `setCountsOverride`: `userSetCounts(participantID:surfaceID:)` (an override set by hand is the user's) |
 | 791 | `Sources/TerminalController+SharedSizing.swift` | `sizing-auto-remote-input` | Two fences. In `mobileDetachedGateError`, after the method switch (input, paste, mouse, scroll, replay): `SupermuxTerminalSizingAuto.shared.remoteTerminalRequestArrived()`. At the top of `noteLocalTerminalSizingActivity`, after the host lookup: `guard !SupermuxTerminalSizingAuto.shared.deliveringRemoteInput else { return }` (O(1) on the keystroke path). Delivering a phone's or another Mac's input runs the Mac pane's `onExplicitInput`, which upstream counted as the Mac pane typing, after the viewer's own activity: in Auto the Mac then took the grid from the phone that typed |
 | 792 | `Sources/TerminalSharingDisplay.swift` | `sizing-auto-label` | In `modeTitle(_:)`, `.latest` returns `SupermuxTerminalSizingScopeNote.autoTitle` ("Auto", `supermux.terminalSizing.mode.auto`) instead of upstream's "Follow Latest" (`terminalSharing.sizeMode.latest`, left in the catalog) |
@@ -5246,6 +5249,30 @@ Re-apply after an upstream merge:
 - **#634/#635**: every device-pane `keyNameResolver` comes from `SupermuxDeviceTerminalInput.keyResolver(for:)`.
 - **#636**: keep the rewritten reservation test in step with #635.
 
+
+### 774–776. A shown Mac pane keeps counting; a departed viewer's size does not stick — `sizing-mac-pane-recheck`, `sizing-mac-pane-input-recheck`, `sizing-portal-reveal`
+
+User feedback (2026-10-04): a terminal randomly became small (99x38), the size panel saying "held".
+The portal hides a hosted pane briefly during layout churn (`isHidden = true` in
+`synchronizeHostedView`) and reveals it without posting anything. `SupermuxTerminalSizingVisibility`
+(#633) re-checks every pane on any window's occlusion change, found the hidden pane off screen, marked
+it not counting at once, and nothing looked again after the reveal. A phone or mirror then sized the
+terminal alone; once it left (or its mirror was hidden) nobody counted, the engine held its size and
+the shown Mac pane stayed pinned to it. Fork code in `SupermuxTerminalSizingVisibility`: a Mac pane goes
+off screen only after 250 ms, as a mirror does; a reveal, input on the pane and every sizing decision
+look again; a runtime-ready re-apply is recorded with the apply governor so the pin it sets is lifted
+like any other. A pane really off screen still holds (nobody sees it, and the other Mac's hidden
+auto-mirror is attached to every terminal: re-sizing to the hidden pane would resize the terminal on
+each tab switch there). E2E: steps 17–19 of `loopback_terminal_sizing_policy_e2e` (DEBUG driver
+`supermux.devices.terminal_sizing.portal_flicker`). Re-apply after an upstream merge:
+
+- **#774**: call `hostWillApply(surfaceID:)` before `applyLocalSizing` reads the host, so a change it
+  makes is published and applied with the decision.
+- **#775**: keep the call first in the Mac pane's input hook, before the host guard; it must stay a
+  set lookup for a pane not marked off screen (typing latency).
+- **#776**: wherever upstream un-hides a portal-hosted terminal view, call `paneRevealed(_:)` with its
+  surface id. Retire it if upstream posts `terminalPortalVisibilityDidChange` (or another notification
+  the class observes) on that reveal.
 
 ### 660–664. New tabs append; New Terminal to the Right keeps its spot in a mirror — `new-tab-at-end`, `mirror-terminal-to-right`
 
