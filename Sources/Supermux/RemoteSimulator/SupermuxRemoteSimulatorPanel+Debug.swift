@@ -22,6 +22,8 @@ extension SupermuxRemoteSimulatorPanel: SupermuxRemoteSimulatorDebugInspectable 
             "superseded": isSuperseded,
             "supports_controls": supportsControls,
             "devices_slow": devicesAreSlow,
+            "devices_count": devices.count,
+            "devices_answers": devicesAnswerCount,
             "renderer_status": displayView.rendererStatusName,
             "binding": [
                 "machine": machine.rawValue,

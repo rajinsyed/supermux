@@ -56,11 +56,21 @@ session, pump, encoder and worker ring; only QUIC is replaced.
                                             the device menu's reply still comes well inside the deadline, marked
                                             slow ("Simulators on <Mac> are slow to respond…" instead of an empty
                                             menu), and the viewer asks again until the list is current
- 22. restore_rebinds                        (--app-path) quit (`tell application id … to quit`, as
+ 22. device_menu_never_empty_while_owner_starts
+                                            with each CoreSimulator read on the owner held 3 s, a new tab's
+                                            first device-menu answer is the owner's list or marked slow,
+                                            never an empty list as current (its refresh lost to the
+                                            owner tab's own startup discovery), and the tab streams
+ 23. slow_coresimulator_new_tab_streams     with each CoreSimulator read held 12 s (past the 8 s menu bound,
+                                            as on a cold CoreSimulatorService after a reboot), a new tab
+                                            picks a device, streams, and its picker fills
+ 24. restore_rebinds                        (--app-path) quit (`tell application id … to quit`, as
                                             scripts and launchers do, with a simulator worker
                                             running) within 60s, the script seeing no error, and
-                                            relaunch: the viewer comes back in M, streams S's
-                                            restored panel, no second SimulatorPanel
+                                            relaunch with each CoreSimulator read held 12 s: the viewer
+                                            comes back in M, binds S's restored panel (a slow device menu
+                                            is asked again, never answered by opening a second tab) and
+                                            streams it, no second SimulatorPanel
 
 Writes a JSON report (default tests/supermux/artifacts/loopback_mirror_simulator_e2e-<tag>.json)
 and a window screenshot next to it (`…-viewer.png`), and exits non-zero on any failure. The
@@ -71,7 +81,7 @@ Usage:
   CMUX_TAG=<tag> python3 tests/supermux/loopback_mirror_simulator_e2e.py [--app-path APP] [--udid UDID]
       [--keep-device] [--timeout 30] [--keep] [--report PATH] [--slow-simctl SECONDS]
 
---slow-simctl arms the slow-`simctl` hook for the whole run (and the relaunch), not only steps 20-21.
+--slow-simctl arms the slow-`simctl` hook for the whole run (and the relaunch), not only steps 20-24.
 """
 
 from __future__ import annotations
@@ -101,6 +111,11 @@ SIM = "supermux.devices.mirror.simulator."
 # the Mac where every `simctl` launch stalled 20-22 s in dyld before `main` (2026-10-03).
 SLOW_SIMCTL_SECONDS = 25.0
 SIMCTL_DELAY_ENV = "SUPERMUX_DEBUG_SIMCTL_DELAY_SECONDS"
+CORESIMULATOR_DELAY_ENV = "SUPERMUX_DEBUG_CORESIMULATOR_DELAY_SECONDS"
+# Steps 22-24's hold on each in-process CoreSimulator read of the owner: 3 s loses no deadline (it only makes a
+# device-menu refresh overlap the new tab's startup discovery); 12 s is past the owner's 8 s device-menu bound.
+CORESIMULATOR_OVERLAP_SECONDS = 3.0
+CORESIMULATOR_SLOW_SECONDS = 12.0
 
 
 class Failure(Exception):
@@ -375,12 +390,15 @@ class MirrorSimulatorE2E:
             raise Failure(f"{action} was not accepted: {result}")
         return result
 
-    def set_simctl_delay(self, seconds: float, coresimulator: bool = True) -> float:
+    def set_simctl_delay(self, seconds: float, coresimulator: bool = True, coresimulator_delay: float = 0.0) -> float:
         """Arms the app's slow-`simctl` hook (DEBUG); `coresimulator=False` also makes the owner list its
-        devices with `simctl` (the fallback when CoreSimulator cannot be used). Returns the previous delay."""
-        result = self.sock.call(SIM + "simctl_delay", {"seconds": seconds, "coresimulator": coresimulator}) or {}
-        if float(result.get("seconds", -1)) != float(seconds):
-            raise Failure(f"simctl_delay did not take {seconds}: {result}")
+        devices with `simctl` (the fallback when CoreSimulator cannot be used), and `coresimulator_delay` holds
+        each in-process CoreSimulator read that long. Returns the previous `simctl` delay."""
+        params = {"seconds": seconds, "coresimulator": coresimulator, "coresimulator_delay": coresimulator_delay}
+        result = self.sock.call(SIM + "simctl_delay", params) or {}
+        if float(result.get("seconds", -1)) != float(seconds) \
+                or float(result.get("coresimulator_delay", -1)) != float(coresimulator_delay):
+            raise Failure(f"simctl_delay did not take {params}: {result}")
         return float(result.get("previous") or 0)
 
     def stir(self) -> None:
@@ -412,7 +430,7 @@ class MirrorSimulatorE2E:
 
         return wait_for(f"the viewer to stream {at_least} new frames", streaming, timeout_s, interval_s=1.0)
 
-    def one_viewer_on_owner(self) -> Dict[str, Any]:
+    def one_viewer_on_owner(self, timeout_s: Optional[float] = None) -> Dict[str, Any]:
         """S holds one SimulatorPanel, M one viewer bound to it and no SimulatorPanel."""
         def settled() -> Optional[Dict[str, Any]]:
             state = self.sim_state()
@@ -435,7 +453,7 @@ class MirrorSimulatorE2E:
                 raise Failure(f"viewer binding {got} != {want}")
             return {"viewer": viewers[0], "host_panel_id": want["host_panel_id"], "summary": summary}
 
-        return wait_for("New Simulator to land on the owning Mac", settled, self.timeout, interval_s=0.5)
+        return wait_for("New Simulator to land on the owning Mac", settled, timeout_s or self.timeout, interval_s=0.5)
 
     # -- steps ----------------------------------------------------------------
 
@@ -935,6 +953,86 @@ class MirrorSimulatorE2E:
         finally:
             self.set_simctl_delay(previous)
 
+    def close_viewer_and_owner_tab(self) -> None:
+        """Closes the mirror's viewer tabs (each closes its Simulator tab on the owner), for a step that needs a
+        new tab on the owner."""
+        for viewer in self.panels(self.mirror, "viewer"):
+            self.sock.call("surface.close", {"workspace_id": self.mirror, "surface_id": viewer["panel_id"], "force": True})
+        wait_for("no Simulator tab on the owner before the step", lambda: not self.panels(self.source, "local"), 20)
+
+    def device_menu_never_empty_while_owner_starts(self) -> Dict[str, Any]:
+        """A viewer asks for the device menu as soon as it attaches, while the owner's new tab still runs its
+        startup discovery. The owner's answer refreshed the tab's list, the startup discovery (#763 retries it)
+        superseded that refresh, and the owner answered with the tab's still empty list as current: "No
+        simulators" on the viewer and an empty picker on the phone. Each CoreSimulator read held 3 s makes the two
+        overlap every time."""
+        self.need_udid()
+        self.close_viewer_and_owner_tab()
+        previous = self.set_simctl_delay(self.args.slow_simctl or 0, coresimulator_delay=CORESIMULATOR_OVERLAP_SECONDS)
+        started = time.monotonic()
+        try:
+            try:
+                self.new_simulator("configured")
+                self.one_viewer_on_owner()
+            finally:
+                self.close_local_simulators_in_mirror()
+
+            def answered() -> Optional[Dict[str, Any]]:
+                viewer = self.need_viewer()
+                if int(viewer.get("devices_answers") or 0) < 1:
+                    raise Failure("the viewer has no device-menu answer yet")
+                return viewer
+
+            first = wait_for("the viewer's first device-menu answer", answered, 30, interval_s=0.25)
+            first_answer = {"after_s": round(time.monotonic() - started, 1), "devices": first.get("devices_count"),
+                            "slow": first.get("devices_slow")}
+            if first.get("devices_slow") is not True and int(first.get("devices_count") or 0) == 0:
+                raise Failure(f"the owner answered the device menu with an empty list as current while its new tab "
+                              f"was starting: {first_answer}")
+            self.show_suite_device()
+            viewer = self.wait_streaming(0, 3, 60)
+            return {"coresimulator_delay_s": CORESIMULATOR_OVERLAP_SECONDS, "first_answer": first_answer,
+                    "streaming_s": round(time.monotonic() - started, 1), "frames": viewer.get("presented_frames")}
+        finally:
+            self.set_simctl_delay(previous)
+
+    def slow_coresimulator_new_tab_streams(self) -> Dict[str, Any]:
+        """A cold CoreSimulatorService (after a reboot) can take longer than the owner's 8 s device-menu bound to
+        list. The panel's own discovery gave up at 8 s, so the new tab failed ("Simulator action failed") and never
+        activated: the viewer got a list but no frames. Upstream waited up to 30 s for `simctl` there."""
+        self.need_udid()
+        self.close_viewer_and_owner_tab()
+        previous = self.set_simctl_delay(self.args.slow_simctl or 0, coresimulator_delay=CORESIMULATOR_SLOW_SECONDS)
+        started = time.monotonic()
+        try:
+            try:
+                self.new_simulator("configured")
+                self.one_viewer_on_owner()
+            finally:
+                self.close_local_simulators_in_mirror()
+            shown = wait_for("the owner's new Simulator tab to pick a device with CoreSimulator slow",
+                             self.host_device, 45, interval_s=1.0)
+            picked_seconds = round(time.monotonic() - started, 1)
+            expected = available_phone_and_tablet_udids()
+
+            def listed() -> Optional[List[str]]:
+                devices = self.need_viewer(include_devices=True).get("devices") or []
+                got = sorted(up(d.get("udid")) for d in devices)
+                if got != expected:
+                    raise Failure(f"picker {got} != the owner's available iPhone/iPad simulators {expected}")
+                return got
+
+            picker = wait_for("the picker to list the owner's devices with CoreSimulator slow", listed, 90,
+                              interval_s=3.0)
+            if shown != self.udid:
+                self.select_and_follow(self.need_udid(), 120)
+            viewer = self.wait_streaming(0, 3, 90)
+            return {"coresimulator_delay_s": CORESIMULATOR_SLOW_SECONDS, "device_picked_s": picked_seconds,
+                    "picker": len(picker), "first_pick": shown,
+                    "streaming_s": round(time.monotonic() - started, 1), "frames": viewer.get("presented_frames")}
+        finally:
+            self.set_simctl_delay(previous)
+
     def restore_rebinds(self) -> Dict[str, Any]:
         if not self.args.app_path:
             raise Skipped("pass --app-path to quit and relaunch")
@@ -942,7 +1040,9 @@ class MirrorSimulatorE2E:
         first_pick = self.show_suite_device()  # the restored stream shows a device the suite stirs
         self.sock.call("workspace.select", {"workspace_id": self.mirror})
         time.sleep(2.0)  # let the session autosave see the viewer
-        self.relaunch()
+        # The relaunched owner's CoreSimulator reads are held past its 8 s device-menu bound: the viewer's rebind
+        # gets `slow` answers first and must ask again, never open a second Simulator tab there.
+        self.relaunch({CORESIMULATOR_DELAY_ENV: str(CORESIMULATOR_SLOW_SECONDS)})
         wait_for("the loopback device to reconnect after the relaunch",
                  lambda: self.device().get("link_state") == "connected" and self.device().get("has_fetched_records"),
                  60)
@@ -950,8 +1050,11 @@ class MirrorSimulatorE2E:
                                   60)["workspace_id"])
         self.sock.call("workspace.select", {"workspace_id": self.mirror})
         wait_for("the restored viewer tab", lambda: self.viewer() is not None, 60)
-        viewer = self.wait_streaming(0, 3, 90)
-        settled = self.one_viewer_on_owner()
+        try:
+            settled = self.one_viewer_on_owner(60)
+            viewer = self.wait_streaming(0, 3, 90)
+        finally:
+            self.set_simctl_delay(self.args.slow_simctl or 0)
         quit_error = self.facts.get("quit_error")
         if quit_error:
             # The app quit, but a script quitting it would have stopped on this error.
@@ -981,7 +1084,7 @@ class MirrorSimulatorE2E:
         except PermissionError:
             return True
 
-    def relaunch(self) -> None:
+    def relaunch(self, extra_env: Optional[Dict[str, str]] = None) -> None:
         app = self.args.app_path
         bundle_id = plistlib.loads((Path(app) / "Contents" / "Info.plist").read_bytes())["CFBundleIdentifier"]
         app_pid = int(self.sim_state().get("app_pid") or 0)
@@ -1018,6 +1121,8 @@ class MirrorSimulatorE2E:
             env_args += ["--env", f"SUPERMUX_PROJECTS_FILE={self.args.projects_file}"]
         if self.args.slow_simctl:
             env_args += ["--env", f"{SIMCTL_DELAY_ENV}={self.args.slow_simctl}"]
+        for key, value in (extra_env or {}).items():
+            env_args += ["--env", f"{key}={value}"]
         subprocess.run(["open", "-g", *env_args, app], check=True)
 
         def socket_alive() -> bool:
@@ -1113,6 +1218,8 @@ class MirrorSimulatorE2E:
                 ("new_simulator_tab_bar_runs_on_owner", self.new_simulator_tab_bar_runs_on_owner),
                 ("slow_simctl_lists_and_streams", self.slow_simctl_lists_and_streams),
                 ("slow_simctl_device_menu_says_so", self.slow_simctl_device_menu_says_so),
+                ("device_menu_never_empty_while_owner_starts", self.device_menu_never_empty_while_owner_starts),
+                ("slow_coresimulator_new_tab_streams", self.slow_coresimulator_new_tab_streams),
                 ("restore_rebinds", self.restore_rebinds),
             ]:
                 ok = self.step(name, check) and ok

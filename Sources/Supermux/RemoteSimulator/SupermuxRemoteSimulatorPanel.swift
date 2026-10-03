@@ -81,6 +81,8 @@ final class SupermuxRemoteSimulatorPanel: Panel {
     @ObservationIgnored private var autoRecoverTask: Task<Void, Never>?
     @ObservationIgnored private var devicesRetryTask: Task<Void, Never>?
     @ObservationIgnored private var devicesRetries = 0
+    /// How many device-menu answers the tab applied (DEBUG state reports it).
+    @ObservationIgnored private(set) var devicesAnswerCount = 0
 
     var displayTitle: String {
         String(localized: "simulator.pane.title", defaultValue: "Simulator")
@@ -285,6 +287,7 @@ final class SupermuxRemoteSimulatorPanel: Panel {
             return
         }
         guard self.hostPanelID == hostPanelID else { return }
+        devicesAnswerCount += 1
         devices = listing.devices
         if let selected = listing.devices.first(where: \.isSelected) {
             deviceUDID = selected.udid
