@@ -1086,7 +1086,10 @@ app ends inside the CoreSimulator load twice in a row, that CoreSimulator build 
 (`SupermuxCoreSimulatorCrashGuard`; a quit or logout during the load removes its marker, a successful load clears the
 count, and steps 25–26 check both; the first version took one quit during a slow load for a crash). A Simulator tab's
 start no longer holds a quit while it waits on a slow CoreSimulator read (the read is cancelled; step 25 quits with a tab
-waiting on the held load and wants the app gone within 5 s, where it took up to 30 s). The
+waiting on the held load and wants the app gone within 5 s, where it took up to 30 s). Measured: red (1f6cad0a6e9 with the
+suite of 035a8fee3df) step 25 failed (quit 26.86 s; CoreSimulator `unavailable` after the relaunch) and step 26 failed (off
+after one killed load); green (035a8fee3df, plain `--tag`) 26 of 26 twice and with `CMUX_E2E_SLOW_SIMCTL=25` (quit 0.5 s,
+`loaded` after it; on after one kill, off after two). The
 hooks slow `simctl` and CoreSimulator, not the worker's launch: on a really stalled Mac a new tab may still wait for its
 worker before it streams.
 
