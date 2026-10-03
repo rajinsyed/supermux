@@ -881,7 +881,9 @@ class GhosttyApp {
             // Mac's clipboard without a user gesture or confirmation.
             guard let callbackContext = GhosttyApp.callbackContext(from: userdata),
                   let terminalSurface = callbackContext.terminalSurface,
-                  terminalSurface.allowsAutomaticClipboardWrite,
+                  // SUPERMUX:begin terminal-user-copy-intent (a copy made by this Mac's user input lands too)
+                  SupermuxTerminalClipboardWrites.allows(terminalSurface, context: callbackContext, location: location),
+                  // SUPERMUX:end terminal-user-copy-intent
                   let content = content, len > 0 else { return }
             let buffer = UnsafeBufferPointer(start: content, count: Int(len))
             let decoder = TerminalClipboardRepresentationDecoder()
@@ -6076,10 +6078,14 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         var copied = false
         let formattedRepresentations = GhosttyApp.terminalPasteboard
             .captureNextStandardClipboardRepresentations {
-                copied = ghostty_surface_copy_selection_to_clipboard_bounded(
-                    surface,
-                    maximumBytes
-                )
+                // SUPERMUX:begin terminal-user-copy-intent (the copy runs as this Mac's user input, so a remote projection's guard lets it land)
+                copied = withPotentialClipboardPasteIntent {
+                    ghostty_surface_copy_selection_to_clipboard_bounded(
+                        surface,
+                        maximumBytes
+                    )
+                }
+                // SUPERMUX:end terminal-user-copy-intent
                 return copied
             }
         if let formattedRepresentations {
