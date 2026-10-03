@@ -9693,9 +9693,19 @@ final class Workspace: Identifiable, ObservableObject, FilePreviewTabMetadataHos
             configTemplate: inheritedTerminalFontSizeConfig(),
             ioMode: .manualMirror,
             allowsRemoteClipboardWrites: allowsRemoteClipboardWrites,
-            manualInputHandler: onInput,
+            // SUPERMUX:begin device-terminal-actions (a forwarded Cmd+K's local form feed is dropped; upstream: `manualInputHandler: onInput,`)
+            manualInputHandler: SupermuxDeviceTerminalActions.inputFilter(onInput, panelID: panelID),
+            // SUPERMUX:end device-terminal-actions
             manualInputKeyNameResolver: keyNameResolver
         )
+        // SUPERMUX:begin device-terminal-focus (another Mac's terminal follows this pane's focus)
+        surface.onFocusStateChange = { [weak surface] focused in
+            MainActor.assumeIsolated {
+                guard let surface else { return }
+                SupermuxDeviceTerminalActions.focusChanged(surface, focused: focused)
+            }
+        }
+        // SUPERMUX:end device-terminal-focus
         let panel = TerminalPanel(workspaceId: id, surface: surface)
         configureNewTerminalPanel(panel)
         return panel

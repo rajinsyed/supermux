@@ -12,7 +12,7 @@ import SupermuxMobileCore
 ///   control, and terminal attachment uploads are **workspace-scoped-permitted**: a ticket pinned to a workspace passes
 ///   when the request's `workspace_id` matches the pin (and no `project_id`
 ///   widens the request to a project root).
-/// - Terminal selection, generic panel selection, and pane close are
+/// - Terminal selection, terminal actions, generic panel selection, and pane close are
 ///   terminal/panel-scoped: a terminal-pinned ticket may target only that panel,
 ///   while a workspace ticket may target any panel in its workspace.
 /// - Everything else (projects, worktrees, presets, run, actions, icon)
@@ -56,7 +56,7 @@ enum SupermuxMobileAuthorization {
              .workspaceSelect, .simulatorCreate, .simulatorControl,
              .terminalAttachmentUpload:
             return .workspaceScopedPermitted
-        case .terminalSelect:
+        case .terminalSelect, .terminalAction:
             return .terminalScopedPermitted
         case .panelSelect, .paneClose:
             return .paneScopedPermitted
