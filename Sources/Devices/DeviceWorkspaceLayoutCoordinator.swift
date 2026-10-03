@@ -217,7 +217,9 @@ final class DeviceWorkspaceLayoutCoordinator {
         // A pending or failed creation for the same workspace is not such a pane.
         // SUPERMUX:begin device-layout-local-panels
         // A bound mirror's own browsers are not unrelated panes: closing a
-        // mirrored tab beside one still closes its terminal on that Mac.
+        // mirrored tab beside one still closes its terminal on that Mac (when
+        // that Mac refuses it as its workspace's last surface, `performClose`
+        // closes that workspace instead).
         // (upstream: `remaining` kept every projection of the workspace, local
         // ones included, and the guard compared it with every native panel)
         let supermuxLocalPanelIDs = SupermuxDeviceLayoutSurfaceFilter.localPanelIDs(in: native, machine: machine)
@@ -232,6 +234,16 @@ final class DeviceWorkspaceLayoutCoordinator {
                   .subtracting(reserved).subtracting(supermuxLocalPanelIDs) else { return }
         // SUPERMUX:end device-layout-local-panels
         let operation = enqueueClose(surfaceID: projection.resource.key, remoteID: remoteID, workspaceID: projection.workspaceID)
+        // SUPERMUX:begin device-layout-local-panels
+        // The mirror's last terminal beside its own tabs: auto-mirror must not
+        // take the mirror (bound, nothing projected now) for an orphan while
+        // that Mac answers this close.
+        if remaining.isEmpty, reserved.isEmpty, !supermuxLocalPanelIDs.isEmpty {
+            SupermuxDeviceMirrorCloseGate.keepMirrorWhileClosingLastTerminal(
+                native, machine: machine, remoteWorkspaceID: remoteID, until: operation.result
+            )
+        }
+        // SUPERMUX:end device-layout-local-panels
         Task { @MainActor [weak self] in
             do {
                 try await operation.result.value
@@ -256,6 +268,14 @@ final class DeviceWorkspaceLayoutCoordinator {
     /// queue and rules as a live one; its failure shows like a live close's.
     private func supermuxSendHeldClose(_ held: SupermuxDeviceHeldCloses.Close) {
         let operation = enqueueClose(surfaceID: held.surfaceID, remoteID: held.remoteWorkspaceID, workspaceID: held.localWorkspaceID)
+        // A mirror left with only its own tabs is kept from auto-mirror's orphan
+        // close while this close (its last terminal's, or one before it) runs.
+        if let native = workspace(held.localWorkspaceID),
+           SupermuxDeviceMirrorCloseGate.holdsOnlyItsOwnTabs(native, machine: machine) {
+            SupermuxDeviceMirrorCloseGate.keepMirrorWhileClosingLastTerminal(
+                native, machine: machine, remoteWorkspaceID: held.remoteWorkspaceID, until: operation.result
+            )
+        }
         Task { @MainActor [weak self] in
             do {
                 try await operation.result.value
@@ -381,6 +401,25 @@ final class DeviceWorkspaceLayoutCoordinator {
                 return
             }
             // SUPERMUX:end device-terminal-close-timed-out
+            // SUPERMUX:begin device-layout-local-panels
+            // That Mac refuses to close its workspace's last surface. When the
+            // layout this close just fetched held only that terminal and the
+            // mirror now holds only tabs of its own, the mirror's last terminal
+            // closed: that workspace closes there instead and this one stays
+            // here with those tabs, as a local workspace, with no failure card.
+            // Decided on that fresh layout, never an older one, so tabs closed
+            // together and a terminal added there meanwhile count.
+            if let id = close.workspaceID, !stopped, let native = workspace(id),
+               let supermuxOwnerSurfaceIDs = try? snapshots[remoteID]?.layout.validatedSurfaceIDs(),
+               SupermuxDeviceMirrorCloseGate.closeOnItsMacAfterLastSurfaceRefusal(
+                   error, workspace: native, machine: machine, remoteWorkspaceID: remoteID,
+                   closedSurfaceID: close.surfaceID, ownerSurfaceIDs: supermuxOwnerSurfaceIDs
+               ) {
+                deliveries[id] = nil
+                close.succeed()
+                return
+            }
+            // SUPERMUX:end device-layout-local-panels
             if !Task.isCancelled, !stopped {
                 try? await fetch(remoteID)
                 await refresh()

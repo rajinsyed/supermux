@@ -52,7 +52,10 @@ the main Mac is closed), and the same on iOS.
    hides them instead: the phone never lists mirrors). The row menu's "Hide Here"
    keeps it running there: it detaches and remembers the remote id in a hidden set so auto-mirror
    does not re-open it. A remote workspace that disappears on its host closes its local mirror.
-   Closing a mirrored tab ends that terminal there (`force`), like a local tab.
+   Closing a mirrored tab ends that terminal there (`force`), like a local tab. Closing the mirror's
+   last terminal tab while tabs of its own stay (a browser, Markdown…) closes the workspace there
+   (that Mac cannot keep a workspace without a surface) and keeps the mirror here with those tabs as
+   an ordinary local workspace.
 4. **Remote Mac is the source of truth for its own projects.** Remote projects are aggregated live
    (never written into `supermux-projects.json`). Projects merge across devices into one sidebar row
    when their normalized git origin URL matches (new additive DTO field `git_remote_url`), falling

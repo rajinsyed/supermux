@@ -31,6 +31,11 @@ final class SupermuxDeviceLoopbackHostAcceptor {
     /// a missed deadline is on its way (see ``blockMainDuringLivenessProbeIfArmed()``);
     /// armed by the DEBUG `supermux.devices.link {action: "stall", main_seconds}`.
     static var mainStallDuringNextLivenessProbe: Double?
+    /// How many more requests for each method the loopback host fails (see
+    /// ``FailingRequests``); armed by the DEBUG `supermux.devices.tunnel.fail_requests`.
+    static var failingRequests: [String: Int] = [:]
+    /// How many requests for each method it failed since that was last armed.
+    static var failedRequests: [String: Int] = [:]
     /// Connections admitted since launch: a link that redials adds one, which
     /// E2E reads through `supermux.devices.link {action: "status"}`.
     private(set) static var admittedConnections = 0
@@ -85,6 +90,7 @@ final class SupermuxDeviceLoopbackHostAcceptor {
         let peer = self.peer
         let layouts = self.layouts
         let busy = BusyRequest(method: Self.busyMethodForNextConnection)
+        let failing = FailingRequests()
         Self.busyMethodForNextConnection = nil
         Self.admittedConnections += 1
         // The same tunnel host a real Mac peer's connection gets; the
@@ -108,6 +114,7 @@ final class SupermuxDeviceLoopbackHostAcceptor {
                 firstFrameTimeoutNanoseconds: 0,
                 peerRequestHandler: { request in
                     if let refused = await busy.answer(request) { return refused }
+                    if let failed = await failing.answer(request) { return failed }
                     await Self.holdIfStalled(request)
                     return await layouts.handle(request)
                 },
@@ -193,6 +200,30 @@ private final class BusyRequest {
         self.method = nil
         cmuxDebugLog("supermux.loopback host answered \(method) busy")
         return .failure(MobileHostRPCError(code: "server_busy", message: "Too many requests are pending"))
+    }
+}
+
+/// One connection's share of the armed failures
+/// (``SupermuxDeviceLoopbackHostAcceptor/failingRequests``): once the
+/// connection's `mobile.sync.fetch` ran (so the dial's own `mobile.host.status`
+/// identity check passes), each armed request is answered `timed_out`, the
+/// failure the viewer's link reports for a request whose reply missed its
+/// deadline while the other Mac still answers (#723), so the viewer's
+/// capability or port listing fetch fails as it does on a stalled Mac.
+@MainActor
+private final class FailingRequests {
+    private var fetched = false
+
+    func answer(_ request: MobileHostRPCRequest) -> MobileHostRPCResult? {
+        if request.method == "mobile.sync.fetch" { fetched = true }
+        guard fetched, let remaining = SupermuxDeviceLoopbackHostAcceptor.failingRequests[request.method],
+              remaining > 0 else { return nil }
+        SupermuxDeviceLoopbackHostAcceptor.failingRequests[request.method] = remaining - 1
+        SupermuxDeviceLoopbackHostAcceptor.failedRequests[request.method, default: 0] += 1
+        cmuxDebugLog("supermux.loopback host failed \(request.method) (\(remaining - 1) more armed)")
+        return .failure(MobileHostRPCError(
+            code: SupermuxDeviceLinkEvents.missedDeadlineCode, message: "The host did not answer in time"
+        ))
     }
 }
 #endif

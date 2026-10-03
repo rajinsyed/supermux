@@ -384,7 +384,8 @@ class MirrorSimulatorE2E:
             frames = int(viewer.get("presented_frames") or 0)
             if viewer.get("phase") != "streaming" or frames < after_frames + at_least:
                 self.stir()
-                raise Failure(f"phase={viewer.get('phase')} {viewer.get('phase_detail') or ''} frames={frames}")
+                raise Failure(f"phase={viewer.get('phase')} {viewer.get('phase_detail') or ''} frames={frames} "
+                              f"owner's Simulator={viewer.get('host_status')} attachment={viewer.get('attachment')}")
             return viewer
 
         return wait_for(f"the viewer to stream {at_least} new frames", streaming, timeout_s, interval_s=1.0)

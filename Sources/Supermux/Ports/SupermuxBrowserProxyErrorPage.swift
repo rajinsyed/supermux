@@ -8,7 +8,7 @@ import Foundation
 /// proxied connections fail with a bare protocol error.
 enum SupermuxBrowserProxyErrorPage {
     enum Reason: String, Sendable {
-        case notListening, needsUpdate, offline, noDirectLink, busy, denied
+        case notListening, needsUpdate, offline, unreachable, noDirectLink, busy, denied
 
         /// Why a tunnel open to the owning Mac failed.
         init(_ error: any Error) {
@@ -19,6 +19,7 @@ enum SupermuxBrowserProxyErrorPage {
             switch failure {
             case .unavailable(.needsUpdate): self = .needsUpdate
             case .unavailable(.noDirectLink): self = .noDirectLink
+            case .unavailable(.unreachable): self = .unreachable
             case .unavailable: self = .offline
             case .notListening, .failed: self = .notListening
             case .denied: self = .denied
@@ -81,6 +82,11 @@ enum SupermuxBrowserProxyErrorPage {
             format = String(
                 localized: "supermux.ports.page.offline",
                 defaultValue: "%@ is offline. Reload this page when it's back."
+            )
+        case .unreachable:
+            format = String(
+                localized: "supermux.ports.page.unreachable",
+                defaultValue: "Can't reach %@ right now. Reload this page in a moment."
             )
         case .noDirectLink:
             format = String(

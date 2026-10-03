@@ -3,20 +3,23 @@
 
 A browser tab opened in a mirror of another Mac's workspace used to be a plain
 browser of THIS Mac: `localhost:3000` there loaded this Mac's server, never the
-one running in the mirrored terminal. Now a bound mirror's browsers use
-upstream's remote-workspace browser mode: one website data store per remote
-Mac, and a per-Mac authenticated SOCKS5/HTTP CONNECT proxy on this Mac's
-loopback that sends the owner's loopback hosts through the device link's tunnel
-lanes and dials every other host directly. This suite drives one tagged DEBUG
-build running the loopback device ("Loopback Mac" = this same app's own mobile
-host, whose tunnel host runs in-process), so "the owner's loopback" and this
-Mac's are one machine: every check is about the ROUTE (proxy, tunnel opens,
+one running in the mirrored terminal. Now a mirror's browsers (bound or not)
+use upstream's remote-workspace browser mode: one website data store per remote
+app instance, and a per-instance authenticated SOCKS5/HTTP CONNECT proxy on this
+Mac's loopback that sends the owner's loopback hosts through the device link's
+tunnel lanes and dials every other host directly. This suite drives one tagged
+DEBUG build running the loopback device ("Loopback Mac" = this same app's own
+mobile host, whose tunnel host runs in-process), so "the owner's loopback" and
+this Mac's are one machine: every check is about the ROUTE (proxy, tunnel opens,
 store), not just whether a page loads. Marker servers run in this script, in no
-workspace, each on its own port so tunnel opens are attributed exactly:
+workspace, each on its own port so tunnel opens are attributed exactly. A
+routed browser's data store is the owning app instance's: a name-based UUID of
+its machine id (`device:<uuid>@<tag>`), the key its proxy has, computed here
+independently:
 
   1 mirror_browser_routes_through_owner  localhost:P in the mirror loads through the proxy and the owner's
-                                         tunnel host (journal `opened` for P), in the device's data store,
-                                         and the server sees `Host: localhost:P`
+                                         tunnel host (journal `opened` for P), in the app instance's data
+                                         store, and the server sees `Host: localhost:P`
   2 literal_127_routes                   http://127.0.0.1:P2 in the mirror routes the same way
   3 local_workspace_stays_direct         the same kind of URL in the source workspace: no proxy, the
                                          profile store, no tunnel open (control)
@@ -25,8 +28,8 @@ workspace, each on its own port so tunnel opens are attributed exactly:
                                          as for localhost); an authenticated CONNECT to it, as WebKit sends for
                                          any other LAN or public host, is dialed directly by the proxy, no
                                          tunnel open (skipped when the Mac has no non-loopback IPv4)
-  5 closed_port_explains                 a closed port in the mirror shows the "localhost:N on <Mac> isn't
-                                         answering" page
+  5 closed_port_explains                 a closed port in a new mirror tab shows the "localhost:N on <Mac> isn't
+                                         answering" page within 5 s
   6 proxy_requires_credential            the proxy refuses SOCKS no-auth (05 FF), a wrong password (01 01)
                                          and CONNECT without credentials (407); the right one connects
   7 terminal_link_opens_routed_browser   a link click in the mirror's terminal (cmux browser) opens a
@@ -35,9 +38,30 @@ workspace, each on its own port so tunnel opens are attributed exactly:
                                          store; moved back, it routes again
   9 old_host_page                        an owner without `supermux.port_forward.v1` gives the "update
                                          Supermux" page
+ 10 proxy_connections_are_released       after relayed, refused, failed and explained proxy connections (and
+                                         direct ones, with a LAN address) end, the app holds no socket of
+                                         theirs (lsof on the app: the proxy cancels every connection it
+                                         accepted or dialed)
+ 11 data_store_per_app_instance          the route's data store for two machine ids that differ only by tag
+                                         are two stores, each the name-based UUID of its machine id
+ 12 unbound_mirror_browser_routes        a browser in an unbound mirror (upstream's vm.workspace_open with
+                                         auto-mirror off) routes through the owner like a bound one's
+ 13 idle_proxy_connections_close         connections that never send a byte are closed: the ones past the
+                                         limit of clients still in their handshake at once, the rest at the
+                                         handshake deadline
+ 14 proxy_listener_failure_recovers      after the proxy's listener fails, it is replaced on its own (waited
+                                         for with a read that starts no listener); then the open mirror tab
+                                         and a new one each load through the owner on the fresh endpoint
+                                         (journal `opened` for the open tab before the new tab exists)
+ 15 restart_keeps_mirror_store_proxied   a mirror tab opened while the failed listener is being replaced
+                                         (held down by `browser_proxy_hold`) leaves the app instance's
+                                         data store with its proxy (2 configurations, as the open tab's),
+                                         so no open tab loads from this Mac; once released, that tab
+                                         loads through the owner
 
-Uses the DEBUG drivers `supermux.devices.mirror.browser_route`, `.browser_proxy`
-and `.link_open` (SupermuxMirrorBrowserSocket) and the tunnel driver
+Uses the DEBUG drivers `supermux.devices.mirror.browser_route`, `.browser_proxy`,
+`.browser_proxy_fail`, `.browser_proxy_hold`, `.browser_store` and `.link_open`
+(SupermuxMirrorBrowserSocket) and the tunnel driver
 `supermux.devices.tunnel.journal` and `.pretend_old_host`. Writes a JSON report
 (default tests/supermux/artifacts/loopback_mirror_browser_e2e-<tag>.json) and
 exits non-zero on any failure. Stdlib only.
@@ -53,14 +77,16 @@ import base64
 import http.server
 import json
 import os
+import select
 import socket
+import subprocess
 import sys
 import threading
 import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from loopback_mirror_local_panels_e2e import (  # noqa: E402
@@ -74,6 +100,17 @@ from loopback_mirror_local_panels_e2e import (  # noqa: E402
 )
 
 PORT_FORWARD_CAPABILITY = "supermux.port_forward.v1"
+LOOPBACK_ALIAS = "cmux-loopback.localtest.me"
+# The namespace of the route's per-app-instance data stores
+# (SupermuxDeviceBrowserRoute.websiteDataStoreID(for:)); a store must keep its
+# identity across launches, so this pins it.
+DATA_STORE_NAMESPACE = uuid.UUID("503c7a18-bbc6-4c4b-beca-22549addb0eb")
+# The proxy's limit of clients still in their handshake, and its deadline for one.
+HANDSHAKE_LIMIT = 64
+HANDSHAKE_DEADLINE_S = 10.0
+# How long the closed port's explanation page may take in a new mirror tab: the
+# proxy answers in milliseconds (the tunnel's refusal, then the page).
+EXPLAIN_PAGE_S = 5.0
 
 
 class MarkerServer:
@@ -149,6 +186,37 @@ def recv_until_closed(conn: socket.socket, limit: int = 1 << 20) -> bytes:
     return data
 
 
+def data_store_id(machine: str) -> str:
+    """The data store a routed browser of `machine` (`device:<uuid>@<tag>`) must use."""
+    return up(str(uuid.uuid5(DATA_STORE_NAMESPACE, machine)))
+
+
+def sibling_instance(machine: str) -> str:
+    """The same Mac's machine id with another app-instance tag."""
+    device, _, tag = machine.partition("@")
+    return f"{device}@{'default' if tag != 'default' else 'e2e-sibling'}"
+
+
+def listening_pid(port: int) -> int:
+    """The process listening on TCP `port` (lsof), 0 when none."""
+    out = subprocess.run(["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"],
+                         capture_output=True, text=True, timeout=30).stdout.split()
+    return int(out[0]) if out else 0
+
+
+def tcp_connections(pid: int, port: int) -> List[Tuple[int, int]]:
+    """(local port, peer port) of every connected TCP socket `pid` holds with
+    either end on `port` (lsof; a listener is not a connection)."""
+    out = subprocess.run(["lsof", "-nP", "-a", "-p", str(pid), f"-iTCP:{port}", "-F", "n"],
+                         capture_output=True, text=True, timeout=30).stdout
+    found = []
+    for line in out.splitlines():
+        if line.startswith("n") and "->" in line:
+            local, peer = line[1:].split("->", 1)
+            found.append((int(local.rsplit(":", 1)[1]), int(peer.rsplit(":", 1)[1])))
+    return found
+
+
 class MirrorBrowserE2E:
     def __init__(self, sock: Socket, args: argparse.Namespace) -> None:
         self.sock = sock
@@ -189,9 +257,27 @@ class MirrorBrowserE2E:
         walk(self.tunnel("journal"))
         return found
 
-    def proxy(self) -> Optional[Dict[str, Any]]:
-        reply = self.sock.call("supermux.devices.mirror.browser_proxy", {"machine": self.pair.machine}) or {}
+    def proxy(self, start: bool = True) -> Optional[Dict[str, Any]]:
+        """The endpoint the mirror browser proxy hands out now; `start=False` reads
+        without starting a listener (one that restarts on its own can be waited for)."""
+        reply = self.sock.call("supermux.devices.mirror.browser_proxy", {"machine": self.pair.machine, "start": start}) or {}
         return reply.get("proxy") or None
+
+    def hold_proxy(self, held: bool) -> None:
+        """While held the proxy makes no new listener, so a failed one stays down."""
+        reply = self.sock.call("supermux.devices.mirror.browser_proxy_hold", {"machine": self.pair.machine, "held": held}) or {}
+        if reply.get("held") is None:
+            raise Failure(f"precondition: no browser proxy to hold for the loopback Mac: {reply}")
+
+    def wait_replacement(self, failed_port: int) -> Dict[str, Any]:
+        """The listener that replaces the one on `failed_port`, waited for without starting one."""
+        def replaced() -> Dict[str, Any]:
+            proxy = self.proxy(start=False)
+            if not proxy or proxy.get("port") == failed_port:
+                raise Failure(f"the proxy hands out {proxy and proxy.get('port')}")
+            return proxy
+
+        return wait_for(f"a listener to replace the failed one on port {failed_port}", replaced, self.timeout)
 
     def require_proxy(self) -> Dict[str, Any]:
         proxy = self.proxy()
@@ -208,6 +294,7 @@ class MirrorBrowserE2E:
 
     def expect_route(self, workspace_id: str, panel_id: str, remote: bool) -> Dict[str, Any]:
         """The browser routes through the owner (or not), with the matching proxy configs and store."""
+        owner_store = data_store_id(self.pair.machine)
 
         def check() -> Dict[str, Any]:
             route = self.route(workspace_id, panel_id)
@@ -217,15 +304,15 @@ class MirrorBrowserE2E:
                     raise Failure(f"the browser does not route through the owning Mac: {route}")
                 if route.get("proxy_configs") != 2:
                     raise Failure(f"want 2 WebKit proxy configurations (SOCKS5 + CONNECT): {route}")
-                if store != up(self.device_id):
-                    raise Failure(f"want the remote Mac's data store {self.device_id}: {route}")
+                if store != owner_store:
+                    raise Failure(f"want the app instance's data store {owner_store}: {route}")
             else:
                 if route.get("routes_remotely"):
                     raise Failure(f"a local browser routes through the owning Mac: {route}")
                 if route.get("proxy_configs") != 0:
                     raise Failure(f"want no proxy configuration (is a system proxy set?): {route}")
-                if store == up(self.device_id):
-                    raise Failure(f"a local browser uses the remote Mac's data store: {route}")
+                if store == owner_store:
+                    raise Failure(f"a local browser uses the remote app instance's data store: {route}")
             return route
 
         return wait_for(f"browser {panel_id} to {'route' if remote else 'not route'} through the owner", check, self.timeout)
@@ -397,14 +484,26 @@ class MirrorBrowserE2E:
         return established, page
 
     def closed_port_explains(self) -> Dict[str, Any]:
+        """The explanation page opens promptly, in a tab of its own. Typing a URL
+        into the shared tab (it shows the previous step's LAN page) would also
+        time WebKit, not the proxy: since WebKit 27 a typed navigation to plain
+        HTTP on a host that is not loopback by name (the localhost alias, a LAN
+        address) leaves the page's hardened Enhanced Security process and comes
+        back once the response arrives, and a swap into a process WebKit
+        already had can take seconds on a busy host."""
         closed = free_port()
         name = self.pair.device_name
-        self.navigate(self.require_mirror_browser(), f"http://localhost:{closed}/")
+        started = time.monotonic()
+        panel = self.new_tab(self.pair.mirror_id, self.mirror_terminal(), f"http://localhost:{closed}/")
         title = self.wait_title(
-            self.mirror_browser, lambda t: f"localhost:{closed}" in t and name in t,
+            panel, lambda t: f"localhost:{closed}" in t and name in t,
             f"the \"localhost:{closed} on {name} isn't answering\" page",
         )
-        return {"port": closed, "title": title}
+        seconds = round(time.monotonic() - started, 2)
+        self.sock.call("surface.close", {"surface_id": panel})
+        if seconds > EXPLAIN_PAGE_S:
+            raise Failure(f"the explanation page took {seconds}s, want at most {EXPLAIN_PAGE_S:.0f}s")
+        return {"port": closed, "title": title, "page_seconds": seconds}
 
     def proxy_requires_credential(self) -> Dict[str, Any]:
         proxy = self.require_proxy()
@@ -478,6 +577,262 @@ class MirrorBrowserE2E:
             self.tunnel("pretend_old_host", enabled=False)
             self.relink(expect_capability=True if had_capability else None)
 
+    def connect_request(self, proxy: Dict[str, Any], target: str) -> bytes:
+        token = base64.b64encode(f"{proxy['username']}:{proxy['password']}".encode()).decode()
+        return f"CONNECT {target} HTTP/1.1\r\nHost: {target}\r\nProxy-Authorization: Basic {token}\r\n\r\n".encode()
+
+    def proxy_client(self, port: int, request: bytes, then: Optional[bytes]) -> Tuple[int, bytes]:
+        """One client of the proxy: sends `request` (and `then` once the proxy's
+        answer head arrived), reads until the proxy closes, closes. Its port and
+        everything it read."""
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=10) as conn:
+                conn.settimeout(10)
+                client_port = conn.getsockname()[1]
+                conn.sendall(request)
+                data = b""
+                if then is not None:
+                    while b"\r\n\r\n" not in data:
+                        chunk = conn.recv(4096)
+                        if not chunk:
+                            break
+                        data += chunk
+                    conn.sendall(then)
+                data += recv_until_closed(conn)
+        except OSError as error:
+            raise Failure(f"a proxy client on port {port} failed: {error!r}") from error
+        return client_port, data
+
+    def proxy_connections_are_released(self) -> Dict[str, Any]:
+        """Every proxy connection that ended leaves no socket in the app: the proxy
+        cancels each connection it accepted or dialed. Before, a finished one kept
+        its file descriptor for the app's lifetime (lsof shows it in TIME_WAIT,
+        still the app's)."""
+        assert self.owner_server is not None
+        proxy = self.require_proxy()
+        port = int(proxy["port"])
+        pid = listening_pid(port)
+        if not pid:
+            raise Failure(f"no process listens on the proxy's port {port}")
+        closed = free_port()
+
+        def get(target: str) -> bytes:
+            return f"GET /marker.html HTTP/1.0\r\nHost: {target}\r\n\r\n".encode()
+
+        owner = f"localhost:{self.owner_server.port}"
+        alias = f"{LOOPBACK_ALIAS}:{closed}"
+        # (kind, request, request after the answer head, what the answer must contain)
+        sessions: List[Tuple[str, bytes, Optional[bytes], bytes]] = [
+            ("relayed", self.connect_request(proxy, owner), get(owner), self.owner_server.title.encode()),
+            ("refused", b"\x05\x01\x00", None, b"\x05\xff"),
+            ("failed", self.connect_request(proxy, f"localhost:{closed}"), None, b"HTTP/1.1 502"),
+            ("explained", self.connect_request(proxy, alias), get(alias), b"HTTP/1.1 502"),
+        ]
+        address = primary_ipv4()
+        lan = self.server("released-lan", host=address) if address else None
+        if lan and address:
+            target = f"{address}:{lan.port}"
+            sessions.append(("direct", self.connect_request(proxy, target), get(target), lan.title.encode()))
+        clients = set()
+        for kind, request, then, expect in sessions:
+            for _ in range(5):
+                client, answer = self.proxy_client(port, request, then)
+                if expect not in answer:
+                    raise Failure(f"a {kind} proxy connection read {answer[:80]!r}, want {expect!r}")
+                clients.add(client)
+
+        def released() -> Dict[str, Any]:
+            held = [c for c in tcp_connections(pid, port) if c[1] in clients]
+            dialed = tcp_connections(pid, lan.port) if lan else []
+            if held or dialed:
+                raise Failure(f"the app still holds {len(held)} of {len(clients)} finished proxy connections "
+                              f"and {len(dialed)} direct dials (local, peer ports): {held[:4]} {dialed[:4]}")
+            return {"held": 0, "dialed": 0}
+
+        wait_for("the proxy to release every finished connection", released, 10)
+        return {"app_pid": pid, "connections": len(clients), "kinds": [s[0] for s in sessions],
+                "direct": "skipped (no LAN IPv4)" if not lan else "checked"}
+
+    def store_preview(self, machine: str) -> str:
+        reply = self.sock.call("supermux.devices.mirror.browser_store", {"machine": machine}) or {}
+        return up(reply.get("store_identifier"))
+
+    def data_store_per_app_instance(self) -> Dict[str, Any]:
+        """Two app instances of one Mac (device+tag, the key of their proxies) get
+        two data stores: one store's proxy configuration serves every browser on
+        it, so a shared store sent one instance's tabs through the other's proxy."""
+        machine = self.pair.machine
+        sibling = sibling_instance(machine)
+        route = self.route(self.pair.mirror_id, self.require_mirror_browser())
+        if up(route.get("store_identifier")) != data_store_id(machine):
+            raise Failure(f"the mirror browser's data store is {route.get('store_identifier')}, "
+                          f"want {machine}'s {data_store_id(machine)}")
+        previews = {m: self.store_preview(m) for m in (machine, sibling)}
+        for m, preview in previews.items():
+            if preview != data_store_id(m):
+                raise Failure(f"the route gives {m} the data store {preview or None}, want {data_store_id(m)}")
+        if previews[machine] == previews[sibling]:
+            raise Failure(f"{machine} and {sibling} share the data store {previews[machine]}")
+        return {"stores": previews}
+
+    def unbound_mirror_browser_routes(self) -> Dict[str, Any]:
+        """A mirror no binding names (upstream's vm.workspace_open with auto-mirror
+        off) gets the ports menu's "Open in cmux Browser" like a bound one, so its
+        browser takes the same route."""
+        assert self.owner_server is not None
+        server = self.owner_server
+        source = mirror = ""
+        self.sock.call("supermux.devices.set_auto_mirror", {"enabled": False})
+        try:
+            created = self.sock.call("workspace.create", {"title": f"mirror-browser-unbound-{self.nonce}", "focus": False}) or {}
+            source = up(created.get("workspace_id") or created.get("created_workspace_id"))
+            if not source:
+                raise Failure(f"workspace.create returned no id: {created}")
+            wait_for("the new source's terminal", lambda: self.pair.surfaces(source), self.timeout)
+            # The device lists a new workspace on its next record refresh; until then upstream answers not_found.
+            opened = wait_for("the device to list the new source", lambda: self.sock.call(
+                "vm.workspace_open", {"id": self.pair.machine, "workspace_id": source, "focus": False}, timeout_s=60
+            ), self.timeout) or {}
+            mirror = up(opened.get("workspace_id"))
+            if not mirror:
+                raise Failure(f"vm.workspace_open opened nothing: {opened}")
+
+            def unbound_row() -> Optional[Dict[str, Any]]:
+                rows = (self.sock.call("supermux.devices.bindings", {}) or {}).get("mirrors") or []
+                return next((row for row in rows if up(row.get("workspace_id")) == mirror), None)
+
+            row = wait_for("the opened workspace to be a mirror", unbound_row, self.timeout)
+            if row.get("is_bound"):
+                raise Failure(f"precondition: the opened mirror is bound: {row}")
+            terminal = wait_for("the unbound mirror's terminal", lambda: (self.pair.surfaces(mirror) or [None])[0], self.timeout)
+            opens_before = self.journal_opens(server.port)
+            panel = self.new_tab(mirror, terminal, f"http://localhost:{server.port}/marker.html?unbound=1")
+            title = self.wait_title(panel, lambda t: t == server.title, "the marker page in the unbound mirror")
+            route = self.expect_route(mirror, panel, remote=True)
+            opens = self.journal_opens(server.port)
+            if opens <= opens_before:
+                raise Failure(f"the owner's tunnel journal has no new `opened` for port {server.port}")
+            return {"source": source, "unbound_mirror": mirror, "title": title, "route": route, "journal_opens": opens}
+        finally:
+            for workspace_id in (mirror, source):
+                if workspace_id:
+                    try:
+                        self.sock.call("workspace.close", {"workspace_id": workspace_id, "force": True})
+                    except Failure:
+                        pass
+            self.sock.call("supermux.devices.set_auto_mirror", {"enabled": True})
+
+    def idle_proxy_connections_close(self) -> Dict[str, Any]:
+        """Local clients that connect and send nothing cannot hold the proxy's
+        connections: past the limit of clients still in their handshake they are
+        closed at once, and every one is closed at the handshake deadline."""
+        port = int(self.require_proxy()["port"])
+        extra = 8
+        conns: List[socket.socket] = []
+        closed_after: Dict[int, float] = {}
+        try:
+            for _ in range(HANDSHAKE_LIMIT + extra):
+                conns.append(socket.create_connection(("127.0.0.1", port), timeout=10))
+            opened_at = time.monotonic()
+            while len(closed_after) < len(conns) and time.monotonic() - opened_at < HANDSHAKE_DEADLINE_S + 5:
+                waiting = [conn for index, conn in enumerate(conns) if index not in closed_after]
+                readable, _, _ = select.select(waiting, [], [], 0.25)
+                for conn in readable:
+                    try:
+                        ended = not conn.recv(1)
+                    except OSError:
+                        ended = True
+                    if ended:
+                        closed_after[conns.index(conn)] = round(time.monotonic() - opened_at, 2)
+        except OSError as error:
+            raise Failure(f"a client of the proxy on port {port} failed ({len(conns)} connected): {error!r}") from error
+        finally:
+            for conn in conns:
+                conn.close()
+        at_once = sum(1 for seconds in closed_after.values() if seconds < 3)
+        facts = {"connections": len(conns), "closed": len(closed_after), "closed_at_once": at_once,
+                 "last_closed_after": max(closed_after.values(), default=None)}
+        if len(closed_after) < len(conns):
+            raise Failure(f"{len(conns) - len(closed_after)} of {len(conns)} connections that never sent a byte "
+                          f"are still open after {HANDSHAKE_DEADLINE_S + 5:.0f}s: {facts}")
+        if at_once < extra:
+            raise Failure(f"want at least {extra} connections past the handshake limit closed at once: {facts}")
+        return facts
+
+    def proxy_listener_failure_recovers(self) -> Dict[str, Any]:
+        """A failed proxy listener is replaced on its own, and the mirror's open tab
+        (it held the dead endpoint) and a new tab each load through the owner on the
+        fresh one. The replacement is waited for with a read that starts no listener
+        (`start=False`), so the open tab never navigates inside the restart delay,
+        whatever WebKit's speed; with no restart the wait times out. The owner's
+        tunnel journal must show the open tab's own load before the new tab exists:
+        in loopback a direct load would reach the same marker server."""
+        browser = self.require_mirror_browser()
+        old = self.require_proxy()
+        server = self.server("recover")
+        failed = self.sock.call("supermux.devices.mirror.browser_proxy_fail", {"machine": self.pair.machine}) or {}
+        if failed.get("failed_port") != old["port"]:
+            raise Failure(f"precondition: the driver failed no listener on port {old['port']}: {failed}")
+        fresh = self.wait_replacement(old["port"])
+        self.navigate(browser, f"http://localhost:{server.port}/marker.html?tab=open")
+        open_title = self.wait_title(browser, lambda t: t == server.title, "the open mirror tab to load after the failure")
+        open_opens = self.journal_opens(server.port)
+        if not open_opens:
+            raise Failure(f"the open mirror tab's load did not go through the owner (no journal `opened` for {server.port}, "
+                          f"server saw {server.marker_hosts()})")
+        panel = self.new_tab(self.pair.mirror_id, self.mirror_terminal(), f"http://localhost:{server.port}/marker.html?tab=new")
+        new_title = self.wait_title(panel, lambda t: t == server.title, "a new mirror tab to load after the failure")
+        route = self.expect_route(self.pair.mirror_id, panel, remote=True)
+        new_opens = self.journal_opens(server.port)
+        if new_opens <= open_opens:
+            raise Failure(f"the new mirror tab's load did not go through the owner (journal `opened` for {server.port}: "
+                          f"{open_opens} -> {new_opens})")
+        proxy = self.require_proxy()
+        if int(proxy.get("owner_dials") or 0) <= int(old.get("owner_dials") or 0):
+            raise Failure(f"the proxy never dialed the owner ({old.get('owner_dials')} -> {proxy.get('owner_dials')})")
+        return {"failed_port": old["port"], "port": fresh["port"], "open_tab": open_title, "new_tab": new_title,
+                "journal_opens": {"open_tab": open_opens, "new_tab": new_opens - open_opens}, "route": route}
+
+    def restart_keeps_mirror_store_proxied(self) -> Dict[str, Any]:
+        """A mirror tab opened while a failed proxy listener is replaced gets the
+        dead endpoint like the open tabs, never none: an endpoint configures the
+        whole data store every mirror tab of that app instance shares, so a tab
+        made with none took the proxy away from the open tabs too, and their
+        `localhost` loads went straight to this Mac. Once a listener is ready
+        again, the tab made meanwhile loads through the owner."""
+        browser = self.require_mirror_browser()
+        old = wait_for("the proxy to listen", self.proxy, self.timeout)
+        server = self.server("restart")
+        url = f"http://localhost:{server.port}/marker.html?tab=restart"
+        self.hold_proxy(True)
+        held = True
+        try:
+            failed = self.sock.call("supermux.devices.mirror.browser_proxy_fail", {"machine": self.pair.machine}) or {}
+            if failed.get("failed_port") != old["port"]:
+                raise Failure(f"precondition: the driver failed no listener on port {old['port']}: {failed}")
+            panel = self.new_tab(self.pair.mirror_id, self.mirror_terminal(), url)
+            configs = {name: self.route(self.pair.mirror_id, tab).get("proxy_configs")
+                       for name, tab in (("open_tab", browser), ("new_tab", panel))}
+            if any(count != 2 for count in configs.values()):
+                raise Failure(f"a mirror tab opened while the listener restarts left the app instance's data store "
+                              f"without its proxy (WebKit proxy configurations {configs}, want 2 each): the open "
+                              f"tabs' localhost loads go to this Mac")
+            self.hold_proxy(False)
+            held = False
+            fresh = self.wait_replacement(old["port"])
+            opens_before = self.journal_opens(server.port)
+            self.navigate(panel, url + "&again=1")
+            title = self.wait_title(panel, lambda t: t == server.title, "the tab made during the restart to load")
+            opens = self.journal_opens(server.port)
+            if opens <= opens_before:
+                raise Failure(f"the tab made during the restart did not load through the owner "
+                              f"(journal `opened` for {server.port}: {opens_before} -> {opens})")
+            return {"failed_port": old["port"], "port": fresh.get("port"), "proxy_configs": configs,
+                    "title": title, "journal_opens": opens}
+        finally:
+            if held:
+                self.hold_proxy(False)
+
     # -- run -------------------------------------------------------------------
 
     def run(self) -> bool:
@@ -495,6 +850,13 @@ class MirrorBrowserE2E:
                 ("terminal_link_opens_routed_browser", self.terminal_link_opens_routed_browser),
                 ("moved_tab_swaps_route", self.moved_tab_swaps_route),
                 ("old_host_page", self.old_host_page),
+                ("proxy_connections_are_released", self.proxy_connections_are_released),
+                ("data_store_per_app_instance", self.data_store_per_app_instance),
+                ("unbound_mirror_browser_routes", self.unbound_mirror_browser_routes),
+                ("idle_proxy_connections_close", self.idle_proxy_connections_close),
+                # Last: they fail the proxy's listener.
+                ("proxy_listener_failure_recovers", self.proxy_listener_failure_recovers),
+                ("restart_keeps_mirror_store_proxied", self.restart_keeps_mirror_store_proxied),
             ]:
                 ok = self.step(name, check) and ok
         for server in self.servers:

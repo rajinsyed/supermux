@@ -240,6 +240,8 @@ enum SupermuxMobileHostGlue {
         // Not a mobile observer, but it needs the same once-per-app start: the
         // per-tab working spinners follow the lifecycle relay from here on.
         SupermuxTabActivitySync.shared.start()
+        // Nor this: a git command still running when the app quits ends with it.
+        SupermuxGitChildProcesses.endOnQuit()
         SupermuxDevicesGlue.activateIfNeeded()
     }
 }
