@@ -578,7 +578,12 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   New Simulator reuses that Simulator tab there. A relaunch restores the viewer, which finds its
   simulator again by device after the owning Mac restarts; when that Mac's restored Simulator tab
   reports its worker stopped for 5 s (its first start, from the stream, in a background workspace),
-  the viewer asks it to recover once, as Recover does. Not offered: multi-touch, mouse-wheel
+  the viewer asks it to recover once, as Recover does. The owning Mac lists its simulators from CoreSimulator
+  in-process, not `simctl` (#760–#762), so a Mac where process launches stall (every `simctl` took 20–22 s on
+  2026-10-03) still fills the device menu and streams a new tab at once; it answers the device menu within 8 s, and when
+  its simulators were slower the menu says "Simulators on <Mac> are slow to respond…" and asks again (never an empty
+  menu). Only a cold boot still waits on `simctl`. A new tab also activates when the viewer's first device-menu refresh
+  overlaps the panel's startup discovery (#763; that used to leave it "preparing"). Not offered: multi-touch, mouse-wheel
   notches, the Tools sidebar, screenshots to this Mac, non-US text; they work on the owning Mac
   through `cmux simulator …` in a mirror terminal. An older owning Mac (no
   `simulator.stream.v2`/`supermux.panes.v1`) gets an alert instead, never a local simulator. A quit
