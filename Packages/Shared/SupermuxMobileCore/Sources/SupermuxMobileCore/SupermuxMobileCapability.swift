@@ -67,6 +67,10 @@ public enum SupermuxMobileCapability: String, CaseIterable, Codable, Sendable, E
     /// `supermux_resume_from_seq` (answering with the bytes since then while
     /// the host's byte tail still holds them) and reports `supermux_stream_epoch`.
     case terminalStreamV1 = "supermux.terminal_stream.v1"
+    /// `mobile.terminal.size_policy.set` takes `supermux_preference`: a size
+    /// mode picked on another Mac's mirror becomes this Mac's setting for all
+    /// its terminals, as one picked here does.
+    case terminalSizingPreferenceV1 = "supermux.terminal_sizing_preference.v1"
 
     /// Every capability, in declaration order (derived from `CaseIterable`).
     public static let all: [SupermuxMobileCapability] = SupermuxMobileCapability.allCases

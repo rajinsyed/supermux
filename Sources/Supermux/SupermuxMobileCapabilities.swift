@@ -108,6 +108,10 @@ enum SupermuxMobileCapabilities {
             // another Mac's device mirror shows this Mac's simulators (the
             // video itself is upstream's simulator.stream.v2 lane).
             SupermuxMobileCapability.remoteSimulatorV1.rawValue,
+            // mobile.terminal.size_policy.set takes `supermux_preference`: a
+            // size mode picked on another Mac's mirror becomes this Mac's
+            // setting for all its terminals.
+            SupermuxMobileCapability.terminalSizingPreferenceV1.rawValue,
         ]
     }
 }
