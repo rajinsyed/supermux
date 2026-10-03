@@ -10,7 +10,8 @@ import Foundation
 /// ``SupermuxDevicesSocketCommands``.
 ///
 /// - `state {}` — the stored preference and each device mirror's claim
-///   (`null` where this build has none).
+///   (`null` where this build has none), with `pending_choice` while a pick
+///   made on a detached mirror waits for its next attach.
 /// - `reset {}` — forgets the stored preference and applies the default to
 ///   this Mac's terminals.
 /// - `select_mode {surface_id, mode, fixed_cols?, fixed_rows?}` — the size
@@ -56,6 +57,7 @@ enum SupermuxTerminalSizingSocketCommands {
                     "self_key": session.viewer.map { SupermuxTerminalSizingDefaults.selfKey(of: $0) as Any } ?? NSNull(),
                     "claimed": session.supermuxSizingClaim.claimed,
                     "pushed": session.supermuxSizingClaim.pushed,
+                    "pending_choice": session.supermuxSizingClaim.pendingChoice != nil,
                 ]
             }
         return ["preference": preferencePayload(), "stored": defaults.isStored, "mirrors": mirrors]
