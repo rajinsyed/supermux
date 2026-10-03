@@ -30,6 +30,7 @@ final class SupermuxDeviceLoopbackHarness {
 
     let identity: SupermuxDeviceLoopbackIdentity
     let provider: DeviceSurfaceProvider
+    private let acceptor: SupermuxDeviceLoopbackHostAcceptor
     private let record: DeviceDirectoryRecord
     private let catalog: SurfaceCatalog
 
@@ -59,6 +60,13 @@ final class SupermuxDeviceLoopbackHarness {
         } catch {
             cmuxDebugLog("supermux.loopback failed to start: \(String(describing: error))")
         }
+    }
+
+    /// The loopback host behind `machine`, whose tunnel lanes stand in for a
+    /// real Mac's (`SupermuxDeviceTunnelClient`); nil for every other machine.
+    static func tunnelAcceptor(for machine: SurfaceMachineID) -> SupermuxDeviceLoopbackHostAcceptor? {
+        guard let active, active.identity.machine == machine else { return nil }
+        return active.acceptor
     }
 
     /// `DeviceLink` refuses every request unless `DevicesFeature.isEnabled`.
@@ -93,6 +101,7 @@ final class SupermuxDeviceLoopbackHarness {
         )
         let link = DeviceLink(record: record, runtime: runtime, authorization: LoopbackAuthorization())
         self.identity = identity
+        self.acceptor = acceptor
         self.record = record
         self.catalog = catalog
         provider = DeviceSurfaceProvider(record: record, link: link, catalog: catalog)

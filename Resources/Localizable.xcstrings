@@ -616994,6 +616994,584 @@
           }
         }
       }
+    },
+    "supermux.ports.page.busy" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ has too many connections open. Reload this page in a moment."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@で開いている接続が多すぎます。少し待ってから、このページを再読み込みしてください。"
+          }
+        }
+      }
+    },
+    "supermux.ports.page.denied" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ didn't allow this connection."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@はこの接続を許可しませんでした。"
+          }
+        }
+      }
+    },
+    "supermux.ports.page.needsUpdate" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Update Supermux on %@ to open its localhost here."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ここでlocalhostを開くには、%@のSupermuxをアップデートしてください。"
+          }
+        }
+      }
+    },
+    "supermux.ports.page.noDirectLink" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opening localhost on %@ needs a direct connection to it."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@のlocalhostを開くには、そのMacへの直接接続が必要です。"
+          }
+        }
+      }
+    },
+    "supermux.ports.page.notListening" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing on %@ is listening on that port. Start the server there, then reload this page."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@のそのポートで待ち受けているものがありません。そちらでサーバーを起動してから、このページを再読み込みしてください。"
+          }
+        }
+      }
+    },
+    "supermux.ports.page.offline" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ is offline. Reload this page when it's back."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@はオフラインです。オンラインに戻ったら、このページを再読み込みしてください。"
+          }
+        }
+      }
+    },
+    "supermux.ports.page.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "localhost:%1$lld on %2$@ isn't answering"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$@のlocalhost:%1$lldが応答していません"
+          }
+        }
+      }
+    },
+    "supermux.ports.failed.noFreePort": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No free local port near %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@付近に空いているローカルポートがありません"
+          }
+        }
+      }
+    },
+    "supermux.ports.line.failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": ":%@ (no free port)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": ":%@（空きポートなし）"
+          }
+        }
+      }
+    },
+    "supermux.ports.line.moved": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": ":%1$@ → here :%2$@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": ":%1$@ → このMacの:%2$@"
+          }
+        }
+      }
+    },
+    "supermux.ports.line.stopped": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": ":%@ (stopped)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": ":%@（停止中）"
+          }
+        }
+      }
+    },
+    "supermux.ports.menu.copy": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy Local URL"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ローカルURLをコピー"
+          }
+        }
+      }
+    },
+    "supermux.ports.menu.forward": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Forward to This Mac"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このMacに転送"
+          }
+        }
+      }
+    },
+    "supermux.ports.menu.forwardPort": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Forward a Port…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ポートを転送…"
+          }
+        }
+      }
+    },
+    "supermux.ports.menu.item.moved": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "localhost:%1$@ → here :%2$@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "localhost:%1$@ → このMacの:%2$@"
+          }
+        }
+      }
+    },
+    "supermux.ports.menu.none": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No ports detected"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ポートが見つかりません"
+          }
+        }
+      }
+    },
+    "supermux.ports.menu.openCmux": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open in cmux Browser"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cmuxブラウザで開く"
+          }
+        }
+      }
+    },
+    "supermux.ports.menu.openDefault": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open in Default Browser"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デフォルトブラウザで開く"
+          }
+        }
+      }
+    },
+    "supermux.ports.menu.otherPorts": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Other forwarded ports"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "その他の転送中のポート"
+          }
+        }
+      }
+    },
+    "supermux.ports.menu.stop": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop Forwarding"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "転送を停止"
+          }
+        }
+      }
+    },
+    "supermux.ports.menu.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ports on %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@のポート"
+          }
+        }
+      }
+    },
+    "supermux.ports.pill": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Port %1$@ from %2$@ is at localhost:%3$@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%2$@のポート%1$@はlocalhost:%3$@で開けます"
+          }
+        }
+      }
+    },
+    "supermux.ports.prompt.confirm": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Forward"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "転送"
+          }
+        }
+      }
+    },
+    "supermux.ports.prompt.invalid": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter a port number from 1 to 65535."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1から65535までのポート番号を入力してください。"
+          }
+        }
+      }
+    },
+    "supermux.ports.prompt.message": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter the port a server on %@ listens on. It opens at localhost on this Mac."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@のサーバーが待ち受けているポートを入力してください。このMacのlocalhostで開けるようになります。"
+          }
+        }
+      }
+    },
+    "supermux.ports.prompt.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Forward a Port from %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@のポートを転送"
+          }
+        }
+      }
+    },
+    "supermux.ports.settings.forward": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Forward other Macs' ports to this Mac"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ほかのMacのポートをこのMacに転送"
+          }
+        }
+      }
+    },
+    "supermux.ports.settings.forward.subtitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Servers you start in another Mac's workspaces open at localhost here, for browsers, the iOS Simulator and other apps. A port already in use here gets the next free one."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ほかのMacのワークスペースで起動したサーバーを、このMacのlocalhostで開けます（ブラウザ、iOSシミュレータ、その他のアプリ）。このMacで使用中のポートには、次の空いているポートが使われます。"
+          }
+        }
+      }
+    },
+    "supermux.ports.settings.line": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ports: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ポート: %@"
+          }
+        }
+      }
+    },
+    "supermux.ports.settings.menu": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ports…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ポート…"
+          }
+        }
+      }
+    },
+    "supermux.ports.settings.none": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No forwarded ports"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "転送中のポートはありません"
+          }
+        }
+      }
+    },
+    "supermux.ports.unavailable.directLink": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Port forwarding needs a direct connection to %@."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ポート転送には%@への直接接続が必要です。"
+          }
+        }
+      }
+    },
+    "supermux.ports.unavailable.offline": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ is offline."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@はオフラインです。"
+          }
+        }
+      }
+    },
+    "supermux.ports.unavailable.update": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update Supermux on %@ to use its ports here."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ここで%@のポートを使うには、そのMacのSupermuxをアップデートしてください。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

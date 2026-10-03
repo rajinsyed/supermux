@@ -291,7 +291,8 @@ public struct SupermuxProjectRowView: View {
                         reorder: actions.reorderWorkspace
                     ),
                     draggingWorkspaceId: $draggingWorkspaceId,
-                    openPullRequest: { url in actions.openPullRequest(url, workspace.id) }
+                    openPullRequest: { url in actions.openPullRequest(url, workspace.id) },
+                    mirrorMenu: { remoteActions.mirrorMenu(workspace.id) }
                 )
             }
             // The disclosure reveals worktrees that exist on disk but have no

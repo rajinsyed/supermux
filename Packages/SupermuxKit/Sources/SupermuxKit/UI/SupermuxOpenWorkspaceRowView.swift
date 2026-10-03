@@ -23,6 +23,8 @@ struct SupermuxOpenWorkspaceRowView: View {
     @Binding var draggingWorkspaceId: UUID?
     /// Opens the workspace's PR badge URL (cmux's per-workspace PR state).
     var openPullRequest: (URL) -> Void = { _ in }
+    /// A device mirror's extra menu items from the host (its "Ports on <Mac>").
+    var mirrorMenu: @MainActor () -> AnyView = { AnyView(EmptyView()) }
 
     @Environment(\.supermuxSidebarFontScale) private var fontScale
     @Environment(\.supermuxUnreadBadgeFillColor) private var unreadBadgeFillColor
@@ -143,6 +145,7 @@ struct SupermuxOpenWorkspaceRowView: View {
         Button(String(localized: "supermux.workspace.close", defaultValue: "Close Workspace"), role: .destructive, action: close)
         if workspace.device != nil {
             Button(String(localized: "supermux.devices.close.button.hideHere", defaultValue: "Hide Here"), action: hide)
+            mirrorMenu()
         }
     }
 }

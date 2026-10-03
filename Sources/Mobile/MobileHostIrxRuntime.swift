@@ -996,12 +996,18 @@ final class MobileHostIrxRuntime: MobileHostPairingRuntime {
         let eventWriter = MobileHostIrxEventWriter(connection: irx, journal: journal)
         let controlTransport = IrxControlByteTransport(
             connection: irx, control: control, closeCode: .hostShutdown)
-        // The browser tunnel serves phones only, and each open re-checks the
-        // same live authorization that keeps this session admitted.
-        let tunnelHost: IrxTunnelHost? = isMac ? nil : MobileHostBrowserTunnel.makeHost(
+        // SUPERMUX:begin device-tunnel-host
+        // The tunnel serves phones (their "On iPhone" browser) and the user's
+        // other Macs (port forwarding, a mirror's browser: this Mac's loopback
+        // only); each open re-checks the same live authorization that keeps
+        // this session admitted. (upstream: `let tunnelHost: IrxTunnelHost? =
+        // isMac ? nil : MobileHostBrowserTunnel.makeHost(isAuthorized:journal:)`)
+        let tunnelHost: IrxTunnelHost? = SupermuxDeviceTunnelHosts.makeHost(
+            peerIsMac: isMac,
             isAuthorized: { stillAuthorized(peer.endpointIDHex) },
             journal: journal
         )
+        // SUPERMUX:end device-tunnel-host
         let laneLoop = Task {
             await Self.runLaneLoop(
                 irx, admittedPeer: admittedPeer, artifactRegistry: artifactRegistry,

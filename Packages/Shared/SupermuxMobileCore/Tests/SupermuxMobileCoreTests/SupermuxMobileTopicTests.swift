@@ -9,12 +9,13 @@ import Testing
         #expect(SupermuxMobileTopic.changesUpdated.rawValue == "supermux.changes.updated")
         #expect(SupermuxMobileTopic.runUpdated.rawValue == "supermux.run.updated")
         #expect(SupermuxMobileTopic.filesUpdated.rawValue == "supermux.files.updated")
+        #expect(SupermuxMobileTopic.portsUpdated.rawValue == "supermux.ports.updated")
     }
 
     @Test func allExposesEveryTopicExactlyOnce() {
         #expect(SupermuxMobileTopic.all == SupermuxMobileTopic.allCases)
-        #expect(SupermuxMobileTopic.all.count == 5)
-        #expect(Set(SupermuxMobileTopic.all).count == 5)
+        #expect(SupermuxMobileTopic.all.count == 6)
+        #expect(Set(SupermuxMobileTopic.all).count == 6)
     }
 }
 
@@ -39,11 +40,12 @@ import Testing
         #expect(SupermuxMobileCapability.terminalInputV1.rawValue == "supermux.terminal_input.v1")
         #expect(SupermuxMobileCapability.terminalPlacementV1.rawValue == "supermux.terminal_placement.v1")
         #expect(SupermuxMobileCapability.filesReadV1.rawValue == "supermux.files_read.v1")
+        #expect(SupermuxMobileCapability.portForwardV1.rawValue == "supermux.port_forward.v1")
     }
 
     @Test func allExposesEveryCapabilityExactlyOnce() {
         #expect(SupermuxMobileCapability.all == SupermuxMobileCapability.allCases)
-        #expect(SupermuxMobileCapability.all.count == 19)
-        #expect(Set(SupermuxMobileCapability.all).count == 19)
+        #expect(SupermuxMobileCapability.all.count == 20)
+        #expect(Set(SupermuxMobileCapability.all).count == 20)
     }
 }

@@ -332,7 +332,12 @@ SupermuxDeviceMirrorsGlue.unhide(machineID:ref:)   // unhide + reconcile
   `supermux_pull_request` now also travel for workspaces no project owns (v2 only; the phone reads them
   only on project rows). The host pokes sync on sidebar-metadata changes
   (`SupermuxMobileSidebarStatusObserver`).
-- **Layout sync** skips remote non-terminal panels (browser/markdown) instead of stalling (#531).
+- **Layout sync** skips remote non-terminal panels (browser/markdown) instead of stalling (#531), and
+  a bound mirror's own non-terminal panels stay local (reserved: never pushed, grafted back) instead of
+  stopping it (#706, `SupermuxDeviceLayoutSurfaceFilter.localPanelIDs`).
+- **Mirror browsers** use upstream's remote-workspace mode with the owning Mac's proxy and a per-Mac data
+  store (#707, `SupermuxDeviceBrowserRoute`, `SupermuxDeviceBrowserProxies`), so their `localhost` is
+  that Mac's.
 - **Socket** (`supermux.devices.*`): `close_mirror {workspace_id, action: close_on_mac|hide}` (a user
   close without this Mac's confirmations, or Hide Here; `pending_on_mac`),
   `unhide {machine?, remote_workspace_id?}`, `hidden {}` (`hidden`, `pending_remote_closes`),

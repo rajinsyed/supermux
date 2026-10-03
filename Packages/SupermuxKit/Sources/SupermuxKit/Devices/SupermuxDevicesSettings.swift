@@ -34,6 +34,17 @@ public struct SupermuxDevicesSettings {
         nonmutating set { defaults.set(newValue, forKey: Self.sharePushKey) }
     }
 
+    /// Whether servers started in another Mac's workspaces (those mirrored
+    /// here) are forwarded to `localhost` on this Mac automatically. Ports
+    /// forwarded by hand are kept either way. Defaults to on.
+    public static let forwardPortsKey = "supermux.devices.forwardPorts"
+
+    /// Auto-forward other Macs' workspace ports (default `true`).
+    public var forwardPorts: Bool {
+        get { defaults.object(forKey: Self.forwardPortsKey) as? Bool ?? true }
+        nonmutating set { defaults.set(newValue, forKey: Self.forwardPortsKey) }
+    }
+
     /// Whether each Mac registers the other Macs' projects whose repo it
     /// already has at the same path (never clones, never deletes).
     public static let syncProjectsKey = "supermux.devices.syncProjects"

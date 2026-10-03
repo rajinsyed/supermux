@@ -17,6 +17,9 @@ public enum SupermuxMobileTopic: String, CaseIterable, Codable, Sendable, Equata
     /// `{workspace_id, root}`, see ``SupermuxMobileMethod/filesWatch``);
     /// another Mac's Files panel relists that folder.
     case filesUpdated = "supermux.files.updated"
+    /// The ports this Mac's workspaces listen on changed (payload `{}`);
+    /// another Mac refetches via ``SupermuxMobileMethod/portsList``.
+    case portsUpdated = "supermux.ports.updated"
 
     /// Every topic, in declaration order (derived from `CaseIterable`).
     public static let all: [SupermuxMobileTopic] = SupermuxMobileTopic.allCases
