@@ -91,7 +91,9 @@ final class SupermuxTerminalSizingAuto {
     func remoteTerminalRequestArrived() {
         guard !deliveringRemoteInput else { return }
         deliveringRemoteInput = true
-        DispatchQueue.main.async { SupermuxTerminalSizingAuto.shared.deliveringRemoteInput = false }
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated { SupermuxTerminalSizingAuto.shared.deliveringRemoteInput = false }
+        }
     }
 
     /// A viewer already attached started viewing: its viewport changed, or a

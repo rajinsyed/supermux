@@ -23,7 +23,11 @@ struct SupermuxTerminalSizingPreference: Codable, Equatable {
     var priority: [String] = [SupermuxTerminalSizingPreference.selfToken]
     var fixed: TerminalGridSize?
 
-    init(mode: TerminalSizingMode = .latest, priority: [String] = [Self.selfToken], fixed: TerminalGridSize? = nil) {
+    init(
+        mode: TerminalSizingMode = .latest,
+        priority: [String] = [SupermuxTerminalSizingPreference.selfToken],
+        fixed: TerminalGridSize? = nil
+    ) {
         self.mode = mode
         self.priority = priority
         self.fixed = fixed
@@ -442,7 +446,7 @@ struct SupermuxTerminalSizingScopeNote: View {
     var surfaceID: UUID
 
     /// Upstream's "Follow Latest" (`latest`), named for what it does here.
-    static var autoTitle: String {
+    nonisolated static var autoTitle: String {
         String(localized: "supermux.terminalSizing.mode.auto", defaultValue: "Auto")
     }
 
