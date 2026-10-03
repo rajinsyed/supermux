@@ -12,7 +12,7 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **759**. The remote-workspaces work (#517–#599) left
+- Numbering: the highest number in use is **763**. The remote-workspaces work (#517–#599) left
   unassigned gaps it may still grow into: **523–524, 527–529, 539–544, 558–559, 562–569,
   578–579 and 588–589** (never assigned, not retired); #600–#601 came from the 2026-10-01 upstream merge; #620–#622 and
   #630–#639 are the remote-workspaces feedback round (602–619 and 623–629 unassigned). The second
@@ -35,8 +35,10 @@ Rules for adding a touchpoint:
   #752–#753 (a nested row's branch line under its title) and its Turnstile fix #754 (a mirror's browser keeps a
   same-port forward's own `localhost` origin) with its review fixes #755–#756 (an as-written page's bridge, main-frame
   reroutes) and its real-Mac fixes #757–#759 (a mirror tab's navigation starts a same-port forward; the wiring of
-  its two files; a terminal link opened into a cmux browser counts as the user's); 709, 713–714, 724, 736, 740–749
-  and 760–769 are unassigned. The highest number in use is 759. Number **351** is unused (the notifications
+  its two files; a terminal link opened into a cmux browser counts as the user's), and its slow-`simctl` hardening
+  #760–#763 (remote simulators keep working while `simctl` launches stall; a new Simulator tab activates although
+  another Mac's device menu refreshed meanwhile); 709, 713–714, 724, 736, 740–749 and 764–769 are unassigned. The highest
+  number in use is 763. Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 82, 83, 89, 106, 121, 142, 213, 214,
   220, 229, 237, 250, 251, 252–258, 335, 470, 473–481, 483, 484, and 487** are unused; all are
@@ -688,6 +690,10 @@ Rules for adding a touchpoint:
 | 757 | `Sources/Panels/BrowserPanel.swift` | `device-mirror-browser-on-demand-forward` | One fenced `if` at the top of `performNavigation(request:originalURL:recordTypedNavigation:preserveRestoredSessionHistory:onNavigationStarted:)`, before `cancelHiddenWebViewDiscard()`: when `SupermuxSamePortForwardGate.holds(request, dataStoreID: websiteDataStore.identifier, typed: recordTypedNavigation, panel: self, resume:abandon:)` (`Sources/Supermux/Ports/`) holds the navigation it returns nil; `resume` calls `performNavigation` again with the same arguments (the gate lets that call pass), `abandon` calls `onNavigationStarted?(nil)` (a newer navigation of the panel dropped it, and its wait is cancelled). `typed` (the user typed the URL; a terminal link, #759, the Ports menu and a port chip count too, `noteUserOpen`) is what lets one of the owner's other ports, in no workspace, be forwarded; a page's own navigation or a link in it forwards only a workspace's port (once the owner lists it as one, the tab gets its forward by itself). The gate holds an `http` navigation to `localhost`, `127.0.0.1` or `[::1]` in a mirror browser (its data store is a device app instance's, #707) whose port P ≥ 1024 is not loaded as written (#754), while the owning Mac can forward and the user did not stop P's forward; for at most 3 s it checks P is free here, asks that Mac for its ports again when its last listing lacks P (workspace or other loopback ports), starts a same-port forward on demand (`SupermuxPortForwards.forwardOnDemand`, or moves one that landed elsewhere back to P), and resumes once it listens on P (the page loads as written) or at the end of the wait (the alias, as before); `forwardsChanged()` leaves a held tab alone, and a port whose forward could not start is not retried until the user navigates to it again. Covers typed URLs, `browser.navigate`, new tabs, restores and every navigation #756 hands back. Upstream: a mirror tab's `localhost:P` without a same-port forward always ran at the alias origin (no secure context, a hostname no Turnstile sitekey allows). E2E: `tests/supermux/loopback_mirror_browser_e2e.py` (`unforwarded_port_forwards_on_demand`, `restarted_server_recovers_as_written`, `held_navigation_lands_on_its_path`, `local_server_restart_keeps_its_port`, `page_navigation_does_not_forward_other_port`, `navigation_spam_bounded_listings`) |
 | 758 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/Ports/SupermuxAliasHTTPRewrite.swift` (every request and response head on an alias connection rewritten, not only the first) and `Sources/Supermux/Ports/SupermuxSamePortForwardGate.swift` (#757) into the cmux target, four entries each (`Ports/…` paths inside the `Supermux` group, next to #751's): file references `50BE00190900000000000001` / `…03`, build files `…02` / `…04`; `grep -c 50BE001909 cmux.xcodeproj/project.pbxproj` prints 8 |
 | 759 | `Sources/Workspace+TerminalLinkOpening.swift` | `device-mirror-browser-user-link` | One fenced line at the top of `openTerminalBrowserLink(url:sourcePanelId:focus:)` (the workspace conformance of upstream's `TerminalLinkOpenContainer`, the path a Command-clicked terminal link takes into the cmux browser): `SupermuxSamePortForwardGate.noteUserOpen(url: url, inWorkspace: self)` (`Sources/Supermux/Ports/`). When this workspace is a device mirror (`SupermuxMirrorPortsActions.mirrorRef`) and the URL is `localhost`, it marks that Mac's port as opened by the user: the next navigation of a browser of that Mac to that port, within 5 s, counts as typed (#757), so it may get a same-port forward of one of that Mac's other loopback ports (a server an agent started), which a page's own navigation may not; the navigation takes the mark whether or not it is held. A no-op in a local workspace (its links reach this Mac's own `localhost`) and for any other URL. `DockSplitStore`'s conformance is not fenced (its links open in the Dock, as #20 notes). E2E: `tests/supermux/loopback_mirror_browser_e2e.py` (`terminal_link_forwards_other_port`, `local_terminal_link_marks_nothing`) |
+| 760 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the remote-simulator slow-`simctl` work into the cmux target, four entries each in the Supermux group next to #737's (`path = RemoteSimulator/<file>`): `SupermuxSimulatorControl.swift` (`50BE0019050000000000001F`/`…20`, the `SimulatorControlling` every `SimulatorPanel` gets, #761), `SupermuxSimctlDebugDelay.swift` (`…21`/`…22`, the DEBUG slow-`simctl` hook; a no-op in Release), `SupermuxCoreSimulatorDevices.swift` (`…23`/`…24`, the device list read from CoreSimulator in-process), `SupermuxResumeOnce.swift` (`…25`/`…26`), `SupermuxSimulatorDeviceListing.swift` (`…27`/`…28`, the bounded `mobile.simulator.devices.list` answer, #762) and `SupermuxCoreSimulatorCrashGuard.swift` (`…29`/`…2A`, a crash while CoreSimulator loads in-process turns that CoreSimulator build off in-process) |
+| 761 | `Sources/Panels/SimulatorPanel.swift` | `simulator-panel-control` | In `init`'s default `clientFactory`, the closing `).makeClient()` of upstream's `SimulatorWorkerClientFactory(...)` becomes `).makeClient(simulatorControl: SupermuxSimulatorControl.make())` (`Sources/Supermux/RemoteSimulator/SupermuxSimulatorControl.swift`): every Simulator panel's worker client runs its `simctl` calls through the fork's control, which builds upstream's `SimulatorControlService` with the same location and camera cleanup scopes the factory would use |
+| 762 | `Sources/TerminalController+MobileSimulator.swift` | `simulator-devices-list-bounded` | Two fences in `v2MobileSimulatorDevicesList`. The first replaces upstream's `let coordinator = resolved.panel.coordinator`, `await coordinator.reloadDevices()`, `let selectedID = coordinator.selectedDeviceID` and the head of `let devices = coordinator.devices.map { device -> [String: Any] in` with `let supermuxListing = await SupermuxSimulatorDeviceListing.listing(for: resolved.panel)`, `let selectedID = supermuxListing.selectedID` and `let devices = supermuxListing.devices.map { device -> [String: Any] in` (upstream's row fields stay as they are); the second makes the final return `return .ok(SupermuxSimulatorDeviceListing.reply(devices: devices, current: supermuxListing.current))`. `SupermuxSimulatorDeviceListing` (`Sources/Supermux/RemoteSimulator/`) waits at most 8 s: a panel that has a device gets upstream's refresh (one at a time per panel, current only when that refresh landed, not when another superseded it), a panel that is not started or still runs its startup discovery gets the list read beside it with its saved or requested device marked (a refresh then would supersede that discovery, and #763's retry would supersede it back), and a refresh or read that outlasted the 8 s answers the next ask. It adds `slow: true` when the list may be out of date; another Mac's viewer then says "Simulators on <Mac> are slow to respond…" and asks again, and its rebind never opens a second tab on a slow answer. Older viewers and the phone ignore the extra key |
+| 763 | `Packages/macOS/CmuxSimulator/Sources/CmuxSimulatorUI/Coordinator/SimulatorPaneCoordinator+Lifecycle.swift` | `simulator-startup-discovery-retry` | In `runStartup(activatingSelectedDevice:)`, upstream's `await reloadDevices()` becomes `while !(await reloadDevices()), !closed, !Task.isCancelled {}`. A refresh started while the startup discovery runs (another Mac's viewer asks `mobile.simulator.devices.list` as soon as it attaches; the phone does too) supersedes it: `reloadDevices` returns false without selecting a device, `runStartup` found `selectedDeviceID == nil` and never called `selectDevice`, and the panel stayed idle (the viewer: `preparing`, no frames). Measured with a temporary log on 2026-10-03: the failing order was startup gen 1, menu gen 2, gen 1 discarded, `selected=nil`; the passing order was menu gen 1, startup gen 2. Retrying lands a discovery and activates as before |
 
 ## How to re-apply
 
@@ -6136,6 +6142,44 @@ Re-apply after an upstream merge:
 Verify: `swift test` in `Packages/Shared/SupermuxMobileCore`, `Packages/iOS/SupermuxMobileKit` and
 `Packages/iOS/CmuxMobileSimulatorStream`, then
 `CMUX_E2E_SUITES="loopback_mirror_simulator_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`
+
+### 760–763. Remote simulators keep working while `simctl` is slow — `simulator-panel-control`, `simulator-devices-list-bounded`, `simulator-startup-discovery-retry`
+
+Found 2026-10-03: twice in one night every `simctl` launch on the owning Mac took 4–5 s, then 20–22 s (a
+`sample` had the main thread in `_dyld_start`, `dyld4::RemoteNotificationResponder::blockOnSynchronousEvent`;
+see LOOPBACK-HARNESS.md "Mirror simulator E2E"). The owner's `mobile.simulator.devices.list` ran a fresh
+`simctl list` and missed the device link's 20 s reply deadline, so a mirror's device menu came up empty, and a new
+Simulator tab never picked a device. Fork code in `Sources/Supermux/RemoteSimulator/`: `SupermuxSimulatorControl`
+(every `SimulatorPanel`'s `SimulatorControlling`: the device list from CoreSimulator in-process through
+`SupermuxCoreSimulatorDevices`, no `simctl list`; no `simctl boot` for a device CoreSimulator reports booted; upstream's
+`SimulatorControlService` for everything else, and for the list when CoreSimulator cannot be used),
+`SupermuxSimulatorDeviceListing` (the owner's bounded answer, `slow` when out of date) with the viewer's
+"Simulators on <Mac> are slow to respond…" and retries in `SupermuxRemoteSimulatorPanel`, and the DEBUG
+`SupermuxSimctlDebugDelay` (the slow-`simctl` hook steps 20–21 of the simulator suite arm through
+`supermux.devices.mirror.simulator.simctl_delay`). Re-apply:
+
+- **#760 `project.pbxproj`.** Re-add the four entries per file listed in the #760 row.
+- **#761 `SimulatorPanel.swift`.** In `init(...)`'s default `clientFactory` closure, pass
+  `simulatorControl: SupermuxSimulatorControl.make()` to upstream's `SimulatorWorkerClientFactory(...).makeClient()`.
+  If upstream adds parameters to `makeClient`, keep theirs and add this one. If upstream builds panels' clients
+  elsewhere (a new factory or a shared service), inject the fork's control there instead; if it replaces
+  `SimulatorControlling`, port `SupermuxSimulatorControl` to the new seam. Verify with step 20
+  (`slow_simctl_lists_and_streams`) of `loopback_mirror_simulator_e2e`.
+- **#762 `TerminalController+MobileSimulator.swift`.** In `v2MobileSimulatorDevicesList`, replace upstream's
+  `let coordinator = …`, `await coordinator.reloadDevices()`, `let selectedID = coordinator.selectedDeviceID` and the
+  head of its `coordinator.devices.map` with
+  `let supermuxListing = await SupermuxSimulatorDeviceListing.listing(for: resolved.panel)`,
+  `let selectedID = supermuxListing.selectedID` and `let devices = supermuxListing.devices.map { device -> [String: Any] in`,
+  keeping upstream's row fields, and its final `return .ok(["devices": devices])` with
+  `return .ok(SupermuxSimulatorDeviceListing.reply(devices: devices, current: supermuxListing.current))`. If upstream
+  answers from a cached inventory itself (no discovery per request, nothing that supersedes the panel's own), keep its
+  answer and drop the first fence. Verify with steps 21–22 (`slow_simctl_device_menu_says_so`,
+  `device_menu_never_empty_while_owner_starts`).
+- **#763 `SimulatorPaneCoordinator+Lifecycle.swift`.** In `runStartup(activatingSelectedDevice:)`, replace
+  `await reloadDevices()` with `while !(await reloadDevices()), !closed, !Task.isCancelled {}`. Retire it when upstream's
+  startup survives a concurrent `reloadDevices()` itself (it selects and activates after a superseded discovery). Verify
+  with `streams_video` and `viewer_close_closes_owner_panel` of `loopback_mirror_simulator_e2e`: a new tab's viewer asks
+  for the device menu right after it attaches, so without this fence most new tabs tried here never streamed.
 
 ### 735. A quit that reaches a worker goes to the app — `worker-quit-forwarding`
 

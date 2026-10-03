@@ -92,7 +92,12 @@ extension SimulatorPaneCoordinator {
         startOutgoingDelivery()
         startEventObservation()
 
-        await reloadDevices()
+        // SUPERMUX:begin simulator-startup-discovery-retry
+        // A refresh started meanwhile (another Mac's or the phone's device menu,
+        // `mobile.simulator.devices.list`) supersedes this one, which then selects
+        // nothing, and the panel never activates its device: discover again.
+        while !(await reloadDevices()), !closed, !Task.isCancelled {}
+        // SUPERMUX:end simulator-startup-discovery-retry
         guard !Task.isCancelled else {
             if !closed { started = false }
             return

@@ -16,8 +16,18 @@ Design decision 12 in [DESIGN.md](DESIGN.md) calls for this harness.
 
 > **Verified 2026-10-01** on tag `rws-f2` (`--supermux-profile` build). The smoke script passes all
 > 10 checks, and a mirror survives an app restart (it is restored and reconnects).
-> An agent-only build (`CMUX_DEV_BACKEND_MODE=local`, not signed in) should work the same way,
-> because the link never asks for a Stack token. **That was not tested.**
+> **Verified 2026-10-03** on tag `simrobust`, a plain agent-only build (`CMUX_DEV_BACKEND_MODE=local`, no
+> `~/.secrets`, not signed in): the loopback device connects and fetches (the link never asks for a Stack token),
+> and `loopback_mirror_simulator_e2e` passes 24 of 24.
+>
+> **Agents: never run the suites on a `--supermux-profile` build.** It is signed in to the user's real account, so
+> it is a real device in their Mac mesh: it auto-mirrors their real workspaces, and with its window raised for the
+> suites its small panes count toward, and claim, their real terminals' size (2026-10-03: a real terminal shrank to
+> "99x35 · <Mac>" with the policy switched to Fit Everyone). Build agent runs with plain `--tag`. A tag that was once
+> built with the profile keeps its seeded identity: quit it, then delete its defaults domain
+> (`defaults delete com.cmuxterm.app.debug.<tag-with-dots>`) and
+> `~/Library/Application Support/cmux/com.cmuxterm.app.debug.<tag-with-dots>/credentials.json` (that is not a
+> sign-out: nothing is revoked) before the plain rebuild.
 
 ## Run it
 
@@ -25,8 +35,8 @@ Design decision 12 in [DESIGN.md](DESIGN.md) calls for this harness.
 export PATH="$HOME/.cargo/bin:$PATH:$HOME/.local/zig/zig-aarch64-macos-0.16.0"
 export CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_STRIP=false
 
-# 1. Build (signed-in profile seeded from the installed Supermux app; never sign out inside it).
-./scripts/reload.sh --tag <tag> --supermux-profile
+# 1. Build a plain tag, not signed in (never --supermux-profile for a test run; see above).
+CMUX_DEV_BACKEND_MODE=local ./scripts/reload.sh --tag <tag>
 
 # 2. Launch with the opt-in. Use the "App path:" that reload.sh printed.
 open -g --env SUPERMUX_DEBUG_LOOPBACK_DEVICE=1 "<App path printed by reload.sh>"
@@ -943,12 +953,22 @@ resumes it; `steal` leaves the viewer "superseded" for 10 s without taking the s
 Here takes it; closing S's Simulator tab closes the viewer; closing the viewer closes S's tab, its
 worker exits and the device stays booted (a new tab showing another booted simulator, the owner's first pick, is
 first switched to the suite's device: the suite never stirs or touches another simulator, and an idle one may draw nothing); the tab bar's button behaves like the configured action;
-with `--app-path`, the app quits within 60 s of `tell application id … to quit` while a simulator worker runs,
+with every `simctl` launch of the app slowed past the link's 20 s reply deadline (the DEBUG `simctl_delay` hook, 25 s), a
+new Simulator tab's picker lists the owner's devices within 30 s and the tab streams (`slow_simctl_lists_and_streams`), and
+with CoreSimulator off on the owner (the `simctl` fallback) the device menu still answers within 15 s, marked slow, and the
+viewer asks again until the list is current (`slow_simctl_device_menu_says_so`); with each in-process CoreSimulator read on the
+owner held 3 s (the DEBUG `coresimulator_delay`), a new tab's first device-menu answer is the owner's list or marked slow,
+never an empty list as current (`device_menu_never_empty_while_owner_starts`), and held 12 s (past the 8 s menu bound, as
+a cold CoreSimulatorService after a reboot) a new tab picks a device, fills its picker and streams
+(`slow_coresimulator_new_tab_streams`);
+with `--app-path`, starting from a new streaming tab, the app quits within 60 s of `tell application id … to quit` while a simulator worker runs,
 and osascript reports no error (the worker shares the app's bundle id and forwards the quit, #735; a failure names the
 app pid and the worker pids before and after; the report records `quit_seconds`) and a relaunch restores the viewer in M, which streams S's
 restored panel (on the suite's device) with no second `SimulatorPanel` (S's restored Simulator tab starts hidden, from
 the stream; its first worker is replaced as the device attaches and the panel reports "worker stopped" until the
-viewer asks it to recover after 5 s; a viewer that never streams reports the owner's status and its attachment).
+viewer asks it to recover after 5 s, and again 20 s apart while it stays stopped; a viewer that never streams reports the owner's status and its attachment).
+The relaunch holds the owner's CoreSimulator reads 12 s (`SUPERMUX_DEBUG_CORESIMULATOR_DELAY_SECONDS`): the viewer's rebind gets
+slow answers first and must ask again, never open a second Simulator tab there.
 After a failed relaunch the suite reconnects
 for its cleanup, so it still closes its workspaces, deletes its simulators and writes its report. The app drops a
 control-socket client that sent nothing for 30 s and step 4 waits on `simctl bootstatus`, so the suite's client
@@ -959,19 +979,96 @@ Settings, toggling the appearance) while it waits for frames.
 CMUX_E2E_SUITES="loopback_mirror_simulator_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
 CMUX_TAG=<tag> python3 tests/supermux/loopback_mirror_simulator_e2e.py --app-path "<App path>" \
   --projects-file /tmp/<tag>/projects.json
+# The whole run with the app's simctl slowed 25 s per launch (from launch, and after the relaunch):
+CMUX_E2E_SLOW_SIMCTL=25 CMUX_E2E_SUITES="loopback_mirror_simulator_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
 ```
 
-**A slow `simctl` fails eight steps (2026-10-03).** `streams_video`, `device_picker_lists_owner_devices` (picker
-`[]`), `quality_cap`, `link_drop_reconnects`, `superseded_no_ping_pong`, `viewer_close_closes_owner_panel` ("the
-owner's Simulator tab never picks a device"), `new_simulator_tab_bar_runs_on_owner` and `restore_rebinds` failed on
-c745a6c9fdb, 6ba37d7a620 and 6e9358fda54 alike, so not the owner's listener check (c745a6c9fdb has none). Every `simctl`
-launch on this Mac took 20–22 s, also `simctl help` from a plain shell with no tagged app running, while `ls`,
-`python3` and `xcrun --find` started at once; a sample of a waiting `simctl` had 875 of 881 main-thread samples in
-`_dyld_start`, in `dyld4::RemoteNotificationResponder::blockOnSynchronousEvent` (dyld waiting on an image-load
-observer before `main`; `spindump` and `sysdiagnosed` had been running for hours, cause not confirmed). The owner's
-`mobile.simulator.devices.list` runs a fresh `simctl list` and missed its 20 s reply deadline every time
-(`supermux.deviceLink mobile.simulator.devices.list missed its reply deadline` in the app log). Before blaming a
-change, time `$(xcrun --find simctl) help`: well under a second on a healthy Mac.
+### A slow `simctl` (2026-10-03)
+
+**What happened.** `streams_video`, `device_picker_lists_owner_devices` (picker `[]`), `quality_cap`,
+`link_drop_reconnects`, `superseded_no_ping_pong`, `viewer_close_closes_owner_panel` ("the owner's Simulator tab never
+picks a device"), `new_simulator_tab_bar_runs_on_owner` and `restore_rebinds` failed on c745a6c9fdb, 6ba37d7a620 and
+6e9358fda54 alike. Every `simctl` launch on this Mac took 4–5 s, later 20–22 s, also `simctl help` from a plain shell
+with no tagged app running, while `ls`, `python3` and `xcrun --find` started at once. A sample of a waiting `simctl` had
+875 of 881 main-thread samples in `_dyld_start`, in `dyld4::RemoteNotificationResponder::blockOnSynchronousEvent`.
+`spindump` and `sysdiagnosed` had been running for hours, after agents had killed hung tagged apps (one at 98% CPU). A
+reboot cleared it (`simctl help` 0.2 s after).
+
+**Why, as far as it could be found (best hypothesis, not confirmed: the stall could not be reproduced afterwards).**
+- dyld4's `RemoteNotificationResponder` sends a message to every image-load observer port registered on the process
+  (`task_dyld_process_info_notify_register`, at most 8) and waits for each reply with **no timeout**: at every image-list
+  change, before initializers and at `main` ([RemoteNotificationResponder.cpp L80–114](https://github.com/apple-oss-distributions/dyld/blob/dyld-1378/dyld/RemoteNotificationResponder.cpp#L80-L114),
+  [ExternallyViewableState.cpp L639–655](https://github.com/apple-oss-distributions/dyld/blob/dyld-1378/dyld/ExternallyViewableState.cpp#L639-L655));
+  this Mac's `/usr/lib/dyld` passes timeout 0 too. A dead observer releases dyld at once; a live but slow one holds every
+  launch it is attached to for as long as it takes to answer (events × ports × its time per message). So the 4–5 s and
+  20–22 s were the observer's speed, not a timeout.
+- The ports are not inherited: a new task starts with none and `exec` drops them
+  ([ipc_tt.c L198, L735–760](https://github.com/apple-oss-distributions/xnu/blob/xnu-12377.121.6/osfmk/kern/ipc_tt.c#L198)).
+  Something attached itself to each new `simctl` right after `exec`. On this Mac only CoreSymbolication uses
+  `_dyld_process_info_notify`, for `sample`, `ReportCrash`, Symbolication and spindump's SampleAnalysis.
+- Xcode 27's `xcrun --find simctl` is a bash wrapper (PlistBuddy, `sort`, `head`) that execs the real
+  `CoreSimulator.framework/…/bin/simctl`: not a platform binary, three frameworks outside the shared cache. `ls`, `xcrun`
+  and the `/usr/bin/python3` shim are platform binaries. (Xcode's own `python3` is not, so platform status alone may not
+  be what spared them.)
+- Best hypothesis: spindump, busy for hours with hang reports of the hung tagged apps, inspected live processes with
+  dyld tracking on and fell behind (a `coresymbolicationd` report from that boot shows 2.2 GB of symbol-archive writes in
+  2 h on behalf of several processes, spindump among them). A stray `sample` is the other candidate.
+- To confirm next time: `tests/supermux/simctl_stall_monitor.sh` (no sudo; `--once`, or every 60 s) captures, while a
+  `simctl help` is stalled, a sample of it and its children, the processes that could be the observer and the full `ps`
+  (default `~/Library/Logs/supermux-simctl-stall`). `sudo lsmp -p <stalled simctl pid>` names who holds the ports dyld
+  waits on. To clear it without a reboot (untested): end that process (`sudo killall spindump`, launchd restarts it);
+  dyld's wait returns as soon as the observer's port dies.
+- Our side: never leave a hung tagged app behind. `run_all_loopback_e2e.sh` now stops a tagged build that does not quit
+  within 30 s (its own executable only), since a hung app keeps macOS taking hang reports.
+
+**What the app does now.** Every `SimulatorPanel` lists devices from CoreSimulator in-process (the framework `simctl`
+and the worker use; no process launch, current from CoreSimulatorService's own notifications), skips `simctl boot` for a
+device CoreSimulator reports booted, and falls back to `simctl list` only when CoreSimulator cannot be used. The owner
+answers `mobile.simulator.devices.list` within 8 s, with `slow: true` when its refresh had not finished, and the viewer
+then says "Simulators on <Mac> are slow to respond…" and asks again every 3 s (up to 20 times) instead of showing an
+empty menu. Only a cold boot (`simctl boot`, `simctl bootstatus`) and the toolbar's `simctl` actions still wait on a slow
+`simctl`.
+
+**A second cause in the same steps.** With `simctl` fast again, `streams_video` still failed on the red build and on the
+first fixed build: a new tab's viewer asks for the device menu as soon as it attaches, and that refresh superseded the
+owner panel's startup discovery, which then selected nothing, so the panel never activated (`preparing`, no frames; a
+temporary log showed startup gen 1, menu gen 2, gen 1 discarded, `selected=nil`). It hit most new tabs tried here, and
+a slow `simctl` widens the window, so it is probably what "never picks a device" was. Fence #763 retries the startup
+discovery.
+
+**Measured.** Red build b71e8948bc3 + 05e20be9130 (the hook and steps 20–21, no fix): `slow_simctl_lists_and_streams`
+failed (picker `[]` after 30 s), `slow_simctl_device_menu_says_so` failed (the menu answered after 20.1 s, not marked
+slow), and `streams_video` and `restore_rebinds` failed too. Fixed build 03d35bc3d5c: 22 of 22 passed twice (step 20:
+picker 0.7 s, device picked 0.7 s, streaming 2.0 s with `simctl` slowed 25 s; step 21: first answer 8.1 s marked slow,
+current after 50.5 s), and 22 of 22 with `CMUX_E2E_SLOW_SIMCTL=25` armed for the whole run (`device_picker_lists_owner_devices`
+61 s for its cold boot).
+
+**Review round (2026-10-03, branch `sim-robust2`).** A review of the first fix found four defects, each now with a step:
+a rebind answered `{devices: [], slow: true}` with a second Simulator tab on the owner (step 24); a menu refresh that the
+new tab's startup discovery superseded (#763 retries it, so it always wins) answered the tab's still empty list as current
+(step 22); a panel's discovery gave CoreSimulator only 8 s, so a cold CoreSimulatorService left a new tab failed, never
+activated (step 23); and the runner's 30 s stop for a hung app waited out AppleScript's 120 s reply timeout first. Fixes:
+the owner answers a starting tab's menu from a list read beside it (no refresh of the tab, so nothing to supersede) and is
+current only when its refresh landed; a panel waits 30 s for CoreSimulator, and callers share one read; a rebind asks a
+slow Mac again every 3 s and shows "slow to respond…" rather than creating a tab; the runner sends the quit without
+waiting for its reply. Running step 24 on the fix showed one more: the restored tab reported "worker stopped"
+(`worker_protocol_queue_overflow` while its start waited on the slow reads), and the viewer's one automatic recovery lost to
+that slow start; it now asks again, 20 s apart, three times in all (recoveries at 18 s and 38 s, streaming at 56 s). Red
+(cdd4b3ac9fd plus the restore setup of 1eabc08a0c7): step 22 failed (first answer empty and current after 6.1 s), step 23
+failed (no device picked in 45 s), step 24 failed ("source SimulatorPanels=2"). Green (228ae002d19, a plain `--tag` build):
+24 of 24 twice (step 22: first answer 3.3 s with 13 devices; step 23: streaming at 21.4 s; step 24: 66 s), and 24 of 24
+with `CMUX_E2E_SLOW_SIMCTL=25` for the whole run (step 23 streaming at 44.9 s, step 24 97 s). The first round's results
+above came from a `--supermux-profile` build, which these suites must no longer use (see the top of this file).
+CoreSimulator stays in the app process: listing in the worker would need a request and reply in upstream's worker protocol
+(about five fences in CmuxSimulator), and the worker's own launch is a process launch that stalls on such a Mac; a crash
+while CoreSimulator loads turns that CoreSimulator build off in-process for good (`SupermuxCoreSimulatorCrashGuard`). The
+hooks slow `simctl` and CoreSimulator, not the worker's launch: on a really stalled Mac a new tab may still wait for its
+worker before it streams.
+
+**The runner checks first.** Before this suite, `run_all_loopback_e2e.sh` runs the monitor once and stops when
+`simctl help` takes more than 2 s, naming the cause: the suite's own `simctl` calls (create, boot, bootstatus, the stir
+that makes the simulator draw, screenshots) would time out, so its failures would not be the app's.
+`CMUX_E2E_ALLOW_SLOW_SIMCTL=1` runs it anyway; `CMUX_E2E_SIMCTL_THRESHOLD` moves the bar.
 
 Not covered here (two real Macs): the `simulator_stream` lane over QUIC (direct and relay) through
 `DeviceIrxClient.supermuxTunnelConnection`, capture on a headless or locked owning Mac, frame rate and

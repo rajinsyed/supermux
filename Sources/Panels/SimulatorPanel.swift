@@ -91,7 +91,9 @@ final class SimulatorPanel: Panel {
                 locationOwnershipScope: TerminalController.shared.simulatorLocationOwnershipScope,
                 cameraCleanupOwnershipScope:
                     TerminalController.shared.simulatorCameraCleanupOwnershipScope
-            ).makeClient()
+            // SUPERMUX:begin simulator-panel-control
+            ).makeClient(simulatorControl: SupermuxSimulatorControl.make())
+            // SUPERMUX:end simulator-panel-control
         }
     ) {
         self.clientFactory = clientFactory

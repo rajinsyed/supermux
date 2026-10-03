@@ -617845,6 +617845,40 @@
         }
       }
     },
+    "supermux.remoteSimulator.devices.slow" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Simulators on %@ are slow to respond…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ のシミュレータの応答が遅れています…"
+          }
+        }
+      }
+    },
+    "supermux.simulator.slow" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Simulators on this Mac are slow to respond."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このMacのシミュレータの応答が遅れています。"
+          }
+        }
+      }
+    },
     "supermux.remoteSimulator.devices.title" : {
       "extractionState" : "manual",
       "localizations" : {
