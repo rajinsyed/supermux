@@ -5,9 +5,7 @@ mirrors), against one tagged DEBUG build running the loopback device.
 The loopback device ("Loopback Mac") is this same app's own mobile host, so
 every local workspace also has a mirror. `supermux.devices.sidebar_rows`
 reports the rows exactly as the sidebar builds them (the Projects section's
-nested rows in display order, and the flat list's row snapshots), and
-`supermux.devices.close_prompt` builds the mirror close prompt without
-showing it. Checks:
+nested rows in display order, and the flat list's row snapshots). Checks:
 
   1. setup                               the loopback linked and fetched, auto-mirror on
   2. project_with_local_and_mirror_rows  a scratch project with two local worktree
@@ -31,11 +29,6 @@ showing it. Checks:
   8. flat_mirror_subtitle_omits_mac      a flat mirror's directory line does not repeat the
                                          Mac name (its icon's tooltip names it), and its Mac
                                          icon sits on that line
-  9. close_prompt_is_safe                "Close on <Mac>" is a plain, enabled, visible button
-                                         and not the Return default; Cancel answers Return
-                                         and Esc; the Mac name appears at most
-                                         once in the text and once in the button; the text
-                                         says the worktree stays and explains Hide Here
 
 Writes a JSON report (default tests/supermux/artifacts/loopback_sidebar_rows_e2e-<tag>.json)
 and exits non-zero on any failure. Stdlib only.
@@ -430,46 +423,6 @@ class SidebarRowsE2E:
                           f"not a {MAC_ICON_SYMBOL} icon on its directory line")
         return found
 
-    def close_prompt_is_safe(self) -> Dict[str, Any]:
-        prompt = self.sock.call("supermux.devices.close_prompt", {"workspace_id": self.mirrors[self.locals[0]]}) or {}
-        buttons = {b.get("role"): b for b in prompt.get("buttons") or []}
-        close, hide, cancel = buttons.get("close_on_mac"), buttons.get("hide"), buttons.get("cancel")
-        problems: List[str] = []
-        if close is None or cancel is None or hide is None:
-            raise Failure(f"expected Close on <Mac>, Hide Here and Cancel: {prompt.get('buttons')}")
-        order = [b.get("role") for b in prompt.get("buttons") or []]
-        if order != ["close_on_mac", "hide", "cancel"]:
-            problems.append(f"button order is {order}")
-        # A plain button: macOS 27 does not draw the destructive red title
-        # while the sheet is key, which left a blank gap where Close sat.
-        if close.get("destructive") is not False:
-            problems.append(f"Close on <Mac> is marked destructive ({close.get('destructive')!r})")
-        if close.get("enabled") is not True:
-            problems.append("Close on <Mac> is disabled while the Mac is connected")
-        for role, button in (("close_on_mac", close), ("hide", hide), ("cancel", cancel)):
-            if button.get("hidden") is not False:
-                problems.append(f"{role} is hidden ({button.get('hidden')!r})")
-            if button.get("alpha") != 1:
-                problems.append(f"{role} has alpha {button.get('alpha')!r}")
-        if close.get("key_equivalent") == "\r" or hide.get("key_equivalent") == "\r":
-            problems.append("Close on <Mac> or Hide Here is the Return default")
-        if cancel.get("key_equivalent") != "\r":
-            problems.append(f"Cancel is not the default (key {cancel.get('key_equivalent')!r})")
-        if prompt.get("escape_role") != "cancel":
-            problems.append(f"Esc answers {prompt.get('escape_role')!r}, not Cancel")
-        text = (prompt.get("message_text") or "") + "\n" + (prompt.get("informative_text") or "")
-        if text.count(self.mac_name) > 1:
-            problems.append(f"the text names the Mac {text.count(self.mac_name)} times")
-        if (close.get("title") or "").count(self.mac_name) != 1:
-            problems.append(f"the Close button names the Mac {(close.get('title') or '').count(self.mac_name)} times")
-        if "worktree" not in text.lower():
-            problems.append("the text does not say what happens to the worktree")
-        if "Hide Here" not in text:
-            problems.append("the text does not explain Hide Here")
-        if problems:
-            raise Failure("; ".join(problems) + f" — prompt: {prompt}")
-        return {"prompt": prompt}
-
     # -- run ------------------------------------------------------------------
 
     def cleanup(self) -> None:
@@ -500,7 +453,6 @@ class SidebarRowsE2E:
                 ("nested_rows_show_no_status", self.nested_rows_show_no_status),
                 ("working_spinner_stays_small", self.working_spinner_stays_small),
                 ("flat_mirror_subtitle_omits_mac", self.flat_mirror_subtitle_omits_mac),
-                ("close_prompt_is_safe", self.close_prompt_is_safe),
             ]:
                 ok = self.step(name, check) and ok
         self.cleanup()

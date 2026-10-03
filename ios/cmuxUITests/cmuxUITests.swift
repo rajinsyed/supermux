@@ -295,6 +295,406 @@ final class cmuxUITests: XCTestCase {
         scroller.swipeRight(velocity: .slow)
     }
 
+    // SUPERMUX:begin supermux-mobile-merged-projects-uitest (one merged Projects + Workspaces list, like the Mac sidebar — see SUPERMUX-TOUCHPOINTS.md)
+    /// The iPhone shows Projects and Workspaces as ONE list: a slim PROJECTS
+    /// caption, then each project (merged across Macs) with its workspaces
+    /// nested right under it as the shell's own workspace rows, then the
+    /// remaining groups and loose workspaces. Runs on the in-memory three-Mac
+    /// fixture (`CMUX_UITEST_WORKSPACE_LIST_PREVIEW_SUPERMUX=1`).
+    @MainActor
+    func testSupermuxMergedProjectsList() throws {
+        let app = launchApp(mockData: false, environment: [
+            "CMUX_UITEST_WORKSPACE_LIST_PREVIEW": "1",
+            "CMUX_UITEST_WORKSPACE_LIST_PREVIEW_REORDER": "1",
+            "CMUX_UITEST_WORKSPACE_LIST_PREVIEW_TABS": "1",
+            "CMUX_UITEST_WORKSPACE_LIST_PREVIEW_SUPERMUX": "1",
+        ])
+        defer { app.terminate() }
+
+        func element(_ identifier: String) -> XCUIElement {
+            app.descendants(matching: .any)[identifier].firstMatch
+        }
+        func elements(prefix: String) -> XCUIElementQuery {
+            app.descendants(matching: .any)
+                .matching(NSPredicate(format: "identifier BEGINSWITH %@", prefix))
+        }
+        func workspaceRow(_ id: String) -> XCUIElement {
+            element("MobileWorkspaceRow-\(id)")
+        }
+        func capture(_ name: String) {
+            let attachment = XCTAttachment(screenshot: app.screenshot())
+            attachment.name = "ios-merged-projects-\(name)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+        func frame(_ element: XCUIElement, _ what: String) throws -> CGRect {
+            try XCTUnwrap(waitForUsableFrame(of: element, timeout: 5), "\(what) has no frame")
+        }
+        func assertAbove(_ upper: XCUIElement, _ lower: XCUIElement, _ message: String) throws {
+            XCTAssertLessThan(try frame(upper, message).midY, try frame(lower, message).midY, message)
+        }
+        func projectRow(endingWith projectID: String) -> XCUIElement {
+            elements(prefix: "SupermuxProjectRow-")
+                .matching(NSPredicate(format: "identifier ENDSWITH %@", projectID))
+                .firstMatch
+        }
+        func waitForCount(_ query: XCUIElementQuery, _ expected: Int) -> Bool {
+            let expectation = XCTNSPredicateExpectation(predicate: NSPredicate(format: "count == %d", expected), object: query)
+            return XCTWaiter.wait(for: [expectation], timeout: 5) == .completed
+        }
+        func pickMac(_ identifier: String) {
+            tap(app.buttons["MobileWorkspaceMacPicker"], in: app)
+            tapMenuItem(app.buttons[identifier], in: app)
+        }
+
+        let caption = element("SupermuxProjectsSectionHeader")
+        XCTAssertTrue(caption.waitForExistence(timeout: 15), "The PROJECTS caption never rendered")
+        let cmuxProjects = elements(prefix: "SupermuxProjectRow-")
+            .matching(NSPredicate(format: "label == %@", "cmux"))
+        let firstCmux = cmuxProjects.firstMatch
+        XCTAssertTrue(firstCmux.waitForExistence(timeout: 10), "The cmux project row never rendered")
+        capture("01-merged-list")
+
+        // One list: no per-Mac headers, no Projects block widget.
+        XCTAssertFalse(element("SupermuxProjectsMacHeader").exists, "Per-Mac headers must be gone")
+        XCTAssertFalse(element("SupermuxProjectsTableSection").exists, "Projects must not be one block row")
+        // The Studio has two cmux rows: an origin-less copy at the MacBook's
+        // own path (listed first) and the real clone. Like the Mac sidebar,
+        // the unique-origin match claims the Studio's slot before any
+        // name+root match, so the copy stays its own row.
+        XCTAssertEqual(cmuxProjects.count, 2, "cmux merges with the Studio's clone; the origin-less copy stays its own row")
+
+        // The cmux project's workspaces nest right under it as the shell's own
+        // rows: pinned first, then by Mac. They sit above the loose ones.
+        let featX = workspaceRow("ws-feat-x")
+        let cmuxMain = workspaceRow("ws-cmux-main")
+        let cmuxFix = workspaceRow("ws-cmux-fix")
+        let scratch = workspaceRow("ws-scratch")
+        for row in [featX, cmuxMain, cmuxFix, scratch] {
+            XCTAssertTrue(row.waitForExistence(timeout: 5), "\(row.identifier) is not a workspace row")
+        }
+        try assertAbove(firstCmux, featX, "feat-x sits under the cmux project")
+        try assertAbove(featX, cmuxMain, "pinned feat-x leads the project")
+        try assertAbove(cmuxMain, cmuxFix, "this Mac's workspaces come before the Studio's")
+        try assertAbove(cmuxFix, scratch, "nested workspaces come before loose ones")
+        try assertAbove(cmuxFix, projectRow(endingWith: "proj-a-docs"),
+                        "cmux-fix (the Studio clone's) nests under the merged cmux, above docs")
+        XCTAssertGreaterThan(
+            try frame(featX, "feat-x").minX,
+            try frame(scratch, "scratch").minX + 15,
+            "Nested workspace rows are indented"
+        )
+        // Each workspace is listed once. The table drops a repeated row id, so
+        // counting rows can never see a nested workspace also left in the
+        // loose list (which would make a drag move the wrong row); the DEBUG
+        // table names any id it dropped in its accessibility value instead.
+        let workspaceList = element("MobileWorkspaceList")
+        func assertNoDroppedDuplicates(_ moment: String) {
+            XCTAssertEqual(workspaceList.value as? String ?? "", "", "No row id is listed twice (\(moment))")
+        }
+        assertNoDroppedDuplicates("merged list")
+        func count(_ id: String) -> Int {
+            app.descendants(matching: .any).matching(identifier: "MobileWorkspaceRow-\(id)").count
+        }
+        XCTAssertFalse(elements(prefix: "SupermuxProjectWorkspaceRow-").firstMatch.exists, "No fork copy of a workspace row")
+
+        // A project-owned workspace in a cmux group stays in its group.
+        let opsHeader = element("MobileWorkspaceGroupHeader-group-studio-ops")
+        let infraOps = workspaceRow("ws-infra-ops")
+        for _ in 0..<4 where !(infraOps.exists && infraOps.isHittable) { app.swipeUp(velocity: .slow) }
+        XCTAssertTrue(opsHeader.waitForExistence(timeout: 5))
+        try assertAbove(opsHeader, infraOps, "infra-ops stays under its Ops group header")
+        XCTAssertEqual(count("ws-infra-ops"), 1, "infra-ops shows only in its group, not nested too")
+        capture("01b-groups-and-loose-rows")
+
+        // Like the Mac sidebar, a nested row shows its branch, and only a row
+        // living on another Mac than the list's home Mac (its first Mac, the
+        // MacBook Pro) gets the small cloud-Mac icon, right before the branch.
+        // The Mac's name is the icon's VoiceOver label ("On <Mac>"), never
+        // drawn text: no device chip naming the Mac.
+        let studioName = "Studio Display Bench With A Very Long Name"
+        func accessory(_ id: String) -> XCUIElement {
+            element("SupermuxNestedWorkspaceAccessory-\(id)")
+        }
+        func assertOnStudio(_ label: String, branch: String, _ what: String) {
+            XCTAssertTrue(label.hasPrefix("On \(studioName)"), "\(what) shows the cloud-Mac icon first: \(label)")
+            XCTAssertTrue(label.contains(branch), "\(what) shows its branch after the icon: \(label)")
+            XCTAssertEqual(label.components(separatedBy: studioName).count, 2,
+                           "\(what) names its Mac only in the icon's label, never as text: \(label)")
+        }
+        for _ in 0..<4 where !(featX.exists && featX.isHittable) { app.swipeDown(velocity: .slow) }
+        let featXAccessory = accessory("ws-feat-x")
+        XCTAssertTrue(featXAccessory.waitForExistence(timeout: 5), "feat-x shows its branch and PR badge")
+        XCTAssertTrue(featXAccessory.label.hasPrefix("feature/x"),
+                      "feat-x (on the home Mac) shows its branch with no Mac icon: \(featXAccessory.label)")
+        XCTAssertFalse(featXAccessory.label.contains("MacBook Pro"), "No Mac name on a home-Mac row: \(featXAccessory.label)")
+        let cmuxFixAccessory = accessory("ws-cmux-fix")
+        XCTAssertTrue(cmuxFixAccessory.waitForExistence(timeout: 5), "cmux-fix shows its branch")
+        assertOnStudio(cmuxFixAccessory.label, branch: "fix/studio-sidebar-sync", "cmux-fix (the Studio clone's workspace)")
+        XCTAssertFalse(accessory("ws-docs-notes").exists, "docs-notes has no branch, PR or run to show")
+        // feat-x has a changes chip at the end of its preview line; the
+        // accessory must end before it rather than cover it. cmux-main has no
+        // chip, so its accessory sits at the row's end.
+        let cmuxMainAccessory = accessory("ws-cmux-main")
+        XCTAssertTrue(cmuxMainAccessory.waitForExistence(timeout: 5), "cmux-main shows its branch")
+        XCTAssertTrue(cmuxMainAccessory.label.hasPrefix("main"),
+                      "cmux-main (on the home Mac) shows its branch with no Mac icon: \(cmuxMainAccessory.label)")
+        let featXInset = try frame(featX, "feat-x").maxX - frame(featXAccessory, "feat-x accessory").maxX
+        let cmuxMainInset = try frame(cmuxMain, "cmux-main").maxX - frame(cmuxMainAccessory, "cmux-main accessory").maxX
+        XCTAssertGreaterThan(featXInset, cmuxMainInset + 30,
+                             "feat-x's accessory moves clear of its changes chip (\(featXInset) vs \(cmuxMainInset))")
+        capture("01c-accessory-beside-changes-chip")
+        // A project that lives only on the Studio is still on another Mac:
+        // like a remote-only project on the Mac, its rows carry the icon.
+        let infraAPI = workspaceRow("ws-infra-api")
+        for _ in 0..<4 where !(infraAPI.exists && infraAPI.isHittable) { app.swipeUp(velocity: .slow) }
+        XCTAssertTrue(accessory("ws-infra-api").waitForExistence(timeout: 5), "infra-api shows its branch")
+        assertOnStudio(accessory("ws-infra-api").label, branch: "main", "infra-api (a Studio-only project)")
+        for _ in 0..<4 where !(featX.exists && featX.isHittable) { app.swipeDown(velocity: .slow) }
+        XCTAssertTrue(waitForHittable(featX, timeout: 4))
+
+        // Nested rows behave exactly like every other workspace row.
+        featX.swipeLeft()
+        XCTAssertTrue(app.buttons["Delete"].waitForExistence(timeout: 3), "Swiping left offers Delete")
+        capture("02-nested-row-swipe-delete")
+        featX.swipeRight()
+        featX.swipeRight()
+        XCTAssertTrue(app.buttons["Mark as Unread"].waitForExistence(timeout: 3), "Swiping right offers the read toggle")
+        capture("03-nested-row-swipe-read")
+        featX.swipeLeft()
+        featX.press(forDuration: 1.2)
+        XCTAssertTrue(app.buttons["Unpin"].waitForExistence(timeout: 3), "The context menu offers Unpin")
+        XCTAssertTrue(app.buttons["Rename"].exists, "The context menu offers Rename")
+        capture("04-nested-row-context-menu")
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
+        XCTAssertTrue(waitForHittable(featX, timeout: 4))
+        tap(featX, in: app)
+        XCTAssertTrue(element("FixtureWorkspaceDetail").waitForExistence(timeout: 4), "Tapping a nested row opens it")
+        tap(app.buttons["MobileWorkspaceBackButton"], in: app)
+        XCTAssertTrue(waitForHittable(featX, timeout: 4))
+
+        // The worktree pill reveals both Macs' worktrees. The Studio's carries
+        // the cloud-Mac icon before its branch (its VoiceOver label joins the
+        // row's); the home Mac's carries none. No Mac name chip on either.
+        let pill = elements(prefix: "SupermuxProjectWorktreeDisclosure-").firstMatch
+        XCTAssertTrue(pill.waitForExistence(timeout: 5), "cmux shows its worktree pill")
+        let worktrees = elements(prefix: "SupermuxNestedWorktreeRow-")
+        // Expansion persists across launches: start from a closed disclosure.
+        if worktrees.firstMatch.exists {
+            tap(pill, in: app)
+            XCTAssertTrue(worktrees.firstMatch.waitForNonExistence(timeout: 5))
+        }
+        tap(pill, in: app)
+        XCTAssertTrue(worktrees.firstMatch.waitForExistence(timeout: 5), "Expanding shows worktree rows")
+        XCTAssertEqual(worktrees.count, 2, "One worktree per Mac")
+        XCTAssertFalse(elements(prefix: "SupermuxNestedWorktreeMac-").firstMatch.exists, "No Mac name chip on worktree rows")
+        func worktree(_ branch: String) -> XCUIElement {
+            worktrees.matching(NSPredicate(format: "label BEGINSWITH %@", branch)).firstMatch
+        }
+        XCTAssertEqual(worktree("feature/login").label, "feature/login", "The home Mac's worktree has no Mac icon")
+        XCTAssertEqual(worktree("fix/race").label, "fix/race, On \(studioName)",
+                       "The Studio's worktree has the cloud-Mac icon, named only in its VoiceOver label")
+        capture("05-worktrees-expanded")
+        tap(pill, in: app)
+        XCTAssertTrue(worktrees.firstMatch.waitForNonExistence(timeout: 5))
+
+        // Scoped to one Mac, the block shows only that Mac's side.
+        let macPicker = app.buttons["MobileWorkspaceMacPicker"]
+        tap(macPicker, in: app)
+        tapMenuItem(app.buttons["MobileWorkspaceMacPickerMachine-preview-studio-stable"], in: app)
+        XCTAssertTrue(cmuxFix.waitForExistence(timeout: 5))
+        XCTAssertTrue(featX.waitForNonExistence(timeout: 5), "MacBook Pro rows leave a Studio-scoped list")
+        XCTAssertTrue(firstCmux.waitForExistence(timeout: 5), "cmux still has a location on the Studio")
+        try assertAbove(firstCmux, cmuxFix, "cmux-fix nests under cmux on the Studio")
+        XCTAssertFalse(
+            elements(prefix: "SupermuxProjectRow-").matching(NSPredicate(format: "label == %@", "docs")).firstMatch.exists,
+            "docs has no Studio location"
+        )
+        // Scoped to the Studio, the Studio is the list's home Mac: its rows
+        // keep their branch and lose the icon.
+        XCTAssertTrue(cmuxFixAccessory.waitForExistence(timeout: 5), "cmux-fix keeps its branch")
+        XCTAssertEqual(cmuxFixAccessory.label, "fix/studio-sidebar-sync",
+                       "One Mac in scope needs no Mac icon: \(cmuxFixAccessory.label)")
+        capture("06-scoped-to-studio")
+        tap(macPicker, in: app)
+        tapMenuItem(app.buttons["MobileWorkspaceMacPickerAll"], in: app)
+        XCTAssertTrue(featX.waitForExistence(timeout: 5))
+
+        // Opened while scoped to one Mac, the merged project is open on every
+        // Mac: back on All Computers it lists both Macs' worktrees.
+        pickMac("MobileWorkspaceMacPickerMachine-preview-macbook-pro-nightly")
+        XCTAssertTrue(cmuxFix.waitForNonExistence(timeout: 5), "Studio rows leave a MacBook-scoped list")
+        tap(pill, in: app)
+        XCTAssertTrue(worktrees.firstMatch.waitForExistence(timeout: 5), "Expanding while scoped shows worktrees")
+        pickMac("MobileWorkspaceMacPickerAll")
+        XCTAssertTrue(cmuxFix.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForCount(worktrees, 2), "Every Mac's worktrees show once All Computers is back (got \(worktrees.count))")
+        capture("08-opened-while-scoped")
+        tap(pill, in: app)
+        XCTAssertTrue(worktrees.firstMatch.waitForNonExistence(timeout: 5))
+
+        // A merged project reaches every Mac's copy from its menu, like the
+        // Mac sidebar's "Open on" submenu.
+        firstCmux.press(forDuration: 1.2)
+        let detailsOn = app.buttons["Project Details on"]
+        XCTAssertTrue(detailsOn.waitForExistence(timeout: 3), "The merged project's menu offers Project Details per Mac")
+        XCTAssertTrue(app.buttons["Open on"].exists, "The merged project's menu offers Open on per Mac")
+        detailsOn.tap()
+        let studioDetails = app.buttons["Studio Display Bench With A Very Long Name"]
+        XCTAssertTrue(studioDetails.waitForExistence(timeout: 3), "The submenu names the Studio")
+        capture("09-project-details-on-submenu")
+        studioDetails.tap()
+        let studioRoot = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@", "/Volumes/work/cmux")).firstMatch
+        XCTAssertTrue(studioRoot.waitForExistence(timeout: 5),
+                      "Project Details on the Studio shows the Studio copy's root")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        XCTAssertTrue(waitForHittable(featX, timeout: 5))
+
+        // An open swipe tray closes when its row leaves the list: the row
+        // must not come back with its actions already revealed.
+        let infra = projectRow(endingWith: "proj-b-infra")
+        let docs = projectRow(endingWith: "proj-a-docs")
+        for _ in 0..<3 where !(infra.exists && infra.isHittable) { app.swipeUp(velocity: .slow) }
+        XCTAssertTrue(waitForHittable(infra, timeout: 5))
+        infra.swipeLeft()
+        XCTAssertLessThan(try frame(infra, "infra").minX, try frame(docs, "docs").minX - 20, "Swiping left opens infra's tray")
+        pickMac("MobileWorkspaceMacPickerMachine-preview-macbook-pro-nightly")
+        XCTAssertTrue(infra.waitForNonExistence(timeout: 5), "infra has no MacBook location")
+        pickMac("MobileWorkspaceMacPickerAll")
+        XCTAssertTrue(infra.waitForExistence(timeout: 5))
+        XCTAssertEqual(try frame(infra, "infra").minX, try frame(docs, "docs").minX, accuracy: 1,
+                       "infra comes back with its tray closed")
+        capture("10-tray-closed-after-row-left")
+
+        // New Worktree offers exactly the Macs a project's row spans. The
+        // merged cmux spans both Macs. The Studio's origin-less copy sits at
+        // the MacBook cmux's path but is its own Studio-only row, so its
+        // sheet must not offer the MacBook (whose cmux another row holds).
+        func reveal(_ row: XCUIElement) {
+            for _ in 0..<3 where !(row.exists && row.isHittable) { app.swipeDown(velocity: .slow) }
+            for _ in 0..<4 where !(row.exists && row.isHittable) { app.swipeUp(velocity: .slow) }
+            XCTAssertTrue(waitForHittable(row, timeout: 5), "\(row.identifier) is on screen")
+        }
+        let newWorktreeSheet = element("SupermuxNewWorktreeSheet")
+        let newWorktreeMacPicker = element("SupermuxNewWorktreeMacPicker")
+        func openNewWorktree(_ row: XCUIElement) {
+            reveal(row)
+            row.press(forDuration: 1.2)
+            // Not the same-titled swipe-tray buttons every project row carries.
+            let menuItem = app.buttons.matching(NSPredicate(
+                format: "label == %@ AND NOT (identifier BEGINSWITH %@)", "New Worktree", "SupermuxSwipeAction-"
+            )).firstMatch
+            XCTAssertTrue(menuItem.waitForExistence(timeout: 3), "The project's menu offers New Worktree")
+            menuItem.tap()
+            XCTAssertTrue(newWorktreeSheet.waitForExistence(timeout: 5), "New Worktree opens its sheet")
+        }
+        func closeNewWorktree() {
+            app.buttons["Cancel"].firstMatch.tap()
+            XCTAssertTrue(newWorktreeSheet.waitForNonExistence(timeout: 5), "Cancel closes the sheet")
+        }
+        openNewWorktree(projectRow(endingWith: "proj-a-cmux"))
+        XCTAssertTrue(newWorktreeMacPicker.waitForExistence(timeout: 3), "The merged cmux offers both of its Macs")
+        closeNewWorktree()
+        openNewWorktree(projectRow(endingWith: "proj-b-cmux-copy"))
+        capture("11-new-worktree-on-a-one-mac-copy")
+        XCTAssertFalse(newWorktreeMacPicker.exists,
+                       "The Studio-only cmux copy offers only the Studio, not the MacBook cmux another row holds")
+        closeNewWorktree()
+
+        // Still no row listed twice after opening, scoping and back.
+        assertNoDroppedDuplicates("after the disclosure and Mac scoping steps")
+        for _ in 0..<3 where !(featX.exists && featX.isHittable) { app.swipeDown(velocity: .slow) }
+
+        // Searching flattens: no project rows, matching workspaces only.
+        let searchButton = app.tabBars.buttons
+            .matching(NSPredicate(format: "label == %@", "Search"))
+            .firstMatch
+        tap(searchButton, in: app)
+        let searchField = app.searchFields["Search workspaces"]
+        XCTAssertTrue(waitForHittable(searchField, timeout: 3))
+        XCTAssertTrue(focusTextInput(searchField, in: app))
+        searchField.typeText("infra")
+        XCTAssertTrue(workspaceRow("ws-infra-api").waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            elements(prefix: "SupermuxProjectRow-").firstMatch.waitForNonExistence(timeout: 5),
+            "A search shows a flat list"
+        )
+        capture("07-search-flat")
+    }
+
+    /// A Mac whose projects load after the list is on screen (it was asleep,
+    /// or its `projects.list` was slow) joins a merged project in the state
+    /// the user last chose for it: open when they opened it, closed when they
+    /// closed it, even if that Mac's own copy was left open. The fixture's
+    /// Studio connects only once a disclosure is first opened or closed.
+    @MainActor
+    func testSupermuxMergedProjectLateMacFollowsTheDisclosure() throws {
+        var app = XCUIApplication()
+        defer { app.terminate() }
+        func launch(_ launchArguments: [String] = []) {
+            app = launchApp(mockData: false, environment: [
+                "CMUX_UITEST_WORKSPACE_LIST_PREVIEW": "1",
+                "CMUX_UITEST_WORKSPACE_LIST_PREVIEW_SUPERMUX": "1",
+                "CMUX_UITEST_WORKSPACE_LIST_PREVIEW_SUPERMUX_LATE_STUDIO": "1",
+            ], launchArguments: launchArguments)
+        }
+        func elements(prefix: String) -> XCUIElementQuery {
+            app.descendants(matching: .any)
+                .matching(NSPredicate(format: "identifier BEGINSWITH %@", prefix))
+        }
+        func cmuxProjects() -> XCUIElementQuery {
+            elements(prefix: "SupermuxProjectRow-").matching(NSPredicate(format: "label == %@", "cmux"))
+        }
+        func pill() -> XCUIElement {
+            elements(prefix: "SupermuxProjectWorktreeDisclosure-").firstMatch
+        }
+        func worktrees() -> XCUIElementQuery {
+            elements(prefix: "SupermuxNestedWorktreeRow-")
+        }
+        func waitForCount(_ query: XCUIElementQuery, _ expected: Int) -> Bool {
+            let expectation = XCTNSPredicateExpectation(predicate: NSPredicate(format: "count == %d", expected), object: query)
+            return XCTWaiter.wait(for: [expectation], timeout: 8) == .completed
+        }
+        func capture(_ name: String) {
+            let attachment = XCTAttachment(screenshot: app.screenshot())
+            attachment.name = "ios-merged-projects-\(name)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+
+        // Every copy starts closed. Only the MacBook has loaded: the Studio's
+        // origin-less cmux copy is not listed yet.
+        launch([
+            "-supermux.projects.expandedProjectIDs", "()",
+            "-supermux.projects.mergedDisclosure", "{}",
+        ])
+        XCTAssertTrue(pill().waitForExistence(timeout: 15), "cmux shows its worktree pill")
+        XCTAssertEqual(cmuxProjects().count, 1, "The Studio has not joined yet")
+        XCTAssertFalse(worktrees().firstMatch.exists, "The project starts closed")
+        // Opening it opens the MacBook's copy; the Studio then joins, and its
+        // copy opens too, because the merged disclosure is one state.
+        tap(pill(), in: app)
+        XCTAssertTrue(waitForCount(cmuxProjects(), 2), "The Studio joins after the first toggle")
+        XCTAssertTrue(waitForCount(worktrees(), 2),
+                      "The late Mac's copy opens inside the open project (got \(worktrees().count))")
+        capture("13-late-mac-joins-open")
+        app.terminate()
+
+        // Both copies are now open. Relaunch with the Studio late again and
+        // close the project before it joins: it must stay closed.
+        launch()
+        XCTAssertTrue(pill().waitForExistence(timeout: 15), "cmux shows its worktree pill")
+        XCTAssertEqual(cmuxProjects().count, 1, "The Studio has not joined yet")
+        XCTAssertTrue(waitForCount(worktrees(), 1), "The MacBook's copy is open, as left")
+        tap(pill(), in: app)
+        XCTAssertTrue(waitForCount(cmuxProjects(), 2), "The Studio joins after the first toggle")
+        XCTAssertFalse(worktrees().firstMatch.waitForExistence(timeout: 4),
+                       "The project stays closed when the late Mac joins (got \(worktrees().count))")
+        capture("14-late-mac-joins-closed")
+    }
+    // SUPERMUX:end supermux-mobile-merged-projects-uitest
+
     @MainActor
     func testDeveloperSettingsReplaysWhatsNewRange() throws {
         let app = launchApp(

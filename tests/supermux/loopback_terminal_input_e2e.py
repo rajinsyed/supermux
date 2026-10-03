@@ -19,6 +19,11 @@ Ghostty view (debug.shortcut.simulate), so they take the same path a keyboard do
   2. source_gets_mirror            a background source workspace gets its mirror
   3. recorder_running              the recorder runs in the source and the mirror shows it
   4. mirror_focused                the mirror's terminal is the app's first responder
+  4b. tabs_draw_no_device_accessory
+                                   with the mirror attached to the source terminal, neither
+                                   the source's tab nor the mirror's tab draws the attached
+                                   device (laptop) accessory, and both keep their presence,
+                                   so the tab's context menu keeps its terminal-size section
   5. key_<name>                    each key reaches the program exactly as the source Mac's
                                    own Ghostty encodes it (Esc -> CSI 27 u, no "[27u" text)
   6. mouse_drag_is_mouse_reports   a drag reaches the program as SGR mouse reports only
@@ -29,6 +34,12 @@ Ghostty view (debug.shortcut.simulate), so they take the same path a keyboard do
                                    reports: the replay restores the program's mouse modes
                                    (button tracking, SGR format) instead of leaving the
                                    mirror selecting text
+  7c. keys_survive_busy_reconnect  the same after a re-attach in which the other Mac answers
+                                   this Mac's first capability request `server_busy` (its
+                                   per-connection request quota full of the re-attaching
+                                   terminals' replays, as on a Mac with many mirrored
+                                   terminals): Shift+Enter and a drag still reach the
+                                   program exactly, not as re-parsed text
   8. hidden_source_pane_does_not_count
                                    the source Mac's hidden pane does not hold the grid
                                    down: the terminal takes the viewing mirror's grid
@@ -371,6 +382,43 @@ class TerminalInputE2E:
         time.sleep(0.5)
         return {}
 
+    def tab_presence(self, workspace_id: str, surface_id: str) -> Optional[Dict[str, Any]]:
+        chrome = self.sock.call("supermux.devices.mirror.tab_chrome", {"workspace_id": workspace_id, "surface_id": surface_id}) or {}
+        return chrome.get("presence")
+
+    def tabs_draw_no_device_accessory(self) -> Dict[str, Any]:
+        """Once the mirror is attached to the source terminal, neither tab draws
+        the attached-device accessory, and both keep their presence (which is
+        what puts Size to My Window / Terminal Size / Disconnect Others in the
+        tab's context menu). Watched for 3 seconds after both tabs have their
+        presence, so a late presence update cannot slip past."""
+        def viewer_attached() -> Optional[List[Dict[str, Any]]]:
+            rows = self.participants(self.size_state(self.source_surface))
+            return rows if any(str(r["id"]).startswith("mobile:") for r in rows) else None
+
+        self.facts["size_participants"] = wait_for("the mirror to attach to the source terminal", viewer_attached, self.timeout)
+        tabs = {"source": (self.source_id, self.source_surface), "mirror": (self.mirror_id, self.mirror_surface)}
+        seen: Dict[str, Any] = {}
+        deadline = time.monotonic() + self.timeout
+        settled_at: Optional[float] = None
+        while time.monotonic() < deadline and (settled_at is None or time.monotonic() < settled_at):
+            for name, (workspace_id, surface_id) in tabs.items():
+                presence = self.tab_presence(workspace_id, surface_id)
+                seen[name] = presence
+                drawn = (presence or {}).get("participants") or []
+                if (presence or {}).get("shows_accessory") or drawn:
+                    self.facts["tab_presence"] = seen
+                    raise Failure(f"the {name} tab draws the attached-device accessory: {drawn}")
+            if settled_at is None and all(presence is not None for presence in seen.values()):
+                # Both tabs have their presence; keep watching a little longer.
+                settled_at = time.monotonic() + 3
+            time.sleep(0.3)
+        self.facts["tab_presence"] = seen
+        lost = [name for name, presence in seen.items() if presence is None]
+        if lost:
+            raise Failure(f"tab(s) {lost} lost their presence, so their context menu has no terminal-size section")
+        return {"tab_presence": seen}
+
     def received_after(self, send: Callable[[], None], settle_s: float = 0.8) -> str:
         """Bytes the recorder got for one input, as hex."""
         before = self.received_hex()
@@ -436,9 +484,29 @@ class TerminalInputE2E:
         return {"received_hex": got}
 
     def keys_survive_reattach(self) -> Dict[str, Any]:
+        self.reattach()
+        return self.key_check("shift+enter", "1b5b31333b3275")()
+
+    def keys_survive_busy_reconnect(self) -> Dict[str, Any]:
+        """A Mac with many mirrored terminals answers the capability request of a
+        reconnect `server_busy` while their replays fill its request quota: the
+        mirror must still forward keys and write mouse reports exactly."""
+        self.reattach(busy="mobile.host.status")
+        keys = self.key_check("shift+enter", "1b5b31333b3275")()
+        self.mirror_focused()
+        return {"shift_enter": keys, "mouse": self.mouse_drag()}
+
+    def reattach(self, busy: Optional[str] = None) -> None:
+        """Drops the loopback link, dials it again and waits for the mirror to
+        re-attach; `busy` names a method the other Mac answers `server_busy` the
+        first time this Mac asks on the new connection (`mobile.host.status`:
+        the capability request)."""
         self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "stop"})
         time.sleep(1.0)
-        self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "restore"})
+        restore = {"machine": self.machine, "action": "restore"}
+        if busy:
+            restore["busy"] = busy
+        self.sock.call("supermux.devices.link", restore)
 
         def reconnected() -> bool:
             device = self.device()
@@ -448,7 +516,6 @@ class TerminalInputE2E:
         wait_for("the mirror to re-attach (REC-READY replayed)", lambda: "REC-READY" in self.mirror_text(), self.timeout)
         time.sleep(1.5)
         self.mirror_focused()
-        return self.key_check("shift+enter", "1b5b31333b3275")()
 
     def mouse_survives_replay(self) -> Dict[str, Any]:
         """Every grid change of the other Mac's terminal replays the mirror (a link drop
@@ -531,12 +598,14 @@ class TerminalInputE2E:
               and self.step("recorder_running", self.recorder_running)
               and self.step("mirror_focused", self.mirror_focused))
         if ok:
+            ok = self.step("tabs_draw_no_device_accessory", self.tabs_draw_no_device_accessory) and ok
             for name, combo, expected in KEYS:
                 ok = self.step(f"key_{name}", self.key_check(combo, expected)) and ok
             ok = self.step("typed_text", self.typed_text) and ok
             ok = self.step("mouse_drag_is_mouse_reports", self.mouse_drag) and ok
             ok = self.step("keys_survive_reattach", self.keys_survive_reattach) and ok
             ok = self.step("mouse_survives_replay", self.mouse_survives_replay) and ok
+            ok = self.step("keys_survive_busy_reconnect", self.keys_survive_busy_reconnect) and ok
             ok = self.step("hidden_source_pane_does_not_count", self.hidden_source_pane) and ok
             ok = self.step("new_remote_tab_fills_the_mirror", self.new_remote_tab_fills_the_mirror) and ok
             ok = self.step("new_tab_from_mirror_shortcut_fills_the_mirror", self.new_tab_from_mirror_shortcut_fills_the_mirror) and ok

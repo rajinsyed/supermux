@@ -4,7 +4,8 @@ import Foundation
 /// Host read → viewer read. When another Mac reads, clears or supersedes a
 /// notification, its feed row turns read (`read_by` "mac"); the local copy on
 /// the mirror pane is marked read too, so stale unread counts, Dock badges and
-/// "needs input" rows do not pile up here.
+/// "needs input" rows do not pile up here, and a focused mirror pane's ring
+/// goes away with it.
 ///
 /// Only a row that turned read SINCE the previous feed counts. A row the host
 /// already reported read stays read there forever, and applying it on every
@@ -37,6 +38,20 @@ enum SupermuxDeviceNotificationReadMirror {
         cmuxDebugLog("supermux.device.notification.hostRead machine=\(machineID) marking=\(ids.count)")
         #endif
         store.markNotificationFeedRead(ids: ids)
+        clearFocusedRings(afterReading: ids, in: store)
+    }
+
+    /// A read on the other Mac also ends the focused pane's ring here, which a
+    /// feed read alone keeps (upstream clears it only on a click or typing).
+    /// A pane that still has an unread record keeps it: that newer record set
+    /// the pane's single indicator, and its own read ends it later. Used in
+    /// both directions (the host side: `supermuxNotificationFeedMarkRead`).
+    static func clearFocusedRings(afterReading readIDs: Set<UUID>, in store: TerminalNotificationStore) {
+        for notification in store.notifications where readIDs.contains(notification.id) {
+            guard let surfaceId = notification.surfaceId,
+                  !store.hasUnreadNotification(forTabId: notification.tabId, surfaceId: surfaceId) else { continue }
+            store.clearFocusedReadIndicator(forTabId: notification.tabId, surfaceId: surfaceId)
+        }
     }
 
     /// Ids of the rows the host reports read.
@@ -60,5 +75,29 @@ enum SupermuxDeviceNotificationReadMirror {
             ids.insert(notification.id)
         }
         return ids
+    }
+}
+
+/// Viewer read → host ring. When another of the user's Macs reads its copy,
+/// the ack arrives here as `notification.feed.mark_read` from an admitted Mac
+/// peer; besides upstream's record read, the focused pane's ring ends here too
+/// (the reverse of ``SupermuxDeviceNotificationReadMirror/mirrorHostReads(of:)``).
+/// A phone's read keeps upstream's semantics: the ring stays until a click or
+/// typing on this Mac.
+extension TerminalController {
+    /// `notification.feed.mark_read` (`device-mac-read-clears-host-ring` fence).
+    func supermuxNotificationFeedMarkRead(
+        params: [String: Any],
+        executionContext: MobileHostRPCExecutionContext?
+    ) -> V2CallResult {
+        guard SupermuxMobilePeerPolicy.isAdmittedMacPeer(executionContext) else {
+            return v2MobileNotificationFeedMarkRead(params: params)
+        }
+        let store = TerminalNotificationStore.shared
+        let unreadBefore = Set(store.notifications.lazy.filter { !$0.isRead }.map(\.id))
+        let result = v2MobileNotificationFeedMarkRead(params: params)
+        let newlyRead = Set(store.notifications.lazy.filter { $0.isRead && unreadBefore.contains($0.id) }.map(\.id))
+        SupermuxDeviceNotificationReadMirror.clearFocusedRings(afterReading: newlyRead, in: store)
+        return result
     }
 }

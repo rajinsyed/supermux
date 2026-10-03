@@ -17,12 +17,17 @@ import SupermuxKit
 /// and (DEBUG builds only) `request {machine, method, params?, timeout_seconds?}`,
 /// `bind {workspace_id, machine, remote_workspace_id}` and `unbind {workspace_id}` (test hooks for the
 /// export filter and restart-stable bindings without a second Mac), and `link {machine, action:
-/// stop|restore}` (holds a link down, then redials it), and `terminal_mouse_drag {surface_id, from, to}`
-/// (a real Ghostty mouse drag across a terminal, for the mirror input E2E). The device-mirror methods
+/// stop|restore|stall|status, busy?, method?, seconds?}` (holds a link down, then redials it; holds one
+/// loopback host request), and `terminal_mouse_drag {surface_id, from, to}`
+/// (a real Ghostty mouse drag across a terminal, for the mirror input E2E), and `user_close
+/// {workspace_id | workspace_ids, answer?}` (a user close with its confirmations pre-answered),
+/// `reopen_closed_workspace {}` and `hold_remote_closes {enabled}`
+/// (``SupermuxDeviceMirrorCloseSocketCommands``). The device-mirror methods
 /// (`close_mirror`, `unhide`, `hidden`, `set_auto_mirror`, `reconcile`) are handled by
 /// ``SupermuxDeviceMirrorSocketCommands``, plus the notification /
 /// phone-push hooks in ``SupermuxDeviceNotificationSocketCommands`` (`push_decisions`,
-/// `notification_records`, `notification_overrides`, `notification_mark_unread`, `phone_push_debug`,
+/// `notification_records`, `notification_overrides`, `notification_mark_unread`,
+/// `notification_indicators`, `notification_click`, `phone_push_debug`,
 /// `phone_push_probe`, `phone_push_share_now`), the `mirror.*` mirror-behavior drivers
 /// (``SupermuxMirrorSocketCommands``), the `terminal_sizing.*` size preference drivers
 /// (``SupermuxTerminalSizingSocketCommands``), and the `new_worktree.*` New Worktree
@@ -92,6 +97,7 @@ enum SupermuxDevicesSocketCommands {
             case let name where SupermuxDeviceNotificationSocketCommands.handles(name):
                 result = try await SupermuxDeviceNotificationSocketCommands.handle(String(name), params)
             case let name where SupermuxDeviceTerminalCloseSocketCommands.handles(name): result = try SupermuxDeviceTerminalCloseSocketCommands.handle(name, params)
+            case let name where SupermuxDeviceMirrorCloseSocketCommands.handles(name): result = try SupermuxDeviceMirrorCloseSocketCommands.handle(name, params)
             case let name where SupermuxTerminalSizingSocketCommands.handles(name):
                 result = try SupermuxTerminalSizingSocketCommands.handle(name, params: params)
             #endif
@@ -281,10 +287,20 @@ enum SupermuxDevicesSocketCommands {
         return ["surface_id": surfaceID.uuidString, "has_selection": selected]
     }
 
-    /// `link {machine, action: "stop" | "restore"}`: holds a device link down
-    /// (tearing down its client like a transport loss, but without the
-    /// immediate redial) or dials it again, so E2E can drop the link under an
-    /// in-flight request and watch availability change live.
+    /// `link {machine, action: "stop" | "restore" | "stall" | "status", busy?,
+    /// method?, seconds?, main_seconds?}`: holds a device link down (tearing
+    /// down its client like a transport loss, but without the immediate
+    /// redial) or dials it again, so E2E can drop the link under an in-flight
+    /// request and watch availability change live. `busy: "<method>"` on a
+    /// restore makes the loopback host answer the new connection's first
+    /// `<method>` request after its sync fetch `server_busy`; `stall` makes it
+    /// hold its next `method` request for `seconds` (default 30) before
+    /// answering it, and with `main_seconds` also blocks the main thread that
+    /// long while the liveness probe after the missed deadline is answered
+    /// (``SupermuxDeviceLoopbackHostAcceptor``). Every action answers the
+    /// link's phase, the loopback connections admitted since launch (a redial
+    /// adds one) and whether a stall (`stall_armed`) or a main-thread block
+    /// (`main_stall_armed`) is still armed.
     private static func setLink(_ params: [String: Any], devices: SupermuxDevices) throws -> [String: Any] {
         let machine = try machine(params)
         guard let link = devices.provider(for: machine)?.link else {
@@ -292,10 +308,26 @@ enum SupermuxDevicesSocketCommands {
         }
         switch try required(params, "action") {
         case "stop": link.stop()
-        case "restore": link.refresh()
-        default: throw InvalidParams(message: "action must be stop or restore")
+        case "restore":
+            SupermuxDeviceLoopbackHostAcceptor.busyMethodForNextConnection = params["busy"] as? String
+            link.refresh()
+        case "stall":
+            SupermuxDeviceLoopbackHostAcceptor.stalledRequest = (
+                method: try required(params, "method"),
+                seconds: min(max(number(params, "seconds") ?? 30, 1), 600)
+            )
+            SupermuxDeviceLoopbackHostAcceptor.mainStallDuringNextLivenessProbe =
+                number(params, "main_seconds").map { min(max($0, 1), 60) }
+        case "status": break
+        default: throw InvalidParams(message: "action must be stop, restore, stall or status")
         }
-        return ["machine": machine.rawValue, "phase": String(describing: link.phase)]
+        return [
+            "machine": machine.rawValue,
+            "phase": String(describing: link.phase),
+            "connections_admitted": SupermuxDeviceLoopbackHostAcceptor.admittedConnections,
+            "stall_armed": SupermuxDeviceLoopbackHostAcceptor.stalledRequest != nil,
+            "main_stall_armed": SupermuxDeviceLoopbackHostAcceptor.mainStallDuringNextLivenessProbe != nil,
+        ]
     }
     #endif
 

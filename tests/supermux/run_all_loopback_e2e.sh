@@ -54,7 +54,7 @@ cd "$ROOT"
 # One line per suite: name, then its extra arguments (one per line in the case).
 suite_args() {
   case "$1" in
-    loopback_projects_e2e) printf '%s\n' --scratch "$SCRATCH/projects" --projects-file "$SCRATCH/projects.json" ;;
+    loopback_projects_e2e) printf '%s\n' --scratch "$SCRATCH/projects" --projects-file "$SCRATCH/projects.json" --app-path "$APP" --push-state-dir "$SCRATCH/push-state" ;;
     loopback_new_worktree_picker_e2e) printf '%s\n' --scratch "$SCRATCH/picker" ;;
     loopback_worktree_disclosure_e2e) printf '%s\n' --scratch "$SCRATCH/disclosure" ;;
     loopback_notifications_e2e) printf '%s\n' --push-state-dir "$SCRATCH/push-state" --work-dir "$SCRATCH/notifications" ;;
@@ -65,13 +65,15 @@ suite_args() {
     loopback_terminal_input_e2e) printf '%s\n' --scratch "$SCRATCH/terminal-input" ;;
     loopback_terminal_sizing_policy_e2e) printf '%s\n' --app-path "$APP" --projects-file "$SCRATCH/projects.json" ;;
     loopback_new_tab_order_e2e) printf '%s\n' --app-path "$APP" --projects-file "$SCRATCH/projects.json" ;;
+    loopback_agent_activity_e2e) printf '%s\n' --scratch "$SCRATCH/activity" ;;
     loopback_mirror_files_e2e) printf '%s\n' --scratch "$SCRATCH/files" --app-path "$APP" --projects-file "$SCRATCH/projects.json" --push-state-dir "$SCRATCH/push-state" ;;
+    loopback_mirror_workspace_close_e2e) printf '%s\n' --app-path "$APP" --projects-file "$SCRATCH/projects.json" ;;
   esac
 }
 
 # The mirror-render and auto-mirror suites run last: they quit and relaunch the app for their restart checks.
 # CMUX_E2E_SUITES="a b" runs only those suites (same order rules).
-SUITES=(${CMUX_E2E_SUITES:-loopback_device_smoke loopback_projects_e2e loopback_worktree_disclosure_e2e loopback_new_worktree_picker_e2e loopback_workspace_behaviors_e2e loopback_notifications_e2e loopback_tab_sync_e2e loopback_remote_macs_settings_e2e loopback_sidebar_rows_e2e loopback_terminal_input_e2e loopback_mirror_tab_close_e2e loopback_mirror_appearance_e2e loopback_new_tab_order_e2e loopback_terminal_sizing_policy_e2e loopback_mirror_files_e2e loopback_mirror_render_e2e loopback_auto_mirror_e2e})
+SUITES=(${CMUX_E2E_SUITES:-loopback_device_smoke loopback_projects_e2e loopback_worktree_disclosure_e2e loopback_new_worktree_picker_e2e loopback_workspace_behaviors_e2e loopback_notifications_e2e loopback_tab_sync_e2e loopback_remote_macs_settings_e2e loopback_sidebar_rows_e2e loopback_terminal_input_e2e loopback_mirror_tab_close_e2e loopback_mirror_workspace_close_e2e loopback_mirror_appearance_e2e loopback_new_tab_order_e2e loopback_terminal_sizing_policy_e2e loopback_mirror_files_e2e loopback_agent_activity_e2e loopback_mirror_render_e2e loopback_auto_mirror_e2e})
 
 status=0
 for name in "${SUITES[@]}"; do

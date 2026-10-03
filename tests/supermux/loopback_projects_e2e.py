@@ -51,6 +51,20 @@ Steps:
      listed there, and a removal another build recorded there is honored.
  14. project_sync_skips_loopback: a sync pass never treats the loopback
      device (which shares this app's list) as another Mac.
+14b. projects_list_answers_while_a_folder_blocks: a project whose folder blocks
+     every git command (its .git/config includes a named pipe nobody writes, as
+     a folder behind an unanswered macOS privacy prompt blocks every file
+     access) does not hold projects.list: the host answers within its bound
+     (2 s, checked against 4 s) three times running, and over the link, and
+     every answer keeps the healthy project's origin (the last one known).
+14c. first_load_is_bounded_while_a_folder_blocks (with --app-path): the app is
+     relaunched with that project still registered, so the first load waits in
+     its `git worktree list` until the 30 s kill. Right after the link connects,
+     projects.list (both projects, the healthy origin), run.state, project.icon,
+     worktrees.list and preset.launch (a preset made for the step, into a fresh
+     workspace) all answer within FIRST_LOAD_BOUND_S, and the launch opens exactly
+     one terminal. A preset call that waits for the whole load misses the
+     caller's 20 s deadline while the launch still runs there later.
  15. sidebar_screenshot: captures the window (nested mirror + device chip) to
      tests/supermux/artifacts/loopback_projects_e2e-<tag>.png.
 
@@ -69,10 +83,12 @@ import argparse
 import fcntl
 import json
 import os
+import plistlib
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -94,6 +110,17 @@ FAKE_ORIGIN = "git@github.com:supermux-e2e/loopback-app.git"
 # Roots a user removed, shared by every build next to the projects file.
 SUPPRESSION_FILE_NAME = "supermux-project-sync-suppressed.json"
 FAKE_IDENTITY = "github.com/supermux-e2e/loopback-app"
+# Step 14b: the host bounds each lookup projects.list makes at 2 s; this is that
+# bound plus room for the socket and the main actor. A git command it waits for
+# instead runs until the host kills it at 5 s.
+BLOCKED_FOLDER_LIST_BOUND_S = 4.0
+# Step 14c: during the first load each host call waits at most 2 s for it, and
+# projects.list 2 s more for the origins and file facts; this is that plus room
+# for the socket and the main actor. A call that waits for the whole load takes
+# ~30 s (the blocked project's `git worktree list` runs until its kill).
+FIRST_LOAD_BOUND_S = 8.0
+# Step 14c is vacuous once the first load may have finished.
+FIRST_LOAD_WINDOW_S = 25.0
 
 WINDOW_ID_SWIFT = r"""
 import CoreGraphics
@@ -138,9 +165,20 @@ def update_shared_json(path: Path, mutate: Callable[[Dict[str, Any]], None]) -> 
 
 class ProjectsE2E:
     def __init__(
-        self, client: SocketClient, tag: str, scratch: Path, projects_file: Path, timeout_s: float, keep: bool
+        self,
+        client: SocketClient,
+        tag: str,
+        scratch: Path,
+        projects_file: Path,
+        timeout_s: float,
+        keep: bool,
+        app_path: Optional[str] = None,
+        push_state_dir: Optional[str] = None,
     ) -> None:
         self.client = client
+        self.app_path = app_path
+        self.push_state_dir = push_state_dir
+        self.first_load_preset_id: Optional[str] = None
         self.tag = tag
         self.projects_file = projects_file
         self.timeout_s = timeout_s
@@ -157,6 +195,8 @@ class ProjectsE2E:
         self.clone_project_id: Optional[str] = None
         self.readded_project_id: Optional[str] = None
         self.suppressed_root: Optional[str] = None
+        self.blocked_project_id: Optional[str] = None
+        self.blocked_fifo = self.root / "blocked.fifo"
         self.worktree_path: Optional[str] = None
         self.opened_workspaces: List[str] = []
 
@@ -492,6 +532,199 @@ class ProjectsE2E:
             raise SmokeFailure(f"sync registered projects against the loopback: {report}")
         return {"report": report}
 
+    def check_blocked_folder_list(self) -> Dict[str, Any]:
+        repo = self.root / "blocked"
+        repo.mkdir(parents=True)
+        git("init", "-q", "-b", "main", cwd=repo)
+        os.mkfifo(self.blocked_fifo)
+        # From here on every git command in the repo blocks opening the pipe.
+        with open(repo / ".git" / "config", "a") as config:
+            config.write(f"[include]\n\tpath = {self.blocked_fifo}\n")
+        # Registered the way another build adds a project (no git run here first),
+        # so no origin lookup has finished and been cached for it.
+        record_id = str(uuid.uuid4()).upper()
+        record = {"id": record_id, "name": f"blocked-{self.nonce}", "rootPath": str(repo)}
+        update_shared_json(self.projects_file, lambda d: d.setdefault("projects", []).append(record))
+        self.blocked_project_id = record_id
+        self.request("mobile.supermux.project.update", {"project_id": self.project_id, "patch": {"color_hex": "#33AA66"}})
+
+        def hosted() -> List[Dict[str, Any]]:
+            payload = (self.client.call("supermux.devices.local_projects", {}, timeout_s=60) or {}).get("host_payload") or {}
+            return payload.get("projects") or []
+
+        def ids(projects: List[Dict[str, Any]]) -> List[str]:
+            return [norm(p.get("id")) for p in projects]
+
+        wait_for("the blocked project in the host's projects list", lambda: norm(record_id) in ids(hosted()), self.timeout_s)
+        timings: List[float] = []
+        for _ in range(3):
+            started = time.monotonic()
+            projects = hosted()
+            timings.append(round(time.monotonic() - started, 2))
+            if norm(record_id) not in ids(projects):
+                raise SmokeFailure("the blocked project left the host's projects list")
+            self.require_healthy_origin(projects, "the host's projects.list")
+        started = time.monotonic()
+        listed = self.request("mobile.supermux.projects.list", {}).get("projects") or []
+        over_link = round(time.monotonic() - started, 2)
+        if not any(norm(p.get("id")) == norm(record_id) for p in listed):
+            raise SmokeFailure("projects.list over the link lacks the blocked project")
+        self.require_healthy_origin(listed, "projects.list over the link")
+        slowest = max(timings + [over_link])
+        if slowest > BLOCKED_FOLDER_LIST_BOUND_S:
+            raise SmokeFailure(
+                f"projects.list took {timings} s on the host and {over_link} s over the link while one project's"
+                f" folder blocks (bound {BLOCKED_FOLDER_LIST_BOUND_S} s)"
+            )
+        return {"host_seconds": timings, "link_seconds": over_link, "blocked_project_id": record_id}
+
+    def require_healthy_origin(self, projects: List[Dict[str, Any]], where: str) -> None:
+        """The healthy project keeps its origin while another project's git blocks:
+        a lookup not finished in time answers the last origin known."""
+        main = next((p for p in projects if norm(p.get("id")) == norm(self.project_id)), None)
+        if main is None or main.get("git_remote_url") != FAKE_ORIGIN:
+            raise SmokeFailure(f"{where} lost the healthy project's git_remote_url={FAKE_ORIGIN}: {main}")
+
+    def check_first_load_bounded(self) -> Dict[str, Any]:
+        if not self.app_path:
+            return {"skipped": True, "reason": "needs --app-path to relaunch the app"}
+        if not self.blocked_fifo.exists():
+            raise SmokeFailure("step 14b's blocked project is gone; this step relaunches with it registered")
+        created = self.request(
+            "mobile.supermux.preset.create",
+            {"name": f"first-load-{self.nonce}", "command": f"echo supermux-first-load-{self.nonce}"},
+        ).get("preset") or {}
+        self.first_load_preset_id = created.get("id")
+        if not self.first_load_preset_id:
+            raise SmokeFailure(f"preset.create returned no preset: {created}")
+        launched = self.relaunch()
+        self.check_device()
+        connected_after = round(time.monotonic() - launched, 2)
+        workspace = (self.client.call("workspace.create", {"title": f"first-load-{self.nonce}", "focus": False}) or {}).get("workspace_id")
+        if not workspace:
+            raise SmokeFailure("workspace.create returned no workspace_id")
+        self.opened_workspaces.append(workspace)
+        terminals_before = set(self.terminal_ids(workspace))
+        calls = {
+            "projects.list": ("mobile.supermux.projects.list", {}),
+            "run.state": ("mobile.supermux.run.state", {}),
+            "project.icon": ("mobile.supermux.project.icon", {"project_id": self.project_id}),
+            "worktrees.list": ("mobile.supermux.worktrees.list", {"project_id": self.project_id}),
+            "preset.launch": ("mobile.supermux.preset.launch", {"preset_id": self.first_load_preset_id, "workspace_id": workspace}),
+        }
+        outcomes = self.request_concurrently(calls)
+        checked_after = round(time.monotonic() - launched, 2)
+        problems: List[str] = []
+        for name, outcome in outcomes.items():
+            allowed = ("ok", "not_found") if name == "project.icon" else ("ok",)  # the repo has no icon
+            if outcome["code"] not in allowed:
+                problems.append(f"{name} answered {outcome['code']}: {outcome.get('error')}")
+            if outcome["seconds"] > FIRST_LOAD_BOUND_S:
+                problems.append(f"{name} took {outcome['seconds']} s (bound {FIRST_LOAD_BOUND_S} s)")
+        listed = (outcomes["projects.list"].get("result") or {}).get("projects") or []
+        if outcomes["projects.list"]["code"] == "ok":
+            listed_ids = [norm(p.get("id")) for p in listed]
+            if norm(self.blocked_project_id) not in listed_ids or norm(self.project_id) not in listed_ids:
+                problems.append(f"projects.list lacks one of the two projects: {listed_ids}")
+            try:
+                self.require_healthy_origin(listed, "projects.list during the first load")
+            except SmokeFailure as error:
+                problems.append(str(error))
+        if checked_after >= FIRST_LOAD_WINDOW_S:
+            problems.append(f"vacuous: the calls ended {checked_after} s after the launch, when the first load may be done")
+        time.sleep(3.0)  # a launch the caller gave up on would still open its terminal meanwhile
+        opened = [t for t in self.terminal_ids(workspace) if t not in terminals_before]
+        if len(opened) != 1:
+            problems.append(f"preset.launch opened {len(opened)} terminals, expected exactly one: {opened}")
+        if problems:
+            raise SmokeFailure("; ".join(problems))
+        return {
+            "connected_after_s": connected_after,
+            "checked_after_s": checked_after,
+            "calls": {name: outcome["seconds"] for name, outcome in outcomes.items()},
+        }
+
+    def terminal_ids(self, workspace_id: str) -> List[str]:
+        result = self.client.call("surface.list", {"workspace_id": workspace_id}) or {}
+        return [norm(s["id"]) for s in result.get("surfaces") or [] if s.get("type") == "terminal"]
+
+    def request_concurrently(self, calls: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+        """Sends each call over the link at once, each on its own socket, and
+        times it: {name: {code, seconds, result | error}}."""
+        outcomes: Dict[str, Dict[str, Any]] = {}
+
+        def send(name: str, method: str, params: Dict[str, Any]) -> None:
+            started = time.monotonic()
+            outcome: Dict[str, Any] = {}
+            try:
+                with SocketClient(self.client.path, timeout_s=90) as other:
+                    result = other.call(
+                        "supermux.devices.request",
+                        {"machine": self.machine, "method": method, "params": params, "timeout_seconds": 60},
+                        timeout_s=70,
+                    ) or {}
+                outcome.update(code="ok", result=result.get("result") or {})
+            except (SmokeFailure, OSError) as error:
+                text = str(error)
+                code = next((c for c in ("not_found", "unavailable", "timed_out") if c in text), "error")
+                outcome.update(code=code, error=text)
+            outcome["seconds"] = round(time.monotonic() - started, 2)
+            outcomes[name] = outcome
+
+        threads = [threading.Thread(target=send, args=(name, *call), daemon=True) for name, call in calls.items()]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=90)
+        missing = [name for name in calls if name not in outcomes]
+        if missing:
+            raise SmokeFailure(f"no answer at all for {missing}")
+        return outcomes
+
+    def relaunch(self) -> float:
+        """Quits the app and opens it again with the runner's environment;
+        returns when its socket answers, with the moment it was opened."""
+        app = str(self.app_path)
+        bundle_id = plistlib.loads((Path(app) / "Contents" / "Info.plist").read_bytes())["CFBundleIdentifier"]
+        self.client.__exit__()
+        subprocess.run(["osascript", "-e", f'tell application id "{bundle_id}" to quit'], check=False, capture_output=True)
+
+        def running() -> bool:
+            script = f'application id "{bundle_id}" is running'
+            result = subprocess.run(["osascript", "-e", script], check=False, capture_output=True, text=True)
+            return result.stdout.strip() == "true"
+
+        wait_for("the app to quit", lambda: not running(), 60)
+        env = {"SUPERMUX_DEBUG_LOOPBACK_DEVICE": "1", "SUPERMUX_PROJECTS_FILE": str(self.projects_file)}
+        if self.push_state_dir:
+            env["SUPERMUX_PHONE_PUSH_STATE_DIR"] = self.push_state_dir
+        env_args = [arg for key, value in env.items() for arg in ("--env", f"{key}={value}")]
+        launched = time.monotonic()
+        subprocess.run(["open", "-g", *env_args, app], check=True)
+
+        def socket_alive() -> bool:
+            try:
+                with SocketClient(self.client.path, timeout_s=3) as probe:
+                    probe.call("supermux.devices.list", {})
+                return True
+            except (OSError, SmokeFailure):
+                return False
+
+        wait_for("the relaunched app's socket", socket_alive, 60)
+        self.client.__enter__()
+        return launched
+
+    def _unblock_folder(self) -> None:
+        """Lets every git process waiting on the pipe go (an empty include) and
+        removes it, so the blocked project deletes like any other."""
+        if not self.blocked_fifo.exists():
+            return
+        try:
+            os.close(os.open(self.blocked_fifo, os.O_WRONLY | os.O_NONBLOCK))
+        except OSError:
+            pass  # nobody is waiting on it
+        self.blocked_fifo.unlink()
+
     def capture_screenshot(self) -> Dict[str, Any]:
         path = ARTIFACTS_DIR / f"loopback_projects_e2e-{self.tag}.png"
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -518,6 +751,7 @@ class ProjectsE2E:
                 self.client.call("workspace.close", {"workspace_id": workspace_id, "force": True})
             except SmokeFailure as error:
                 self.facts.setdefault("cleanup_errors", []).append(str(error))
+        self._unblock_folder()
         for action in (self._remove_worktree, self._delete_projects):
             try:
                 action()
@@ -534,7 +768,9 @@ class ProjectsE2E:
             )
 
     def _delete_projects(self) -> None:
-        for project_id in (self.clone_project_id, self.readded_project_id, self.project_id):
+        if self.first_load_preset_id:
+            self.request("mobile.supermux.preset.delete", {"preset_id": self.first_load_preset_id})
+        for project_id in (self.blocked_project_id, self.clone_project_id, self.readded_project_id, self.project_id):
             if project_id:
                 self.request("mobile.supermux.project.delete", {"project_id": project_id})
 
@@ -556,6 +792,8 @@ class ProjectsE2E:
             self.step("readd_by_other_build_keeps_suppression", self.check_readd_keeps_suppression)
             self.step("suppression_shared_with_other_builds", self.check_suppression_shared)
             self.step("project_sync_skips_loopback", self.check_sync_skips_loopback)
+            self.step("projects_list_answers_while_a_folder_blocks", self.check_blocked_folder_list)
+            self.step("first_load_is_bounded_while_a_folder_blocks", self.check_first_load_bounded)
             self.step("sidebar_screenshot", self.capture_screenshot)
             return True
         except SmokeFailure:
@@ -579,6 +817,8 @@ def main() -> int:
     )
     parser.add_argument("--timeout", type=float, default=30.0, help="seconds to wait for each check")
     parser.add_argument("--keep", action="store_true", help="leave the workspaces, projects and repos in place")
+    parser.add_argument("--app-path", help="the tagged .app to quit and relaunch for the first-load step (skipped without it)")
+    parser.add_argument("--push-state-dir", help="SUPERMUX_PHONE_PUSH_STATE_DIR to relaunch with")
     parser.add_argument("--report", help="report path (default: tests/supermux/artifacts/loopback_projects_e2e-<tag>.json)")
     args = parser.parse_args()
     if not args.tag and not args.socket:
@@ -590,7 +830,14 @@ def main() -> int:
     try:
         with SocketClient(socket_path) as client:
             e2e = ProjectsE2E(
-                client, args.tag or "", scratch, Path(args.projects_file), timeout_s=args.timeout, keep=args.keep
+                client,
+                args.tag or "",
+                scratch,
+                Path(args.projects_file),
+                timeout_s=args.timeout,
+                keep=args.keep,
+                app_path=args.app_path,
+                push_state_dir=args.push_state_dir,
             )
             passed = e2e.run()
             steps, facts = e2e.steps, e2e.facts

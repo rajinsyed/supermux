@@ -72,7 +72,11 @@ enum SupermuxNewWorktreeMacOptions {
     }
 
     /// Another Mac's copy of `project`, or `nil` when it has none or the
-    /// phone cannot tell which of its checkouts is meant.
+    /// phone cannot tell which of its checkouts is meant. The rule is the
+    /// list's own merge rule (``SupermuxPhoneProjectMerge``), applied to one
+    /// pair of Macs; the section model then drops any match the merge gave
+    /// to a different row, so the sheet never offers a Mac outside the
+    /// project's row.
     /// - Parameters:
     ///   - project: The chosen project on its own Mac.
     ///   - ownProjects: Every project on the chosen project's Mac.
@@ -82,25 +86,29 @@ enum SupermuxNewWorktreeMacOptions {
         ownProjects: [SupermuxProjectDTO],
         in candidates: [SupermuxProjectDTO]
     ) -> SupermuxProjectDTO? {
-        if let identity = project.gitRemoteIdentity,
-           ownProjects.filter({ $0.gitRemoteIdentity == identity }).count == 1 {
-            let sameOrigin = candidates.filter { $0.gitRemoteIdentity == identity }
-            if sameOrigin.count == 1 { return sameOrigin[0] }
+        let own = facts(project, among: ownProjects)
+        let theirs = candidates.map { facts($0, among: candidates) }
+        // Rule by rule, like the merge: a unique-origin match anywhere on
+        // that Mac wins over a name-and-root match it happens to list first.
+        for rule in SupermuxPhoneProjectMerge.rules {
+            if let index = theirs.firstIndex(where: { rule(own, $0) }) {
+                return candidates[index]
+            }
         }
-        return candidates.first { candidate in
-            candidate.name == project.name
-                && sameRoot(candidate.rootPath, project.rootPath)
-                && !conflicting(candidate.gitRemoteIdentity, project.gitRemoteIdentity)
-        }
+        return nil
     }
 
-    private static func sameRoot(_ lhs: String, _ rhs: String) -> Bool {
-        (lhs as NSString).standardizingPath == (rhs as NSString).standardizingPath
-    }
-
-    private static func conflicting(_ lhs: String?, _ rhs: String?) -> Bool {
-        guard let lhs, let rhs else { return false }
-        return lhs != rhs
+    private static func facts(
+        _ project: SupermuxProjectDTO,
+        among projects: [SupermuxProjectDTO]
+    ) -> SupermuxPhoneProjectMerge.Facts {
+        let unique = SupermuxPhoneProjectMerge.uniqueOrigins(projects.map(\.gitRemoteIdentity))
+        return SupermuxPhoneProjectMerge.Facts(
+            name: project.name,
+            rootPath: project.rootPath,
+            origin: project.gitRemoteIdentity,
+            originIsUnique: project.gitRemoteIdentity.map(unique.contains) ?? false
+        )
     }
 
     private static func option(_ mac: SupermuxMacInfo, projectID: String) -> SupermuxNewWorktreeMacOption {

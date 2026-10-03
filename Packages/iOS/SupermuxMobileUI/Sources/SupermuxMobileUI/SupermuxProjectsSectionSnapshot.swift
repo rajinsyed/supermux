@@ -239,6 +239,13 @@ public struct SupermuxProjectsSectionActions {
     /// runs on, or `nil` when the host lacks `supermux.agent_launch.v1` (the
     /// sheet then hides its prompt path).
     public let makeAgentLaunchStore: @MainActor (_ projectID: String) -> SupermuxMobileAgentLaunchStore?
+    /// Opens or closes a merged project's disclosure on every Mac it spans
+    /// (its merged key, then its project ROW ids, one per Mac).
+    public let toggleProjectsExpanded: @MainActor (_ key: String, _ projectIDs: [String]) -> Void
+    /// The one row whose swipe tray is open, across every cell of the list.
+    public let openSwipeRowID: @MainActor () -> String?
+    /// Opens one row's swipe tray (closing any other), or closes it (`nil`).
+    public let setOpenSwipeRowID: @MainActor (_ rowID: String?) -> Void
 
     /// Memberwise initializer.
     /// - Parameters:
@@ -280,7 +287,10 @@ public struct SupermuxProjectsSectionActions {
         ) -> Void = { _, _ in },
         requestNewWorktree: @escaping @MainActor (_ projectID: String) -> Void = { _ in },
         preparingNewWorktreeProjectID: String? = nil,
-        makeAgentLaunchStore: @escaping @MainActor (_ projectID: String) -> SupermuxMobileAgentLaunchStore? = { _ in nil }
+        makeAgentLaunchStore: @escaping @MainActor (_ projectID: String) -> SupermuxMobileAgentLaunchStore? = { _ in nil },
+        toggleProjectsExpanded: @escaping @MainActor (_ key: String, _ projectIDs: [String]) -> Void = { _, _ in },
+        openSwipeRowID: @escaping @MainActor () -> String? = { nil },
+        setOpenSwipeRowID: @escaping @MainActor (_ rowID: String?) -> Void = { _ in }
     ) {
         self.toggleCollapsed = toggleCollapsed
         self.iconPNGData = iconPNGData
@@ -297,6 +307,9 @@ public struct SupermuxProjectsSectionActions {
         self.requestNewWorktree = requestNewWorktree
         self.preparingNewWorktreeProjectID = preparingNewWorktreeProjectID
         self.makeAgentLaunchStore = makeAgentLaunchStore
+        self.toggleProjectsExpanded = toggleProjectsExpanded
+        self.openSwipeRowID = openSwipeRowID
+        self.setOpenSwipeRowID = setOpenSwipeRowID
     }
 }
 

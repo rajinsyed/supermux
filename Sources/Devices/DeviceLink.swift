@@ -214,6 +214,18 @@ final class DeviceLink {
 
     /// Keeps large replay replies encoded until their decoder leaves the UI actor.
     func requestData(_ method: String, params: [String: Any] = [:], timeoutNanoseconds: UInt64? = nil) async throws -> Data {
+        // SUPERMUX:begin device-link-busy-retry
+        // A request the host refused as busy never ran there: ask again on the
+        // same connection (SupermuxDeviceLinkEvents.swift). The upstream body
+        // follows unchanged.
+        let supermuxGeneration = generation
+        return try await supermuxAskingAgainWhileBusy(isCurrent: { self.generation == supermuxGeneration }) {
+            try await self.supermuxRequestDataOnce(method, params: params, timeoutNanoseconds: timeoutNanoseconds)
+        }
+    }
+
+    private func supermuxRequestDataOnce(_ method: String, params: [String: Any], timeoutNanoseconds: UInt64?) async throws -> Data {
+        // SUPERMUX:end device-link-busy-retry
         guard DevicesFeature.isEnabled, let client, phase == .connected else { throw DeviceLinkError.notConnected }
         let requestGeneration = generation
         let requestData = try MobileCoreRPCClient.requestData(method: method, params: params)
@@ -226,7 +238,14 @@ final class DeviceLink {
             switch error {
             case .rpcError(let code, let message):
                 throw DeviceLinkError.hostRejected(code: code, message: message)
-            case .connectionClosed, .requestTimedOut, .transportWriteTimedOut:
+            // SUPERMUX:begin device-link-slow-request (upstream's `.requestTimedOut` taken out of the next case: a missed deadline fails alone while the host still answers)
+            case .requestTimedOut:
+                let failure = await supermuxMissedDeadline(method, error, client: client) {
+                    !Task.isCancelled && requestGeneration == self.generation
+                }
+                throw failure
+            case .connectionClosed, .transportWriteTimedOut:
+            // SUPERMUX:end device-link-slow-request
                 reportTransportLost(error)
                 throw DeviceLinkError.notConnected
             default:
@@ -419,6 +438,13 @@ final class DeviceLink {
         } catch {
             guard generation == self.generation else { return }
             deviceLinkLog.error("device sync fetch failed \(self.instance.wireValue, privacy: .private(mask: .hash)): \(String(describing: error), privacy: .private)")
+            // SUPERMUX:begin device-link-fetch-timed-out
+            // The fetch missed its deadline but the link stayed up; the reconnect
+            // that used to fetch again does not come (SupermuxDeviceLinkEvents.swift).
+            if SupermuxDeviceLinkEvents.isMissedDeadline(error) {
+                supermuxFetchAgain { [weak self] in self?.generation == generation }
+            }
+            // SUPERMUX:end device-link-fetch-timed-out
         }
     }
 

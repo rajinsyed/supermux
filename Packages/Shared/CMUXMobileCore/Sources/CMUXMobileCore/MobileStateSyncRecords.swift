@@ -303,6 +303,11 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
     public let supermuxProgress: SupermuxProgress?
     /// The host row's latest log line, when there is one.
     public let supermuxLog: SupermuxLog?
+    /// Terminal identifiers (the `terminals[].id` values) whose own agent is
+    /// working, so another Mac's mirror spins exactly those tabs. `nil` means
+    /// the host predates per-tab activity; an empty array means the host
+    /// supports it and no terminal is working.
+    public let supermuxWorkingPanelIDs: [String]?
     // SUPERMUX:end supermux-mobile-workspace-fields
 
     /// ``MobileSyncRecord`` identity: the workspace id.
@@ -344,7 +349,8 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
         supermuxUnreadPanelIDs: [String]? = nil,
         supermuxStatusEntries: [SupermuxStatusEntry]? = nil,
         supermuxProgress: SupermuxProgress? = nil,
-        supermuxLog: SupermuxLog? = nil
+        supermuxLog: SupermuxLog? = nil,
+        supermuxWorkingPanelIDs: [String]? = nil
         // SUPERMUX:end supermux-mobile-workspace-fields
     ) {
         self.id = id
@@ -379,6 +385,7 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
         self.supermuxStatusEntries = supermuxStatusEntries
         self.supermuxProgress = supermuxProgress
         self.supermuxLog = supermuxLog
+        self.supermuxWorkingPanelIDs = supermuxWorkingPanelIDs
         // SUPERMUX:end supermux-mobile-workspace-fields
     }
 
@@ -436,6 +443,9 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
         ) ?? nil
         supermuxProgress = (try? container.decodeIfPresent(SupermuxProgress.self, forKey: .supermuxProgress)) ?? nil
         supermuxLog = (try? container.decodeIfPresent(SupermuxLog.self, forKey: .supermuxLog)) ?? nil
+        supermuxWorkingPanelIDs = (
+            try? container.decodeIfPresent([String].self, forKey: .supermuxWorkingPanelIDs)
+        ) ?? nil
         // SUPERMUX:end supermux-mobile-workspace-fields
     }
 
@@ -473,6 +483,7 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
         case supermuxStatusEntries = "supermux_status_entries"
         case supermuxProgress = "supermux_progress"
         case supermuxLog = "supermux_log"
+        case supermuxWorkingPanelIDs = "supermux_working_panel_ids"
         // SUPERMUX:end supermux-mobile-workspace-fields
     }
 }

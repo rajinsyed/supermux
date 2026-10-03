@@ -80,6 +80,9 @@ public struct SupermuxProjectRowSnapshot: Equatable, Identifiable, Sendable {
     public let name: String
     /// Absolute path to the project root on the Mac.
     public let rootPath: String
+    /// The normalized git origin (`SupermuxProjectDTO.gitRemoteIdentity`), or
+    /// `nil` without one — what merges one repository across Macs.
+    public let gitRemoteIdentity: String?
     /// SF Symbol avatar, or `nil` for the letter avatar.
     public let iconSymbol: String?
     /// Parsed accent color, or `nil` for the neutral default.
@@ -102,7 +105,7 @@ public struct SupermuxProjectRowSnapshot: Equatable, Identifiable, Sendable {
     /// fetch — an expanded project's live session or the section's one-shot
     /// per-project seed — or `nil` (capsule hidden) before real data exists,
     /// never a made-up zero badge.
-    public let worktreeCount: Int?
+    public private(set) var worktreeCount: Int?
     /// Open-workspace count badge: the number of ``openWorkspaces``, or `nil`
     /// when there are none (badge hidden, never a zero badge).
     public let openWorkspaceCount: Int?
@@ -124,7 +127,7 @@ public struct SupermuxProjectRowSnapshot: Equatable, Identifiable, Sendable {
     public let run: SupermuxProjectRunState?
     /// Whether this project's inline disclosure is open (phone-local,
     /// UserDefaults-persisted — NOT the Mac's `section_collapsed`).
-    public let isExpanded: Bool
+    public private(set) var isExpanded: Bool
     /// The nested unopened-worktree rows for an expanded project; always
     /// ``SupermuxProjectNestedWorktrees/unavailable`` while collapsed.
     public let nestedWorktrees: SupermuxProjectNestedWorktrees
@@ -163,6 +166,7 @@ public struct SupermuxProjectRowSnapshot: Equatable, Identifiable, Sendable {
         self.pairingID = pairingID
         self.name = project.name
         self.rootPath = project.rootPath
+        self.gitRemoteIdentity = project.gitRemoteIdentity
         self.iconSymbol = project.iconSymbol
         self.avatarRGB = project.colorHex.flatMap(SupermuxAvatarRGB.init(hex:))
         self.hasCustomIcon = project.hasCustomIcon ?? false
@@ -178,5 +182,17 @@ public struct SupermuxProjectRowSnapshot: Equatable, Identifiable, Sendable {
         self.run = run
         self.isExpanded = isExpanded
         self.nestedWorktrees = nestedWorktrees
+    }
+
+    /// This row as the face of a project merged across Macs: the same
+    /// identity and look, with the merged worktree count and disclosure.
+    /// - Parameters:
+    ///   - worktreeCount: Unopened worktrees across every Mac, or `nil`.
+    ///   - isExpanded: Whether the merged disclosure is open.
+    func merged(worktreeCount: Int?, isExpanded: Bool) -> SupermuxProjectRowSnapshot {
+        var copy = self
+        copy.worktreeCount = worktreeCount
+        copy.isExpanded = isExpanded
+        return copy
     }
 }

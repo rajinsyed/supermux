@@ -146,7 +146,7 @@ import UIKit
         let recorder = DropRecorder()
         let chrome: [WorkspaceListTableItem] = [
             .chrome(.macStatusRow),
-            .chrome(.supermuxProjects),
+            .chrome(.supermux("header")),
         ]
         let (coordinator, tableView, dragItem) = makeFixture(
             recorder: recorder,

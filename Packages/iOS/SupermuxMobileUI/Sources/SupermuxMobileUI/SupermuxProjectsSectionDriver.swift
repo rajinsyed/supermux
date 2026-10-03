@@ -41,8 +41,50 @@ extension View {
         resolveWorkspace: SupermuxWorkspaceResolver? = nil,
         closeWorkspace: (@MainActor (MobileWorkspacePreview.ID) -> Void)? = nil
     ) -> some View {
-        let macs = seams.map(SupermuxMacInfo.init(seam:))
+        modifier(SupermuxProjectsSectionDriver(
+            model: model,
+            seams: seams,
+            workspaces: workspaces,
+            selectedWorkspaceID: selectedWorkspaceID,
+            selectWorkspace: selectWorkspace,
+            resolveWorkspace: resolveWorkspace,
+            closeWorkspace: closeWorkspace
+        ))
+    }
+}
+
+/// The driver itself: a modifier, so the DEBUG layout preview can hand it
+/// in-memory Macs through the environment instead of the shell's seams.
+private struct SupermuxProjectsSectionDriver: ViewModifier {
+    let model: SupermuxProjectsSectionModel
+    let seams: [SupermuxMacSeam]
+    let workspaces: [MobileWorkspacePreview]
+    let selectedWorkspaceID: MobileWorkspacePreview.ID?
+    let selectWorkspace: @MainActor (MobileWorkspacePreview.ID) -> Void
+    let resolveWorkspace: SupermuxWorkspaceResolver?
+    let closeWorkspace: (@MainActor (MobileWorkspacePreview.ID) -> Void)?
+    #if DEBUG
+    @Environment(\.supermuxProjectsPreviewMacs) private var previewMacs
+    #endif
+
+    func body(content: Content) -> some View {
         let runnable = seams.filter { $0.status != .unavailable }
+        var macInfos = seams.map(SupermuxMacInfo.init(seam:))
+        var keys = Set(runnable.map(SupermuxProjectsConnectionKey.init(seam:)))
+        var run: @MainActor @Sendable () async -> Void = { [model] in
+            await model.runSessions(runnable)
+        }
+        #if DEBUG
+        if !previewMacs.isEmpty {
+            let previews = previewMacs
+            macInfos = previews.map(\.mac)
+            keys = Set(previews.map { SupermuxProjectsConnectionKey(previewPairingID: $0.mac.pairingID) })
+            run = { [model] in await model.runPreviewSessions(previews) }
+        }
+        #endif
+        let macs = macInfos
+        let sessionKeys = keys
+        let runSessions = run
         let pushing = seams.filter {
             $0.status == .connected
                 && SupermuxMobileCapabilities(hostCapabilities: $0.hostCapabilities).supportsPhonePush
@@ -56,38 +98,49 @@ extension View {
             }
             closeByRowID = close
         }
-        return task(id: Set(runnable.map(SupermuxProjectsConnectionKey.init(seam:)))) {
-            model.updateMacs(macs)
-            await model.runSessions(runnable)
-        }
-        // Names, colors, status and order change without restarting sessions.
-        .onChange(of: macs, initial: true) { _, macs in
-            model.updateMacs(macs)
-        }
-        .task(id: Set(pushing.map(SupermuxProjectsConnectionKey.init(seam:)))) {
-            await SupermuxPhonePushRegistrations.run(pushing)
-        }
-        .onChange(of: SupermuxProjectWorkspaceRowSnapshot.rows(from: workspaces), initial: true) { _, rows in
-            model.updateWorkspaces(
-                rows,
-                selectWorkspace: { workspaceID in
-                    selectWorkspace(MobileWorkspacePreview.ID(rawValue: workspaceID))
-                },
-                closeWorkspace: closeByRowID,
-                resolveWorkspace: resolveWorkspace
-            )
-        }
-        // A freshly created workspace's row lands with the owning Mac's next
-        // list refresh: retry any navigation parked waiting for it.
-        .onChange(of: workspaces.map(\.id)) { _, _ in
-            model.workspaceListDidChange()
-        }
-        .onChange(of: selectedWorkspaceID) { _, selected in
-            model.shellSelectionDidChange(to: selected?.rawValue)
-        }
-        // Detail-route destination, New Worktree sheet and error alerts: on
-        // the stable wrapper above the `List`, never inside a lazy row.
-        .modifier(SupermuxProjectsSectionNavigation(model: model))
+        let selectWorkspace = selectWorkspace
+        let resolveWorkspace = resolveWorkspace
+        return content
+            .task(id: sessionKeys) {
+                model.updateMacs(macs)
+                await runSessions()
+            }
+            // Names, colors, status and order change without restarting sessions.
+            .onChange(of: macs, initial: true) { _, macs in
+                model.updateMacs(macs)
+            }
+            .task(id: Set(pushing.map(SupermuxProjectsConnectionKey.init(seam:)))) {
+                await SupermuxPhonePushRegistrations.run(pushing)
+            }
+            .onChange(of: SupermuxProjectWorkspaceRowSnapshot.rows(from: workspaces), initial: true) { _, rows in
+                model.updateWorkspaces(
+                    rows,
+                    selectWorkspace: { workspaceID in
+                        selectWorkspace(MobileWorkspacePreview.ID(rawValue: workspaceID))
+                    },
+                    closeWorkspace: closeByRowID,
+                    resolveWorkspace: resolveWorkspace
+                )
+            }
+            // A freshly created workspace's row lands with the owning Mac's next
+            // list refresh: retry any navigation parked waiting for it.
+            .onChange(of: workspaces.map(\.id)) { _, _ in
+                model.workspaceListDidChange()
+            }
+            .onChange(of: selectedWorkspaceID) { _, selected in
+                model.shellSelectionDidChange(to: selected?.rawValue)
+            }
+            // A Mac's copy that joins a merged project takes the project's
+            // state: open inside an open one, closed inside a closed one (the
+            // iPhone's merged list; the macOS `List` keeps per-Mac rows).
+            #if os(iOS)
+            .onChange(of: model.copiesOutOfStep, initial: true) { _, projectIDs in
+                model.syncCopies(projectIDs)
+            }
+            #endif
+            // Detail-route destination, New Worktree sheet and error alerts: on
+            // the stable wrapper above the `List`, never inside a lazy row.
+            .modifier(SupermuxProjectsSectionNavigation(model: model))
     }
 }
 
@@ -104,5 +157,12 @@ struct SupermuxProjectsConnectionKey: Hashable, Sendable {
         self.pairingID = seam.pairingID
         self.clientID = ObjectIdentifier(seam.client)
         self.hostCapabilities = seam.hostCapabilities
+    }
+
+    /// The identity of a DEBUG layout-preview Mac (one fixed connection).
+    init(previewPairingID: String) {
+        self.pairingID = previewPairingID
+        self.clientID = nil
+        self.hostCapabilities = nil
     }
 }

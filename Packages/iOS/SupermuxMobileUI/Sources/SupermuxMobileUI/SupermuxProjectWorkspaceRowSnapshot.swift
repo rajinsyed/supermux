@@ -95,7 +95,6 @@ public struct SupermuxProjectWorkspaceRowSnapshot: Equatable, Identifiable, Send
     public static func rows(from workspaces: [MobileWorkspacePreview]) -> [SupermuxProjectWorkspaceRowSnapshot] {
         workspaces.compactMap { preview in
             guard let projectID = preview.supermuxProjectID else { return nil }
-            let branch = preview.supermuxBranch?.trimmingCharacters(in: .whitespacesAndNewlines)
             return SupermuxProjectWorkspaceRowSnapshot(
                 id: preview.id.rawValue,
                 remoteID: preview.rpcWorkspaceID.rawValue,
@@ -108,7 +107,7 @@ public struct SupermuxProjectWorkspaceRowSnapshot: Equatable, Identifiable, Send
                 activity: preview.supermuxActivity.flatMap(SupermuxWorkspaceActivityDTO.init(rawValue:)),
                 hasUnread: preview.hasUnread,
                 unreadCount: preview.supermuxUnreadCount,
-                branch: branch?.isEmpty == false ? branch : nil,
+                branch: preview.supermuxDisplayedBranch,
                 pullRequest: SupermuxPullRequestBadgeSnapshot(
                     number: preview.supermuxPullRequestNumber,
                     state: preview.supermuxPullRequestState,
@@ -151,5 +150,14 @@ public struct SupermuxProjectWorkspaceRowSnapshot: Equatable, Identifiable, Send
     public func hostsRunningWorkspace(_ runningWorkspaceID: String?) -> Bool {
         guard let runningWorkspaceID else { return false }
         return remoteID.caseInsensitiveCompare(runningWorkspaceID) == .orderedSame
+    }
+}
+
+extension MobileWorkspacePreview {
+    /// The git branch the Mac reported for this workspace, trimmed; `nil`
+    /// when it reported none or only whitespace.
+    var supermuxDisplayedBranch: String? {
+        let branch = supermuxBranch?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return branch?.isEmpty == false ? branch : nil
     }
 }

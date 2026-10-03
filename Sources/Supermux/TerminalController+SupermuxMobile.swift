@@ -119,6 +119,8 @@ extension TerminalController {
             return await v2SupermuxFilesSearch(params: params)
         case .filesGitStatus:
             return await v2SupermuxFilesGitStatus(params: params)
+        case .filesWatch:
+            return await v2SupermuxFilesWatch(params: params)
         case .workspaceSelect:
             return v2SupermuxWorkspaceSelect(params: params)
         case .terminalSelect:

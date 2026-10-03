@@ -106,6 +106,22 @@ quit + relaunch dedupe check).
    (`device.workspace.layout.changed` + reconcile).
 10. `mirror_split_creates_source_terminal`: a split in the mirror creates a real source terminal
     (`device.workspace.terminal.create`), and that terminal is projected back.
+11. `slow_request_keeps_the_link` (#723): the loopback host holds one
+    `mobile.supermux.projects.list` for 30 s (`supermux.devices.link {machine, action: "stall",
+    method, seconds}`), past the link's 20 s reply deadline. Only that request fails (`timed_out`);
+    for 60 s the link stays `connected` and admits no new loopback connection
+    (`supermux.devices.link {action: "status"}` reports `phase`, `connections_admitted` and
+    `stall_armed`), and the source's output still reaches the mirror afterwards.
+12. `slow_request_keeps_the_link_while_main_is_stuck` (#723): the same, with `main_seconds: 12`,
+    which blocks the app's main thread (the loopback host's) for 12 s from the moment the link sends
+    its liveness probe, longer than the probe's 10 s deadline. The probe carries no `client_id`, so the
+    host answers it without its main thread and the link still stays (`main_stall_armed` reports a
+    block not yet used).
+13. `slow_replay_reattaches_the_mirror` (#690): the loopback host holds the mirror pane's next
+    `mobile.terminal.replay` for 25 s (`supermux.devices.terminal_close.replay` starts it). The replay
+    misses its deadline on a live link, and the pane must be attached again within 45 s
+    (`supermux.devices.terminal_close.inspect`) with the link connected throughout. Before, it stayed
+    detached: the reconnect that used to re-attach it no longer comes.
 
 Cleanup closes the mirror first, then the source. `--keep` leaves both open, which is how to test
 restore: quit the app, relaunch it with the opt-in, and the mirror reconnects.
@@ -123,15 +139,13 @@ restore: quit the app, relaunch it with the opt-in, and the mirror reconnects.
   state, tooltip, and placement on the branch line).
   `--screenshot` also opens Settings on Automation and captures the window.
 - `tests/supermux/loopback_sidebar_rows_e2e.py` reads the sidebar rows as drawn
-  (`supermux.devices.sidebar_rows`) and the mirror close prompt without showing it
-  (`supermux.devices.close_prompt`): nested rows list this Mac's workspaces before each Mac's
+  (`supermux.devices.sidebar_rows`): nested rows list this Mac's workspaces before each Mac's
   mirrors, a nested mirror's accessibility label names its Mac, a nested mirror draws the Mac icon
   (no name capsule) before its branch, `set_status` / `set_progress` (Claude's lifecycle-less "Idle"
   pill included) show on no nested row (local or mirror), the working spinner of a nested local row
   and of its mirror is the 6·scale one (measured in a window screenshot), a flat mirror's directory
-  line omits the Mac name and carries its icon, and the prompt is safe (a plain, enabled, visible
-  Close on <Mac>, Cancel as the Return/Esc default, the Mac named once, the worktree outcome and Hide
-  Here explained). Hover behavior and the footer are checked visually.
+  line omits the Mac name and carries its icon. Hover behavior, the footer and the row menus (Close
+  Workspace on every row, Hide Here on mirrors, no "Close on <Mac>…") are checked visually.
 
 ## New tab order E2E
 
@@ -149,6 +163,37 @@ step records the before/after orders, the owning pane's selected tab and the lat
 
 ```bash
 CMUX_E2E_SUITES="loopback_new_tab_order_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
+```
+
+## Agent activity E2E
+
+`tests/supermux/loopback_agent_activity_e2e.py` checks the agent-working indicator while an agent is
+"Waiting" and the per-tab working spinner (#715–#719). A background workspace S gets a second
+terminal; with the lifecycle set over `set_agent_lifecycle`, T_A's agent `backgroundWorkPending`
+must read as `working` on S's and its mirror's flat rows, the mirror status and the phone's
+`mobile.workspace.list`, and only T_A's tab must spin on S and on the mirror
+(`supermux.devices.mirror.tab_indicators`, DEBUG: each tab's `is_loading`, unread dot, lifecycle and,
+for a mirror tab, the other Mac's terminal id); window screenshots of S and the mirror are kept next
+to the report. The spinner then moves to T_B (per tab) and clears when both are idle. Last, a real
+`cmux claude-hook` turn (prompt-submit, then Stop with a running `background_tasks` entry, through
+`scripts/cmux-debug-cli.sh` with a scratch hook-state file) must show upstream's Waiting pill
+(`work_state: waiting`), deliver no notification while waiting, keep the indicators, and on a second
+Stop with the work done clear them and deliver the notification. Its hooks get exactly what cmux's
+`claude` wrapper exports to Claude Code and no other agent environment: `CMUX_CLAUDE_PID` of a
+stand-in running in T_A (it execs a long sleep under its own PID, as the wrapper execs Claude Code)
+and the `CMUX_AGENT_LAUNCH_*` launch capture. Without the PID upstream registers no agent process, so
+it hides the agent's pill; without the launch capture the pane gets no resume binding, so upstream
+drops the completion notification as `session-unbound`.
+Then: a Claude harness tab in S spins while its lifecycle is `running` and stops at `idle`; the
+mirror's T_A tab, reset to the state a tab is created in (`supermux.devices.mirror.reset_tab_loading`,
+DEBUG), spins again after one projector pass (`supermux.devices.reconcile`) with the overlay
+unchanged; a second workspace S2 gets running T_A over `surface.move` and both S2's tab and the newly
+projected tab in S2's mirror spin; last, T_A Waiting moves into its window's Dock
+(`supermux.devices.mirror.move_into_dock`, DEBUG, the drag's `moveSurfaceIntoDock`) and its Dock tab
+(`supermux.devices.mirror.dock_tab`, DEBUG) spins, stops at `idle` and spins again at `running`.
+
+```bash
+CMUX_E2E_SUITES="loopback_agent_activity_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
 ```
 
 ## Mirror rendering E2E
@@ -199,8 +244,11 @@ CMUX_E2E_SUITES="loopback_mirror_appearance_e2e" CMUX_TAG=<tag> tests/supermux/r
 notifications behave between Macs as they do locally: the mirror copy keeps the remote project,
 the viewer never forwards `.deviceMac` records to the phone (and leaves them out of the phone
 badge), reads travel both ways, Mark as Unread on a host-read mirror copy survives the host's
-next feed, a focused mirror pane acknowledges the host, an away host keeps a focused pane's
-notification unread, `notifications.suppressWhenAppFocused` withholds only the banner (panes the
+next feed, a notification for a focused pane (the mirror's or the source's) stays unread with the
+ring, the tab badge and the workspace badge until a real click in the pane clears it (DEBUG
+`notification_indicators` / `notification_click`, plus a window screenshot of the ring beside the
+report) or the notification is read on the other Mac (in both directions, #548/#722; a newer unread
+copy on the same mirror pane keeps the ring when the host reads an older one), a present user's focused pane is not pushed to the phone while an away host's is, `notifications.suppressWhenAppFocused` withholds only the banner (panes the
 user is not looking at stay unread on both Macs), a burst over the admission budget is fully
 delivered, and `mobile.supermux.phone_push.status/share` work over the Mac link while `share`
 refuses non-Mac callers. Like the smoke, it pauses auto-mirror for its run so its explicit
@@ -270,20 +318,82 @@ CMUX_TAG=<tag> python3 tests/supermux/loopback_new_worktree_picker_e2e.py --scra
 ## Mirror tab close E2E
 
 `tests/supermux/loopback_mirror_tab_close_e2e.py` closes mirror tabs whose terminals run a program.
-Three of a source workspace's five terminals run a Claude Code stand-in (alternate screen, kitty
+Three of a source workspace's seven terminals run a Claude Code stand-in (no step closes T5, so every
+close is of a tab beside another; a workspace's last tab cannot be closed on its own) (alternate screen, kitty
 keyboard flags, a marker line, a sleeping child; `--claude` runs the real CLI). The DEBUG drivers
-`supermux.devices.terminal_close.{inspect, answer, needs_confirm}` report each mirror pane's
-attachment and overlay plus the workspace's failure card, pre-answer the "Close “X” on <Mac>?"
-prompt so no modal shows (and log every prompt asked), and say whether the source would confirm a
-close. The suite checks that `mobile.terminal.close` without force answers `confirmation_required`
-for a busy terminal; Close on the prompt closes it there and the tab stays gone; Cancel keeps it and
-the re-projected pane attaches and renders (no "Mac disconnected", no card); a terminal projected
-again into another workspace after a close on the same link attaches; Kill Terminal… (`vm.terminal_close`)
-forces without asking; an idle tab closes without asking; and a tab closed while the link is down
-(`supermux.devices.link stop`) disappears with no card and is closed there on reconnect, never coming back.
+`supermux.devices.terminal_close.{inspect, needs_confirm, replay}` report each mirror pane's
+attachment and overlay plus the workspace's failure card, say whether the source would confirm a
+close, and replay a pane. The suite checks that `mobile.terminal.close` without force answers
+`confirmation_required` for a busy terminal (the host contract); closing a busy mirror tab closes it
+there at once with no prompt and the tab stays gone (`busy_tab_close_forces`); a terminal projected
+again into another workspace after a close on the same link attaches; Kill Terminal…
+(`vm.terminal_close`) forces; an idle tab closes; and a tab closed while the link is down
+(`supermux.devices.link stop`), busy or idle, disappears with no card and is closed there on
+reconnect, never coming back, also when the other Mac answers that held close `server_busy`
+(`offline_close_lands_on_a_busy_host`, #721: `supermux.devices.link {action: restore, busy:
+"mobile.terminal.close"}` makes the loopback host answer the new connection's first such request so). On builds from before every close forced, the run pre-answers the old
+"Close “X” on <Mac>?" prompt's DEBUG driver (`terminal_close.answer`) with Cancel and fails if it asked.
 
 ```bash
 CMUX_TAG=<tag> python3 tests/supermux/loopback_mirror_tab_close_e2e.py [--claude]
+```
+
+## Mirror workspace close E2E
+
+`tests/supermux/loopback_mirror_workspace_close_e2e.py` closes mirror workspaces the way the user
+does: the DEBUG driver `supermux.devices.user_close {workspace_id | workspace_ids, answer}` runs
+upstream's `closeWorkspaceWithConfirmation` (or the batch `closeWorkspacesWithConfirmation`) with
+every close confirmation pre-answered and logged (`prompts: [{kind, title}]`), so no modal shows. It
+checks that an idle mirror closes with no prompt at all and its source closes on the Mac, is not
+hidden and is not reopened (W1); a mirror whose source runs a program closes there too (W2); a
+multi-close of two mirrors and a local workspace asks at most upstream's "Close workspaces?" and
+closes all three plus both sources (W3); a pinned source's mirror asks only "Close pinned
+workspace?" (Cancel keeps both, Close closes both: the other Mac unpins it to close it, W4); a
+mirror closed while the link is down goes at once, is listed in `hidden {}`'s
+`pending_remote_closes`, and its source closes on reconnect without the mirror coming back (W5);
+the host answers `confirmation_required` without force and closes with it (W6, the phone's
+contract); and, with `--app-path`, a close made offline survives a quit and relaunch and lands once
+the loopback is back (W7, run last). W8 pauses sending with the DEBUG
+`supermux.devices.hold_remote_closes {enabled}` driver, so the source and its record stay while the
+link is up, and checks that several auto-mirror passes reopen nothing (only the pending set guards
+it), then releases the hold and the source closes. W9 closes a mirror offline, reopens it with the
+DEBUG `supermux.devices.reopen_closed_workspace {}` driver (⌘⇧T, no activation) and checks that the
+reconnect does not close the source and drops the pending close. W10 groups a mirror with a local
+workspace and deletes the group with `workspace.group.delete {close_workspaces: true}`: the source
+closes on its Mac and is not hidden. W11 builds a local workspace holding only terminals borrowed
+(`surface.project`) from two sources, closes its own shell, and checks it is not taken for a mirror
+and that closing it leaves both sources, their mirrors and the pending/hidden sets alone. W12 makes
+the loopback host hold the next `workspace.close` for 30 s (`supermux.devices.link {action: "stall",
+method: "workspace.close"}`): the close misses its 20 s deadline on a live link (`timed_out`), and for
+26 s it must stay in `pending_remote_closes` with auto-mirror reopening nothing; then the source
+closes and the pending close is forgotten. Before, the closer took `timed_out` as a refusal: it forgot
+the close and beeped, and auto-mirror reopened the workspace until the held close ran.
+W13 deletes the same kind of group from the phone (mobile `workspace.group.action {action: delete}` sent
+over the loopback link with `supermux.devices.request`): the phone never listed the mirror member,
+so its source stays open, is hidden here and is not queued for a close. W14 borrows one terminal of
+a source into a local workspace (keeping its own shell), hides the source's mirror and unhides it:
+the source gets its own mirror again, and auto-mirror runs at most a few passes in 3 s (the skip
+loop ran ~15).
+
+```bash
+CMUX_TAG=<tag> python3 tests/supermux/loopback_mirror_workspace_close_e2e.py \
+  [--app-path "<App path>" --projects-file /tmp/<tag>/projects.json]
+```
+
+## Terminal input E2E: tab chrome
+
+`tests/supermux/loopback_terminal_input_e2e.py` also checks (`tabs_draw_no_device_accessory`, #720)
+that, with the mirror attached to the source terminal, neither tab draws the attached-device avatar
+while both keep their presence, which is what gives the tab's context menu its terminal-size section.
+It reads each tab through the DEBUG `supermux.devices.mirror.tab_chrome {workspace_id, surface_id}`
+driver (badge, loading state and presence with its participants). `keys_survive_busy_reconnect`
+(#721) re-attaches with the loopback host answering this Mac's capability request `server_busy`
+(`supermux.devices.link {action: restore, busy: "mobile.host.status"}`, what a Mac whose request quota
+is full of re-attaching replays answers) and checks that Shift+Enter and a drag still reach the program
+exactly, not through upstream's text path.
+
+```bash
+CMUX_E2E_SUITES="loopback_terminal_input_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
 ```
 
 ## Terminal size policy E2E
@@ -321,7 +431,11 @@ CMUX_TAG=<tag> python3 tests/supermux/loopback_terminal_sizing_policy_e2e.py --a
 other Mac's folder. It drives the DEBUG `supermux.devices.mirror.files {workspace_id, action}` driver
 (`Sources/Supermux/Mirrors/SupermuxMirrorFilesSocket.swift`), which keeps a Files store per workspace
 and syncs it exactly like the right sidebar (`showHiddenFiles`, `syncWorkspaceRoot`), so the resolver,
-provider, follow-the-folder observation and live refresh are the real ones. Actions: `state`,
+provider, follow-the-folder observation and live refresh are the real ones. Actions: `state` (also
+the expanded paths and the selection), `counters {reset?}` (the panel's visible refreshes since the
+last reset, counted from the store's published values: `emptied`, `loading_shown`, `rebuilt`,
+`git_published`, plus `refreshes`, the live refresh runs, which also counts a refresh that changed
+nothing),
 `expand`, `open` (the double-click path, after a download probe so a failure is a reply; with
 `probe: false` it only starts the open and a refusal is the coordinator's alert), `preview` (the open
 previews of a path and what each shows), `alert` / `dismiss_alert` (the alert up on the workspace's
@@ -343,11 +457,25 @@ confinement probes (`..`, the symlink, a directory read, a wrong `expected_root`
 phone's dotfile-free listing, git status and search answer; a `files.read` of a named pipe in the
 folder is refused at once (it never waits for a writer) and the link stays up; `cd src` / `cd ..` in the source
 terminal re-roots the panel; a new file appears with no action (`--refresh-timeout`, default 6 s);
+an idle panel does not refresh at all for `--idle-seconds` (default 5; every counter 0, `refreshes`
+included, so a loop that re-lists unchanged folders fails too); while a file deep in `src/` and
+`.git/index` change five times a second for `--churn-seconds` (default 6) the panel does not refresh
+at all (every counter 0) and keeps its rows, `src/`'s expansion and the selection (the user's "refreshes
+every second at the repo root": the old live refresh reloaded the whole tree for any change under
+the folder); a file created and removed at the root appears and goes in place (a refresh runs and
+rebuilds the rows, never emptied, `src/` still expanded, selection kept); the folder renamed away
+there (the shell still in it) empties the panel with the reason, as the local reload does, and
+renamed back its rows return;
 the menu offers New File / New Folder / Rename / Duplicate / Move to Trash and each changes the
 disk; with the link held down the panel names the Mac and says it is not connected (no rows), and
 the redial brings the rows back; with `--app-path`, a relaunch with
 `CMUX_DEBUG_SUPPRESS_MOBILE_CAPS=supermux.files_read.v1` shows "Update Supermux on Loopback Mac to
-browse its files here." Move to Trash moves the scratch files to this Mac's Trash.
+browse its files here." Move to Trash moves the scratch files to this Mac's Trash. macOS's own
+Move to Trash can take tens of seconds per item on a headless Mac (with privacy prompts left up it
+waited ~45 s in the kernel on `~/.Trash`, from any process), so Duplicate and Move to Trash get the
+product's reply bound (`SupermuxDeviceReplyDeadline.fileCopy`) and the step reports each
+operation's `op_seconds`. A call that gets no reply hangs up the suite's socket, so its late reply
+cannot answer the next step's call.
 
 ```bash
 CMUX_E2E_SUITES="loopback_mirror_files_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
@@ -357,6 +485,46 @@ CMUX_TAG=<tag> python3 tests/supermux/loopback_mirror_files_e2e.py --scratch /tm
 
 Every suite at once: `CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh` (launches, runs and
 quits the tagged app per suite; scratch state in `/tmp/<tag>-e2e`).
+
+## Projects E2E: a blocked project folder
+
+`loopback_projects_e2e.py`'s `projects_list_answers_while_a_folder_blocks` adds a project the way
+another build does (the shared projects file, then a save that folds it in) whose `.git/config`
+includes a named pipe nobody writes, so every git command there blocks, as in a folder behind an
+unanswered privacy prompt. `projects.list` must answer within 4 s (the host's 2 s bound plus slack)
+three times on the host (`supermux.devices.local_projects`) and once over the link; before the bound
+it waited for git until the 5 s kill. Cleanup opens the pipe for writing to release the waiting git
+processes, then removes it. Each answer must also keep the healthy project's `git_remote_url` (the
+last origin known stands in for a lookup not finished in time).
+
+`first_load_is_bounded_while_a_folder_blocks` (needs `--app-path`; the runner passes it with
+`--push-state-dir`) then makes a preset (`preset.create`, an `echo` command) and relaunches the app
+with that project still registered, so the projects model's first load waits in its `git worktree
+list` until the 30 s kill. Right after the link connects it sends, at once and each on its own socket,
+`projects.list` (both projects, the healthy origin), `run.state`, `project.icon` (no icon:
+`not_found` is an answer), `worktrees.list` for the healthy project and `preset.launch` into a fresh
+workspace. Each must answer within 8 s (2 s for the load, 2 s more for the origins), the calls must end
+within 25 s of the launch (else the step is vacuous), and the launch must open exactly one terminal.
+Before the bound, `preset.launch` waited for the whole load and missed the 20 s deadline, and the
+terminal still opened later.
+
+## The ~20 s link flap (round 4) and why E2E did not see it
+
+The round-4 visual check launched `rws-int` without `SUPERMUX_PROJECTS_FILE`, so it read the user's
+real project list: 11 projects, all in ~/Documents. The tagged app's Documents privacy prompt sat
+unanswered (behind two other system prompts), and every access there waited about 10 s in the kernel
+and then failed (`Interrupted system call`; a `git worktree list` took 21 s). On every connect the
+viewer asks `mobile.supermux.projects.list`; the host's handler waited for the projects model's first
+load (31 s: each project's `config.json` import and `git worktree list`) and for a `git config`
+origin lookup per project, which the 5 s git kill cannot end while the kernel holds it. The reply
+missed the link's 20 s deadline, and the link took that as a dead transport and redialed: connected
+for 20 s, then 30 s of backoff, 29 times in 22 minutes. Temporary request timing on both sides showed
+`projects.list` timing out at 20.0 s on the viewer while the host was still running it (31.4 s), and
+nothing else slow. `run_all_loopback_e2e.sh` always points `SUPERMUX_PROJECTS_FILE` at a scratch file,
+so E2E runs had no ~/Documents projects and a stable link. Fixed by #723 (a missed deadline fails alone
+while the host answers) and the host-side bounds (SUPERMUX.md, "A slow Mac is not a lost Mac").
+When you check visually with the real project list, expect the same prompt: never answer it for the
+user; the link now stays up regardless.
 
 ## How it works
 

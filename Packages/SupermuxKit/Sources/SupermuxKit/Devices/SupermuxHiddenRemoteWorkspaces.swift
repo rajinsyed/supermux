@@ -8,6 +8,10 @@ public import Foundation
 /// auto-mirror coordinator once their remote workspace is authoritatively
 /// gone, so the set stays small without a capacity bound.
 ///
+/// The app also keeps a second set of this type under its own `key`: remote
+/// workspaces closed here whose close their Mac has not done yet (the device
+/// mirror closer drops them once their remote workspace is gone).
+///
 /// ```swift
 /// hidden.hide(ref)                        // "Hide Here"
 /// hidden.contains(ref)                    // auto-mirror skips it

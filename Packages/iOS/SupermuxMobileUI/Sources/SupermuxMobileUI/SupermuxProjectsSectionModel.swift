@@ -32,13 +32,26 @@ public final class SupermuxProjectsSectionModel {
     /// Local collapse toggle. `nil` follows the lead Mac's `section_collapsed`.
     var collapsedOverride: Bool?
 
+    /// The one list row whose swipe tray is open. Shared by every cell of the
+    /// iPhone's list, so opening one tray closes the others, as in any
+    /// native list.
+    var openSwipeRowID: String?
+
     /// Open inline disclosures, by project ROW id (legacy entries may be
     /// plain project ids, which apply on every Mac). UserDefaults-persisted.
     var expandedProjectIDs: Set<String>
 
-    /// Backing store for ``expandedProjectIDs`` (injectable for tests).
+    /// The user's last open/closed choice for each merged project, by its
+    /// merged key (``SupermuxMergedProject/id``). Every copy follows it, so
+    /// a Mac whose copy loads late neither reopens a project the user closed
+    /// nor stays closed inside one they opened. UserDefaults-persisted.
+    var mergedDisclosure: [String: Bool]
+
+    /// Backing store for ``expandedProjectIDs`` and ``mergedDisclosure``
+    /// (injectable for tests).
     @ObservationIgnored let expansionDefaults: UserDefaults
     static let expansionDefaultsKey = "supermux.projects.expandedProjectIDs"
+    static let mergedDisclosureDefaultsKey = "supermux.projects.mergedDisclosure"
 
     /// The project ROW routed to the detail screen; `nil` while none is.
     public internal(set) var detailProjectID: String?
@@ -103,6 +116,7 @@ public final class SupermuxProjectsSectionModel {
     public init(expansionDefaults: UserDefaults = .standard, navigationTimeout: Duration = .seconds(20)) {
         self.expansionDefaults = expansionDefaults
         self.expandedProjectIDs = Set(expansionDefaults.stringArray(forKey: Self.expansionDefaultsKey) ?? [])
+        self.mergedDisclosure = expansionDefaults.dictionary(forKey: Self.mergedDisclosureDefaultsKey) as? [String: Bool] ?? [:]
         self.navigator = SupermuxWorkspaceNavigator(timeout: navigationTimeout)
         navigator.select = { [weak self] rowID in
             self?.navigateToWorkspace(rowID)
@@ -258,10 +272,22 @@ public final class SupermuxProjectsSectionModel {
             return store
         }
         guard let lead = visible.first else { return }
+        openSwipeRowID = nil
         let collapsed = !(collapsedOverride ?? lead.isSectionCollapsed)
         collapsedOverride = collapsed
         for store in visible {
             Task { await store.setSectionCollapsed(collapsed) }
+        }
+    }
+
+    /// Closes the open swipe tray when its row is no longer listed (a search,
+    /// a filter, a collapse, a Mac leaving, a worktree opened or removed).
+    /// A worktree row is keyed by its path, so without this a worktree
+    /// recreated at the same path would come back with Remove revealed.
+    /// - Parameter ids: The swipe-tray ids of the rows on screen.
+    public func closeSwipeTray(unlessAmong ids: Set<String>) {
+        if let open = openSwipeRowID, !ids.contains(open) {
+            openSwipeRowID = nil
         }
     }
 
