@@ -16,6 +16,7 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../../Shared/CMUXMobileCore"),
+        .package(path: "../../Shared/CmuxTerminalSizing"),
         // SUPERMUX:begin notification-feed-project-wire
         // The shared notification-project snapshot carried on each feed item.
         .package(path: "../../Shared/SupermuxMobileCore"),
@@ -26,6 +27,7 @@ let package = Package(
             name: "CmuxMobileShellModel",
             dependencies: [
                 "CMUXMobileCore",
+                "CmuxTerminalSizing",
                 // SUPERMUX:begin notification-feed-project-wire
                 "SupermuxMobileCore",
                 // SUPERMUX:end notification-feed-project-wire
@@ -40,6 +42,7 @@ let package = Package(
             name: "CmuxMobileShellModelTests",
             dependencies: [
                 "CmuxMobileShellModel",
+                "CmuxTerminalSizing",
                 // SUPERMUX:begin notification-feed-project-wire
                 "SupermuxMobileCore",
                 // SUPERMUX:end notification-feed-project-wire
