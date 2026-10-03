@@ -52,7 +52,11 @@ session, pump, encoder and worker ring; only QUIC is replaced.
                                             20 s reply deadline (the DEBUG `simctl_delay` hook, as on a Mac
                                             whose new processes stall in dyld), a new Simulator tab's
                                             picker still lists the owner's devices and the tab streams
- 21. restore_rebinds                        (--app-path) quit (`tell application id … to quit`, as
+ 21. slow_simctl_device_menu_says_so        the same with CoreSimulator off on the owner (the `simctl` fallback):
+                                            the device menu's reply still comes well inside the deadline, marked
+                                            slow ("Simulators on <Mac> are slow to respond…" instead of an empty
+                                            menu), and the viewer asks again until the list is current
+ 22. restore_rebinds                        (--app-path) quit (`tell application id … to quit`, as
                                             scripts and launchers do, with a simulator worker
                                             running) within 60s, the script seeing no error, and
                                             relaunch: the viewer comes back in M, streams S's
@@ -67,7 +71,7 @@ Usage:
   CMUX_TAG=<tag> python3 tests/supermux/loopback_mirror_simulator_e2e.py [--app-path APP] [--udid UDID]
       [--keep-device] [--timeout 30] [--keep] [--report PATH] [--slow-simctl SECONDS]
 
---slow-simctl arms the slow-`simctl` hook for the whole run (and the relaunch), not only step 20.
+--slow-simctl arms the slow-`simctl` hook for the whole run (and the relaunch), not only steps 20-21.
 """
 
 from __future__ import annotations
@@ -371,9 +375,10 @@ class MirrorSimulatorE2E:
             raise Failure(f"{action} was not accepted: {result}")
         return result
 
-    def set_simctl_delay(self, seconds: float) -> float:
-        """Arms the app's slow-`simctl` hook (DEBUG); returns the previous delay."""
-        result = self.sock.call(SIM + "simctl_delay", {"seconds": seconds}) or {}
+    def set_simctl_delay(self, seconds: float, coresimulator: bool = True) -> float:
+        """Arms the app's slow-`simctl` hook (DEBUG); `coresimulator=False` also makes the owner list its
+        devices with `simctl` (the fallback when CoreSimulator cannot be used). Returns the previous delay."""
+        result = self.sock.call(SIM + "simctl_delay", {"seconds": seconds, "coresimulator": coresimulator}) or {}
         if float(result.get("seconds", -1)) != float(seconds):
             raise Failure(f"simctl_delay did not take {seconds}: {result}")
         return float(result.get("previous") or 0)
@@ -895,6 +900,41 @@ class MirrorSimulatorE2E:
         finally:
             self.set_simctl_delay(previous)
 
+    def slow_simctl_device_menu_says_so(self) -> Dict[str, Any]:
+        """Where the owner can only ask `simctl` (CoreSimulator unusable there) and `simctl` is slow, its answer
+        to the device menu still comes well inside the link's 20 s reply deadline, says the list may be out of
+        date (`slow`; the menu says "Simulators on <Mac> are slow to respond…" instead of coming up empty), and
+        the viewer asks again until the owner's refresh lands."""
+        self.need_viewer()
+        delay = max(SLOW_SIMCTL_SECONDS, self.args.slow_simctl or 0)
+        previous = self.set_simctl_delay(delay, coresimulator=False)
+        started = time.monotonic()
+        try:
+            asked = time.monotonic()
+            first = self.need_viewer(include_devices=True)
+            answer_seconds = round(time.monotonic() - asked, 1)
+            if answer_seconds > 15 or first.get("devices_slow") is not True:
+                raise Failure(f"the device menu took {answer_seconds}s and devices_slow={first.get('devices_slow')} "
+                              f"(want an answer well inside the 20 s deadline, marked slow): {first.get('devices')}")
+
+            def current() -> Optional[Dict[str, Any]]:
+                viewer = self.need_viewer()
+                if viewer.get("devices_slow") is not False:
+                    raise Failure(f"devices_slow={viewer.get('devices_slow')}")
+                return viewer
+
+            # Two `simctl list` launches at `delay` each, then the viewer's next retry.
+            wait_for("the viewer's retry to get the owner's current list", current, 2 * delay + 40, interval_s=2.0)
+            expected = available_phone_and_tablet_udids()
+            listed = sorted(up(d.get("udid")) for d in self.need_viewer(include_devices=True).get("devices") or [])
+            if listed != expected:
+                raise Failure(f"picker {listed} != the owner's available iPhone/iPad simulators {expected}")
+            return {"simctl_delay_s": delay, "first_answer_s": answer_seconds,
+                    "first_devices": len(first.get("devices") or []),
+                    "current_after_s": round(time.monotonic() - started, 1), "picker": listed}
+        finally:
+            self.set_simctl_delay(previous)
+
     def restore_rebinds(self) -> Dict[str, Any]:
         if not self.args.app_path:
             raise Skipped("pass --app-path to quit and relaunch")
@@ -1072,6 +1112,7 @@ class MirrorSimulatorE2E:
                 ("viewer_close_closes_owner_panel", self.viewer_close_closes_owner_panel),
                 ("new_simulator_tab_bar_runs_on_owner", self.new_simulator_tab_bar_runs_on_owner),
                 ("slow_simctl_lists_and_streams", self.slow_simctl_lists_and_streams),
+                ("slow_simctl_device_menu_says_so", self.slow_simctl_device_menu_says_so),
                 ("restore_rebinds", self.restore_rebinds),
             ]:
                 ok = self.step(name, check) and ok
