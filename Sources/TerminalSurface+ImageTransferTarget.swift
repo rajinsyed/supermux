@@ -10,6 +10,11 @@ extension TerminalSurface {
         // The bound session remains authoritative even during reconnect, before
         // its local workspace or a fresh remote numeric surface can be resolved.
         let workspace = workspace ?? owningWorkspace()
+        // SUPERMUX:begin device-terminal-upload
+        if let workspace, let device = SupermuxDeviceTerminalUpload.target(forPanel: id, in: workspace) {
+            return .remote(.supermuxDevice(device))
+        }
+        // SUPERMUX:end device-terminal-upload
         // Native SSH projections use SCP/SFTP upload for both paste and drag/drop.
         // They have no Cloud image coordinator, so never turn an SSH file into
         // a local path or a Cloud image request.

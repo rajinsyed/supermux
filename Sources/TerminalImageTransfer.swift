@@ -16,6 +16,10 @@ enum TerminalImageTransferMode: Codable, Sendable {
 enum TerminalRemoteUploadTarget: Equatable {
     case workspaceRemote
     case detectedSSH(DetectedSSHSession)
+    // SUPERMUX:begin device-terminal-upload
+    /// A terminal another of the user's Macs runs (a device mirror pane).
+    case supermuxDevice(SupermuxDeviceUploadTarget)
+    // SUPERMUX:end device-terminal-upload
 }
 
 enum TerminalImageTransferPreparedContent: Codable, Equatable, Sendable {
@@ -260,6 +264,9 @@ enum TerminalImageTransferPlanner {
             }
             return .insertText(insertedText(forFileURLs: fileURLs))
         case .remote(let remoteTarget):
+            // SUPERMUX:begin device-terminal-upload (another Mac's terminal never gets a local path; the upload says why a folder cannot go)
+            if case .supermuxDevice = remoteTarget { return .uploadFiles(fileURLs, remoteTarget) }
+            // SUPERMUX:end device-terminal-upload
             guard fileURLs.allSatisfy(isRemoteUploadableFileURL) else {
                 return .insertText(insertedText(forFileURLs: fileURLs))
             }
@@ -340,6 +347,16 @@ enum TerminalImageTransferPlanner {
                 finishUpload(result: result, insertText: insertText, onFailure: onFailure)
             }
             return operation
+        // SUPERMUX:begin device-terminal-upload
+        case .uploadFiles(let fileURLs, .supermuxDevice(let target)):
+            let operation = operation ?? TerminalImageTransferOperation()
+            SupermuxDeviceTerminalUpload.upload(fileURLs, to: target, operation: operation) { result in
+                GhosttyApp.terminalPasteboard.cleanupTransferredTemporaryImageFiles(fileURLs)
+                guard operation.finish() else { return }
+                finishUpload(result: result, insertText: insertText, onFailure: onFailure)
+            }
+            return operation
+        // SUPERMUX:end device-terminal-upload
         case .reject:
             return operation
         }

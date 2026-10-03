@@ -102,7 +102,9 @@ extension Workspace {
         guard let panel = makeRemoteTmuxPanePanel(
             onInput: { input in relay.send(input) },
             keyNameResolver: Self.reservationKeyNameResolver(for: projection.resource.machine),
-            allowsRemoteClipboardWrites: projection.resource.machine.cloudMachineID != nil
+            // SUPERMUX:begin device-mirror-clipboard (upstream: `projection.resource.machine.cloudMachineID != nil`; another Mac's pane too)
+            allowsRemoteClipboardWrites: SupermuxTerminalClipboardWrites.allowsProgramWrites(on: projection.resource.machine)
+            // SUPERMUX:end device-mirror-clipboard
         ) else { return nil }
         panel.surface.setManualIONoReflow(false)
         do {
@@ -148,7 +150,9 @@ extension Workspace {
         guard let panel = makeRemoteTmuxPanePanel(
             onInput: { input in relay.send(input) },
             keyNameResolver: Self.reservationKeyNameResolver(for: machine),
-            allowsRemoteClipboardWrites: machine.cloudMachineID != nil
+            // SUPERMUX:begin device-mirror-clipboard (upstream: `machine.cloudMachineID != nil`; another Mac's pane too)
+            allowsRemoteClipboardWrites: SupermuxTerminalClipboardWrites.allowsProgramWrites(on: machine)
+            // SUPERMUX:end device-mirror-clipboard
         ) else { return nil }
         panel.surface.setManualIONoReflow(false)
         let reservation = CloudTerminalPaneReservation(

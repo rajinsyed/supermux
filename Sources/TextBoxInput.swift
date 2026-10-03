@@ -2940,6 +2940,10 @@ struct TextBoxInputContainer: View {
                 operation: operation,
                 completion: finish
             )
+        // SUPERMUX:begin device-terminal-upload
+        case .supermuxDevice(let target):
+            SupermuxDeviceTerminalUpload.upload(fileURLs, to: target, operation: operation, completion: finish)
+        // SUPERMUX:end device-terminal-upload
         }
     }
 
