@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""End-to-end test: a terminal fills the Mac you look at it from, and the size mode is one
+"""End-to-end test: every terminal starts as "Fit everyone", and the size mode is one
 sticky choice for every terminal on this Mac, never for another Mac's.
 
-Before: every terminal started as "Fit everyone" (smallest), held only in memory on the
-Mac that runs it, so a phone or a small pane on the other Mac shrank a terminal viewed
-full screen; and a mode chosen in the size panel changed one terminal only, until the
-next relaunch. Now the default is "Priority" with this Mac first: the Mac pane for a
-local terminal, this Mac's mirror for another Mac's terminal. A mirror claims its
+The default is "Fit everyone" (smallest), so a terminal opened from the phone fits the
+phone (until 2026-10-03 the default was "Priority" with this Mac first, and a phone saw
+a cropped grid). Upstream holds a mode chosen in the size panel only in memory on one
+terminal, until the next relaunch. Under "Priority" this Mac comes first: the Mac pane
+for a local terminal, this Mac's mirror for another Mac's terminal. A mirror claims its
 terminal when it is shown (or first attaches while shown, or reconnects), pushing once
 per connection and never in answer to the other Mac's size events; the claim only moves
 this Mac first in a Priority order and never changes another Mac's mode, fixed size or
@@ -27,57 +27,64 @@ driven by `supermux.devices.terminal_sizing.*` (DEBUG), which run the panel's ow
   1. setup                               auto-mirror on, the loopback linked, the preference reset
   2. source_and_mirror                   a background source workspace and its mirror, shown;
                                          the mirror's priority key differs from the source pane's
-  3. default_policy_is_this_mac_first    the source terminal is Priority with the mirror first and
-                                         takes the mirror's grid (decided AND real PTY grid)
-  4. counting_source_pane_does_not_shrink
+  3. default_policy_is_fit_everyone      with no stored choice the source terminal is Fit everyone
+                                         and no mirror claims it (3 s hold)
+  4. priority_choice_puts_this_mac_first Priority picked on the mirror: the source terminal is
+                                         Priority with the mirror first and takes the mirror's grid
+                                         (decided AND real PTY grid)
+  5. counting_source_pane_does_not_shrink
                                          the other Mac's own small pane counting does not shrink it
-  5. local_terminal_mac_first_over_phone a local terminal keeps its Mac pane's grid while a phone
-                                         (40x12) views it
-  6. mode_choice_applies_to_every_terminal
+  6. local_terminal_mac_first_over_phone under Priority a local terminal keeps its Mac pane's grid
+                                         while a phone (40x12) views it
+  7. mode_choice_applies_to_every_terminal
                                          Follow Latest chosen on one mirror reaches its terminal and
                                          every terminal of this Mac (both sources and the local one,
                                          all this Mac's own in the loopback)
-  7. new_terminals_follow_choice         a new local terminal and a new terminal opened over the
+  8. new_terminals_follow_choice         a new local terminal and a new terminal opened over the
                                          device link start in Follow Latest
-  8. second_mac_no_ping_pong             another Mac sets Priority with itself first: the shown
+  9. second_mac_no_ping_pong             another Mac sets Priority with itself first: the shown
                                          mirror does not push back (3 s hold)
-  9. viewing_mac_viewport_up_to_500x200
+ 10. viewing_mac_viewport_up_to_500x200
                                          a viewing Mac's full-screen pane (400x150) is taken as is,
                                          not clamped to a phone's 300x120
- 10. reselecting_mode_keeps_claims       picking the mode this Mac already has (Priority, as the
+ 11. reselecting_mode_keeps_claims       picking the mode this Mac already has (Priority, as the
                                          tab menu does to open the panel) on the local terminal
                                          changes no other terminal: the second Mac keeps the
                                          terminal it claimed (3 s hold)
- 10b. stored_choice_applies_to_its_terminal
+ 11b. stored_choice_applies_to_its_terminal
                                          the panel's choice reaches the terminal it was made on
                                          whenever that terminal differs, even when it equals this
                                          Mac's stored preference: the second Mac set Fit everyone,
                                          then Priority (already stored) picked on the mirror takes
                                          it back; the second Mac claimed it, then the stored order
                                          dragged on the mirror takes it back
- 10c. showing_keeps_other_macs_mode     the second Mac chose Fit everyone: hiding then showing the
+ 11c. showing_keeps_other_macs_mode     the second Mac chose Fit everyone: hiding then showing the
                                          mirror, and a link drop, leave it Fit everyone (3 s holds;
                                          red before: the shown mirror pushed this Mac's Priority)
- 10d. choice_during_reconnect_lands      Priority picked on the mirror while its link is down (the
+ 11d. choice_during_reconnect_lands      Priority picked on the mirror while its link is down (the
                                          second Mac chose Fit everyone) reaches the terminal once the
                                          link is back (red before: the reconnect only claimed, which
                                          leaves Fit everyone, and the choice was lost)
- 11. showing_again_reclaims              hiding then showing the mirror claims the terminal again,
+ 12. showing_again_reclaims              hiding then showing the mirror claims the terminal again,
                                          then stays put (3 s hold)
- 12. reconnect_reclaims                  after the link drops and the other Mac starts over with its
-                                         own default (Priority, its pane first), the reconnected
+ 13. reconnect_reclaims                  after the link drops and the other Mac starts over with its
+                                         own stored choice (Priority, its pane first), the reconnected
                                          mirror claims it again
- 12b. sticky_choice_stays_on_this_mac    Largest chosen on a local terminal reaches the source as
+ 13b. sticky_choice_stays_on_this_mac    Largest chosen on a local terminal reaches the source as
                                          this Mac's own terminal (its pane's key) and no mirror pushes
                                          it (3 s hold; red before: the shown mirror pushed it, under
                                          its own key, to the terminal it shows)
- 13. priority_order_applies_everywhere   a priority order dragged on one mirror ([phone, this Mac])
+ 14. priority_order_applies_everywhere   a priority order dragged on one mirror ([phone, this Mac])
                                          is stored as [phone, self] and reaches the local terminal as
                                          [phone, its Mac pane] (a mirror that pushed the order to the
                                          terminal it shows, its own hidden auto-mirror in the loopback,
                                          would land after the local apply under the mirror's key)
- 14. choice_survives_relaunch            (--app-path) Largest Window, then quit and relaunch: new
+ 15. choice_survives_relaunch            (--app-path) Largest Window, then quit and relaunch: new
                                          and restored terminals start in Largest Window
+ 16. new_terminals_fit_the_phone         after a reset, a new local terminal and a terminal opened
+                                         with `mobile.terminal.create` (as the phone opens one) start
+                                         in Fit everyone, and a phone (40x12) viewing the local one
+                                         sizes it to 40x12 (red before: both started in Priority)
 
 Writes a JSON report (default tests/supermux/artifacts/loopback_terminal_sizing_policy_e2e-<tag>.json)
 with the policy, keys, owners, grid and live grid per step, and exits non-zero on any failure.
@@ -495,7 +502,18 @@ class SizingPolicyE2E:
             raise Failure(f"the loopback mirror and the source pane share the priority key {source_key}")
         return {"mirror_key": self.mirror_key, "source_pane_key": source_key, **found}
 
-    def default_policy_is_this_mac_first(self) -> Dict[str, Any]:
+    def default_policy_is_fit_everyone(self) -> Dict[str, Any]:
+        stored = (self.sock.call(SIZING + "state", {}) or {}).get("stored")
+        if stored:
+            raise Failure("the preference is still stored after the reset")
+        result = self.wait_state("the source terminal to be Fit everyone", self.source_surface,
+                                 self.expect_mode("smallest"))
+        # A shown mirror claims only under Priority: nothing may move it off Fit everyone.
+        return {**result, **self.hold(self.source_surface, self.expect_mode("smallest"))}
+
+    def priority_choice_puts_this_mac_first(self) -> Dict[str, Any]:
+        chosen = self.select_mode(self.mirror_surface, "priority")
+
         def check(state: Dict[str, Any]) -> None:
             self.expect_first(self.mirror_key)(state)
             mirror = self.row(state, MIRROR_PREFIX)
@@ -510,7 +528,7 @@ class SizingPolicyE2E:
 
         result = self.wait_state("the source terminal to be Priority with this viewer first", self.source_surface, check)
         result["live_grid"] = list(self.live_grid(self.source_id, self.source_surface) or ())
-        return result
+        return {"accepted": chosen.get("accepted"), **result}
 
     def counting_source_pane_does_not_shrink(self) -> Dict[str, Any]:
         state = self.state(self.source_surface)
@@ -763,8 +781,8 @@ class SizingPolicyE2E:
         self.select(self.mirror_id)
         self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "stop"})
         time.sleep(1.0)
-        # What a restarted Mac does: its terminal starts over with its own default, Priority
-        # with its own pane first.
+        # What a restarted Mac does: its terminal starts over with its own stored choice,
+        # Priority with its own pane first.
         pane_key = self.facts["source_pane_key"]
         self.sock.call("terminal.size_policy.set", {"surface_id": self.source_surface, "mode": "priority",
                                                      "priority": [pane_key]})
@@ -858,6 +876,33 @@ class SizingPolicyE2E:
         result["preference"] = self.preference()
         return result
 
+    def new_terminals_fit_the_phone(self) -> Dict[str, Any]:
+        """With no stored choice, a new local terminal and a terminal opened as the phone opens
+        one start in Fit everyone, and the phone's 40x12 sizes the local one (red before: both
+        started in Priority with the Mac pane first, so the phone saw a cropped grid)."""
+        reset = self.sock.call(SIZING + "reset", {}) or {}
+        workspace = self.create_workspace("fresh")
+        self.select(workspace)
+        surface = wait_for("the fresh terminal", lambda: self.surfaces(workspace), self.timeout)[0]
+        self.wait_state("the fresh terminal's Mac pane", surface, self.has_row("mac:", "the Mac pane"))
+        self.report_viewport(workspace, surface, self.phone_client, "iphone", 40, 12)
+
+        def fits_phone(state: Dict[str, Any]) -> None:
+            self.expect_mode("smallest")(state)
+            if not (self.row(state, "mac:") or {}).get("counts"):
+                raise Failure(f"the shown Mac pane does not count: {self.rows(state)}")
+            if self.grid(state) != (40, 12):
+                raise Failure(f"grid {self.grid(state)}, expected the phone's 40x12")
+
+        local = self.wait_state("the fresh terminal to fit the phone", surface, fits_phone)
+        created = self.request("mobile.terminal.create", {"workspace_id": self.create_workspace("phone")})
+        terminal = up(created.get("created_terminal_id"))
+        if not terminal:
+            raise Failure(f"mobile.terminal.create returned no created_terminal_id: {created}")
+        remote = self.wait_state("a terminal opened as the phone opens one to start in Fit everyone", terminal,
+                                 self.expect_mode("smallest"))
+        return {"reset": reset.get("reset"), "local": local, "phone_created": {"terminal": terminal, **remote}}
+
     def relaunch(self) -> None:
         app = self.args.app_path
         bundle_id = plistlib.loads((Path(app) / "Contents" / "Info.plist").read_bytes())["CFBundleIdentifier"]
@@ -920,7 +965,8 @@ class SizingPolicyE2E:
         ok = (self.step("setup", self.setup)
               and self.step("source_and_mirror", self.source_and_mirror))
         if ok:
-            ok = self.step("default_policy_is_this_mac_first", self.default_policy_is_this_mac_first) and ok
+            ok = self.step("default_policy_is_fit_everyone", self.default_policy_is_fit_everyone) and ok
+            ok = self.step("priority_choice_puts_this_mac_first", self.priority_choice_puts_this_mac_first) and ok
             ok = self.step("counting_source_pane_does_not_shrink", self.counting_source_pane_does_not_shrink) and ok
             ok = self.step("local_terminal_mac_first_over_phone", self.local_terminal_mac_first_over_phone) and ok
             ok = self.step("mode_choice_applies_to_every_terminal", self.mode_choice_applies_to_every_terminal) and ok
@@ -944,6 +990,7 @@ class SizingPolicyE2E:
                 ok = self.step("choice_survives_relaunch", self.choice_survives_relaunch) and ok
             else:
                 self.steps.append({"name": "choice_survives_relaunch", "ok": None, "skipped": "pass --app-path to run"})
+            ok = self.step("new_terminals_fit_the_phone", self.new_terminals_fit_the_phone) and ok
         self.cleanup()
         return ok
 
