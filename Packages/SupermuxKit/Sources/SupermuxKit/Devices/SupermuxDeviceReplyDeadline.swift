@@ -42,6 +42,9 @@ public enum SupermuxDeviceReplyDeadline {
     /// A `files.duplicate` or `files.trash`: the host's bound on copying or
     /// moving a whole tree.
     public static let fileCopy: Duration = seconds(SupermuxMobileFileBrowser.copyTimeout + git)
+    /// One `terminal.attachment.upload` chunk: up to 3 MB of file data
+    /// (4 MB as base64) over a slow relay, then one file write there.
+    public static let attachmentChunk: Duration = .seconds(60)
 
     /// The reply deadline for a wire method, or `nil` for the link default
     /// (every method that is not a `mobile.supermux.*` call).
@@ -65,6 +68,8 @@ public enum SupermuxDeviceReplyDeadline {
             return localWork
         case .filesDuplicate, .filesTrash:
             return fileCopy
+        case .terminalAttachmentUpload:
+            return attachmentChunk
         case .worktreeCreate, .worktreeRemove, .agentStart:
             return checkout
         case .projectClone:
@@ -73,7 +78,8 @@ public enum SupermuxDeviceReplyDeadline {
              .projectsSetSectionCollapsed, .worktreeOpen, .changesWatch, .filesWatch, .runState, .runStart, .runStop,
              .presetCreate, .presetUpdate, .presetDelete, .presetLaunch, .actionRun,
              .workspaceSelect, .terminalSelect, .panelSelect, .paneClose, .simulatorCreate, .simulatorControl,
-             .usageState, .phonePushRegister, .phonePushStatus, .phonePushShare, .portsList:
+             .usageState, .phonePushRegister, .phonePushStatus, .phonePushShare, .portsList,
+             .terminalWatch, .terminalAction:
             return nil
         }
     }

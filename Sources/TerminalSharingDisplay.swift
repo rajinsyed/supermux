@@ -67,7 +67,9 @@ struct TerminalSharingDisplay {
 
     static func modeTitle(_ mode: TerminalSizingMode) -> String {
         switch mode {
-        case .latest: return String(localized: "terminalSharing.sizeMode.latest", defaultValue: "Follow Latest")
+        // SUPERMUX:begin sizing-auto-label (upstream's "Follow Latest" is Auto here: the device you're using sets the size)
+        case .latest: return SupermuxTerminalSizingScopeNote.autoTitle
+        // SUPERMUX:end sizing-auto-label
         case .smallest: return String(localized: "terminalSharing.sizeMode.smallest", defaultValue: "Fit Everyone")
         case .largest: return String(localized: "terminalSharing.sizeMode.largest", defaultValue: "Largest Window")
         case .priority: return String(localized: "terminalSharing.sizeMode.priority", defaultValue: "Priority")

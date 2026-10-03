@@ -13,6 +13,29 @@ enum SupermuxMobileCapabilities {
     /// Capabilities whose backing RPC methods are implemented on this host.
     nonisolated static var advertised: [String] {
         served + (servesPortForward ? [SupermuxMobileCapability.portForwardV1.rawValue] : [])
+            + (servesTerminalAttachments ? [SupermuxMobileCapability.terminalAttachmentsV1.rawValue] : [])
+            + (servesTerminalStream ? [SupermuxMobileCapability.terminalStreamV1.rawValue] : [])
+    }
+
+    /// Files pasted or dropped into another Mac's terminal mirror are stored
+    /// here (`terminal.attachment.upload`). DEBUG builds can pretend to be an
+    /// older host without it (`supermux.devices.terminal_clipboard.old_host`).
+    nonisolated private static var servesTerminalAttachments: Bool {
+        #if DEBUG
+        if SupermuxTerminalClipboardSocketCommands.pretendsOldHost { return false }
+        #endif
+        return true
+    }
+
+    /// terminal.watch is served and mobile.terminal.replay resumes from a byte
+    /// position: another Mac's device mirror streams a terminal losslessly
+    /// instead of re-anchoring on full replays. A DEBUG E2E can withhold it to
+    /// play an older host.
+    nonisolated private static var servesTerminalStream: Bool {
+        #if DEBUG
+        if SupermuxTerminalStreamDebug.pretendsOldHost { return false }
+        #endif
+        return true
     }
 
     /// Port forwarding (another Mac's `tcp_connect` lanes, `ports.list`,
@@ -87,6 +110,9 @@ enum SupermuxMobileCapabilities {
             // device.workspace.terminal.create takes `after_surface_id`: another
             // Mac's "New Terminal to the Right" lands right of its tab here too.
             SupermuxMobileCapability.terminalPlacementV1.rawValue,
+            // terminal.action is served: another Mac's mirror of a terminal here
+            // runs Cmd+K (clear_screen), reset and its focus changes on it.
+            SupermuxMobileCapability.terminalActionsV1.rawValue,
             // files.list {show_hidden} / files.read / files.search /
             // files.git_status / files.watch are served: another Mac's Files
             // panel browses a workspace's folder here, read-only and
@@ -96,6 +122,10 @@ enum SupermuxMobileCapabilities {
             // another Mac's device mirror shows this Mac's simulators (the
             // video itself is upstream's simulator.stream.v2 lane).
             SupermuxMobileCapability.remoteSimulatorV1.rawValue,
+            // mobile.terminal.size_policy.set takes `supermux_preference`: a
+            // size mode picked on another Mac's mirror becomes this Mac's
+            // setting for all its terminals.
+            SupermuxMobileCapability.terminalSizingPreferenceV1.rawValue,
         ]
     }
 }

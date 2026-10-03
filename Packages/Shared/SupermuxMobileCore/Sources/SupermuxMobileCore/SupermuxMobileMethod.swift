@@ -166,6 +166,29 @@ public enum SupermuxMobileMethod: String, CaseIterable, Codable, Sendable, Equat
     /// too (for a manual forward). Served only to an admitted Mac peer.
     case portsList = "mobile.supermux.ports.list"
 
+    // MARK: Terminal attachments
+
+    /// Stores one chunk of a file pasted or dropped into another Mac's device
+    /// mirror of a terminal here, and answers the stored file's absolute path
+    /// on the last chunk, which that Mac types into the terminal. Same store
+    /// and chunk contract as upstream's `mobile.task.attachment.upload`
+    /// (`~/.cache/cmux/task-attachments`), without its Task Composer gate.
+    case terminalAttachmentUpload = "mobile.supermux.terminal.attachment.upload"
+    // MARK: Terminal streaming
+
+    /// Names the terminals this connection mirrors (`surface_ids`): the host
+    /// then sends `terminal.bytes` only for those, and never sheds them from
+    /// the event queue (``SupermuxMobileCapability/terminalStreamV1``).
+    /// Connection-scoped; a new connection starts topic-wide again.
+    case terminalWatch = "mobile.supermux.terminal.watch"
+
+    // MARK: Terminal actions
+
+    /// Runs one terminal action (`action`: `clear_screen`, `reset`,
+    /// `focus_in`, `focus_out`) on terminal `terminal_id` of `workspace_id`,
+    /// forwarded by another Mac's device mirror of that terminal.
+    case terminalAction = "mobile.supermux.terminal.action"
+
     /// The shared method-name prefix; the Mac router dispatches on it.
     public static let namespacePrefix = "mobile.supermux."
 

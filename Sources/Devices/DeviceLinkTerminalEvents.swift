@@ -79,9 +79,18 @@ final class DeviceLinkTerminalEvents {
     private var continuations: [UUID: [UUID: AsyncStream<DeviceTerminalEvent>.Continuation]] = [:]
     private var pendingControls: [UUID: [UUID: [DeviceTerminalEvent]]] = [:]
 
+    // SUPERMUX:begin terminal-stream-viewer
+    #if DEBUG
+    /// Counts every decoded `terminal.bytes` payload (SupermuxTerminalStreamWatch).
+    var supermuxOnBytes: ((UUID, Int) -> Void)?
+    #endif
+    // SUPERMUX:end terminal-stream-viewer
+
     func stream(surfaceID: UUID) -> AsyncStream<DeviceTerminalEvent> {
         let id = UUID()
-        return AsyncStream(bufferingPolicy: .bufferingNewest(512)) { continuation in
+        // SUPERMUX:begin terminal-stream-viewer (upstream: `.bufferingNewest(512)`)
+        return AsyncStream(bufferingPolicy: .bufferingNewest(SupermuxTerminalStream.sessionEventBufferLimit)) { continuation in
+        // SUPERMUX:end terminal-stream-viewer
             continuations[surfaceID, default: [:]][id] = continuation
             pendingControls[surfaceID, default: [:]][id] = []
             continuation.onTermination = { @Sendable [weak self] _ in
@@ -96,6 +105,11 @@ final class DeviceLinkTerminalEvents {
     /// Topics that `DeviceTerminalEvent` does not decode are ignored.
     func receive(_ envelope: MobileEventEnvelope) {
         guard let decoded = DeviceTerminalEvent.decode(envelope) else { return }
+        // SUPERMUX:begin terminal-stream-viewer
+        #if DEBUG
+        if case .bytes(_, let data) = decoded.event { supermuxOnBytes?(decoded.surfaceID, data.count) }
+        #endif
+        // SUPERMUX:end terminal-stream-viewer
         send(decoded.event, surfaceID: decoded.surfaceID)
     }
 

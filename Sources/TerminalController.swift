@@ -15709,6 +15709,17 @@ class TerminalController {
                 data: nil
             )
         }
+        // SUPERMUX:begin terminal-stream-resume
+        // A device mirror resumes from its byte position when the host's byte
+        // tail still holds it (SupermuxTerminalStreamHost.swift).
+        if var resumed = supermuxTerminalStreamResume(
+            params: params, workspaceID: resolved.workspace.id, surfaceID: surfaceId,
+            terminalTarget: terminalTarget, expectedViewport: expectedViewport
+        ) {
+            addSharedSizingReplayFields(to: &resumed, surfaceID: surfaceId, clientID: v2String(params, "client_id"))
+            return .ok(resumed)
+        }
+        // SUPERMUX:end terminal-stream-resume
         let state = MobileTerminalByteTee.shared.replayState(surfaceID: surfaceId)
         let seq = state?.seq ?? 0
         // Screen-anchored replays hydrate the phone's local scrollback: honor
@@ -15835,6 +15846,9 @@ class TerminalController {
         // slow replay is unattributable: the phone cannot tell a slow capture
         // here from a slow or stalled transport between us.
         addSharedSizingReplayFields(to: &payload, surfaceID: surfaceId, clientID: v2String(params, "client_id"))
+        // SUPERMUX:begin terminal-stream-resume
+        supermuxAddTerminalStreamEpoch(to: &payload, params: params, surfaceID: surfaceId)
+        // SUPERMUX:end terminal-stream-resume
         payload["host_elapsed_ms"] = Int(
             (DispatchTime.now().uptimeNanoseconds &- traceStartedAt) / 1_000_000
         )

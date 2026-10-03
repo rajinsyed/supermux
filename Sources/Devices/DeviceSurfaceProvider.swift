@@ -297,7 +297,10 @@ final class DeviceSurfaceProvider: SurfaceProvider {
                         onInput: { input in router.enqueue(input) },
                         keyNameResolver: SupermuxDeviceTerminalInput.keyResolver(for: machine),
                         // SUPERMUX:end device-mirror-key-resolver
-                        onResize: { _ in }, onRuntimeReady: {}, onFocus: {}
+                        onResize: { _ in }, onRuntimeReady: {}, onFocus: {},
+                        // SUPERMUX:begin device-mirror-clipboard
+                        allowsRemoteClipboardWrites: SupermuxTerminalClipboardWrites.allowsProgramWrites(on: machine)
+                        // SUPERMUX:end device-mirror-clipboard
                     )
                 }
             }

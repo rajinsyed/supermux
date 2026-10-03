@@ -61,6 +61,25 @@ public enum SupermuxMobileCapability: String, CaseIterable, Codable, Sendable, E
     /// (rotate, software keyboard, appearance) is served and
     /// `simulator.create` takes `udid`.
     case remoteSimulatorV1 = "supermux.remote_simulator.v1"
+    /// A file pasted or dropped into another Mac's device mirror of a
+    /// terminal here is uploaded to this Mac (`terminal.attachment.upload`),
+    /// so the path typed into the terminal names a file that exists here.
+    case terminalAttachmentsV1 = "supermux.terminal_attachments.v1"
+    /// Another Mac's device mirror streams a terminal like a local one:
+    /// `terminal.watch` limits `terminal.bytes` to the mirrored terminals and
+    /// keeps them lossless, and `mobile.terminal.replay` takes
+    /// `supermux_resume_from_seq` (answering with the bytes since then while
+    /// the host's byte tail still holds them) and reports `supermux_stream_epoch`.
+    case terminalStreamV1 = "supermux.terminal_stream.v1"
+    /// `mobile.terminal.size_policy.set` takes `supermux_preference`: a size
+    /// mode picked on another Mac's mirror becomes this Mac's setting for all
+    /// its terminals, as one picked here does.
+    case terminalSizingPreferenceV1 = "supermux.terminal_sizing_preference.v1"
+    /// Another Mac's device mirror of a terminal here forwards the bindings
+    /// that change the terminal itself (`clear_screen`, `reset`) and its
+    /// focus changes (`focus_in`, `focus_out`) with `terminal.action`, so
+    /// they act on this terminal, not only on that Mac's view of it.
+    case terminalActionsV1 = "supermux.terminal_actions.v1"
 
     /// Every capability, in declaration order (derived from `CaseIterable`).
     public static let all: [SupermuxMobileCapability] = SupermuxMobileCapability.allCases

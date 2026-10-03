@@ -1,18 +1,22 @@
 #!/usr/bin/env python3
-"""End-to-end test: a terminal fills the Mac you look at it from, and the size mode is one
-sticky choice for every terminal on this Mac, never for another Mac's.
+"""End-to-end test: every terminal starts in Auto, where the device you are viewing it from
+sets its size, and the size mode is one sticky choice for every terminal on this Mac.
 
-Before: every terminal started as "Fit everyone" (smallest), held only in memory on the
-Mac that runs it, so a phone or a small pane on the other Mac shrank a terminal viewed
-full screen; and a mode chosen in the size panel changed one terminal only, until the
-next relaunch. Now the default is "Priority" with this Mac first: the Mac pane for a
-local terminal, this Mac's mirror for another Mac's terminal. A mirror claims its
+The default is Auto (`latest`): the device that last started viewing or used a terminal sets
+its grid, the phone included, so a terminal opened on the phone is phone-sized even while its
+Mac pane is on screen, and typing on the Mac takes it back (until 2026-10-04 the default was
+"Fit everyone"; until 2026-10-03 "Priority" with this Mac first). Upstream holds a mode
+chosen in the size panel only in memory on one
+terminal, until the next relaunch. Under "Priority" this Mac comes first: the Mac pane
+for a local terminal, this Mac's mirror for another Mac's terminal. A mirror claims its
 terminal when it is shown (or first attaches while shown, or reconnects), pushing once
 per connection and never in answer to the other Mac's size events; the claim only moves
 this Mac first in a Priority order and never changes another Mac's mode, fixed size or
 the rest of its order. A mode, fixed size or priority order chosen in the size panel or
 the tab menu applies to every terminal on this Mac, now and later, and survives a
-relaunch; of another Mac's terminals it changes only the one it was chosen on.
+relaunch. A mode picked on the phone is this Mac's setting the same way, and one picked on a
+mirror also becomes the other Mac's setting (sent with `supermux_preference`, once, on the
+pick); a mirror's claim still changes only the one terminal it shows.
 
 This suite runs against one tagged DEBUG build with the loopback device ("Loopback Mac"
 = this app's own mobile host): a source workspace is the "other Mac" and its auto mirror
@@ -27,57 +31,105 @@ driven by `supermux.devices.terminal_sizing.*` (DEBUG), which run the panel's ow
   1. setup                               auto-mirror on, the loopback linked, the preference reset
   2. source_and_mirror                   a background source workspace and its mirror, shown;
                                          the mirror's priority key differs from the source pane's
-  3. default_policy_is_this_mac_first    the source terminal is Priority with the mirror first and
-                                         takes the mirror's grid (decided AND real PTY grid)
-  4. counting_source_pane_does_not_shrink
+  3. default_policy_is_auto              with no stored choice the source terminal is Auto (latest)
+                                         and no mirror claims it (3 s hold)
+  4. priority_choice_puts_this_mac_first Priority picked on the mirror: the source terminal is
+                                         Priority with the mirror first and takes the mirror's grid
+                                         (decided AND real PTY grid)
+  5. counting_source_pane_does_not_shrink
                                          the other Mac's own small pane counting does not shrink it
-  5. local_terminal_mac_first_over_phone a local terminal keeps its Mac pane's grid while a phone
-                                         (40x12) views it
-  6. mode_choice_applies_to_every_terminal
+  6. local_terminal_mac_first_over_phone under Priority a local terminal keeps its Mac pane's grid
+                                         while a phone (40x12) views it
+  7. mode_choice_applies_to_every_terminal
                                          Follow Latest chosen on one mirror reaches its terminal and
                                          every terminal of this Mac (both sources and the local one,
                                          all this Mac's own in the loopback)
-  7. new_terminals_follow_choice         a new local terminal and a new terminal opened over the
+  8. new_terminals_follow_choice         a new local terminal and a new terminal opened over the
                                          device link start in Follow Latest
-  8. second_mac_no_ping_pong             another Mac sets Priority with itself first: the shown
+  9. second_mac_no_ping_pong             another Mac sets Priority with itself first: the shown
                                          mirror does not push back (3 s hold)
-  9. viewing_mac_viewport_up_to_500x200
+ 10. viewing_mac_viewport_up_to_500x200
                                          a viewing Mac's full-screen pane (400x150) is taken as is,
                                          not clamped to a phone's 300x120
- 10. reselecting_mode_keeps_claims       picking the mode this Mac already has (Priority, as the
+ 11. reselecting_mode_keeps_claims       picking the mode this Mac already has (Priority, as the
                                          tab menu does to open the panel) on the local terminal
                                          changes no other terminal: the second Mac keeps the
                                          terminal it claimed (3 s hold)
- 10b. stored_choice_applies_to_its_terminal
+ 11b. stored_choice_applies_to_its_terminal
                                          the panel's choice reaches the terminal it was made on
                                          whenever that terminal differs, even when it equals this
                                          Mac's stored preference: the second Mac set Fit everyone,
                                          then Priority (already stored) picked on the mirror takes
                                          it back; the second Mac claimed it, then the stored order
                                          dragged on the mirror takes it back
- 10c. showing_keeps_other_macs_mode     the second Mac chose Fit everyone: hiding then showing the
+ 11c. showing_keeps_other_macs_mode     the second Mac chose Fit everyone: hiding then showing the
                                          mirror, and a link drop, leave it Fit everyone (3 s holds;
                                          red before: the shown mirror pushed this Mac's Priority)
- 10d. choice_during_reconnect_lands      Priority picked on the mirror while its link is down (the
+ 11d. choice_during_reconnect_lands      Priority picked on the mirror while its link is down (the
                                          second Mac chose Fit everyone) reaches the terminal once the
                                          link is back (red before: the reconnect only claimed, which
                                          leaves Fit everyone, and the choice was lost)
- 11. showing_again_reclaims              hiding then showing the mirror claims the terminal again,
+ 12. showing_again_reclaims              hiding then showing the mirror claims the terminal again,
                                          then stays put (3 s hold)
- 12. reconnect_reclaims                  after the link drops and the other Mac starts over with its
-                                         own default (Priority, its pane first), the reconnected
+ 13. reconnect_reclaims                  after the link drops and the other Mac starts over with its
+                                         own stored choice (Priority, its pane first), the reconnected
                                          mirror claims it again
- 12b. sticky_choice_stays_on_this_mac    Largest chosen on a local terminal reaches the source as
+ 13b. sticky_choice_stays_on_this_mac    Largest chosen on a local terminal reaches the source as
                                          this Mac's own terminal (its pane's key) and no mirror pushes
                                          it (3 s hold; red before: the shown mirror pushed it, under
                                          its own key, to the terminal it shows)
- 13. priority_order_applies_everywhere   a priority order dragged on one mirror ([phone, this Mac])
+ 14. priority_order_applies_everywhere   a priority order dragged on one mirror ([phone, this Mac])
                                          is stored as [phone, self] and reaches the local terminal as
                                          [phone, its Mac pane] (a mirror that pushed the order to the
                                          terminal it shows, its own hidden auto-mirror in the loopback,
                                          would land after the local apply under the mirror's key)
- 14. choice_survives_relaunch            (--app-path) Largest Window, then quit and relaunch: new
+ 15. choice_survives_relaunch            (--app-path; runs last, the relaunch renumbers mirror tabs)
+                                         Largest Window, then quit and relaunch: new
                                          and restored terminals start in Largest Window
+ 16. auto_phone_viewing_takes_the_grid  after a reset, a fresh shown terminal and one opened with
+                                         `mobile.terminal.create` start in Auto; a phone (40x12) opening
+                                         the fresh one takes its grid while the Mac pane is on screen
+                                         and counts (red before: the phone deferred to the Mac pane)
+ 17. auto_mac_typing_takes_it_back       typing on the Mac gives the grid back to its pane, and the
+                                         phone re-reporting the same viewport (its answer to the size
+                                         change) does not take it again (2 s hold: no ping-pong)
+ 18. auto_phone_returning_takes_it       the phone leaves (viewport cleared) and opens it again: 40x12
+ 19. auto_phone_typing_takes_it          the Mac takes it back, then the phone types over its link:
+                                         40x12 (red before: delivering the phone's input also counted
+                                         as typing on the Mac pane, which then won)
+ 20. auto_rotated_phone_takes_it         the Mac takes it back, then the phone reports a new viewport
+                                         (60x20, a rotation): 60x20
+ 21. auto_opted_out_phone_never_sizes    a second phone that chose not to resize (counts_override
+                                         false, 30x10) never takes the grid and keeps its choice
+ 22. auto_viewing_mac_takes_it           a second Mac attaching (100x30) takes it; the Mac pane takes
+                                         it back by typing; the second Mac typing takes it again
+ 23. auto_shown_mirror_takes_it          on the source terminal the second Mac types (it owns the
+                                         grid), the mirror is hidden, then shown again: the shown mirror
+                                         owns it (red before: showing a mirror was no activity)
+ 24. phone_choice_applies_to_every_terminal
+                                         Largest Window picked on the phone (its size sheet, over its
+                                         link) is stored and reaches every terminal of this Mac and a
+                                         new one (red before: only the terminal it was picked on)
+ 25. other_macs_choice_becomes_this_macs_setting
+                                         Fit everyone picked on another Mac's mirror (sent with
+                                         `supermux_preference`) is stored here and reaches every terminal;
+                                         that Mac's claim (no `supermux_preference`) changes only its one
+                                         terminal and not the preference
+ 26. mirror_choice_reaches_the_other_mac Largest Window picked on the mirror is adopted by the other
+                                         Mac (`adopted_remote_choices` rises) and reaches both source
+                                         terminals
+ 27. held_size_returns_to_mac_pane       after a reset (Auto), a phone (40x12) views a shown local terminal; its pane is hidden
+                                         long enough to stop counting, then shown again by a path that
+                                         posts nothing (the class never hears of it); the phone leaves:
+                                         the terminal takes the Mac pane's own grid, decided and real,
+                                         instead of holding the phone's 40x12 (red before: "held" 40x12)
+ 28. brief_portal_hide_keeps_counting    the portal hides the shown pane for 100 ms (layout churn) while
+                                         a phone views it: the Mac pane keeps counting throughout (red
+                                         before: it stopped counting at once and never came back)
+ 29. mac_pane_counts_after_portal_reveal the portal hides the shown pane for 1.5 s: it stops counting,
+                                         then counts again once the portal reveals it (red before: the
+                                         reveal posts nothing, so the pane stayed "off screen" and the
+                                         terminal stayed at the phone's size)
 
 Writes a JSON report (default tests/supermux/artifacts/loopback_terminal_sizing_policy_e2e-<tag>.json)
 with the policy, keys, owners, grid and live grid per step, and exits non-zero on any failure.
@@ -238,6 +290,9 @@ class SizingPolicyE2E:
         self.local_surface = ""
         self.local_key = ""
         self.source2_surface = ""
+        # A fresh, shown local terminal for the Auto steps.
+        self.fresh_id = ""
+        self.fresh_surface = ""
         self.phone_client = f"e2e-phone-{self.nonce}"
         self.mac_b_client = f"e2e-mac-b-{self.nonce}"
         # Latest viewport generation per fake viewer report: (workspace, surface, client) -> generation.
@@ -333,6 +388,17 @@ class SizingPolicyE2E:
             "workspace_id": workspace_id, "surface_id": surface_id, "client_id": client_id,
             "viewport_columns": cols, "viewport_rows": rows, "viewport_generation": generation,
             "device_kind": kind, "device_id": client_id, "device_name": f"E2E {kind}",
+        })
+        self.reports[key] = generation
+
+    def clear_report(self, workspace_id: str, surface_id: str, client_id: str) -> None:
+        """One fake viewer leaves (its explicit clear). Its generation stays counted, so a
+        later report from it is newer than the clear."""
+        key = (workspace_id, surface_id, client_id)
+        generation = self.reports.get(key, 0) + 1
+        self.sock.call("mobile.terminal.viewport", {
+            "workspace_id": workspace_id, "surface_id": surface_id, "client_id": client_id,
+            "clear": True, "viewport_generation": generation,
         })
         self.reports[key] = generation
 
@@ -495,7 +561,18 @@ class SizingPolicyE2E:
             raise Failure(f"the loopback mirror and the source pane share the priority key {source_key}")
         return {"mirror_key": self.mirror_key, "source_pane_key": source_key, **found}
 
-    def default_policy_is_this_mac_first(self) -> Dict[str, Any]:
+    def default_policy_is_auto(self) -> Dict[str, Any]:
+        stored = (self.sock.call(SIZING + "state", {}) or {}).get("stored")
+        if stored:
+            raise Failure("the preference is still stored after the reset")
+        result = self.wait_state("the source terminal to be Auto", self.source_surface,
+                                 self.expect_mode("latest"))
+        # A shown mirror claims only under Priority: nothing may move it off Auto.
+        return {**result, **self.hold(self.source_surface, self.expect_mode("latest"))}
+
+    def priority_choice_puts_this_mac_first(self) -> Dict[str, Any]:
+        chosen = self.select_mode(self.mirror_surface, "priority")
+
         def check(state: Dict[str, Any]) -> None:
             self.expect_first(self.mirror_key)(state)
             mirror = self.row(state, MIRROR_PREFIX)
@@ -510,7 +587,7 @@ class SizingPolicyE2E:
 
         result = self.wait_state("the source terminal to be Priority with this viewer first", self.source_surface, check)
         result["live_grid"] = list(self.live_grid(self.source_id, self.source_surface) or ())
-        return result
+        return {"accepted": chosen.get("accepted"), **result}
 
     def counting_source_pane_does_not_shrink(self) -> Dict[str, Any]:
         state = self.state(self.source_surface)
@@ -763,8 +840,8 @@ class SizingPolicyE2E:
         self.select(self.mirror_id)
         self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "stop"})
         time.sleep(1.0)
-        # What a restarted Mac does: its terminal starts over with its own default, Priority
-        # with its own pane first.
+        # What a restarted Mac does: its terminal starts over with its own stored choice,
+        # Priority with its own pane first.
         pane_key = self.facts["source_pane_key"]
         self.sock.call("terminal.size_policy.set", {"surface_id": self.source_surface, "mode": "priority",
                                                      "priority": [pane_key]})
@@ -858,6 +935,329 @@ class SizingPolicyE2E:
         result["preference"] = self.preference()
         return result
 
+    # -- Auto: the device you are viewing from sets the size ------------------------------
+
+    def owned_by(self, prefix: str, grid: Optional[tuple] = None) -> Callable[[Dict[str, Any]], None]:
+        """Auto, one owner whose id starts with `prefix`, and its grid (default: its own viewport)."""
+        def check(state: Dict[str, Any]) -> None:
+            self.expect_mode("latest")(state)
+            owner = self.row(state, prefix)
+            if not owner:
+                raise Failure(f"{prefix}* is not a participant: {self.rows(state)}")
+            if state.get("owners") != [owner["id"]]:
+                raise Failure(f"owners {state.get('owners')}, expected [{owner['id']}] ({self.rows(state)})")
+            want = grid or grid_of(owner.get("viewport"))
+            if self.grid(state) != want:
+                raise Failure(f"grid {self.grid(state)}, expected {want}")
+        return check
+
+    def mac_types(self, workspace_id: str, surface_id: str) -> None:
+        """Typing on this Mac's pane (a socket client's input is explicit input, as a key press)."""
+        self.sock.call("surface.send_text", {"workspace_id": workspace_id, "surface_id": surface_id, "text": " "})
+
+    def viewer_types(self, workspace_id: str, surface_id: str, client_id: str) -> None:
+        """A phone or another Mac types over its own link (`mobile.terminal.input` with its client id)."""
+        self.request("mobile.terminal.input", {"workspace_id": workspace_id, "surface_id": surface_id,
+                                               "client_id": client_id, "text": " "})
+
+    def clear_report(self, workspace_id: str, surface_id: str, client_id: str) -> None:
+        """A viewer stops viewing (the phone left the terminal or went to the background)."""
+        key = (workspace_id, surface_id, client_id)
+        generation = self.reports.get(key, 0) + 1
+        self.sock.call("mobile.terminal.viewport", {"workspace_id": workspace_id, "surface_id": surface_id,
+                                                    "client_id": client_id, "clear": True,
+                                                    "viewport_generation": generation})
+        self.reports[key] = generation
+
+    def mac_owns(self) -> Callable[[Dict[str, Any]], None]:
+        return self.owned_by("mac:")
+
+    def phone_owns(self, grid: tuple = (40, 12)) -> Callable[[Dict[str, Any]], None]:
+        return self.owned_by("mobile:" + self.phone_client, grid)
+
+    def auto_phone_viewing_takes_the_grid(self) -> Dict[str, Any]:
+        reset = self.sock.call(SIZING + "reset", {}) or {}
+        self.fresh_id = self.create_workspace("fresh")
+        self.select(self.fresh_id)
+        self.fresh_surface = wait_for("the fresh terminal", lambda: self.surfaces(self.fresh_id), self.timeout)[0]
+
+        def pane_counts(state: Dict[str, Any]) -> None:
+            self.expect_mode("latest")(state)
+            if not (self.row(state, "mac:") or {}).get("counts"):
+                raise Failure(f"the shown Mac pane does not count: {self.rows(state)}")
+
+        try:
+            pane = wait_for("the fresh terminal's shown Mac pane in Auto",
+                            lambda: (pane_counts(self.state(self.fresh_surface)), True)[1], 5)
+        except Failure:
+            # The window is covered (another app's full-screen Space): the pane is off screen
+            # and does not count. Make it count by hand, as a pane on screen does, so the Auto
+            # rules below are still exercised against a counting Mac pane.
+            mac = self.row(self.state(self.fresh_surface), "mac:")
+            self.sock.call("terminal.size_counts.set", {"surface_id": self.fresh_surface,
+                                                        "participant_id": mac["id"], "counts": True})
+            self.facts["fresh_pane_counts_forced"] = True
+            pane = self.wait_state("the fresh terminal's Mac pane to count", self.fresh_surface, pane_counts)
+        created = self.request("mobile.terminal.create", {"workspace_id": self.create_workspace("phone")})
+        terminal = up(created.get("created_terminal_id"))
+        if not terminal:
+            raise Failure(f"mobile.terminal.create returned no created_terminal_id: {created}")
+        phone_created = self.wait_state("a terminal opened as the phone opens one to start in Auto", terminal,
+                                        self.expect_mode("latest"))
+        self.report_viewport(self.fresh_id, self.fresh_surface, self.phone_client, "iphone", 40, 12)
+
+        def phone_sizes_it(state: Dict[str, Any]) -> None:
+            self.phone_owns()(state)
+            if not (self.row(state, "mac:") or {}).get("counts"):
+                raise Failure(f"the shown Mac pane stopped counting: {self.rows(state)}")
+
+        viewing = self.wait_state("the phone viewing the fresh terminal to set its size", self.fresh_surface,
+                                  phone_sizes_it)
+        return {"reset": reset.get("reset"), "pane": pane, "phone_created": {"terminal": terminal, **phone_created},
+                "viewing": viewing}
+
+    def auto_mac_typing_takes_it_back(self) -> Dict[str, Any]:
+        self.mac_types(self.fresh_id, self.fresh_surface)
+        back = self.wait_state("typing on the Mac to give the grid back to its pane", self.fresh_surface,
+                               self.mac_owns())
+        # The phone answers a grid that moved away from it by reporting the same viewport again.
+        self.report_viewport(self.fresh_id, self.fresh_surface, self.phone_client, "iphone", 40, 12)
+        held = self.hold(self.fresh_surface, self.mac_owns(), 2.0)
+        return {"back": back, "reassert": held}
+
+    def auto_phone_returning_takes_it(self) -> Dict[str, Any]:
+        self.clear_report(self.fresh_id, self.fresh_surface, self.phone_client)
+        left = self.wait_state("the phone to leave", self.fresh_surface, self.mac_owns())
+        self.report_viewport(self.fresh_id, self.fresh_surface, self.phone_client, "iphone", 40, 12)
+        back = self.wait_state("the phone opening the terminal again to set its size", self.fresh_surface,
+                               self.phone_owns())
+        return {"left": left, "back": back}
+
+    def auto_phone_typing_takes_it(self) -> Dict[str, Any]:
+        self.mac_types(self.fresh_id, self.fresh_surface)
+        mac = self.wait_state("the Mac pane to take it back", self.fresh_surface, self.mac_owns())
+        self.viewer_types(self.fresh_id, self.fresh_surface, self.phone_client)
+        phone = self.wait_state("typing on the phone to give it the grid", self.fresh_surface, self.phone_owns())
+        held = self.hold(self.fresh_surface, self.phone_owns(), 1.5)
+        return {"mac": mac, "phone": phone, **held}
+
+    def auto_rotated_phone_takes_it(self) -> Dict[str, Any]:
+        self.mac_types(self.fresh_id, self.fresh_surface)
+        mac = self.wait_state("the Mac pane to take it back", self.fresh_surface, self.mac_owns())
+        self.report_viewport(self.fresh_id, self.fresh_surface, self.phone_client, "iphone", 60, 20)
+        rotated = self.wait_state("the rotated phone to set the size", self.fresh_surface, self.phone_owns((60, 20)))
+        return {"mac": mac, "rotated": rotated}
+
+    def auto_opted_out_phone_never_sizes(self) -> Dict[str, Any]:
+        phone2 = f"e2e-phone2-{self.nonce}"
+        self.mac_types(self.fresh_id, self.fresh_surface)
+        self.wait_state("the Mac pane to take it back", self.fresh_surface, self.mac_owns())
+        key = (self.fresh_id, self.fresh_surface, phone2)
+        self.reports[key] = 1
+        self.sock.call("mobile.terminal.viewport", {
+            "workspace_id": self.fresh_id, "surface_id": self.fresh_surface, "client_id": phone2,
+            "viewport_columns": 30, "viewport_rows": 10, "viewport_generation": 1, "counts_override": False,
+            "device_kind": "iphone", "device_id": phone2, "device_name": "E2E opted-out iphone",
+        })
+
+        def opted_out(state: Dict[str, Any]) -> None:
+            self.mac_owns()(state)
+            row = self.row(state, "mobile:" + phone2)
+            if not row:
+                raise Failure(f"the opted-out phone is not a participant yet: {self.rows(state)}")
+            if row.get("counts") or row.get("counts_override") is not False:
+                raise Failure(f"the opted-out phone lost its choice: {row}")
+
+        joined = self.wait_state("the opted-out phone to join without sizing", self.fresh_surface, opted_out)
+        held = self.hold(self.fresh_surface, opted_out, 2.0)
+        return {"joined": joined, **held}
+
+    def auto_viewing_mac_takes_it(self) -> Dict[str, Any]:
+        mac_b = "mobile:" + self.mac_b_client
+        self.report_viewport(self.fresh_id, self.fresh_surface, self.mac_b_client, "mac", 100, 30)
+        attached = self.wait_state("a second Mac viewing the terminal to set its size", self.fresh_surface,
+                                   self.owned_by(mac_b, (100, 30)))
+        self.mac_types(self.fresh_id, self.fresh_surface)
+        mac = self.wait_state("the Mac pane to take it back", self.fresh_surface, self.mac_owns())
+        self.viewer_types(self.fresh_id, self.fresh_surface, self.mac_b_client)
+        typed = self.wait_state("typing on the second Mac to give it the grid", self.fresh_surface,
+                                self.owned_by(mac_b, (100, 30)))
+        return {"attached": attached, "mac": mac, "typed": typed}
+
+    def auto_shown_mirror_takes_it(self) -> Dict[str, Any]:
+        mac_b = "mobile:" + self.mac_b_client
+        self.select(self.mirror_id)
+        self.wait_state("the source terminal in Auto with the mirror shown", self.source_surface,
+                        lambda state: (self.expect_mode("latest")(state), self.mirror_counts(True)(state)))
+        self.viewer_types(self.source_id, self.source_surface, self.mac_b_client)
+        typed = self.wait_state("the second Mac's typing to give it the source terminal", self.source_surface,
+                                self.owned_by(mac_b))
+        self.select(self.fresh_id)
+        self.wait_state("the mirror to stop counting while hidden", self.source_surface, self.mirror_counts(False))
+        self.select(self.mirror_id)
+        shown = self.wait_state("the mirror shown again to set the source terminal's size", self.source_surface,
+                                self.owned_by(MIRROR_PREFIX))
+        return {"typed": typed, "shown": shown}
+
+    # -- One setting: a mode picked anywhere is the Mac's setting ---------------------------
+
+    def expect_everywhere(self, mode: str, labels: Dict[str, str]) -> Dict[str, Any]:
+        return {label: self.wait_state(f"the {label} terminal to be {mode}", surface, self.expect_mode(mode))
+                for label, surface in labels.items()}
+
+    def expect_preference(self, mode: str) -> Dict[str, Any]:
+        sizing = self.sock.call(SIZING + "state", {}) or {}
+        preference = sizing.get("preference") or {}
+        if not sizing.get("stored") or preference.get("mode") != mode:
+            raise Failure(f"the stored preference is {preference} (stored={sizing.get('stored')}), expected {mode}")
+        return preference
+
+    def phone_choice_applies_to_every_terminal(self) -> Dict[str, Any]:
+        """A mode picked in the phone's size sheet (`mobile.terminal.size_policy.set` over the
+        phone's own link, with its client id) is this Mac's setting: every terminal of this Mac
+        takes it, and a new one starts in it (red before: only the terminal it was picked on)."""
+        self.sock.call(SIZING + "reset", {})
+        current = self.policy(self.state(self.fresh_surface))
+        self.request("mobile.terminal.size_policy.set", {
+            "workspace_id": self.fresh_id, "surface_id": self.fresh_surface, "client_id": self.phone_client,
+            "policy": {"mode": "largest", "priority": current["priority"], "fixed": current["fixed"]},
+        })
+        terminals = self.expect_everywhere("largest", {"fresh": self.fresh_surface, "local": self.local_surface,
+                                                       "source2": self.source2_surface})
+        preference = wait_for("the phone's pick to be stored", lambda: self.expect_preference("largest"), self.timeout)
+        workspace = self.create_workspace("after-phone")
+        surface = wait_for("a new terminal", lambda: self.surfaces(workspace), self.timeout)[0]
+        new = self.wait_state("a new terminal to start in the phone's pick", surface, self.expect_mode("largest"))
+        return {"terminals": terminals, "preference": preference, "new": new}
+
+    def other_macs_choice_becomes_this_macs_setting(self) -> Dict[str, Any]:
+        """Another Mac's explicit pick on a terminal of this Mac (its size panel, sent with
+        `supermux_preference`) is this Mac's setting too; its claim (sent without) stays on that
+        one terminal, so a preference arriving here never travels on."""
+        b_key = self.facts.get("mac_b_key")
+        if not b_key:
+            raise Failure("the second Mac never joined the source terminal (second_mac_no_ping_pong failed)")
+        self.request("mobile.terminal.size_policy.set", {
+            "workspace_id": self.source_id, "surface_id": self.source_surface,
+            "policy": {"mode": "smallest", "priority": [b_key], "fixed": None},
+            "supermux_preference": {"mode": "smallest", "priority": ["self"], "fixed": None},
+        })
+        terminals = self.expect_everywhere("smallest", {"source": self.source_surface, "local": self.local_surface,
+                                                        "source2": self.source2_surface, "fresh": self.fresh_surface})
+        preference = wait_for("the other Mac's pick to be stored", lambda: self.expect_preference("smallest"),
+                              self.timeout)
+        self.other_mac_sets({"mode": "priority", "priority": [b_key], "fixed": None})
+        claimed = self.wait_state("the other Mac's claim on its one terminal", self.source_surface,
+                                  self.expect_first(b_key))
+        held = self.hold(self.local_surface, self.expect_mode("smallest"), 1.5, steady=False)
+        after = self.expect_preference("smallest")
+        return {"terminals": terminals, "preference": preference, "claimed": claimed, "local_kept": held,
+                "preference_after_claim": after}
+
+    def remote_choices(self) -> int:
+        value = (self.sock.call(SIZING + "state", {}) or {}).get("adopted_remote_choices")
+        if not isinstance(value, int):
+            raise Failure("terminal_sizing.state has no adopted_remote_choices (this build adopts no remote pick)")
+        return value
+
+    def mirror_choice_reaches_the_other_mac(self) -> Dict[str, Any]:
+        """A mode picked on a mirror reaches the other Mac as that Mac's setting: the mirror sends
+        it with `supermux_preference` and that Mac adopts it (`adopted_remote_choices`). In the
+        loopback both Macs are this app, so the stored preference and a second source terminal
+        show it."""
+        before = self.remote_choices()
+        self.select(self.mirror_id)
+        chosen = self.select_mode(self.mirror_surface, "largest")
+        adopted = wait_for("the other Mac to adopt the mirror's pick", lambda: self.remote_choices() > before,
+                           self.timeout)
+        terminals = self.expect_everywhere("largest", {"source": self.source_surface,
+                                                       "source2": self.source2_surface})
+        return {"accepted": chosen.get("accepted"), "adopted": adopted, "terminals": terminals,
+                "preference": self.expect_preference("largest")}
+
+    # -- the Mac pane's own size (a phone's small size must not stick) ----------------
+
+    def mac_counts(self, counts: bool) -> Callable[[Dict[str, Any]], None]:
+        def check(state: Dict[str, Any]) -> None:
+            if bool((self.row(state, "mac:") or {}).get("counts")) != counts:
+                raise Failure(f"the Mac pane should{'' if counts else ' not'} count: {self.rows(state)}")
+        return check
+
+    def shown_terminal_with_phone(self, label: str) -> tuple:
+        """A selected local workspace whose shown Mac pane counts, with a phone (40x12) viewing it."""
+        # Back to the default (Auto): the phone viewing it takes the grid.
+        self.sock.call(SIZING + "reset", {})
+        workspace = self.create_workspace(label)
+        self.select(workspace)
+        surface = wait_for(f"the {label} terminal", lambda: self.surfaces(workspace), self.timeout)[0]
+        self.wait_state(f"the {label} Mac pane to count", surface, self.mac_counts(True))
+        self.report_viewport(workspace, surface, self.phone_client, "iphone", 40, 12)
+
+        def fits_phone(state: Dict[str, Any]) -> None:
+            self.mac_counts(True)(state)
+            if self.grid(state) != (40, 12):
+                raise Failure(f"grid {self.grid(state)}, expected the phone's 40x12")
+
+        self.wait_state(f"the {label} terminal to fit the phone", surface, fits_phone)
+        return workspace, surface
+
+    def portal_flicker(self, surface_id: str, hidden_ms: int, silent_reveal: bool = False) -> Dict[str, Any]:
+        return self.sock.call(SIZING + "portal_flicker", {
+            "surface_id": surface_id, "hidden_ms": hidden_ms, "silent_reveal": silent_reveal,
+        }) or {}
+
+    def held_size_returns_to_mac_pane(self) -> Dict[str, Any]:
+        """The phone leaves while a shown Mac pane is still marked off screen: the terminal goes
+        back to the Mac pane's own grid instead of holding the phone's (red before: "held" 40x12)."""
+        workspace, surface = self.shown_terminal_with_phone("held")
+        flicker = self.portal_flicker(surface, 800, silent_reveal=True)
+        wait_for("the hidden Mac pane to stop counting",
+                 lambda: not (self.row(self.state(surface), "mac:") or {}).get("counts"), 5, interval_s=0.1)
+        # Shown again, but nothing told the visibility rule: the pane may still be marked off screen.
+        time.sleep(1.2)
+        marked = self.summary(self.state(surface))
+        self.clear_report(workspace, surface, self.phone_client)
+        live: List[Optional[tuple]] = [None]
+
+        def own_grid(state: Dict[str, Any]) -> None:
+            mac = self.row(state, "mac:")
+            want = grid_of(mac and mac.get("viewport"))
+            if self.row(state, "mobile:" + self.phone_client):
+                raise Failure(f"the phone is still a participant: {self.rows(state)}")
+            if state.get("reason") == "held" or self.grid(state) != want or want == (40, 12):
+                raise Failure(f"grid {self.grid(state)} ({state.get('reason')}), expected the Mac pane's {want}")
+            live[0] = self.live_grid(workspace, surface)
+            if live[0] != want:
+                raise Failure(f"the terminal's real grid is {live[0]}, not the Mac pane's {want}")
+
+        result = self.wait_state("the terminal to take its Mac pane's grid again", surface, own_grid)
+        return {"flicker": flicker, "before_leave": marked, "live_grid": list(live[0] or ()), **result}
+
+    def brief_portal_hide_keeps_counting(self) -> Dict[str, Any]:
+        """A 100 ms portal hide (layout churn) is not "off screen" (red before: the Mac pane
+        stopped counting at once and nothing brought it back)."""
+        workspace, surface = self.shown_terminal_with_phone("flicker")
+        flicker = self.portal_flicker(surface, 100)
+        try:
+            held = self.hold(surface, self.mac_counts(True), 1.5, steady=False)
+        finally:
+            self.clear_report(workspace, surface, self.phone_client)
+        return {"flicker": flicker, **held}
+
+    def mac_pane_counts_after_portal_reveal(self) -> Dict[str, Any]:
+        """A pane the portal hid long enough stops counting, and counts again once the portal
+        reveals it (red before: the reveal posted nothing, so the pane stayed "off screen")."""
+        workspace, surface = self.shown_terminal_with_phone("reveal")
+        try:
+            flicker = self.portal_flicker(surface, 1500)
+            hidden = wait_for("the hidden Mac pane to stop counting",
+                              lambda: not (self.row(self.state(surface), "mac:") or {}).get("counts"),
+                              1.4, interval_s=0.1)
+            shown = self.wait_state("the revealed Mac pane to count again", surface, self.mac_counts(True))
+        finally:
+            self.clear_report(workspace, surface, self.phone_client)
+        return {"flicker": flicker, "stopped_counting": bool(hidden), **shown}
+
     def relaunch(self) -> None:
         app = self.args.app_path
         bundle_id = plistlib.loads((Path(app) / "Contents" / "Info.plist").read_bytes())["CFBundleIdentifier"]
@@ -920,7 +1320,8 @@ class SizingPolicyE2E:
         ok = (self.step("setup", self.setup)
               and self.step("source_and_mirror", self.source_and_mirror))
         if ok:
-            ok = self.step("default_policy_is_this_mac_first", self.default_policy_is_this_mac_first) and ok
+            ok = self.step("default_policy_is_auto", self.default_policy_is_auto) and ok
+            ok = self.step("priority_choice_puts_this_mac_first", self.priority_choice_puts_this_mac_first) and ok
             ok = self.step("counting_source_pane_does_not_shrink", self.counting_source_pane_does_not_shrink) and ok
             ok = self.step("local_terminal_mac_first_over_phone", self.local_terminal_mac_first_over_phone) and ok
             ok = self.step("mode_choice_applies_to_every_terminal", self.mode_choice_applies_to_every_terminal) and ok
@@ -940,10 +1341,27 @@ class SizingPolicyE2E:
                 ok = self.step("sticky_choice_stays_on_this_mac", self.sticky_choice_stays_on_this_mac) and ok
             if self.local_key:
                 ok = self.step("priority_order_applies_everywhere", self.priority_order_applies_everywhere) and ok
+            ok = self.step("auto_phone_viewing_takes_the_grid", self.auto_phone_viewing_takes_the_grid) and ok
+            if self.fresh_surface:
+                for name in ("auto_mac_typing_takes_it_back", "auto_phone_returning_takes_it",
+                             "auto_phone_typing_takes_it", "auto_rotated_phone_takes_it",
+                             "auto_opted_out_phone_never_sizes", "auto_viewing_mac_takes_it",
+                             "auto_shown_mirror_takes_it"):
+                    ok = self.step(name, getattr(self, name)) and ok
+                ok = self.step("phone_choice_applies_to_every_terminal",
+                               self.phone_choice_applies_to_every_terminal) and ok
+            if self.fresh_surface and self.facts.get("mac_b_key"):
+                ok = self.step("other_macs_choice_becomes_this_macs_setting",
+                               self.other_macs_choice_becomes_this_macs_setting) and ok
+            ok = self.step("mirror_choice_reaches_the_other_mac", self.mirror_choice_reaches_the_other_mac) and ok
+            # Last: the relaunch gives the restored mirror tabs new panel ids.
             if self.args.app_path:
                 ok = self.step("choice_survives_relaunch", self.choice_survives_relaunch) and ok
             else:
                 self.steps.append({"name": "choice_survives_relaunch", "ok": None, "skipped": "pass --app-path to run"})
+            ok = self.step("held_size_returns_to_mac_pane", self.held_size_returns_to_mac_pane) and ok
+            ok = self.step("brief_portal_hide_keeps_counting", self.brief_portal_hide_keeps_counting) and ok
+            ok = self.step("mac_pane_counts_after_portal_reveal", self.mac_pane_counts_after_portal_reveal) and ok
         self.cleanup()
         return ok
 

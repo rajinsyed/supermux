@@ -63,6 +63,12 @@ final class MobileTerminalByteTee {
         /// Mac uptime stamps (microseconds) for the latest accepted marker,
         /// handed out once to the next captured frame for per-hop latency.
         var pendingInputTiming: (receivedMicros: UInt64, acceptedMicros: UInt64)?
+        // SUPERMUX:begin terminal-stream-resume
+        /// Names this byte stream while it stays continuous; a stretch the tee
+        /// did not record starts a new one (SupermuxTerminalStreamHost.swift).
+        var supermuxStreamEpoch = UUID().uuidString
+        var supermuxSkipGeneration = SupermuxTerminalStreamContinuity.currentGeneration()
+        // SUPERMUX:end terminal-stream-resume
     }
 
     /// Get-or-create the mutable state box for a surface.
@@ -122,6 +128,9 @@ final class MobileTerminalByteTee {
                 || MobileHostService.hasEventSubscribers(topic: "terminal.render_grid")
                 || laneDemand.loadAcquire()
         else {
+            // SUPERMUX:begin terminal-stream-resume
+            SupermuxTerminalStreamContinuity.noteSkipped()
+            // SUPERMUX:end terminal-stream-resume
             return
         }
         guard let base = bytes.baseAddress, bytes.count > 0 else { return }
@@ -258,6 +267,9 @@ final class MobileTerminalByteTee {
 
     func publishFromMain(surfaceID: UUID, data: Data) {
         let state = state(for: surfaceID)
+        // SUPERMUX:begin terminal-stream-resume
+        _ = supermuxContinuousEpoch(state)
+        // SUPERMUX:end terminal-stream-resume
         let chunkSeq = state.seq
         state.seq &+= UInt64(data.count)
         state.replayBuffer.append(data)
@@ -300,15 +312,9 @@ final class MobileTerminalByteTee {
         // subscribers keep correct sequence continuity.
         guard MobileHostService.hasEventSubscribers(topic: "terminal.bytes") else { return }
 
-        // JSON+base64 stopgap for the wire format. A future commit can
-        // switch to a binary opcode on the same connection if PTY
-        // throughput becomes a bottleneck.
-        let payload: [String: Any] = [
-            "surface_id": surfaceID.uuidString,
-            "seq": chunkSeq,
-            "data_b64": data.base64EncodedString(),
-        ]
-        MobileHostService.shared.emitEvent(topic: "terminal.bytes", payload: payload)
+        // SUPERMUX:begin terminal-stream-coalesce (upstream emitted one JSON+base64 `terminal.bytes` event per PTY read here)
+        SupermuxTerminalByteCoalescer.shared.append(surfaceID: surfaceID, sequence: chunkSeq, data: data)
+        // SUPERMUX:end terminal-stream-coalesce
     }
 
     private func removeLaneContinuation(id: UUID, surfaceID: UUID) {

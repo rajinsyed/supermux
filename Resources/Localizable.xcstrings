@@ -618252,6 +618252,125 @@
           }
         }
       }
+    },
+    "supermux.terminalUpload.notAFile" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@” is a folder. Only files can be pasted into a terminal on another Mac."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@”はフォルダです。別のMacのターミナルに貼り付けられるのはファイルだけです。"
+          }
+        }
+      }
+    },
+    "supermux.terminalUpload.tooLarge" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@” is larger than 32 MB, the most a terminal on another Mac takes."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@”は32 MBを超えています。別のMacのターミナルに貼り付けられるのは32 MBまでです。"
+          }
+        }
+      }
+    },
+    "supermux.terminalUpload.tooManyFiles" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paste at most %lld files at a time into a terminal on another Mac."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "別のMacのターミナルには、一度に%lld個までのファイルを貼り付けられます。"
+          }
+        }
+      }
+    },
+    "supermux.terminalUpload.updateMac" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Update Supermux on %@ to paste files into its terminals."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ターミナルにファイルを貼り付けるには、%@のSupermuxをアップデートしてください。"
+          }
+        }
+      }
+    },
+    "supermux.terminalSizing.appliesToBothMacs": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Applies to all terminals on both Macs."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "両方の Mac のすべてのターミナルに適用されます。"
+          }
+        }
+      }
+    },
+    "supermux.terminalSizing.mode.auto" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auto"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動"
+          }
+        }
+      }
+    },
+    "supermux.terminalSizing.autoDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The device you're using sets the size."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用中のデバイスがサイズを決めます。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

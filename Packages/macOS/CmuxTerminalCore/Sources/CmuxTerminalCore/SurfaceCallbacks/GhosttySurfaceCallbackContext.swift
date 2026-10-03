@@ -224,6 +224,17 @@ public final class GhosttySurfaceCallbackContext {
         return try body()
     }
 
+    // SUPERMUX:begin terminal-user-copy-intent
+    /// Whether a native input dispatch on this surface (a key, a pointer
+    /// button, a binding action) is running on the calling thread right now,
+    /// so a clipboard write made inside it comes from this Mac's user, not
+    /// from the program's output. Same marker as the paste intent above.
+    public var isDispatchingRuntimeInput: Bool {
+        pthread_getspecific(Self.runtimeClipboardPasteDispatchKey)
+            == Unmanaged.passUnretained(self).toOpaque()
+    }
+    // SUPERMUX:end terminal-user-copy-intent
+
     /// The immutable native surface address bound to this callback context.
     public var runtimeClipboardSurfaceAddress: UInt? {
         runtimeClipboardState.withLock { state in

@@ -23,6 +23,14 @@ extension DockSplitStore: TerminalLinkOpenContainer {
         return machineOwningSurface(panelId)?.isLocal != true
     }
 
+    // SUPERMUX:begin device-terminal-file-link (a path in another Mac's terminal in the Dock opens that Mac's file)
+    func deferRemoteTerminalFileLinkOpen(sourcePanelId: UUID, rawValue: String) -> Bool {
+        guard let panelId = panelID(forTerminalLinkSourceID: sourcePanelId),
+              let workspace = Workspace.liveWorkspace(id: workspaceId) else { return false }
+        return SupermuxDeviceTerminalLinks.open(rawValue, panelID: panelId, in: workspace)
+    }
+    // SUPERMUX:end device-terminal-file-link
+
     func cloudTerminalLinkTarget(url: URL, sourcePanelId: UUID) -> CloudTerminalLinkTarget? {
         guard let resource = SurfaceCatalog.shared.resource(forPanel: sourcePanelId),
               let address = SurfaceCatalog.shared.machineInfo(for: resource.machine)?.privateAddress,

@@ -398,7 +398,18 @@ public final class TerminalSurface: Identifiable, ObservableObject {
     /// Start unfocused and only opt into focus when the workspace/AppKit focus
     /// path explicitly requests it so background panes do not keep a focused
     /// state unless the workspace focus path requests it.
-    var desiredFocusState: Bool = false
+    // SUPERMUX:begin device-terminal-focus (owners learn each focus change; upstream: `var desiredFocusState: Bool = false`)
+    var desiredFocusState: Bool = false {
+        didSet {
+            if desiredFocusState != oldValue { onFocusStateChange?(desiredFocusState) }
+        }
+    }
+    /// Called each time the pane's focus state changes (``desiredFocusState``:
+    /// the responder chain, ``setFocus(_:force:)`` or a runtime teardown, all
+    /// on the main thread). A device mirror sends it to the Mac that runs the
+    /// terminal.
+    public var onFocusStateChange: ((Bool) -> Void)?
+    // SUPERMUX:end device-terminal-focus
 
     /// Whether this model still owns its logical surface-registry entry.
     /// Weak registry membership is cleared before `deinit`, so the model keeps

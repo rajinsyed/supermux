@@ -58,6 +58,14 @@ struct SupermuxMobileAuthorizationTests {
             case .simulatorControl:
                 expected = .workspaceScopedPermitted
             // SUPERMUX:end remote-simulator-authz
+            // SUPERMUX:begin device-terminal-upload-authz
+            case .terminalAttachmentUpload:
+                expected = .workspaceScopedPermitted
+            // SUPERMUX:end device-terminal-upload-authz
+            // SUPERMUX:begin device-terminal-actions-authz
+            case .terminalAction:
+                expected = .terminalScopedPermitted
+            // SUPERMUX:end device-terminal-actions-authz
             default:
                 expected = .macWide
             }

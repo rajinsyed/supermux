@@ -12,6 +12,10 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
+- Numbering: the highest number in use is **773**. The remote-workspaces work (#517–#599) left
+- Numbering: the highest number in use is **783** (remote terminal streaming, #777–#783; #764–#776 are
+  reserved for open PRs #74/#75). The remote-workspaces work (#517–#599) left
+- Numbering: the highest number in use is **818**. The remote-workspaces work (#517–#599) left
 - Numbering: the highest number in use is **835**. The remote-workspaces work (#517–#599) left
   unassigned gaps it may still grow into: **523–524, 527–529, 539–544, 558–559, 562–569,
   578–579 and 588–589** (never assigned, not retired); #600–#601 came from the 2026-10-01 upstream merge; #620–#622 and
@@ -37,6 +41,11 @@ Rules for adding a touchpoint:
   reroutes) and its real-Mac fixes #757–#759 (a mirror tab's navigation starts a same-port forward; the wiring of
   its two files; a terminal link opened into a cmux browser counts as the user's), and its slow-`simctl` hardening
   #760–#763 (remote simulators keep working while `simctl` launches stall; a new Simulator tab activates although
+  another Mac's device menu refreshed meanwhile), and its remote-terminal clipboard fixes #764–#773 (a program's
+  copy and the user's copy in another Mac's terminal reach this Mac's clipboard; pasted images and dropped files upload
+  to that Mac) and its remote-terminal polish #810–#818 (a Cmd-click on a path opens the other Mac's file; Cmd+K,
+  reset and focus reach the other Mac's terminal; Ctrl+V of an image uploads it); 709, 713–714, 724, 736 and
+  740–749 are unassigned (774–809 are held by other open branches). The highest number in use is 818. Number **351** is unused (the notifications
   another Mac's device menu refreshed meanwhile); 709, 713–714, 724, 736, 740–749 and 764–769 are unassigned. Remote
   Host Mode uses #830–#835 (770–829 are reserved by other open PRs). The highest
   number in use is 835. Number **351** is unused (the notifications
@@ -621,9 +630,9 @@ Rules for adding a touchpoint:
 | 663 | `Sources/Devices/DeviceSurfaceProvider+TerminalLayout.swift` | `mirror-terminal-to-right` | In `createTerminal(nearTabID:splitDirection:request:)`, after upstream's `direction` param: a tab create adds `after_surface_id` from `SupermuxMirrorTerminalPlacement.afterSurfaceID(for:remoteWorkspaceID:on:catalog:)` (only when the request remembered one in the same remote workspace and the host advertises `supermux.terminal_placement.v1`). DEBUG only: when `SupermuxTabOrderDebug.takeLostReply()` is armed, the request is sent, its reply dropped and `DeviceLinkError.notConnected` thrown (the E2E's lost-reply fault) |
 | 663b | `Sources/Devices/DeviceWorkspaceLayoutHost.swift` | `mirror-terminal-to-right` | Three fences in `handle(_:)`'s `device.workspace.terminal.create` path: the allowed-params set also takes `after_surface_id`; before `createTerminal`, `SupermuxMirrorTerminalPlacement.hostAnchor(…)` rejects (`invalid_params`) an anchor that is not a terminal of this workspace or comes with a split direction; after it, `place(terminalID, at:, inWorkspace:)` moves the new tab right of the anchor (selection untouched) before the reply's snapshot is captured |
 | 664 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/Mirrors/SupermuxTabOrderSocketCommands.swift` (DEBUG E2E drivers) and `SupermuxMirrorTerminalPlacement.swift` into the cmux target (ids `50BE00170300…01`–`…04`, four entries each, `Mirrors/…` paths in the Supermux group) |
-| 665 | `Sources/TerminalController+SharedSizing.swift` | `sizing-default-policy` | In `localSizingHost(surfaceID:create:)`, right after #633's fence: `SupermuxTerminalSizingDefaults.shared.prepareHost(&host)` sets this Mac's size preference (default Priority with the Mac pane first, instead of upstream's Fit everyone) before the first grid applies |
+| 665 | `Sources/TerminalController+SharedSizing.swift` | `sizing-default-policy` | In `localSizingHost(surfaceID:create:)`, right after #633's fence: `SupermuxTerminalSizingDefaults.shared.prepareHost(&host)` sets this Mac's size preference (default Auto, upstream's `latest` with #790's rules, since 2026-10-04; Fit everyone until then, and Priority with the Mac pane first until 2026-10-03) before the first grid applies, and starts `SupermuxTerminalSizingAuto`'s app-activation observer |
 | 666 | `Sources/Devices/DeviceTerminalMirrorSession.swift` | `device-mirror-sizing-claim` | Three fences: the stored `supermuxSizingClaim` (`SupermuxTerminalSizingClaim`), `SupermuxTerminalSizingDefaults.shared.mirrorAttached(self)` right after an attach sticks (after #631's reconcile), and `connectionDropped(self)` at the end of `linkDropped()`. Also, inside #631's fences: the convenience init's viewer identity is `SupermuxTerminalSizingDefaults.viewerIdentity(for: link.instance)` (this Mac's identity; DEBUG gives the loopback's mirrors a distinct device id) and `supermuxSetHidden(_:)` calls `mirrorVisibilityChanged(self)` after its counts reconcile (counts before the claim, as on attach). A shown mirror claims its terminal once per connection: it puts this Mac first in that terminal's Priority order and never changes its mode, fixed size or the rest of the order (2026-10-03; before, it pushed this Mac's whole preference) |
-| 667 | `Sources/TerminalSizePanelView.swift` | `sizing-sticky-preference` | Four fences: the mode picker's `set:`, `applyFixedSize` and `movePriority` call `SupermuxTerminalSizingDefaults.shared.userChoseMode/userChoseFixedSize/userChosePriority(…, surfaceID:, store:)` instead of `store.setMode/setFixedSize/setPriority` (the choice becomes this Mac's preference for every terminal on this Mac and applies to the terminal it was made on, a mirror's included; other Macs' terminals are never swept; Cloud terminals fall through to the store); under the mode row, `SupermuxTerminalSizingScopeNote()` ("Applies to all terminals on this Mac.") unless `snapshot.isCloud` |
+| 667 | `Sources/TerminalSizePanelView.swift` | `sizing-sticky-preference` | Four fences: the mode picker's `set:`, `applyFixedSize` and `movePriority` call `SupermuxTerminalSizingDefaults.shared.userChoseMode/userChoseFixedSize/userChosePriority(…, surfaceID:, store:)` instead of `store.setMode/setFixedSize/setPriority` (the choice becomes this Mac's preference for every terminal on this Mac and applies to the terminal it was made on, a mirror's included; other Macs' terminals are never swept; Cloud terminals fall through to the store); under the mode row, `SupermuxTerminalSizingScopeNote(mode: snapshot.state.policy.mode, surfaceID: surfaceID)` unless `snapshot.isCloud` ("The device you're using sets the size." under Auto, then "Applies to all terminals on this Mac.", or "…on both Macs." on a mirror of a Mac that adopts the pick, #795) |
 | 668 | `Sources/Workspace+TerminalSharing.swift` | `sizing-sticky-preference` | In `handleTerminalSharingContextAction`, the tab menu's size modes call `SupermuxTerminalSizingDefaults.shared.userChoseMode(mode, surfaceID: panelId, store: store)` instead of `store.setMode` (same beep on `false`) |
 | 669 | `Sources/TerminalController.swift` | `device-mirror-viewport-limit` | In `applyMobileViewportReport`, upstream's `min(…, 300)` / `min(…, 120)` viewport clamp takes its limit from `SupermuxTerminalSizingDefaults.viewportLimit(deviceKind:)` (the report's `device_kind`, else the stored report's): 500x200 (`TerminalSizingPolicy.maximumFixedSize`) for a viewing Mac, upstream's 300x120 otherwise |
 | 670 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/Devices/SupermuxTerminalSizingDefaults.swift` and `SupermuxTerminalSizingSocketCommands.swift` (DEBUG drivers) into the cmux target (ids `50BE00170400000000000001`–`…04`, four entries each, `Devices/…` paths in the Supermux group) |
@@ -695,6 +704,43 @@ Rules for adding a touchpoint:
 | 761 | `Sources/Panels/SimulatorPanel.swift` | `simulator-panel-control` | In `init`'s default `clientFactory`, the closing `).makeClient()` of upstream's `SimulatorWorkerClientFactory(...)` becomes `).makeClient(simulatorControl: SupermuxSimulatorControl.make())` (`Sources/Supermux/RemoteSimulator/SupermuxSimulatorControl.swift`): every Simulator panel's worker client runs its `simctl` calls through the fork's control, which builds upstream's `SimulatorControlService` with the same location and camera cleanup scopes the factory would use |
 | 762 | `Sources/TerminalController+MobileSimulator.swift` | `simulator-devices-list-bounded` | Two fences in `v2MobileSimulatorDevicesList`. The first replaces upstream's `let coordinator = resolved.panel.coordinator`, `await coordinator.reloadDevices()`, `let selectedID = coordinator.selectedDeviceID` and the head of `let devices = coordinator.devices.map { device -> [String: Any] in` with `let supermuxListing = await SupermuxSimulatorDeviceListing.listing(for: resolved.panel)`, `let selectedID = supermuxListing.selectedID` and `let devices = supermuxListing.devices.map { device -> [String: Any] in` (upstream's row fields stay as they are); the second makes the final return `return .ok(SupermuxSimulatorDeviceListing.reply(devices: devices, current: supermuxListing.current))`. `SupermuxSimulatorDeviceListing` (`Sources/Supermux/RemoteSimulator/`) waits at most 8 s: a panel that has a device gets upstream's refresh (one at a time per panel, current only when that refresh landed, not when another superseded it), a panel that is not started or still runs its startup discovery gets the list read beside it with its saved or requested device marked (a refresh then would supersede that discovery, and #763's retry would supersede it back), and a refresh or read that outlasted the 8 s answers the next ask. It adds `slow: true` when the list may be out of date; another Mac's viewer then says "Simulators on <Mac> are slow to respond…" and asks again, and its rebind never opens a second tab on a slow answer. Older viewers and the phone ignore the extra key |
 | 763 | `Packages/macOS/CmuxSimulator/Sources/CmuxSimulatorUI/Coordinator/SimulatorPaneCoordinator+Lifecycle.swift` | `simulator-startup-discovery-retry` | In `runStartup(activatingSelectedDevice:)`, upstream's `await reloadDevices()` becomes `while !(await reloadDevices()), !closed, !Task.isCancelled {}`. A refresh started while the startup discovery runs (another Mac's viewer asks `mobile.simulator.devices.list` as soon as it attaches; the phone does too) supersedes it: `reloadDevices` returns false without selecting a device, `runStartup` found `selectedDeviceID == nil` and never called `selectDevice`, and the panel stayed idle (the viewer: `preparing`, no frames). Measured with a temporary log on 2026-10-03: the failing order was startup gen 1, menu gen 2, gen 1 discarded, `selected=nil`; the passing order was menu gen 1, startup gen 2. Retrying lands a discovery and activates as before |
+| 764 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the remote-terminal clipboard work into the cmux target, four entries each (build file, file reference, Supermux group child, Sources phase) next to #693's `SupermuxDeviceTunnelSocketCommands.swift`: `SupermuxMobileHost+TerminalAttachments.swift` (`50BE001A0100000000000001`/`…02`, the host's `terminal.attachment.upload`), `Devices/SupermuxDeviceTerminalUpload.swift` (`…03`/`…04`, the viewer's upload, #765–#767), `SupermuxTerminalClipboardWrites.swift` (`…05`/`…06`, the clipboard write policy, #768–#772) and `Devices/SupermuxTerminalClipboardSocketCommands.swift` (`…07`/`…08`, DEBUG drivers). `grep -c 50BE001A cmux.xcodeproj/project.pbxproj` prints 16 |
+| 765 | `Sources/TerminalImageTransfer.swift` | `device-terminal-upload` | Three fences: `TerminalRemoteUploadTarget` gains `case supermuxDevice(SupermuxDeviceUploadTarget)` (a terminal another of the user's Macs runs); in `plan(fileURLs:target:mode:)`'s `.remote` branch a `.supermuxDevice` target always plans `.uploadFiles` (never upstream's local-path text for a folder; the upload says why it cannot go); and `execute(plan:…)` gains `case .uploadFiles(let fileURLs, .supermuxDevice(let target))`, which runs `SupermuxDeviceTerminalUpload.upload` (`Sources/Supermux/Devices/SupermuxDeviceTerminalUpload.swift`), cleans the transfer's temporary files and finishes through upstream's `finishUpload` (shell-escaped remote paths, or `onFailure`) |
+| 766 | `Sources/TerminalSurface+ImageTransferTarget.swift` | `device-terminal-upload` | At the top of `resolvedImageTransferTarget(mode:in:)`, after the workspace is resolved: a pane `SupermuxDeviceTerminalUpload.target(forPanel:in:)` names as another Mac's terminal returns `.remote(.supermuxDevice(target))`, so a pasted image or a dropped file uploads to that Mac instead of typing a path on this one (upstream returned `.local`) |
+| 767 | `Sources/TextBoxInput.swift` | `device-terminal-upload` | In `uploadFileAttachments`'s `switch remoteTarget`, `case .supermuxDevice(let target)` runs `SupermuxDeviceTerminalUpload.upload(fileURLs, to: target, operation:, completion: finish)`: an image pasted into the text box of another Mac's terminal becomes an attachment whose submission text is the uploaded file's path there |
+| 768 | `Sources/Devices/DeviceSurfaceProvider.swift` | `device-mirror-clipboard` | The device provider's `SurfacePaneFactory.makeCloudManualMirrorPane(…)` call passes `allowsRemoteClipboardWrites: SupermuxTerminalClipboardWrites.allowsProgramWrites(on: machine)` (true for another of the user's Macs, as upstream does for Cloud): a program's OSC 52 copy in another Mac's terminal reaches this Mac's clipboard |
+| 769 | `Sources/Surfaces/Workspace+CloudTerminalReservation.swift` | `device-mirror-clipboard` | Two fences, in `reserveRestoredCloudTerminalPane` and `reserveCloudTerminalPane`: upstream's `allowsRemoteClipboardWrites: <machine>.cloudMachineID != nil` becomes `SupermuxTerminalClipboardWrites.allowsProgramWrites(on: <machine>)`, so a reserved pane a device terminal later adopts keeps its program's copies |
+| 770 | `Sources/Surfaces/Workspace+CloudManualMirror.swift` | `device-mirror-clipboard` | `restoreDeviceDisplayPanel` builds its process-free placeholder with `makeRemoteTmuxPanePanel(onInput:keyNameResolver: nil, allowsRemoteClipboardWrites: true)` (a restored device pane is another Mac's terminal) |
+| 771 | `Packages/macOS/CmuxTerminalCore/Sources/CmuxTerminalCore/SurfaceCallbacks/GhosttySurfaceCallbackContext.swift` | `terminal-user-copy-intent` | Adds `public var isDispatchingRuntimeInput: Bool`: whether this surface's native input dispatch (the paste-intent marker `withRuntimeClipboardPasteIntent` sets around keys, pointer buttons and binding actions) is running on the calling thread, which a program's OSC 52 never is |
+| 772 | `Sources/GhosttyTerminalView.swift` | `terminal-user-copy-intent` | Two fences. In `write_clipboard_cb`'s guard, upstream's `terminalSurface.allowsAutomaticClipboardWrite` becomes `SupermuxTerminalClipboardWrites.allows(terminalSurface, context: callbackContext, location: location)` (`Sources/Supermux/SupermuxTerminalClipboardWrites.swift`: upstream's check OR this Mac's own input is dispatching, so a user's copy lands from any remote projection; DEBUG builds record each decision). In `copyKeyboardCopyModeSelectionToClipboard`, `ghostty_surface_copy_selection_to_clipboard_bounded` runs inside `withPotentialClipboardPasteIntent`, so keyboard copy mode's yank counts as that input instead of being dropped while the method reported success |
+| 773 | `cmuxTests/SupermuxMobileAuthorizationTests.swift` | `device-terminal-upload-authz` | `classificationCoversWorkspacePaneAndMacWideMethods` expects `terminal.attachment.upload` to be workspace-scoped (the upload names the mirrored `workspace_id`); the test's `default: .macWide` would otherwise fail it |
+| 774 | `Sources/TerminalController+SharedSizing.swift` | `sizing-mac-pane-recheck` | At the top of `applyLocalSizing(surfaceID:previous:immediate:reason:)`: `SupermuxTerminalSizingVisibility.shared.hostWillApply(surfaceID:)`, a set lookup unless #633's rule marked the Mac pane off screen; then a pane on screen again gets its automatic `counts_override: false` lifted before the decision applies. Nobody counting holds the grid (`TerminalSizingEngine`, reason `held`) and `applyTarget` pinned the pane to it, so a shown pane still marked off screen kept a departed phone's or mirror's size (99x38) |
+| 775 | `Sources/TerminalController+SharedSizing.swift` | `sizing-mac-pane-input-recheck` | At the top of `noteLocalTerminalSizingActivity(surfaceID:)`: `SupermuxTerminalSizingVisibility.shared.macPaneInput(surfaceID)`, a set lookup unless the pane is marked off screen, then a visibility re-check (input on a pane shows it is in view; a missed reveal must not keep it from counting) |
+| 776 | `Sources/TerminalWindowPortal.swift` | `sizing-portal-reveal` | In `synchronizeHostedView`'s reveal branch, right after `hostedView.isHidden = false`: `SupermuxTerminalSizingVisibility.shared.paneRevealed(hostedView.surfaceView.terminalSurface?.id)`. The portal hides a pane during layout, split and remount churn and reveals it with no visibility notification and often no frame change, so a pane found off screen meanwhile (any window's occlusion change re-checks every pane) stayed "off screen" and stopped counting while shown |
+| 777 | `Packages/macOS/CmuxMobileHost/Sources/CmuxMobileHost/MobileHostConnectionEventQueue.swift` | `terminal-stream-watch` | A connection that named its terminals (`supermuxWatchTerminalBytes(surfaceIDs:)`, set by #778) gets `terminal.bytes` only for those: `enqueue` first runs `supermuxEnqueueWatchedBytesLocked`, which refuses the others and admits the watched ones in order on the shared lane outside the shared 256-event / 8 MB budget, never shed (`hasRoomLocked` and the shed walk subtract them, the walk skips them, `removeQueuedEventLocked` forgets them, `close()` clears them). Past 8 MB queued for one terminal its queued bytes go and only the newest chunk stays, so the viewer sees the gap and resumes (`supermuxWatchedByteResyncCount`). A connection that never names terminals (the phone, an older Mac) keeps upstream's topic-wide, droppable delivery |
+| 778 | `Sources/Mobile/MobileHostService.swift` | `terminal-stream-watch` | `MobileHostConnection.handleSubscriptionRPC` answers `mobile.supermux.terminal.watch {surface_ids}` on the connection itself (`SupermuxTerminalStreamHost.watch`, `Sources/Supermux/Devices/SupermuxTerminalStreamHost.swift`), since its event queue is the filter |
+| 779 | `Sources/Mobile/MobileTerminalByteTee.swift` | `terminal-stream-resume`, `terminal-stream-coalesce` | `SurfaceState` gains `supermuxStreamEpoch` / `supermuxSkipGeneration`; the no-subscriber early return in `append` calls `SupermuxTerminalStreamContinuity.noteSkipped()` (an atomic flag) and `publishFromMain` refreshes the epoch first, so a stretch the tee did not record starts a new epoch and no byte position from before it is resumed. Upstream's JSON+base64 `terminal.bytes` emit at the end of `publishFromMain` becomes `SupermuxTerminalByteCoalescer.shared.append(...)`: the first chunk after a quiet spell goes out at once, later ones within ~2 ms join one event per terminal (up to 32 KB); sequences are unchanged |
+| 780 | `Sources/TerminalController.swift` | `terminal-stream-resume` | Two fences in `v2MobileTerminalReplay`. Before `let state = MobileTerminalByteTee.shared.replayState(...)`: a request with `supermux_resume_from_seq` / `supermux_resume_epoch` / `supermux_resume_columns` / `supermux_resume_rows` is answered by `supermuxTerminalStreamResume(...)` (the bytes since that position from the tee's tail, `supermux_resumed: true`, plus upstream's sizing fields) when the tail holds them, the epoch matches and the PTY grid is the viewer's; otherwise upstream's render-grid replay runs. After `addSharedSizingReplayFields`: `supermuxAddTerminalStreamEpoch` adds `supermux_stream_epoch` to replays that sent `supermux_stream` |
+| 781 | `Sources/Devices/DeviceTerminalMirrorSession.swift` | `terminal-stream-viewer` | The session owns a `SupermuxTerminalStream` (made in `init(link:…)`, stopped in `stop()`). `attach()` awaits `prepare()` (watch this terminal on the connection, capability `supermux.terminal_stream.v1`) before its replay, merges `replayParams` (screen anchor, 10000 history rows, resume position), decodes the reply with `SupermuxTerminalStream.decodeReply` (a resumed reply becomes a `Replay` with `supermuxResumed`; else upstream's `decodeReplay`), feeds resumed bytes as they are and a full replay after `ESC[3J`. While attaching a streaming mirror buffers up to 16 MB (upstream 256 KB); a gap is counted; a `terminal.updated` grid change only re-pins an attached streaming mirror. Without the capability every path is upstream's |
+| 782 | `Sources/Devices/DeviceLinkTerminalEvents.swift` | `terminal-stream-viewer` | Each session's event stream holds `SupermuxTerminalStream.sessionEventBufferLimit` (4096; upstream 512) events; DEBUG builds count every decoded `terminal.bytes` payload per surface through `supermuxOnBytes` (`supermux.devices.terminal_stream.stats`) |
+| 783 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `SupermuxTerminalStream.swift` (`50BE00191000000000000001`/`…02`), `SupermuxTerminalStreamHost.swift` (`…03`/`…04`) and `SupermuxTerminalStreamSocketCommands.swift` (`…05`/`…06`, DEBUG drivers) into the cmux target, four entries each in the Supermux group next to `SupermuxDeviceTunnelSocketCommands.swift` (`path = Devices/<file>`) |
+| 790 | `Sources/TerminalController+SharedSizing.swift` | `sizing-auto` | Three fences calling `SupermuxTerminalSizingAuto` (`Sources/Supermux/Devices/`). In `resolveSharedSizing`, after `syncPhones` and the explicit `counts_override`: `viewersReported(&host, surfaceID:, previous:, explicitParticipantID:)` (in Auto a viewer whose viewport changed or whose `counts_override` false was lifted gets `noteActivity`, and a phone without an override of its own gets `counts_override: true`). In `localSizingSetPolicy`, after `setPolicy`: `policyChanged(&host, surfaceID:)` (Auto's overrides follow the mode, cleared when it leaves Auto). In `localSizingSetCountsOverride`, before `setCountsOverride`: `userSetCounts(participantID:surfaceID:)` (an override set by hand is the user's) |
+| 791 | `Sources/TerminalController+SharedSizing.swift` | `sizing-auto-remote-input` | Two fences. In `mobileDetachedGateError`, after the method switch (input, paste, mouse, scroll, replay): `SupermuxTerminalSizingAuto.shared.remoteTerminalRequestArrived()`. At the top of `noteLocalTerminalSizingActivity`, after the host lookup: `guard !SupermuxTerminalSizingAuto.shared.deliveringRemoteInput else { return }` (O(1) on the keystroke path). Delivering a phone's or another Mac's input runs the Mac pane's `onExplicitInput`, which upstream counted as the Mac pane typing, after the viewer's own activity: in Auto the Mac then took the grid from the phone that typed |
+| 792 | `Sources/TerminalSharingDisplay.swift` | `sizing-auto-label` | In `modeTitle(_:)`, `.latest` returns `SupermuxTerminalSizingScopeNote.autoTitle` ("Auto", `supermux.terminalSizing.mode.auto`) instead of upstream's "Follow Latest" (`terminalSharing.sizeMode.latest`, left in the catalog) |
+| 793 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/TerminalSizingText.swift` | `sizing-auto-label` | In `modeName(_:)`, `.latest` reads `supermux.terminalSizing.mode.auto` ("Auto") instead of upstream's `mobile.terminal.sizing.mode.latest` ("Follow latest", left in the catalog) |
+| 794 | `Sources/TerminalController+SharedSizing.swift` | `sizing-one-setting` | In `v2MobileTerminalSizePolicySet`, after the fixed-size limit check: `if SupermuxTerminalSizingDefaults.shared.remoteChose(policy, params: params, surfaceID:) { return .ok(sizeStatePayload(…)) }`. A pick sent with `supermux_preference` (another Mac's mirror) or by a handheld client (the phone's size sheet) becomes this Mac's stored preference for every local terminal and the terminal named takes `policy` as sent; anything else (a mirror's claim, an older Mac, a Cloud terminal) falls through to upstream's per-terminal path |
+| 795 | `Sources/Devices/DeviceTerminalMirrorSession.swift` | `sizing-one-setting` | Three fences: the stored `supermuxHostTakesSizingPreference` closure (default `{ false }`); in the convenience init after `self.init(…)`, it is set to `SupermuxTerminalSizingDefaults.hostTakesPreference(on: .device(link.instance))` (the cached `supermux.terminal_sizing_preference.v1`); after `sharingSetPolicy`, `supermuxSendSizingChoice(_:preference:)` sends `mobile.terminal.size_policy.set` with `supermux_preference` when given. Only `SupermuxTerminalSizingDefaults.pushChoice` (a pick, never a claim) calls it |
+| 796 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/Devices/SupermuxTerminalSizingAuto.swift` into the cmux target (ids `50BE00170400000000000005`/`…06`, four entries, `Devices/…` path in the Supermux group, next to #670's) |
+| 797 | `ios/cmux/Resources/Localizable.xcstrings` | `unfenced` | Adds `supermux.terminalSizing.mode.auto` (en "Auto", ja "自動") for #793; additive only |
+| 810 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the remote-terminal polish into the cmux target, four entries each (build file, file reference, Supermux group child, Sources phase) next to #764's `SupermuxDeviceTerminalUpload.swift`: `Devices/SupermuxDeviceTerminalLinks.swift` (`50BE001B0200000000000001`/`…02`, a Cmd-click on a path in another Mac's terminal), `Devices/SupermuxDeviceTerminalActions.swift` (`…03`/`…04`, forwarded Cmd+K/reset, focus and Ctrl+V of an image) and `SupermuxMobileHost+TerminalActions.swift` (`…05`/`…06`, the host's `terminal.action`) |
+| 811 | `Sources/Workspace+TerminalLinkOpening.swift` | `device-terminal-file-link` | First thing in `deferRemoteTerminalFileLinkOpen`: `SupermuxDeviceTerminalLinks.open(rawValue, panelID:in:)` claims a file path clicked in another Mac's terminal and opens that Mac's file in the mirror's read-only preview (upstream refused it: only SSH terminals resolved a remote path) |
+| 812 | `Sources/DockSplitStore+TerminalLinkOpening.swift` | `device-terminal-file-link` | Adds `deferRemoteTerminalFileLinkOpen` to the Dock's link container (upstream relies on the protocol's `false` default): the same `SupermuxDeviceTerminalLinks.open` for another Mac's terminal moved into the Dock |
+| 813 | `Sources/Workspace.swift` | `device-terminal-actions` | In `makeRemoteTmuxPanePanel`, the manual-mirror surface's `manualInputHandler` is `SupermuxDeviceTerminalActions.inputFilter(onInput, panelID:)` (upstream: `onInput`): drops the one form feed a forwarded Cmd+K's local clear writes, so the shell repaints once (the owning Mac's clear sends its own). Only a lone 0x0C is ever inspected |
+| 814 | `Sources/Workspace.swift` | `device-terminal-focus` | In `makeRemoteTmuxPanePanel`, sets the new surface's `onFocusStateChange` (#817) to `SupermuxDeviceTerminalActions.focusChanged`, which sends a device mirror pane's settled focus to the owning Mac (`focus_in` / `focus_out`) |
+| 815 | `Sources/Panels/TerminalPanel.swift` | `device-terminal-actions` | In `performBindingAction`, `SupermuxDeviceTerminalActions.perform(action, on: surface, locally:)` runs `clear_screen`/`reset` on another Mac's terminal too (the `surface.clear_history` socket path); `nil` keeps upstream's path |
+| 816 | `Sources/GhosttyTerminalView.swift` | `device-terminal-actions` | Two fences. In `keyDown`, right after the surface is ready, a device mirror pane (`ioMode == .manualMirror`) with Cmd or Ctrl held asks `handleDeviceTerminalKey`; the second fence adds that helper next to `ghosttyConsumeMenuAction`: Ctrl+V with only an image on the clipboard runs `paste(nil)` (the Cmd+V upload), and a key bound to `clear_screen`/`reset` is consumed and runs `SupermuxDeviceTerminalActions.perform` (local clear + the owning Mac's) |
+| 817 | `Packages/macOS/CmuxTerminal/Sources/CmuxTerminal/Surface/TerminalSurface.swift` | `device-terminal-focus` | `desiredFocusState` gets a `didSet` that calls the new `public var onFocusStateChange: ((Bool) -> Void)?` when the value changes (upstream: a plain stored `var desiredFocusState: Bool = false`) |
+| 818 | `cmuxTests/SupermuxMobileAuthorizationTests.swift` | `device-terminal-actions-authz` | `classificationCoversWorkspacePaneAndMacWideMethods` expects `terminal.action` to be terminal-scoped (it names `workspace_id` and `terminal_id`, like `terminal.select`) |
 | 830 | `Sources/AppDelegate.swift` | `remote-host-mode` | Remote Host Mode (`Sources/Supermux/RemoteHost/SupermuxRemoteHostMode.swift`). Five fenced sites: the top of `applicationShouldHandleReopen` (`showsWindowsOnReopen()`: reopening a headless host shows its windows), the end of `syncApplicationPresentationPreferences` after `syncMenuBarExtraVisibility` (`syncToSettings()`: the setting turning on hides every main window, off shows them), the show block near the end of `createMainWindow` (an `if keepsNewMainWindowHidden(window) { window.orderOut(nil) } else` prefix to upstream's `if !shouldActivate || …` so a new window stays hidden while headless), the top of `handleMainTerminalWindowCloseRequest` (the close button / `performClose` hides the window: `return false`), and `closeWindowWithConfirmation` after its `isMainTerminalWindow` guard (Close Window hides with no dialog) |
 | 831 | `Sources/App/MenuBarExtraController.swift` | `remote-host-mode` | Four fenced sites: a stored `supermuxRemoteHostItems` (`SupermuxRemoteHostModeMenuItems`), installed right after `showMainWindowItem` in `buildMenu()` and refreshed after its `isHidden` line in `refreshUI(snapshot:)` (Show/Hide Supermux and Turn Off Remote Host Mode; hides upstream's Show cmux while the mode is on), `MenuBarExtraSettings.shouldInstallMenuBarExtra` returns true while the mode is on, and `MenuBarOnlySettings.activationPolicy` returns `.accessory` while the mode is on (no Dock icon) |
 | 832 | `Sources/App/MainWindowVisibilityController.swift` | `remote-host-mode` | Two fenced early returns, after the `defer` in `focus(_:reason:…)` and in `focusForInWindowCommand(_:reason:)`: while headless (`blocksWindowFocus(reason:)`, every reason but `.menuBar`, `.globalHotkey`, `.applicationReopen`) a focus request only sets the active main window, so a socket or device command and launch neither show a window nor activate the app |
@@ -5235,6 +5281,30 @@ Re-apply after an upstream merge:
 - **#636**: keep the rewritten reservation test in step with #635.
 
 
+### 774–776. A shown Mac pane keeps counting; a departed viewer's size does not stick — `sizing-mac-pane-recheck`, `sizing-mac-pane-input-recheck`, `sizing-portal-reveal`
+
+User feedback (2026-10-04): a terminal randomly became small (99x38), the size panel saying "held".
+The portal hides a hosted pane briefly during layout churn (`isHidden = true` in
+`synchronizeHostedView`) and reveals it without posting anything. `SupermuxTerminalSizingVisibility`
+(#633) re-checks every pane on any window's occlusion change, found the hidden pane off screen, marked
+it not counting at once, and nothing looked again after the reveal. A phone or mirror then sized the
+terminal alone; once it left (or its mirror was hidden) nobody counted, the engine held its size and
+the shown Mac pane stayed pinned to it. Fork code in `SupermuxTerminalSizingVisibility`: a Mac pane goes
+off screen only after 250 ms, as a mirror does; a reveal, input on the pane and every sizing decision
+look again; a runtime-ready re-apply is recorded with the apply governor so the pin it sets is lifted
+like any other. A pane really off screen still holds (nobody sees it, and the other Mac's hidden
+auto-mirror is attached to every terminal: re-sizing to the hidden pane would resize the terminal on
+each tab switch there). E2E: steps 17–19 of `loopback_terminal_sizing_policy_e2e` (DEBUG driver
+`supermux.devices.terminal_sizing.portal_flicker`). Re-apply after an upstream merge:
+
+- **#774**: call `hostWillApply(surfaceID:)` before `applyLocalSizing` reads the host, so a change it
+  makes is published and applied with the decision.
+- **#775**: keep the call first in the Mac pane's input hook, before the host guard; it must stay a
+  set lookup for a pane not marked off screen (typing latency).
+- **#776**: wherever upstream un-hides a portal-hosted terminal view, call `paneRevealed(_:)` with its
+  surface id. Retire it if upstream posts `terminalPortalVisibilityDidChange` (or another notification
+  the class observes) on that reveal.
+
 ### 660–664. New tabs append; New Terminal to the Right keeps its spot in a mirror — `new-tab-at-end`, `mirror-terminal-to-right`
 
 User feedback: every terminal tab opened from a remote workspace (⌘T, `+`, the phone) landed second
@@ -5274,6 +5344,15 @@ code: `Sources/Supermux/Devices/SupermuxTerminalSizingDefaults.swift` (the prefe
 identity), `SupermuxTerminalSizingVisibility.trackedMirrorSessions()`, and the DEBUG drivers in
 `SupermuxTerminalSizingSocketCommands.swift`. No engine change: `priority` is upstream's mode.
 
+2026-10-03, user feedback: every terminal opened from the phone started as Priority (this Mac first),
+so the phone saw a cropped grid. The preference's default is now Fit everyone (`smallest`, upstream's
+default) on every terminal, Mac and phone alike; Priority (this Mac first) and the claim apply once
+the user picks Priority in the size panel or tab menu.
+
+2026-10-04, user feedback ("auto priority … should include the iOS app too, so it doesn't show the
+desktop size when viewing from it"): the default is now Auto (#790–#797), and a mode picked
+anywhere (the phone's size sheet, another Mac's mirror) is the one setting (#794/#795).
+
 Re-apply after an upstream merge:
 - **#665**: wherever upstream creates a `LocalTerminalSizingHost` for a local terminal, call
   `SupermuxTerminalSizingDefaults.shared.prepareHost(&host)` after #633's `prepareHost` and before the
@@ -5297,6 +5376,38 @@ Re-apply after an upstream merge:
 
 Verify: `CMUX_E2E_SUITES="loopback_terminal_sizing_policy_e2e loopback_terminal_input_e2e" CMUX_TAG=<tag>
 tests/supermux/run_all_loopback_e2e.sh`.
+
+### 790–797. Auto: the device you are viewing from sets the size; one setting wherever it is picked — `sizing-auto`, `sizing-auto-remote-input`, `sizing-auto-label`, `sizing-one-setting`
+
+User feedback (2026-10-04): "I want an auto priority system instead of Fit everyone … auto priority
+should include the iOS app too so that it doesn't show the desktop size when viewing from it", and
+"changing the setting should change for all terminals, not just the changed one". Fork code:
+`Sources/Supermux/Devices/SupermuxTerminalSizingAuto.swift` (Auto's host rules and the app-activation
+observer) and `SupermuxTerminalSizingDefaults.remoteChose` / `pushChoice` (the one setting). Auto is
+upstream's `latest`; the shared engine (`TerminalSizingEngine`, its Rust twin and
+`schemas/terminal-sizing/fixtures.json`) is unchanged: the fork only sets `counts_override` and
+`noteActivity` from the host.
+
+Re-apply after an upstream merge:
+- **#790**: wherever upstream syncs viewers' reports into a local host, call `viewersReported` after
+  the sync and the explicit `counts_override`, with the state from before the sync; call
+  `policyChanged` after every policy change of a local host and `userSetCounts` before every counts
+  override set by hand. Never note activity for a report that repeats the viewer's viewport: the phone
+  re-reports the same grid in answer to every grid change (`MobileTerminalSizingSurface.reassertViewport`),
+  which would ping-pong. Retire the counts half if upstream drops the handheld deferral under `latest`.
+- **#791**: mark every mobile terminal input/scroll request before its handler runs, and keep the
+  guard first in `noteLocalTerminalSizingActivity`. Retire it if upstream stops running
+  `onExplicitInput` for remote input.
+- **#792/#793**: keep `latest` labelled Auto on both platforms.
+- **#794**: keep the call before upstream's `terminalSharing.setPolicy` in the mobile handler only.
+  `terminal.size_policy.set` (socket, CLI) stays per terminal: the E2E uses it to stand in for a
+  restarted Mac.
+- **#795**: only an explicit pick (`pushChoice`, including the pick held while detached) may send
+  `supermux_preference`. A claim, a show, a reconnect or a size event must not, and a Mac that adopts a
+  preference must never send it on: that is what keeps two Macs from bouncing it (see #666).
+- **#796/#797**: re-wire the file and keep the key if upstream rewrites the project or the catalog.
+
+Verify: as above. Steps 16–23 cover Auto, 24–26 the one setting.
 
 ### 620–622. New Workspace stays on this Mac; other Macs on request — `sidebar-empty-area-local`, `device-root-workspace-create`, `sidebar-empty-area-device-menu`
 
@@ -6224,6 +6335,125 @@ app does not quit within 60 s or osascript reports an error (its report records 
 (it creates, boots, shuts down and deletes its own simulator; see LOOPBACK-HARNESS.md "Mirror
 simulator E2E"). Two real Macs are still needed for the irx lane and capture on a headless owner.
 
+### 764–773. The clipboard works in another Mac's terminal — `device-terminal-upload`, `device-mirror-clipboard`, `terminal-user-copy-intent`, `device-terminal-upload-authz`
+
+Reported 2026-10-04: in a remote workspace, copying did not reach this MacBook's clipboard and pasting an image
+typed a path that does not exist on the other Mac. A device mirror is a manual-I/O Ghostty surface, and
+upstream's `write_clipboard_cb` drops every write from such a surface unless it was made with remote clipboard
+writes (only Cloud panes were): a program's OSC 52 copy (Claude Code, tmux, nvim) never landed, keyboard copy
+mode's yank reported success and wrote nothing, and copy-on-select was dropped. A pasted image or a dropped file
+resolved to the `.local` transfer target and typed this Mac's (temporary) path. Fork code:
+`Sources/Supermux/SupermuxTerminalClipboardWrites.swift` (which writes land),
+`Sources/Supermux/Devices/SupermuxDeviceTerminalUpload.swift` (the upload, chunked 3 MB with
+`mobile.supermux.terminal.attachment.upload`), `Sources/Supermux/SupermuxMobileHost+TerminalAttachments.swift`
+(the host: upstream's `MobileTaskAttachmentStore` under `~/.cache/cmux/task-attachments`, without upstream's
+Task Composer gate on `mobile.task.attachment.upload`; advertised as `supermux.terminal_attachments.v1`), and
+the DEBUG drivers in `Sources/Supermux/Devices/SupermuxTerminalClipboardSocketCommands.swift`. Re-apply:
+
+- **#764 `project.pbxproj`.** Re-add the four entries per file listed in the #764 row.
+- **#765 `TerminalImageTransfer.swift`.** Keep the `supermuxDevice` case on `TerminalRemoteUploadTarget`, the
+  `.supermuxDevice` early return in `plan(fileURLs:target:mode:)`'s `.remote` branch, and the `execute` case that
+  runs `SupermuxDeviceTerminalUpload.upload` then upstream's `finishUpload`. If upstream adds an upload seam per
+  target (a closure per transport), move the device upload into it. Any new exhaustive switch over
+  `TerminalRemoteUploadTarget` needs a `.supermuxDevice` arm that uploads, never one that types a local path.
+- **#766 `TerminalSurface+ImageTransferTarget.swift`.** Keep the device check first in
+  `resolvedImageTransferTarget`, right after the workspace is resolved (before the SSH and Cloud checks).
+- **#767 `TextBoxInput.swift`.** Keep the `.supermuxDevice` arm in `uploadFileAttachments`'s switch.
+- **#773 `SupermuxMobileAuthorizationTests.swift`.** Keep `.terminalAttachmentUpload` in the workspace-scoped
+  arm of `classificationCoversWorkspacePaneAndMacWideMethods`.
+- **#768–#770 `device-mirror-clipboard`.** Every place a device terminal pane is built passes
+  `allowsRemoteClipboardWrites` from `SupermuxTerminalClipboardWrites.allowsProgramWrites(on:)` (or `true` for the
+  restored device placeholder). If upstream starts granting it to device panes itself, retire these fences.
+- **#771–#772 `terminal-user-copy-intent`.** Keep `isDispatchingRuntimeInput` next to upstream's
+  `withRuntimeClipboardPasteIntent`, the `SupermuxTerminalClipboardWrites.allows` call in `write_clipboard_cb`'s
+  guard, and the paste-intent wrapper around keyboard copy mode's
+  `ghostty_surface_copy_selection_to_clipboard_bounded`. If upstream lets user copies from remote projections
+  through itself, keep only #768–#770.
+
+Verify: `CMUX_E2E_SUITES="loopback_terminal_clipboard_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`
+(OSC 52 written by the mirror, Cmd+V text, copy mode's yank, image paste and file drop upload to the owning Mac,
+an owning Mac without uploads types nothing and says to update). Not covered there: copy-on-select (the same
+`write_clipboard_cb` guard, inside the pointer dispatch) and the text box paste (same upload).
+### 777–783. A device mirror streams its terminal like a local one — `terminal-stream-watch`, `terminal-stream-resume`, `terminal-stream-coalesce`, `terminal-stream-viewer`
+
+Before, the host sent every terminal's PTY reads as droppable `terminal.bytes` events in one shared
+256-event queue, the viewer dropped more (512-event streams, 256 KB attach buffer), and every seq gap,
+remote resize, resync or reconnect re-anchored the mirror on a render-grid replay that wiped this Mac's
+scrollback to ~240 rows. Capability `supermux.terminal_stream.v1` (both sides gate on it; an older host or
+viewer keeps upstream's path): the viewer names the terminals it mirrors (`mobile.supermux.terminal.watch`),
+the host sends only their bytes and never sheds them, a gap or reconnect resumes from the mirror's byte
+position from the tee's tail (`supermux_resume_from_seq`), a full replay asks for 10000 screen-anchored
+history rows, a remote grid change only re-pins, and PTY reads are coalesced. Fork code:
+`Sources/Supermux/Devices/SupermuxTerminalStreamHost.swift` (host), `SupermuxTerminalStream.swift`
+(viewer), `SupermuxTerminalStreamSocketCommands.swift` (DEBUG drivers); the watch set is re-sent on every
+connect from `SupermuxDeviceLinkEvents`. Re-apply:
+
+- **#777 `MobileHostConnectionEventQueue.swift`.** Re-add the fenced state block after
+  `simulatorFrameReplayAfterDrainPanelIDs`, the early `supermuxEnqueueWatchedBytesLocked` call right after
+  `enqueue`'s subscribed-topic guard, `supermuxForgetWatchedEventLocked(eventID)` right after
+  `removeQueuedEventLocked` subtracts the frame, the watched totals added to `reclaimedCount` /
+  `reclaimedBytes` in `hasRoomLocked` and to `releasedCount` / `releasedBytes` in
+  `shedDroppableEventsLocked`, `supermuxWatchedEvents[eventID] == nil` in the shed walk's guard, the reset in
+  `close()`, and the helpers at the end of the class. If upstream gives `terminal.bytes` its own per-surface
+  lane or makes it lossless itself, keep the filter and drop the budget.
+- **#778 `MobileHostService.swift`.** In `handleSubscriptionRPC`, the `SupermuxTerminalStreamHost.watchMethod`
+  case before `default`.
+- **#779 `MobileTerminalByteTee.swift`.** The two `SurfaceState` fields, `noteSkipped()` in `append`'s
+  no-demand return, `_ = supermuxContinuousEpoch(state)` at the top of `publishFromMain`, and the coalescer
+  call in place of upstream's final `terminal.bytes` emit. If upstream moves the emit off the main actor or
+  coalesces itself, keep its emit and drop the coalescer; if upstream records bytes without subscribers,
+  the continuity fence can go.
+- **#780 `TerminalController.swift`.** In `v2MobileTerminalReplay`, the resume early return after the
+  viewport report and Cloud relay checks (before the tee's `replayState` read), and the epoch line after
+  `addSharedSizingReplayFields`.
+- **#781 `DeviceTerminalMirrorSession.swift`.** The `supermuxStream` property, its creation at the end of
+  `init(link:…)`, `stop()`'s call, the attach-buffer limits, `noteGap()` before the gap's
+  `scheduleAttach()`, the re-pin-only return in `.updated`, `prepare()` + `replayParams` before the replay
+  request, `decodeReply` around upstream's `decodeReplay`, the resumed/full branch around the
+  `device-mirror-viewer-colors` output line, and the `supermuxResumed` field on `Replay`.
+- **#782 `DeviceLinkTerminalEvents.swift`.** The DEBUG `supermuxOnBytes` hook and its call in `receive`, and
+  the stream's buffer limit.
+- **#783 `project.pbxproj`.** Re-add the four entries per file listed in the #783 row.
+
+Verify: `CMUX_E2E_SUITES="loopback_terminal_streaming_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`
+(LOOPBACK-HARNESS.md "Terminal streaming E2E").
+
+### 810–818. Another Mac's terminal acts like a local one — `device-terminal-file-link`, `device-terminal-actions`, `device-terminal-focus`, `device-terminal-actions-authz`
+
+A device mirror is a manual-mirror Ghostty surface fed with the other Mac's output, so four things a local
+terminal does stayed local or were refused: a Cmd-click on a file path (upstream claims a remote path only for
+SSH terminals, so `sub/notes.txt:2` fell through to the URL router and opened `http://sub/…` in a browser tab),
+Cmd+K (the other Mac kept its scrollback and the next replay brought it back), focus reporting (a mirror's
+Ghostty drops every terminal response, focus reports included, so a program that asked for mode 1004 never saw
+the mirror gain or lose focus) and Ctrl+V of an image (the program on the other Mac read THAT Mac's clipboard).
+Fork code: `Sources/Supermux/Devices/SupermuxDeviceTerminalLinks.swift` (resolves the click against the
+terminal's own folder from the Mac's workspace record, verifies it over `files.list`, opens the read-only
+preview through upstream's `FileExplorerPreviewCoordinator` with a device provider),
+`Sources/Supermux/Devices/SupermuxDeviceTerminalActions.swift` (forwarded bindings, the form-feed filter, focus
+settling, the Ctrl+V decision) and `Sources/Supermux/SupermuxMobileHost+TerminalActions.swift` (the host's
+`mobile.supermux.terminal.action`, advertised as `supermux.terminal_actions.v1`). Re-apply:
+
+- **#810 `project.pbxproj`.** Re-add the four entries per file listed in the #810 row.
+- **#811–#812 `device-terminal-file-link`.** Keep the `SupermuxDeviceTerminalLinks.open` call first in the
+  workspace's `deferRemoteTerminalFileLinkOpen` and the Dock's own implementation. If upstream adds a remote-file
+  seam per transport (as it has for SSH), move the device branch into it; never let a device terminal's path
+  reach the local resolver.
+- **#813 / #815 / #816 `device-terminal-actions`.** Keep the input filter around `manualInputHandler`, the
+  `perform` call at the top of `TerminalPanel.performBindingAction`, and the keyDown fence plus
+  `handleDeviceTerminalKey`. The keyDown fence must stay after `ensureSurfaceReadyForInput` and before any
+  binding or text handling; it runs only for manual-mirror panes with Cmd or Ctrl held, so typing elsewhere
+  never reaches it. If upstream adds an app-level callback for performed bindings, hook `perform` there instead.
+- **#814 / #817 `device-terminal-focus`.** Keep `onFocusStateChange` on `TerminalSurface` and its `didSet`
+  call, and the hook in `makeRemoteTmuxPanePanel`. If upstream starts sending a mirror's focus reports itself,
+  retire both and the host's `focus_in` / `focus_out`.
+- **#818 `SupermuxMobileAuthorizationTests.swift`.** Keep `.terminalAction` in the terminal-scoped arm.
+
+Verify: `CMUX_E2E_SUITES="loopback_terminal_polish_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`
+(Cmd-click of a relative `path:line` opens the other Mac's bytes in the preview and a folder opens nothing; Cmd+K
+clears the source terminal's scrollback and a re-attach does not bring it back; focus out and in reach a mode-1004
+program once each; Ctrl+V passes text through and uploads an image). Not covered there: `reset`, the
+`surface.clear_history` socket path (same `perform`), an older host (no capability: today's local-only clear,
+no focus reports, Ctrl+V passes through).
 ### 830–835. Remote Host Mode: no window, no Dock icon, everything still runs — `remote-host-mode`
 
 A Mac used only as a remote host (for the iPhone app or another Mac's mirrors) runs with every main window
