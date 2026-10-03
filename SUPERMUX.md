@@ -592,11 +592,13 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   `simctl`). The owning Mac answers the device menu within 8 s, current only when its list really landed; when its
   simulators were slower the menu says "Simulators on <Mac> are slow to respond…" and asks again (never an empty menu),
   and a viewer that rebinds after a restart asks a slow Mac again rather than opening a second tab there. A panel's own
-  discovery waits up to 30 s for a slow CoreSimulator (upstream's `simctl` timeout). Only a cold boot still waits on
+  discovery waits up to 30 s for a slow CoreSimulator (upstream's `simctl` timeout), and closing the tab or quitting
+  stops that wait at once. Only a cold boot still waits on
   `simctl`. A new tab also activates when the viewer's first device-menu refresh overlaps the panel's startup discovery
   (#763; that used to leave it "preparing"). CoreSimulator in the app process is the one exception to upstream's rule
-  that private Simulator frameworks load only in the worker: read-only calls, and a crash while it loads turns that
-  CoreSimulator build off in-process for good (`simctl` then, as upstream). Not offered: multi-touch, mouse-wheel
+  that private Simulator frameworks load only in the worker: read-only calls, and when the app ends inside its load twice
+  in a row (a crash there; a quit or logout during a slow load does not count, one kill does not suffice) that
+  CoreSimulator build is off in-process until a new Xcode (`simctl` then, as upstream). Not offered: multi-touch, mouse-wheel
   notches, the Tools sidebar, screenshots to this Mac, non-US text; they work on the owning Mac
   through `cmux simulator …` in a mirror terminal. An older owning Mac (no
   `simulator.stream.v2`/`supermux.panes.v1`) gets an alert instead, never a local simulator. A quit
