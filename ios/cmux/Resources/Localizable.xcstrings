@@ -100247,6 +100247,23 @@
         }
       }
     },
+    "supermux.terminalSizing.mode.auto": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自動"
+          }
+        }
+      }
+    },
     "mobile.terminal.sizing.mode.smallest": {
       "extractionState": "manual",
       "localizations": {

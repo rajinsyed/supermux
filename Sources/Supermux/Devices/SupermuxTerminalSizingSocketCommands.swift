@@ -11,7 +11,9 @@ import Foundation
 ///
 /// - `state {}` — the stored preference and each device mirror's claim
 ///   (`null` where this build has none), with `pending_choice` while a pick
-///   made on a detached mirror waits for its next attach.
+///   made on a detached mirror waits for its next attach, and
+///   `adopted_remote_choices`: picks made on another Mac's mirror that this
+///   Mac adopted as its setting.
 /// - `reset {}` — forgets the stored preference and applies the default to
 ///   this Mac's terminals.
 /// - `select_mode {surface_id, mode, fixed_cols?, fixed_rows?}` — the size
@@ -68,7 +70,12 @@ enum SupermuxTerminalSizingSocketCommands {
                     "pending_choice": session.supermuxSizingClaim.pendingChoice != nil,
                 ]
             }
-        return ["preference": preferencePayload(), "stored": defaults.isStored, "mirrors": mirrors]
+        return [
+            "preference": preferencePayload(),
+            "stored": defaults.isStored,
+            "mirrors": mirrors,
+            "adopted_remote_choices": defaults.adoptedRemoteChoices,
+        ]
     }
 
     private static func preferencePayload() -> [String: Any] {

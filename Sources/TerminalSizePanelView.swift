@@ -49,7 +49,7 @@ struct TerminalSizePanelView: View {
             header(presentation)
             modeRow(snapshot.state.policy.mode)
             // SUPERMUX:begin sizing-sticky-preference (the mode is one choice for every terminal on this Mac)
-            if !snapshot.isCloud { SupermuxTerminalSizingScopeNote() }
+            if !snapshot.isCloud { SupermuxTerminalSizingScopeNote(mode: snapshot.state.policy.mode, surfaceID: surfaceID) }
             // SUPERMUX:end sizing-sticky-preference
             if snapshot.state.policy.mode == .fixed {
                 fixedSizeEditor(snapshot.state.policy.fixed ?? snapshot.state.size)
