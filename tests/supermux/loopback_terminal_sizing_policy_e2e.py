@@ -14,7 +14,9 @@ per connection and never in answer to the other Mac's size events; the claim onl
 this Mac first in a Priority order and never changes another Mac's mode, fixed size or
 the rest of its order. A mode, fixed size or priority order chosen in the size panel or
 the tab menu applies to every terminal on this Mac, now and later, and survives a
-relaunch; of another Mac's terminals it changes only the one it was chosen on.
+relaunch. A mode picked on the phone is this Mac's setting the same way, and one picked on a
+mirror also becomes the other Mac's setting (sent with `supermux_preference`, once, on the
+pick); a mirror's claim still changes only the one terminal it shows.
 
 This suite runs against one tagged DEBUG build with the loopback device ("Loopback Mac"
 = this app's own mobile host): a source workspace is the "other Mac" and its auto mirror
@@ -103,6 +105,18 @@ driven by `supermux.devices.terminal_sizing.*` (DEBUG), which run the panel's ow
  23. auto_shown_mirror_takes_it          on the source terminal the second Mac types (it owns the
                                          grid), the mirror is hidden, then shown again: the shown mirror
                                          owns it (red before: showing a mirror was no activity)
+ 24. phone_choice_applies_to_every_terminal
+                                         Largest Window picked on the phone (its size sheet, over its
+                                         link) is stored and reaches every terminal of this Mac and a
+                                         new one (red before: only the terminal it was picked on)
+ 25. other_macs_choice_becomes_this_macs_setting
+                                         Fit everyone picked on another Mac's mirror (sent with
+                                         `supermux_preference`) is stored here and reaches every terminal;
+                                         that Mac's claim (no `supermux_preference`) changes only its one
+                                         terminal and not the preference
+ 26. mirror_choice_reaches_the_other_mac Largest Window picked on the mirror is adopted by the other
+                                         Mac (`adopted_remote_choices` rises) and reaches both source
+                                         terminals
 
 Writes a JSON report (default tests/supermux/artifacts/loopback_terminal_sizing_policy_e2e-<tag>.json)
 with the policy, keys, owners, grid and live grid per step, and exits non-zero on any failure.
@@ -1050,6 +1064,82 @@ class SizingPolicyE2E:
                                 self.owned_by(MIRROR_PREFIX))
         return {"typed": typed, "shown": shown}
 
+    # -- One setting: a mode picked anywhere is the Mac's setting ---------------------------
+
+    def expect_everywhere(self, mode: str, labels: Dict[str, str]) -> Dict[str, Any]:
+        return {label: self.wait_state(f"the {label} terminal to be {mode}", surface, self.expect_mode(mode))
+                for label, surface in labels.items()}
+
+    def expect_preference(self, mode: str) -> Dict[str, Any]:
+        sizing = self.sock.call(SIZING + "state", {}) or {}
+        preference = sizing.get("preference") or {}
+        if not sizing.get("stored") or preference.get("mode") != mode:
+            raise Failure(f"the stored preference is {preference} (stored={sizing.get('stored')}), expected {mode}")
+        return preference
+
+    def phone_choice_applies_to_every_terminal(self) -> Dict[str, Any]:
+        """A mode picked in the phone's size sheet (`mobile.terminal.size_policy.set` over the
+        phone's own link, with its client id) is this Mac's setting: every terminal of this Mac
+        takes it, and a new one starts in it (red before: only the terminal it was picked on)."""
+        self.sock.call(SIZING + "reset", {})
+        current = self.policy(self.state(self.fresh_surface))
+        self.request("mobile.terminal.size_policy.set", {
+            "workspace_id": self.fresh_id, "surface_id": self.fresh_surface, "client_id": self.phone_client,
+            "policy": {"mode": "largest", "priority": current["priority"], "fixed": current["fixed"]},
+        })
+        terminals = self.expect_everywhere("largest", {"fresh": self.fresh_surface, "local": self.local_surface,
+                                                       "source2": self.source2_surface})
+        preference = wait_for("the phone's pick to be stored", lambda: self.expect_preference("largest"), self.timeout)
+        workspace = self.create_workspace("after-phone")
+        surface = wait_for("a new terminal", lambda: self.surfaces(workspace), self.timeout)[0]
+        new = self.wait_state("a new terminal to start in the phone's pick", surface, self.expect_mode("largest"))
+        return {"terminals": terminals, "preference": preference, "new": new}
+
+    def other_macs_choice_becomes_this_macs_setting(self) -> Dict[str, Any]:
+        """Another Mac's explicit pick on a terminal of this Mac (its size panel, sent with
+        `supermux_preference`) is this Mac's setting too; its claim (sent without) stays on that
+        one terminal, so a preference arriving here never travels on."""
+        b_key = self.facts.get("mac_b_key")
+        if not b_key:
+            raise Failure("the second Mac never joined the source terminal (second_mac_no_ping_pong failed)")
+        self.request("mobile.terminal.size_policy.set", {
+            "workspace_id": self.source_id, "surface_id": self.source_surface,
+            "policy": {"mode": "smallest", "priority": [b_key], "fixed": None},
+            "supermux_preference": {"mode": "smallest", "priority": ["self"], "fixed": None},
+        })
+        terminals = self.expect_everywhere("smallest", {"source": self.source_surface, "local": self.local_surface,
+                                                        "source2": self.source2_surface, "fresh": self.fresh_surface})
+        preference = wait_for("the other Mac's pick to be stored", lambda: self.expect_preference("smallest"),
+                              self.timeout)
+        self.other_mac_sets({"mode": "priority", "priority": [b_key], "fixed": None})
+        claimed = self.wait_state("the other Mac's claim on its one terminal", self.source_surface,
+                                  self.expect_first(b_key))
+        held = self.hold(self.local_surface, self.expect_mode("smallest"), 1.5, steady=False)
+        after = self.expect_preference("smallest")
+        return {"terminals": terminals, "preference": preference, "claimed": claimed, "local_kept": held,
+                "preference_after_claim": after}
+
+    def remote_choices(self) -> int:
+        value = (self.sock.call(SIZING + "state", {}) or {}).get("adopted_remote_choices")
+        if not isinstance(value, int):
+            raise Failure("terminal_sizing.state has no adopted_remote_choices (this build adopts no remote pick)")
+        return value
+
+    def mirror_choice_reaches_the_other_mac(self) -> Dict[str, Any]:
+        """A mode picked on a mirror reaches the other Mac as that Mac's setting: the mirror sends
+        it with `supermux_preference` and that Mac adopts it (`adopted_remote_choices`). In the
+        loopback both Macs are this app, so the stored preference and a second source terminal
+        show it."""
+        before = self.remote_choices()
+        self.select(self.mirror_id)
+        chosen = self.select_mode(self.mirror_surface, "largest")
+        adopted = wait_for("the other Mac to adopt the mirror's pick", lambda: self.remote_choices() > before,
+                           self.timeout)
+        terminals = self.expect_everywhere("largest", {"source": self.source_surface,
+                                                       "source2": self.source2_surface})
+        return {"accepted": chosen.get("accepted"), "adopted": adopted, "terminals": terminals,
+                "preference": self.expect_preference("largest")}
+
     def relaunch(self) -> None:
         app = self.args.app_path
         bundle_id = plistlib.loads((Path(app) / "Contents" / "Info.plist").read_bytes())["CFBundleIdentifier"]
@@ -1144,6 +1234,12 @@ class SizingPolicyE2E:
                              "auto_opted_out_phone_never_sizes", "auto_viewing_mac_takes_it",
                              "auto_shown_mirror_takes_it"):
                     ok = self.step(name, getattr(self, name)) and ok
+                ok = self.step("phone_choice_applies_to_every_terminal",
+                               self.phone_choice_applies_to_every_terminal) and ok
+            if self.fresh_surface and self.facts.get("mac_b_key"):
+                ok = self.step("other_macs_choice_becomes_this_macs_setting",
+                               self.other_macs_choice_becomes_this_macs_setting) and ok
+            ok = self.step("mirror_choice_reaches_the_other_mac", self.mirror_choice_reaches_the_other_mac) and ok
         self.cleanup()
         return ok
 
