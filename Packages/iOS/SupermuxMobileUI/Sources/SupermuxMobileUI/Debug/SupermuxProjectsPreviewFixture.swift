@@ -18,6 +18,24 @@ public struct SupermuxProjectsPreviewMac: Sendable {
     /// project's disclosure: a Mac that was asleep, or whose `projects.list`
     /// was slow, joining a list already on screen.
     var joinsLate = false
+
+    /// This Mac with its foreground flag set as given.
+    func foreground(_ isForeground: Bool) -> SupermuxProjectsPreviewMac {
+        SupermuxProjectsPreviewMac(
+            mac: SupermuxMacInfo(
+                macDeviceID: mac.macDeviceID,
+                instanceTag: mac.instanceTag,
+                displayName: mac.displayName,
+                colorIndex: mac.colorIndex,
+                customColor: mac.customColor,
+                status: mac.status,
+                isForeground: isForeground
+            ),
+            client: client,
+            hostCapabilities: hostCapabilities,
+            joinsLate: joinsLate
+        )
+    }
 }
 
 /// DEBUG fixture behind `CMUX_UITEST_WORKSPACE_LIST_PREVIEW_SUPERMUX=1`: three
@@ -36,7 +54,10 @@ public struct SupermuxProjectsPreviewMac: Sendable {
 /// - Mac mini (`preview-mini`): no Supermux capabilities; one loose workspace.
 ///
 /// Every project workspace but `docs-notes` reports a branch, so nested rows
-/// show it, with the cloud-Mac icon on the Studio's (not the list's first Mac).
+/// show it, with the cloud-Mac icon on the Studio's. `cmux-fix` is a shell at
+/// its prompt with no notification, so its preview line is its terminal's
+/// path, as in a real worktree. Opening a workspace on another Mac makes that
+/// Mac the foreground, as the shell does (``foregroundFirst(_:opened:in:)``).
 ///
 /// With `CMUX_UITEST_WORKSPACE_LIST_PREVIEW_SUPERMUX_LATE_STUDIO=1` the Studio
 /// joins late: it connects only once the user first opens or closes a
@@ -144,6 +165,29 @@ public enum SupermuxProjectsPreviewFixture {
         ]
     }
 
+    /// The fixture's twin of the shell's foreground switch: opening a
+    /// workspace on a Mac other than the foreground one makes that Mac the
+    /// foreground, listed first (`MobileShellComposite.openWorkspace`).
+    /// - Parameters:
+    ///   - macs: The fixture's Macs, foreground first.
+    ///   - workspaceID: The workspace the shell opened last, if any.
+    ///   - workspaces: The shell's rows, to find that workspace's Mac.
+    /// - Returns: The Macs with the opened workspace's Mac first.
+    static func foregroundFirst(
+        _ macs: [SupermuxProjectsPreviewMac],
+        opened workspaceID: MobileWorkspacePreview.ID?,
+        in workspaces: [MobileWorkspacePreview]
+    ) -> [SupermuxProjectsPreviewMac] {
+        guard let workspace = workspaces.first(where: { $0.id == workspaceID }) else { return macs }
+        let pairingID = SupermuxMacSeam.pairingID(macDeviceID: workspace.macDeviceID, instanceTag: workspace.macInstanceTag)
+        guard let index = macs.firstIndex(where: { $0.mac.pairingID == pairingID }), !macs[index].mac.isForeground else {
+            return macs
+        }
+        var others = macs.map { $0.foreground(false) }
+        let opened = others.remove(at: index).foreground(true)
+        return [opened] + others
+    }
+
     /// The cmux group on the Studio that holds an infra-owned workspace.
     public static let opsGroupID = MobileWorkspaceGroupPreview.ID(rawValue: "group-studio-ops")
 
@@ -188,14 +232,21 @@ public enum SupermuxProjectsPreviewFixture {
         var featX = row("ws-feat-x", "feat-x", on: laptop, project: "proj-a-cmux", branch: "feature/x", pinned: true, minutesAgo: 3)
         featX.supermuxPullRequestNumber = 123
         featX.supermuxPullRequestState = "open"
+        // Long on purpose: the nested row truncates it in the middle. A shell
+        // at its prompt, as in a fresh worktree: no notification, so the shell
+        // row's preview line is the terminal's title, a path.
+        var cmuxFix = row("ws-cmux-fix", "cmux-fix", on: studio, project: "proj-b-cmux", branch: "fix/studio-sidebar-sync", minutesAgo: 5)
+        cmuxFix.previewText = nil
+        cmuxFix.terminals = [
+            MobileTerminalPreview(id: .init(rawValue: "terminal-ws-cmux-fix"), name: "…/cmux/.worktrees/fix-studio-sidebar-sync"),
+        ]
         return [
             row("ws-cmux-main", "cmux-main", on: laptop, project: "proj-a-cmux", branch: "main", minutesAgo: 1),
             featX,
             // No branch, PR or run: a nested row with nothing to add.
             row("ws-docs-notes", "docs-notes", on: laptop, project: "proj-a-docs", minutesAgo: 30),
             row("ws-scratch", "scratch", on: laptop, minutesAgo: 8),
-            // Long on purpose: the nested row truncates it in the middle.
-            row("ws-cmux-fix", "cmux-fix", on: studio, project: "proj-b-cmux", branch: "fix/studio-sidebar-sync", minutesAgo: 5),
+            cmuxFix,
             row("ws-infra-api", "infra-api", on: studio, project: "proj-b-infra", branch: "main", minutesAgo: 12),
             row("ws-ops-lead", "ops-lead", on: studio, group: opsGroupID, minutesAgo: 15),
             row("ws-infra-ops", "infra-ops", on: studio, project: "proj-b-infra", group: opsGroupID, minutesAgo: 20),
