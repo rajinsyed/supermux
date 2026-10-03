@@ -331,10 +331,16 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   terminal starts as Priority with this Mac first (its own pane for a local terminal, so a phone
   defers to a Mac pane on screen); a mirror claims the other Mac's terminal when it is shown, first
   attaches while shown, or reconnects, pushing once per connection and never in answer to that Mac's
-  size events, so of two viewing Macs the one that showed it last wins. The mode, fixed size and
-  priority order chosen in the size panel or the tab menu are one sticky choice per Mac
-  (`supermux.terminalSizing.preference`; the panel says "Applies to all terminals on this Mac."),
-  applied to every local terminal and mirror, now and after a relaunch. Cloud terminals,
+  size events, so of two viewing Macs the one that showed it last wins. The claim only puts this
+  Mac first in that terminal's Priority order; a mode, fixed size or order chosen on the terminal
+  (on either Mac or the phone) stays. The mode, fixed size and priority order chosen in the size
+  panel or the tab menu are one sticky choice per Mac (`supermux.terminalSizing.preference`; the
+  panel says "Applies to all terminals on this Mac."), applied to every local terminal, now and
+  after a relaunch, and to the terminal it was chosen on (on a mirror whose link is down, once it
+  attaches again); another Mac's terminals change only by a
+  choice made on them (until 2026-10-03 every mirror pushed the whole preference when shown, on
+  reconnect and on every change, so a Fit Everyone picked once on one Mac became the mode of every
+  terminal it mirrored on the other, again after each show, and any small pane shrank them). Cloud terminals,
   `terminal.size_policy.set`, a phone's or another Mac's choice, Size to My Window and Don't Resize
   from This Mac stay per terminal. A viewing Mac's pane counts up to 500x200 (a phone's, 300x120). A
   pane that is not on screen (a tab never shown on its Mac, a mirror in a background workspace, a hidden
@@ -586,11 +592,13 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   `simctl`). The owning Mac answers the device menu within 8 s, current only when its list really landed; when its
   simulators were slower the menu says "Simulators on <Mac> are slow to respond…" and asks again (never an empty menu),
   and a viewer that rebinds after a restart asks a slow Mac again rather than opening a second tab there. A panel's own
-  discovery waits up to 30 s for a slow CoreSimulator (upstream's `simctl` timeout). Only a cold boot still waits on
+  discovery waits up to 30 s for a slow CoreSimulator (upstream's `simctl` timeout), and closing the tab or quitting
+  stops that wait at once. Only a cold boot still waits on
   `simctl`. A new tab also activates when the viewer's first device-menu refresh overlaps the panel's startup discovery
   (#763; that used to leave it "preparing"). CoreSimulator in the app process is the one exception to upstream's rule
-  that private Simulator frameworks load only in the worker: read-only calls, and a crash while it loads turns that
-  CoreSimulator build off in-process for good (`simctl` then, as upstream). Not offered: multi-touch, mouse-wheel
+  that private Simulator frameworks load only in the worker: read-only calls, and when the app ends inside its load twice
+  in a row (a crash there; a quit or logout during a slow load does not count, one kill does not suffice) that
+  CoreSimulator build is off in-process until a new Xcode (`simctl` then, as upstream). Not offered: multi-touch, mouse-wheel
   notches, the Tools sidebar, screenshots to this Mac, non-US text; they work on the owning Mac
   through `cmux simulator …` in a mirror terminal. An older owning Mac (no
   `simulator.stream.v2`/`supermux.panes.v1`) gets an alert instead, never a local simulator. A quit
@@ -613,11 +621,11 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   with Supermux running on the Mac that hosts the work.
 - **Testing:** real links need two machines, so DEBUG builds have a loopback device
   (`SUPERMUX_DEBUG_LOOPBACK_DEVICE=1`) whose link talks in-process to the same app's host. Run
-  `CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh` against a plain tagged build
-  (`CMUX_DEV_BACKEND_MODE=local ./scripts/reload.sh --tag <tag>`, not signed in: the loopback needs no sign-in); see
-  `plans/supermux-remote-workspaces/LOOPBACK-HARNESS.md`. Never run the suites on a `--supermux-profile` build: it is
-  signed in to the user's real account, so it joins their real Mac mesh, mirrors their real workspaces, and its small
-  test panes claim their real terminals' size (2026-10-03: a real terminal shrank to 99x35 under Fit Everyone).
+  `CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh` against an agent-only tagged build
+  (`CMUX_DEV_BACKEND_MODE=local ./scripts/reload.sh --tag <tag>`), never a `--supermux-profile` or
+  `--prod-auth` one: those copy the user's sign-in and appear on the user's account, and the runner
+  refuses them (`tests/supermux/require_isolated_app.py`). See
+  `plans/supermux-remote-workspaces/LOOPBACK-HARNESS.md`.
 
 ## Fork management — THE RULES
 

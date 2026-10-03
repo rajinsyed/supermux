@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """End-to-end test: a terminal fills the Mac you look at it from, and the size mode is one
-sticky choice for every terminal on this Mac.
+sticky choice for every terminal on this Mac, never for another Mac's.
 
 Before: every terminal started as "Fit everyone" (smallest), held only in memory on the
 Mac that runs it, so a phone or a small pane on the other Mac shrank a terminal viewed
@@ -8,9 +8,11 @@ full screen; and a mode chosen in the size panel changed one terminal only, unti
 next relaunch. Now the default is "Priority" with this Mac first: the Mac pane for a
 local terminal, this Mac's mirror for another Mac's terminal. A mirror claims its
 terminal when it is shown (or first attaches while shown, or reconnects), pushing once
-per connection and never in answer to the other Mac's size events. A mode, fixed size or
-priority order chosen in the size panel or the tab menu applies to every terminal on
-this Mac, now and later, and survives a relaunch.
+per connection and never in answer to the other Mac's size events; the claim only moves
+this Mac first in a Priority order and never changes another Mac's mode, fixed size or
+the rest of its order. A mode, fixed size or priority order chosen in the size panel or
+the tab menu applies to every terminal on this Mac, now and later, and survives a
+relaunch; of another Mac's terminals it changes only the one it was chosen on.
 
 This suite runs against one tagged DEBUG build with the loopback device ("Loopback Mac"
 = this app's own mobile host): a source workspace is the "other Mac" and its auto mirror
@@ -32,8 +34,9 @@ driven by `supermux.devices.terminal_sizing.*` (DEBUG), which run the panel's ow
   5. local_terminal_mac_first_over_phone a local terminal keeps its Mac pane's grid while a phone
                                          (40x12) views it
   6. mode_choice_applies_to_every_terminal
-                                         Follow Latest chosen on one mirror reaches every terminal
-                                         (both sources and the local one)
+                                         Follow Latest chosen on one mirror reaches its terminal and
+                                         every terminal of this Mac (both sources and the local one,
+                                         all this Mac's own in the loopback)
   7. new_terminals_follow_choice         a new local terminal and a new terminal opened over the
                                          device link start in Follow Latest
   8. second_mac_no_ping_pong             another Mac sets Priority with itself first: the shown
@@ -52,15 +55,27 @@ driven by `supermux.devices.terminal_sizing.*` (DEBUG), which run the panel's ow
                                          then Priority (already stored) picked on the mirror takes
                                          it back; the second Mac claimed it, then the stored order
                                          dragged on the mirror takes it back
+ 10c. showing_keeps_other_macs_mode     the second Mac chose Fit everyone: hiding then showing the
+                                         mirror, and a link drop, leave it Fit everyone (3 s holds;
+                                         red before: the shown mirror pushed this Mac's Priority)
+ 10d. choice_during_reconnect_lands      Priority picked on the mirror while its link is down (the
+                                         second Mac chose Fit everyone) reaches the terminal once the
+                                         link is back (red before: the reconnect only claimed, which
+                                         leaves Fit everyone, and the choice was lost)
  11. showing_again_reclaims              hiding then showing the mirror claims the terminal again,
                                          then stays put (3 s hold)
- 12. reconnect_reclaims                  after the link drops and the other Mac reset the policy, the
-                                         reconnected mirror claims it again
+ 12. reconnect_reclaims                  after the link drops and the other Mac starts over with its
+                                         own default (Priority, its pane first), the reconnected
+                                         mirror claims it again
+ 12b. sticky_choice_stays_on_this_mac    Largest chosen on a local terminal reaches the source as
+                                         this Mac's own terminal (its pane's key) and no mirror pushes
+                                         it (3 s hold; red before: the shown mirror pushed it, under
+                                         its own key, to the terminal it shows)
  13. priority_order_applies_everywhere   a priority order dragged on one mirror ([phone, this Mac])
                                          is stored as [phone, self] and reaches the local terminal as
-                                         [phone, its own view on this Mac]: its Mac pane, or in the
-                                         loopback its own auto-mirror, whose push of the same order
-                                         lands after the local apply
+                                         [phone, its Mac pane] (a mirror that pushed the order to the
+                                         terminal it shows, its own hidden auto-mirror in the loopback,
+                                         would land after the local apply under the mirror's key)
  14. choice_survives_relaunch            (--app-path) Largest Window, then quit and relaunch: new
                                          and restored terminals start in Largest Window
 
@@ -377,8 +392,9 @@ class SizingPolicyE2E:
             return self.summary(state)
         return wait_for(description, probe, self.timeout)
 
-    def hold(self, surface_id: str, check: Callable[[Dict[str, Any]], None], seconds: float = 3.0) -> Dict[str, Any]:
-        """The check keeps passing for `seconds`, and the state barely moves (no push-back loop)."""
+    def hold(self, surface_id: str, check: Callable[[Dict[str, Any]], None], seconds: float = 3.0,
+             steady: bool = True) -> Dict[str, Any]:
+        """The check keeps passing for `seconds`, and (`steady`) the state barely moves (no push-back loop)."""
         generations: List[int] = []
         deadline = time.monotonic() + seconds
         while time.monotonic() < deadline:
@@ -387,7 +403,7 @@ class SizingPolicyE2E:
             generations.append(int(state.get("generation") or 0))
             time.sleep(0.25)
         delta = (generations[-1] - generations[0]) if generations else 0
-        if delta > 2:
+        if steady and delta > 2:
             raise Failure(f"the size state kept changing while it should have held: generations {generations}")
         return {"held_seconds": seconds, "generation_delta": delta}
 
@@ -402,6 +418,19 @@ class SizingPolicyE2E:
         if not row or not row.get("priority_key"):
             raise Failure(f"no priority key for {prefix}* on {surface_id}")
         return str(row["priority_key"])
+
+    def mirror_counts(self, counts: bool) -> Callable[[Dict[str, Any]], None]:
+        def check(state: Dict[str, Any]) -> None:
+            mirror = self.row(state, MIRROR_PREFIX)
+            if not mirror or bool(mirror.get("counts")) != counts:
+                raise Failure(f"the mirror should{'' if counts else ' not'} count: {self.rows(state)}")
+        return check
+
+    def other_mac_sets(self, policy: Dict[str, Any]) -> None:
+        """The second Mac's explicit choice on the source terminal (its size panel, over its link)."""
+        self.request("mobile.terminal.size_policy.set", {
+            "workspace_id": self.source_id, "surface_id": self.source_surface, "policy": policy,
+        })
 
     def expect_mode(self, mode: str) -> Callable[[Dict[str, Any]], None]:
         def check(state: Dict[str, Any]) -> None:
@@ -635,15 +664,96 @@ class SizingPolicyE2E:
         return {"fit": fit, "mode_accepted": chosen.get("accepted"), "by_mode": by_mode, "claimed": claimed,
                 "drag_accepted": dragged.get("accepted"), "by_drag": by_drag}
 
+    def showing_keeps_other_macs_mode(self) -> Dict[str, Any]:
+        """Another Mac's explicit Fit everyone stays when this Mac shows its mirror again or its
+        link reconnects: a claim only moves this Mac first in a Priority order, it never changes
+        the mode another Mac chose (red before: the shown mirror pushed this Mac's Priority)."""
+        b_key = self.facts.get("mac_b_key")
+        if not b_key:
+            raise Failure("the second Mac never joined the source terminal (second_mac_no_ping_pong failed)")
+        self.other_mac_sets({"mode": "smallest", "priority": [b_key], "fixed": None})
+        fit = self.wait_state("the second Mac's Fit everyone", self.source_surface, self.expect_mode("smallest"))
+        self.select(self.local_id)
+        self.wait_state("the mirror to stop counting while hidden", self.source_surface, self.mirror_counts(False))
+        self.select(self.mirror_id)
+        self.wait_state("the shown mirror to count again", self.source_surface, self.mirror_counts(True))
+        try:
+            shown = self.hold(self.source_surface, self.expect_mode("smallest"), steady=False)
+            self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "stop"})
+            time.sleep(1.0)
+            self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "restore"})
+            wait_for("the loopback link to reconnect", lambda: self.device().get("link_state") == "connected",
+                     self.timeout)
+            self.wait_state("the reconnected mirror to count again", self.source_surface, self.mirror_counts(True))
+            reconnected = self.hold(self.source_surface, self.expect_mode("smallest"), steady=False)
+        finally:
+            # Leave the terminal as the next step expects: the second Mac holds it in Priority.
+            self.other_mac_sets({"mode": "priority", "priority": [b_key], "fixed": None})
+            self.wait_state("the second Mac to hold the terminal again", self.source_surface, self.expect_first(b_key))
+        return {"fit": fit, "after_show": shown, "after_reconnect": reconnected}
+
+    def mirror_claim(self) -> Dict[str, Any]:
+        """This Mac's sizing claim for the first mirror (`terminal_sizing.state`), or {}."""
+        for mirror in (self.sock.call(SIZING + "state", {}) or {}).get("mirrors") or []:
+            if up(mirror.get("surface_id")) == up(self.mirror_surface):
+                return mirror
+        return {}
+
+    def mirror_policy_mode(self) -> Optional[str]:
+        """The mode this Mac's mirror last heard for its terminal, or None if it cannot be read."""
+        try:
+            return self.policy(self.state(self.mirror_surface))["mode"]
+        except Failure:
+            return None
+
+    def choice_during_reconnect_lands(self) -> Dict[str, Any]:
+        """A mode picked on a mirror tab while its link is down reaches the other Mac's terminal
+        once the link is back. The second Mac holds Fit everyone and this Mac's stored preference
+        is Priority, so the pick changes no preference and no local terminal: only the mirror can
+        bring it (red before: the push failed while detached and the reconnect only claimed, which
+        leaves Fit everyone alone)."""
+        b_key = self.facts.get("mac_b_key")
+        if not b_key:
+            raise Failure("the second Mac never joined the source terminal (second_mac_no_ping_pong failed)")
+        stored = self.preference() or {}
+        if stored.get("mode") != "priority":
+            raise Failure(f"expected a stored Priority preference: {stored}")
+        self.select(self.mirror_id)
+        self.other_mac_sets({"mode": "smallest", "priority": [b_key], "fixed": None})
+        fit = self.wait_state("the second Mac's Fit everyone", self.source_surface, self.expect_mode("smallest"))
+        # The mirror must have heard it too, or the pick would look like no change.
+        def mirror_heard() -> bool:
+            mode = self.mirror_policy_mode()
+            if mode is None:
+                time.sleep(1.5)  # the mirror's state cannot be read: give the size event time to arrive
+                return True
+            return mode == "smallest"
+
+        wait_for("the mirror to hear Fit everyone", mirror_heard, self.timeout)
+        self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "stop"})
+        try:
+            wait_for("the loopback link to drop", lambda: self.device().get("link_state") != "connected", self.timeout)
+            # The mirror itself must know it is detached, or the pick would go out on the dead link.
+            wait_for("the mirror to detach", lambda: self.mirror_claim().get("attached") is False, self.timeout)
+            chosen = self.select_mode(self.mirror_surface, "priority")
+            while_down = self.summary(self.state(self.source_surface))
+            if self.policy(self.state(self.source_surface))["mode"] != "smallest":
+                raise Failure(f"the pick reached the terminal without the link: {while_down['policy']}")
+        finally:
+            self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "restore"})
+        wait_for("the loopback link to reconnect", lambda: self.device().get("link_state") == "connected", self.timeout)
+        try:
+            landed = self.wait_state("Priority picked while reconnecting to reach the terminal", self.source_surface,
+                                     self.expect_first(self.mirror_key))
+        finally:
+            # Leave the terminal as the next step expects: the second Mac holds it in Priority.
+            self.other_mac_sets({"mode": "priority", "priority": [b_key], "fixed": None})
+            self.wait_state("the second Mac to hold the terminal again", self.source_surface, self.expect_first(b_key))
+        return {"fit": fit, "accepted": chosen.get("accepted"), "while_down": while_down, "landed": landed}
+
     def showing_again_reclaims(self) -> Dict[str, Any]:
         self.select(self.local_id)
-
-        def hidden(state: Dict[str, Any]) -> None:
-            mirror = self.row(state, MIRROR_PREFIX)
-            if not mirror or mirror.get("counts"):
-                raise Failure(f"the hidden mirror still counts: {self.rows(state)}")
-
-        self.wait_state("the mirror to stop counting while hidden", self.source_surface, hidden)
+        self.wait_state("the mirror to stop counting while hidden", self.source_surface, self.mirror_counts(False))
         self.select(self.mirror_id)
         claimed = self.wait_state("the shown mirror to claim the terminal", self.source_surface,
                                   self.expect_first(self.mirror_key))
@@ -653,14 +763,51 @@ class SizingPolicyE2E:
         self.select(self.mirror_id)
         self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "stop"})
         time.sleep(1.0)
-        # What a restarted Mac does: its terminal starts over with its own policy.
-        self.sock.call("terminal.size_policy.set", {"surface_id": self.source_surface, "mode": "smallest"})
-        reset = self.wait_state("the other Mac's reset", self.source_surface, self.expect_mode("smallest"))
+        # What a restarted Mac does: its terminal starts over with its own default, Priority
+        # with its own pane first.
+        pane_key = self.facts["source_pane_key"]
+        self.sock.call("terminal.size_policy.set", {"surface_id": self.source_surface, "mode": "priority",
+                                                     "priority": [pane_key]})
+        reset = self.wait_state("the other Mac's reset", self.source_surface, self.expect_first(pane_key))
         self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "restore"})
         wait_for("the loopback link to reconnect", lambda: self.device().get("link_state") == "connected", self.timeout)
         claimed = self.wait_state("the reconnected mirror to claim the terminal again", self.source_surface,
                                   self.expect_first(self.mirror_key))
         return {"reset": reset, "claimed": claimed}
+
+    def sticky_choice_stays_on_this_mac(self) -> Dict[str, Any]:
+        """A mode chosen on one of this Mac's terminals changes this Mac's terminals, not the
+        terminals this Mac's mirrors show. In the loopback the source terminal is also this Mac's
+        own, so it takes the choice as a local terminal, resolved to its own pane's key; a push
+        through the shown mirror would name the mirror's key and land last (red before: every
+        mirror pushed the new preference to the terminal it shows)."""
+        pane_key = self.facts["source_pane_key"]
+        self.select(self.mirror_id)
+        before = self.wait_state("the shown mirror to hold the source terminal", self.source_surface,
+                                 self.expect_first(self.mirror_key))
+
+        def own_pane(state: Dict[str, Any]) -> None:
+            self.expect_mode("largest")(state)
+            priority = self.policy(state)["priority"]
+            if priority[:1] == [self.mirror_key]:
+                raise Failure(f"the mirror pushed this Mac's choice to the terminal it shows: {self.policy(state)}")
+            if priority[:1] != [pane_key]:
+                raise Failure(f"policy is {self.policy(state)}, expected this Mac's choice for its own pane {pane_key}")
+
+        chosen = self.select_mode(self.local_surface, "largest")
+        try:
+            local = self.wait_state("Largest Window on the local terminal it was chosen on", self.local_surface,
+                                    self.expect_mode("largest"))
+            source = self.wait_state("the source terminal to take it as this Mac's own terminal",
+                                     self.source_surface, own_pane)
+            held = self.hold(self.source_surface, own_pane, steady=False)
+        finally:
+            # Back to Priority, chosen on the mirror (a choice on that very terminal), for the next steps.
+            self.select_mode(self.mirror_surface, "priority")
+            restored = self.wait_state("Priority chosen on the mirror to reach its terminal", self.source_surface,
+                                       self.expect_first(self.mirror_key))
+        return {"accepted": chosen.get("accepted"), "before": before, "local": local, "source": source,
+                **held, "restored": restored}
 
     def priority_order_applies_everywhere(self) -> Dict[str, Any]:
         self.report_viewport(self.source_id, self.source_surface, self.phone_client, "iphone", 40, 12)
@@ -683,16 +830,14 @@ class SizingPolicyE2E:
         source = self.wait_state("the dragged order on the source terminal", self.source_surface,
                                  order([phone_key, self.mirror_key]))
         # In the loopback the local terminal is also "the other Mac's terminal" for its own
-        # (hidden) auto-mirror. The choice applies to local terminals first, then pushes to
-        # every mirror, so that mirror's push of the same order, relative to itself, lands last.
-        own_view = self.local_key
-        for mirror in (self.sock.call(SIZING + "state", {}) or {}).get("mirrors") or []:
-            if up(mirror.get("remote_surface_id")) == up(self.local_surface) and mirror.get("pushed"):
-                own_view = str(mirror.get("self_key") or "")
-        local = self.wait_state("the same order, relative to its own view on this Mac, on the local terminal",
-                                self.local_surface, order([phone_key, own_view]))
-        return {"accepted": chosen.get("accepted"), "source": source, "local": local,
-                "local_own_view": "auto-mirror" if own_view != self.local_key else "mac pane",
+        # (hidden) auto-mirror. The order reaches it as a local terminal, relative to its Mac pane;
+        # a mirror that pushed the order to the terminal it shows would land after that, under the
+        # mirror's key, and the hold catches it.
+        local_order = order([phone_key, self.local_key])
+        local = self.wait_state("the same order, relative to its Mac pane, on the local terminal",
+                                self.local_surface, local_order)
+        held = self.hold(self.local_surface, local_order, 2.0, steady=False)
+        return {"accepted": chosen.get("accepted"), "source": source, "local": local, **held,
                 "preference": preference}
 
     def choice_survives_relaunch(self) -> Dict[str, Any]:
@@ -786,8 +931,13 @@ class SizingPolicyE2E:
                 ok = self.step("reselecting_mode_keeps_claims", self.reselecting_mode_keeps_claims) and ok
             ok = self.step("stored_choice_applies_to_its_terminal", self.stored_choice_applies_to_its_terminal) and ok
             if self.local_id:
+                ok = self.step("showing_keeps_other_macs_mode", self.showing_keeps_other_macs_mode) and ok
+            ok = self.step("choice_during_reconnect_lands", self.choice_during_reconnect_lands) and ok
+            if self.local_id:
                 ok = self.step("showing_again_reclaims", self.showing_again_reclaims) and ok
             ok = self.step("reconnect_reclaims", self.reconnect_reclaims) and ok
+            if self.local_surface:
+                ok = self.step("sticky_choice_stays_on_this_mac", self.sticky_choice_stays_on_this_mac) and ok
             if self.local_key:
                 ok = self.step("priority_order_applies_everywhere", self.priority_order_applies_everywhere) and ok
             if self.args.app_path:
@@ -801,7 +951,7 @@ class SizingPolicyE2E:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--tag", default=os.environ.get("CMUX_TAG"))
-    parser.add_argument("--socket", default=os.environ.get("CMUX_SOCKET_PATH"))
+    parser.add_argument("--socket", help="this tagged build's control socket (default: /tmp/cmux-debug-<tag>.sock; never $CMUX_SOCKET_PATH, which in a Supermux terminal names the user's own app)")
     parser.add_argument("--timeout", type=float, default=30.0, help="seconds to wait before a check gives up")
     parser.add_argument("--app-path", help="the tagged .app to quit and relaunch for the persistence check")
     parser.add_argument("--projects-file", help="SUPERMUX_PROJECTS_FILE to relaunch with")

@@ -39,6 +39,9 @@ protocol SupermuxRemoteSimulatorDebugInspectable: AnyObject {
 ///   spawn of this app's Simulator panels waits that long first (0 turns it off);
 ///   `coresimulator: false` makes them list devices with `simctl` too, and
 ///   `coresimulator_delay` holds each in-process CoreSimulator read that long.
+/// - `coresimulator {load?}` — where this app's in-process CoreSimulator load
+///   stands (`phase`: `not_loaded`, `loading`, `loaded`, `unavailable: …`);
+///   `load: true` starts a device read first (without waiting for it).
 @MainActor
 enum SupermuxRemoteSimulatorSocketCommands {
     static let methodPrefix = "mirror.simulator."
@@ -85,6 +88,12 @@ enum SupermuxRemoteSimulatorSocketCommands {
                 "coresimulator": SupermuxSimctlDebugDelay.allowsCoreSimulator,
                 "coresimulator_delay": SupermuxSimctlDebugDelay.coreSimulatorDelay,
             ]
+        case "coresimulator":
+            let reader = SupermuxCoreSimulatorDevices.shared
+            if params["load"] as? Bool == true {
+                Task.detached { _ = try? await reader.devices(timeout: 120) }
+            }
+            return ["phase": reader.loadPhase]
         default:
             throw InvalidParams(message: "unknown simulator driver \(name)")
         }

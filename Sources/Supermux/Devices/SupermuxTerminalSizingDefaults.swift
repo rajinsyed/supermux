@@ -31,14 +31,21 @@ struct SupermuxTerminalSizingPreference: Codable, Equatable {
 /// Whether a device mirror holds its terminal's grid for this Mac.
 ///
 /// A mirror claims the terminal when it is shown, or first attaches while
-/// shown, and pushes this Mac's preference to the other Mac once per
-/// connection: again after a reconnect, never in answer to the other Mac's
-/// size events or replays, so two Macs cannot push each other in a loop.
-/// Hiding the mirror gives the claim up. The Mac that showed it last wins.
+/// shown, once per connection: again after a reconnect, never in answer to
+/// the other Mac's size events or replays, so two Macs cannot push each other
+/// in a loop. The claim only puts this Mac first in the terminal's Priority
+/// order (``SupermuxTerminalSizingDefaults/claimPolicy(_:selfKey:)``): the
+/// mode, the fixed size and the rest of the order stay what was chosen on
+/// that terminal. Hiding the mirror gives the claim up. The Mac that showed
+/// it last wins.
 struct SupermuxTerminalSizingClaim: Equatable {
     var claimed = false
     var pushed = false
     var hasAttached = false
+    /// A choice made on this mirror's terminal (its size panel or tab menu)
+    /// while the mirror was not attached, so it could not be sent: it goes
+    /// on the next attach that sticks, before any claim, then is cleared.
+    var pendingChoice: SupermuxTerminalSizingPreference?
 }
 
 /// This Mac's terminal size preference (`supermux.terminalSizing.preference`).
@@ -48,10 +55,19 @@ struct SupermuxTerminalSizingClaim: Equatable {
 /// terminal viewed full screen, and a mode chosen in the size panel changed
 /// one terminal until the next relaunch. Here the preference (default:
 /// Priority with this Mac first) applies to every local terminal as its
-/// sizing host is created (`sizing-default-policy`), to every device mirror
-/// through its claim (`device-mirror-sizing-claim`), and is replaced by a
+/// sizing host is created (`sizing-default-policy`), and is replaced by a
 /// mode, fixed size or priority order chosen in the size panel or the tab
-/// menu, which re-applies it everywhere (`sizing-sticky-preference`).
+/// menu, which re-applies it to every local terminal and to the terminal it
+/// was chosen on (`sizing-sticky-preference`).
+///
+/// Another Mac's terminal changes policy only by a choice made on it: the
+/// size panel or tab menu of the mirror that shows it. A sticky choice made
+/// here never reaches the other terminals this Mac mirrors, and a mirror's
+/// claim (`device-mirror-sizing-claim`) only puts this Mac first in a
+/// Priority order. Before, every mirror pushed this Mac's whole preference
+/// whenever it was shown, reconnected or the preference changed, so one
+/// "Fit Everyone" picked on one Mac became the mode of every terminal of the
+/// Macs it mirrors, again after each show, and any small pane then shrank them.
 ///
 /// Per terminal, as upstream: Cloud terminals, `terminal.size_policy.set`,
 /// a phone's or another Mac's choice, Size to My Window, and the counts
@@ -132,40 +148,46 @@ final class SupermuxTerminalSizingDefaults {
         return true
     }
 
-    /// Forgets the user's choice and applies the default everywhere.
+    /// Forgets the user's choice and applies the default to this Mac's terminals.
     func reset() {
         defaults.removeObject(forKey: Self.defaultsKey)
         preference = .standard
-        applyEverywhere()
+        applyToLocalTerminals()
     }
 
-    /// A new preference applies everywhere. Re-choosing the current one applies
-    /// it only to the terminal the user acted on (`surfaceID`), and only when
-    /// that terminal's policy differs, as upstream's `setMode` compares against
-    /// the terminal's own policy: another Mac, a phone, `terminal.size_policy.set`
-    /// or Size to My Window may have changed it. The other terminals are left
-    /// alone, so the tab menu's Priority and Fixed (which mostly open the panel)
-    /// never take back terminals other Macs claimed.
+    /// A new preference applies to every local terminal. The terminal the user
+    /// acted on (`surfaceID`, a mirror's included) takes it whenever its own
+    /// policy differs, also when the preference did not change, as upstream's
+    /// `setMode` compares against the terminal's own policy: another Mac, a
+    /// phone, `terminal.size_policy.set` or Size to My Window may have changed
+    /// it. No other terminal of another Mac is touched, and re-choosing the
+    /// current preference leaves every other terminal alone, so the tab menu's
+    /// Priority and Fixed (which mostly open the panel) never take back
+    /// terminals other Macs claimed.
     private func choose(_ next: SupermuxTerminalSizingPreference, surfaceID: UUID) {
         let changed = next != preference
         preference = next
         if let data = try? JSONEncoder().encode(next) { defaults.set(data, forKey: Self.defaultsKey) }
-        if changed {
-            applyEverywhere()
-        } else {
-            apply(to: surfaceID)
-        }
+        if changed { applyToLocalTerminals() }
+        apply(to: surfaceID)
     }
 
-    /// The preference on one terminal: a device mirror claims its terminal and
-    /// pushes; a local terminal's sizing host takes it.
+    /// The preference on the one terminal the user acted on: a device mirror
+    /// pushes it to the other Mac's terminal (a choice made on that terminal);
+    /// a local terminal's sizing host takes it.
     private func apply(to surfaceID: UUID) {
         let controller = TerminalController.shared
         if let session = SupermuxTerminalSizingVisibility.shared.trackedMirrorSessions()[surfaceID] {
-            guard let viewer = session.viewer,
-                  viewer.state?.policy != preference.policy(selfKey: Self.selfKey(of: viewer)) else { return }
+            guard let viewer = session.viewer else { return }
+            guard viewer.state?.policy != preference.policy(selfKey: Self.selfKey(of: viewer)) else {
+                // The terminal already has it: an earlier pick still waiting is outdated.
+                session.supermuxSizingClaim.pendingChoice = nil
+                return
+            }
             session.supermuxSizingClaim.claimed = !session.supermuxHidden
-            session.supermuxSizingClaim.pushed = push(session)
+            let sent = pushChoice(session, preference)
+            session.supermuxSizingClaim.pushed = sent
+            session.supermuxSizingClaim.pendingChoice = sent ? nil : preference
         } else if let host = controller.localSizingHostsBySurfaceID[surfaceID] {
             let policy = preference.policy(selfKey: Self.selfKey(of: host))
             guard host.state.policy != policy else { return }
@@ -173,18 +195,14 @@ final class SupermuxTerminalSizingDefaults {
         }
     }
 
-    /// Local terminals first, then device mirrors: in the loopback a source
-    /// terminal is both, and the mirror's claim lands last.
-    private func applyEverywhere() {
+    /// Every terminal of this Mac. In the loopback a source terminal is also
+    /// the mirror's terminal: a choice made on the mirror lands after this.
+    private func applyToLocalTerminals() {
         let controller = TerminalController.shared
         for (surfaceID, host) in controller.localSizingHostsBySurfaceID {
             let policy = preference.policy(selfKey: Self.selfKey(of: host))
             guard host.state.policy != policy else { continue }
             _ = controller.localSizingSetPolicy(surfaceID: surfaceID, policy: policy)
-        }
-        for (_, session) in SupermuxTerminalSizingVisibility.shared.trackedMirrorSessions() {
-            session.supermuxSizingClaim.claimed = !session.supermuxHidden
-            session.supermuxSizingClaim.pushed = push(session)
         }
     }
 
@@ -216,17 +234,52 @@ final class SupermuxTerminalSizingDefaults {
         session.supermuxSizingClaim.pushed = false
     }
 
+    /// A choice made on this terminal while the mirror was detached goes
+    /// first (a reconnect's claim alone would only reorder Priority and lose
+    /// it); otherwise the claim, once per connection.
     private func pushClaim(_ session: DeviceTerminalMirrorSession) {
+        if let choice = session.supermuxSizingClaim.pendingChoice {
+            guard pushChoice(session, choice) else { return }
+            session.supermuxSizingClaim.pendingChoice = nil
+            session.supermuxSizingClaim.pushed = true
+            return
+        }
         guard session.supermuxSizingClaim.claimed, !session.supermuxSizingClaim.pushed else { return }
-        session.supermuxSizingClaim.pushed = push(session)
+        session.supermuxSizingClaim.pushed = claim(session)
     }
 
-    /// Sends this Mac's preference for the mirror's terminal. Unconditional:
-    /// after the other Mac restarts, the state this Mac last saw can be stale,
-    /// and the other Mac ignores a policy it already has.
-    private func push(_ session: DeviceTerminalMirrorSession) -> Bool {
+    /// Puts this Mac first in the other Mac's Priority order, as that Mac
+    /// published it (the replay that attached the mirror carried it). Any other
+    /// mode was chosen on that terminal: nothing to claim, and the claim counts
+    /// as made for this connection.
+    private func claim(_ session: DeviceTerminalMirrorSession) -> Bool {
+        guard session.phase == .attached, let viewer = session.viewer, viewer.detachment == nil,
+              let current = viewer.state?.policy else { return false }
+        guard let policy = Self.claimPolicy(current, selfKey: Self.selfKey(of: viewer)) else { return true }
+        return session.sharingSetPolicy(policy)
+    }
+
+    /// What a shown mirror asks of another Mac's terminal: under Priority,
+    /// this Mac's view first and the rest of that Mac's order after it, the
+    /// fixed size kept. Nil when there is nothing to claim: another mode, or
+    /// this Mac already first.
+    static func claimPolicy(_ current: TerminalSizingPolicy, selfKey: String) -> TerminalSizingPolicy? {
+        guard current.mode == .priority, current.priority.first != selfKey else { return nil }
+        return TerminalSizingPolicy(
+            mode: .priority,
+            priority: [selfKey] + current.priority.filter { $0 != selfKey },
+            fixed: current.fixed
+        )
+    }
+
+    /// Sends a choice made on the terminal the user acted on through its
+    /// mirror. False while the mirror is not attached (the caller keeps it
+    /// pending). Unconditional otherwise: after the other Mac restarts, the
+    /// state this Mac last saw can be stale, and the other Mac ignores a
+    /// policy it already has.
+    private func pushChoice(_ session: DeviceTerminalMirrorSession, _ choice: SupermuxTerminalSizingPreference) -> Bool {
         guard session.phase == .attached, let viewer = session.viewer, viewer.detachment == nil else { return false }
-        return session.sharingSetPolicy(preference.policy(selfKey: Self.selfKey(of: viewer)))
+        return session.sharingSetPolicy(choice.policy(selfKey: Self.selfKey(of: viewer)))
     }
 
     /// This Mac's priority key in another Mac's terminal: as that Mac
