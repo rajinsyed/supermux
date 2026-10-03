@@ -15,6 +15,10 @@ enum SupermuxTerminalInputDebug {
         var pipelinedRequests = 0
     }
 
+    /// This host withholds `supermux.terminal_input_pipeline.v1`, as a host
+    /// that predates it (takes effect on the link's next connection).
+    nonisolated(unsafe) static var pretendsOldHost = false
+
     private static let lock = NSLock()
     nonisolated(unsafe) private static var stats = Stats()
 
@@ -53,6 +57,8 @@ enum SupermuxTerminalInputDebug {
 /// - `terminal_input.latency {to_host_ms?, to_viewer_ms?}`: one-way latency
 ///   of the loopback device's link (``SupermuxDeviceLoopbackLatency``), so
 ///   typing runs over a slow link; 0 turns it off.
+/// - `terminal_input.pretend_old_host {enabled}`: this host withholds
+///   `supermux.terminal_input_pipeline.v1`; takes effect on the next connection.
 @MainActor
 enum SupermuxTerminalInputSocketCommands {
     static let methodPrefix = "terminal_input."
@@ -88,6 +94,10 @@ enum SupermuxTerminalInputSocketCommands {
                 "to_host_ms": milliseconds(of: SupermuxDeviceLoopbackLatency.toHost),
                 "to_viewer_ms": milliseconds(of: SupermuxDeviceLoopbackLatency.toViewer),
             ]
+        case "pretend_old_host":
+            guard let enabled = params["enabled"] as? Bool else { throw HookError(message: "enabled is required") }
+            SupermuxTerminalInputDebug.pretendsOldHost = enabled
+            return ["enabled": enabled]
         default:
             throw HookError(message: "unknown terminal_input method \(name)")
         }

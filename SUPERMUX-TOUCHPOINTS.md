@@ -747,8 +747,9 @@ Rules for adding a touchpoint:
 | 833 | `Packages/macOS/CmuxSettingsUI/Sources/CmuxSettingsUI/Sections/AppSection.swift` | `remote-host-mode` | Renders `SupermuxRemoteHostModeSettingsRow(defaultsStore: defaultsStore)` plus a `SettingsCardDivider()` right after the Menu Bar Only row in `mainCard`. The row and its `SupermuxRemoteHostModeSetting` key live in the fork-owned `Sections/SupermuxRemoteHostModeSettingsRow.swift` of the same package |
 | 834 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/RemoteHost/SupermuxRemoteHostMode.swift`, `SupermuxRemoteHostModeMenuItems.swift` and `SupermuxRemoteHostSocketCommands.swift` (ids `50BE001A…01`–`…06`, file refs `path = RemoteHost/<file>` in the Supermux group) into the cmux target |
 | 835 | `Sources/GhosttyTerminalView.swift` | `remote-host-mode` | One fenced early return in `GhosttySurfaceScrollView.ensureFocus(...)`, right before its `window.makeKeyAndOrderFront(nil)` (after the `shouldAllowEnsureFocusWindowActivation` guard): while headless (`SupermuxRemoteHostMode.shared.isHeadless`) focusing a terminal never orders its hidden window in. Found by the relaunch step: the restored workspace's terminal focus made the hidden window key and visible |
-| 850 | `Sources/Devices/DeviceTerminalInputRouter.swift` | `terminal-input-pipeline` | DEBUG in-flight counters (`SupermuxTerminalInputDebug.requestStarted/requestFinished`) around the legacy one-at-a-time `send` in `drain()` |
-| 851 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/Devices/SupermuxTerminalInputSocketCommands.swift` (`50BE00851000000000000001`/`…02`, DEBUG `terminal_input.*` drivers and counters) into the cmux target, four entries next to #783's `SupermuxTerminalStreamSocketCommands.swift` |
+| 850 | `Sources/Devices/DeviceTerminalInputRouter.swift` | `terminal-input-pipeline` | A `pipelined` closure (stored property and a defaulted trailing `init(sendBatch:onFailure:pipelined:)` parameter, nested inside the `device-mirror-input-batch` init fence); `drain()` first offers each batch to it (`if let pipelined, await pipelined(batch) { continue }`) and keeps upstream's one-at-a-time send only when it declines; DEBUG in-flight counters (`SupermuxTerminalInputDebug.requestStarted/requestFinished`) around that legacy `send` |
+| 851 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/Devices/SupermuxTerminalInputSocketCommands.swift` (`50BE00851000000000000001`/`…02`, DEBUG `terminal_input.*` drivers and counters) and `SupermuxTerminalInputPipeline.swift` (`…03`/`…04`) into the cmux target, four entries each next to #783's `SupermuxTerminalStreamSocketCommands.swift` |
+| 852 | `Sources/Devices/DeviceTerminalMirrorSession.swift` | `terminal-input-pipeline` | The `supermuxInputPipeline` property, a defaulted `supportsInputPipeline` init parameter (the convenience init passes the link's `supermux.terminal_input_pipeline.v1` capability), the pipeline's creation right before the router (`SupermuxTerminalInputPipeline.forMirror`) and its `pipelined:` argument, `setEnabled(phase == .attached)` in `phase`'s `didSet`, and `invalidate()` in `stop()` |
 
 ## How to re-apply
 
@@ -6516,3 +6517,25 @@ CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh` (the mode hides every win
 the menu bar items; a device-created workspace and terminal run a command while headless, no window shows and
 the app stays inactive; the close button and Close Window hide and keep the workspaces; a relaunch stays
 headless with the session restored; off shows the windows).
+
+### 850–852. Typing into another Mac's terminal does not wait for its replies — `terminal-input-pipeline`
+
+Before, a device mirror sent one `mobile.terminal.input` at a time: keys typed while a request waited for its
+reply queued behind it, so over a relay every burst paid a full round trip before it left this Mac. Capability
+`supermux.terminal_input_pipeline.v1` (an older host keeps the one-at-a-time path): each batch leaves at once
+from `SupermuxTerminalInputPipeline` with upstream's exactly-once delivery identity (`input_stream_id` /
+`input_stream_seq`, `MobileTerminalInputOutbox`); the host needs no new code, since its per-connection ordered
+terminal-input queue and shared `MobileHostTerminalInputLedger` already apply each sequence once, in order
+(`duplicate` for a resend, `gap` for one ahead of a missing sequence, which the viewer resends in order).
+Requests in flight at a link drop are resent after the re-attach with the same identity; pending input is
+dropped instead after 10 s down, when the host lost the stream (restart), or after an RPC refusal. Re-apply:
+
+- **#850 `DeviceTerminalInputRouter.swift`.** The `pipelined` property and init parameter and the first line
+  of `drain()`'s loop; the DEBUG counters around the legacy `send`. If upstream pipelines its own router
+  (several requests in flight with delivery identities), drop the pipeline and keep upstream's.
+- **#851 `project.pbxproj`.** Re-add the four entries per file listed in the #851 row.
+- **#852 `DeviceTerminalMirrorSession.swift`.** The property, the init parameter, the pipeline's creation before
+  `inputRouter` and the router's `pipelined:` argument, the `didSet` and `stop()` lines.
+
+Verify: `CMUX_E2E_SUITES="loopback_terminal_input_pipeline_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`
+(LOOPBACK-HARNESS.md "Terminal input pipeline E2E").

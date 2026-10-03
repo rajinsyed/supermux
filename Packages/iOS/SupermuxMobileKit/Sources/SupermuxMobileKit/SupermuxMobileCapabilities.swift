@@ -89,4 +89,7 @@ public struct SupermuxMobileCapabilities: Sendable, Equatable {
     /// The Mac runs terminal actions forwarded from another Mac's terminal
     /// mirror (Mac-to-Mac only; no phone UI depends on it).
     public var supportsTerminalActions: Bool { contains(.terminalActionsV1) }
+    /// The Mac takes pipelined device-mirror input (Mac-to-Mac only; no
+    /// phone UI depends on it).
+    public var supportsTerminalInputPipeline: Bool { contains(.terminalInputPipelineV1) }
 }

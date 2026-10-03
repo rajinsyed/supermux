@@ -46,11 +46,12 @@ import Testing
         #expect(SupermuxMobileCapability.terminalStreamV1.rawValue == "supermux.terminal_stream.v1")
         #expect(SupermuxMobileCapability.terminalSizingPreferenceV1.rawValue == "supermux.terminal_sizing_preference.v1")
         #expect(SupermuxMobileCapability.terminalActionsV1.rawValue == "supermux.terminal_actions.v1")
+        #expect(SupermuxMobileCapability.terminalInputPipelineV1.rawValue == "supermux.terminal_input_pipeline.v1")
     }
 
     @Test func allExposesEveryCapabilityExactlyOnce() {
         #expect(SupermuxMobileCapability.all == SupermuxMobileCapability.allCases)
-        #expect(SupermuxMobileCapability.all.count == 25)
-        #expect(Set(SupermuxMobileCapability.all).count == 25)
+        #expect(SupermuxMobileCapability.all.count == 26)
+        #expect(Set(SupermuxMobileCapability.all).count == 26)
     }
 }

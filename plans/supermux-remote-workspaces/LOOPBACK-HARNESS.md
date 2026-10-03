@@ -537,6 +537,28 @@ may still hold the previous grid, and a resume at a grid the mirror does not hav
 CMUX_E2E_SUITES="loopback_terminal_streaming_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
 ```
 
+## Terminal input pipeline E2E
+
+`tests/supermux/loopback_terminal_input_pipeline_e2e.py` (touchpoints #850–#852,
+`supermux.terminal_input_pipeline.v1`) types separate key presses into a mirror while the loopback link has
+an artificial one-way latency: `supermux.devices.terminal_input.latency {to_host_ms, to_viewer_ms}` (DEBUG) makes
+the loopback pipe a delay line, in order, whose in-transit bytes are lost when the link drops. A recorder in the
+source terminal logs each read with its arrival time; `supermux.devices.terminal_input.stats {reset?}` counts the
+mirrors' input requests (sent, most in flight at once, resends). Steps: 8 keys at 250 ms one-way arrive in order
+with several requests in flight and no key waiting for an earlier key's reply (max per-key latency under 1.5×
+the one-way delay); keys in transit when the link drops are resent after the re-attach and arrive once; keys
+applied whose replies were lost with the link are resent and dropped by the host's ledger (once, `resends ≥ 1`);
+with `supermux.devices.terminal_input.pretend_old_host {enabled}` the mirror sends one request at a time
+without delivery identities.
+
+Red on the test commit (one-in-flight router): max per-key latency 532 ms (per key 277–532, 815 ms from the
+first press to the last arrival), one request in flight, the in-transit keys lost at a reconnect. Green on the
+fix: 255–283 ms per key (≈ the 250 ms one-way delay), 551 ms total, up to 7 requests in flight.
+
+```bash
+CMUX_E2E_SUITES="loopback_terminal_input_pipeline_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
+```
+
 ## Terminal size policy E2E
 
 `tests/supermux/loopback_terminal_sizing_policy_e2e.py` (touchpoints #665–#670) checks that a

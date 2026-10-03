@@ -87,6 +87,7 @@ import Testing
             (.terminalStreamV1, \.supportsTerminalStream),
             (.terminalSizingPreferenceV1, \.supportsTerminalSizingPreference),
             (.terminalActionsV1, \.supportsTerminalActions),
+            (.terminalInputPipelineV1, \.supportsTerminalInputPipeline),
         ]
         #expect(accessors.count == SupermuxMobileCapability.all.count)
         for (capability, accessor) in accessors {
