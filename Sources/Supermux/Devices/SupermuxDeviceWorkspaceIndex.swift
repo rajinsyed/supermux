@@ -63,7 +63,8 @@ final class SupermuxDeviceWorkspaceIndex {
     func isDeviceMirror(_ workspace: Workspace) -> Bool {
         if bindings.ref(forStableID: workspace.stableId) != nil { return true }
         guard catalog.projectionMachines(forWorkspace: workspace.id).contains(where: \.isDevice) else { return false }
-        let panelIDs = workspace.panels.keys
+        // A remote-simulator viewer tab projects nothing but belongs to the mirror.
+        let panelIDs = workspace.panels.compactMap { $0.value is SupermuxRemoteSimulatorPanel ? nil : $0.key }
         guard !panelIDs.isEmpty else { return false }
         var refs = Set<SupermuxRemoteWorkspaceRef>()
         for panelID in panelIDs {

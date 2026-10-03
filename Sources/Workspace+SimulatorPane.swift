@@ -49,6 +49,10 @@ extension Workspace {
     ) -> SimulatorPanel? {
         guard !isRetiredFromOwningTabManager,
               (CmuxFeatureFlags.shared.isSimulatorEnabled || restoringSession),
+              // SUPERMUX:begin remote-simulator-no-local-in-mirror
+              // A device mirror's simulators run on the Mac that owns it.
+              !SupermuxRemoteSimulators.blocksLocalSimulator(in: self),
+              // SUPERMUX:end remote-simulator-no-local-in-mirror
               !isRemoteTmuxMirror else { return nil }
         let shouldFocus = focus ?? (bonsplitController.focusedPaneId == paneId)
         let previousFocusedPanelId = focusedPanelId
@@ -117,6 +121,10 @@ extension Workspace {
     ) -> SimulatorPanel? {
         guard !isRetiredFromOwningTabManager,
               CmuxFeatureFlags.shared.isSimulatorEnabled,
+              // SUPERMUX:begin remote-simulator-no-local-in-mirror
+              // A device mirror's simulators run on the Mac that owns it.
+              !SupermuxRemoteSimulators.blocksLocalSimulator(in: self),
+              // SUPERMUX:end remote-simulator-no-local-in-mirror
               !isRemoteTmuxMirror,
               let sourceTabId = surfaceIdFromPanelId(panelId),
               let sourcePaneId = bonsplitController.allPaneIds.first(where: { paneId in
