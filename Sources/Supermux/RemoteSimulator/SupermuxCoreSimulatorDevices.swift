@@ -54,10 +54,28 @@ final class SupermuxCoreSimulatorDevices: @unchecked Sendable {
     /// - Parameter timeout: How long this caller waits; the read itself goes on
     ///   and answers the callers that ask meanwhile.
     /// - Throws: ``Failure/unavailable(_:)`` when CoreSimulator cannot be
-    ///   used, ``Failure/slow`` when it did not answer within `timeout`.
+    ///   used, ``Failure/slow`` when it did not answer within `timeout`, and
+    ///   `CancellationError` as soon as the calling task is cancelled (a
+    ///   Simulator tab that closes, or the app quitting, never waits on a slow
+    ///   CoreSimulator; the read goes on for the other callers).
     func devices(timeout: TimeInterval) async throws -> [SimulatorDevice] {
+        let registered = OSAllocatedUnfairLock<Waiter?>(initialState: nil)
+        return try await withTaskCancellationHandler {
+            try await waitForRead(timeout: timeout, registered: registered)
+        } onCancel: {
+            registered.withLock { $0 }?.resume(with: .failure(CancellationError()))
+        }
+    }
+
+    private func waitForRead(timeout: TimeInterval, registered: OSAllocatedUnfairLock<Waiter?>) async throws -> [SimulatorDevice] {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[SimulatorDevice], any Error>) in
             let waiter = Waiter(continuation)
+            registered.withLock { $0 = waiter }
+            // Cancelled before the waiter was registered: `onCancel` found none.
+            guard !Task.isCancelled else {
+                waiter.resume(with: .failure(CancellationError()))
+                return
+            }
             let startsRead = waiters.withLock { pending -> Bool in
                 guard pending != nil else {
                     pending = [waiter]
