@@ -11,7 +11,8 @@ import Foundation
 ///
 /// - `state {}` — the stored preference and each device mirror's claim
 ///   (`null` where this build has none).
-/// - `reset {}` — forgets the stored preference and applies the default.
+/// - `reset {}` — forgets the stored preference and applies the default to
+///   this Mac's terminals.
 /// - `select_mode {surface_id, mode, fixed_cols?, fixed_rows?}` — the size
 ///   panel's mode picker; with `fixed_cols`/`fixed_rows`, its fixed-size editor.
 /// - `set_priority {surface_id, keys}` — the size panel's priority drag.
