@@ -61,6 +61,10 @@ public enum SupermuxMobileCapability: String, CaseIterable, Codable, Sendable, E
     /// (rotate, software keyboard, appearance) is served and
     /// `simulator.create` takes `udid`.
     case remoteSimulatorV1 = "supermux.remote_simulator.v1"
+    /// `mobile.terminal.size_policy.set` takes `supermux_preference`: a size
+    /// mode picked on another Mac's mirror becomes this Mac's setting for all
+    /// its terminals, as one picked here does.
+    case terminalSizingPreferenceV1 = "supermux.terminal_sizing_preference.v1"
 
     /// Every capability, in declaration order (derived from `CaseIterable`).
     public static let all: [SupermuxMobileCapability] = SupermuxMobileCapability.allCases

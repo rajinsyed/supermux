@@ -327,9 +327,23 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   then SIGKILL), and one still running when the app quits ends with the app
   (`SupermuxGitChildProcesses`: on `willTerminate`, every git child with its process group); before,
   those were left under launchd and ran for hours.
-- **Terminal size follows the Mac you look from** (upstream's shared sizing, #633, #665–#669): every
-  terminal starts as Priority with this Mac first (its own pane for a local terminal, so a phone
-  defers to a Mac pane on screen); a mirror claims the other Mac's terminal when it is shown, first
+- **Terminal size: Auto, one setting** (upstream's shared sizing, #633, #665–#669, #790–#797):
+  every terminal starts in Auto (upstream's `latest`, labelled Auto on the Mac and the phone): the
+  device you are viewing it from sets its grid. A phone opening a terminal, or returning to it, gets
+  a phone-sized grid even while the Mac window is on screen; typing, a paste, a focus click or
+  switching to the app with the terminal focused gives it back to the Mac; another Mac's mirror takes
+  it when it attaches, is shown again or types. Upstream's rule that a phone defers to a Mac pane on
+  screen is lifted in Auto by giving each phone without an override of its own `counts_override:
+  true` (cleared when the terminal leaves Auto; "Counts toward size" off on the phone stays off). A
+  viewport report that repeats the same grid is no activity (the phone sends one in answer to every
+  grid change, which would bounce the grid), and delivering a phone's or Mac's input no longer counts
+  as typing on the Mac pane. A pane merely coming on screen is no activity either: selecting a
+  workspace on the phone selects it on the Mac too. Not following yet: a phone that returns to a
+  terminal it never left (its view only left the window, so it keeps its viewport) takes the grid on
+  its next input or rotation; Cloud terminals keep upstream's rules (their host
+  decides). Until 2026-10-04 the default was Fit everyone; until 2026-10-03 Priority with this Mac
+  first, so a terminal opened from the phone did not fit the phone. Under Priority (this Mac first: its own pane for a local terminal, so a phone
+  defers to a Mac pane on screen) a mirror claims the other Mac's terminal when it is shown, first
   attaches while shown, or reconnects, pushing once per connection and never in answer to that Mac's
   size events, so of two viewing Macs the one that showed it last wins. The claim only puts this
   Mac first in that terminal's Priority order; a mode, fixed size or order chosen on the terminal
@@ -337,12 +351,19 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   panel or the tab menu are one sticky choice per Mac (`supermux.terminalSizing.preference`; the
   panel says "Applies to all terminals on this Mac."), applied to every local terminal, now and
   after a relaunch, and to the terminal it was chosen on (on a mirror whose link is down, once it
-  attaches again); another Mac's terminals change only by a
-  choice made on them (until 2026-10-03 every mirror pushed the whole preference when shown, on
-  reconnect and on every change, so a Fit Everyone picked once on one Mac became the mode of every
-  terminal it mirrored on the other, again after each show, and any small pane shrank them). Cloud terminals,
-  `terminal.size_policy.set`, a phone's or another Mac's choice, Size to My Window and Don't Resize
-  from This Mac stay per terminal. A viewing Mac's pane counts up to 500x200 (a phone's, 300x120). A
+  attaches again). The same holds for a mode picked in the phone's size sheet (a
+  `mobile.terminal.size_policy.set` from a phone or iPad), and a mode picked on a mirror also
+  becomes the other Mac's setting for all its terminals: the mirror sends it once, on the pick, with
+  `supermux_preference` to a Mac that advertises `supermux.terminal_sizing_preference.v1` (the panel
+  then says "Applies to all terminals on both Macs."; an older Mac keeps it on that terminal). A
+  setting that arrives is stored and never sent on, and nothing is sent on a show, a reconnect or a
+  size event, so two Macs cannot bounce it (until 2026-10-03 every mirror pushed the whole preference
+  when shown, on reconnect and on every change, so a Fit Everyone picked once on one Mac became the
+  mode of every terminal it mirrored on the other, again after each show, and any small pane shrank
+  them). Fixed keeps its size in the one setting (every terminal of the Mac gets that grid). Cloud
+  terminals, `terminal.size_policy.set` (socket, CLI), a mirror's claim, Size to My Window and the
+  counts overrides (Don't Resize from This Mac, a device's own "Counts toward size") stay per
+  terminal. A viewing Mac's pane counts up to 500x200 (a phone's, 300x120). A
   pane that is not on screen (a tab never shown on its Mac, a mirror in a background workspace, a hidden
   or fully covered window) does not count, so a tab opened from a mirror takes the mirror's size at
   once; a mirror still off screen when its link reconnects keeps not counting (the other Mac forgets the
