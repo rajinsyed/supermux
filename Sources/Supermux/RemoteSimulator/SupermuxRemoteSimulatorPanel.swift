@@ -76,8 +76,8 @@ final class SupermuxRemoteSimulatorPanel: Panel {
     @ObservationIgnored private var rebindTask: Task<Void, Never>?
     @ObservationIgnored private var autoLongSide = SimStreamQualityPreset.high.maximumLongSidePixels
     @ObservationIgnored private var autoQualityTask: Task<Void, Never>?
-    /// Host panels this tab already asked to recover on its own (once each).
-    @ObservationIgnored private var autoRecoveredHostPanelIDs: Set<UUID> = []
+    /// How many times this tab asked each host panel to recover on its own.
+    @ObservationIgnored private var autoRecoveries: [UUID: Int] = [:]
     @ObservationIgnored private var autoRecoverTask: Task<Void, Never>?
     @ObservationIgnored private var devicesRetryTask: Task<Void, Never>?
     @ObservationIgnored private var devicesRetries = 0
@@ -396,19 +396,31 @@ final class SupermuxRemoteSimulatorPanel: Panel {
     /// first starts when this stream asks for frames, and there it can lose
     /// its first worker (replaced as the device attaches) and stay "worker
     /// stopped" although a new worker runs: the stream never begins. When
-    /// the owning Mac reports that for 5 s, ask it to recover once, as the
+    /// the owning Mac reports that for 5 s, ask it to recover, as the
     /// Recover button does; a device switch passes through it briefly. A
-    /// later stop of the same panel keeps the button.
+    /// recovery can lose to a slow start there (its simulators slower than
+    /// the recovery, 2026-10-03), so while it stays stopped the tab asks again
+    /// every 20 s, three times in all per host panel; after that the button
+    /// stays.
     private func hostStatusChanged(_ status: SimStreamHostStatus?) {
         autoRecoverTask?.cancel()
         autoRecoverTask = nil
-        guard status == .workerCrashed, let hostPanelID, !autoRecoveredHostPanelIDs.contains(hostPanelID) else { return }
+        guard status == .workerCrashed, let hostPanelID else { return }
+        scheduleAutoRecover(after: .seconds(5), hostPanelID: hostPanelID)
+    }
+
+    private static let maximumAutoRecoveries = 3
+    private static let autoRecoverRetryDelay: Duration = .seconds(20)
+
+    private func scheduleAutoRecover(after delay: Duration, hostPanelID: UUID) {
+        guard autoRecoveries[hostPanelID, default: 0] < Self.maximumAutoRecoveries else { return }
         autoRecoverTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(5))
+            try? await Task.sleep(for: delay)
             guard let self, !Task.isCancelled, !self.isClosed, self.hostPanelID == hostPanelID,
                   self.store?.hostStatus == .workerCrashed else { return }
-            self.autoRecoveredHostPanelIDs.insert(hostPanelID)
+            self.autoRecoveries[hostPanelID, default: 0] += 1
             self.recover()
+            self.scheduleAutoRecover(after: Self.autoRecoverRetryDelay, hostPanelID: hostPanelID)
         }
     }
 
