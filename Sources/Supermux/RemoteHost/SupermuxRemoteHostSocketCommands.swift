@@ -1,6 +1,7 @@
 #if DEBUG
 import AppKit
 import Foundation
+import UserNotifications
 
 /// `supermux.devices.remote_host.*` (DEBUG builds only): E2E drivers for
 /// Remote Host Mode (`tests/supermux/loopback_remote_host_mode_e2e.py`),
@@ -21,6 +22,14 @@ import Foundation
 ///   — the window's close button (`performClose`) or Close Window
 ///   (`closeWindowWithConfirmation`); `dialog_shown` says whether Close
 ///   Window would have asked first.
+/// - `remote_host.global_hotkey {}` — a press of the global show/hide hotkey
+///   (`toggleApplicationVisibilityFromGlobalHotkey`).
+/// - `remote_host.notification_click {workspace_id, surface_id?}` — a click on
+///   a delivered terminal notification's banner for that terminal (its default
+///   action, as the notification center delegate hands it over).
+///
+/// Both run inside a socket command, which keeps the app in the background
+/// (``TerminalController/shouldSuppressSocketCommandActivation()``).
 @MainActor
 enum SupermuxRemoteHostSocketCommands {
     static let methodPrefix = "remote_host."
@@ -46,6 +55,11 @@ enum SupermuxRemoteHostSocketCommands {
             return state()
         case "close_window":
             return try closeWindow(params)
+        case "global_hotkey":
+            AppDelegate.shared?.toggleApplicationVisibilityFromGlobalHotkey()
+            return state()
+        case "notification_click":
+            return try notificationClick(params)
         default:
             throw SupermuxMirrorSocketCommands.InvalidParams(message: "unknown remote_host method \(name)")
         }
@@ -101,6 +115,20 @@ enum SupermuxRemoteHostSocketCommands {
         }
         var result = state()
         result["dialog_shown"] = dialogShown
+        return result
+    }
+
+    private static func notificationClick(_ params: [String: Any]) throws -> [String: Any] {
+        guard let app = AppDelegate.shared,
+              let raw = params["workspace_id"] as? String, let workspaceID = UUID(uuidString: raw) else {
+            throw SupermuxMirrorSocketCommands.InvalidParams(message: "workspace_id must name a workspace")
+        }
+        let surfaceID = (params["surface_id"] as? String).flatMap(UUID.init(uuidString:))
+        // What the notification center delegate does for a banner click (#880), then the open.
+        SupermuxRemoteHostMode.shared.notificationClicked(actionIdentifier: UNNotificationDefaultActionIdentifier)
+        let opened = app.openNotification(tabId: workspaceID, surfaceId: surfaceID, notificationId: nil)
+        var result = state()
+        result["opened"] = opened
         return result
     }
 
