@@ -621,9 +621,9 @@ Rules for adding a touchpoint:
 | 663 | `Sources/Devices/DeviceSurfaceProvider+TerminalLayout.swift` | `mirror-terminal-to-right` | In `createTerminal(nearTabID:splitDirection:request:)`, after upstream's `direction` param: a tab create adds `after_surface_id` from `SupermuxMirrorTerminalPlacement.afterSurfaceID(for:remoteWorkspaceID:on:catalog:)` (only when the request remembered one in the same remote workspace and the host advertises `supermux.terminal_placement.v1`). DEBUG only: when `SupermuxTabOrderDebug.takeLostReply()` is armed, the request is sent, its reply dropped and `DeviceLinkError.notConnected` thrown (the E2E's lost-reply fault) |
 | 663b | `Sources/Devices/DeviceWorkspaceLayoutHost.swift` | `mirror-terminal-to-right` | Three fences in `handle(_:)`'s `device.workspace.terminal.create` path: the allowed-params set also takes `after_surface_id`; before `createTerminal`, `SupermuxMirrorTerminalPlacement.hostAnchor(…)` rejects (`invalid_params`) an anchor that is not a terminal of this workspace or comes with a split direction; after it, `place(terminalID, at:, inWorkspace:)` moves the new tab right of the anchor (selection untouched) before the reply's snapshot is captured |
 | 664 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/Mirrors/SupermuxTabOrderSocketCommands.swift` (DEBUG E2E drivers) and `SupermuxMirrorTerminalPlacement.swift` into the cmux target (ids `50BE00170300…01`–`…04`, four entries each, `Mirrors/…` paths in the Supermux group) |
-| 665 | `Sources/TerminalController+SharedSizing.swift` | `sizing-default-policy` | In `localSizingHost(surfaceID:create:)`, right after #633's fence: `SupermuxTerminalSizingDefaults.shared.prepareHost(&host)` sets this Mac's size preference (default Priority with the Mac pane first, instead of upstream's Fit everyone) before the first grid applies |
+| 665 | `Sources/TerminalController+SharedSizing.swift` | `sizing-default-policy` | In `localSizingHost(surfaceID:create:)`, right after #633's fence: `SupermuxTerminalSizingDefaults.shared.prepareHost(&host)` sets this Mac's size preference (default Auto, upstream's `latest` with #790's rules, since 2026-10-04; Fit everyone until then, and Priority with the Mac pane first until 2026-10-03) before the first grid applies, and starts `SupermuxTerminalSizingAuto`'s app-activation observer |
 | 666 | `Sources/Devices/DeviceTerminalMirrorSession.swift` | `device-mirror-sizing-claim` | Three fences: the stored `supermuxSizingClaim` (`SupermuxTerminalSizingClaim`), `SupermuxTerminalSizingDefaults.shared.mirrorAttached(self)` right after an attach sticks (after #631's reconcile), and `connectionDropped(self)` at the end of `linkDropped()`. Also, inside #631's fences: the convenience init's viewer identity is `SupermuxTerminalSizingDefaults.viewerIdentity(for: link.instance)` (this Mac's identity; DEBUG gives the loopback's mirrors a distinct device id) and `supermuxSetHidden(_:)` calls `mirrorVisibilityChanged(self)` after its counts reconcile (counts before the claim, as on attach). A shown mirror claims its terminal once per connection: it puts this Mac first in that terminal's Priority order and never changes its mode, fixed size or the rest of the order (2026-10-03; before, it pushed this Mac's whole preference) |
-| 667 | `Sources/TerminalSizePanelView.swift` | `sizing-sticky-preference` | Four fences: the mode picker's `set:`, `applyFixedSize` and `movePriority` call `SupermuxTerminalSizingDefaults.shared.userChoseMode/userChoseFixedSize/userChosePriority(…, surfaceID:, store:)` instead of `store.setMode/setFixedSize/setPriority` (the choice becomes this Mac's preference for every terminal on this Mac and applies to the terminal it was made on, a mirror's included; other Macs' terminals are never swept; Cloud terminals fall through to the store); under the mode row, `SupermuxTerminalSizingScopeNote()` ("Applies to all terminals on this Mac.") unless `snapshot.isCloud` |
+| 667 | `Sources/TerminalSizePanelView.swift` | `sizing-sticky-preference` | Four fences: the mode picker's `set:`, `applyFixedSize` and `movePriority` call `SupermuxTerminalSizingDefaults.shared.userChoseMode/userChoseFixedSize/userChosePriority(…, surfaceID:, store:)` instead of `store.setMode/setFixedSize/setPriority` (the choice becomes this Mac's preference for every terminal on this Mac and applies to the terminal it was made on, a mirror's included; other Macs' terminals are never swept; Cloud terminals fall through to the store); under the mode row, `SupermuxTerminalSizingScopeNote(mode: snapshot.state.policy.mode, surfaceID: surfaceID)` unless `snapshot.isCloud` ("The device you're using sets the size." under Auto, then "Applies to all terminals on this Mac.", or "…on both Macs." on a mirror of a Mac that adopts the pick, #795) |
 | 668 | `Sources/Workspace+TerminalSharing.swift` | `sizing-sticky-preference` | In `handleTerminalSharingContextAction`, the tab menu's size modes call `SupermuxTerminalSizingDefaults.shared.userChoseMode(mode, surfaceID: panelId, store: store)` instead of `store.setMode` (same beep on `false`) |
 | 669 | `Sources/TerminalController.swift` | `device-mirror-viewport-limit` | In `applyMobileViewportReport`, upstream's `min(…, 300)` / `min(…, 120)` viewport clamp takes its limit from `SupermuxTerminalSizingDefaults.viewportLimit(deviceKind:)` (the report's `device_kind`, else the stored report's): 500x200 (`TerminalSizingPolicy.maximumFixedSize`) for a viewing Mac, upstream's 300x120 otherwise |
 | 670 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/Devices/SupermuxTerminalSizingDefaults.swift` and `SupermuxTerminalSizingSocketCommands.swift` (DEBUG drivers) into the cmux target (ids `50BE00170400000000000001`–`…04`, four entries each, `Devices/…` paths in the Supermux group) |
@@ -705,6 +705,14 @@ Rules for adding a touchpoint:
 | 771 | `Packages/macOS/CmuxTerminalCore/Sources/CmuxTerminalCore/SurfaceCallbacks/GhosttySurfaceCallbackContext.swift` | `terminal-user-copy-intent` | Adds `public var isDispatchingRuntimeInput: Bool`: whether this surface's native input dispatch (the paste-intent marker `withRuntimeClipboardPasteIntent` sets around keys, pointer buttons and binding actions) is running on the calling thread, which a program's OSC 52 never is |
 | 772 | `Sources/GhosttyTerminalView.swift` | `terminal-user-copy-intent` | Two fences. In `write_clipboard_cb`'s guard, upstream's `terminalSurface.allowsAutomaticClipboardWrite` becomes `SupermuxTerminalClipboardWrites.allows(terminalSurface, context: callbackContext, location: location)` (`Sources/Supermux/SupermuxTerminalClipboardWrites.swift`: upstream's check OR this Mac's own input is dispatching, so a user's copy lands from any remote projection; DEBUG builds record each decision). In `copyKeyboardCopyModeSelectionToClipboard`, `ghostty_surface_copy_selection_to_clipboard_bounded` runs inside `withPotentialClipboardPasteIntent`, so keyboard copy mode's yank counts as that input instead of being dropped while the method reported success |
 | 773 | `cmuxTests/SupermuxMobileAuthorizationTests.swift` | `device-terminal-upload-authz` | `classificationCoversWorkspacePaneAndMacWideMethods` expects `terminal.attachment.upload` to be workspace-scoped (the upload names the mirrored `workspace_id`); the test's `default: .macWide` would otherwise fail it |
+| 790 | `Sources/TerminalController+SharedSizing.swift` | `sizing-auto` | Three fences calling `SupermuxTerminalSizingAuto` (`Sources/Supermux/Devices/`). In `resolveSharedSizing`, after `syncPhones` and the explicit `counts_override`: `viewersReported(&host, surfaceID:, previous:, explicitParticipantID:)` (in Auto a viewer whose viewport changed or whose `counts_override` false was lifted gets `noteActivity`, and a phone without an override of its own gets `counts_override: true`). In `localSizingSetPolicy`, after `setPolicy`: `policyChanged(&host, surfaceID:)` (Auto's overrides follow the mode, cleared when it leaves Auto). In `localSizingSetCountsOverride`, before `setCountsOverride`: `userSetCounts(participantID:surfaceID:)` (an override set by hand is the user's) |
+| 791 | `Sources/TerminalController+SharedSizing.swift` | `sizing-auto-remote-input` | Two fences. In `mobileDetachedGateError`, after the method switch (input, paste, mouse, scroll, replay): `SupermuxTerminalSizingAuto.shared.remoteTerminalRequestArrived()`. At the top of `noteLocalTerminalSizingActivity`, after the host lookup: `guard !SupermuxTerminalSizingAuto.shared.deliveringRemoteInput else { return }` (O(1) on the keystroke path). Delivering a phone's or another Mac's input runs the Mac pane's `onExplicitInput`, which upstream counted as the Mac pane typing, after the viewer's own activity: in Auto the Mac then took the grid from the phone that typed |
+| 792 | `Sources/TerminalSharingDisplay.swift` | `sizing-auto-label` | In `modeTitle(_:)`, `.latest` returns `SupermuxTerminalSizingScopeNote.autoTitle` ("Auto", `supermux.terminalSizing.mode.auto`) instead of upstream's "Follow Latest" (`terminalSharing.sizeMode.latest`, left in the catalog) |
+| 793 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/TerminalSizingText.swift` | `sizing-auto-label` | In `modeName(_:)`, `.latest` reads `supermux.terminalSizing.mode.auto` ("Auto") instead of upstream's `mobile.terminal.sizing.mode.latest` ("Follow latest", left in the catalog) |
+| 794 | `Sources/TerminalController+SharedSizing.swift` | `sizing-one-setting` | In `v2MobileTerminalSizePolicySet`, after the fixed-size limit check: `if SupermuxTerminalSizingDefaults.shared.remoteChose(policy, params: params, surfaceID:) { return .ok(sizeStatePayload(…)) }`. A pick sent with `supermux_preference` (another Mac's mirror) or by a handheld client (the phone's size sheet) becomes this Mac's stored preference for every local terminal and the terminal named takes `policy` as sent; anything else (a mirror's claim, an older Mac, a Cloud terminal) falls through to upstream's per-terminal path |
+| 795 | `Sources/Devices/DeviceTerminalMirrorSession.swift` | `sizing-one-setting` | Three fences: the stored `supermuxHostTakesSizingPreference` closure (default `{ false }`); in the convenience init after `self.init(…)`, it is set to `SupermuxTerminalSizingDefaults.hostTakesPreference(on: .device(link.instance))` (the cached `supermux.terminal_sizing_preference.v1`); after `sharingSetPolicy`, `supermuxSendSizingChoice(_:preference:)` sends `mobile.terminal.size_policy.set` with `supermux_preference` when given. Only `SupermuxTerminalSizingDefaults.pushChoice` (a pick, never a claim) calls it |
+| 796 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/Devices/SupermuxTerminalSizingAuto.swift` into the cmux target (ids `50BE00170400000000000005`/`…06`, four entries, `Devices/…` path in the Supermux group, next to #670's) |
+| 797 | `ios/cmux/Resources/Localizable.xcstrings` | `unfenced` | Adds `supermux.terminalSizing.mode.auto` (en "Auto", ja "自動") for #793; additive only |
 
 ## How to re-apply
 
@@ -5278,6 +5286,15 @@ code: `Sources/Supermux/Devices/SupermuxTerminalSizingDefaults.swift` (the prefe
 identity), `SupermuxTerminalSizingVisibility.trackedMirrorSessions()`, and the DEBUG drivers in
 `SupermuxTerminalSizingSocketCommands.swift`. No engine change: `priority` is upstream's mode.
 
+2026-10-03, user feedback: every terminal opened from the phone started as Priority (this Mac first),
+so the phone saw a cropped grid. The preference's default is now Fit everyone (`smallest`, upstream's
+default) on every terminal, Mac and phone alike; Priority (this Mac first) and the claim apply once
+the user picks Priority in the size panel or tab menu.
+
+2026-10-04, user feedback ("auto priority … should include the iOS app too, so it doesn't show the
+desktop size when viewing from it"): the default is now Auto (#790–#797), and a mode picked
+anywhere (the phone's size sheet, another Mac's mirror) is the one setting (#794/#795).
+
 Re-apply after an upstream merge:
 - **#665**: wherever upstream creates a `LocalTerminalSizingHost` for a local terminal, call
   `SupermuxTerminalSizingDefaults.shared.prepareHost(&host)` after #633's `prepareHost` and before the
@@ -5301,6 +5318,38 @@ Re-apply after an upstream merge:
 
 Verify: `CMUX_E2E_SUITES="loopback_terminal_sizing_policy_e2e loopback_terminal_input_e2e" CMUX_TAG=<tag>
 tests/supermux/run_all_loopback_e2e.sh`.
+
+### 790–797. Auto: the device you are viewing from sets the size; one setting wherever it is picked — `sizing-auto`, `sizing-auto-remote-input`, `sizing-auto-label`, `sizing-one-setting`
+
+User feedback (2026-10-04): "I want an auto priority system instead of Fit everyone … auto priority
+should include the iOS app too so that it doesn't show the desktop size when viewing from it", and
+"changing the setting should change for all terminals, not just the changed one". Fork code:
+`Sources/Supermux/Devices/SupermuxTerminalSizingAuto.swift` (Auto's host rules and the app-activation
+observer) and `SupermuxTerminalSizingDefaults.remoteChose` / `pushChoice` (the one setting). Auto is
+upstream's `latest`; the shared engine (`TerminalSizingEngine`, its Rust twin and
+`schemas/terminal-sizing/fixtures.json`) is unchanged: the fork only sets `counts_override` and
+`noteActivity` from the host.
+
+Re-apply after an upstream merge:
+- **#790**: wherever upstream syncs viewers' reports into a local host, call `viewersReported` after
+  the sync and the explicit `counts_override`, with the state from before the sync; call
+  `policyChanged` after every policy change of a local host and `userSetCounts` before every counts
+  override set by hand. Never note activity for a report that repeats the viewer's viewport: the phone
+  re-reports the same grid in answer to every grid change (`MobileTerminalSizingSurface.reassertViewport`),
+  which would ping-pong. Retire the counts half if upstream drops the handheld deferral under `latest`.
+- **#791**: mark every mobile terminal input/scroll request before its handler runs, and keep the
+  guard first in `noteLocalTerminalSizingActivity`. Retire it if upstream stops running
+  `onExplicitInput` for remote input.
+- **#792/#793**: keep `latest` labelled Auto on both platforms.
+- **#794**: keep the call before upstream's `terminalSharing.setPolicy` in the mobile handler only.
+  `terminal.size_policy.set` (socket, CLI) stays per terminal: the E2E uses it to stand in for a
+  restarted Mac.
+- **#795**: only an explicit pick (`pushChoice`, including the pick held while detached) may send
+  `supermux_preference`. A claim, a show, a reconnect or a size event must not, and a Mac that adopts a
+  preference must never send it on: that is what keeps two Macs from bouncing it (see #666).
+- **#796/#797**: re-wire the file and keep the key if upstream rewrites the project or the catalog.
+
+Verify: as above. Steps 16–23 cover Auto, 24–26 the one setting.
 
 ### 620–622. New Workspace stays on this Mac; other Macs on request — `sidebar-empty-area-local`, `device-root-workspace-create`, `sidebar-empty-area-device-menu`
 

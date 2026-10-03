@@ -65,6 +65,10 @@ public enum SupermuxMobileCapability: String, CaseIterable, Codable, Sendable, E
     /// terminal here is uploaded to this Mac (`terminal.attachment.upload`),
     /// so the path typed into the terminal names a file that exists here.
     case terminalAttachmentsV1 = "supermux.terminal_attachments.v1"
+    /// `mobile.terminal.size_policy.set` takes `supermux_preference`: a size
+    /// mode picked on another Mac's mirror becomes this Mac's setting for all
+    /// its terminals, as one picked here does.
+    case terminalSizingPreferenceV1 = "supermux.terminal_sizing_preference.v1"
 
     /// Every capability, in declaration order (derived from `CaseIterable`).
     public static let all: [SupermuxMobileCapability] = SupermuxMobileCapability.allCases

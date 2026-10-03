@@ -79,4 +79,7 @@ public struct SupermuxMobileCapabilities: Sendable, Equatable {
     /// The Mac stores files pasted or dropped into another Mac's terminal
     /// mirror (Mac-to-Mac only; no phone UI depends on it).
     public var supportsTerminalAttachments: Bool { contains(.terminalAttachmentsV1) }
+    /// The Mac adopts a size mode picked on another Mac's mirror as its own
+    /// setting (Mac-to-Mac only; no phone UI depends on it).
+    public var supportsTerminalSizingPreference: Bool { contains(.terminalSizingPreferenceV1) }
 }
