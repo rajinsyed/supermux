@@ -1,6 +1,7 @@
 #if DEBUG
 import AppKit
 import Foundation
+import UserNotifications
 
 /// `supermux.devices.remote_host.*` (DEBUG builds only): E2E drivers for
 /// Remote Host Mode (`tests/supermux/loopback_remote_host_mode_e2e.py`),
@@ -123,6 +124,8 @@ enum SupermuxRemoteHostSocketCommands {
             throw SupermuxMirrorSocketCommands.InvalidParams(message: "workspace_id must name a workspace")
         }
         let surfaceID = (params["surface_id"] as? String).flatMap(UUID.init(uuidString:))
+        // What the notification center delegate does for a banner click (#880), then the open.
+        SupermuxRemoteHostMode.shared.notificationClicked(actionIdentifier: UNNotificationDefaultActionIdentifier)
         let opened = app.openNotification(tabId: workspaceID, surfaceId: surfaceID, notificationId: nil)
         var result = state()
         result["opened"] = opened

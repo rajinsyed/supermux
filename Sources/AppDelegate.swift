@@ -11015,6 +11015,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 self?.showNotificationsPopoverFromMenuBar()
             },
             onOpenNotification: { [weak self] notification in
+                // SUPERMUX:begin remote-host-user-show
+                _ = SupermuxRemoteHostMode.shared.showsWindowsForUserRequest()
+                // SUPERMUX:end remote-host-user-show
                 _ = self?.openTerminalNotification(notification)
             },
             onJumpToLatestUnread: { [weak self] in
@@ -11205,6 +11208,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     func toggleApplicationVisibilityFromGlobalHotkey() {
+        // SUPERMUX:begin remote-host-user-show
+        // A headless remote host shows its hidden windows, as Show Supermux does.
+        if SupermuxRemoteHostMode.shared.showsWindowsForUserRequest() { return }
+        // SUPERMUX:end remote-host-user-show
         mainWindowVisibilityController.toggleApplicationVisibility(
             windows: mainWindowsForVisibilityController(),
             reason: .globalHotkey
@@ -18590,6 +18597,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         Task { @MainActor [weak self] in
+            // SUPERMUX:begin remote-host-user-show
+            // A click on a banner shows a headless remote host's windows first.
+            SupermuxRemoteHostMode.shared.notificationClicked(actionIdentifier: response.actionIdentifier)
+            // SUPERMUX:end remote-host-user-show
             await self?.notificationDelivery.handleNotificationResponse(response)
             completionHandler()
         }
