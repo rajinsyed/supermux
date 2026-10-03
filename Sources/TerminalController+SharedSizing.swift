@@ -72,6 +72,14 @@ extension TerminalController {
                 countsOverride.value
             )
         }
+        // SUPERMUX:begin sizing-auto (Auto: a viewer starting to view is activity, and a phone counts)
+        SupermuxTerminalSizingAuto.shared.viewersReported(
+            &host,
+            surfaceID: surfaceID,
+            previous: previous,
+            explicitParticipantID: countsOverride.map { LocalTerminalSizingHost.phoneParticipantID(clientID: $0.clientID) }
+        )
+        // SUPERMUX:end sizing-auto
         localSizingHostsBySurfaceID[surfaceID] = host
         return applyLocalSizing(surfaceID: surfaceID, previous: previous, immediate: immediate, reason: reason)
     }
@@ -216,6 +224,9 @@ extension TerminalController {
     /// terminal is not shared, because it runs on every keystroke.
     func noteLocalTerminalSizingActivity(surfaceID: UUID) {
         guard var host = localSizingHostsBySurfaceID[surfaceID] else { return }
+        // SUPERMUX:begin sizing-auto-remote-input (a phone's or another Mac's input delivered here is theirs, not this pane's)
+        guard !SupermuxTerminalSizingAuto.shared.deliveringRemoteInput else { return }
+        // SUPERMUX:end sizing-auto-remote-input
         let previous = host.state
         guard host.noteActivity(host.macParticipantID) else { return }
         localSizingHostsBySurfaceID[surfaceID] = host
@@ -430,6 +441,9 @@ extension TerminalController {
         default:
             return nil
         }
+        // SUPERMUX:begin sizing-auto-remote-input (delivering this input or scroll is not typing on the Mac pane)
+        SupermuxTerminalSizingAuto.shared.remoteTerminalRequestArrived()
+        // SUPERMUX:end sizing-auto-remote-input
         guard let clientID = v2String(params, "client_id") else { return nil }
         let needsGate = hasDetachedMobileClients
         guard needsGate || (isInput && (!localSizingHostsBySurfaceID.isEmpty || !cloudSizingRelaysBySurfaceID.isEmpty)) else {
@@ -457,6 +471,9 @@ extension TerminalController {
         guard var host = localSizingHostsBySurfaceID[surfaceID] else { return false }
         let previous = host.state
         host.setPolicy(policy)
+        // SUPERMUX:begin sizing-auto (Auto's phone counts follow the mode)
+        SupermuxTerminalSizingAuto.shared.policyChanged(&host, surfaceID: surfaceID)
+        // SUPERMUX:end sizing-auto
         localSizingHostsBySurfaceID[surfaceID] = host
         applyLocalSizing(surfaceID: surfaceID, previous: previous, reason: "terminal.size_policy.set")
         return true
@@ -466,6 +483,9 @@ extension TerminalController {
         guard var host = localSizingHostsBySurfaceID[surfaceID],
               host.state.participant(participantID) != nil else { return false }
         let previous = host.state
+        // SUPERMUX:begin sizing-auto (an override set by hand is the user's, never Auto's)
+        SupermuxTerminalSizingAuto.shared.userSetCounts(participantID: participantID, surfaceID: surfaceID)
+        // SUPERMUX:end sizing-auto
         host.setCountsOverride(participantID, value)
         localSizingHostsBySurfaceID[surfaceID] = host
         applyLocalSizing(surfaceID: surfaceID, previous: previous, reason: "terminal.size_counts.set")

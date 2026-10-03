@@ -12,12 +12,13 @@ import SwiftUI
 /// another Mac's terminal. One stored order is then right for both.
 struct SupermuxTerminalSizingPreference: Codable, Equatable {
     static let selfToken = "self"
-    /// The default: Fit everyone, so every device viewing a terminal (this
-    /// Mac, a phone, another Mac) sees its whole grid. The order keeps this
-    /// Mac first for when Priority is chosen.
+    /// The default: Auto (`latest`, ``SupermuxTerminalSizingAuto``), so the
+    /// device the user is viewing a terminal from (this Mac, a phone, another
+    /// Mac) sets its grid. The order keeps this Mac first for when Priority
+    /// is chosen.
     static let standard = SupermuxTerminalSizingPreference()
 
-    var mode: TerminalSizingMode = .smallest
+    var mode: TerminalSizingMode = .latest
     var priority: [String] = [SupermuxTerminalSizingPreference.selfToken]
     var fixed: TerminalGridSize?
 
@@ -53,9 +54,11 @@ struct SupermuxTerminalSizingClaim: Equatable {
 ///
 /// Upstream keeps the policy in memory per terminal, so a mode chosen in the
 /// size panel changed one terminal until the next relaunch. Here the
-/// preference (default: Fit everyone, as upstream; the default was Priority
-/// with this Mac first until 2026-10-03, so a terminal opened from the phone
-/// did not fit the phone) applies to every local terminal as its
+/// preference (default: Auto, where the device the user is viewing from sets
+/// the grid, ``SupermuxTerminalSizingAuto``; it was Fit everyone until
+/// 2026-10-04, and Priority with this Mac first until 2026-10-03, so a
+/// terminal opened from the phone did not fit the phone) applies to every
+/// local terminal as its
 /// sizing host is created (`sizing-default-policy`), and is replaced by a
 /// mode, fixed size or priority order chosen in the size panel or the tab
 /// menu, which re-applies it to every local terminal and to the terminal it
@@ -95,6 +98,7 @@ final class SupermuxTerminalSizingDefaults {
 
     /// Called as a local terminal's sizing host is created, before its first grid.
     func prepareHost(_ host: inout LocalTerminalSizingHost) {
+        SupermuxTerminalSizingAuto.shared.start()
         host.setPolicy(preference.policy(selfKey: Self.selfKey(of: host)))
     }
 
@@ -324,14 +328,29 @@ final class SupermuxTerminalSizingDefaults {
     }
 }
 
-/// The size panel's note under the mode picker: the mode is this Mac's
-/// choice for every terminal, not this terminal's alone.
+/// The size panel's note under the mode picker: what Auto does, and that the
+/// mode is this Mac's choice for every terminal, not this terminal's alone.
 struct SupermuxTerminalSizingScopeNote: View {
+    var mode: TerminalSizingMode
+
+    /// Upstream's "Follow Latest" (`latest`), named for what it does here.
+    static var autoTitle: String {
+        String(localized: "supermux.terminalSizing.mode.auto", defaultValue: "Auto")
+    }
+
     var body: some View {
-        Text(String(
-            localized: "supermux.terminalSizing.appliesToAll",
-            defaultValue: "Applies to all terminals on this Mac."
-        ))
+        VStack(alignment: .leading, spacing: 2) {
+            if mode == .latest {
+                Text(String(
+                    localized: "supermux.terminalSizing.autoDescription",
+                    defaultValue: "The device you're using sets the size."
+                ))
+            }
+            Text(String(
+                localized: "supermux.terminalSizing.appliesToAll",
+                defaultValue: "Applies to all terminals on this Mac."
+            ))
+        }
         .font(.caption)
         .foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)

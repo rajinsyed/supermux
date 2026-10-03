@@ -616842,6 +616842,40 @@
         }
       }
     },
+    "supermux.terminalSizing.mode.auto" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auto"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自動"
+          }
+        }
+      }
+    },
+    "supermux.terminalSizing.autoDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The device you're using sets the size."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用中のデバイスがサイズを決めます。"
+          }
+        }
+      }
+    },
     "supermux.mirror.files.error.folderChanged" : {
       "extractionState" : "manual",
       "localizations" : {
