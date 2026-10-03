@@ -17,6 +17,12 @@ import Foundation
 /// - `select_mode {surface_id, mode, fixed_cols?, fixed_rows?}` — the size
 ///   panel's mode picker; with `fixed_cols`/`fixed_rows`, its fixed-size editor.
 /// - `set_priority {surface_id, keys}` — the size panel's priority drag.
+/// - `portal_flicker {surface_id, hidden_ms, silent_reveal?}` — hides a shown
+///   terminal pane the way the portal does during layout churn, rechecks every
+///   pane's visibility as any window's occlusion change does, then lets the
+///   portal reveal the pane `hidden_ms` later through its own synchronize pass;
+///   with `silent_reveal`, un-hides it directly instead (a reveal path nothing
+///   hears about).
 @MainActor
 enum SupermuxTerminalSizingSocketCommands {
     static let methodPrefix = "terminal_sizing."
@@ -36,6 +42,8 @@ enum SupermuxTerminalSizingSocketCommands {
             return try selectMode(params)
         case "set_priority":
             return try setPriority(params)
+        case "portal_flicker":
+            return try portalFlicker(params)
         default:
             throw SupermuxMirrorSocketCommands.InvalidParams(message: "unknown terminal_sizing method \(name)")
         }
@@ -99,6 +107,32 @@ enum SupermuxTerminalSizingSocketCommands {
             keys, surfaceID: surfaceID, store: TerminalController.shared.terminalSharing
         )
         return payload(surfaceID, accepted: accepted)
+    }
+
+    // MARK: - Visibility
+
+    private static func portalFlicker(_ params: [String: Any]) throws -> [String: Any] {
+        guard let raw = params["surface_id"] as? String, let id = UUID(uuidString: raw),
+              let surface = TerminalController.shared.terminalSocketTarget(surfaceID: id)?.surface else {
+            throw SupermuxMirrorSocketCommands.InvalidParams(message: "surface_id must be a terminal id")
+        }
+        let pane = surface.hostedView
+        guard let window = pane.window, !pane.isHidden else {
+            throw SupermuxMirrorSocketCommands.InvalidParams(message: "the terminal's pane is not shown")
+        }
+        let hiddenMilliseconds = max(0, (params["hidden_ms"] as? NSNumber)?.intValue ?? 500)
+        let silentReveal = (params["silent_reveal"] as? Bool) ?? false
+        pane.isHidden = true
+        SupermuxTerminalSizingVisibility.shared.recheckAll()
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(hiddenMilliseconds) * 1_000_000)
+            if silentReveal {
+                pane.isHidden = false
+            } else {
+                TerminalWindowPortalRegistry.scheduleExternalGeometrySynchronize(for: window, forceImmediate: true)
+            }
+        }
+        return ["surface_id": id.uuidString, "hidden_ms": hiddenMilliseconds, "silent_reveal": silentReveal]
     }
 
     // MARK: - Helpers

@@ -85,6 +85,18 @@ driven by `supermux.devices.terminal_sizing.*` (DEBUG), which run the panel's ow
                                          with `mobile.terminal.create` (as the phone opens one) start
                                          in Fit everyone, and a phone (40x12) viewing the local one
                                          sizes it to 40x12 (red before: both started in Priority)
+ 17. held_size_returns_to_mac_pane       a phone (40x12) views a shown local terminal; its pane is hidden
+                                         long enough to stop counting, then shown again by a path that
+                                         posts nothing (the class never hears of it); the phone leaves:
+                                         the terminal takes the Mac pane's own grid, decided and real,
+                                         instead of holding the phone's 40x12 (red before: "held" 40x12)
+ 18. brief_portal_hide_keeps_counting    the portal hides the shown pane for 100 ms (layout churn) while
+                                         a phone views it: the Mac pane keeps counting throughout (red
+                                         before: it stopped counting at once and never came back)
+ 19. mac_pane_counts_after_portal_reveal the portal hides the shown pane for 1.5 s: it stops counting,
+                                         then counts again once the portal reveals it (red before: the
+                                         reveal posts nothing, so the pane stayed "off screen" and the
+                                         terminal stayed at the phone's size)
 
 Writes a JSON report (default tests/supermux/artifacts/loopback_terminal_sizing_policy_e2e-<tag>.json)
 with the policy, keys, owners, grid and live grid per step, and exits non-zero on any failure.
@@ -340,6 +352,17 @@ class SizingPolicyE2E:
             "workspace_id": workspace_id, "surface_id": surface_id, "client_id": client_id,
             "viewport_columns": cols, "viewport_rows": rows, "viewport_generation": generation,
             "device_kind": kind, "device_id": client_id, "device_name": f"E2E {kind}",
+        })
+        self.reports[key] = generation
+
+    def clear_report(self, workspace_id: str, surface_id: str, client_id: str) -> None:
+        """One fake viewer leaves (its explicit clear). Its generation stays counted, so a
+        later report from it is newer than the clear."""
+        key = (workspace_id, surface_id, client_id)
+        generation = self.reports.get(key, 0) + 1
+        self.sock.call("mobile.terminal.viewport", {
+            "workspace_id": workspace_id, "surface_id": surface_id, "client_id": client_id,
+            "clear": True, "viewport_generation": generation,
         })
         self.reports[key] = generation
 
@@ -903,6 +926,87 @@ class SizingPolicyE2E:
                                  self.expect_mode("smallest"))
         return {"reset": reset.get("reset"), "local": local, "phone_created": {"terminal": terminal, **remote}}
 
+    # -- the Mac pane's own size (a phone's small size must not stick) ----------------
+
+    def mac_counts(self, counts: bool) -> Callable[[Dict[str, Any]], None]:
+        def check(state: Dict[str, Any]) -> None:
+            if bool((self.row(state, "mac:") or {}).get("counts")) != counts:
+                raise Failure(f"the Mac pane should{'' if counts else ' not'} count: {self.rows(state)}")
+        return check
+
+    def shown_terminal_with_phone(self, label: str) -> tuple:
+        """A selected local workspace whose shown Mac pane counts, with a phone (40x12) viewing it."""
+        workspace = self.create_workspace(label)
+        self.select(workspace)
+        surface = wait_for(f"the {label} terminal", lambda: self.surfaces(workspace), self.timeout)[0]
+        self.wait_state(f"the {label} Mac pane to count", surface, self.mac_counts(True))
+        self.report_viewport(workspace, surface, self.phone_client, "iphone", 40, 12)
+
+        def fits_phone(state: Dict[str, Any]) -> None:
+            self.mac_counts(True)(state)
+            if self.grid(state) != (40, 12):
+                raise Failure(f"grid {self.grid(state)}, expected the phone's 40x12")
+
+        self.wait_state(f"the {label} terminal to fit the phone", surface, fits_phone)
+        return workspace, surface
+
+    def portal_flicker(self, surface_id: str, hidden_ms: int, silent_reveal: bool = False) -> Dict[str, Any]:
+        return self.sock.call(SIZING + "portal_flicker", {
+            "surface_id": surface_id, "hidden_ms": hidden_ms, "silent_reveal": silent_reveal,
+        }) or {}
+
+    def held_size_returns_to_mac_pane(self) -> Dict[str, Any]:
+        """The phone leaves while a shown Mac pane is still marked off screen: the terminal goes
+        back to the Mac pane's own grid instead of holding the phone's (red before: "held" 40x12)."""
+        workspace, surface = self.shown_terminal_with_phone("held")
+        flicker = self.portal_flicker(surface, 800, silent_reveal=True)
+        wait_for("the hidden Mac pane to stop counting",
+                 lambda: not (self.row(self.state(surface), "mac:") or {}).get("counts"), 5, interval_s=0.1)
+        # Shown again, but nothing told the visibility rule: the pane may still be marked off screen.
+        time.sleep(1.2)
+        marked = self.summary(self.state(surface))
+        self.clear_report(workspace, surface, self.phone_client)
+        live: List[Optional[tuple]] = [None]
+
+        def own_grid(state: Dict[str, Any]) -> None:
+            mac = self.row(state, "mac:")
+            want = grid_of(mac and mac.get("viewport"))
+            if self.row(state, "mobile:" + self.phone_client):
+                raise Failure(f"the phone is still a participant: {self.rows(state)}")
+            if state.get("reason") == "held" or self.grid(state) != want or want == (40, 12):
+                raise Failure(f"grid {self.grid(state)} ({state.get('reason')}), expected the Mac pane's {want}")
+            live[0] = self.live_grid(workspace, surface)
+            if live[0] != want:
+                raise Failure(f"the terminal's real grid is {live[0]}, not the Mac pane's {want}")
+
+        result = self.wait_state("the terminal to take its Mac pane's grid again", surface, own_grid)
+        return {"flicker": flicker, "before_leave": marked, "live_grid": list(live[0] or ()), **result}
+
+    def brief_portal_hide_keeps_counting(self) -> Dict[str, Any]:
+        """A 100 ms portal hide (layout churn) is not "off screen" (red before: the Mac pane
+        stopped counting at once and nothing brought it back)."""
+        workspace, surface = self.shown_terminal_with_phone("flicker")
+        flicker = self.portal_flicker(surface, 100)
+        try:
+            held = self.hold(surface, self.mac_counts(True), 1.5, steady=False)
+        finally:
+            self.clear_report(workspace, surface, self.phone_client)
+        return {"flicker": flicker, **held}
+
+    def mac_pane_counts_after_portal_reveal(self) -> Dict[str, Any]:
+        """A pane the portal hid long enough stops counting, and counts again once the portal
+        reveals it (red before: the reveal posted nothing, so the pane stayed "off screen")."""
+        workspace, surface = self.shown_terminal_with_phone("reveal")
+        try:
+            flicker = self.portal_flicker(surface, 1500)
+            hidden = wait_for("the hidden Mac pane to stop counting",
+                              lambda: not (self.row(self.state(surface), "mac:") or {}).get("counts"),
+                              1.4, interval_s=0.1)
+            shown = self.wait_state("the revealed Mac pane to count again", surface, self.mac_counts(True))
+        finally:
+            self.clear_report(workspace, surface, self.phone_client)
+        return {"flicker": flicker, "stopped_counting": bool(hidden), **shown}
+
     def relaunch(self) -> None:
         app = self.args.app_path
         bundle_id = plistlib.loads((Path(app) / "Contents" / "Info.plist").read_bytes())["CFBundleIdentifier"]
@@ -991,6 +1095,9 @@ class SizingPolicyE2E:
             else:
                 self.steps.append({"name": "choice_survives_relaunch", "ok": None, "skipped": "pass --app-path to run"})
             ok = self.step("new_terminals_fit_the_phone", self.new_terminals_fit_the_phone) and ok
+            ok = self.step("held_size_returns_to_mac_pane", self.held_size_returns_to_mac_pane) and ok
+            ok = self.step("brief_portal_hide_keeps_counting", self.brief_portal_hide_keeps_counting) and ok
+            ok = self.step("mac_pane_counts_after_portal_reveal", self.mac_pane_counts_after_portal_reveal) and ok
         self.cleanup()
         return ok
 

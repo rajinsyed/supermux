@@ -143,6 +143,11 @@ final class SupermuxTerminalSizingVisibility {
 
     // MARK: - Updates
 
+    /// Looks at every tracked pane again, as any window's occlusion change does.
+    func recheckAll() {
+        refresh(surfaceID: nil)
+    }
+
     private func refresh(surfaceID: UUID?) {
         if let surfaceID {
             refreshMirror(surfaceID)
