@@ -692,6 +692,13 @@ class SizingPolicyE2E:
             self.wait_state("the second Mac to hold the terminal again", self.source_surface, self.expect_first(b_key))
         return {"fit": fit, "after_show": shown, "after_reconnect": reconnected}
 
+    def mirror_claim(self) -> Dict[str, Any]:
+        """This Mac's sizing claim for the first mirror (`terminal_sizing.state`), or {}."""
+        for mirror in (self.sock.call(SIZING + "state", {}) or {}).get("mirrors") or []:
+            if up(mirror.get("surface_id")) == up(self.mirror_surface):
+                return mirror
+        return {}
+
     def mirror_policy_mode(self) -> Optional[str]:
         """The mode this Mac's mirror last heard for its terminal, or None if it cannot be read."""
         try:
@@ -726,6 +733,8 @@ class SizingPolicyE2E:
         self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "stop"})
         try:
             wait_for("the loopback link to drop", lambda: self.device().get("link_state") != "connected", self.timeout)
+            # The mirror itself must know it is detached, or the pick would go out on the dead link.
+            wait_for("the mirror to detach", lambda: self.mirror_claim().get("attached") is False, self.timeout)
             chosen = self.select_mode(self.mirror_surface, "priority")
             while_down = self.summary(self.state(self.source_surface))
             if self.policy(self.state(self.source_surface))["mode"] != "smallest":
