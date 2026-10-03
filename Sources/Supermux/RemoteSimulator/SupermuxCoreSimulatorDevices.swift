@@ -115,13 +115,14 @@ final class SupermuxCoreSimulatorDevices: @unchecked Sendable {
         if let permanentFailure { throw Failure.unavailable(permanentFailure) }
         let crashGuard = SupermuxCoreSimulatorCrashGuard(frameworkPath: Self.frameworkPath)
         guard crashGuard.allowsLoading() else {
-            permanentFailure = "CoreSimulator crashed this app while loading; not loaded in-process again"
-            phase.withLock { $0 = "unavailable: crashed while loading" }
+            permanentFailure = "This app ended inside the CoreSimulator load twice in a row; not loaded in-process again"
+            phase.withLock { $0 = "unavailable: interrupted while loading" }
             throw Failure.unavailable(permanentFailure ?? "")
         }
         phase.withLock { $0 = "loading" }
         crashGuard.willLoad()
-        defer { crashGuard.didLoad() }
+        var loaded = false
+        defer { crashGuard.didLoad(succeeded: loaded) }
         SupermuxSimctlDebugDelay.duringCoreSimulatorLoad()
         guard FileManager.default.fileExists(atPath: Self.frameworkPath),
               dlopen(Self.frameworkPath, RTLD_NOW | RTLD_GLOBAL) != nil,
@@ -146,6 +147,7 @@ final class SupermuxCoreSimulatorDevices: @unchecked Sendable {
         context = loadedContext
         deviceSet = set
         phase.withLock { $0 = "loaded" }
+        loaded = true
         return set
     }
 
