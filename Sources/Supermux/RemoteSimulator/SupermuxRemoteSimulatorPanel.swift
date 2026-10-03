@@ -76,8 +76,8 @@ final class SupermuxRemoteSimulatorPanel: Panel {
     @ObservationIgnored private var rebindTask: Task<Void, Never>?
     @ObservationIgnored private var autoLongSide = SimStreamQualityPreset.high.maximumLongSidePixels
     @ObservationIgnored private var autoQualityTask: Task<Void, Never>?
-    /// How many times this tab asked each host panel to recover on its own.
-    @ObservationIgnored private var autoRecoveries: [UUID: Int] = [:]
+    /// How many times this tab asked each host panel to recover on its own, and when last.
+    @ObservationIgnored private var autoRecoveries: [UUID: (count: Int, last: ContinuousClock.Instant)] = [:]
     @ObservationIgnored private var autoRecoverTask: Task<Void, Never>?
     @ObservationIgnored private var devicesRetryTask: Task<Void, Never>?
     @ObservationIgnored private var devicesRetries = 0
@@ -269,7 +269,13 @@ final class SupermuxRemoteSimulatorPanel: Panel {
         guard let hostPanelID else { return }
         let host = hostClient
         Task { @MainActor [weak self] in
-            try? await host.recover(panelID: hostPanelID)
+            do {
+                try await host.recover(panelID: hostPanelID)
+            } catch {
+                #if DEBUG
+                cmuxDebugLog("supermux.remoteSimulator recover of \(hostPanelID) failed: \(error)")
+                #endif
+            }
             self?.store?.refresh()
         }
     }
@@ -406,21 +412,33 @@ final class SupermuxRemoteSimulatorPanel: Panel {
         autoRecoverTask?.cancel()
         autoRecoverTask = nil
         guard status == .workerCrashed, let hostPanelID else { return }
-        scheduleAutoRecover(after: .seconds(5), hostPanelID: hostPanelID)
+        scheduleAutoRecover(hostPanelID: hostPanelID)
     }
 
     private static let maximumAutoRecoveries = 3
-    private static let autoRecoverRetryDelay: Duration = .seconds(20)
+    /// The least time between two recoveries this tab asks for. A recovery
+    /// restarts the stream, so the reported status flaps right after it.
+    private static let autoRecoverSpacing: Duration = .seconds(20)
 
-    private func scheduleAutoRecover(after delay: Duration, hostPanelID: UUID) {
-        guard autoRecoveries[hostPanelID, default: 0] < Self.maximumAutoRecoveries else { return }
+    /// Asks `hostPanelID` to recover once it has reported "worker stopped"
+    /// for 5 s, and at least ``autoRecoverSpacing`` after the last time.
+    private func scheduleAutoRecover(hostPanelID: UUID) {
+        let previous = autoRecoveries[hostPanelID]
+        guard (previous?.count ?? 0) < Self.maximumAutoRecoveries else { return }
+        let now = ContinuousClock.now
+        let spaced = previous.map { now.duration(to: $0.last + Self.autoRecoverSpacing) } ?? .zero
+        let delay = max(.seconds(5), spaced)
         autoRecoverTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: delay)
             guard let self, !Task.isCancelled, !self.isClosed, self.hostPanelID == hostPanelID,
                   self.store?.hostStatus == .workerCrashed else { return }
-            self.autoRecoveries[hostPanelID, default: 0] += 1
+            let count = (self.autoRecoveries[hostPanelID]?.count ?? 0) + 1
+            self.autoRecoveries[hostPanelID] = (count, .now)
+            #if DEBUG
+            cmuxDebugLog("supermux.remoteSimulator auto-recover \(count) of \(hostPanelID)")
+            #endif
             self.recover()
-            self.scheduleAutoRecover(after: Self.autoRecoverRetryDelay, hostPanelID: hostPanelID)
+            self.scheduleAutoRecover(hostPanelID: hostPanelID)
         }
     }
 
