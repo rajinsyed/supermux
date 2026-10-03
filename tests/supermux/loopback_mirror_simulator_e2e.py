@@ -1036,8 +1036,16 @@ class MirrorSimulatorE2E:
     def restore_rebinds(self) -> Dict[str, Any]:
         if not self.args.app_path:
             raise Skipped("pass --app-path to quit and relaunch")
-        self.need_viewer()
+        # A new, streaming tab, whatever the steps before left behind (a failed one would fail this step before the
+        # relaunch, hiding what it checks).
+        self.close_viewer_and_owner_tab()
+        try:
+            self.new_simulator("configured")
+            self.one_viewer_on_owner()
+        finally:
+            self.close_local_simulators_in_mirror()
         first_pick = self.show_suite_device()  # the restored stream shows a device the suite stirs
+        self.wait_streaming(0, 1, 60)
         self.sock.call("workspace.select", {"workspace_id": self.mirror})
         time.sleep(2.0)  # let the session autosave see the viewer
         # The relaunched owner's CoreSimulator reads are held past its 8 s device-menu bound: the viewer's rebind
