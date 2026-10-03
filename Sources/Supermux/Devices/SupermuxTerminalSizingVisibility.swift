@@ -23,6 +23,13 @@ import Foundation
 /// An override someone set by hand is left alone: the automatic false is
 /// only lifted when it is still the value this class set.
 ///
+/// A pane goes off screen only once it stays so for a moment: the portal
+/// hides a pane briefly during layout and split churn. Its reveal posts no
+/// visibility change, so the portal (`sizing-portal-reveal`) looks again, and
+/// so do input on the pane (`sizing-mac-pane-input-recheck`) and every sizing
+/// decision (`sizing-mac-pane-recheck`): nobody counting holds the grid, so a
+/// shown pane still marked off screen kept a departed phone's size.
+///
 /// Also: a terminal whose runtime starts after its shared grid was decided
 /// gets that grid when it becomes ready (upstream applies only to a live
 /// surface and never retries).
@@ -118,6 +125,37 @@ final class SupermuxTerminalSizingVisibility {
         hiddenHosts.insert(surface.id)
     }
 
+    /// Called before a local terminal's sizing decision applies: a Mac pane
+    /// marked off screen that is on screen again counts again first, so the
+    /// decision never holds a departed viewer's size on a pane in view. A set
+    /// lookup unless the pane is marked.
+    func hostWillApply(surfaceID: UUID) {
+        guard hiddenHosts.contains(surfaceID) else { return }
+        let controller = TerminalController.shared
+        guard var host = controller.localSizingHostsBySurfaceID[surfaceID],
+              let surface = controller.terminalSocketTarget(surfaceID: surfaceID)?.surface,
+              Self.isOnScreen(surface) else { return }
+        hiddenHosts.remove(surfaceID)
+        let macID = host.macParticipantID
+        guard host.state.participant(macID)?.participant.countsOverride == false else { return }
+        host.setCountsOverride(macID, nil)
+        controller.localSizingHostsBySurfaceID[surfaceID] = host
+    }
+
+    /// The portal revealed a pane it had hidden (layout churn): look again,
+    /// once the reveal's layout pass is over.
+    func paneRevealed(_ surfaceID: UUID?) {
+        guard let surfaceID else { return }
+        Task { @MainActor [weak self] in self?.refresh(surfaceID: surfaceID) }
+    }
+
+    /// Input on a Mac pane. A pane marked off screen evidently is not: look
+    /// again. A set lookup otherwise, as this runs on every keystroke.
+    func macPaneInput(_ surfaceID: UUID) {
+        guard hiddenHosts.contains(surfaceID) else { return }
+        refreshHost(surfaceID)
+    }
+
     /// A pane's grid changed. A pane shown for the first time gets its real
     /// size here without a visibility change (it starts out "visible" before
     /// it has a window), so look again once layout settles.
@@ -128,16 +166,19 @@ final class SupermuxTerminalSizingVisibility {
     /// A terminal whose runtime starts after its shared grid was decided
     /// (a tab opened from a mirror starts in the background when the mirror
     /// first attaches) missed the apply, which needs a live surface: apply
-    /// the decided grid now, past the apply governor, which already counted
-    /// that request as done.
+    /// the decided grid now. The governor may already count that request as
+    /// done, so apply past it, but record it there first: only the governor's
+    /// record lifts a pin, so a pin it does not know of outlived its reason.
     private func applyDecidedGrid(_ surfaceID: UUID) {
         let controller = TerminalController.shared
         guard let host = controller.localSizingHostsBySurfaceID[surfaceID],
               case let .grid(size) = host.applyTarget else { return }
+        let reason = "supermux.sizing.runtimeReady"
+        controller.governMobileViewportTarget(
+            surfaceID: surfaceID, target: .cap(columns: size.cols, rows: size.rows), immediate: true, reason: reason
+        )
         _ = controller.performMobileViewportTarget(
-            surfaceID: surfaceID,
-            target: .cap(columns: size.cols, rows: size.rows),
-            reason: "supermux.sizing.runtimeReady"
+            surfaceID: surfaceID, target: .cap(columns: size.cols, rows: size.rows), reason: reason
         )
     }
 
@@ -155,7 +196,7 @@ final class SupermuxTerminalSizingVisibility {
             return
         }
         for surfaceID in Array(mirrors.keys) { refreshMirror(surfaceID) }
-        Array(TerminalController.shared.localSizingHostsBySurfaceID.keys).forEach(refreshHost)
+        for surfaceID in Array(TerminalController.shared.localSizingHostsBySurfaceID.keys) { refreshHost(surfaceID) }
     }
 
     /// Shows at once; hides only once the pane is still off screen a moment
@@ -183,7 +224,9 @@ final class SupermuxTerminalSizingVisibility {
     /// How long a pane must stay off screen before it counts as hidden.
     private static let hideSettleNanoseconds: UInt64 = 250_000_000
 
-    private func refreshHost(_ surfaceID: UUID) {
+    /// Shows at once; hides, as a mirror does, only once the pane is still off
+    /// screen a moment later (the portal hides a pane briefly during layout).
+    private func refreshHost(_ surfaceID: UUID, settled: Bool = false) {
         let controller = TerminalController.shared
         guard let host = controller.localSizingHostsBySurfaceID[surfaceID] else {
             hiddenHosts.remove(surfaceID)
@@ -194,6 +237,13 @@ final class SupermuxTerminalSizingVisibility {
         let current = host.state.participant(macID)?.participant.countsOverride
         if !Self.isOnScreen(surface) {
             guard current == nil else { return }
+            guard settled else {
+                Task { @MainActor [weak self] in
+                    try? await Task.sleep(nanoseconds: Self.hideSettleNanoseconds)
+                    self?.refreshHost(surfaceID, settled: true)
+                }
+                return
+            }
             if controller.localSizingSetCountsOverride(surfaceID: surfaceID, participantID: macID, value: false) {
                 hiddenHosts.insert(surfaceID)
             }

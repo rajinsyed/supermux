@@ -163,6 +163,9 @@ extension TerminalController {
         immediate: Bool = false,
         reason: String
     ) -> (columns: Int, rows: Int)? {
+        // SUPERMUX:begin sizing-mac-pane-recheck (a shown Mac pane still marked off screen counts again before the decision applies)
+        SupermuxTerminalSizingVisibility.shared.hostWillApply(surfaceID: surfaceID)
+        // SUPERMUX:end sizing-mac-pane-recheck
         guard let host = localSizingHostsBySurfaceID[surfaceID] else { return nil }
         if host.state != previous { publishLocalSizing(surfaceID: surfaceID) }
         switch host.applyTarget {
@@ -215,6 +218,9 @@ extension TerminalController {
     /// Explicit keyboard, paste or mouse input on the Mac pane. O(1) when the
     /// terminal is not shared, because it runs on every keystroke.
     func noteLocalTerminalSizingActivity(surfaceID: UUID) {
+        // SUPERMUX:begin sizing-mac-pane-input-recheck (input on a pane marked off screen: look again; a set lookup otherwise)
+        SupermuxTerminalSizingVisibility.shared.macPaneInput(surfaceID)
+        // SUPERMUX:end sizing-mac-pane-input-recheck
         guard var host = localSizingHostsBySurfaceID[surfaceID] else { return }
         let previous = host.state
         guard host.noteActivity(host.macParticipantID) else { return }
