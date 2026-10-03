@@ -103,6 +103,11 @@ final class DeviceTerminalMirrorSession {
     /// this Mac's size preference on this connection (SupermuxTerminalSizingDefaults).
     var supermuxSizingClaim = SupermuxTerminalSizingClaim()
     // SUPERMUX:end device-mirror-sizing-claim
+    // SUPERMUX:begin sizing-one-setting
+    /// Whether the other Mac adopts a mode picked on this mirror as its own
+    /// setting (`supermux.terminal_sizing_preference.v1`).
+    var supermuxHostTakesSizingPreference: @MainActor () -> Bool = { false }
+    // SUPERMUX:end sizing-one-setting
 
     convenience init(link: DeviceLink, remoteWorkspaceID: String, remoteSurfaceID: UUID) {
         self.init(
@@ -120,6 +125,11 @@ final class DeviceTerminalMirrorSession {
             }
             // SUPERMUX:end device-mirror-input-batch
         )
+        // SUPERMUX:begin sizing-one-setting
+        supermuxHostTakesSizingPreference = { [instance = link.instance] in
+            SupermuxTerminalSizingDefaults.hostTakesPreference(on: .device(instance))
+        }
+        // SUPERMUX:end sizing-one-setting
     }
 
     init(
@@ -706,6 +716,19 @@ extension DeviceTerminalMirrorSession: TerminalSharingSurfaceControlling {
         sendSizing("mobile.terminal.size_policy.set", ["policy": TerminalSizingWireCoder().jsonObject(policy)])
         return true
     }
+
+    // SUPERMUX:begin sizing-one-setting
+    /// A size mode the user picked on this mirror: `policy` for this
+    /// terminal and, when `preference` is set, the setting the other Mac
+    /// adopts for all its terminals (`supermux_preference`).
+    func supermuxSendSizingChoice(_ policy: TerminalSizingPolicy, preference: [String: Any]?) -> Bool {
+        guard viewer != nil else { return false }
+        var params: [String: Any] = ["policy": TerminalSizingWireCoder().jsonObject(policy)]
+        if let preference { params[SupermuxTerminalSizingDefaults.preferenceParam] = preference }
+        sendSizing("mobile.terminal.size_policy.set", params)
+        return true
+    }
+    // SUPERMUX:end sizing-one-setting
 
     /// The host's mobile RPC sets the counts override of this viewer only.
     func sharingSetCountsOverride(participantID: String, value: Bool?) -> Bool {

@@ -609,6 +609,11 @@ extension TerminalController {
             return .err(code: "invalid_params", message: "Missing or invalid policy", data: nil)
         }
         guard policy.fixedSizeIsWithinLimit else { return Self.fixedSizeTooLarge }
+        // SUPERMUX:begin sizing-one-setting (a mode picked on the phone or on another Mac's mirror is this Mac's setting)
+        if SupermuxTerminalSizingDefaults.shared.remoteChose(policy, params: params, surfaceID: resolved.surfaceID) {
+            return .ok(sizeStatePayload(surfaceID: resolved.surfaceID))
+        }
+        // SUPERMUX:end sizing-one-setting
         _ = localSizingHost(surfaceID: resolved.surfaceID, create: true)
         guard terminalSharing.setPolicy(policy, surfaceID: resolved.surfaceID) else {
             return .err(code: "unavailable", message: "Terminal size policy is unavailable", data: nil)
