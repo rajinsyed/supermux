@@ -2,7 +2,7 @@
 # Runs every remote-workspaces loopback E2E suite against ONE tagged DEBUG build
 # and writes a combined JSON summary.
 #
-#   ./scripts/reload.sh --tag <tag> --supermux-profile      # build (never sign out in it)
+#   CMUX_DEV_BACKEND_MODE=local ./scripts/reload.sh --tag <tag>   # build, not signed in (never --supermux-profile)
 #   CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh    # launch, run, quit
 #   CMUX_E2E_SUITES="loopback_terminal_input_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
 #
