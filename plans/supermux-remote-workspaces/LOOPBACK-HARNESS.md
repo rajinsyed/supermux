@@ -22,6 +22,12 @@ Design decision 12 in [DESIGN.md](DESIGN.md) calls for this harness.
 > `run_all_loopback_e2e.sh` refuses any other app before it launches anything
 > (`tests/supermux/require_isolated_app.py`), and see
 > [Agent E2E builds and the user's account](#agent-e2e-builds-and-the-users-account-2026-10-03).
+>
+> **Verified 2026-10-03** on tag `sizeguard`, built with `CMUX_DEV_BACKEND_MODE=local
+> ./scripts/reload.sh --tag sizeguard` and never signed in (its defaults hold only the development
+> Stack project, no `credentials.json`, an empty Iroh journal): `loopback_device_smoke` 13/13,
+> `loopback_terminal_sizing_policy_e2e` 17/17, `loopback_terminal_input_e2e` 22/22,
+> `loopback_mirror_browser_e2e` 42/42. The simulator suite also runs on a plain tag (`simrobust`).
 
 ## Run it
 
@@ -498,7 +504,8 @@ CMUX_E2E_SUITES="loopback_terminal_input_e2e" CMUX_TAG=<tag> tests/supermux/run_
 ## Terminal size policy E2E
 
 `tests/supermux/loopback_terminal_sizing_policy_e2e.py` (touchpoints #665–#670) checks that a
-terminal fills the Mac it is viewed from and that the size mode is one sticky choice per Mac. In the
+terminal fills the Mac it is viewed from and that the size mode is one sticky choice per Mac, which
+never changes another Mac's terminal unless it was made on that terminal. In the
 loopback the source workspace is the "other Mac" and its auto mirror the viewer; DEBUG builds give
 the loopback's mirrors a distinct sizing device id, so the two "Macs" have distinct priority keys. A
 fake phone (`e2e-phone-…`, 40x12) and a fake second Mac (`e2e-mac-b-…`) report viewports
@@ -511,11 +518,17 @@ while the other Mac's own small pane counts; a local terminal keeps its Mac pane
 phone views it; Follow Latest chosen on one mirror reaches every terminal, and new terminals (local
 and over the link) start in it; a second Mac's own Priority choice is not pushed back by the shown
 mirror (3 s hold, generation barely moves); its 400x150 pane is not clamped to 300x120; hiding then
-showing the mirror, and a link drop after the other Mac reset the policy, claim the terminal again; a
-priority order dragged on the mirror is stored relative to this Mac (`[phone, self]`) and reaches the
-local terminal relative to its own view here (in the loopback its hidden auto-mirror, whose push of
-the same order lands after the local apply, as for the source terminal); and with
-`--app-path`, Largest Window survives a quit and relaunch. It drives the DEBUG
+showing the mirror, and a link drop after the other Mac started over in Priority with its pane first,
+claim the terminal again (the mirror first, the rest of the order kept); the second Mac's own Fit
+everyone survives this Mac hiding and showing the mirror and a link drop
+(`showing_keeps_other_macs_mode`); Largest picked on a local terminal reaches the source only as this
+Mac's own terminal, under its pane's key, never through the mirror that shows it
+(`sticky_choice_stays_on_this_mac`); a priority order dragged on the mirror is stored relative to this
+Mac (`[phone, self]`) and reaches the local terminal relative to its own view here (its Mac pane); and
+with `--app-path`, Largest Window survives a quit and relaunch. The two named steps were red on
+1e708492df4 (tag `sizeguard`, 15/17: the shown mirror flipped the second Mac's Fit everyone to
+Priority, and Largest reached the source as the mirror's push, under the mirror's key) and are green
+on the fix (17/17). It drives the DEBUG
 `supermux.devices.terminal_sizing.{state,reset,select_mode,set_priority}` methods
 (`Sources/Supermux/Devices/SupermuxTerminalSizingSocketCommands.swift`), which run the size panel's
 own actions, and resets the preference at start and end.
