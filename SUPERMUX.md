@@ -157,7 +157,7 @@ Status per fork feature area:
 
 | 19 | Usage limits (Claude Code + Codex) | ✅ on iOS, read-only by design | a gauge ring in the workspace-list toolbar, filled to the tightest limit across both providers, opening `SupermuxUsageScreen`: window meters with reset countdowns and the ahead-of-pace marker, the other cswap accounts, provider notes (not configured / re-login / offline session log), and the honest oldest-measurement footer. The Mac projects its EXISTING `SupermuxUsageModel` — the same one the sidebar popover renders — over `mobile.supermux.usage.state`; credentials, polling, and the rate-limit floor all stay Mac-side. **cswap account switching is deliberately not ported**: it mutates which account Claude Code is logged in as, and that decision belongs at the machine doing the work. Touchpoints #340–#341 |
 | 20 | Start Claude from the New Worktree sheet | ✅ on iOS | the iOS `SupermuxNewWorktreeSheet` gains a prompt field and a Claude section (`SupermuxNewWorktreeClaudeSection`) over `mobile.supermux.agent.options` / `agent.start`, gated on `supermux.agent_launch.v1`; store `SupermuxMobileAgentLaunchStore` (MobileKit), loaded alongside the branch snapshot in `requestNewWorktree` / the detail screen's prepare. No extra entry points: every existing New Worktree affordance reaches it. Commands, catalogs, naming, git, and the terminal launch stay Mac-side (the phone cannot edit the command list; do that in the Mac sheet) |
-| 21 | Projects and worktrees on every connected Mac | ✅ on iOS | per-Mac seams (`supermuxConnectionSeams`, #580–#586), one Supermux session per Mac, projects merged across Macs with the Mac sidebar's rule (`SupermuxPhoneProjectMerge`: every unique git origin match first, then name + standardized root among the rest; one location per Mac; opening or closing a merged project does so on every Mac, and the choice is kept under the merged key so a Mac that joins later follows it either way; "Open on ▸" / "Project Details on ▸" reach each Mac's copy) and nested workspace and worktree rows drawn like the Mac sidebar's: each shows its branch (a nested workspace row on the line right under its title, where the shell row would otherwise show its preview's first line — often the terminal's path), and a row on another Mac than the list's home Mac (the first Mac with projects in the shell's stable per-session Mac order, so opening a workspace on another Mac, which makes it the shell's foreground, neither reorders the list nor moves the icons; the scoped Mac under the title picker) gets the small cloud-Mac icon right before it (`SupermuxMobileRemoteMacIcon`, the phone twin of `SupermuxRemoteMacIcon`, dimmed while that Mac is reconnecting or offline), naming the Mac only in VoiceOver ("On <Mac>") — no Mac name chip (no per-Mac headers on iPhone), the Mac title picker scoping the block to that Mac, a Mac picker in New Worktree for Macs with the same repo (same merge rule, limited to the copies the project's merged row holds), navigation that maps Mac-local ids to the right Mac's row, push registration with every Mac |
+| 21 | Projects and worktrees on every connected Mac | ✅ on iOS | per-Mac seams (`supermuxConnectionSeams`, #580–#586), one Supermux session per Mac, projects merged across Macs with the Mac sidebar's rule (`SupermuxPhoneProjectMerge`: every unique git origin match first, then name + standardized root among the rest; one location per Mac; opening or closing a merged project does so on every Mac, and the choice is kept under the merged key so a Mac that joins later follows it either way; "Open on ▸" / "Project Details on ▸" reach each Mac's copy) and nested workspace and worktree rows drawn like the Mac sidebar's: each shows its branch (a nested workspace row on the line right under its title, where the shell row would otherwise show its preview's first line — often the terminal's path), and a row on another Mac than the list's home Mac (the first Mac with projects in the shell's stable per-session Mac order, so opening a workspace on another Mac, which makes it the shell's foreground, neither reorders the list nor moves the icons, while a merged project's tap goes to its first copy on a connected Mac; the scoped Mac under the title picker) gets the small cloud-Mac icon right before it (`SupermuxMobileRemoteMacIcon`, the phone twin of `SupermuxRemoteMacIcon`, dimmed while that Mac is reconnecting or offline), naming the Mac only in VoiceOver ("On <Mac>") — no Mac name chip (no per-Mac headers on iPhone), the Mac title picker scoping the block to that Mac, a Mac picker in New Worktree for Macs with the same repo (same merge rule, limited to the copies the project's merged row holds), navigation that maps Mac-local ids to the right Mac's row, push registration with every Mac |
 
 **Recorded non-goals** (deliberate, may be revisited later):
 
@@ -339,9 +339,11 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   from This Mac stay per terminal. A viewing Mac's pane counts up to 500x200 (a phone's, 300x120). A
   pane that is not on screen (a tab never shown on its Mac, a mirror in a background workspace, a hidden
   or fully covered window) does not count, so a tab opened from a mirror takes the mirror's size at
-  once; a terminal that starts after its grid was decided gets it when it becomes ready. A
-  terminal's tab draws no avatar for the attached Macs (#720); its context menu keeps Size to My
-  Window, Terminal Size and Disconnect Others, and the size panel lists who is attached.
+  once; a mirror still off screen when its link reconnects keeps not counting (the other Mac forgets the
+  override with the connection, and the re-attach sends it again); a terminal that starts after its
+  grid was decided gets it when it becomes ready. A terminal's tab draws no avatar for the attached
+  Macs (#720); its context menu keeps Size to My Window, Terminal Size and Disconnect Others, and the
+  size panel lists who is attached.
 - **A mirror uses this Mac's terminal appearance** (#650–#653): the owning Mac's replay carries no
   theme colors, so a mirror pane shares the window's (translucent) backdrop exactly like a local
   pane; only colors a program on the other Mac set itself (OSC 4/10/11/12) are mirrored, and its
@@ -397,7 +399,9 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   loopback listener (for a manual forward). `supermux.ports.updated` tells the other Macs when they
   change. **Exposure:** a service here that trusts loopback (an unauthenticated admin page, Docker's
   TCP API, Jupyter) is reachable from your other Macs once it is forwarded; only ports started in
-  cmux terminals are offered automatically. The journal records scope, port and outcome, never host
+  cmux terminals are offered automatically, and another Mac forwards one of the others only by hand
+  or when you open its `localhost` URL in a mirror tab yourself (typed, a terminal link you
+  Command-click, Open in cmux Browser; #757, #759; stop it in "Ports on <Mac>"); a page cannot. The journal records scope, port and outcome, never host
   names or bytes.
 - **A mirror's own tabs stay on this Mac** (#706): a browser, Files preview, Markdown or any other
   non-terminal tab opened in a mirror is never sent to or closed by the owning Mac, and the mirror
@@ -421,9 +425,69 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   the ports menu's "Open in cmux Browser" and a port chip) uses
   upstream's remote-workspace browser mode: `localhost`, `127.0.0.1`, `[::1]` and `*.localhost` go to
   the owning Mac through a per-app-instance proxy on this Mac's loopback and the device link's tunnel lanes
-  (port forwarding's transport; the owning Mac serves only its own loopback), with the page's
-  `localhost` origin kept, so `localhost:3000` there is the other Mac's dev server even when this Mac
-  runs its own on 3000. Public sites load from this Mac. Each remote app instance (Mac + tag, so a
+  (port forwarding's transport; the owning Mac serves only its own loopback), so `localhost:3000`
+  there is the other Mac's dev server even when this Mac runs its own on 3000. The omnibar and the
+  server's `Host` say `localhost`, but the page runs at upstream's alias origin,
+  `http://cmux-loopback.localtest.me:3000`: not a secure context, and a hostname a dev app's sitekeys
+  and OAuth settings do not name. So when this Mac forwards that Mac's port on the same port while
+  that Mac lists the port (#754: a port of its workspaces, or since #757 any other loopback port it
+  serves, say a server an agent started (`TTY ??`), one orphaned with `&` or in Docker; port
+  forwarding does that automatically for a server in a mirrored terminal whenever the port is free
+  here), the mirror's browser loads `http://localhost:3000` as written, straight to the forward, and
+  the page keeps its own origin, as on that Mac: a Cloudflare Turnstile login works (on the alias it
+  showed "Unable to connect to website", 110200 Domain not authorized). With no such forward yet, a
+  mirror tab's navigation to `localhost:P` (typed, a new tab, a link, a reload, also the reload of a
+  page already on the alias) starts one itself (#757, `SupermuxSamePortForwardGate`): when that Mac
+  lists P (asked again first when its last listing lacks it; navigations at once share one request) and
+  P is free here, it waits up to 3 s for a same-port forward, then loads as written. A port of that
+  Mac's workspaces is forwarded so for any navigation; one of its other loopback ports (in no
+  workspace: a server an agent started, but also a Docker API or a database) only when you open it
+  yourself (a URL you type, a terminal link you Command-click in that mirror, #759, the Ports menu's
+  Open in cmux Browser, a port chip: each marks that Mac's port for the next navigation to it, within
+  5 s) or once you forwarded it that way, so a page cannot make this Mac listen on it. That forward behaves
+  like an automatic one, also with automatic forwarding off: it is in the Ports menus, Stop Forwarding
+  stops it (and keeps it stopped across its server's restarts, until Resume), and it goes when the
+  server does. While the forward starts, the tab's own navigation is not replaced (a link or form to
+  another path of the port lands there). **The alias is still used** when P is in use on this Mac (this
+  Mac's own server, another app, another Mac's forward), when the user stopped P's forward, when that
+  Mac does not serve P (nothing listens there: the proxy explains it) or cannot forward right now
+  (offline, unreachable, an older Supermux, no direct link), for a port below 1024, for one of that
+  Mac's other ports reached by a page or a link in it rather than by you (until that Mac lists it as
+  a workspace's: then the tab gets its forward by itself), for `https`,
+  `*.localhost` and every other host, and when the forward did not start within 3 s (the tab then moves
+  once it is active). After a forward could not start (P in use here, not allowed, not in time), that
+  port's alias pages are left alone, reloads stay reloads and nothing retries in the background, until
+  you navigate to P again: a reload handed back would become a new navigation, so a page that reloads
+  itself once (Next.js's dev client) would reload forever, and a retry on every change could take this
+  Mac's own port while its server restarts. The ports menu ("Ports on <Mac>") shows each forward and the pill
+  where a moved one listens. Through the alias every request and answer on a kept-alive connection is
+  rewritten to `localhost` and back (`SupermuxAliasHTTPRewrite`), not only the first: Next.js 16's
+  dev server refused each later request still naming the alias (403, "Blocked cross-origin request to
+  Next.js dev resource"), so the page's chunks never loaded and it never hydrated. The tab follows its forward (#756): opened
+  before the forward is up (a link the dev server prints, a restored tab) it moves to `localhost:3000`
+  once it is; when the forward stops or moves it goes back through the alias, and every main-frame
+  navigation (reload, link, redirect, back and forward) is routed the same way, so none lands on this
+  Mac's own `localhost:3000`. A server that restarts comes back by itself: once a forward's port leaves
+  that Mac's listing this Mac asks it again after 2, 4, 8, 15, 30 and 60 s (a quick restart never
+  changes that Mac's sidebar ports, which keep a port through two missed scans, so it sends no poke),
+  and an open mirror tab on the alias of a port whose last try found it unlisted, not yet a workspace's
+  (a restarted server that is only one of that Mac's other ports until its sidebar scan attributes it),
+  or that was never tried (a tab restored or opened while that Mac was away) gets its same-port forward
+  once that Mac lists it as a workspace's (or you forwarded it). That Mac also notices a server binding
+  after its terminal's port scans are over (a dev script doing other work first): for 2 minutes after one
+  of its terminals starts a command, while another Mac follows its ports, it compares its loopback
+  listeners (every 4 s for the first 20 s after the command or a new listener, then less often, up to
+  30 s; never otherwise) and scans its terminals again when one appears; the attribution that follows
+  pokes. A page loaded as written (and its same-origin `localhost` iframes)
+  calls that Mac's other ports with `fetch`, XHR, `WebSocket` and `EventSource` (#755): a port
+  forwarded here on the same port goes to its
+  forward (with the page's `localhost` cookies), any other port through the alias (its own cookies;
+  the proxy keeps the API's `Access-Control-Allow-Origin` for the page), so a Supabase on 54321 there
+  is reached even when this Mac runs its own. Markup (`<img>`, `<script>`, `<iframe>`, forms) pointing
+  at another `localhost` port is not rerouted, as on an alias page; only a page on a loopback host is
+  told which ports are forwarded. A browser opened in a mirror that bypasses the workspace proxy (the
+  http diff viewer, a `local`-context split) is an ordinary browser of this Mac (this Mac's profile,
+  its `localhost`). Public sites load from this Mac. Each remote app instance (Mac + tag, so a
   dogfood build beside that Mac's main app is separate) has its own persistent
   website data store, so a login to its dev app survives the mirror being re-created and never mixes
   with this Mac's `localhost` cookies (and public sites are not signed in with the profile's cookies,
@@ -438,17 +502,29 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   every connection's socket when it ends, and replaces its listener if the system fails it: until the
   new one is ready every tab of that Mac, open or opened meanwhile, keeps the old endpoint and gets a
   refused load, never one that goes direct from this Mac. A tab moved out of a mirror goes back to this Mac's profile.
+  A URL typed into a mirror tab whose port is forwarded here on the same port loads at once (#754).
+  Known gap: through the alias (a port not forwarded, or taken here) it waits about 10 s on an affected
+  Mac, as a plain-HTTP page on a LAN address does in any tab: WebKit 27 moves such a navigation into a
+  new hardened WebContent process and making one blocks the UI thread issuing font sandbox extensions
+  (WebKit and macOS, not the proxy; `plans/supermux-remote-workspaces/LOOPBACK-HARNESS.md`).
 - **Other Macs' ports open here** (#699, #705, #750, #751; the tunnel is round 5's Track A): a server started in
   another Mac's workspace that is mirrored here (`bun run dev` on 3000) opens at `localhost` on this
   Mac, in any browser, the iOS Simulator or any other app (setting "Forward other Macs' ports to this
   Mac", `supermux.devices.forwardPorts`, default on). Each Mac lists the ports of its own cmux
-  workspaces (its sidebar port detection, intersected with live loopback listeners); ports ≥ 1024 of
-  a mirrored workspace are forwarded automatically. A forward listens on `127.0.0.1` and `::1` at the
+  workspaces (its sidebar port detection, intersected with live loopback listeners) and, apart, its
+  other loopback listeners (asked with `include_other`); ports ≥ 1024 of a mirrored workspace are
+  forwarded automatically, the other ones only by hand or for a mirror tab you open on them (#757). A
+  connection refused for a listed port, and a forward whose port left the listing (followed by fetches
+  2 s to 60 s later), make this Mac ask for the listing again, since the other ports change without a
+  poke. A forward listens on `127.0.0.1` and `::1` at the
   same port when it is free here, else the next free one (up to +50, then any), and a port in use
   here is never taken (every candidate is probed with a connect on both addresses, so a dual-stack
   `[::]` server counts as in use). It is one dual-stack listener scoped to the loopback interface
   (Network.framework refuses `[::1]:P` while the same app holds `127.0.0.1:P`), so nothing on the
-  network, nor this Mac's own LAN address, reaches it. When a port lands elsewhere, the flat mirror row shows a pill
+  network, nor this Mac's own LAN address, reaches it. A forward tries the remote port first, then the
+  local port it last listened on, so one that moved because the port was busy here comes back to it
+  once it is free (Resume, a reconnect, or a mirror tab opening it), and keeps its local port while the
+  port stays busy. When a port lands elsewhere, the flat mirror row shows a pill
   ("Port 3000 from M4 Pro is at localhost:3001", click opens it), and a localhost link in that
   mirror's terminal opened in the default browser goes to the local port. Flat mirror rows also
   show the owning Mac's port chips: a chip opens the port in a cmux browser in the mirror, and with
@@ -466,9 +542,13 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   reason and the pending forwards, and Settings keeps Ports… for them), so a forward never starts
   listening later after the user stopped it. The menus and chips exist only on what
   `SupermuxDeviceWorkspaceIndex.mirrors()` lists, not on a local workspace that borrows a remote
-  terminal. A stopped automatic forward stays stopped until its server goes away; a forward whose
-  server goes away is removed; while a Mac is offline its forwards wait and come back (same local
-  port when still free), except one stopped meanwhile, which goes at once. Needs that Mac on this build with its sidebar port
+  terminal. A stopped automatic or on-demand forward stays stopped until Resume (Forward to This Mac),
+  also while its server restarts (the port leaves that Mac's listing and comes back); the stop is
+  forgotten only once that Mac no longer lists the port and none of the workspaces that listed it at the
+  stop is mirrored here, and a stop of a port no workspace listed lasts until it is forwarded again; a forward whose
+  server goes away is removed; while a Mac is offline its forwards wait and come back (on the remote
+  port when it is free here, else the same local port when still free), except one stopped meanwhile,
+  which goes at once. Needs that Mac on this build with its sidebar port
   detection on (else only Forward a Port… works); an older Mac (capabilities without
   `supermux.port_forward.v1`) says "Update Supermux on <Mac> to use its ports here.", a link without
   a direct connection says it needs one. A connected Mac that does not answer the capability request
@@ -756,6 +836,12 @@ Constraints inherited from upstream that supermux code MUST follow:
   are loopback-verified too: there both "Macs" share one loopback, so the suites check the route
   (proxy, tunnel opens, data store), and the tunnel's QUIC lane, real port collisions, HMR WebSockets
   through the alias and `https://localhost` dev servers need two Macs.
+- **Upstream's SSH workspace proxy rewrites only the first request of a connection.**
+  `RemoteDaemonProxySession` (`Packages/macOS/CmuxRemoteWorkspace`) passes every later request on a
+  kept-alive connection through `RemoteLoopbackHTTPRequestStreamRewriter`, which rewrites only the first
+  head (and the first response head the same way), so an SSH workspace's browser should hit the same
+  Next.js 16 403s on the alias. The fork fixed its device-mirror proxy in fork code
+  (`SupermuxAliasHTTPRewrite`); the SSH path is a candidate for an upstream PR (not opened).
 - **A URL typed into a mirror's browser tab costs two WebKit process swaps (macOS 27).** The tab
   opens the owning Mac's `localhost` as upstream's `cmux-loopback.localtest.me` alias, plain HTTP to
   a host that is not loopback by name, so WebKit 27's Enhanced Security heuristic runs its pages in

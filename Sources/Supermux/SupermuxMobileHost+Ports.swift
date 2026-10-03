@@ -13,6 +13,9 @@ extension TerminalController {
         guard SupermuxMobilePeerPolicy.isAdmittedMacPeer(executionContext) else {
             return .err(code: "forbidden", message: "Ports are listed only for another of your Macs", data: nil)
         }
+        #if DEBUG
+        SupermuxDeviceTunnelSocketCommands.listingsServed.increment()
+        #endif
         let list = await SupermuxHostPorts.list(includeOther: params["include_other"] as? Bool == true)
         guard let data = try? JSONEncoder().encode(list),
               let object = try? JSONSerialization.jsonObject(with: data) else {

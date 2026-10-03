@@ -9,14 +9,18 @@ import SupermuxKit
 /// (`tests/supermux/loopback_port_forward_e2e.py`). Each runs the code path of
 /// its UI entry point. Routed from ``SupermuxDevicesSocketCommands``.
 ///
-/// - `list {machine?}` — the forwards, each Mac's availability and port
-///   listing, and what every device mirror shows (its sidebar port chips and
+/// - `list {machine?}` — the forwards, the user's stops (`stops`, each with the
+///   workspaces that listed its port at the stop), each Mac's availability and port
+///   listing (`host_ports`, and `host_other_ports`: its `other_ports`, null
+///   when the listing did not ask for them), and what every device mirror shows (its sidebar port chips and
 ///   its `supermux.ports.*` pills).
 /// - `forward`, `stop`, `resume {machine, port}` — the "Ports on <Mac>" menu's
 ///   Forward to This Mac / Stop Forwarding.
 /// - `set_auto {enabled}` — the Settings toggle (through the card's action).
 /// - `refresh {machine?}` — fetches the Macs' port listings now (a test hook
 ///   for ports injected on the host without a poke).
+/// - `follow_ups {enabled}` — turns the follow-up fetches after a forward's
+///   port left its listing on or off.
 @MainActor
 enum SupermuxDevicePortsSocketCommands {
     static let methodPrefix = "ports."
@@ -44,6 +48,9 @@ enum SupermuxDevicePortsSocketCommands {
             SupermuxComposition.remoteMacsSettings.actions().setForwardPorts(enabled)
         case "refresh":
             forwards.refresh(machine: try optionalMachine(params))
+        case "follow_ups":
+            guard let enabled = params["enabled"] as? Bool else { throw invalid("enabled must be a boolean") }
+            forwards.followUpsEnabled = enabled
         default:
             throw invalid("unknown ports method \(name)")
         }
@@ -81,7 +88,9 @@ enum SupermuxDevicePortsSocketCommands {
             availability[key.rawValue] = value.rawValue
         }
         var hostPorts: [String: Any] = [:]
+        var hostOtherPorts: [String: Any] = [:]
         for (key, listing) in forwards.hostPorts where machine == nil || key == machine {
+            hostOtherPorts[key.rawValue] = listing.otherPorts ?? NSNull()
             hostPorts[key.rawValue] = listing.ports.map { port -> [String: Any] in
                 [
                     "port": port.port,
@@ -93,9 +102,13 @@ enum SupermuxDevicePortsSocketCommands {
         }
         return [
             "auto": SupermuxComposition.devicesSettings.forwardPorts,
+            "stops": forwards.debugStops
+                .filter { machine == nil || $0.key.machine == machine }
+                .map { ["machine": $0.key.machine.rawValue, "remote_port": $0.key.remotePort, "workspaces": $0.workspaces] },
             "forwards": rows,
             "availability": availability,
             "host_ports": hostPorts,
+            "host_other_ports": hostOtherPorts,
             "mirrors": mirrors,
         ]
     }

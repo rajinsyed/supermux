@@ -25,7 +25,8 @@ enum SupermuxHostPorts {
         }.value
         let ports = unique(attributed.filter { live.contains($0.port) } + injectedPorts())
         let other = includeOther
-            ? live.subtracting(attributed.map(\.port)).subtracting(SupermuxOwnListenerPorts.shared.all).sorted()
+            ? live.subtracting(attributed.map(\.port)).subtracting(SupermuxOwnListenerPorts.shared.all)
+                .union(injectedOtherPorts()).sorted()
             : nil
         return SupermuxPortsListDTO(ports: ports, otherPorts: other)
     }
@@ -62,6 +63,16 @@ enum SupermuxHostPorts {
         return ports
             .filter { seen.insert("\($0.port)|\($0.workspaceID)").inserted }
             .sorted { ($0.port, $0.workspaceID) < ($1.port, $1.workspaceID) }
+    }
+
+    /// Ports the DEBUG `tunnel.inject_other_port` driver reports under
+    /// `other_ports`, live or not (none in Release builds).
+    private static func injectedOtherPorts() -> Set<Int> {
+        #if DEBUG
+        SupermuxDeviceTunnelSocketCommands.injectedOtherPorts
+        #else
+        []
+        #endif
     }
 
     /// Ports the DEBUG `tunnel.inject_port` driver reports as a workspace's,

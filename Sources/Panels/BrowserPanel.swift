@@ -3236,6 +3236,9 @@ final class BrowserPanel: Panel, ObservableObject {
             self.scheduleBrowserViewportHostRestoration(reason: "webViewHierarchyChanged")
         }
         DiffCommentsBridge.associate(panelId: id, workspaceId: workspaceId, with: webView)
+        // SUPERMUX:begin device-mirror-browser-bridge
+        SupermuxMirrorLoopbackBridge.install(on: webView)
+        // SUPERMUX:end device-mirror-browser-bridge
         webView.onMouseBackButton = { [weak self] in
             self?.goBack()
         }
@@ -3677,7 +3680,8 @@ final class BrowserPanel: Panel, ObservableObject {
         // (navigation waits for the proxy). (upstream: the parameters used as passed)
         let supermuxRoute = SupermuxDeviceBrowserRoute.route(
             workspaceID: workspaceId, isRemoteWorkspace: isRemoteWorkspace,
-            proxyEndpoint: proxyEndpoint, dataStoreID: remoteWebsiteDataStoreIdentifier)
+            proxyEndpoint: proxyEndpoint, dataStoreID: remoteWebsiteDataStoreIdentifier,
+            bypassesProxy: bypassRemoteProxy)
         let isRemoteWorkspace = supermuxRoute.isRemoteWorkspace
         let proxyEndpoint = supermuxRoute.proxyEndpoint
         let remoteWebsiteDataStoreIdentifier = supermuxRoute.dataStoreID
@@ -4442,7 +4446,8 @@ final class BrowserPanel: Panel, ObservableObject {
         // proxy and data store. (upstream: the parameters used as passed)
         let supermuxRoute = SupermuxDeviceBrowserRoute.route(
             workspaceID: newWorkspaceId, isRemoteWorkspace: isRemoteWorkspace,
-            proxyEndpoint: proxyEndpoint, dataStoreID: remoteWebsiteDataStoreIdentifier)
+            proxyEndpoint: proxyEndpoint, dataStoreID: remoteWebsiteDataStoreIdentifier,
+            bypassesProxy: bypassesRemoteWorkspaceProxy)
         let isRemoteWorkspace = supermuxRoute.isRemoteWorkspace
         let proxyEndpoint = supermuxRoute.proxyEndpoint
         let remoteWebsiteDataStoreIdentifier = supermuxRoute.dataStoreID
@@ -5711,6 +5716,12 @@ final class BrowserPanel: Panel, ObservableObject {
         preserveRestoredSessionHistory: Bool,
         onNavigationStarted: ((WKNavigation?) -> Void)? = nil
     ) -> WKNavigation? {
+        // SUPERMUX:begin device-mirror-browser-on-demand-forward
+        if SupermuxSamePortForwardGate.holds(request, dataStoreID: websiteDataStore.identifier, typed: recordTypedNavigation, panel: self, resume: { [weak self] in
+            _ = self?.performNavigation(request: request, originalURL: originalURL, recordTypedNavigation: recordTypedNavigation,
+                                        preserveRestoredSessionHistory: preserveRestoredSessionHistory, onNavigationStarted: onNavigationStarted)
+        }, abandon: { onNavigationStarted?(nil) }) { return nil }
+        // SUPERMUX:end device-mirror-browser-on-demand-forward
         cancelHiddenWebViewDiscard()
         if hasRecoverableWebContentTermination {
             _ = replaceWebViewPreservingState(
@@ -5772,6 +5783,9 @@ final class BrowserPanel: Panel, ObservableObject {
     private func remoteProxyPreparedRequest(from request: URLRequest, logScope: String) -> URLRequest {
         guard cloudBrowserMachineID == nil, remoteProxyEndpoint != nil else { return request }
         guard let url = request.url else { return request }
+        // SUPERMUX:begin device-mirror-browser-same-port-forward
+        if SupermuxDeviceBrowserRoute.loadsAsWritten(url, dataStoreID: websiteDataStore.identifier) { return request }
+        // SUPERMUX:end device-mirror-browser-same-port-forward
         guard let rewrittenURL = Self.remoteProxyLoopbackAliasURL(for: url) else { return request }
 
         var rewrittenRequest = request

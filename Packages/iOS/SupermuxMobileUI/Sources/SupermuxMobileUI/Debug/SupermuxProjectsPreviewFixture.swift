@@ -19,8 +19,8 @@ public struct SupermuxProjectsPreviewMac: Sendable {
     /// was slow, joining a list already on screen.
     var joinsLate = false
 
-    /// This Mac with its foreground flag set as given.
-    func foreground(_ isForeground: Bool) -> SupermuxProjectsPreviewMac {
+    /// This Mac with its foreground flag (and link status) set as given.
+    func foreground(_ isForeground: Bool, status: SupermuxMacSeam.Status? = nil) -> SupermuxProjectsPreviewMac {
         SupermuxProjectsPreviewMac(
             mac: SupermuxMacInfo(
                 macDeviceID: mac.macDeviceID,
@@ -28,7 +28,7 @@ public struct SupermuxProjectsPreviewMac: Sendable {
                 displayName: mac.displayName,
                 colorIndex: mac.colorIndex,
                 customColor: mac.customColor,
-                status: mac.status,
+                status: status ?? mac.status,
                 isForeground: isForeground
             ),
             client: client,
@@ -59,6 +59,12 @@ public struct SupermuxProjectsPreviewMac: Sendable {
 /// path, as in a real worktree. Opening a workspace on another Mac makes that
 /// Mac the foreground, as the shell does (``foregroundFirst(_:opened:in:)``).
 ///
+/// `project.open` answers with the project's fixture workspace (`cmux-main`
+/// on the MacBook, `cmux-fix` on the Studio). With
+/// `CMUX_UITEST_WORKSPACE_LIST_PREVIEW_SUPERMUX_LAPTOP_SLEEPS=1` the MacBook's
+/// lid closes once a workspace on another Mac is opened: it stays listed,
+/// offline, and its `project.open` fails.
+///
 /// With `CMUX_UITEST_WORKSPACE_LIST_PREVIEW_SUPERMUX_LATE_STUDIO=1` the Studio
 /// joins late: it connects only once the user first opens or closes a
 /// project's disclosure.
@@ -71,6 +77,22 @@ public enum SupermuxProjectsPreviewFixture {
     /// Whether the Studio joins late (see the type's documentation).
     static var studioJoinsLate: Bool {
         ProcessInfo.processInfo.environment["CMUX_UITEST_WORKSPACE_LIST_PREVIEW_SUPERMUX_LATE_STUDIO"] == "1"
+    }
+
+    /// Whether the MacBook Pro goes to sleep (its lid closes) once the user
+    /// opens a workspace on another Mac: like a real background Mac, it stays
+    /// listed with its cached rows, marked offline, and every call to it fails.
+    static var laptopSleepsInBackground: Bool {
+        ProcessInfo.processInfo.environment["CMUX_UITEST_WORKSPACE_LIST_PREVIEW_SUPERMUX_LAPTOP_SLEEPS"] == "1"
+    }
+
+    /// The fixture Macs that are asleep: their calls fail as unreachable.
+    @MainActor static var asleepPairingIDs: Set<String> = []
+
+    /// Whether a fixture Mac is asleep.
+    /// - Parameter pairingID: The Mac's pairing id.
+    @MainActor static func isAsleep(_ pairingID: String) -> Bool {
+        asleepPairingIDs.contains(pairingID)
     }
 
     /// Set once the late Mac has been let in, so a later run of the
@@ -109,6 +131,7 @@ public enum SupermuxProjectsPreviewFixture {
             SupermuxProjectsPreviewMac(
                 mac: laptop,
                 client: SupermuxPreviewMacClient(
+                    pairingID: laptop.pairingID,
                     projects: [
                         SupermuxProjectDTO(
                             id: "proj-a-cmux",
@@ -127,13 +150,15 @@ public enum SupermuxProjectsPreviewFixture {
                     ],
                     runs: [
                         SupermuxRunStateDTO(projectId: "proj-a-cmux", isRunning: true, command: "bun dev", workspaceId: "ws-cmux-main"),
-                    ]
+                    ],
+                    projectWorkspaces: ["proj-a-cmux": "ws-cmux-main"]
                 ),
                 hostCapabilities: supermuxCapabilities
             ),
             SupermuxProjectsPreviewMac(
                 mac: studio,
                 client: SupermuxPreviewMacClient(
+                    pairingID: studio.pairingID,
                     projects: [
                         // Same name and root as the MacBook's cmux but no
                         // origin: the unique-origin match below must win.
@@ -152,14 +177,15 @@ public enum SupermuxProjectsPreviewFixture {
                             SupermuxWorktreeDTO(path: "/Volumes/work/cmux-worktrees/race", branch: "fix/race"),
                         ],
                     ],
-                    runs: []
+                    runs: [],
+                    projectWorkspaces: ["proj-b-cmux": "ws-cmux-fix"]
                 ),
                 hostCapabilities: supermuxCapabilities,
                 joinsLate: studioJoinsLate
             ),
             SupermuxProjectsPreviewMac(
                 mac: mini,
-                client: SupermuxPreviewMacClient(projects: [], worktrees: [:], runs: []),
+                client: SupermuxPreviewMacClient(pairingID: mini.pairingID, projects: [], worktrees: [:], runs: []),
                 hostCapabilities: []
             ),
         ]
@@ -173,6 +199,7 @@ public enum SupermuxProjectsPreviewFixture {
     ///   - workspaceID: The workspace the shell opened last, if any.
     ///   - workspaces: The shell's rows, to find that workspace's Mac.
     /// - Returns: The Macs with the opened workspace's Mac first.
+    @MainActor
     static func foregroundFirst(
         _ macs: [SupermuxProjectsPreviewMac],
         opened workspaceID: MobileWorkspacePreview.ID?,
@@ -183,7 +210,15 @@ public enum SupermuxProjectsPreviewFixture {
         guard let index = macs.firstIndex(where: { $0.mac.pairingID == pairingID }), !macs[index].mac.isForeground else {
             return macs
         }
-        var others = macs.map { $0.foreground(false) }
+        // The MacBook's lid closes once it is in the background (on request):
+        // it stays listed, offline, as a real background Mac's seam does.
+        let asleep: Set<String> = laptopSleepsInBackground && pairingID != laptop.pairingID ? [laptop.pairingID] : []
+        if asleepPairingIDs != asleep {
+            asleepPairingIDs = asleep
+        }
+        var others = macs.map { mac in
+            mac.foreground(false, status: asleep.contains(mac.mac.pairingID) ? .unavailable : mac.mac.status)
+        }
         let opened = others.remove(at: index).foreground(true)
         return [opened] + others
     }
@@ -269,11 +304,17 @@ public enum SupermuxProjectsPreviewFixture {
 }
 
 /// A canned, in-memory ``SupermuxMacCalling``: lists, worktrees and run state
-/// come from the fixture; every write fails as if the Mac were unreachable.
+/// come from the fixture, and `project.open` answers with the project's
+/// fixture workspace; every other write fails as if the Mac were
+/// unreachable, and so does `project.open` while the Mac is asleep.
 struct SupermuxPreviewMacClient: SupermuxMacCalling {
+    /// The Mac this client reaches.
+    let pairingID: String
     let projects: [SupermuxProjectDTO]
     let worktrees: [String: [SupermuxWorktreeDTO]]
     let runs: [SupermuxRunStateDTO]
+    /// The workspace `project.open` opens (focuses), by project id.
+    var projectWorkspaces: [String: String] = [:]
 
     func projectsList() async throws -> SupermuxProjectsListResponse {
         SupermuxProjectsListResponse(projects: projects, sectionCollapsed: false)
@@ -312,7 +353,11 @@ struct SupermuxPreviewMacClient: SupermuxMacCalling {
     func agentOptions(_ request: SupermuxAgentOptionsRequest) async throws -> SupermuxAgentLaunchOptionsDTO { try unavailable() }
     func agentStart(_ request: SupermuxAgentStartRequest) async throws -> SupermuxAgentStartResponse { try unavailable() }
     func projectCreate(_ request: SupermuxProjectCreateRequest) async throws -> SupermuxProjectWriteResponse { try unavailable() }
-    func projectOpen(_ request: SupermuxProjectOpenRequest) async throws -> SupermuxProjectOpenResponse { try unavailable() }
+    func projectOpen(_ request: SupermuxProjectOpenRequest) async throws -> SupermuxProjectOpenResponse {
+        let isAsleep = await SupermuxProjectsPreviewFixture.isAsleep(pairingID)
+        guard !isAsleep, let workspaceID = projectWorkspaces[request.projectID] else { return try unavailable() }
+        return SupermuxProjectOpenResponse(workspaceId: workspaceID, projectId: request.projectID)
+    }
     func projectUpdate(_ request: SupermuxProjectUpdateRequest) async throws -> SupermuxProjectWriteResponse { try unavailable() }
     func projectDelete(_ request: SupermuxProjectDeleteRequest) async throws -> SupermuxProjectDeleteResponse { try unavailable() }
     func presetCreate(_ request: SupermuxPresetCreateRequest) async throws -> SupermuxPresetWriteResponse { try unavailable() }

@@ -52,6 +52,10 @@ Ghostty view (debug.shortcut.simulate), so they take the same path a keyboard do
                                    the same for Cmd+T pressed in the mirror (the other Mac
                                    starts that terminal after the grid was decided)
  11. hidden_mirror_does_not_count  a mirror that is not on screen stops counting
+ 12. hidden_mirror_survives_reconnect
+                                   a mirror off screen when the link drops still does not
+                                   count after it re-attaches (the other Mac forgot its
+                                   counts override with the connection)
 
 Writes a JSON report (default tests/supermux/artifacts/loopback_terminal_input_e2e-<tag>.json)
 with expected and received hex per key, and exits non-zero on any failure. Stdlib only.
@@ -578,6 +582,45 @@ class TerminalInputE2E:
         finally:
             self.sock.call("workspace.select", {"workspace_id": self.mirror_id})
 
+    def hidden_mirror_survives_reconnect(self) -> Dict[str, Any]:
+        """A mirror off screen when the link drops still does not count once it
+        re-attaches. The other Mac forgets this link's counts override with its
+        connection; before the fix this Mac still believed the other Mac held it,
+        so the re-attached hidden mirror counted (and sized the terminal) until
+        it was shown and hidden again."""
+        self.sock.call("workspace.select", {"workspace_id": self.source_id})
+        self.sock.call("surface.focus", {"workspace_id": self.source_id, "surface_id": self.source_surface})
+
+        def viewer_row() -> Dict[str, Any]:
+            rows = self.participants(self.size_state(self.source_surface))
+            viewer = next((r for r in rows if str(r["id"]).startswith("mobile:")), None)
+            if not viewer or not viewer.get("viewport"):
+                raise Failure(f"the mirror is not attached with its grid: {rows}")
+            return {"viewer": viewer, "participants": rows}
+
+        def not_counting() -> Dict[str, Any]:
+            row = viewer_row()
+            if row["viewer"].get("counts"):
+                raise Failure(f"the hidden mirror counts: {row['participants']}")
+            return row
+
+        try:
+            wait_for("the hidden mirror to stop counting before the drop", not_counting, self.timeout)
+            before = self.device().get("link_state")
+            self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "stop"})
+            time.sleep(1.0)
+            self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "restore"})
+            wait_for("the loopback link to reconnect", lambda: self.device().get("link_state") == "connected", self.timeout)
+            settled = wait_for("the re-attached hidden mirror not to count", not_counting, self.timeout)
+            # A late replay or report must not bring the count back.
+            held_until = time.monotonic() + 3.0
+            while time.monotonic() < held_until:
+                not_counting()
+                time.sleep(0.3)
+            return {"link_before": before, **not_counting(), "first_settled": settled["viewer"]}
+        finally:
+            self.sock.call("workspace.select", {"workspace_id": self.mirror_id})
+
     # -- run ------------------------------------------------------------------
 
     def cleanup(self) -> None:
@@ -610,6 +653,7 @@ class TerminalInputE2E:
             ok = self.step("new_remote_tab_fills_the_mirror", self.new_remote_tab_fills_the_mirror) and ok
             ok = self.step("new_tab_from_mirror_shortcut_fills_the_mirror", self.new_tab_from_mirror_shortcut_fills_the_mirror) and ok
             ok = self.step("hidden_mirror_does_not_count", self.hidden_mirror) and ok
+            ok = self.step("hidden_mirror_survives_reconnect", self.hidden_mirror_survives_reconnect) and ok
         self.facts["received_hex_total"] = self.received_hex()
         self.cleanup()
         return ok

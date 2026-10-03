@@ -781,6 +781,53 @@ final class cmuxUITests: XCTestCase {
         XCTAssertFalse(featXBranch.label.contains("MacBook Pro"),
                        "feat-x stays a home-Mac row with no icon: \(featXBranch.label)")
     }
+
+    /// Tapping a merged project opens it on a Mac that can answer. The list
+    /// keeps the MacBook Pro first (the stable order), but once the user has
+    /// opened a Studio workspace and the MacBook's lid closes, that background
+    /// Mac stays listed offline: the tap must open cmux on the Studio, not
+    /// fail against the sleeping MacBook.
+    @MainActor
+    func testSupermuxMergedProjectOpensOnAConnectedMac() throws {
+        let app = launchApp(mockData: false, environment: [
+            "CMUX_UITEST_WORKSPACE_LIST_PREVIEW": "1",
+            "CMUX_UITEST_WORKSPACE_LIST_PREVIEW_REORDER": "1",
+            "CMUX_UITEST_WORKSPACE_LIST_PREVIEW_TABS": "1",
+            "CMUX_UITEST_WORKSPACE_LIST_PREVIEW_SUPERMUX": "1",
+            "CMUX_UITEST_WORKSPACE_LIST_PREVIEW_SUPERMUX_LAPTOP_SLEEPS": "1",
+        ])
+        defer { app.terminate() }
+        func element(_ identifier: String) -> XCUIElement {
+            app.descendants(matching: .any)[identifier].firstMatch
+        }
+        let cmuxFix = element("MobileWorkspaceRow-ws-cmux-fix")
+        XCTAssertTrue(cmuxFix.waitForExistence(timeout: 15), "cmux-fix is a nested workspace row")
+        XCTAssertTrue(waitForHittable(cmuxFix, timeout: 5))
+        tap(cmuxFix, in: app)
+        let detail = element("FixtureWorkspaceDetail")
+        XCTAssertTrue(detail.waitForExistence(timeout: 4), "Tapping cmux-fix opens it")
+        tap(app.buttons["MobileWorkspaceBackButton"], in: app)
+        XCTAssertTrue(detail.waitForNonExistence(timeout: 4), "Back on the list")
+
+        // The merged cmux: the MacBook's copy (still listed first) and the
+        // Studio's clone. Not the Studio's origin-less copy, its own row.
+        let mergedCmux = app.descendants(matching: .any).matching(NSPredicate(
+            format: "identifier BEGINSWITH %@ AND label == %@ AND NOT (identifier ENDSWITH %@)",
+            "SupermuxProjectRow-", "cmux", "proj-b-cmux-copy"
+        )).firstMatch
+        XCTAssertTrue(waitForHittable(mergedCmux, timeout: 5), "The merged cmux project row is on screen")
+        tap(mergedCmux, in: app)
+        let opened = detail.waitForExistence(timeout: 6)
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "ios-merged-project-opens-on-a-connected-mac"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        XCTAssertFalse(app.alerts.firstMatch.exists,
+                       "No error from the sleeping MacBook: \(app.alerts.firstMatch.label)")
+        XCTAssertTrue(opened, "Tapping the merged cmux opens it on the connected Studio")
+        XCTAssertTrue(app.staticTexts["cmux-fix"].waitForExistence(timeout: 2),
+                      "The Studio's cmux workspace (cmux-fix) opened, not the MacBook's (cmux-main)")
+    }
     // SUPERMUX:end supermux-mobile-merged-projects-uitest
 
     @MainActor

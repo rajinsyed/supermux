@@ -42,6 +42,11 @@ CMUX_TAG=<tag> python3 tests/supermux/loopback_device_smoke.py
     `defaults write com.cmuxterm.app.debug.<tag-with-dots> supermux.debug.loopbackDevice -bool true`.
     Write it **after** the reload: `--supermux-profile` re-imports the whole defaults domain and
     wipes the key. Delete it afterwards with `defaults delete … supermux.debug.loopbackDevice`.
+- **The window must be on screen.** Many suites check what the user sees. With another app in
+  native full screen on the display, or the screen locked or asleep, the tagged app's window is
+  covered and those suites fail for nothing. `run_all_loopback_e2e.sh` stops after a launch whose
+  window stays covered for 15 s; see
+  [Six suites failed with another app full screen](#six-suites-failed-with-another-app-full-screen-2026-10-02).
 - **Why not `reload.sh --launch`.** That launch runs the app under `env -i`, so the variable never
   reaches the app. It also needs team dev credentials (`~/.secrets/cmuxterm-dev.env`). Use
   `open --env` or the default instead.
@@ -195,7 +200,30 @@ answers `chip_open {workspace_id, port, cmux_browser?}` (a sidebar chip click th
 CMUX_E2E_SUITES="loopback_port_forward_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
 ```
 
-What the loopback cannot show: the same-port path (R is always busy here), real QUIC tunnels and
+`stop_forgotten_with_its_workspace` (third review): a second source S2 serves P2 (automatic forward); the stop of
+P2 must record S2 (`ports.list`'s `stops`); once the owner unlists P2 and S2's mirror is hidden here
+(`close_mirror {action: hide}`) the stop must be gone, and with S2 shown again (`unhide`) and P2 listed again P2 must
+be forwarded automatically. `late_bind_is_attributed` (third review, red on 100859b1f2e): a new terminal in S runs
+`sleep 12; python3 -m http.server P`, so the server binds after the ~10 s of port scans the command's kick starts;
+`tunnel.host_ports` must list P as S's within 15 s (3.7 s measured: the owner's check of its loopback listeners, which
+the command's start opened for 2 minutes, re-kicks the scans). `idle_owner_does_not_scan_listeners` (fourth review,
+the suite's first step, before any command runs in a terminal): with the loopback link up, the owner may run no
+loopback listener check for 10 s (DEBUG `tunnel.live_checks` counts them); red on 6ba37d7a620 (2 checks in 10 s: one
+every 4 s for as long as any Mac was linked), green on 6e9358fda54 (0; `late_bind_is_attributed` 1.1 s there).
+
+`stop_survives_server_restart` (review of #757): an automatic forward of P (served from another port) is stopped,
+then the owner unlists P and lists it again, each with a poke; the forward must stay stopped and P unbound for 3 s,
+and Resume must start it (red on 754e7bc9198: the forward was active again, the stop forgotten when P left the
+listing).
+
+`moved_forward_returns_to_remote_port` (#757 round) takes a port P the suite holds here, has the loopback owner
+serve it from another port (`tunnel.serve_port`) and lists it as S's (`tunnel.inject_port`): the forward lands
+above P; once the suite frees P, Stop then Resume must bring it back on P, and after it moved again (the suite takes
+P back meanwhile) a relink must too. Red on e0c96de51ff (Resume came back on its last local port, 60919, not 60917):
+a forward tried its last local port first. `disconnect_stops_listeners` still covers keeping the last local port
+while R stays busy here.
+
+What the loopback cannot show: the same-port path for R (R is always busy here), real QUIC tunnels and
 their limits, a Tailscale-only link (`no_direct_link`), and iOS Simulator apps. Check those on two
 Macs.
 
@@ -443,6 +471,12 @@ driver (badge, loading state and presence with its participants). `keys_survive_
 (`supermux.devices.link {action: restore, busy: "mobile.host.status"}`, what a Mac whose request quota
 is full of re-attaching replays answers) and checks that Shift+Enter and a drag still reach the program
 exactly, not through upstream's text path.
+`hidden_mirror_survives_reconnect` shows the source and hides its mirror, drops and restores the
+link (`supermux.devices.link stop|restore`), and checks that the re-attached mirror does not count
+toward the terminal's size and still does not 3 s later. The other Mac clears a closed connection's
+viewport reports and counts override; this Mac used to keep its record that the other Mac held the
+override, so the re-attach never sent it again and the hidden mirror counted (red on 3586ec66544 for
+the whole 30 s wait; the fix resets the record in `linkDropped()`, touchpoint #631).
 
 ```bash
 CMUX_E2E_SUITES="loopback_terminal_input_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
@@ -607,32 +641,166 @@ the app (the pid listening on the proxy's port) shows no socket whose peer is on
 clients, nor any dial to the LAN server (`proxy_connections_are_released`; before the fix each one
 stayed in the app in `TIME_WAIT`); the route's data store for two machine ids that differ only by
 tag are two stores (`data_store_per_app_instance`); a browser in an unbound mirror (auto-mirror off,
-`vm.workspace_open`) routes like a bound one's (`unbound_mirror_browser_routes`); 72 connections that
+`vm.workspace_open`) loads the owner's page like a bound one's (`unbound_mirror_browser_routes`); 72 connections that
 never send a byte are closed, at least the 8 past the 64-handshake limit at once and all by the 10 s
 handshake deadline (`idle_proxy_connections_close`); after `browser_proxy_fail` the proxy replaces
 its listener on its own (waited for with `browser_proxy start: false`, a read that starts no
 listener, so the open tab never navigates inside the 1 s restart delay and with no restart the step
-times out), then M's open tab and a new tab each load through the owner on the fresh port, the open
-tab's journal `opened` counted before the new tab exists, since in loopback a direct load reaches the
-same marker server (`proxy_listener_failure_recovers`; the step it replaced navigated the open tab
-straight after the failure and passed only while WebKit's swap delay above held the request past the
-restart: on a healthy host it got `navigation_failed` in 0.09 s); and with the listener failed and held
-down (`browser_proxy_hold`), a mirror tab opened meanwhile leaves the app instance's data store with
-its 2 proxy configurations, as the open tab's, and once released loads through the owner
-(`restart_keeps_mirror_store_proxied`; before the fix the new tab got no endpoint and its init wrote
-`[]` onto the store every mirror tab shares, 0 configurations, so the open tabs' `localhost` went to
-this Mac). DEBUG drivers
+times out), then M's open tab and a new tab each load the owner's page on the fresh port
+(`proxy_listener_failure_recovers`; the step it replaced navigated the open tab straight after the
+failure and passed only while WebKit's swap delay above held the request past the restart: on a healthy
+host it got `navigation_failed` in 0.09 s); and with the listener failed and held down
+(`browser_proxy_hold`), a mirror tab opened meanwhile leaves the app instance's data store with its 2
+proxy configurations, as the open tab's, a load in it while the listener is down fails and reaches
+nothing, and once released it loads the owner's page (`restart_keeps_mirror_store_proxied`; before the
+fix the new tab got no endpoint and its init wrote `[]` onto the store every mirror tab shares, 0
+configurations, so the open tabs' `localhost` went to this Mac). Those three steps prove the route per
+page, not by counting the owner's tunnel opens: this Mac runs its own server on the port they open and
+the owner's page is served from another port that the loopback owner serves as that one
+(`owner_and_this_mac`, `tunnel.serve_port`), so the owner's title proves the load came through the
+owner and a request to this Mac's server fails the step. A count was not a proof: for 28 of 31 measured
+navigations of the open tab WebKit opened 2 tunnels for its 1 request, and a request that rides a tunnel
+opened earlier opens none, the likely cause of the one run where `proxy_listener_failure_recovers` saw no
+`opened` for the new tab (both tabs had asked for the alias, per the app log, and no run ever sent a request
+to this Mac's own server). Then `owner_localhost_keeps_origin` (#754, the user's Turnstile report): a login page with a
+Cloudflare Turnstile widget (the always-passing test sitekey `1x00000000000000000000AA`) served on the owner's
+`localhost:P`, with P listed as the source workspace's port (`supermux.devices.tunnel.inject_port`, as a dev server in
+its terminal is) and so forwarded to this Mac on P by automatic forwarding, opened in a new mirror tab, must
+run at `http://localhost:P`, a secure context, come from the owner (journal `opened` for P) and get a Turnstile token; the
+same page in a local browser is the control that Turnstile works at all (it needs challenges.cloudflare.com). In
+loopback the owner's P would be busy here too, so the owner serves P from another port Q
+(`supermux.devices.tunnel.serve_port {port: P, from: Q}`, `SupermuxLoopbackServedPorts`: the loopback tunnel host
+dials Q when asked for P), leaving P free for the forward as on two Macs; P is chosen below the ephemeral range, where
+an outgoing connection's local port can take it meanwhile. Red before the fix: the tab ran at
+`http://cmux-loopback.localtest.me:P`, `isSecureContext` false (a real dev sitekey answers 110200 there). The suite
+passes with it anywhere in the order (checked first, before and after the listener-failure steps).
+
+The review fixes (#755–#756) add three steps, red on the build before them (2026-10-02):
+`as_written_page_reaches_owner_ports`: an as-written page (P listed and forwarded on P) whose `fetch` and XHR call
+`localhost:Q`, where this Mac runs its own server on Q and the owner serves Q from another port, must get the owner's
+answer, with `Origin: http://localhost:P` and the API's `Access-Control-Allow-Origin` kept, and this Mac's server no
+request (red: both calls answered by this Mac's server); a call to another listed, same-port forwarded port F must
+reach the owner with no proxy dial (its forward, as written). `forward_changes_reroute_open_tab`: a mirror tab opened
+on `localhost:P` before P is listed or forwarded runs on the alias; once the forward is active it must move to
+`http://localhost:P` (red: still on the alias after 20 s); after `ports.stop` and this Mac binding its own server on
+P it must go back to the alias, and a page `location.reload()` must show the owner's page with this Mac's server seeing
+nothing. `unlisted_forward_explains`: a manual forward of P (not listed; the owner serves P from a closed port) must
+show "localhost:P on <Mac> isn't answering" (red: WebKit's bare error, the title the URL). The suite clears the
+listed ports (`tunnel.clear_injected`) and stops its manual forwards at the end.
+
+Their second review adds four: `bypass_browser_stays_local` (a `browser.open_split` with `bypass_remote_proxy` in the
+mirror must load this Mac's `localhost` page, with neither the mirror's store nor a reroute loop, while the open mirror
+tab keeps the store's 2 proxy configurations and the owner's page); `as_written_page_navigation_reroutes` (an
+as-written page's own `location.href` to `localhost:Q`, this Mac serving Q, must show the owner's Q: it exercises the
+#756 navigation policy, without which WebKit loads the loopback URL itself, straight to this Mac);
+`public_page_gets_no_ports` (an alias page that defines `__cmuxSetMirrorLoopbackPorts` must be handed nothing when the
+forwards change); `same_origin_iframe_reaches_owner` (a same-origin iframe's `fetch` to `localhost:Q` must reach the
+owner's Q).
+
+The real two-Mac fixes (#757, 2026-10-03) add seven steps. `alias_keep_alive_requests_reach_owner`: the owner's
+page comes from a strict HTTP/1.1 keep-alive server (`StrictDevServer`) that answers 403 to a `Host` or `Origin`
+that is not `localhost:P`, as Next.js 16's `blockCrossSiteDEV` does; this Mac serves P itself, so the tab runs at the
+alias; the page loads two scripts and a module (which sends `Origin`), then fetches one after another over the same
+connection (GETs, a chunked answer, a POST with a body, a HEAD, a redirect whose `Location` names localhost, a
+`Set-Cookie` for `Domain=localhost` and a request that needs the cookie). All must succeed and the owner refuse
+nothing; a connection must carry at least 3 requests, else the step cannot tell (red: 9 of 9 fetches answered 403).
+`other_port_forward_loads_as_written`: a port the owner lists only under `other_ports` (DEBUG
+`tunnel.inject_other_port {port, remove?}`; `clear_injected` clears these too), forwarded here by hand on P, loads
+as written (red: the alias; the viewer never asked for other ports). `unforwarded_port_forwards_on_demand`: (a) a
+new mirror tab on such an other port, free here and forwarded nowhere, must run at `http://localhost:P`, a secure
+context, with a same-port forward active and listed in "Ports on <Mac>" and no proxy dial to the owner (it never
+went through the alias); (b) the same for a URL typed into the open tab, P a workspace port with automatic
+forwarding off; (c) after Stop Forwarding a navigation to P runs at the alias and the forward stays stopped; (d)
+once the owner no longer lists P and a connection to the forward is refused there, the forward goes with no poke
+(red: the alias). `restarted_server_recovers_as_written`: the owner's server on P stops (unlisted with a poke: the
+forward goes, the tab moves to the alias) and restarts; (A) re-listed with a poke, the tab moves back by itself
+(#756's activation, green on the red build too); (B) listed only among the owner's other ports, no poke, and the
+page reloads itself: the reload must land at `http://localhost:P` (red: stayed on the alias).
+`restarted_server_returns_without_poke`: the same restart with no poke and no reload: the tab must move back on its
+own within 45 s (red on a3cdb4e4813, which had every other fix: the follow-up fetches after a forward's port left
+the listing and the open-tab forwards were missing). `alias_page_reload_settles`: a page on the alias (this
+Mac serves P, so no forward can start) that reloads itself once after loading, as Next.js's dev client does
+(it checks the navigation type), must load exactly twice and end as a `reload` (red on 95356a7a629: 14 loads in
+4 s and 23 in 7 s, every reload handed to the panel became a new navigation; found with a real Next 16.3.1 dev
+server in a loopback mirror tab, which reloaded about five times a second and never hydrated). The ports
+driver's `list` reports each listing's `host_other_ports`.
+
+Their review (2026-10-03) adds five steps, all red on 754e7bc9198: `held_navigation_lands_on_its_path` (a URL
+typed from alias `/a.html` to `/b.html` on the same port, P listed only once the gate asks, automatic forwarding
+off, must land on `/b.html`; red: the forward's activation moved the tab to `localhost/a.html` and dropped the
+held `/b.html`); `local_server_restart_keeps_its_port` (this Mac's own server holds P, an alias tab of the owner's
+P is open with automatic forwarding off; the server stops, the listing is fetched three times, and no forward may
+take P; red: an `on_demand` forward took P: the background retry probed it on every change);
+`page_navigation_does_not_forward_other_port` (an owner's other port reached by a page's own `location.href` and by
+a new tab stays on the alias with no forward, the typed URL forwards it; red: the page's navigation created an
+`on_demand` forward); `navigation_spam_bounded_listings` (20 `browser.navigate` calls at once, each on its own
+socket, to an unlisted port free here: the host answers at most 4 `ports.list`, counted by the DEBUG
+`tunnel.listings_served`; red: 20, green: 1); and, last because before its fix it ended the app,
+`alias_bad_chunk_size_survives` (a raw server answers through the alias with chunk lines `-5`, `+5`,
+`7fffffffffffffff`, `fffffffffffffffffff` and `5;name=value`; every answer must arrive and the app keep answering;
+red: the app crashed on `-5`). The suite's cleanup survives a dead app so the report is still written.
+`unforwarded_port_forwards_on_demand` now opens a new tab on a workspace port (automatic forwarding off) and
+types the URL of an other port; `restarted_server_recovers_as_written` (B) re-lists P as the workspace's with no
+poke and the follow-up fetches off (DEBUG `ports.follow_ups {enabled}`) and wants the reloaded tab at
+`localhost:P` within 3.5 s (0.11 s measured), so the follow-ups cannot pass it; `restarted_server_returns_without_poke`
+runs with automatic forwarding off, so only the tab's own on-demand forward brings it back.
+
+The fourth review adds two: `local_terminal_link_marks_nothing` (a terminal link opened into a cmux browser of a local
+workspace, `mirror.link_open` on the source, then a mirror page's own `location.href` to the owner's other port P: no
+forward, the page on the alias; red on 6ba37d7a620, where the link marked P for 5 s on every Mac and the page got a
+forward; green on 6e9358fda54) and
+`port_chip_opens_as_written` (coverage: `ports.chip_open {cmux_browser: true}` on a workspace port with automatic
+forwarding off opens a cmux browser in the mirror that gets an on-demand forward and runs as written).
+
+The third review (2026-10-03) adds four (red on 3f1b3ca9b69, the last three on 100859b1f2e, which fixed only the
+first): `restart_listed_as_other_first_recovers` (automatic forwarding off; the owner's server on P restarts and the
+follow-up fetches see it only among its other ports, the page reloads meanwhile, then the owner lists it as the
+workspace's with a poke: the tab must end on `localhost:P`; red on 3f1b3ca9b69: the app froze, the main thread spinning
+in `SupermuxPortForwards.fetchListingNow` at 98 % CPU, sample kept beside the reports; red on 100859b1f2e: stuck on
+the alias, "not allowed" stored as for good); `unchecked_alias_tab_gets_forward` (a tab opened while the link is down,
+so the gate never tried its port, must get a same-port forward once the link is back and P is listed; red: stayed on
+the alias); `terminal_link_forwards_other_port` (`supermux.devices.mirror.link_open` with `destination: cmux`, the
+real Command-click path, to an owner's other port must run as written; red: the alias); and, last, after the chunk
+step, `held_navigation_joins_fetch_in_flight` (the owner holds the next `ports.list` 2 s, `supermux.devices.link
+{action: stall}`, a refresh starts it, a URL is typed into a tab meanwhile: the app must answer a socket call every
+0.4 s for 6 s and the tab land as written; green: every answer within 0.02 s). A step whose socket call times out
+now fails as "the app stopped answering", the later steps are listed as skipped and the report keeps every result.
+
+**A URL typed into a tab, to plain HTTP on a host that is not loopback by name, waits ~10 s on this Mac**
+(WebKit and macOS 27, not the proxy; not a fail-open). WebKit 27 moves such a navigation into a new hardened
+WebContent process (`triggerProcessSwapForEnhancedSecurity`, `continueNavigationInNewProcess`), and making one
+blocks its UI thread in the kernel issuing font sandbox extensions (`registerUserInstalledFonts` ->
+`_sandbox_extension_issue`, 759 of 1285 samples of one stall; only 1 font is installed here). Measured
+2026-10-02 in a local tab with no proxy: typed navigations to the alias resolved directly took 10.76, 11.18
+and 10.87 s and to this Mac's LAN address 10.47, 11.18 and 10.87 s (the first from a new tab 0.32 s), to
+`localhost` 0.02–0.04 s. A mirror tab met it on every typed `localhost` URL, which became the alias: the
+proxy's DEBUG connection traces (`browser_proxy` `connections`: accept, first byte, decision, tunnel open,
+request/response bytes, end) showed WebKit's preconnect (its `PreconnectTask` has a 10 s timeout) completing
+the SOCKS5 handshake at once, its tunnel open (main actor) waiting for the blocked main thread 11–13 s, no
+request on it, and the real request on a new connection once the main thread was free; no connection
+reached the proxy's handshake deadline. A deadline in the proxy could not help. A port forwarded here on the
+same port loads as written (#754), so WebKit keeps the process: `typed_navigations_are_prompt` types 6
+such URLs into the open mirror tab and wants each within 3 s (red on the pre-#754 build: 10.82–11.28 s,
+the page at the alias; green: 0.03–0.06 s). Still slow: a mirror URL whose port is not forwarded on the
+same port (the alias), and in any tab a plain-HTTP page on a LAN address or another non-localhost host.
+That wait is why `proxy_listener_failure_recovers` once ran past `browser.navigate`'s own 17.5 s wait
+(`navigation_timeout`); navigations of an open tab to the alias in the suite (`navigate_open_tab`) let that
+wait run out and still require the owner's page. With the listener down and a Turnstile tab live in the
+mirror, 4 of 4 rounds sent nothing to this Mac's own server.
+
+DEBUG drivers
 (`SupermuxMirrorBrowserSocket`): `supermux.devices.mirror.browser_route {workspace_id}` (per
 browser: `routes_remotely`, `proxy_configs`, `store_identifier`), `.browser_proxy {machine, start?}`
-(the endpoint it hands out now: port, credential, `owner_dials`, `direct_dials`, `failures`; null
+(the endpoint it hands out now: port, credential, `owner_dials`, `direct_dials`, `failures`, `connections`
+(its newest 64 connections' timelines); null
 while it has none; starts the proxy unless `start` is false),
 `.browser_proxy_fail {machine}` (runs the listener's `.failed` path; `failed_port`),
 `.browser_proxy_hold {machine, held}` (while held no new listener is made, as when the system cannot
 make one; releasing starts one),
 `.browser_store {machine}` (the store identifier the route gives that app instance, any `device:` id)
 and `.link_open {workspace_id, surface_id, url, destination}` (a terminal link click with the system
-browser captured). It also reads the tunnel drivers `supermux.devices.tunnel.journal` and
-`.pretend_old_host` of the tunnel lanes work.
+browser captured). It also uses the tunnel drivers `supermux.devices.tunnel.journal`,
+`.pretend_old_host` and `.serve_port` of the tunnel lanes work.
 
 ```bash
 CMUX_E2E_SUITES="loopback_mirror_local_panels_e2e loopback_mirror_browser_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
@@ -793,9 +961,64 @@ CMUX_TAG=<tag> python3 tests/supermux/loopback_mirror_simulator_e2e.py --app-pat
   --projects-file /tmp/<tag>/projects.json
 ```
 
+**A slow `simctl` fails eight steps (2026-10-03).** `streams_video`, `device_picker_lists_owner_devices` (picker
+`[]`), `quality_cap`, `link_drop_reconnects`, `superseded_no_ping_pong`, `viewer_close_closes_owner_panel` ("the
+owner's Simulator tab never picks a device"), `new_simulator_tab_bar_runs_on_owner` and `restore_rebinds` failed on
+c745a6c9fdb, 6ba37d7a620 and 6e9358fda54 alike, so not the owner's listener check (c745a6c9fdb has none). Every `simctl`
+launch on this Mac took 20–22 s, also `simctl help` from a plain shell with no tagged app running, while `ls`,
+`python3` and `xcrun --find` started at once; a sample of a waiting `simctl` had 875 of 881 main-thread samples in
+`_dyld_start`, in `dyld4::RemoteNotificationResponder::blockOnSynchronousEvent` (dyld waiting on an image-load
+observer before `main`; `spindump` and `sysdiagnosed` had been running for hours, cause not confirmed). The owner's
+`mobile.simulator.devices.list` runs a fresh `simctl list` and missed its 20 s reply deadline every time
+(`supermux.deviceLink mobile.simulator.devices.list missed its reply deadline` in the app log). Before blaming a
+change, time `$(xcrun --find simctl) help`: well under a second on a healthy Mac.
+
 Not covered here (two real Macs): the `simulator_stream` lane over QUIC (direct and relay) through
 `DeviceIrxClient.supermuxTunnelConnection`, capture on a headless or locked owning Mac, frame rate and
 latency, the phone and a Mac taking the stream from each other, and version skew.
+
+## Six suites failed with another app full screen (2026-10-02)
+
+After a reboot, the installed Supermux release ran in native full screen on this Mac's only display,
+so its full-screen Space was the one shown (`com.apple.spaces`: current Space type 4, owned by the
+release's pid). `open -g` puts a tagged app's window on the desktop Space, which was not shown. The
+window was visible but covered (`debug.terminals`: `window_occluded: true`,
+`renderer_window_visible: false`; CGWindowList: not on screen). Everything that follows what the
+user sees then failed:
+
+- **Sizing.** A pane counts only on screen (`SupermuxTerminalSizingVisibility.isOnScreen` needs
+  `occlusionState.contains(.visible)`). Every participant reported `counts: false`, a shown mirror
+  never claimed its terminal (`loopback_terminal_sizing_policy_e2e`: `default_policy_is_this_mac_first`,
+  `counting_source_pane_does_not_shrink`, `local_terminal_mac_first_over_phone`,
+  `showing_again_reclaims`, `reconnect_reclaims`), and the mirror pane stayed `hidden: true`
+  (`loopback_mirror_tab_close_e2e`: `pane_opened_off_screen_keeps_counting` and three after it).
+- **Drawing.** The renderer presents nothing in a covered window, so pane ink stayed 0
+  (`loopback_mirror_appearance_e2e`, three steps).
+- **Simulator.** The viewer never streamed and its picker stayed empty (`loopback_mirror_simulator_e2e`).
+- **Screenshots.** `loopback_projects_e2e`'s `sidebar_screenshot` found "no on-screen window".
+
+It was not the seeded profile: neither the tag's defaults nor the release's hold
+`supermux.terminalSizing.preference`, the suite reset it to `["self"]`, and the source's key
+`…/mac/55c63b65f767163a` is this Mac's own sizing id, read from the Mac-wide `mobile-host-device-id`
+file, so every build on this Mac has it. It was not a regression: nothing merged after e1cf813087d
+touches sizing, visibility, rendering or the simulator. Once the desktop Space was shown, the same
+six suites passed on 11edaf432c5 (3586ec66544 plus the hidden-mirror fix above; the Simulator
+suite's `build_booted_simulator_shows_up` skipped as designed, another booted simulator being the owner's
+first pick).
+
+Activating the tagged app does not help: it does not switch Spaces. Neither can the harness move its
+window. Measured on macOS 27, a regular app's window cannot join another app's full-screen Space
+under any collection behavior. An accessory app's window can (`.canJoinAllSpaces`,
+`.fullScreenAuxiliary`). A standalone app moves an existing window there by briefly becoming an
+accessory. In cmux that never worked for a window first shown while the app was regular, while a
+window created as an accessory did. The cause was not found, and the remaining routes (launch-time
+accessory mode with new upstream touchpoints, or private SkyLight calls) are not worth it for a test
+harness.
+
+So the runner checks instead. After each launch it waits up to 15 s for a terminal whose window is
+not occluded, and otherwise stops with the reason. `CMUX_E2E_ALLOW_COVERED_WINDOW=1` runs anyway
+(only for suites that check no pixels). To run, show the desktop Space or take the full-screen app out
+of full screen. **Never do either to the user's own app for them.**
 
 ## The ~20 s link flap (round 4) and why E2E did not see it
 
