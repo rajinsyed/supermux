@@ -1,6 +1,7 @@
 public import CmuxMobileShellModel
 public import Foundation
 public import SupermuxMobileCore
+import SupermuxMobileKit
 
 /// Immutable value snapshot of one open workspace nested under a project —
 /// the phone-side projection of the §6 `supermux_project_id` /
@@ -19,6 +20,10 @@ public struct SupermuxProjectWorkspaceRowSnapshot: Equatable, Identifiable, Send
     public let remoteID: String
     /// The owning project's UUID string (from `supermux_project_id`).
     public let projectID: String
+    /// The owning Mac pairing (`SupermuxMacSeam.pairingID`), or empty for an
+    /// unowned row. Project ids are only unique per Mac, so the section joins
+    /// a workspace to a project by this AND ``projectID``.
+    public let pairingID: String
     /// The workspace's user-facing display name.
     public let name: String
     /// The workspace's agent activity, or `nil` when idle (or the Mac sent an
@@ -47,6 +52,7 @@ public struct SupermuxProjectWorkspaceRowSnapshot: Equatable, Identifiable, Send
     ///   - id: The workspace's UI row identifier.
     ///   - remoteID: The Mac-local workspace id; defaults to `id`.
     ///   - projectID: The owning project's UUID string.
+    ///   - pairingID: The owning Mac pairing, or empty for an unowned row.
     ///   - name: The workspace's display name.
     ///   - activity: The workspace's agent activity, if any.
     ///   - hasUnread: Whether the workspace has unread activity.
@@ -58,6 +64,7 @@ public struct SupermuxProjectWorkspaceRowSnapshot: Equatable, Identifiable, Send
         id: String,
         remoteID: String? = nil,
         projectID: String,
+        pairingID: String = "",
         name: String,
         activity: SupermuxWorkspaceActivityDTO?,
         hasUnread: Bool,
@@ -69,6 +76,7 @@ public struct SupermuxProjectWorkspaceRowSnapshot: Equatable, Identifiable, Send
         self.id = id
         self.remoteID = remoteID ?? id
         self.projectID = projectID
+        self.pairingID = pairingID
         self.name = name
         self.activity = activity
         self.hasUnread = hasUnread
@@ -92,6 +100,10 @@ public struct SupermuxProjectWorkspaceRowSnapshot: Equatable, Identifiable, Send
                 id: preview.id.rawValue,
                 remoteID: preview.rpcWorkspaceID.rawValue,
                 projectID: projectID,
+                pairingID: SupermuxMacSeam.pairingID(
+                    macDeviceID: preview.macDeviceID,
+                    instanceTag: preview.macInstanceTag
+                ),
                 name: preview.name,
                 activity: preview.supermuxActivity.flatMap(SupermuxWorkspaceActivityDTO.init(rawValue:)),
                 hasUnread: preview.hasUnread,
@@ -114,6 +126,7 @@ public struct SupermuxProjectWorkspaceRowSnapshot: Equatable, Identifiable, Send
             id: id,
             remoteID: remoteID,
             projectID: projectID,
+            pairingID: pairingID,
             name: name,
             activity: activity,
             hasUnread: hasUnread,
@@ -122,6 +135,13 @@ public struct SupermuxProjectWorkspaceRowSnapshot: Equatable, Identifiable, Send
             pullRequest: pullRequest,
             isRunning: isRunning
         )
+    }
+
+    /// Whether this row belongs to a session's pairing. A session without a
+    /// pairing (the single legacy session) owns every row, as before.
+    /// - Parameter sessionPairingID: The session's pairing id.
+    func belongs(toPairingID sessionPairingID: String) -> Bool {
+        sessionPairingID.isEmpty || pairingID == sessionPairingID
     }
 
     /// Whether this row hosts the given running workspace id (`run.state`'s

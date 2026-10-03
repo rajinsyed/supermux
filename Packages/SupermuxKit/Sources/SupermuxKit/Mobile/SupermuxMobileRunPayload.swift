@@ -74,14 +74,17 @@ public struct SupermuxMobileRunPayloadBuilder: Sendable {
     /// Creates a builder. Stateless; construct wherever needed.
     public init() {}
 
-    /// Encodes the `run.state` result: one row per registered project (in
-    /// sidebar order, so the phone can paint run dots on every project row),
-    /// folding in the live snapshot when the project is running.
+    /// Encodes the `run.state` result: `runs`, one row per registered project
+    /// (in sidebar order, so the phone can paint run dots on every project
+    /// row), folding in the project's representative live run; and the
+    /// additive `workspace_runs`, one row per live run. Runs are per
+    /// workspace, so a project can run in several at once: a viewer Mac's
+    /// mirror reads its own workspace's row there, which `runs` may not carry.
     ///
     /// - Parameters:
     ///   - projects: Registered projects in sidebar order.
     ///   - snapshots: The coordinator's live-run projection.
-    /// - Returns: The RPC result object (`{runs: [...]}`).
+    /// - Returns: The RPC result object (`{runs: [...], workspace_runs: [...]}`).
     /// - Throws: Any encoding failure from the shared wire bridge.
     public func runState(
         projects: [SupermuxProject],
@@ -93,6 +96,9 @@ public struct SupermuxMobileRunPayloadBuilder: Sendable {
                     projectId: project.id,
                     snapshot: representativeSnapshot(for: project.id, in: snapshots)
                 )
+            },
+            "workspace_runs": try snapshots.compactMap { snapshot in
+                try snapshot.projectId.map { try encodedRun(projectId: $0, snapshot: snapshot) }
             },
         ]
     }

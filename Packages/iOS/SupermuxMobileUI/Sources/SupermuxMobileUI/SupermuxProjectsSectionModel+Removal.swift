@@ -5,7 +5,7 @@ import SupermuxMobileKit
 /// on screen. Carries the project so the confirm can reach the right
 /// section-owned store, and the branch so the dialog can name what it deletes.
 public struct SupermuxPendingWorktreeRemoval: Equatable, Sendable {
-    /// The owning project's UUID string.
+    /// The owning project's ROW id (its Mac plus its project id).
     public let projectID: String
     /// The worktree's absolute path on the Mac (its stable identity).
     public let path: String
@@ -14,7 +14,7 @@ public struct SupermuxPendingWorktreeRemoval: Equatable, Sendable {
 
     /// Memberwise initializer.
     /// - Parameters:
-    ///   - projectID: The owning project's UUID string.
+    ///   - projectID: The owning project's ROW id.
     ///   - path: The worktree's absolute path on the Mac.
     ///   - displayName: The worktree's display name.
     public init(projectID: String, path: String, displayName: String) {
@@ -40,7 +40,7 @@ extension SupermuxProjectsSectionModel {
     /// Asks to remove a nested worktree. Raises the first confirmation; it
     /// never deletes anything on its own.
     /// - Parameters:
-    ///   - projectID: The owning project's UUID string.
+    ///   - projectID: The owning project's ROW id.
     ///   - worktree: The swiped row's value snapshot.
     public func requestNestedWorktreeRemoval(
         projectID: String,
@@ -49,7 +49,7 @@ extension SupermuxProjectsSectionModel {
         // No session store means no way to remove it (disconnected, or the
         // host lacks `supermux.worktrees.v1`) — raising a dialog whose confirm
         // could only fail would be worse than ignoring the swipe.
-        guard worktreeSessions[projectID]?.store != nil else { return }
+        guard worktreeStore(forProjectRowID: projectID) != nil else { return }
         // Remembered so the force/failure dialogs can speak for the worktree
         // the user actually acted on, rather than whichever project won an
         // unordered dictionary scan.
@@ -66,7 +66,7 @@ extension SupermuxProjectsSectionModel {
     /// `awaitingForceConfirmation`, which surfaces as the force dialog.
     public func confirmPendingWorktreeRemoval() {
         guard let pending = pendingWorktreeRemoval,
-              let store = worktreeSessions[pending.projectID]?.store else {
+              let store = worktreeStore(forProjectRowID: pending.projectID) else {
             pendingWorktreeRemoval = nil
             return
         }
@@ -76,9 +76,9 @@ extension SupermuxProjectsSectionModel {
 
     /// Confirms a FORCED removal of the worktree parked in the force-confirm
     /// state (uncommitted changes acknowledged).
-    /// - Parameter projectID: The project whose store is parked.
+    /// - Parameter projectID: The ROW id of the project whose store is parked.
     public func confirmForcedWorktreeRemoval(projectID: String) {
-        guard let store = worktreeSessions[projectID]?.store,
+        guard let store = worktreeStore(forProjectRowID: projectID),
               case let .awaitingForceConfirmation(path, _, _) = store.removal else { return }
         Task { await store.removeWorktree(path: path, force: true) }
     }
@@ -90,9 +90,15 @@ extension SupermuxProjectsSectionModel {
 
     /// Resets a parked removal state on the project's store (force declined,
     /// or a failure acknowledged).
-    /// - Parameter projectID: The project whose store is parked.
+    /// - Parameter projectID: The ROW id of the project whose store is parked.
     public func dismissWorktreeRemovalState(projectID: String) {
-        worktreeSessions[projectID]?.store.dismissRemoval()
+        worktreeStore(forProjectRowID: projectID)?.dismissRemoval()
+    }
+
+    /// The section-owned worktree store behind an expanded project row.
+    func worktreeStore(forProjectRowID rowID: String) -> SupermuxMobileWorktreesStore? {
+        guard let resolved = resolve(rowID) else { return nil }
+        return resolved.session.worktreeSessions[resolved.projectID]?.store
     }
 
     /// The worktree currently awaiting a force confirmation, with the Mac's
@@ -146,7 +152,7 @@ extension SupermuxProjectsSectionModel {
         _ match: (SupermuxWorktreeRemovalState) -> (path: String, message: String)?
     ) -> SupermuxWorktreeRemovalPrompt? {
         func build(_ projectID: String) -> SupermuxWorktreeRemovalPrompt? {
-            guard let store = worktreeSessions[projectID]?.store,
+            guard let store = worktreeStore(forProjectRowID: projectID),
                   let hit = match(store.removal) else { return nil }
             return SupermuxWorktreeRemovalPrompt(
                 projectID: projectID,
@@ -161,8 +167,11 @@ extension SupermuxProjectsSectionModel {
         if let recent = lastRemovalRequestProjectID, let prompt = build(recent) {
             return prompt
         }
-        for projectID in worktreeSessions.keys.sorted() {
-            if let prompt = build(projectID) { return prompt }
+        for session in orderedSessions {
+            for projectID in session.worktreeSessions.keys.sorted() {
+                let rowID = SupermuxProjectKey(pairingID: session.pairingID, projectID: projectID).rawValue
+                if let prompt = build(rowID) { return prompt }
+            }
         }
         return nil
     }
@@ -172,7 +181,7 @@ extension SupermuxProjectsSectionModel {
 /// names, and the Mac's message. Carrying the NAME is what lets the dialogs
 /// say what they are about to delete instead of asking a generic question.
 public struct SupermuxWorktreeRemovalPrompt: Equatable, Sendable {
-    /// The owning project's UUID string.
+    /// The owning project's ROW id.
     public let projectID: String
     /// The worktree's display name (branch, else the path's last component).
     public let displayName: String

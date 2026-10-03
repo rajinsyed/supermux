@@ -1,4 +1,4 @@
-public import SupermuxMobileCore
+import SupermuxMobileCore
 public import SupermuxMobileKit
 public import SwiftUI
 
@@ -25,6 +25,7 @@ public struct SupermuxNewWorktreeSheet: View {
     private let defaultBaseBranch: String?
     private let showsBaseBranchPicker: Bool
     private let agentStore: SupermuxMobileAgentLaunchStore?
+    private let macPicker: SupermuxNewWorktreeMacPicker?
     private let suggestBranch: @MainActor (_ workspaceName: String?) async throws -> String
     private let createWorktree: @MainActor (
         _ workspaceName: String?,
@@ -55,6 +56,8 @@ public struct SupermuxNewWorktreeSheet: View {
     ///   - agentStore: The agent-launch store, or `nil` to hide the Claude
     ///     path. The sheet loads its options itself, so presenting never
     ///     waits on the Mac's model probe.
+    ///   - macPicker: The Macs that can host this worktree, or `nil` (one
+    ///     Mac) to show no picker.
     ///   - suggestBranch: Asks the Mac for a branch-name suggestion.
     ///   - createWorktree: Creates a plain worktree; returns the opened
     ///     workspace's id when the Mac opened one.
@@ -65,6 +68,7 @@ public struct SupermuxNewWorktreeSheet: View {
         defaultBaseBranch: String?,
         showsBaseBranchPicker: Bool = true,
         agentStore: SupermuxMobileAgentLaunchStore? = nil,
+        macPicker: SupermuxNewWorktreeMacPicker? = nil,
         suggestBranch: @escaping @MainActor (_ workspaceName: String?) async throws -> String,
         createWorktree: @escaping @MainActor (
             _ workspaceName: String?,
@@ -79,6 +83,7 @@ public struct SupermuxNewWorktreeSheet: View {
         self.defaultBaseBranch = defaultBaseBranch
         self.showsBaseBranchPicker = showsBaseBranchPicker
         self.agentStore = agentStore
+        self.macPicker = macPicker
         self.suggestBranch = suggestBranch
         self.createWorktree = createWorktree
         self.openWorkspace = openWorkspace
@@ -91,6 +96,9 @@ public struct SupermuxNewWorktreeSheet: View {
     public var body: some View {
         NavigationStack {
             Form {
+                if let macPicker, macPicker.options.count > 1 {
+                    SupermuxNewWorktreeMacSection(picker: macPicker, isBusy: isCreating)
+                }
                 if agentStore != nil {
                     promptSection
                 }
@@ -150,7 +158,7 @@ public struct SupermuxNewWorktreeSheet: View {
                             Text(String(localized: "supermux.newWorktree.create", defaultValue: "Create", bundle: .module))
                         }
                     }
-                    .disabled(isCreating)
+                    .disabled(isCreating || isRetargeting)
                     .accessibilityIdentifier("SupermuxCreateWorktreeButton")
                 }
             }
@@ -161,9 +169,16 @@ public struct SupermuxNewWorktreeSheet: View {
         // sheet: a cold probe can take seconds and must never hold the sheet
         // back from a plain worktree. Picks reset by `selectCommand` keep a
         // Start pressed mid-load on the CLI defaults.
-        .task {
+        .task(id: agentStore.map(ObjectIdentifier.init)) {
+            // Re-keyed on the store: picking another Mac swaps in THAT Mac's
+            // Claude options.
             guard let agentStore, !agentStore.hasLoadedOptions else { return }
             await agentStore.loadOptions()
+        }
+        .onChange(of: macPicker?.selectedPairingID) { _, _ in
+            // A starting branch picked on one Mac may not exist on another.
+            baseBranchWasEdited = false
+            updateUntouchedBaseBranch()
         }
         .onChange(of: branches, initial: true) { _, _ in updateUntouchedBaseBranch() }
         .onChange(of: defaultBaseBranch) { _, _ in updateUntouchedBaseBranch() }
@@ -217,7 +232,7 @@ public struct SupermuxNewWorktreeSheet: View {
                             Image(systemName: "wand.and.stars")
                         }
                         .buttonStyle(.borderless)
-                        .disabled(isCreating)
+                        .disabled(isCreating || isRetargeting)
                         .accessibilityLabel(String(
                             localized: "supermux.newWorktree.suggest",
                             defaultValue: "Suggest a branch name",
@@ -272,6 +287,13 @@ public struct SupermuxNewWorktreeSheet: View {
         agentStore != nil && !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    /// A Mac switch is still loading that Mac's branches. The stores bound
+    /// here are still the OLD Mac's while the picker already names the new
+    /// one, so nothing may run on them until the switch lands.
+    private var isRetargeting: Bool {
+        macPicker?.preparingPairingID != nil
+    }
+
     private var workspacePlaceholder: String {
         hasPrompt
             ? String(localized: "supermux.newWorktree.workspace.placeholder.derived", defaultValue: "Workspace name (from prompt)", bundle: .module)
@@ -320,9 +342,9 @@ public struct SupermuxNewWorktreeSheet: View {
     // MARK: - Actions
 
     /// Fills the branch field from the Mac's suggestion. Never overwrites
-    /// while a create is running.
+    /// while a create is running, nor asks the old Mac mid-switch.
     private func suggest() {
-        guard !isSuggesting, !isCreating else { return }
+        guard !isSuggesting, !isCreating, !isRetargeting else { return }
         isSuggesting = true
         errorMessage = nil
         Task {
@@ -343,7 +365,7 @@ public struct SupermuxNewWorktreeSheet: View {
     /// is present — then navigates to the opened workspace and dismisses.
     /// Errors show inline and the form stays editable for another attempt.
     private func create() {
-        guard !isCreating else { return }
+        guard !isCreating, !isRetargeting else { return }
         isCreating = true
         errorMessage = nil
         Task {
@@ -389,115 +411,5 @@ extension SupermuxNewWorktreeSheet {
             bundle: .module
         )
         return String(format: format, branch ?? "")
-    }
-}
-
-/// The Claude section of the New Worktree sheet: command, model, and effort
-/// pickers fed by the Mac's launch options, plus the resolved command line.
-struct SupermuxNewWorktreeClaudeSection: View {
-    let store: SupermuxMobileAgentLaunchStore
-    let isBusy: Bool
-
-    var body: some View {
-        Section {
-            if store.commands.count > 1 {
-                Picker(
-                    String(localized: "supermux.agent.command.label", defaultValue: "Command", bundle: .module),
-                    selection: Binding(
-                        get: { store.command },
-                        set: { newValue in Task { await store.selectCommand(newValue) } }
-                    )
-                ) {
-                    ForEach(store.commands, id: \.self) { command in
-                        Text(command).monospaced().tag(command)
-                    }
-                }
-                .disabled(isBusy || store.isLoadingOptions)
-            }
-            modelRow
-            if !store.effortLevels.isEmpty {
-                Picker(
-                    String(localized: "supermux.agent.effort.label", defaultValue: "Effort", bundle: .module),
-                    selection: Binding(
-                        get: { store.selectedEffort ?? "" },
-                        set: { store.selectedEffort = $0.isEmpty ? nil : $0 }
-                    )
-                ) {
-                    Text(defaultEffortTitle).tag("")
-                    ForEach(store.effortLevels, id: \.self) { level in
-                        Text(SupermuxAgentEffortLabel.title(for: level)).tag(level)
-                    }
-                }
-                .disabled(isBusy)
-            }
-        } header: {
-            Text(String(localized: "supermux.agent.section.claude", defaultValue: "Claude", bundle: .module))
-        } footer: {
-            if let modelsError = store.modelsError {
-                Label(modelsError, systemImage: "exclamationmark.triangle")
-            } else {
-                Text(commandPreview)
-                    .font(.footnote.monospaced())
-                    .lineLimit(2)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var modelRow: some View {
-        if store.isLoadingOptions, store.models.isEmpty {
-            HStack {
-                Text(String(localized: "supermux.agent.model.label", defaultValue: "Model", bundle: .module))
-                Spacer()
-                ProgressView()
-            }
-        } else {
-            Picker(
-                String(localized: "supermux.agent.model.label", defaultValue: "Model", bundle: .module),
-                selection: Binding(
-                    get: { store.selectedModel ?? "" },
-                    set: { store.selectedModel = $0.isEmpty ? nil : $0 }
-                )
-            ) {
-                Text(store.defaultModelEntry?.displayName
-                    ?? String(localized: "supermux.agent.model.default", defaultValue: "Default", bundle: .module))
-                    .tag("")
-                ForEach(store.selectableModels) { model in
-                    Text(model.displayName).tag(model.value)
-                }
-            }
-            .disabled(isBusy)
-        }
-    }
-
-    private var defaultEffortTitle: String {
-        if let level = store.selectedModelDescriptor?.defaultEffortLevel {
-            let format = String(localized: "supermux.agent.effort.defaultNamed", defaultValue: "Default (%@)", bundle: .module)
-            return String(format: format, SupermuxAgentEffortLabel.title(for: level))
-        }
-        return String(localized: "supermux.agent.effort.default", defaultValue: "Default", bundle: .module)
-    }
-
-    /// `<command> [--model M] [--effort E] …`, so the pickers are never a guess.
-    private var commandPreview: String {
-        var parts = [store.command]
-        if let model = store.selectedModel { parts += ["--model", model] }
-        if let effort = store.selectedEffort { parts += ["--effort", effort] }
-        parts.append("\"…\"")
-        return parts.joined(separator: " ")
-    }
-}
-
-/// Localized display names for Claude effort levels on the phone.
-enum SupermuxAgentEffortLabel {
-    static func title(for level: String) -> String {
-        switch level.lowercased() {
-        case "low": return String(localized: "supermux.agent.effort.low", defaultValue: "Low", bundle: .module)
-        case "medium": return String(localized: "supermux.agent.effort.medium", defaultValue: "Medium", bundle: .module)
-        case "high": return String(localized: "supermux.agent.effort.high", defaultValue: "High", bundle: .module)
-        case "xhigh": return String(localized: "supermux.agent.effort.xhigh", defaultValue: "Extra High", bundle: .module)
-        case "max": return String(localized: "supermux.agent.effort.max", defaultValue: "Max", bundle: .module)
-        default: return level
-        }
     }
 }

@@ -1,100 +1,189 @@
 import Foundation
 public import SupermuxMobileKit
 
-/// One presented New Worktree sheet: the project row it was opened for and
-/// the worktrees store its create/suggest calls run through.
-///
-/// Deliberately NOT part of the section snapshot: it carries a live store,
-/// and it is consumed only by the stable navigation wrapper above the list —
-/// never by a recycled row.
-struct SupermuxNewWorktreePresentation {
-    /// The project the sheet creates a worktree in, as captured at request
-    /// time (name, default branch).
-    let row: SupermuxProjectRowSnapshot
-    /// The store the sheet's suggest/create closures call. An expanded
-    /// project's section-owned store when one exists (one mutation path — its
-    /// event loop refetches the nested rows the moment the create lands), a
-    /// freshly minted one otherwise.
+/// Where one New Worktree create runs: a Mac's copy of the project, the
+/// worktrees store (and Claude store) bound to THAT Mac's client, and how to
+/// navigate to the workspace that Mac answers with.
+struct SupermuxNewWorktreeTarget {
+    /// The Mac the create runs on.
+    let pairingID: String
+    /// The project's display name on that Mac.
+    let projectName: String
+    /// The project's starting branch on that Mac, if configured.
+    let defaultBranch: String?
+    /// The store the create/suggest calls run through (that Mac's client).
     let store: SupermuxMobileWorktreesStore
-    /// The Claude section's store (the sheet loads its options), or `nil`
-    /// when the host lacks `supermux.agent_launch.v1` — the sheet then hides
-    /// the prompt path.
+    /// That Mac's Claude store, or `nil` without `supermux.agent_launch.v1`.
     let agentStore: SupermuxMobileAgentLaunchStore?
+    /// Navigates to a workspace by the Mac-local id that Mac answered with.
+    let openWorkspace: @MainActor (_ remoteWorkspaceID: String) -> Void
 }
 
-/// The sidebar's create-worktree flow (m7): the inline "New Worktree" row
-/// under an expanded project, the project row's swipe action, and its
-/// long-press menu entry all funnel through ``requestNewWorktree(_:)`` — one
-/// shared action path, per the repo's shared-behavior policy.
+/// One presented New Worktree sheet: the requesting row, the Mac it opens
+/// on, and every other Mac that has the same repository.
 ///
-/// Before this, creating a worktree from the phone took four steps
-/// (long-press the project → Project Details → find the Worktrees header →
-/// tap its small "+"). Now it is one gesture from the list itself, using the
-/// exact same sheet and store calls the detail screen uses.
-extension SupermuxProjectsSectionModel {
-    /// Builds an agent-launch store against the live session, or `nil` when
-    /// disconnected or the host lacks `supermux.agent_launch.v1`.
-    /// - Parameter projectID: The project's UUID string.
-    public func makeAgentLaunchStore(forProjectID projectID: String) -> SupermuxMobileAgentLaunchStore? {
-        guard let sessionClient, let sessionCapabilities,
-              sessionCapabilities.supportsAgentLaunch else {
-            return nil
-        }
-        return SupermuxMobileAgentLaunchStore(
-            client: sessionClient,
-            capabilities: sessionCapabilities,
-            projectID: projectID
-        )
+/// Deliberately NOT part of the section snapshot: it carries live stores and
+/// is consumed only by the stable navigation wrapper above the list.
+struct SupermuxNewWorktreePresentation {
+    /// Tells this sheet apart from a later one for the same row.
+    let id = UUID()
+    /// The project row the sheet was requested for.
+    let row: SupermuxProjectRowSnapshot
+    /// The create target on the row's own Mac.
+    let target: SupermuxNewWorktreeTarget
+    /// The Macs the sheet's picker offers (own Mac first); one entry hides it.
+    let options: [SupermuxNewWorktreeMacOption]
+    /// The Mac the sheet creates on: the row's own Mac until the picker
+    /// retargets it. Only this Mac's connection holds stores the create
+    /// uses; the other offered Macs re-resolve when picked.
+    var activePairingID: String
+
+    /// Creates the presentation, creating on the row's own Mac.
+    init(row: SupermuxProjectRowSnapshot, target: SupermuxNewWorktreeTarget, options: [SupermuxNewWorktreeMacOption]) {
+        self.row = row
+        self.target = target
+        self.options = options
+        self.activePairingID = target.pairingID
     }
 
-    /// Prepares and presents the New Worktree sheet for one project:
-    /// fetches an authoritative branch snapshot first (branch-only git
-    /// changes emit no worktree events, so a cached list is not trusted —
-    /// the same rule as the detail screen), then presents.
-    ///
-    /// While the fetch is in flight ``preparingNewWorktreeProjectID`` marks
-    /// the requesting project so its affordance can show a spinner. Failures
-    /// surface on ``newWorktreeErrorMessage`` (UI-03: visible, never silent).
-    /// - Parameter projectID: The project's UUID string.
+    /// The own Mac's worktrees store.
+    var store: SupermuxMobileWorktreesStore { target.store }
+    /// The own Mac's Claude store, if any.
+    var agentStore: SupermuxMobileAgentLaunchStore? { target.agentStore }
+}
+
+/// The sidebar's create-worktree flow (m7). Every entry point funnels
+/// through ``requestNewWorktree(_:)`` — one shared action path — and the
+/// sheet's Mac picker retargets the create through
+/// ``prepareNewWorktreeTarget(_:)`` without switching the foreground Mac.
+extension SupermuxProjectsSectionModel {
+    /// Builds an agent-launch store on a project's own Mac, or `nil` when
+    /// disconnected or that Mac lacks `supermux.agent_launch.v1`.
+    /// - Parameter projectID: The project ROW id.
+    public func makeAgentLaunchStore(forProjectID projectID: String) -> SupermuxMobileAgentLaunchStore? {
+        guard let resolved = resolve(projectID) else { return nil }
+        return resolved.session.makeAgentLaunchStore(forProjectID: resolved.projectID)
+    }
+
+    /// Prepares and presents the New Worktree sheet for one project: fetches
+    /// an authoritative branch snapshot first (branch-only git changes emit
+    /// no events), then presents with the Macs that share the repository.
+    /// Failures surface on ``newWorktreeErrorMessage``.
+    /// - Parameter projectID: The project ROW id.
     /// - Returns: The preparation task, or `nil` when the request cannot start.
     @discardableResult
     public func requestNewWorktree(_ projectID: String) -> Task<Void, Never>? {
         guard preparingNewWorktreeProjectID == nil, newWorktreePresentation == nil else { return nil }
-        guard let row = snapshot.rows.first(where: { $0.id == projectID }) else { return nil }
-        // The expanded project's section-owned store when present (its event
-        // loop already follows this project), else a minted one — `nil` means
-        // no session or no `supermux.worktrees.v1`, and every entry point to
-        // this flow is already hidden in that case.
-        guard let store = worktreeSessions[projectID]?.store
-            ?? makeWorktreesStore(forProjectID: projectID) else { return nil }
+        guard let row = snapshot.rows.first(where: { $0.id == projectID }),
+              let resolved = resolve(projectID) else { return nil }
+        let session = resolved.session
+        // The expanded project's section-owned store when present (one
+        // mutation path), else a minted one.
+        guard let store = session.worktreeSessions[resolved.projectID]?.store
+            ?? session.makeWorktreesStore(forProjectID: resolved.projectID) else { return nil }
         preparingNewWorktreeProjectID = projectID
-        let generation = sessionGeneration
+        let generation = session.generation
         return Task {
             defer {
-                // Generation-guarded: after a session replacement has already
-                // reset the flow, a NEWER request for the same project owns
+                // After a replacement reset the flow, a NEWER request owns
                 // the marker — this stale task must not clear its spinner.
-                if sessionGeneration == generation, preparingNewWorktreeProjectID == projectID {
+                if session.generation == generation, preparingNewWorktreeProjectID == projectID {
                     preparingNewWorktreeProjectID = nil
                 }
             }
             do {
-                // Only the (fast) branch snapshot gates presenting. The Claude
-                // section's options — a cold model probe can take seconds —
-                // load behind the open sheet, so a plain worktree is never
-                // held up by the probe and the plus control never sticks.
+                // Only the branch snapshot gates presenting; the Claude
+                // options load behind the open sheet.
                 try await store.refreshBranches()
-                guard sessionGeneration == generation else { return }
+                guard session.generation == generation else { return }
                 newWorktreePresentation = SupermuxNewWorktreePresentation(
                     row: row,
-                    store: store,
-                    agentStore: makeAgentLaunchStore(forProjectID: projectID)
+                    target: makeTarget(
+                        session: session,
+                        projectID: resolved.projectID,
+                        projectName: row.name,
+                        defaultBranch: row.defaultBranch,
+                        store: store
+                    ),
+                    options: newWorktreeOptions(forProjectID: projectID)
                 )
             } catch {
-                guard sessionGeneration == generation else { return }
+                guard session.generation == generation else { return }
+                newWorktreeErrorPairingID = session.pairingID
                 newWorktreeErrorMessage = error.localizedDescription
             }
         }
+    }
+
+    /// The Macs that can host a worktree of a project, own Mac first.
+    /// - Parameter projectID: The project ROW id.
+    func newWorktreeOptions(forProjectID projectID: String) -> [SupermuxNewWorktreeMacOption] {
+        guard let resolved = resolve(projectID) else { return [] }
+        let sources = orderedSessions.compactMap { session -> SupermuxNewWorktreeMacOptions.Source? in
+            guard let store = session.store, store.hasLoaded else { return nil }
+            return SupermuxNewWorktreeMacOptions.Source(
+                mac: session.mac,
+                supportsWorktrees: session.capabilities?.supportsWorktrees ?? false,
+                projects: store.projects
+            )
+        }
+        return SupermuxNewWorktreeMacOptions.options(
+            forProjectID: resolved.projectID,
+            onPairingID: resolved.session.pairingID,
+            sources: sources
+        )
+    }
+
+    /// Retargets a New Worktree create to another Mac's copy of the project:
+    /// fetches that Mac's branches and returns stores bound to ITS client, so
+    /// the create runs there without switching the foreground Mac. The
+    /// presented sidebar sheet then creates on that Mac, so only ITS
+    /// connection ending closes the sheet.
+    /// - Parameter option: The picked Mac.
+    /// - Returns: The target the sheet creates through.
+    func prepareNewWorktreeTarget(_ option: SupermuxNewWorktreeMacOption) async throws -> SupermuxNewWorktreeTarget {
+        guard let session = sessions[option.pairingID],
+              let project = session.store?.projects.first(where: { $0.id == option.projectID }),
+              let store = session.worktreeSessions[option.projectID]?.store
+                ?? session.makeWorktreesStore(forProjectID: option.projectID) else {
+            throw SupermuxMacUnavailableError()
+        }
+        let generation = session.generation
+        let presentationID = newWorktreePresentation?.id
+        try await store.refreshBranches()
+        // A reconnect while the branches loaded left this store on a dead client.
+        guard sessions[option.pairingID] === session, session.generation == generation else {
+            throw SupermuxMacUnavailableError()
+        }
+        if let presentationID, newWorktreePresentation?.id == presentationID {
+            newWorktreePresentation?.activePairingID = option.pairingID
+        }
+        return makeTarget(
+            session: session,
+            projectID: option.projectID,
+            projectName: project.name,
+            defaultBranch: project.defaultBranch,
+            store: store
+        )
+    }
+
+    private func makeTarget(
+        session: SupermuxMacProjectsSession,
+        projectID: String,
+        projectName: String,
+        defaultBranch: String?,
+        store: SupermuxMobileWorktreesStore
+    ) -> SupermuxNewWorktreeTarget {
+        SupermuxNewWorktreeTarget(
+            pairingID: session.pairingID,
+            projectName: projectName,
+            defaultBranch: defaultBranch,
+            store: store,
+            agentStore: session.makeAgentLaunchStore(forProjectID: projectID),
+            openWorkspace: { [weak self, mac = session.mac] remoteWorkspaceID in
+                self?.navigateToMacWorkspace(remoteWorkspaceID, on: mac)
+            }
+        )
     }
 
     /// Drops the presented sheet (dismissed or completed).
@@ -107,11 +196,8 @@ extension SupermuxProjectsSectionModel {
         newWorktreeErrorMessage = nil
     }
 
-    /// Ends the create flow's transient state when its session goes away
-    /// (disconnect or replacement): the presentation's store belongs to the
-    /// dead connection, and a sheet kept open over it could only fail. A
-    /// surfaced preparation failure drops too — its alert describes the dead
-    /// session, not the one replacing it.
+    /// Ends the create flow's transient state when its Mac's session goes
+    /// away: the presentation's stores belong to the dead connection.
     func resetNewWorktreeFlow() {
         newWorktreePresentation = nil
         preparingNewWorktreeProjectID = nil

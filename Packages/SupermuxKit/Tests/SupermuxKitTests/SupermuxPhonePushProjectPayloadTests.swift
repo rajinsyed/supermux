@@ -113,7 +113,7 @@ private actor ProjectPushRecorder {
     @Test func oversizePayloadDropsProjectDecorationBeforeTruncatingTheBody() async throws {
         // Sized so the payload fits WITHOUT decoration but not with it, which
         // is the only window where the priority question is observable.
-        let body = String(repeating: "x", count: 3_800)
+        let body = String(repeating: "x", count: 3_770)
         let payload = try await sendPayload(
             project: SupermuxNotificationProject(id: "project-1", name: "supermux"),
             tabName: "fix-notifications",

@@ -19,11 +19,15 @@ extension SupermuxProjectDTO {
     ///     marker; the caller resolves it via
     ///     ``SupermuxMobileProjectConfigMarker/managedRelativePath(projectRoot:)``),
     ///     or `nil` when those fields are user-owned.
+    ///   - gitRemoteURL: The repo's `origin` URL as git reports it on this Mac
+    ///     (the caller resolves it off the main actor via
+    ///     ``SupermuxGitRemoteURLResolver``), or `nil` to omit the field.
     public init(
         project: SupermuxProject,
         hasCustomIcon: Bool,
         iconETag: String? = nil,
-        configPath: String? = nil
+        configPath: String? = nil,
+        gitRemoteURL: String? = nil
     ) {
         self.init(
             id: project.id.uuidString,
@@ -41,7 +45,8 @@ extension SupermuxProjectDTO {
             actions: project.actions.map(SupermuxProjectActionDTO.init(action:)),
             createdAt: project.createdAt.timeIntervalSince1970,
             lastOpenedAt: project.lastOpenedAt?.timeIntervalSince1970,
-            configPath: configPath
+            configPath: configPath,
+            gitRemoteURL: gitRemoteURL
         )
     }
 }

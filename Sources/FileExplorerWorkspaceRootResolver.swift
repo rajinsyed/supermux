@@ -78,6 +78,9 @@ struct FileExplorerWorkspaceRootResolver {
             )
         }
         if workspace.usesRemoteDirectoryProvenance {
+            // SUPERMUX:begin mirror-file-explorer-hint
+            if let mirrorRoot = SupermuxMirrorFileExplorerRoot.root(for: workspace) { return mirrorRoot }
+            // SUPERMUX:end mirror-file-explorer-hint
             // A projection without an unambiguous workspace owner never becomes local or SSH.
             if !workspace.cloudBindingState.projectedResources.isEmpty ||
                 catalog.projectionRecords(forWorkspace: workspace.id).contains(where: { !$0.resource.machine.isLocal }) {

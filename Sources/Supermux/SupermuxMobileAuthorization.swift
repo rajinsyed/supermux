@@ -60,11 +60,13 @@ enum SupermuxMobileAuthorization {
             return .paneScopedPermitted
         case .projectsList, .projectCreate, .projectUpdate, .projectDelete,
              .projectOpen, .projectIcon, .projectsSetSectionCollapsed,
+             .projectProbe, .projectClone,
              .worktreesList, .worktreeSuggestBranch, .worktreeCreate,
              .worktreeOpen, .worktreeRemove, .agentOptions, .agentStart,
              .runState, .runStart, .runStop,
              .presetCreate, .presetUpdate, .presetDelete, .presetLaunch,
-             .actionRun, .phonePushRegister, .usageState:
+             .actionRun, .phonePushRegister, .phonePushStatus, .phonePushShare,
+             .usageState:
             return .macWide
         }
     }

@@ -8,6 +8,9 @@ struct SupermuxOpenWorkspaceRowView: View {
     let workspace: SupermuxOpenWorkspace
     let select: () -> Void
     let close: () -> Void
+    /// Hides a device mirror here (it keeps running on its Mac); unused for
+    /// this Mac's own workspaces.
+    var hide: () -> Void = {}
     /// Renames the workspace (sets its custom title) via the host.
     var rename: () -> Void = {}
     /// Starts a drag session, returning the reorder payload.
@@ -32,16 +35,22 @@ struct SupermuxOpenWorkspaceRowView: View {
             Color.clear
                 .frame(width: 20 * fontScale, height: 12 * fontScale)
             VStack(alignment: .leading, spacing: 0) {
-                Text(workspace.title)
-                    .font(.system(size: 11.5 * fontScale, weight: workspace.isSelected ? .semibold : .regular))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                if let branch = workspace.branch, !branch.isEmpty {
-                    Text(branch)
-                        .font(.system(size: 9.5 * fontScale, design: .monospaced))
-                        .foregroundStyle(.secondary)
+                HStack(spacing: 3 * fontScale) {
+                    deviceIcon(at: .beforeTitle)
+                    Text(workspace.title)
+                        .font(.system(size: 11.5 * fontScale, weight: workspace.isSelected ? .semibold : .regular))
                         .lineLimit(1)
-                        .truncationMode(.middle)
+                        .truncationMode(.tail)
+                }
+                if let branch = workspace.displayedBranch {
+                    HStack(spacing: 3 * fontScale) {
+                        deviceIcon(at: .beforeBranch)
+                        Text(branch)
+                            .font(.system(size: 9.5 * fontScale, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
                 }
             }
             Spacer(minLength: 2)
@@ -105,19 +114,44 @@ struct SupermuxOpenWorkspaceRowView: View {
         .animation(.easeOut(duration: 0.15), value: workspace.isSelected)
         .onHover { isHovered = $0 }
         .onTapGesture(perform: select)
-        .contextMenu {
-            Button(String(localized: "supermux.workspace.select", defaultValue: "Focus Workspace"), action: select)
-            Button(String(localized: "supermux.workspace.rename", defaultValue: "Rename Workspace…"), action: rename)
-            Divider()
-            Button(String(localized: "supermux.workspace.close", defaultValue: "Close Workspace"), role: .destructive, action: close)
-        }
+        .contextMenu { menu }
         .opacity(draggingWorkspaceId == workspace.id ? 0.4 : 1)
         .animation(.easeOut(duration: 0.15), value: draggingWorkspaceId == workspace.id)
         .onDrag(beginDrag)
         .modifier(SupermuxWorkspaceReorderDrop(delegate: dropDelegate))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(workspace.title)
+        .accessibilityLabel(workspace.accessibilityLabel)
         .accessibilityAddTraits(workspace.isSelected ? [.isButton, .isSelected] : .isButton)
+    }
+
+    /// A device mirror's Mac icon (its name in the tooltip, dimmed while that
+    /// Mac is offline), drawn only at the row's placement for it.
+    @ViewBuilder
+    private func deviceIcon(at placement: SupermuxDeviceIconPlacement) -> some View {
+        if let device = workspace.device, workspace.deviceIconPlacement == placement {
+            SupermuxRemoteMacIcon(device: device, pointSize: 9 * fontScale)
+        }
+    }
+
+    @ViewBuilder
+    private var menu: some View {
+        Button(String(localized: "supermux.workspace.select", defaultValue: "Focus Workspace"), action: select)
+        Button(String(localized: "supermux.workspace.rename", defaultValue: "Rename Workspace…"), action: rename)
+        Divider()
+        if let device = workspace.device {
+            // A mirror closes the two ways its close prompt offers: hide it
+            // here (it keeps running there), or close it on its Mac (the
+            // prompt confirms).
+            Button(String(localized: "supermux.devices.close.button.hideHere", defaultValue: "Hide Here"), action: hide)
+            Button(
+                String(localized: "supermux.devices.menu.closeOnMac", defaultValue: "Close on \(device.name)…"),
+                role: .destructive,
+                action: close
+            )
+            .disabled(!device.isOnline)
+        } else {
+            Button(String(localized: "supermux.workspace.close", defaultValue: "Close Workspace"), role: .destructive, action: close)
+        }
     }
 }
 

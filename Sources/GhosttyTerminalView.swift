@@ -7568,7 +7568,9 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
            manualNamedKeyConsumedKeyUps.remove(keyCode) != nil {
             return true
         }
-        if let keyName = terminalSurface?.manualInputKeyName(for: keyEvent) {
+        // SUPERMUX:begin device-mirror-key-sequence (a pending key sequence or key table stays with this Ghostty, which flushes or matches it)
+        if keySequence.isEmpty, keyTables.isEmpty, let keyName = terminalSurface?.manualInputKeyName(for: keyEvent) {
+        // SUPERMUX:end device-mirror-key-sequence
             var bindingFlags = ghostty_binding_flags_e(0)
             if !ghostty_surface_key_is_binding(surface, keyEvent, &bindingFlags) {
                 if terminalSurface?.enqueueManualInputNamedKey(keyName) == true {
@@ -11480,6 +11482,10 @@ final class GhosttySurfaceScrollView: NSView {
 
     /// Keeps the shared-backdrop cutout view present only while a pane-local fill needs it.
     private func synchronizeSharedBackdropCutout(visible: Bool) {
+        // SUPERMUX:begin backdrop-cutout-after-first-frame
+        // Built detached or before the first frame, the cutout blanks the pane once shown (touchpoint #538).
+        if visible, sharedBackdropCutoutView == nil, window == nil || surfaceView.terminalSurface?.hasPresentedFrame != true { return }
+        // SUPERMUX:end backdrop-cutout-after-first-frame
         if visible {
             let cutoutView = sharedBackdropCutoutView ?? makeSharedBackdropCutoutView()
             _ = setFrameIfNeeded(cutoutView, to: bounds)

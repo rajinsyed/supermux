@@ -12,15 +12,17 @@ import Foundation
 public actor SupermuxGitChangesService {
     // `runner`, `gitTimeout`, and `noOptionalLocks` are internal (not
     // private): also used by the AI-capture extension in
-    // `SupermuxGitChangesService+AICapture.swift`.
+    // `SupermuxGitChangesService+AICapture.swift`. The timeouts are also the
+    // host bounds `SupermuxDeviceReplyDeadline` derives another Mac's reply
+    // deadlines from.
     let runner: any CommandRunning
     private let parser = SupermuxGitStatusParser()
     static let gitTimeout: TimeInterval = 30
-    private static let networkTimeout: TimeInterval = 120
+    static let networkTimeout: TimeInterval = 120
     /// Shorter deadline for the best-effort background fetch: it runs on a timer
     /// and must give up quickly (and retry next cycle) rather than linger on a
     /// stalled network or auth like the user-initiated push/pull paths.
-    private static let fetchTimeout: TimeInterval = 30
+    static let fetchTimeout: TimeInterval = 30
     /// Global git flag prepended to every read-only invocation so a refresh
     /// never takes the optional `.git/index` lock (or rewrites the index),
     /// which would re-trigger the FSEvents watcher that requested the refresh.

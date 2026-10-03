@@ -481,6 +481,9 @@ private extension View {
                     _ = AppDelegate.shared?.createEmptyWorkspaceGroup(tabManager: tabManager)
                 }
             }
+            // SUPERMUX:begin sidebar-empty-area-device-menu
+            SupermuxEmptyAreaNewWorkspaceMenu(tabManager: tabManager)
+            // SUPERMUX:end sidebar-empty-area-device-menu
         }
     }
 }

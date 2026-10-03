@@ -1,5 +1,8 @@
 import CmuxTerminal
 import Foundation
+// SUPERMUX:begin device-mirror-input-batch
+import SupermuxKit
+// SUPERMUX:end device-mirror-input-batch
 
 /// Delivers keystrokes from a manual-mirror Ghostty surface to another Mac's
 /// terminal in order, one `mobile.terminal.input` request at a time.
@@ -26,34 +29,47 @@ final class DeviceTerminalInputRouter: @unchecked Sendable {
     // @unchecked Sendable: mutable input and task state are only touched under
     // `queue`; callers cross the boundary with immutable Data values.
     private let queue = DispatchQueue(label: "dev.cmux.devices.terminal-input", qos: .userInitiated)
-    private var pending = Data()
+    // SUPERMUX:begin device-mirror-input-batch (ordered bytes and forwarded keys instead of bytes only)
+    private var pending = SupermuxTerminalInputBatch()
+    // SUPERMUX:end device-mirror-input-batch
     private var draining = false
     private var drainTask: Task<Void, Never>?
     private var invalidated = false
     private var enabled = true
-    private let pendingByteLimit = 256 * 1024
-    private let send: @Sendable (Data) async throws -> Void
+    // SUPERMUX:begin device-mirror-input-batch (the batch enforces the 256 KiB limit; upstream's Data init sends only the bytes)
+    private let send: @Sendable (SupermuxTerminalInputBatch) async throws -> Void
     private let onFailure: @Sendable (any Error) -> Void
 
-    init(
+    convenience init(
         send: @escaping @Sendable (Data) async throws -> Void,
         onFailure: @escaping @Sendable (any Error) -> Void
     ) {
-        self.send = send
+        self.init(sendBatch: { batch in try await send(SupermuxDeviceTerminalInput.bytes(of: batch)) }, onFailure: onFailure)
+    }
+
+    init(
+        sendBatch: @escaping @Sendable (SupermuxTerminalInputBatch) async throws -> Void,
+        onFailure: @escaping @Sendable (any Error) -> Void
+    ) {
+        self.send = sendBatch
         self.onFailure = onFailure
     }
+    // SUPERMUX:end device-mirror-input-batch
 
     /// Safe from Ghostty's I/O thread. Named keys never reach the host: with no
     /// key-name resolver installed, Ghostty encodes every key to bytes itself.
+    // SUPERMUX:begin device-mirror-input-batch (forwarded keys join the bytes in order; the mirror's own terminal replies are dropped)
+    // Supermux installs a resolver (SupermuxDeviceTerminalInput) for a Mac
+    // that takes forwarded keys, so its named keys travel in the batch.
     func enqueue(_ input: TerminalManualInput) {
-        guard case .bytes(let data) = input, !data.isEmpty else { return }
+        guard let item = SupermuxDeviceTerminalInput.batchItem(for: input) else { return }
         queue.async { [self] in
             guard !invalidated, enabled else { return }
-            guard pending.count + data.count <= pendingByteLimit else {
+            guard pending.append(item) else {
                 onFailure(InputError.queueFull)
                 return
             }
-            pending.append(data)
+    // SUPERMUX:end device-mirror-input-batch
             guard !draining else { return }
             draining = true
             drainTask = Task { await self.drain() }
@@ -80,7 +96,8 @@ final class DeviceTerminalInputRouter: @unchecked Sendable {
         }
     }
 
-    private func takePending() -> Data? {
+    // SUPERMUX:begin device-mirror-input-batch
+    private func takePending() -> SupermuxTerminalInputBatch? {
         queue.sync {
             guard !invalidated, enabled, !pending.isEmpty else {
                 draining = false
@@ -88,10 +105,11 @@ final class DeviceTerminalInputRouter: @unchecked Sendable {
                 return nil
             }
             let batch = pending
-            pending = Data()
+            pending.removeAll()
             return batch
         }
     }
+    // SUPERMUX:end device-mirror-input-batch
 
     private func drain() async {
         while let batch = takePending() {

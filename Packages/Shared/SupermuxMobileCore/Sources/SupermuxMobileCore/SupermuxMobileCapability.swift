@@ -33,6 +33,15 @@ public enum SupermuxMobileCapability: String, CaseIterable, Codable, Sendable, E
     case usageV1 = "supermux.usage.v1"
     /// Prompt-first worktree creation (`agent.options` / `agent.start`) is served.
     case agentLaunchV1 = "supermux.agent_launch.v1"
+    /// Macs can share direct-APNs credentials and phone registrations
+    /// (`phone_push.status` / `phone_push.share`) over the device link.
+    case phonePushShareV1 = "supermux.phone_push_share.v1"
+    /// Cross-Mac project setup (`project.probe` / `project.clone`) is served.
+    case projectSetupV1 = "supermux.project_setup.v1"
+    /// `mobile.terminal.input` takes `supermux_input`: ordered raw bytes,
+    /// written to the PTY verbatim, and forwarded key presses, encoded by this
+    /// Mac's own terminal state (Mac-to-Mac device mirrors).
+    case terminalInputV1 = "supermux.terminal_input.v1"
 
     /// Every capability, in declaration order (derived from `CaseIterable`).
     public static let all: [SupermuxMobileCapability] = SupermuxMobileCapability.allCases

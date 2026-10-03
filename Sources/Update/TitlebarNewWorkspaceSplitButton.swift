@@ -74,7 +74,9 @@ struct TitlebarNewWorkspaceSplitButton: View {
             .onHover { hovering in
                 updateHoveredSegment(.newTab, hovering: hovering)
             }
-            .safeHelp(KeyboardShortcutSettings.Action.newTab.tooltip(String(localized: "titlebar.newWorkspace.tooltip", defaultValue: "New workspace")))
+            // SUPERMUX:begin new-workspace-target-help
+            .supermuxNewWorkspaceButtonHelp(KeyboardShortcutSettings.Action.newTab.tooltip(String(localized: "titlebar.newWorkspace.tooltip", defaultValue: "New workspace")))
+            // SUPERMUX:end new-workspace-target-help
 
             Button(
                 action: {

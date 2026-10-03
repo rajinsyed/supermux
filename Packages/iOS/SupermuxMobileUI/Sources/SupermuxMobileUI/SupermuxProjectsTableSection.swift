@@ -123,33 +123,48 @@ public struct SupermuxProjectsTableSection: View {
             ))
         } else if section.rows.isEmpty {
             SupermuxProjectsEmptyState(editing: actions.editing)
-        } else {
+        } else if section.showsMacHeaders {
+            // More than one Mac has projects: each Mac's rows sit under its
+            // own header, and each row offers only what ITS Mac supports.
             VStack(spacing: SupermuxProjectRowMetrics.rowSpacing) {
-                ForEach(section.rows) { row in
-                    SupermuxSidebarSwipeRow(
-                        rowID: "project:\(row.id)",
-                        openRowID: $openSwipeRowID,
-                        actions: projectSwipeActions(for: row)
-                    ) {
-                        SupermuxProjectMobileRow(
-                            row: row,
-                            iconPNGData: actions.iconPNGData,
-                            toggleExpanded: actions.toggleProjectExpanded,
-                            openWorkspace: actions.openProjectWorkspace,
-                            openDetail: actions.openProjectDetail,
-                            newWorktree: section.showsWorktreeCreation
-                                ? actions.requestNewWorktree
-                                : nil
-                        )
-                    }
-                    SupermuxProjectTableNestedRows(
-                        row: row,
-                        actions: actions,
-                        showsNewWorktree: section.showsWorktreeCreation,
-                        openSwipeRowID: $openSwipeRowID
-                    )
+                ForEach(section.displayedGroups) { group in
+                    SupermuxProjectsMacHeaderRow(header: group.header)
+                    projectRows(group.rows, showsWorktreeCreation: group.showsWorktreeCreation)
                 }
             }
+        } else {
+            VStack(spacing: SupermuxProjectRowMetrics.rowSpacing) {
+                projectRows(section.rows, showsWorktreeCreation: section.showsWorktreeCreation)
+            }
+        }
+    }
+
+    /// One Mac's project rows with their nested rows.
+    private func projectRows(
+        _ rows: [SupermuxProjectRowSnapshot],
+        showsWorktreeCreation: Bool
+    ) -> some View {
+        ForEach(rows) { row in
+            SupermuxSidebarSwipeRow(
+                rowID: "project:\(row.id)",
+                openRowID: $openSwipeRowID,
+                actions: projectSwipeActions(for: row, showsWorktreeCreation: showsWorktreeCreation)
+            ) {
+                SupermuxProjectMobileRow(
+                    row: row,
+                    iconPNGData: actions.iconPNGData,
+                    toggleExpanded: actions.toggleProjectExpanded,
+                    openWorkspace: actions.openProjectWorkspace,
+                    openDetail: actions.openProjectDetail,
+                    newWorktree: showsWorktreeCreation ? actions.requestNewWorktree : nil
+                )
+            }
+            SupermuxProjectTableNestedRows(
+                row: row,
+                actions: actions,
+                showsNewWorktree: showsWorktreeCreation,
+                openSwipeRowID: $openSwipeRowID
+            )
         }
     }
 
@@ -158,7 +173,10 @@ public struct SupermuxProjectsTableSection: View {
     /// actions out left-to-right in array order, so the FIRST-revealed action
     /// — the one on the trailing edge — is the LAST element. Worktree
     /// creation swipes only on a `supermux.worktrees.v1` host.
-    private func projectSwipeActions(for row: SupermuxProjectRowSnapshot) -> [SupermuxSwipeAction] {
+    private func projectSwipeActions(
+        for row: SupermuxProjectRowSnapshot,
+        showsWorktreeCreation: Bool
+    ) -> [SupermuxSwipeAction] {
         var trayActions: [SupermuxSwipeAction] = [
             SupermuxSwipeAction(
                 id: "details",
@@ -172,7 +190,7 @@ public struct SupermuxProjectsTableSection: View {
                 perform: { actions.openProjectDetail(row.id) }
             ),
         ]
-        if section.showsWorktreeCreation {
+        if showsWorktreeCreation {
             trayActions.append(SupermuxSwipeAction(
                 id: "new-worktree",
                 systemImage: "arrow.triangle.branch",
@@ -392,7 +410,14 @@ public struct SupermuxProjectsTableLayoutIdentity: Equatable, Sendable {
                 shape,
             ].joined(separator: ":")
         }
-        self.fingerprint = "rows:\(section.editingFingerprint):\(creation)|" + rows.joined(separator: ";")
+        // Per-Mac headers add a row each and move creation to the group, so
+        // they are part of the shape whenever they render.
+        let groups = section.showsMacHeaders
+            ? section.displayedGroups.map { group in
+                "\(group.id):\(group.header.displayName.count):\(group.showsWorktreeCreation ? "n" : "-")"
+            }.joined(separator: ",")
+            : "-"
+        self.fingerprint = "rows:\(section.editingFingerprint):\(creation):\(groups)|" + rows.joined(separator: ";")
     }
 }
 

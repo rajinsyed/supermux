@@ -104,7 +104,9 @@ extension TerminalController {
             }
             let visibleWorkspaces = requestedWorkspaceID.map { workspaceID in
                 tabManager.tabs.filter { $0.id == workspaceID }
-            } ?? tabManager.tabs
+            // SUPERMUX:begin device-mirror-export-filter (upstream: `} ?? tabManager.tabs`)
+            } ?? tabManager.tabs.filter { !SupermuxDeviceWorkspaceIndex.isDeviceMirror($0) }
+            // SUPERMUX:end device-mirror-export-filter
             if let requestedWorkspaceID, visibleWorkspaces.isEmpty {
                 return .err(
                     code: "not_found",
@@ -158,6 +160,9 @@ extension TerminalController {
                     )
                 )
                 for workspace in windowTabManager.tabs where seenWorkspaceIDs.insert(workspace.id).inserted {
+                    // SUPERMUX:begin device-mirror-export-filter (a mirror of another Mac's workspace is never re-exported)
+                    if SupermuxDeviceWorkspaceIndex.isDeviceMirror(workspace) { continue }
+                    // SUPERMUX:end device-mirror-export-filter
                     flattened.append(
                         mobileWorkspacePayload(
                             workspace: workspace,

@@ -7659,6 +7659,9 @@ struct ContentView: View {
         // SUPERMUX:begin claude-harness-palette-contribution
         contributions.append(.newClaudeHarnessPane)
         // SUPERMUX:end claude-harness-palette-contribution
+        // SUPERMUX:begin device-mirror-unhide-palette
+        contributions.append(.supermuxUnhideRemoteWorkspaces)
+        // SUPERMUX:end device-mirror-unhide-palette
         contributions.append(
             CommandPaletteCommandContribution(
                 commandId: "palette.closeTab",
@@ -9007,6 +9010,9 @@ struct ContentView: View {
         // SUPERMUX:begin claude-harness-palette-contribution
         registry.registerNewClaudeHarnessPane(tabManager: tabManager, windowId: windowId)
         // SUPERMUX:end claude-harness-palette-contribution
+        // SUPERMUX:begin device-mirror-unhide-palette
+        registry.registerSupermuxDeviceMirrorCommands()
+        // SUPERMUX:end device-mirror-unhide-palette
         registry.register(commandId: "palette.closeTab") {
             if let dockBrowserStore, let browserTarget {
                 guard dockBrowserStore.containsPanel(
@@ -11306,6 +11312,11 @@ struct VerticalTabsSidebar: View, Equatable {
     // filler stays one viewport (see SupermuxProjectsSectionHeightPreferenceKey).
     @State private var supermuxProjectsSectionHeight: CGFloat = 0
     // SUPERMUX:end sidebar-projects-empty-area
+    // SUPERMUX:begin sidebar-footer-clearance
+    // Measured height of the footer drawn over the list's bottom; the list is
+    // masked out behind it (SupermuxSidebarFooterClearance).
+    @State private var supermuxSidebarFooterHeight: CGFloat = 0
+    // SUPERMUX:end sidebar-footer-clearance
     @State private var pendingSelectedWorkspaceScrollId: UUID?
     @State private var collapsedExtensionSidebarSectionIds: Set<String> = []
     @State private var extensionSidebarWorktreeCreationInFlightSectionIds: Set<String> = []
@@ -11892,6 +11903,9 @@ struct VerticalTabsSidebar: View, Equatable {
         ZStack(alignment: .bottomLeading) {
             if CmuxExtensionSidebarSelection.resolvesToDefaultSidebar(effectiveProviderId: effectiveExtensionSidebarProviderId) {
                 workspaceScrollArea(renderContext: renderContext)
+                    // SUPERMUX:begin sidebar-footer-clearance
+                    .supermuxClearsSidebarFooter(height: isPresented ? supermuxSidebarFooterHeight : 0)
+                    // SUPERMUX:end sidebar-footer-clearance
             } else {
                 extensionSidebarScrollArea(renderContext: renderContext)
             }
@@ -11903,6 +11917,9 @@ struct VerticalTabsSidebar: View, Equatable {
                     onSendFeedback: onSendFeedback
                 )
                 .frame(maxWidth: .infinity, alignment: .leading)
+                // SUPERMUX:begin sidebar-footer-clearance
+                .supermuxReportsSidebarFooterHeight($supermuxSidebarFooterHeight)
+                // SUPERMUX:end sidebar-footer-clearance
             }
         }
         .accessibilityIdentifier("Sidebar")
@@ -12039,6 +12056,14 @@ struct VerticalTabsSidebar: View, Equatable {
             guard isPresented else { return }
             scheduleWorkspaceSnapshotRefresh(workspaceId: workspaceId)
         }
+        // SUPERMUX:begin device-mirror-flatrow-refresh
+        // A device mirror's activity/branch/PR are fork overlays with no
+        // workspace publisher; the fork relay announces their changes.
+        .onReceive(SupermuxWorkspaceLifecycleRelay.lifecycleDidChange) { workspaceId in
+            guard isPresented, renderContext.workspaceIds.contains(workspaceId) else { return }
+            scheduleWorkspaceSnapshotRefresh(workspaceId: workspaceId)
+        }
+        // SUPERMUX:end device-mirror-flatrow-refresh
         // The compact status tooltip reads agent profiles from the live index,
         // which is not observable; rebuild the rows it reports as changed.
         .onReceive(NotificationCenter.default.publisher(for: .sharedLiveAgentIndexDidChange)) { notification in
@@ -16470,7 +16495,13 @@ struct TabItemView: View, Equatable {
                         .padding(.trailing, SidebarCompactStatusGlyph.titleSpacing - titleRowSpacing)
                 }
 
-                SidebarCloudWorkspaceBadgeView(label: detailVisibility.showsBranchDirectory ? workspaceSnapshot.remoteWorkspaceBadgeLabel : nil, pointSize: scaledFontSize(10), tint: activeSecondaryColor(0.7), symbol: workspaceSnapshot.remoteWorkspaceBadgeSymbol)
+                // SUPERMUX:begin sidebar-flatrow-device-chip (a device mirror shows the fork's Mac icon instead of the icon-only badge: first on its branch/directory line, or here before the title when the row draws no such line)
+                SidebarCloudWorkspaceBadgeView(label: detailVisibility.showsBranchDirectory && workspaceSnapshot.deviceWorkspaceLabel == nil ? workspaceSnapshot.remoteWorkspaceBadgeLabel : nil, pointSize: scaledFontSize(10), tint: activeSecondaryColor(0.7), symbol: workspaceSnapshot.remoteWorkspaceBadgeSymbol)
+                if let deviceWorkspaceLabel = workspaceSnapshot.deviceWorkspaceLabel,
+                   !SupermuxFlatRowDeviceChip.drawsOnBranchLine(workspaceSnapshot, settings: settings) {
+                    SupermuxFlatRowDeviceChip(deviceWorkspaceLabel: deviceWorkspaceLabel, pointSize: GlobalFontMagnification.scaledSize(scaledFontSize(10), percent: globalFontMagnificationPercent), tint: activeSecondaryColor(0.7))
+                }
+                // SUPERMUX:end sidebar-flatrow-device-chip
 
                 if isEditing {
                     SidebarInlineRenameField(
@@ -16649,6 +16680,11 @@ struct TabItemView: View, Equatable {
                 if sidebarBranchLayout == .vertical {
                     if !workspaceSnapshot.branchDirectoryLines.isEmpty {
                         HStack(alignment: .top, spacing: 3) {
+                            // SUPERMUX:begin sidebar-flatrow-device-chip
+                            if let deviceWorkspaceLabel = workspaceSnapshot.deviceWorkspaceLabel {
+                                SupermuxFlatRowDeviceChip(deviceWorkspaceLabel: deviceWorkspaceLabel, pointSize: GlobalFontMagnification.scaledSize(scaledFontSize(9), percent: globalFontMagnificationPercent), tint: activeSecondaryColor(0.6))
+                            }
+                            // SUPERMUX:end sidebar-flatrow-device-chip
                             if sidebarShowGitBranchIcon, workspaceSnapshot.branchLinesContainBranch {
                                 CmuxSystemSymbolImage(magnified: "arrow.triangle.branch", pointSize: scaledFontSize(9), tint: activeSecondaryColor(0.6))
                             }
@@ -16699,6 +16735,11 @@ struct TabItemView: View, Equatable {
                           (workspaceSnapshot.compactGitBranchSummaryText != nil
                            || !workspaceSnapshot.compactDirectoryCandidates.isEmpty) {
                     HStack(alignment: .top, spacing: 3) {
+                        // SUPERMUX:begin sidebar-flatrow-device-chip
+                        if let deviceWorkspaceLabel = workspaceSnapshot.deviceWorkspaceLabel {
+                            SupermuxFlatRowDeviceChip(deviceWorkspaceLabel: deviceWorkspaceLabel, pointSize: GlobalFontMagnification.scaledSize(scaledFontSize(9), percent: globalFontMagnificationPercent), tint: activeSecondaryColor(0.6))
+                        }
+                        // SUPERMUX:end sidebar-flatrow-device-chip
                         if sidebarShowGitBranchIcon, workspaceSnapshot.compactGitBranchSummaryText != nil {
                             CmuxSystemSymbolImage(magnified: "arrow.triangle.branch", pointSize: scaledFontSize(9), tint: activeSecondaryColor(0.6))
                         }
@@ -16721,6 +16762,11 @@ struct TabItemView: View, Equatable {
                     }
                 } else if !workspaceSnapshot.compactBranchDirectoryCandidates.isEmpty {
                     HStack(spacing: 3) {
+                        // SUPERMUX:begin sidebar-flatrow-device-chip
+                        if let deviceWorkspaceLabel = workspaceSnapshot.deviceWorkspaceLabel {
+                            SupermuxFlatRowDeviceChip(deviceWorkspaceLabel: deviceWorkspaceLabel, pointSize: GlobalFontMagnification.scaledSize(scaledFontSize(9), percent: globalFontMagnificationPercent), tint: activeSecondaryColor(0.6))
+                        }
+                        // SUPERMUX:end sidebar-flatrow-device-chip
                         if sidebarShowGitBranchIcon, workspaceSnapshot.compactGitBranchSummaryText != nil {
                             CmuxSystemSymbolImage(magnified: "arrow.triangle.branch", pointSize: scaledFontSize(9), tint: activeSecondaryColor(0.6))
                         }

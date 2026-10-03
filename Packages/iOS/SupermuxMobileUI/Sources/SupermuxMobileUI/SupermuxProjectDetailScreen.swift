@@ -30,6 +30,14 @@ public struct SupermuxProjectDetailScreen: View {
     /// The section model's connection epoch: a change means the session
     /// behind `makeWorktreesStore` was replaced, so the store is rebuilt.
     private let sessionEpoch: Int
+    /// Opens a workspace by the Mac-local id this project's Mac answered
+    /// with, resolving it against THAT Mac's rows; `nil` (single Mac) uses
+    /// ``selectWorkspace`` directly.
+    let openMacWorkspace: (@MainActor (_ remoteWorkspaceID: String) -> Void)?
+    /// The Macs the New Worktree sheet can create on (own Mac first).
+    private let newWorktreeOptions: [SupermuxNewWorktreeMacOption]
+    /// Retargets the New Worktree sheet to another Mac's copy.
+    private let prepareNewWorktreeTarget: (@MainActor (SupermuxNewWorktreeMacOption) async throws -> SupermuxNewWorktreeTarget)?
 
     /// The screen-owned worktrees session for this project; `nil` while
     /// disconnected or when the host lacks `supermux.worktrees.v1` (the
@@ -96,6 +104,64 @@ public struct SupermuxProjectDetailScreen: View {
         runActions: SupermuxProjectRunActions? = nil,
         sessionEpoch: Int = 0
     ) {
+        self.init(
+            row: row,
+            iconPNGData: iconPNGData,
+            selectWorkspace: selectWorkspace,
+            makeWorktreesStore: makeWorktreesStore,
+            makeAgentLaunchStore: makeAgentLaunchStore,
+            editing: editing,
+            presets: presets,
+            showsPresets: showsPresets,
+            showsActions: showsActions,
+            runActions: runActions,
+            sessionEpoch: sessionEpoch,
+            openMacWorkspace: nil,
+            newWorktreeOptions: [],
+            prepareNewWorktreeTarget: nil
+        )
+    }
+
+    /// The detail bound to the project's own Mac (the section's route).
+    /// - Parameter context: The routed project's own-Mac seams.
+    init(context: SupermuxProjectDetailContext) {
+        self.init(
+            row: context.row,
+            iconPNGData: context.iconPNGData,
+            selectWorkspace: context.selectWorkspace,
+            makeWorktreesStore: context.makeWorktreesStore,
+            makeAgentLaunchStore: context.makeAgentLaunchStore,
+            editing: context.editing,
+            presets: context.showsPresets ? context.presets : [],
+            showsPresets: context.showsPresets,
+            showsActions: context.showsActions,
+            runActions: context.runActions,
+            sessionEpoch: context.sessionEpoch,
+            openMacWorkspace: context.openMacWorkspace,
+            newWorktreeOptions: context.newWorktreeOptions,
+            prepareNewWorktreeTarget: context.prepareNewWorktreeTarget
+        )
+    }
+
+    private init(
+        row: SupermuxProjectRowSnapshot,
+        iconPNGData: @escaping @Sendable (_ projectID: String) async -> Data?,
+        selectWorkspace: @escaping @MainActor (_ workspaceID: String) -> Void,
+        makeWorktreesStore: @escaping @MainActor (_ projectID: String) -> SupermuxMobileWorktreesStore?,
+        makeAgentLaunchStore: @escaping @MainActor (_ projectID: String) -> SupermuxMobileAgentLaunchStore?,
+        editing: SupermuxProjectEditingActions?,
+        presets: [SupermuxTerminalPresetDTO],
+        showsPresets: Bool,
+        showsActions: Bool,
+        runActions: SupermuxProjectRunActions?,
+        sessionEpoch: Int,
+        openMacWorkspace: (@MainActor (_ remoteWorkspaceID: String) -> Void)?,
+        newWorktreeOptions: [SupermuxNewWorktreeMacOption],
+        prepareNewWorktreeTarget: (@MainActor (SupermuxNewWorktreeMacOption) async throws -> SupermuxNewWorktreeTarget)?
+    ) {
+        self.openMacWorkspace = openMacWorkspace
+        self.newWorktreeOptions = newWorktreeOptions
+        self.prepareNewWorktreeTarget = prepareNewWorktreeTarget
         self.row = row
         self.iconPNGData = iconPNGData
         self.selectWorkspace = selectWorkspace
@@ -128,7 +194,7 @@ public struct SupermuxProjectDetailScreen: View {
                         // Seed from the freshest fetched DTO so the editor
                         // reflects fields the row snapshot doesn't carry
                         // (commands, actions, config marker).
-                        if let project = editing.editorProject(row.id) {
+                        if let project = editing.editorProject(row.projectID) {
                             editorProject = project
                         } else {
                             editErrorMessage = String(
@@ -187,31 +253,28 @@ public struct SupermuxProjectDetailScreen: View {
             // only fail now; drop them with the store they belonged to.
             showingNewWorktreeSheet = false
             agentLaunchStore = nil
-            let store = makeWorktreesStore(row.id)
+            let store = makeWorktreesStore(row.projectID)
             worktreesStore = store
             guard let store else { return }
             await store.run()
         }
         .sheet(isPresented: $showingNewWorktreeSheet) {
             if let store = worktreesStore {
-                SupermuxNewWorktreeSheet(
-                    projectName: row.name,
-                    branches: store.branches,
-                    defaultBaseBranch: row.defaultBranch,
-                    showsBaseBranchPicker: store.supportsStartingBranchSelection,
-                    agentStore: agentLaunchStore,
-                    suggestBranch: { workspaceName in
-                        try await store.suggestBranchName(workspaceName: workspaceName).branchName
-                    },
-                    createWorktree: { workspaceName, branchName, baseBranch, open in
-                        try await store.createWorktree(
-                            workspaceName: workspaceName,
-                            branchName: branchName,
-                            baseBranch: baseBranch,
-                            open: open
-                        ).workspaceId
-                    },
-                    openWorkspace: selectWorkspace
+                // The same create flow as the sidebar, Mac picker included.
+                SupermuxNewWorktreeFlowSheet(
+                    initialTarget: SupermuxNewWorktreeTarget(
+                        pairingID: row.pairingID,
+                        projectName: row.name,
+                        defaultBranch: row.defaultBranch,
+                        store: store,
+                        agentStore: agentLaunchStore,
+                        openWorkspace: { openMac($0) }
+                    ),
+                    options: newWorktreeOptions,
+                    prepareTarget: { [prepareNewWorktreeTarget] option in
+                        guard let prepareNewWorktreeTarget else { throw SupermuxMacUnavailableError() }
+                        return try await prepareNewWorktreeTarget(option)
+                    }
                 )
             }
         }
@@ -495,7 +558,7 @@ public struct SupermuxProjectDetailScreen: View {
                 // Same rule as the sidebar flow: only the branch snapshot
                 // gates presenting; the sheet loads the Claude options itself.
                 try await store.refreshBranches()
-                agentLaunchStore = makeAgentLaunchStore(row.id)
+                agentLaunchStore = makeAgentLaunchStore(row.projectID)
                 showingNewWorktreeSheet = true
             } catch {
                 newWorktreeErrorMessage = error.localizedDescription
@@ -508,19 +571,25 @@ public struct SupermuxProjectDetailScreen: View {
     /// first, then navigate to the result.
     private func openWorktree(_ worktree: SupermuxWorktreeRowSnapshot) {
         if let workspaceID = worktree.workspaceID {
-            selectWorkspace(workspaceID)
+            openMac(workspaceID)
             return
         }
         guard let store = worktreesStore else { return }
         Task {
             do {
                 if let workspaceID = try await store.openWorktree(path: worktree.path) {
-                    selectWorkspace(workspaceID)
+                    openMac(workspaceID)
                 }
             } catch {
                 openErrorMessage = error.localizedDescription
             }
         }
+    }
+
+    /// Navigates to a workspace this project's Mac answered with (a
+    /// Mac-local id), on that Mac.
+    func openMac(_ remoteWorkspaceID: String) {
+        (openMacWorkspace ?? selectWorkspace)(remoteWorkspaceID)
     }
 
     /// The dirty-worktree confirm-force payload, when the store parked there.
@@ -538,64 +607,5 @@ public struct SupermuxProjectDetailScreen: View {
             String(localized: "supermux.worktrees.remove.staleConfirmation", defaultValue: "This worktree changed since you confirmed — nothing was removed. Try again.", bundle: .module)
         default: nil
         }
-    }
-}
-
-/// One open workspace nested under the project, laid out like the mac
-/// sidebar's `SupermuxOpenWorkspaceRowView`: title with a monospaced branch
-/// subtitle, then the trailing status cluster — agent activity, PR badge,
-/// run indicator — plus the phone's unread dot and navigation chevron.
-/// Tapping opens the workspace through the shell's own navigation closure.
-struct SupermuxProjectWorkspaceRow: View {
-    let workspace: SupermuxProjectWorkspaceRowSnapshot
-    let selectWorkspace: @MainActor (_ workspaceID: String) -> Void
-
-    var body: some View {
-        Button {
-            selectWorkspace(workspace.id)
-        } label: {
-            HStack(spacing: 8) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(workspace.name)
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    if let branch = workspace.branch {
-                        Text(branch)
-                            .font(.caption.monospaced())
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-                }
-                Spacer(minLength: 4)
-                // Status cluster on the trailing edge, mac order: activity,
-                // PR badge, run indicator (idle activity renders nothing).
-                // 9: this row titles in `.subheadline`, matching the sidebar's
-                // nested rows rather than the shell tiles' headline scale.
-                SupermuxWorkspaceActivityDot(activity: workspace.activity, size: 9)
-                if let pullRequest = workspace.pullRequest {
-                    SupermuxMobilePullRequestBadge(pullRequest: pullRequest)
-                }
-                if workspace.isRunning {
-                    SupermuxMobileRunIndicator()
-                }
-                if workspace.hasUnread {
-                    // The same badge the workspace list draws. This was its own
-                    // 8pt accent circle, which made the detail screen a third
-                    // unread indicator alongside the Mac's and the list's.
-                    SupermuxMobileUnreadBadge(count: workspace.unreadCount, fontSize: 10)
-                }
-                Image(systemName: "chevron.right")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(workspace.name)
-        .accessibilityValue(workspace.activity.map(SupermuxWorkspaceActivityDot.label(for:)) ?? "")
-        .accessibilityIdentifier("SupermuxProjectWorkspaceRow-\(workspace.id)")
     }
 }

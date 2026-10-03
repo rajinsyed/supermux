@@ -322,6 +322,11 @@ extension TerminalController {
         createParams["focus"] = false
         createParams["eager_load_terminal"] = false
         createParams["auto_refresh_metadata"] = false
+        // SUPERMUX:begin device-root-workspace-create
+        // Another Mac's "New Workspace on ▸ <this Mac>" gives no directory:
+        // start in home, not in whatever this Mac has selected.
+        SupermuxDeviceWorkspaceOpener.applyRootDirectoryRequest(to: &createParams)
+        // SUPERMUX:end device-root-workspace-create
         let outcome = v2PrepareWorkspaceCreate(
             params: createParams,
             tabManager: resolvedTabManager,

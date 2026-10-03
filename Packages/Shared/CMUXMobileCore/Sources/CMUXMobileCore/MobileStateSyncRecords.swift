@@ -255,6 +255,54 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
     /// host predates exact pane unread state; an empty array means the host
     /// supports it and no pane currently needs acknowledgment.
     public let supermuxUnreadPanelIDs: [String]?
+
+    /// One `cmux set-status` pill as the host's own sidebar row shows it
+    /// (agent lifecycle pills its activity indicator duplicates are dropped).
+    public struct SupermuxStatusEntry: Codable, Equatable, Sendable {
+        public let key: String
+        public let value: String
+        public let icon: String?
+        public let color: String?
+        public let priority: Int?
+
+        public init(key: String, value: String, icon: String? = nil, color: String? = nil, priority: Int? = nil) {
+            self.key = key
+            self.value = value
+            self.icon = icon
+            self.color = color
+            self.priority = priority
+        }
+    }
+
+    /// The `cmux set-progress` bar (`value` in 0...1).
+    public struct SupermuxProgress: Codable, Equatable, Sendable {
+        public let value: Double
+        public let label: String?
+
+        public init(value: Double, label: String? = nil) {
+            self.value = value
+            self.label = label
+        }
+    }
+
+    /// The latest `cmux log` line (`level`: info / progress / success / warning / error).
+    public struct SupermuxLog: Codable, Equatable, Sendable {
+        public let message: String
+        public let level: String?
+
+        public init(message: String, level: String? = nil) {
+            self.message = message
+            self.level = level
+        }
+    }
+
+    /// The host row's status pills in display order; `nil` from a host that
+    /// predates the field (Mac-to-Mac mirrors render them on the viewer).
+    public let supermuxStatusEntries: [SupermuxStatusEntry]?
+    /// The host row's progress bar, when one is shown.
+    public let supermuxProgress: SupermuxProgress?
+    /// The host row's latest log line, when there is one.
+    public let supermuxLog: SupermuxLog?
     // SUPERMUX:end supermux-mobile-workspace-fields
 
     /// ``MobileSyncRecord`` identity: the workspace id.
@@ -293,7 +341,10 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
         supermuxBranch: String? = nil,
         supermuxPullRequest: SupermuxPullRequest? = nil,
         supermuxUnreadCount: Int? = nil,
-        supermuxUnreadPanelIDs: [String]? = nil
+        supermuxUnreadPanelIDs: [String]? = nil,
+        supermuxStatusEntries: [SupermuxStatusEntry]? = nil,
+        supermuxProgress: SupermuxProgress? = nil,
+        supermuxLog: SupermuxLog? = nil
         // SUPERMUX:end supermux-mobile-workspace-fields
     ) {
         self.id = id
@@ -325,6 +376,9 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
         self.supermuxPullRequest = supermuxPullRequest
         self.supermuxUnreadCount = supermuxUnreadCount
         self.supermuxUnreadPanelIDs = supermuxUnreadPanelIDs
+        self.supermuxStatusEntries = supermuxStatusEntries
+        self.supermuxProgress = supermuxProgress
+        self.supermuxLog = supermuxLog
         // SUPERMUX:end supermux-mobile-workspace-fields
     }
 
@@ -377,6 +431,11 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
         supermuxUnreadPanelIDs = (
             try? container.decodeIfPresent([String].self, forKey: .supermuxUnreadPanelIDs)
         ) ?? nil
+        supermuxStatusEntries = (
+            try? container.decodeIfPresent([SupermuxStatusEntry].self, forKey: .supermuxStatusEntries)
+        ) ?? nil
+        supermuxProgress = (try? container.decodeIfPresent(SupermuxProgress.self, forKey: .supermuxProgress)) ?? nil
+        supermuxLog = (try? container.decodeIfPresent(SupermuxLog.self, forKey: .supermuxLog)) ?? nil
         // SUPERMUX:end supermux-mobile-workspace-fields
     }
 
@@ -411,6 +470,9 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
         case supermuxPullRequest = "supermux_pull_request"
         case supermuxUnreadCount = "supermux_unread_count"
         case supermuxUnreadPanelIDs = "supermux_unread_panel_ids"
+        case supermuxStatusEntries = "supermux_status_entries"
+        case supermuxProgress = "supermux_progress"
+        case supermuxLog = "supermux_log"
         // SUPERMUX:end supermux-mobile-workspace-fields
     }
 }

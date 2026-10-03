@@ -183,6 +183,9 @@ extension MobileShellComposite {
     /// The badge is absolute, not locally incremented/decremented, so drift
     /// self-heals on the next event, push, or reconcile response.
     public func applyAuthoritativeUnreadBadge(_ count: Int) {
+        // SUPERMUX:begin supermux-phone-badge-total (upstream sets `count`, the foreground Mac's own unread, as the whole badge; the phone badges every Mac's total)
+        let count = supermuxPhoneBadgeTotal(foregroundCount: count)
+        // SUPERMUX:end supermux-phone-badge-total
         deliveredNotificationClearer.setBadgeCount(max(0, count))
         recordAppEvent(.notificationBadgeReconciled, count: max(0, count))
     }

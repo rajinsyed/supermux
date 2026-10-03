@@ -56,6 +56,17 @@ enum SupermuxMobileCapabilities {
             // agent.options / agent.start are served: prompt-first worktree
             // creation that opens a workspace already running Claude.
             SupermuxMobileCapability.agentLaunchV1.rawValue,
+            // phone_push.status / phone_push.share are served: another of the
+            // user's Macs can fill this Mac's missing direct-APNs credentials
+            // and phone registrations over the device link.
+            SupermuxMobileCapability.phonePushShareV1.rawValue,
+            // project.probe / project.clone are served: other Macs register
+            // their copy of a repo here (project sync) and "Set Up on <Mac>…".
+            SupermuxMobileCapability.projectSetupV1.rawValue,
+            // mobile.terminal.input takes `supermux_input`: another Mac's
+            // device mirror sends its keys as key events and its other input
+            // as exact bytes, so typing there behaves as typing here.
+            SupermuxMobileCapability.terminalInputV1.rawValue,
         ]
     }
 }

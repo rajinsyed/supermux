@@ -76,6 +76,9 @@ import Testing
             (.phonePushV1, \.supportsPhonePush),
             (.usageV1, \.supportsUsage),
             (.agentLaunchV1, \.supportsAgentLaunch),
+            (.phonePushShareV1, \.supportsPhonePushShare),
+            (.projectSetupV1, \.supportsProjectSetup),
+            (.terminalInputV1, \.supportsTerminalInput),
         ]
         #expect(accessors.count == SupermuxMobileCapability.all.count)
         for (capability, accessor) in accessors {

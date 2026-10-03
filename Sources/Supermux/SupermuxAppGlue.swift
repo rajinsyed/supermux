@@ -73,8 +73,12 @@ enum SupermuxComposition {
 
     /// Personal Mac-to-APNs delivery for the fixed-identity Supermux iPhone app.
     static let phonePushService = SupermuxPhonePushService(
-        baseDirectory: CmuxSettings.CmuxStateDirectory.url(
-            homeDirectory: FileManager.default.homeDirectoryForCurrentUser
+        // DEBUG builds honor SUPERMUX_PHONE_PUSH_STATE_DIR so E2E runs never
+        // touch the real credentials every build on this Mac shares.
+        baseDirectory: SupermuxPhonePushService.resolvedBaseDirectory(
+            default: CmuxSettings.CmuxStateDirectory.url(
+                homeDirectory: FileManager.default.homeDirectoryForCurrentUser
+            )
         )
     )
 
@@ -101,7 +105,7 @@ enum SupermuxComposition {
     }()
 
     /// App-wide run-action coordinator behind the ⌘G shortcut.
-    static let runCoordinator = SupermuxRunCoordinator(projectsModel: projectsModel)
+    static let runCoordinator = SupermuxRunCoordinator(projectsModel: projectsModel, mirrorRuns: mirrorRuns)
 
     /// Tracks which workspaces were explicitly opened from a project, so only
     /// those (plus worktrees, matched by directory) nest under a project —
@@ -182,42 +186,19 @@ struct SupermuxProjectsMount: View {
         // Reading tabs/selectedTabId here subscribes this small, eager section
         // to workspace add/remove/select changes (not per-keystroke output), so
         // a project's live workspaces stay nested and in sync underneath it.
-        let projects = SupermuxComposition.projectsModel.projects
-        let associations = SupermuxComposition.workspaceAssociations
-        // This window's memoized project resolution — the same cache instance
-        // the flat-list filter uses, so per-workspace NSString path
-        // normalization runs once per invalidation, not once per consumer.
-        // Its validity preamble reads the store's observable `revision` and
-        // durable directory map on every call (cache hits included), which is
-        // what re-renders this body on association changes now that the raw
-        // `associations.projectId` reads no longer happen here.
-        let resolutionCache = SupermuxMainListFilter.resolutionCache(for: tabManager)
         let pullRequestsEnabled = watchGitStatus && showPullRequests && !hideAllDetails
         // Reading the @Observable snapshot here subscribes the mount to unread
         // publications, so a nested row's badge appears/clears live — the same
         // per-workspace summary source cmux's flat rows read.
         let unreadSnapshot = TerminalNotificationStore.shared.sidebarUnread.snapshot
-        let openWorkspaces = tabManager.tabs.map { workspace -> SupermuxOpenWorkspace in
-            let isSelected = workspace.id == tabManager.selectedTabId
-            // Full snapshots (branch/PR/activity, each walking the bonsplit
-            // pane tree) only for project-nested rows; the section consumes
-            // just the directory of everything else.
-            guard let projectId = resolutionCache.projectId(
-                forWorkspace: workspace,
-                projects: projects,
-                associations: associations
-            ) else {
-                return SupermuxWorkspaceRow.standaloneSnapshot(for: workspace, isSelected: isSelected)
-            }
-            return SupermuxWorkspaceRow.snapshot(
-                for: workspace,
-                isSelected: isSelected,
-                projectId: projectId,
-                isRunning: SupermuxComposition.runCoordinator.isRunning(workspaceId: workspace.id),
-                includePullRequest: pullRequestsEnabled,
-                unreadCount: unreadSnapshot.unreadCount(forWorkspaceId: workspace.id)
-            )
-        }
+        // The same builder `supermux.devices.sidebar_rows` reports. Its reads
+        // (projects, associations, mirror ownership, device revision) happen
+        // during this body, so they keep subscribing the mount.
+        let openWorkspaces = SupermuxNestedWorkspaceRows.rows(
+            for: tabManager,
+            includePullRequest: pullRequestsEnabled,
+            unreadCount: { unreadSnapshot.unreadCount(forWorkspaceId: $0) }
+        )
         SupermuxProjectsSectionView(
             model: SupermuxComposition.projectsModel,
             opener: SupermuxTabManagerOpener(tabManager: tabManager),
@@ -284,7 +265,9 @@ struct SupermuxProjectsMount: View {
             // One app-wide logo cache, shared with the workspace switcher.
             iconStore: SupermuxComposition.projectIconStore,
             // "Start Claude in a New Worktree" (prompt-first worktree launch).
-            agentLaunch: SupermuxComposition.agentLaunch
+            agentLaunch: SupermuxComposition.agentLaunch,
+            // Other Macs' copies: remote-only rows, Mac icons and actions.
+            remote: SupermuxRemoteProjectsPresenter.presentation(for: tabManager)
         )
         // Subscribe once on appear and re-subscribe only when the set of open
         // workspaces changes; `register` eagerly seeds the switcher's MRU order.
@@ -404,8 +387,7 @@ final class SupermuxWorkspaceObservation: ObservableObject {
             directory: workspace.currentDirectory,
             branch: workspace.supermuxSidebarBranch,
             activity: SupermuxWorkspaceActivityResolver.activity(for: workspace),
-            pullRequest: workspace.sidebarPullRequestsInDisplayOrder().first
-                .flatMap(SupermuxPullRequest.init(sidebarState:))
+            pullRequest: workspace.supermuxSidebarPullRequest
         )
     }
 
@@ -505,6 +487,16 @@ private final class SupermuxChangesModelBox: ObservableObject {
     /// The on-demand PR viewer. Idle until a header PR button is clicked; it
     /// owns no timer or watcher.
     let pullRequests = SupermuxPullRequestViewerModel()
+    /// Swaps in a remote model (the owning Mac's repository) while a device
+    /// mirror is selected; the local model above is untouched otherwise.
+    let mirror: SupermuxMirrorChangesSource = {
+        let source = SupermuxMirrorChangesSource(
+            resolver: SupermuxComposition.mirrorResolver,
+            devices: SupermuxComposition.devices
+        )
+        SupermuxComposition.mirrorChangesPanels.insert(source)
+        return source
+    }()
 }
 
 /// The git Changes panel mounted as the right sidebar's `changes` mode (see
@@ -531,6 +523,42 @@ struct SupermuxChangesMount: View {
 
     var body: some View {
         let _ = shortcutObserver.revision
+        Group {
+            if let target = box.mirror.target, let remote = box.mirror.remoteModel {
+                SupermuxMirrorChangesPanel(
+                    model: remote,
+                    target: target,
+                    isVisible: isVisible,
+                    commitShortcut: Self.keyboardShortcut(for: .supermuxCommit),
+                    commitAcceleratorShortcut: Self.keyboardShortcut(for: .supermuxCommitAccelerator),
+                    commitShortcutHint: KeyboardShortcutSettings.shortcut(for: .supermuxCommit).displayString
+                )
+                .id(target.ref)
+            } else {
+                localPanel
+            }
+        }
+        .onAppear { box.model.setDirectory(localDirectory) }
+        .onChange(of: workspaceDirectory) { _, _ in
+            box.model.setDirectory(localDirectory)
+        }
+        .onChange(of: tabManager.selectedWorkspace?.id, initial: true) { _, _ in
+            pullRequestObserver.observe(workspace: tabManager.selectedWorkspace)
+            box.mirror.track(tabManager.selectedWorkspace)
+            box.model.setDirectory(localDirectory)
+        }
+        .onChange(of: box.mirror.target?.ref) { _, _ in
+            box.model.setDirectory(localDirectory)
+        }
+    }
+
+    /// The local model's directory: the selected workspace's, or none while a
+    /// device mirror (whose local directory means nothing) is selected.
+    private var localDirectory: String? {
+        box.mirror.target == nil ? workspaceDirectory : nil
+    }
+
+    private var localPanel: some View {
         SupermuxChangesPanelView(
             model: box.model,
             isVisible: isVisible,
@@ -555,13 +583,6 @@ struct SupermuxChangesMount: View {
                 }
             }
         )
-        .onAppear { box.model.setDirectory(workspaceDirectory) }
-        .onChange(of: workspaceDirectory) { _, newDirectory in
-            box.model.setDirectory(newDirectory)
-        }
-        .onChange(of: tabManager.selectedWorkspace?.id, initial: true) { _, _ in
-            pullRequestObserver.observe(workspace: tabManager.selectedWorkspace)
-        }
     }
 
     /// Resolves a configured shortcut into a SwiftUI ``KeyboardShortcut`` the
@@ -621,6 +642,8 @@ struct SupermuxPresetsBarMount: View {
         // rebinds; preset edits invalidate inside the bar view, not here.
         let _ = shortcutObserver.revision
         let runCoordinator = SupermuxComposition.runCoordinator
+        // A device mirror's chips and Run act on the Mac that owns it.
+        let mirror = SupermuxComposition.mirrorResolver.target(for: workspace)
         SupermuxPresetsBarView(
             model: SupermuxComposition.projectsModel,
             isRunning: runCoordinator.isRunning(workspaceId: workspace.id),
@@ -629,6 +652,10 @@ struct SupermuxPresetsBarMount: View {
             runShortcutHint: KeyboardShortcutSettings.shortcutIfBound(for: .supermuxToggleRun)?.displayString ?? "",
             onLaunch: { [weak workspace] preset in
                 guard let workspace, preset.isLaunchable else { return }
+                if let target = SupermuxComposition.mirrorResolver.target(for: workspace) {
+                    SupermuxComposition.mirrorPresets.launchFromBar(preset, in: target)
+                    return
+                }
                 guard let paneId = workspace.bonsplitController.focusedPaneId
                     ?? workspace.bonsplitController.allPaneIds.first else { return }
                 // Submit through the ordered input queue: aliases/functions
@@ -645,7 +672,8 @@ struct SupermuxPresetsBarMount: View {
             onToggleRun: { [weak workspace] in
                 guard let workspace else { return }
                 _ = SupermuxComposition.runCoordinator.toggleRun(workspace: workspace)
-            }
+            },
+            hostLabel: mirror?.presetsBarHostLabel
         )
         // The bar deliberately does not observe the workspace, so a closed run
         // surface would leave the Stop button stale: reconcile from the panel
