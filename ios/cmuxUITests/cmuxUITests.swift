@@ -408,8 +408,9 @@ final class cmuxUITests: XCTestCase {
         capture("01b-groups-and-loose-rows")
 
         // Like the Mac sidebar, a nested row shows its branch, and only a row
-        // living on another Mac than the list's home Mac (its first Mac, the
-        // MacBook Pro) gets the small cloud-Mac icon, right before the branch.
+        // living on another Mac than the list's home Mac (its first Mac in the
+        // stable order, the MacBook Pro) gets the small cloud-Mac icon, right
+        // before the branch, on the line under its title.
         // The Mac's name is the icon's VoiceOver label ("On <Mac>"), never
         // drawn text: no device chip naming the Mac.
         let studioName = "Studio Display Bench With A Very Long Name"
@@ -424,7 +425,7 @@ final class cmuxUITests: XCTestCase {
         }
         for _ in 0..<4 where !(featX.exists && featX.isHittable) { app.swipeDown(velocity: .slow) }
         let featXAccessory = accessory("ws-feat-x")
-        XCTAssertTrue(featXAccessory.waitForExistence(timeout: 5), "feat-x shows its branch and PR badge")
+        XCTAssertTrue(featXAccessory.waitForExistence(timeout: 5), "feat-x shows its branch")
         XCTAssertTrue(featXAccessory.label.hasPrefix("feature/x"),
                       "feat-x (on the home Mac) shows its branch with no Mac icon: \(featXAccessory.label)")
         XCTAssertFalse(featXAccessory.label.contains("MacBook Pro"), "No Mac name on a home-Mac row: \(featXAccessory.label)")
@@ -432,17 +433,23 @@ final class cmuxUITests: XCTestCase {
         XCTAssertTrue(cmuxFixAccessory.waitForExistence(timeout: 5), "cmux-fix shows its branch")
         assertOnStudio(cmuxFixAccessory.label, branch: "fix/studio-sidebar-sync", "cmux-fix (the Studio clone's workspace)")
         XCTAssertFalse(accessory("ws-docs-notes").exists, "docs-notes has no branch, PR or run to show")
-        // feat-x has a changes chip at the end of its preview line; the
-        // accessory must end before it rather than cover it. cmux-main has no
-        // chip, so its accessory sits at the row's end.
+        // feat-x has a changes chip at the end of its preview line; its
+        // status (the PR badge) must end before it rather than cover it.
+        // cmux-main has no chip, so its status (the run indicator) sits at the
+        // row's end.
         let cmuxMainAccessory = accessory("ws-cmux-main")
         XCTAssertTrue(cmuxMainAccessory.waitForExistence(timeout: 5), "cmux-main shows its branch")
         XCTAssertTrue(cmuxMainAccessory.label.hasPrefix("main"),
                       "cmux-main (on the home Mac) shows its branch with no Mac icon: \(cmuxMainAccessory.label)")
-        let featXInset = try frame(featX, "feat-x").maxX - frame(featXAccessory, "feat-x accessory").maxX
-        let cmuxMainInset = try frame(cmuxMain, "cmux-main").maxX - frame(cmuxMainAccessory, "cmux-main accessory").maxX
+        let featXStatus = element("SupermuxNestedWorkspaceStatus-ws-feat-x")
+        let cmuxMainStatus = element("SupermuxNestedWorkspaceStatus-ws-cmux-main")
+        XCTAssertTrue(featXStatus.waitForExistence(timeout: 5), "feat-x shows its PR badge")
+        XCTAssertTrue(cmuxMainStatus.waitForExistence(timeout: 5), "cmux-main shows its run indicator")
+        XCTAssertFalse(element("SupermuxNestedWorkspaceStatus-ws-cmux-fix").exists, "cmux-fix has no PR or run to show")
+        let featXInset = try frame(featX, "feat-x").maxX - frame(featXStatus, "feat-x status").maxX
+        let cmuxMainInset = try frame(cmuxMain, "cmux-main").maxX - frame(cmuxMainStatus, "cmux-main status").maxX
         XCTAssertGreaterThan(featXInset, cmuxMainInset + 30,
-                             "feat-x's accessory moves clear of its changes chip (\(featXInset) vs \(cmuxMainInset))")
+                             "feat-x's status moves clear of its changes chip (\(featXInset) vs \(cmuxMainInset))")
         capture("01c-accessory-beside-changes-chip")
         // A project that lives only on the Studio is still on another Mac:
         // like a remote-only project on the Mac, its rows carry the icon.
@@ -692,6 +699,87 @@ final class cmuxUITests: XCTestCase {
         XCTAssertFalse(worktrees().firstMatch.waitForExistence(timeout: 4),
                        "The project stays closed when the late Mac joins (got \(worktrees().count))")
         capture("14-late-mac-joins-closed")
+    }
+
+    /// Launches the merged-list fixture for the nested-row tests below.
+    @MainActor
+    private func launchSupermuxMergedListFixture() -> XCUIApplication {
+        launchApp(mockData: false, environment: [
+            "CMUX_UITEST_WORKSPACE_LIST_PREVIEW": "1",
+            "CMUX_UITEST_WORKSPACE_LIST_PREVIEW_REORDER": "1",
+            "CMUX_UITEST_WORKSPACE_LIST_PREVIEW_TABS": "1",
+            "CMUX_UITEST_WORKSPACE_LIST_PREVIEW_SUPERMUX": "1",
+        ])
+    }
+
+    /// A nested workspace row shows its branch where the Mac sidebar does:
+    /// the line right under its title, from the title's leading edge, the
+    /// cloud-Mac icon first for a workspace on another Mac. cmux-fix (on the
+    /// Studio) is a shell at its prompt, so its preview line is its
+    /// terminal's path, the case real worktree workspaces hit: that path must
+    /// not take the branch's place, with the branch pushed to the far end of
+    /// the line below.
+    @MainActor
+    func testSupermuxNestedRowShowsItsBranchUnderItsTitle() throws {
+        let app = launchSupermuxMergedListFixture()
+        defer { app.terminate() }
+        let row = app.descendants(matching: .any)["MobileWorkspaceRow-ws-cmux-fix"].firstMatch
+        let branch = app.descendants(matching: .any)["SupermuxNestedWorkspaceAccessory-ws-cmux-fix"].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 15), "cmux-fix is a nested workspace row")
+        XCTAssertTrue(branch.waitForExistence(timeout: 5), "cmux-fix shows its branch")
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "ios-nested-row-branch-under-title"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        let studioName = "Studio Display Bench With A Very Long Name"
+        XCTAssertTrue(branch.label.hasPrefix("On \(studioName)") && branch.label.contains("fix/studio-sidebar-sync"),
+                      "The cloud-Mac icon leads the branch: \(branch.label)")
+        let rowFrame = try XCTUnwrap(waitForUsableFrame(of: row, timeout: 5), "cmux-fix has no frame")
+        let branchFrame = try XCTUnwrap(waitForUsableFrame(of: branch, timeout: 5), "cmux-fix's branch has no frame")
+        XCTAssertLessThan(branchFrame.minX, rowFrame.minX + 40,
+                          "The branch starts at the title's leading edge (branch \(branchFrame), row \(rowFrame))")
+        XCTAssertLessThan(branchFrame.minY, rowFrame.midY,
+                          "The branch is the line right under the title, above the preview (branch \(branchFrame), row \(rowFrame))")
+    }
+
+    /// Opening a workspace on another Mac makes that Mac the shell's
+    /// foreground (the fixture follows the shell). Where a row lives did not
+    /// change, so the cloud-Mac icon stays on the same rows instead of moving
+    /// to the Mac that was home a moment ago.
+    @MainActor
+    func testSupermuxCloudMacIconStaysWhenTheForegroundMacChanges() throws {
+        let app = launchSupermuxMergedListFixture()
+        defer { app.terminate() }
+        func element(_ identifier: String) -> XCUIElement {
+            app.descendants(matching: .any)[identifier].firstMatch
+        }
+        let studioName = "Studio Display Bench With A Very Long Name"
+        let cmuxFix = element("MobileWorkspaceRow-ws-cmux-fix")
+        let cmuxFixBranch = element("SupermuxNestedWorkspaceAccessory-ws-cmux-fix")
+        let featXBranch = element("SupermuxNestedWorkspaceAccessory-ws-feat-x")
+        XCTAssertTrue(cmuxFix.waitForExistence(timeout: 15), "cmux-fix is a nested workspace row")
+        XCTAssertTrue(cmuxFixBranch.waitForExistence(timeout: 5))
+        XCTAssertTrue(cmuxFixBranch.label.hasPrefix("On \(studioName)"), "Before: cmux-fix carries the icon: \(cmuxFixBranch.label)")
+        XCTAssertTrue(waitForHittable(cmuxFix, timeout: 5))
+        tap(cmuxFix, in: app)
+        XCTAssertTrue(element("FixtureWorkspaceDetail").waitForExistence(timeout: 4), "Tapping cmux-fix opens it")
+        tap(app.buttons["MobileWorkspaceBackButton"], in: app)
+        XCTAssertTrue(waitForHittable(cmuxFix, timeout: 5))
+        // The relayout after the switch lands within a moment.
+        let stillOnStudio = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label BEGINSWITH %@", "On \(studioName)"),
+            object: cmuxFixBranch
+        )
+        _ = XCTWaiter.wait(for: [stillOnStudio], timeout: 3)
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "ios-nested-row-icon-after-foreground-switch"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        XCTAssertTrue(cmuxFixBranch.label.hasPrefix("On \(studioName)"),
+                      "After opening it, cmux-fix still carries the cloud-Mac icon: \(cmuxFixBranch.label)")
+        XCTAssertTrue(featXBranch.waitForExistence(timeout: 5))
+        XCTAssertFalse(featXBranch.label.contains("MacBook Pro"),
+                       "feat-x stays a home-Mac row with no icon: \(featXBranch.label)")
     }
     // SUPERMUX:end supermux-mobile-merged-projects-uitest
 
