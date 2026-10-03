@@ -42,6 +42,10 @@ struct SupermuxTerminalSizingClaim: Equatable {
     var claimed = false
     var pushed = false
     var hasAttached = false
+    /// A choice made on this mirror's terminal (its size panel or tab menu)
+    /// while the mirror was not attached, so it could not be sent: it goes
+    /// on the next attach that sticks, before any claim, then is cleared.
+    var pendingChoice: SupermuxTerminalSizingPreference?
 }
 
 /// This Mac's terminal size preference (`supermux.terminalSizing.preference`).
@@ -174,10 +178,16 @@ final class SupermuxTerminalSizingDefaults {
     private func apply(to surfaceID: UUID) {
         let controller = TerminalController.shared
         if let session = SupermuxTerminalSizingVisibility.shared.trackedMirrorSessions()[surfaceID] {
-            guard let viewer = session.viewer,
-                  viewer.state?.policy != preference.policy(selfKey: Self.selfKey(of: viewer)) else { return }
+            guard let viewer = session.viewer else { return }
+            guard viewer.state?.policy != preference.policy(selfKey: Self.selfKey(of: viewer)) else {
+                // The terminal already has it: an earlier pick still waiting is outdated.
+                session.supermuxSizingClaim.pendingChoice = nil
+                return
+            }
             session.supermuxSizingClaim.claimed = !session.supermuxHidden
-            session.supermuxSizingClaim.pushed = pushChoice(session)
+            let sent = pushChoice(session, preference)
+            session.supermuxSizingClaim.pushed = sent
+            session.supermuxSizingClaim.pendingChoice = sent ? nil : preference
         } else if let host = controller.localSizingHostsBySurfaceID[surfaceID] {
             let policy = preference.policy(selfKey: Self.selfKey(of: host))
             guard host.state.policy != policy else { return }
@@ -224,7 +234,16 @@ final class SupermuxTerminalSizingDefaults {
         session.supermuxSizingClaim.pushed = false
     }
 
+    /// A choice made on this terminal while the mirror was detached goes
+    /// first (a reconnect's claim alone would only reorder Priority and lose
+    /// it); otherwise the claim, once per connection.
     private func pushClaim(_ session: DeviceTerminalMirrorSession) {
+        if let choice = session.supermuxSizingClaim.pendingChoice {
+            guard pushChoice(session, choice) else { return }
+            session.supermuxSizingClaim.pendingChoice = nil
+            session.supermuxSizingClaim.pushed = true
+            return
+        }
         guard session.supermuxSizingClaim.claimed, !session.supermuxSizingClaim.pushed else { return }
         session.supermuxSizingClaim.pushed = claim(session)
     }
@@ -253,12 +272,14 @@ final class SupermuxTerminalSizingDefaults {
         )
     }
 
-    /// Sends this Mac's preference for the terminal the user acted on through
-    /// its mirror. Unconditional: after the other Mac restarts, the state this
-    /// Mac last saw can be stale, and the other Mac ignores a policy it already has.
-    private func pushChoice(_ session: DeviceTerminalMirrorSession) -> Bool {
+    /// Sends a choice made on the terminal the user acted on through its
+    /// mirror. False while the mirror is not attached (the caller keeps it
+    /// pending). Unconditional otherwise: after the other Mac restarts, the
+    /// state this Mac last saw can be stale, and the other Mac ignores a
+    /// policy it already has.
+    private func pushChoice(_ session: DeviceTerminalMirrorSession, _ choice: SupermuxTerminalSizingPreference) -> Bool {
         guard session.phase == .attached, let viewer = session.viewer, viewer.detachment == nil else { return false }
-        return session.sharingSetPolicy(preference.policy(selfKey: Self.selfKey(of: viewer)))
+        return session.sharingSetPolicy(choice.policy(selfKey: Self.selfKey(of: viewer)))
     }
 
     /// This Mac's priority key in another Mac's terminal: as that Mac

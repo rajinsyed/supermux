@@ -22,9 +22,11 @@ Ways a run could reach the user's real account, Macs or app, and the check for e
   4. The app joins the production Mac-to-Mac mesh: CMUX_IROH_V2_ENVIRONMENT=production in its
      LSEnvironment or its defaults.
   5. The tag was seeded from the release earlier, and a later plain rebuild kept that state:
-     the tag's own defaults carry the production Stack project id or a signed-in session, its
-     credentials file (`~/Library/Application Support/cmux/<bundle id>/credentials.json`) exists,
-     or its mirror bindings name a Mac that is not the loopback device.
+     the tag's own defaults carry the production Stack project id, its credentials file
+     (`~/Library/Application Support/cmux/<bundle id>/credentials.json`) holds the release app's
+     own refresh token (compared in memory, never printed), or its mirror bindings name a Mac that
+     is not the loopback device. A plain tag's own sign-in (the ~/.secrets dogfood account, a
+     manual dev sign-in, or the `{}` the keychain path writes) is another session and passes.
 
 Exit status 0 when every check passes, 1 with one line per reason otherwise. Read-only: it
 reads the app's Info.plist, the tag's defaults domain and one file's existence.
@@ -32,6 +34,8 @@ reads the app's Info.plist, the tag's defaults domain and one file's existence.
   python3 tests/supermux/require_isolated_app.py --app "<App path>" --tag <tag>
 """
 import argparse
+import hmac
+import json
 import plistlib
 import re
 import subprocess
@@ -44,6 +48,7 @@ PRODUCTION_ORIGIN = "https://cmux.com"
 # scripts/supermux-seed-dev-profile.sh does.
 PRODUCTION_STACK_PROJECT_ID = "9790718f-14cd-4f7e-824d-eaf527a82b82"
 LOOPBACK_DEVICE_ID = "5e1f10b0-0000-4000-8000-000000000001"
+RELEASE_BUNDLE_ID = "com.supermux.app"
 REBUILD = "rebuild it with a tag that never had --supermux-profile: CMUX_DEV_BACKEND_MODE=local ./scripts/reload.sh --tag <new-tag>"
 
 
@@ -69,6 +74,23 @@ def read_defaults(bundle_id: str) -> Dict[str, Any]:
         return plistlib.loads(exported.stdout)
     except Exception:  # an unreadable domain is not a reason to refuse; the build checks still run
         return {}
+
+
+def refresh_token(path: Path) -> str:
+    """The Stack refresh token a credentials file holds, or "" (missing, `{}`, unreadable)."""
+    try:
+        body = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return ""
+    token = body.get("refreshToken") if isinstance(body, dict) else None
+    return token.strip() if isinstance(token, str) else ""
+
+
+def holds_release_session(credentials: Path, support: Path) -> bool:
+    """Whether the tag's sign-in is the release app's own session (what --supermux-profile copies)."""
+    release = refresh_token(support / RELEASE_BUNDLE_ID / "credentials.json")
+    tag = refresh_token(credentials)
+    return bool(release) and bool(tag) and hmac.compare_digest(release.encode(), tag.encode())
 
 
 def text(value: Any) -> str:
@@ -111,9 +133,11 @@ def reasons(app: Path, tag: str, repo_root: Path) -> List[str]:
     real = [m for m in machines if m.lower() != LOOPBACK_DEVICE_ID]
     if real:
         found.append(f"its defaults ({bundle_id}) mirror real Macs ({', '.join(real)}): seeded from the release")
-    credentials = Path.home() / "Library/Application Support/cmux" / bundle_id / "credentials.json"
-    if credentials.exists():
-        found.append(f"a copied sign-in exists ({credentials}): --supermux-profile seeded the user's Stack session")
+    support = Path.home() / "Library/Application Support/cmux"
+    credentials = support / bundle_id / "credentials.json"
+    if holds_release_session(credentials, support):
+        found.append(f"{credentials} holds the release app's own sign-in ({RELEASE_BUNDLE_ID}): "
+                     "--supermux-profile copied the user's Stack session")
     return found
 
 

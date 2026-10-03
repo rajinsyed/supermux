@@ -52,7 +52,12 @@ CMUX_TAG=<tag> python3 tests/supermux/loopback_device_smoke.py
 ```
 
 - **Never a seeded tag.** A tag once built with `--supermux-profile` keeps the user's copied
-  defaults and `credentials.json` after a plain rebuild; the guard refuses it. Use a new tag.
+  defaults and `credentials.json` after a plain rebuild; the guard refuses it when that file holds
+  the release app's own refresh token (compared in memory, never printed) or the defaults hold the
+  production Stack project. Use a new tag. A plain tag's own sign-in (the `~/.secrets` dogfood
+  account, a manual dev sign-in, or the `{}` the keychain path writes) passes.
+  `python3 tests/supermux/require_isolated_app_check.py` runs the guard on fake apps under a scratch
+  HOME, no real app or account involved.
 - **The suites never read `CMUX_SOCKET_PATH`.** Inside a Supermux terminal it names the user's
   running app (`/tmp/supermux.sock`), and a suite that took it would drive that app. Each suite
   talks to `/tmp/cmux-debug-<tag>.sock` unless `--socket` says otherwise, and the runner passes the
@@ -533,7 +538,12 @@ Mac (`[phone, self]`) and reaches the local terminal relative to its own view he
 with `--app-path`, Largest Window survives a quit and relaunch. The two named steps were red on
 1e708492df4 (tag `sizeguard`, 15/17: the shown mirror flipped the second Mac's Fit everyone to
 Priority, and Largest reached the source as the mirror's push, under the mirror's key) and are green
-on the fix (17/17). It drives the DEBUG
+on the fix (17/17). `choice_during_reconnect_lands` picks Priority on the mirror once it is detached
+(link stopped, `terminal_sizing.state` reports `attached: false`), with the second Mac holding Fit
+everyone and Priority already stored, so only the mirror can bring the pick; after the link is back
+the terminal must be Priority with the mirror first. Before, the pick failed on the detached link and
+the reconnect only claimed, which leaves Fit everyone; now it waits as the claim's `pending_choice`
+and goes on the next attach. It drives the DEBUG
 `supermux.devices.terminal_sizing.{state,reset,select_mode,set_priority}` methods
 (`Sources/Supermux/Devices/SupermuxTerminalSizingSocketCommands.swift`), which run the size panel's
 own actions, and resets the preference at start and end.
