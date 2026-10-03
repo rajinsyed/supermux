@@ -316,10 +316,7 @@ private enum Strings {
     }
 
     static func slow(_ mac: String) -> String {
-        String(
-            localized: "supermux.remoteSimulator.devices.slow",
-            defaultValue: "Simulators on \(mac) are slow to respond…"
-        )
+        SupermuxRemoteSimulatorHostClient.slowText(mac)
     }
 
     static func noSimulators(_ mac: String) -> String {

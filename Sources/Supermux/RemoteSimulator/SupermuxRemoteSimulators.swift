@@ -96,15 +96,26 @@ final class SupermuxRemoteSimulators {
                 return
             }
             if let udid = panel.deviceUDID {
+                var unanswered = false
                 for candidate in listed {
-                    let showsDevice = try await host.deviceList(panelID: candidate).devices
-                        .contains { $0.isSelected && $0.udid == udid }
+                    let listing = try await host.settledDeviceList(panelID: candidate)
+                    guard !listing.isSlow else {
+                        unanswered = true
+                        continue
+                    }
+                    let showsDevice = listing.devices.contains { $0.isSelected && $0.udid == udid }
                     // Read after each await, so a viewer that attached meanwhile counts.
                     let shown = shownHostPanelIDs(on: panel.machine, besides: panel)
                     if showsDevice, !shown.contains(candidate) {
                         panel.attach(hostPanelID: candidate, deviceUDID: udid)
                         return
                     }
+                }
+                // A slow answer says nothing about which device a tab there
+                // shows: a new tab could duplicate the one that shows it.
+                if unanswered {
+                    panel.attachFailed(SupermuxRemoteSimulatorHostClient.slowText(panel.macName))
+                    return
                 }
             }
             guard create else {

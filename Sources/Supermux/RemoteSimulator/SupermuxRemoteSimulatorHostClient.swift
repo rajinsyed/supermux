@@ -20,6 +20,18 @@ struct SupermuxRemoteSimulatorHostClient {
     let machine: SurfaceMachineID
     let workspaceID: String
 
+    /// How long a viewer waits before it asks again after a slow device menu.
+    nonisolated static let slowRetryDelay: Duration = .seconds(3)
+
+    /// "Simulators on <Mac> are slow to respond…": the device menu, the status
+    /// line, and a rebind that could not tell which tab shows its device.
+    nonisolated static func slowText(_ macName: String) -> String {
+        String(
+            localized: "supermux.remoteSimulator.devices.slow",
+            defaultValue: "Simulators on \(macName) are slow to respond…"
+        )
+    }
+
     private var devices: SupermuxDevices { SupermuxComposition.devices }
 
     /// The workspace's Simulator panels there, in tab order.
@@ -57,6 +69,20 @@ struct SupermuxRemoteSimulatorHostClient {
             )
         }
         return DeviceListing(devices: listed, isSlow: result["slow"] as? Bool ?? false)
+    }
+
+    /// The device menu, asked again every ``slowRetryDelay`` while the owning
+    /// Mac says its simulators are slow, `attempts` times at most. The last
+    /// answer may still be slow: then it says nothing about the devices.
+    func settledDeviceList(panelID: UUID, attempts: Int = 10) async throws -> DeviceListing {
+        var listing = try await deviceList(panelID: panelID)
+        var left = attempts - 1
+        while listing.isSlow, left > 0 {
+            try await Task.sleep(for: Self.slowRetryDelay)
+            listing = try await deviceList(panelID: panelID)
+            left -= 1
+        }
+        return listing
     }
 
     /// Shows `udid` in `panelID`, booting it there when needed (the host
