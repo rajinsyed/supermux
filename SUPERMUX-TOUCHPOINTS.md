@@ -16,7 +16,7 @@ Rules for adding a touchpoint:
 - Numbering: the highest number in use is **783** (remote terminal streaming, #777–#783; #764–#776 are
   reserved for open PRs #74/#75). The remote-workspaces work (#517–#599) left
 - Numbering: the highest number in use is **818**. The remote-workspaces work (#517–#599) left
-- Numbering: the highest number in use is **835**. The remote-workspaces work (#517–#599) left
+- Numbering: the highest number in use is **883** (#880–#883: Remote Host Mode's hotkey and notification shows, Auto's `view_appeared` report; #850–#879 are held by another open branch). The remote-workspaces work (#517–#599) left
   unassigned gaps it may still grow into: **523–524, 527–529, 539–544, 558–559, 562–569,
   578–579 and 588–589** (never assigned, not retired); #600–#601 came from the 2026-10-01 upstream merge; #620–#622 and
   #630–#639 are the remote-workspaces feedback round (602–619 and 623–629 unassigned). The second
@@ -747,6 +747,10 @@ Rules for adding a touchpoint:
 | 833 | `Packages/macOS/CmuxSettingsUI/Sources/CmuxSettingsUI/Sections/AppSection.swift` | `remote-host-mode` | Renders `SupermuxRemoteHostModeSettingsRow(defaultsStore: defaultsStore)` plus a `SettingsCardDivider()` right after the Menu Bar Only row in `mainCard`. The row and its `SupermuxRemoteHostModeSetting` key live in the fork-owned `Sections/SupermuxRemoteHostModeSettingsRow.swift` of the same package |
 | 834 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/RemoteHost/SupermuxRemoteHostMode.swift`, `SupermuxRemoteHostModeMenuItems.swift` and `SupermuxRemoteHostSocketCommands.swift` (ids `50BE001A…01`–`…06`, file refs `path = RemoteHost/<file>` in the Supermux group) into the cmux target |
 | 835 | `Sources/GhosttyTerminalView.swift` | `remote-host-mode` | One fenced early return in `GhosttySurfaceScrollView.ensureFocus(...)`, right before its `window.makeKeyAndOrderFront(nil)` (after the `shouldAllowEnsureFocusWindowActivation` guard): while headless (`SupermuxRemoteHostMode.shared.isHeadless`) focusing a terminal never orders its hidden window in. Found by the relaunch step: the restored workspace's terminal focus made the hidden window key and visible |
+| 880 | `Sources/AppDelegate.swift` | `remote-host-user-show` | Three fenced sites calling `SupermuxRemoteHostMode`: the top of `toggleApplicationVisibilityFromGlobalHotkey()` (`if showsWindowsForUserRequest() { return }`: the global show/hide hotkey shows a headless host's windows), the first statement of the `Task` in `userNotificationCenter(_:didReceive:withCompletionHandler:)` (`notificationClicked(actionIdentifier:)`: a click on a banner or its Show action shows them before the open), and the menu bar item's `onOpenNotification` closure in the `MenuBarExtraController` factory (`showsWindowsForUserRequest()` before `openTerminalNotification`) |
+| 881 | `Sources/TerminalController.swift` | `sizing-auto-view-appeared` | In `v2MobileTerminalViewport`, the non-clear branch, right before `applyMobileViewportReport`: sets `SupermuxTerminalSizingAuto.shared.viewAppearedClientID` to the report's `client_id` when it carries `view_appeared: true` (nil otherwise), with a `defer` clearing it, so `viewersReported` notes that phone's activity although its viewport repeats |
+| 882 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite+TerminalViewport.swift` | `sizing-auto-view-appeared` | Two fenced sites: a `public var viewAppeared = false` on `MobileTerminalViewportPreparation`, and in `updatePreparedTerminalViewport` the `mobile.terminal.viewport` parameters built into a local `viewportParams` that gains `"view_appeared": true` when the preparation says so |
+| 883 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/GhosttySurfaceRepresentable.swift` | `sizing-auto-view-appeared` | Three fenced sites in `Coordinator`: the stored `viewAppearedReportPending`, set in `ghosttySurfaceView(_:didChangeWindowAttachment:)` when the surface joins a window, and consumed by the viewport scheduler's `send` closure (the report sent goes through a preparation with `viewAppeared = true`, prepared on the spot when none was) |
 
 ## How to re-apply
 
@@ -6454,6 +6458,29 @@ clears the source terminal's scrollback and a re-attach does not bring it back; 
 program once each; Ctrl+V passes text through and uploads an image). Not covered there: `reset`, the
 `surface.clear_history` socket path (same `perform`), an older host (no capability: today's local-only clear,
 no focus reports, Ctrl+V passes through).
+### 880–883. A headless host shows for the hotkey and a notification; a phone's terminal view coming back takes the grid in Auto — `remote-host-user-show`, `sizing-auto-view-appeared`
+
+- **#880 `remote-host-user-show`.** Remote Host Mode (#830–#835) showed a headless host's windows only for the
+  menu bar item and reopening the app: the hotkey's toggle found nothing to reveal (the windows are `orderOut`,
+  not app-hidden, and the mode clears the restore targets) and a notification's open went through a focus the
+  mode blocks. Each now calls `SupermuxRemoteHostMode.showsWindowsForUserRequest()` first (Show Supermux's
+  `showAllWindows`; the mode stays on; inside a socket command the app stays in the background). Keep the
+  three calls before upstream's own handling. If upstream adds another user-initiated show (a Dock menu, a
+  Services entry), route it the same way.
+- **#881–#883 `sizing-auto-view-appeared`.** A phone terminal view that only left the window (navigated
+  away and back without backgrounding) keeps its viewport lease and re-reports the same size, which
+  Auto deliberately treats as no activity (#790). The phone now marks the first viewport report after the
+  surface joins a window with `view_appeared: true`, and the host treats that one report as activity.
+  Compatible both ways: an older Mac ignores the key (today's behavior), an older phone never sends it.
+  Keep the flag on one report per window attach only; flagging every report would bring back the
+  ping-pong #790 avoids.
+
+Verify: `CMUX_E2E_ALLOW_COVERED_WINDOW=1 CMUX_E2E_SUITES="loopback_remote_host_mode_e2e" CMUX_TAG=<tag>
+tests/supermux/run_all_loopback_e2e.sh` (steps `global_hotkey_shows_windows`,
+`notification_click_shows_windows`) and `CMUX_E2E_SUITES="loopback_terminal_sizing_policy_e2e" …`
+(step `auto_reappearing_phone_takes_it`). Not covered there: the phone side of #882–#883 (compile-checked;
+the window attach comes from UIKit).
+
 ### 830–835. Remote Host Mode: no window, no Dock icon, everything still runs — `remote-host-mode`
 
 A Mac used only as a remote host (for the iPhone app or another Mac's mirrors) runs with every main window
@@ -6506,8 +6533,8 @@ workspaces. Fork code: `Sources/Supermux/RemoteHost/` (`SupermuxRemoteHostMode`,
 
 Keep Mac Awake is the existing menu bar item (`CaffeineController`, upstream #7564), not new power management;
 the row's subtitle points at it. Limits: the app runs in a logged-in macOS session (a locked screen is fine,
-the display may sleep); a notification click or the global show/hide hotkey does not show a headless host's
-windows (the menu bar item and reopening the app do).
+the display may sleep). The global show/hide hotkey and a notification click also show a headless host's
+windows (#880).
 
 Verify: `CMUX_E2E_ALLOW_COVERED_WINDOW=1 CMUX_E2E_SUITES="loopback_remote_host_mode_e2e loopback_device_smoke"
 CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh` (the mode hides every window with accessory policy and
