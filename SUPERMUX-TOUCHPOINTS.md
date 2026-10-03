@@ -6175,7 +6175,7 @@ Simulator tab never picked a device. Fork code in `Sources/Supermux/RemoteSimula
   `await reloadDevices()` with `while !(await reloadDevices()), !closed, !Task.isCancelled {}`. Retire it when upstream's
   startup survives a concurrent `reloadDevices()` itself (it selects and activates after a superseded discovery). Verify
   with `streams_video` and `viewer_close_closes_owner_panel` of `loopback_mirror_simulator_e2e`: a new tab's viewer asks
-  for the device menu right after it attaches, so without this fence about half of all new tabs never stream.
+  for the device menu right after it attaches, so without this fence most new tabs tried here never streamed.
 
 ### 735. A quit that reaches a worker goes to the app — `worker-quit-forwarding`
 
