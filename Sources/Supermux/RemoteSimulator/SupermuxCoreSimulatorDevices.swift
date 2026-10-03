@@ -18,12 +18,15 @@ import os
 /// does (`SimulatorDeviceResolver`, `SimulatorFrameworkLoader`). Every call
 /// runs on one serial queue, never the main thread; callers that ask while a
 /// read runs share its answer, and each caller waits at most its own timeout.
+/// Upstream loads private Simulator frameworks only in its worker child; this
+/// reader is the one exception, kept to read-only calls and guarded by
+/// ``SupermuxCoreSimulatorCrashGuard``.
 final class SupermuxCoreSimulatorDevices: @unchecked Sendable {
     static let shared = SupermuxCoreSimulatorDevices()
 
     enum Failure: Error {
-        /// CoreSimulator cannot be used here (no Xcode, or its API changed):
-        /// ask `simctl` instead.
+        /// CoreSimulator cannot be used here (no Xcode, its API changed, or it
+        /// crashed this app before): ask `simctl` instead.
         case unavailable(String)
         /// CoreSimulator did not answer in time.
         case slow
@@ -105,6 +108,13 @@ final class SupermuxCoreSimulatorDevices: @unchecked Sendable {
             return deviceSet
         }
         if let permanentFailure { throw Failure.unavailable(permanentFailure) }
+        let crashGuard = SupermuxCoreSimulatorCrashGuard(frameworkPath: Self.frameworkPath)
+        guard crashGuard.allowsLoading() else {
+            permanentFailure = "CoreSimulator crashed this app while loading; not loaded in-process again"
+            throw Failure.unavailable(permanentFailure ?? "")
+        }
+        crashGuard.willLoad()
+        defer { crashGuard.didLoad() }
         guard FileManager.default.fileExists(atPath: Self.frameworkPath),
               dlopen(Self.frameworkPath, RTLD_NOW | RTLD_GLOBAL) != nil,
               let contextClass = NSClassFromString("SimServiceContext") else {
