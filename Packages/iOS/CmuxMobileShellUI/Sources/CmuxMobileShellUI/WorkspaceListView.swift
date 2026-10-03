@@ -454,8 +454,36 @@ struct WorkspaceListView: View {
         return Set(snapshot.rows.map(\.id))
     }
 
+    /// The iPhone's merged Projects rows: its `nestedWorkspaceIDs` are the
+    /// rows nested under a project, which the flat and grouped lists hide —
+    /// the same set, from one function, so every workspace shows once.
+    var supermuxProjectsLayout: SupermuxProjectsListLayout {
+        #if os(iOS)
+        let actions = supermuxProjects.actions
+        return SupermuxProjectsListLayout(
+            section: supermuxProjects.snapshot,
+            workspaces: workspaces,
+            scope: SupermuxProjectsListScope(
+                query: trimmedQuery,
+                filter: filter,
+                activeFilter: activeFilter,
+                appliesRecencySort: appliesRecencySort
+            ),
+            canEdit: actions.editing != nil,
+            preparingNewWorktreeProjectID: actions.preparingNewWorktreeProjectID
+        )
+        #else
+        return .empty
+        #endif
+    }
+
     private var supermuxFlatWorkspaces: [MobileWorkspacePreview] {
-        workspaces.supermuxFlatRows(hidingProjectIDs: supermuxShownProjectIDs)
+        #if os(iOS)
+        let nested = supermuxProjectsLayout.nestedWorkspaceIDs
+        return nested.isEmpty ? workspaces : workspaces.filter { !nested.contains($0.id) }
+        #else
+        return workspaces.supermuxFlatRows(hidingProjectIDs: supermuxShownProjectIDs)
+        #endif
     }
     // SUPERMUX:end supermux-mobile-hide-project-workspaces
 
@@ -607,6 +635,10 @@ struct WorkspaceListView: View {
             workspacesByID: currentWorkspacesByID
         )
             .supermuxProjectsSectionDriver(model: supermuxProjects, seams: store?.supermuxConnectionSeams ?? [], workspaces: workspaces, selectedWorkspaceID: selectedWorkspaceID, selectWorkspace: { selectWorkspace($0) }, resolveWorkspace: supermuxResolveWorkspace, closeWorkspace: supermuxRequestWorkspaceClose)
+            // A fork row's open swipe tray closes when the row leaves the list.
+            .onChange(of: supermuxProjectsLayout.swipeableRowIDs, initial: true) { _, ids in
+                supermuxProjects.closeSwipeTray(unlessAmong: ids)
+            }
             // SUPERMUX:begin supermux-mobile-usage-button (usage session driver on the stable list — the toolbar gauge that renders it is torn down on every push)
             .supermuxUsageDriver(model: supermuxUsage, connection: store?.supermuxConnectionSeam)
             // SUPERMUX:end supermux-mobile-usage-button

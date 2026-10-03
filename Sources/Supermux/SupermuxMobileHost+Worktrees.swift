@@ -227,15 +227,16 @@ extension TerminalController {
     }
 
     /// Resolves the request's `project_id` to a loaded project record, or the
-    /// wire error to return (`invalid_params` / `not_found`).
+    /// wire error to return (`invalid_params` / `not_found`, or `unavailable`
+    /// while the projects file is not read yet).
     @MainActor
     func supermuxResolveProject(params: [String: Any]) async -> SupermuxParamResolution<SupermuxProject> {
         guard let idString = params["project_id"] as? String,
               let projectID = UUID(uuidString: idString) else {
             return .failure(.err(code: "invalid_params", message: "project_id must be a project UUID", data: nil))
         }
-        let model = SupermuxComposition.projectsModel
-        await model.loadIfNeeded()
+        // A bounded wait for the first load (supermuxLoadedProjectsModel).
+        guard let model = await supermuxLoadedProjectsModel() else { return .failure(supermuxProjectsStillLoading()) }
         guard let project = model.projects.first(where: { $0.id == projectID }) else {
             return .failure(.err(code: "not_found", message: "Unknown project", data: [
                 "project_id": idString,

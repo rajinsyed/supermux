@@ -64,7 +64,8 @@ anything.** It is the contract that keeps the fork mergeable with upstream cmux.
    empty-area menu) creates project-less workspaces remotely, while a plain New Workspace always stays
    on this Mac. Activity
    spinners, status pills, progress, logs, branch/PR, unread and notification banners mirror the
-   owning Mac; closing a mirror asks "Close on <Mac>" vs "Hide Here". The phone gets pushes from the
+   owning Mac; closing a mirror closes it on its Mac like a local workspace (row menus also offer
+   "Hide Here"). The phone gets pushes from the
    Mac that runs the agent, so the main Mac can be closed. Details: "Remote Macs (devices)" below and
    `plans/supermux-remote-workspaces/`.
 
@@ -113,9 +114,13 @@ paired with an upstream cmux Mac renders exactly upstream's UI.
 
 > **Where the Projects UI is mounted on iPhone (read before touching the workspace list).**
 > The iPhone renders the workspace list through a UIKit `UITableView`
-> (`WorkspaceListTable`), not the SwiftUI `List`. The Projects section therefore renders as one
-> table row — touchpoints #148–#151 — while the SwiftUI `SupermuxProjectsMobileSection` mount is
-> macOS-only. The session driver lives on the iOS `workspaceTable` (#97).
+> (`WorkspaceListTable`), not the SwiftUI `List`. Projects and workspaces are ONE list there, like
+> the Mac sidebar: the table's leading run is a slim PROJECTS caption, then each project (merged
+> across Macs) as its own row with its workspaces nested right under it as the shell's own
+> indented workspace rows, then the shell's groups and loose workspaces — touchpoints #148–#151,
+> #502 and #700–#702, projected by `SupermuxProjectsListLayout`. The SwiftUI
+> `SupermuxProjectsMobileSection` mount (with per-Mac headers) is macOS-only. The session driver
+> lives on the iOS `workspaceTable` (#97).
 >
 > This is the fork's most dangerous known failure mode, because it fails **silently and
 > compiling**: upstream 0.64.20 moved the iOS list behind `#if os(iOS)` and left the fork's mount
@@ -129,7 +134,7 @@ Status per fork feature area:
 
 | # | Fork feature area | Mobile status | How / where |
 |---|-------------------|---------------|-------------|
-| 1 | Projects (sticky, full CRUD) | ✅ on iOS | `SupermuxProjectsTableSection` (iPhone, hosted in the #148 table row) / `SupermuxProjectsMobileSection` (macOS `List`) + `SupermuxProjectDetailScreen` + `SupermuxProjectEditorSheet` over `projects.list` / `project.create/update/delete/open` |
+| 1 | Projects (sticky, full CRUD) | ✅ on iOS | `SupermuxProjectsListLayout` + `SupermuxProjectsTableRowView` (iPhone: one row per project in the workspace table, #148–#151) / `SupermuxProjectsMobileSection` (macOS `List`) + `SupermuxProjectDetailScreen` + `SupermuxProjectEditorSheet` over `projects.list` / `project.create/update/delete/open` |
 | 2 | Project icons & colors | ✅ on iOS | custom icon via `project.icon` (base64 PNG, etag-cached `SupermuxProjectIconCache`) → SF Symbol → letter avatar tinted by `color_hex` |
 | 3 | Worktrees (create/open/remove, starting branch, AI branch suggest) | ✅ on iOS | `SupermuxNewWorktreeSheet` + project-detail worktree rows over lazy `worktrees.list` branch snapshots (`include_branches`) / `worktree.suggest_branch/create/open/remove` (dirty removals require `force` after a phone-side confirm) |
 | 4 | Worktree PR badges | ✅ on iOS | `SupermuxPullRequestDTO` (number/state/url; title optional-nil, matching the desktop probe) on `worktrees.list` rows |
@@ -140,9 +145,9 @@ Status per fork feature area:
 | 9 | Worktree setup/teardown scripts | ✅ mac-side execution, phone-triggered | scripts always run on the Mac when worktrees are created/removed from the phone; script lists editable in the phone's project editor (config-imported projects render read-only) |
 | 10 | AI integration | ✅ mac-side only (by design) | the AI key/model never leave the Mac; the phone consumes results (`worktree.suggest_branch`, `changes.generate_commit_message`) and surfaces the `ai_unavailable` error when unconfigured |
 | 11 | Workspace switcher | ✅ covered by existing surface — **deliberate decision** | the existing iOS workspace list already is the mobile switcher; no new switcher UI was built. Workspace selection and the focused panel sync bidirectionally with the Mac: v1 preserves terminal-only compatibility, while `supermux.selection_sync.v2` covers terminals, browser tabs, Simulator tabs, and forward-compatible future panel kinds. Phone-created panels request atomic Mac focus before the create reply, and browser/Simulator streams wait for the ordered focus operation before starting, so a newly opened or selected tab is immediately visible and operable on both devices |
-| 12 | Agent activity indicators | ✅ on iOS | additive `supermux_activity` travels for project-associated and global workspaces; the real iPhone `UITableView` row mounts `SupermuxWorkspaceActivityDot` and shows the amber working spinner whenever any tab's agent is running |
+| 12 | Agent activity indicators | ✅ on iOS | additive `supermux_activity` travels for project-associated and global workspaces; the real iPhone `UITableView` row mounts `SupermuxWorkspaceActivityDot` and shows the amber working spinner whenever any tab's agent is running or waiting on its background work (upstream's "Waiting") |
 | 13 | File explorer ops | ✅ on iOS | `SupermuxFileBrowserScreen` (browse, new file/folder, rename, duplicate, trash — never `rm`) over root-confined `files.*`; doubles as the project editor's folder picker |
-| 14 | Project association / nesting | ✅ on iOS | additive `supermux_project_id` field folds loose project-owned rows under the Projects section; a project's open workspaces are listed in its detail screen |
+| 14 | Project association / nesting | ✅ on iOS | additive `supermux_project_id` field nests loose project-owned workspaces right under their project as the shell's own workspace rows (swipes, menu, unread, preview, selection all upstream's), pinned first, then by Mac; a workspace in a cmux group stays in its group; a search or a filter-menu filter flattens the list. One function (`SupermuxProjectsListLayout.nestedWorkspaceIDs`) decides both the nesting and the flat-list hide, so each workspace shows once; nested rows are not reorderable (#700). A project's open workspaces are also listed in its detail screen |
 | 15 | Empty-home behavior | mac-side only — **deliberate decision** | pure macOS window behavior; the mobile close path is already handled by touchpoint #71. No iOS surface (recorded mission decision) |
 | 16 | Sidebar polish (font scale, switcher cards, list filter) | mac-side only | pure macOS sidebar cosmetics with no mobile analogue; the phone's Projects section has its own mobile-native styling |
 | 17 | Unread badge (one design, both devices) | ✅ on iOS | additive `supermux_unread_count` field + `SupermuxUnreadBadgeStyle`/`SupermuxUnreadBadgeContent` in `SupermuxMobileCore`, wrapped per platform (`SupermuxUnreadBadgeView` on the Mac, `SupermuxMobileUnreadBadge` on the phone) and mirrored by the AppKit sidebar's Core Graphics renderer. Both apps now draw the same gradient capsule with localized overflow; the phone wrapper follows Dynamic Type, and its old permanently reserved unread gutter is gone. Touchpoints #261–#284, #291, #297–#298 |
@@ -150,7 +155,7 @@ Status per fork feature area:
 
 | 19 | Usage limits (Claude Code + Codex) | ✅ on iOS, read-only by design | a gauge ring in the workspace-list toolbar, filled to the tightest limit across both providers, opening `SupermuxUsageScreen`: window meters with reset countdowns and the ahead-of-pace marker, the other cswap accounts, provider notes (not configured / re-login / offline session log), and the honest oldest-measurement footer. The Mac projects its EXISTING `SupermuxUsageModel` — the same one the sidebar popover renders — over `mobile.supermux.usage.state`; credentials, polling, and the rate-limit floor all stay Mac-side. **cswap account switching is deliberately not ported**: it mutates which account Claude Code is logged in as, and that decision belongs at the machine doing the work. Touchpoints #340–#341 |
 | 20 | Start Claude from the New Worktree sheet | ✅ on iOS | the iOS `SupermuxNewWorktreeSheet` gains a prompt field and a Claude section (`SupermuxNewWorktreeClaudeSection`) over `mobile.supermux.agent.options` / `agent.start`, gated on `supermux.agent_launch.v1`; store `SupermuxMobileAgentLaunchStore` (MobileKit), loaded alongside the branch snapshot in `requestNewWorktree` / the detail screen's prepare. No extra entry points: every existing New Worktree affordance reaches it. Commands, catalogs, naming, git, and the terminal launch stay Mac-side (the phone cannot edit the command list; do that in the Mac sheet) |
-| 21 | Projects and worktrees on every connected Mac | ✅ on iOS | per-Mac seams (`supermuxConnectionSeams`, #580–#586), one Supermux session per Mac, Mac headers when more than one Mac has projects, a Mac picker in New Worktree for Macs with the same repo, navigation that maps Mac-local ids to the right Mac's row, push registration with every Mac |
+| 21 | Projects and worktrees on every connected Mac | ✅ on iOS | per-Mac seams (`supermuxConnectionSeams`, #580–#586), one Supermux session per Mac, projects merged across Macs with the Mac sidebar's rule (`SupermuxPhoneProjectMerge`: every unique git origin match first, then name + standardized root among the rest; one location per Mac; opening or closing a merged project does so on every Mac, and the choice is kept under the merged key so a Mac that joins later follows it either way; "Open on ▸" / "Project Details on ▸" reach each Mac's copy) and nested workspace and worktree rows drawn like the Mac sidebar's: each shows its branch, and a row on another Mac than the list's home Mac (the first Mac in display order, the foreground Mac when it has projects; the scoped Mac under the title picker) gets the small cloud-Mac icon right before it (`SupermuxMobileRemoteMacIcon`, the phone twin of `SupermuxRemoteMacIcon`, dimmed while that Mac is reconnecting or offline), naming the Mac only in VoiceOver ("On <Mac>") — no Mac name chip (no per-Mac headers on iPhone), the Mac title picker scoping the block to that Mac, a Mac picker in New Worktree for Macs with the same repo (same merge rule, limited to the copies the project's merged row holds), navigation that maps Mac-local ids to the right Mac's row, push registration with every Mac |
 
 **Recorded non-goals** (deliberate, may be revisited later):
 
@@ -239,16 +244,30 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   window already holding that Mac's mirrors, survive restarts (bindings keyed by
   `Workspace.stableId`), close by themselves when the remote workspace closes, and are never
   re-exported by this Mac's mobile host (the loop guard; the phone talks to every Mac directly).
-- **Closing a mirror** asks **Close on <Mac>** (closes the real workspace there) or **Hide Here**
-  (keeps it running there; "Show Hidden Remote Workspaces" brings it back). Cancel is the prompt's
-  Return/Esc default; Close on <Mac> is a plain button (macOS 27 does not draw the destructive red
-  title while the sheet is key, which left a blank gap) and the text says it closes the workspace on
-  that Mac; mirror rows' menus offer Hide Here
-  and Close on <Mac>… directly. Closing a single mirrored tab closes that terminal on the owning
-  Mac, like a local tab: when that Mac says a program is still running there (by its own
-  close-confirmation setting), the viewer asks "Close “X” on <Mac>?" (Cancel, the Return/Esc default,
-  brings the tab back); Kill Terminal… forces. A tab closed while that Mac is unreachable disappears
-  at once and its close is sent first when the link is back (#640–#644).
+- **Closing a mirror** works like closing a local workspace: only this Mac's own confirmations
+  (pinned, running process, the close settings, the batch "Close workspaces?"), no prompt of the
+  fork's; then the mirror closes here at once and the real workspace closes on its Mac (with
+  `force`; a workspace pinned there is unpinned there first). While that Mac is offline the close
+  waits (persisted, so also across a relaunch) and auto-mirror does not show the workspace again;
+  it is sent once that Mac is back. A refusal beeps and the mirror comes back. Mirror rows' menus
+  also offer **Hide Here** (keeps it running there; "Show Hidden Remote Workspaces" brings it back);
+  Reopen Closed Workspace (⌘⇧T) on a mirror whose offline close was not sent yet cancels that
+  close. Delete Group closes its member mirrors on their Mac too, except the phone's Delete Group,
+  which hides them (the phone never lists mirrors); other socket/CLI/AppleScript
+  closes of a mirror stay Hide Here. A workspace holding only terminals borrowed from several
+  remote workspaces is not a mirror and closes here only. Closing a mirrored tab ends that
+  terminal on the owning Mac like a local tab, even when a program runs there (always `force`); a
+  tab closed while that Mac is unreachable disappears at once and its close is sent first when the
+  link is back (#530, #640–#644). The phone's workspace close forces too, after its own
+  "Delete Workspace?" (#695).
+- **Agent activity** (#715–#719): the amber working spinner shows while an agent runs and while it is
+  "Waiting" (its turn ended with background shells, subagents or crons still running; upstream's grey
+  Waiting pill stays beside it and the done notification still waits for the work to finish), on
+  every row, mirror and the phone. Each terminal or Claude harness tab that is working shows
+  Bonsplit's own tab spinner (in the tab's text colour; the unread dot is unchanged), in workspaces,
+  the Dock and mirrors (the other Mac sends `supermux_working_panel_ids`; an older Mac's mirror tabs
+  show none). A working tab keeps spinning when it moves to another workspace, into the Dock, or
+  appears in a mirror after the agent started.
 - **Sidebar rows:** inside a project, this Mac's workspaces come first, then each Mac's mirrors;
   every mirror row (nested or flat) marks its Mac with a small Mac + cloud icon right before its
   branch name (the Mac's name in its tooltip); nested rows show no `cmux set-status` pills or
@@ -277,6 +296,31 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   binding bytes, which reach the PTY exactly; the mirror's own answers to terminal queries are
   dropped. A pending Ghostty key sequence stays local. An older Mac on either side keeps upstream's
   text path.
+- **A busy Mac is asked again** (#721): after a reconnect every mirrored terminal re-attaches at
+  once, and a Mac with many of them answers further requests `server_busy` (its per-connection
+  request quota is full; the request never ran). Every request to another Mac is sent again after
+  0.25, 0.5, 1, 2 and 4 s on the same connection, so the capability request (which keeps typing on
+  the key-forwarding path) and the tab closes held while offline still land.
+- **A slow Mac is not a lost Mac** (#723): a request whose reply misses its deadline (20 s, unless
+  the method's own is longer) no longer drops the link. This Mac first asks the other Mac's
+  connection whether it still answers (`mobile.events.probe`, 10 s); only no answer redials. Otherwise
+  that one request fails with "<Mac> did not answer in time. It is still connected; try again." and
+  every mirror, Files panel and held close stays up. The probe carries no `client_id`, so on an Iroh
+  route the other Mac answers it even while its main thread is stuck; on a Tailscale route the host
+  authorizes it on its main thread, so there a Mac stuck for 10 s still redials. What the reconnect
+  used to repair recovers on the live link (#690–#692): a mirror whose replay missed its deadline
+  asks again (2 s, up to 3 times), the synced workspace list is fetched again after 2 s, a mirror-tab
+  close answered late succeeds when its terminal is gone there, and a mirror close answered late (or
+  by a Mac that stayed busy) stays pending and is sent again instead of beeping and being forgotten.
+  The other Mac also bounds what touches project folders, where an unanswered macOS privacy prompt
+  (say for ~/Documents on a headless Mac) blocks every git and file access in the kernel:
+  `projects.list`, `run.state`, `project.icon`, the `preset.*` calls and every call that names a
+  project wait at most 2 s for the projects' first load (which imports each project's `config.json`
+  and lists its worktrees; the projects and presets are known once the projects file is read), so a
+  preset launch never misses the 20 s deadline and runs later anyway, `projects.list` at most 2 s for
+  the git origins and the file facts (an origin or icon not found in time keeps the last one known,
+  per project), and `files.watch` builds its folder watcher on a thread of its own instead of the
+  main actor. Before this, such a prompt made the link connect and drop every ~20 s.
 - **Terminal size follows the Mac you look from** (upstream's shared sizing, #633, #665–#669): every
   terminal starts as Priority with this Mac first (its own pane for a local terminal, so a phone
   defers to a Mac pane on screen); a mirror claims the other Mac's terminal when it is shown, first
@@ -289,7 +333,9 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   from This Mac stay per terminal. A viewing Mac's pane counts up to 500x200 (a phone's, 300x120). A
   pane that is not on screen (a tab never shown on its Mac, a mirror in a background workspace, a hidden
   or fully covered window) does not count, so a tab opened from a mirror takes the mirror's size at
-  once; a terminal that starts after its grid was decided gets it when it becomes ready.
+  once; a terminal that starts after its grid was decided gets it when it becomes ready. A
+  terminal's tab draws no avatar for the attached Macs (#720); its context menu keeps Size to My
+  Window, Terminal Size and Disconnect Others, and the size panel lists who is attached.
 - **A mirror uses this Mac's terminal appearance** (#650–#653): the owning Mac's replay carries no
   theme colors, so a mirror pane shares the window's (translucent) backdrop exactly like a local
   pane; only colors a program on the other Mac set itself (OSC 4/10/11/12) are mirrored, and its
@@ -305,8 +351,8 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
 - **The Files panel in a mirror is that Mac's folder** (#675–#681, capability
   `supermux.files_read.v1`): the workspace's current folder there (it follows a `cd`), hidden files
   listed as the local panel lists them (`.git` included; git internals are readable, never
-  mutable), that Mac's git colors, Find (ripgrep over there), live refresh from that Mac's folder
-  watcher, a read-only preview on double-click/Return/search hit (downloaded, 8 MB cap), and New
+  mutable), that Mac's git colors, Find (ripgrep over there), live refresh, a read-only preview on
+  double-click/Return/search hit (downloaded, 8 MB cap), and New
   File/New Folder/Rename/Duplicate/Move to Trash run there. Every call is confined to that folder
   (`..`, symlinks out of it and a stale folder are refused). That Mac answers every call within a
   bound (30 s; 300 s for Duplicate and Move to Trash, which keep running there) and the link's
@@ -316,11 +362,25 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   folder over 10,000 entries lists the first 10,000. The panel names the Mac when it cannot browse:
   not connected, loading, "Update Supermux on <Mac> to browse its files here." (an older Mac), or no
   folder reported yet.
+  Live refresh follows the local panel's rule: the panel leases `files.watch` on that Mac, a
+  watcher on the folder's own entries (the local panel's `FileWatcher`, not the recursive Changes
+  watcher), and an entry added, removed or renamed there (or a reconnect, which re-leases) refreshes
+  it **in place**: the root and expanded folders are listed again and merged into the rows shown,
+  so it never empties or shows the spinner, expansion, selection and scroll stay, rows are rebuilt
+  only when a listing changed and git colors are published only when they changed. A failed
+  listing keeps its rows (link down, timeout, a busy Mac), except a folder gone or unreadable
+  there: as the local reload does, the tree empties and says why, and the rows return when the
+  folder does. Events are matched against the folder as that Mac spells it (its `files.watch`
+  reply's `root`), never normalized on this Mac's disk. As locally,
+  edits deeper in the tree (`.git/` included) do not refresh it, so their git colors update on the
+  next root-entry change, `cd` or reconnect. Both Macs need this build (an earlier
+  `files_read.v1` host refuses `files.watch`; the panel then refreshes only on reconnect and `cd`).
 - **Notifications:** the owning Mac pushes to the phone (the viewer never forwards `.deviceMac`
   rows, so no duplicates); the phone badges the total over every pairable Mac build; read state
   flows both ways, and mirrored notifications (read state and Mark as Unread included) survive a
-  relaunch of the viewer; an unattended Mac (away/locked) never
-  swallows a notification as "already visible"; Macs share the direct-APNs setup and phone tokens
+  relaunch of the viewer; a notification for the pane you are looking at (a mirror's or a local
+  one) rings and badges like any other until you click or type in it, with no banner, and is not
+  pushed to the phone while you are at the Mac (an away or locked Mac still pushes it); Macs share the direct-APNs setup and phone tokens
   with each other (setting, default on; the key only travels to a same-account Mac over the
   authenticated link and never overwrites a different key).
 - **Enablement:** the Supermux release identity seeds Beta › Cloud Machines, "Discover other Macs"

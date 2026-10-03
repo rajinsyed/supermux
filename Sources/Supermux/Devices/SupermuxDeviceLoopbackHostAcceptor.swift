@@ -18,6 +18,22 @@ import Foundation
 /// long as the app.
 @MainActor
 final class SupermuxDeviceLoopbackHostAcceptor {
+    /// The method the next connection answers busy once (see
+    /// ``BusyRequest``); armed by the DEBUG `supermux.devices.link
+    /// {action: "restore", busy: "<method>"}`.
+    static var busyMethodForNextConnection: String?
+    /// The method whose next request the loopback host holds, and for how
+    /// many seconds (see ``holdIfStalled(_:)``); armed by the DEBUG
+    /// `supermux.devices.link {action: "stall", method, seconds}`.
+    static var stalledRequest: (method: String, seconds: Double)?
+    /// How long the main thread is blocked once the next liveness probe after
+    /// a missed deadline is on its way (see ``blockMainDuringLivenessProbeIfArmed()``);
+    /// armed by the DEBUG `supermux.devices.link {action: "stall", main_seconds}`.
+    static var mainStallDuringNextLivenessProbe: Double?
+    /// Connections admitted since launch: a link that redials adds one, which
+    /// E2E reads through `supermux.devices.link {action: "status"}`.
+    private(set) static var admittedConnections = 0
+
     private let peer: CmxIrohAdmittedPeer
     private let layouts: DeviceWorkspaceLayoutHost
 
@@ -54,6 +70,9 @@ final class SupermuxDeviceLoopbackHostAcceptor {
     private func admit(_ transport: any CmxByteTransport) {
         let peer = self.peer
         let layouts = self.layouts
+        let busy = BusyRequest(method: Self.busyMethodForNextConnection)
+        Self.busyMethodForNextConnection = nil
+        Self.admittedConnections += 1
         cmuxDebugLog("supermux.loopback host admitted connection")
         Task {
             let exit = await MobileHostService.acceptTransport(
@@ -61,12 +80,66 @@ final class SupermuxDeviceLoopbackHostAcceptor {
                 authorization: .irohAdmission(peer),
                 hostDeviceID: SupermuxDeviceLoopbackIdentity.deviceID,
                 firstFrameTimeoutNanoseconds: 0,
-                peerRequestHandler: { request in await layouts.handle(request) },
+                peerRequestHandler: { request in
+                    if let refused = await busy.answer(request) { return refused }
+                    await Self.holdIfStalled(request)
+                    return await layouts.handle(request)
+                },
                 isCurrent: { true }
             )
             await transport.close()
             cmuxDebugLog("supermux.loopback host connection ended: \(String(describing: exit.lifecycle))")
         }
+    }
+
+    /// Holds the first request for the stalled method (any connection) for
+    /// the armed seconds, then lets it run as usual: one slow host call, as a
+    /// git command or file read in a folder behind an unanswered macOS privacy
+    /// prompt is. The connection keeps answering everything else meanwhile.
+    private static func holdIfStalled(_ request: MobileHostRPCRequest) async {
+        guard let stall = stalledRequest, stall.method == request.method else { return }
+        stalledRequest = nil
+        cmuxDebugLog("supermux.loopback host holds \(stall.method) for \(stall.seconds) s")
+        try? await Task.sleep(for: .milliseconds(Int(stall.seconds * 1000)))
+    }
+
+    /// Called by the viewer's link as it sends the liveness probe that follows
+    /// a missed deadline: once armed, blocks the main thread for the armed
+    /// seconds from the moment the link awaits the probe's answer, as a host
+    /// whose main thread is stuck (a synchronous file access behind an
+    /// unanswered macOS privacy prompt) is. The loopback host is this same
+    /// app, so this is the host's main thread while the probe is answered.
+    static func blockMainDuringLivenessProbeIfArmed() {
+        guard let seconds = mainStallDuringNextLivenessProbe else { return }
+        mainStallDuringNextLivenessProbe = nil
+        cmuxDebugLog("supermux.loopback host blocks its main thread for \(seconds) s during the liveness probe")
+        // Runs right after the current main-actor job, which ends where the
+        // link starts awaiting the probe's answer.
+        DispatchQueue.main.async { Thread.sleep(forTimeInterval: seconds) }
+    }
+}
+
+/// One connection's armed fault: the first request for `method` after the
+/// post-connect `mobile.sync.fetch` (so a `mobile.host.status` is the viewer's
+/// capability request, not the dial's identity check) is answered
+/// `server_busy`, word for word what the host answers while its
+/// per-connection request quota is full, as it is when every mirrored
+/// terminal re-attaches at once after a reconnect.
+@MainActor
+private final class BusyRequest {
+    private var method: String?
+    private var fetched = false
+
+    init(method: String?) {
+        self.method = method
+    }
+
+    func answer(_ request: MobileHostRPCRequest) -> MobileHostRPCResult? {
+        if request.method == "mobile.sync.fetch" { fetched = true }
+        guard fetched, let method, request.method == method else { return nil }
+        self.method = nil
+        cmuxDebugLog("supermux.loopback host answered \(method) busy")
+        return .failure(MobileHostRPCError(code: "server_busy", message: "Too many requests are pending"))
     }
 }
 #endif

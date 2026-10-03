@@ -115,7 +115,10 @@ extension SupermuxProjectsSectionModel {
         }
     }
 
-    /// The Macs that can host a worktree of a project, own Mac first.
+    /// The Macs that can host a worktree of a project, own Mac first. Only
+    /// copies the list's merged row for this project holds are offered: a
+    /// Mac whose matching project the merge gave to a different row would
+    /// create the worktree under that other row.
     /// - Parameter projectID: The project ROW id.
     func newWorktreeOptions(forProjectID projectID: String) -> [SupermuxNewWorktreeMacOption] {
         guard let resolved = resolve(projectID) else { return [] }
@@ -127,11 +130,17 @@ extension SupermuxProjectsSectionModel {
                 projects: store.projects
             )
         }
-        return SupermuxNewWorktreeMacOptions.options(
+        let options = SupermuxNewWorktreeMacOptions.options(
             forProjectID: resolved.projectID,
             onPairingID: resolved.session.pairingID,
             sources: sources
         )
+        guard let merged = SupermuxPhoneProjectMerge.merge(snapshot.groups)
+            .first(where: { $0.allRowIDs.contains(projectID) }) else { return options }
+        return options.filter { option in
+            option.pairingID == resolved.session.pairingID
+                || merged.allRowIDs.contains(SupermuxProjectKey(pairingID: option.pairingID, projectID: option.projectID).rawValue)
+        }
     }
 
     /// Retargets a New Worktree create to another Mac's copy of the project:

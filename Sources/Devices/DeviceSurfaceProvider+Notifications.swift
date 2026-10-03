@@ -16,7 +16,7 @@ extension DeviceSurfaceProvider {
             clientID: DeviceNotificationFeed.clientID,
             store: hub.persistenceStore,
             resolveTarget: { [weak self] row in self?.notificationDeliveryTarget(for: row) },
-            // SUPERMUX:begin device-notification-parity (upstream: `deliver: { [weak self] row, target in self?.deliverNotification(row, to: target) ?? .declined },`; the fork wrapper calls that same method, then keeps the remote project, acknowledges a row recorded already read on a focused mirror pane, and retries rate-limited rows on a short timer)
+            // SUPERMUX:begin device-notification-parity (upstream: `deliver: { [weak self] row, target in self?.deliverNotification(row, to: target) ?? .declined },`; the fork wrapper calls that same method, then keeps the remote project and retries rate-limited rows on a short timer)
             deliver: { [weak self] row, target in
                 guard let self else { return .declined }
                 return SupermuxDeviceNotificationDelivery.deliver(row, to: target, via: self)

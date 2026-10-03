@@ -8,12 +8,13 @@ import Testing
         #expect(SupermuxMobileTopic.worktreesUpdated.rawValue == "supermux.worktrees.updated")
         #expect(SupermuxMobileTopic.changesUpdated.rawValue == "supermux.changes.updated")
         #expect(SupermuxMobileTopic.runUpdated.rawValue == "supermux.run.updated")
+        #expect(SupermuxMobileTopic.filesUpdated.rawValue == "supermux.files.updated")
     }
 
     @Test func allExposesEveryTopicExactlyOnce() {
         #expect(SupermuxMobileTopic.all == SupermuxMobileTopic.allCases)
-        #expect(SupermuxMobileTopic.all.count == 4)
-        #expect(Set(SupermuxMobileTopic.all).count == 4)
+        #expect(SupermuxMobileTopic.all.count == 5)
+        #expect(Set(SupermuxMobileTopic.all).count == 5)
     }
 }
 

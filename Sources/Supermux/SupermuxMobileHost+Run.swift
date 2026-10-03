@@ -19,8 +19,8 @@ extension TerminalController {
     /// live run (a viewer Mac's mirrors read their own workspace's run there).
     @MainActor
     func v2SupermuxRunState(params: [String: Any]) async -> V2CallResult {
-        let model = SupermuxComposition.projectsModel
-        await model.loadIfNeeded()
+        // A bounded wait for the first load: the viewer asks this on every connect.
+        guard let model = await supermuxLoadedProjectsModel() else { return supermuxProjectsStillLoading() }
         do {
             let payload = try SupermuxMobileRunPayloadBuilder().runState(
                 projects: model.projects,

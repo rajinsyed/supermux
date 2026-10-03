@@ -174,6 +174,14 @@ public struct WorkspaceListLayoutPreviewView: View {
         ] == "1"
         let initialWorkspaces: [MobileWorkspacePreview]
         let initialGroups: [MobileWorkspaceGroupPreview]
+        // SUPERMUX:begin supermux-mobile-merged-projects-fixture (CMUX_UITEST_WORKSPACE_LIST_PREVIEW_SUPERMUX=1: three in-memory Macs with projects — see SUPERMUX-TOUCHPOINTS.md)
+        if SupermuxProjectsPreviewFixture.isEnabled {
+            (initialWorkspaces, initialGroups) = (
+                SupermuxProjectsPreviewFixture.workspaces,
+                SupermuxProjectsPreviewFixture.groups
+            )
+        } else
+        // SUPERMUX:end supermux-mobile-merged-projects-fixture
         if usesMixedGroupFixture {
             (initialWorkspaces, initialGroups) = Self.mixedGroupFixture()
         } else if let seedCount, seedCount >= 0 {
@@ -672,6 +680,12 @@ public struct WorkspaceListLayoutPreviewView: View {
             selectedWorkspaceID: selectedWorkspaceID,
             host: "Visual Mock Mac",
             connectionStatus: fixtureConnectionStatus,
+            // SUPERMUX:begin supermux-mobile-merged-projects-fixture (feat-x carries a changes chip, so the nested row's accessory must stay clear of it)
+            workspaceChangesCapable: SupermuxProjectsPreviewFixture.isEnabled,
+            workspaceChangeChipsByWorkspaceID: SupermuxProjectsPreviewFixture.isEnabled
+                ? ["ws-feat-x": MobileWorkspaceChangesChip(filesChanged: 3, additions: 12, deletions: 3)]
+                : [:],
+            // SUPERMUX:end supermux-mobile-merged-projects-fixture
             navigationStyle: usesSidebarSelectionFixture ? .sidebar : .push,
             wrapWorkspaceTitles: false,
             previewLineLimit: MobileDisplaySettings.defaultWorkspacePreviewLineCount,
@@ -772,6 +786,9 @@ public struct WorkspaceListLayoutPreviewView: View {
             filterState: filterState,
             searchText: searchText
         )
+        // SUPERMUX:begin supermux-mobile-merged-projects-fixture (the fixture's Macs reach the Projects driver through the environment)
+        .supermuxProjectsPreviewFixture()
+        // SUPERMUX:end supermux-mobile-merged-projects-fixture
     }
 
     public var body: some View {

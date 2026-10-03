@@ -10,27 +10,25 @@ generation restarted below the clear the old pane had sent (the host fences
 lower generations from the same link until it reconnects). Closing with the link
 down showed the same card, and the closed tab came back on reconnect.
 
+Closing a mirror tab closes it like a local tab: the terminal ends on its
+Mac at once, even when a program runs there (no "Close “X” on <Mac>?" prompt).
+
 This suite drives the real device path against ONE tagged DEBUG build running
-the loopback device ("Loopback Mac" = this same app's own mobile host). The
-close prompt ("Close “X” on <Mac>?") is pre-answered through
-`supermux.devices.terminal_close.answer`, so no modal shows except in step 6,
-which shows the real prompt and lets it answer Cancel by itself:
+the loopback device ("Loopback Mac" = this same app's own mobile host). Builds
+from before the fix had a "Close “X” on <Mac>?" prompt with a DEBUG pre-answer
+(`supermux.devices.terminal_close.answer`); when that driver exists the run
+pre-answers Cancel, so the old prompt shows no modal and keeps the terminal:
 
   1. setup                              auto-mirror on, the loopback linked and fetched
-  2. source_with_terminals              a source workspace with T0 idle, T1-T3 busy, T4
-                                        idle, every terminal projected in its mirror
+  2. source_with_terminals              a source workspace with T0 idle, T1-T3 busy, T4-T6
+                                        idle, every terminal projected in its mirror; no
+                                        step closes T5, so every close below closes a tab
+                                        beside another one (a workspace's last tab cannot be
+                                        closed on its own)
   3. host_close_requires_confirmation   mobile.terminal.close on busy T1 without force
                                         -> confirmation_required, T1 still there
-  4. busy_tab_close_confirmed           answer Close, close T1's mirror tab -> asked once
-                                        naming the Mac, T1 closed there, not projected
-                                        again, no failure card
-  5. busy_tab_close_cancelled           answer Cancel, close T2's (selected) mirror tab ->
-                                        asked once, T2 kept and projected again at its old
-                                        place in the tab strip and selected again, the new
-                                        pane attached and rendering, no overlay, no card
-  6. shown_prompt_keeps_app_responsive  the real prompt for busy T2 (Cancel pressed after
-                                        a few seconds) -> the app answers other requests at
-                                        once while it is up, then T2 is projected again
+  4. busy_tab_close_forces              close T1's mirror tab -> no prompt, T1 closed
+                                        there, not projected again, no failure card
   7. reopened_pane_attaches             T0 projected into another workspace, closed and
                                         projected again (same link) -> the new pane attaches
   8. first_pane_replays_beside_another  T0 in a second, split pane (same link), then the
@@ -54,9 +52,19 @@ which shows the real prompt and lets it answer Cancel by itself:
   9. kill_terminal_forces               vm.terminal_close on busy T3 (Kill Terminal…) ->
                                         closed there, no prompt
  10. idle_tab_close_control             close idle T0's mirror tab -> closed there, no prompt
+ 10b. offline_busy_tab_close_forces_on_reconnect
+                                        link down, close busy T2's mirror tab -> gone at
+                                        once, no card; on reconnect T2 is closed there
+                                        (no prompt) and never projected again
  11. offline_close                      link down, close idle T4's mirror tab -> gone at
                                         once, no card; on reconnect T4 is closed there and
                                         never projected again
+ 11b. offline_close_lands_on_a_busy_host
+                                        the same for T6, but the other Mac answers the held
+                                        close `server_busy` on reconnect (its request quota
+                                        full of the re-attaching terminals' replays, as on a
+                                        Mac with many mirrored terminals) -> T6 still closes
+                                        there and never comes back
 
 The busy terminals run a stand-in for Claude Code (alternate screen, kitty
 keyboard flags, a marker line, a sleeping child); `--claude` runs the real
@@ -264,12 +272,20 @@ class MirrorTabCloseE2E:
     def failure_card(self) -> Optional[Dict[str, Any]]:
         return self.inspect(self.mirror_id).get("failure_card")
 
-    def answer(self, value: Optional[str] = None) -> Dict[str, Any]:
-        params = {"answer": value} if value else {}
-        return self.sock.call("supermux.devices.terminal_close.answer", params) or {}
+    def old_prompt(self, answer: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """The pre-fix "Close “X” on <Mac>?" prompt's DEBUG driver (sets its answer and
+        returns its log), or None once the prompt is gone."""
+        params = {"answer": answer} if answer else {}
+        try:
+            return self.sock.call("supermux.devices.terminal_close.answer", params) or {}
+        except SocketError:
+            return None
 
-    def asked(self) -> List[Dict[str, Any]]:
-        return self.answer().get("asked") or []
+    def prompt_problems(self) -> List[str]:
+        state = self.old_prompt()
+        asked = (state or {}).get("asked") or []
+        self.facts.setdefault("asked", []).append(asked)
+        return [f"the close asked \"Close “X” on <Mac>?\" {len(asked)} times: {asked}"] if asked else []
 
     def needs_confirm(self, terminal: str) -> bool:
         result = self.sock.call("supermux.devices.terminal_close.needs_confirm",
@@ -378,17 +394,6 @@ class MirrorTabCloseE2E:
     def source_has(self, name: str) -> bool:
         return up(self.terms[name]) in self.surfaces(self.source_id)
 
-    def asked_problems(self, expected: int) -> List[str]:
-        asked = self.asked()
-        self.facts.setdefault("asked", []).append(asked)
-        if len(asked) != expected:
-            return [f"the close prompt was asked {len(asked)} times, expected {expected}: {asked}"]
-        problems = []
-        for prompt in asked:
-            if prompt.get("device") != self.device_name or self.device_name not in str(prompt.get("title", "")):
-                problems.append(f"the prompt does not name {self.device_name!r}: {prompt}")
-        return problems
-
     # -- steps ----------------------------------------------------------------
 
     def step(self, name: str, action: Callable[[], Optional[Dict[str, Any]]]) -> bool:
@@ -408,7 +413,7 @@ class MirrorTabCloseE2E:
 
     def setup(self) -> Dict[str, Any]:
         state = self.sock.call("supermux.devices.set_auto_mirror", {"enabled": True}) or {}
-        self.answer("clear")
+        self.old_prompt("clear")
 
         def ready() -> Optional[Dict[str, Any]]:
             device = self.device()
@@ -431,7 +436,8 @@ class MirrorTabCloseE2E:
         self.mirror_id = up(wait_for("the auto-mirror of the source", lambda: (self.mirrors_of_source() or [None])[0],
                                      self.timeout)["workspace_id"])
         self.terms["T0"] = wait_for("the source's first terminal", lambda: self.surfaces(self.source_id), self.timeout)[0]
-        for name in ("T1", "T2", "T3", "T4"):
+        # T5 is never closed: it keeps the mirror from being down to the tab a step closes.
+        for name in ("T1", "T2", "T3", "T4", "T5", "T6"):
             created = self.sock.call("surface.create", {"workspace_id": self.source_id, "type": "terminal"}) or {}
             self.terms[name] = up(created.get("surface_id"))
             if not self.terms[name]:
@@ -463,9 +469,9 @@ class MirrorTabCloseE2E:
             raise Failure(f"mobile.terminal.close on busy T1 without force answered {code}, expected confirmation_required")
         return {"code": code}
 
-    def busy_tab_close_confirmed(self) -> Dict[str, Any]:
+    def busy_tab_close_forces(self) -> Dict[str, Any]:
         self.require_busy("T1")
-        self.answer("close")
+        self.old_prompt("cancel")
         panel = self.close_mirror_tab("T1")
         problems: List[str] = []
         try:
@@ -476,108 +482,13 @@ class MirrorTabCloseE2E:
                             if up(self.terms["T1"]) in self.projections(self.mirror_id) else None, 3.0)
         if reprojected:
             problems.append(reprojected)
-        problems += self.asked_problems(1)
+        problems += self.prompt_problems()
         card = self.failure_card()
         if card:
             problems.append(f"a failure card is shown: {card}")
         if problems:
             raise Failure("; ".join(problems))
         return {"closed_panel": panel}
-
-    def tab_place(self, workspace_id: str, panel: str) -> Optional[Dict[str, Any]]:
-        """Where a tab sits: its pane, its index in that pane's strip, and whether it is selected."""
-        for pane in (self.sock.call("pane.list", {"workspace_id": workspace_id}) or {}).get("panes") or []:
-            ids = [up(s) for s in pane.get("surface_ids") or []]
-            if up(panel) in ids:
-                return {"pane": str(pane.get("id") or pane.get("pane_id") or ""), "index": ids.index(up(panel)),
-                        "selected": up(pane.get("selected_surface_id")) == up(panel), "tabs": len(ids)}
-        return None
-
-    def busy_tab_close_cancelled(self) -> Dict[str, Any]:
-        self.require_busy("T2")
-        self.answer("cancel")
-        before_panel = self.mirror_panel(self.terms["T2"]) or ""
-        self.sock.call("surface.focus", {"workspace_id": self.mirror_id, "surface_id": before_panel})
-        before = wait_for("T2's mirror tab to be selected", lambda: (lambda p: p if p and p["selected"] else None)(
-            self.tab_place(self.mirror_id, before_panel)), self.timeout)
-        old_panel = self.close_mirror_tab("T2")
-        problems: List[str] = []
-
-        def new_panel() -> Optional[str]:
-            panel = self.mirror_panel(self.terms["T2"])
-            return panel if panel and panel != old_panel else None
-
-        panel = wait_for("T2 to be projected in the mirror again", new_panel, self.timeout)
-        if not self.source_has("T2"):
-            problems.append("the source lost T2 although the prompt was cancelled")
-        problems += self.asked_problems(1)
-        try:
-            after = wait_for("T2's tab back at its place and selected",
-                             lambda: (lambda p: p if p and p["pane"] == before["pane"] and p["index"] == before["index"]
-                                      and p["selected"] else None)(self.tab_place(self.mirror_id, panel)), 5.0)
-        except Failure as error:
-            after = self.tab_place(self.mirror_id, panel)
-            problems.append(f"after Cancel T2's tab is at {after}, not back at {before} and selected ({error})")
-        try:
-            wait_for("the new T2 pane to attach", lambda: (self.pane(self.mirror_id, panel) or {}).get("attached"), 5.0)
-        except Failure as error:
-            problems.append(f"{error}: {self.pane(self.mirror_id, panel)}")
-        try:
-            wait_for("the new T2 pane to show the program",
-                     lambda: self.shows_program("T2", self.read_text(self.mirror_id, panel)), 5.0)
-        except Failure as error:
-            problems.append(str(error))
-        pane = self.pane(self.mirror_id, panel) or {}
-        if pane.get("overlay_title"):
-            problems.append(f"the new T2 pane shows {pane.get('overlay_title')!r}")
-        card = self.failure_card()
-        if card:
-            problems.append(f"a failure card is shown: {card}")
-        if problems:
-            raise Failure("; ".join(problems))
-        return {"old_panel": old_panel, "new_panel": panel, "before": before, "after": after}
-
-    def shown_prompt_keeps_app_responsive(self) -> Dict[str, Any]:
-        """The real prompt is up: other requests (main-actor work) are still answered at once.
-
-        A prompt run as a nested modal session from the close's main-actor task
-        stalls the main queue until it is answered, so every request waits.
-        """
-        self.require_busy("T2")
-        self.answer("show")
-        old_panel = self.close_mirror_tab("T2")
-        slowest = 0.0
-
-        def timed(call: Callable[[], Any]) -> Any:
-            nonlocal slowest
-            started = time.monotonic()
-            value = call()
-            slowest = max(slowest, time.monotonic() - started)
-            return value
-
-        problems: List[str] = []
-        shown = wait_for("the close prompt to show", lambda: timed(self.asked), self.timeout)
-        if not all(prompt.get("shown") is True for prompt in shown):
-            problems.append(f"the prompt was answered without showing: {shown}")
-        deadline = time.monotonic() + 2.5
-        while time.monotonic() < deadline:
-            timed(lambda: self.surfaces(self.mirror_id))
-            timed(self.asked)
-            time.sleep(0.1)
-        if slowest > 1.0:
-            problems.append(f"a request waited {slowest:.1f}s while the prompt was up (expected under 1s)")
-
-        def new_panel() -> Optional[str]:
-            panel = self.mirror_panel(self.terms["T2"])
-            return panel if panel and panel != old_panel else None
-
-        panel = wait_for("T2 to be projected again after the prompt's Cancel", new_panel, self.timeout)
-        if not self.source_has("T2"):
-            problems.append("the source lost T2 although the prompt was cancelled")
-        problems += self.asked_problems(1)
-        if problems:
-            raise Failure("; ".join(problems))
-        return {"slowest_request_seconds": round(slowest, 2), "new_panel": panel}
 
     def reopened_pane_attaches(self) -> Dict[str, Any]:
         resource = (self.projections(self.mirror_id).get(up(self.terms["T0"])) or {}).get("resource")
@@ -731,6 +642,15 @@ class MirrorTabCloseE2E:
         wait_for("B2 to attach", lambda: (self.pane(self.extra_id, b2) or {}).get("attached"), self.timeout)
         self.select(self.extra_id)
         self.sock.call("surface.focus", {"workspace_id": self.extra_id, "surface_id": b2})
+        # B1 and B2 come on screen together and each reports its grid; the last report
+        # speaks. If that was B1, show B2 again so it reports last and speaks.
+        wait_for("B1 and B2 on screen", lambda: all((self.pane(self.extra_id, p) or {}).get("hidden") is False
+                                                     for p in (b1, b2)), self.timeout)
+        time.sleep(0.5)
+        if not (self.pane(self.extra_id, b2) or {}).get("speaks"):
+            self.sock.call("surface.focus", {"workspace_id": self.extra_id, "surface_id": own})
+            wait_for("B2 off screen", lambda: (self.pane(self.extra_id, b2) or {}).get("hidden") is True, self.timeout)
+            self.sock.call("surface.focus", {"workspace_id": self.extra_id, "surface_id": b2})
 
         def both_shown_b2_speaks() -> bool:
             one, two = self.pane(self.extra_id, b1) or {}, self.pane(self.extra_id, b2) or {}
@@ -803,7 +723,7 @@ class MirrorTabCloseE2E:
 
     def kill_terminal_forces(self) -> Dict[str, Any]:
         self.require_busy("T3")
-        self.answer("cancel")
+        self.old_prompt("cancel")
         code = self.error_code("vm.terminal_close", {"id": self.machine, "terminal_id": self.terms["T3"]}, timeout_s=130)
         problems: List[str] = []
         if code != "ok":
@@ -812,40 +732,42 @@ class MirrorTabCloseE2E:
             wait_for("T3 to close on the source", lambda: not self.source_has("T3"), self.close_timeout)
         except Failure as error:
             problems.append(str(error))
-        problems += self.asked_problems(0)
+        problems += self.prompt_problems()
         if problems:
             raise Failure("; ".join(problems))
         return {"code": code}
 
     def idle_tab_close_control(self) -> Dict[str, Any]:
         self.require_idle("T0")
-        self.answer("cancel")
+        self.old_prompt("cancel")
         self.close_mirror_tab("T0")
         problems: List[str] = []
         try:
             wait_for("T0 to close on the source", lambda: not self.source_has("T0"), self.close_timeout)
         except Failure as error:
             problems.append(str(error))
-        problems += self.asked_problems(0)
+        problems += self.prompt_problems()
         if problems:
             raise Failure("; ".join(problems))
         return {}
 
-    def offline_close(self) -> Dict[str, Any]:
-        self.require_idle("T4")
-        self.answer("cancel")
-        panel = self.mirror_panel(self.terms["T4"])
+    def offline_busy_tab_close_forces_on_reconnect(self) -> Dict[str, Any]:
+        """A busy mirror tab closed while its Mac is unreachable closes there on reconnect."""
+        self.require_busy("T2")
+        self.old_prompt("cancel")
+        panel = self.mirror_panel(self.terms["T2"])
         if not panel:
-            raise Failure("precondition: the mirror does not show T4")
+            raise Failure("precondition: the mirror does not show T2")
         self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "stop"})
         self.link_stopped = True
         wait_for("the loopback link to drop", lambda: self.device().get("link_state") != "connected", self.timeout)
         self.sock.call("surface.close", {"workspace_id": self.mirror_id, "surface_id": panel, "force": True})
         problems: List[str] = []
         try:
-            wait_for("T4's mirror tab to close", lambda: panel not in self.surfaces(self.mirror_id), 3.0)
+            wait_for("T2's mirror tab to close", lambda: panel not in self.surfaces(self.mirror_id), 3.0)
         except Failure as error:
             problems.append(str(error))
+
         def no_card() -> Optional[str]:
             card = self.failure_card()
             return f"a failure card is shown while offline: {card}" if card else None
@@ -857,14 +779,68 @@ class MirrorTabCloseE2E:
         self.link_stopped = False
         wait_for("the loopback link to reconnect", lambda: self.device().get("link_state") == "connected", self.timeout)
         try:
-            wait_for("T4 to close on the source after the reconnect", lambda: not self.source_has("T4"), 10.0)
+            wait_for("busy T2 to close on the source after the reconnect", lambda: not self.source_has("T2"), 10.0)
         except Failure as error:
             problems.append(str(error))
-        back = holds(lambda: "T4 came back in the mirror after the reconnect"
-                     if up(self.terms["T4"]) in self.projections(self.mirror_id) else None, 5.0)
+        back = holds(lambda: "T2 came back in the mirror after the reconnect"
+                     if up(self.terms["T2"]) in self.projections(self.mirror_id) else None, 5.0)
         if back:
             problems.append(back)
-        problems += self.asked_problems(0)
+        problems += self.prompt_problems()
+        if problems:
+            raise Failure("; ".join(problems))
+        return {"closed_panel": panel}
+
+    def offline_close(self) -> Dict[str, Any]:
+        return self.close_offline_then_reconnect("T4")
+
+    def offline_close_lands_on_a_busy_host(self) -> Dict[str, Any]:
+        """A close held while the link was down is sent first on reconnect, while
+        every mirrored terminal re-attaches; a Mac whose request quota that fills
+        answers it `server_busy`, and the close must still land there."""
+        return self.close_offline_then_reconnect("T6", busy="mobile.terminal.close")
+
+    def close_offline_then_reconnect(self, name: str, busy: Optional[str] = None) -> Dict[str, Any]:
+        """Link down, close idle `name`'s mirror tab: gone at once with no card; on
+        reconnect (the other Mac answering the first `busy` request `server_busy`,
+        if given) it is closed there and never projected again."""
+        self.require_idle(name)
+        self.old_prompt("cancel")
+        panel = self.mirror_panel(self.terms[name])
+        if not panel:
+            raise Failure(f"precondition: the mirror does not show {name}")
+        self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "stop"})
+        self.link_stopped = True
+        wait_for("the loopback link to drop", lambda: self.device().get("link_state") != "connected", self.timeout)
+        self.sock.call("surface.close", {"workspace_id": self.mirror_id, "surface_id": panel, "force": True})
+        problems: List[str] = []
+        try:
+            wait_for(f"{name}'s mirror tab to close", lambda: panel not in self.surfaces(self.mirror_id), 3.0)
+        except Failure as error:
+            problems.append(str(error))
+
+        def no_card() -> Optional[str]:
+            card = self.failure_card()
+            return f"a failure card is shown while offline: {card}" if card else None
+
+        shown = holds(no_card, 2.0)
+        if shown:
+            problems.append(shown)
+        restore = {"machine": self.machine, "action": "restore"}
+        if busy:
+            restore["busy"] = busy
+        self.sock.call("supermux.devices.link", restore)
+        self.link_stopped = False
+        wait_for("the loopback link to reconnect", lambda: self.device().get("link_state") == "connected", self.timeout)
+        try:
+            wait_for(f"{name} to close on the source after the reconnect", lambda: not self.source_has(name), 10.0)
+        except Failure as error:
+            problems.append(str(error))
+        back = holds(lambda: f"{name} came back in the mirror after the reconnect"
+                     if up(self.terms[name]) in self.projections(self.mirror_id) else None, 5.0)
+        if back:
+            problems.append(back)
+        problems += self.prompt_problems()
         if problems:
             raise Failure("; ".join(problems))
         return {"closed_panel": panel}
@@ -890,7 +866,7 @@ class MirrorTabCloseE2E:
 
     def cleanup(self) -> None:
         try:
-            self.answer("clear")
+            self.old_prompt("clear")
             if self.link_stopped and self.machine:
                 self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "restore"})
         except Failure as error:
@@ -925,9 +901,7 @@ class MirrorTabCloseE2E:
         if ok:
             for name, check in [
                 ("host_close_requires_confirmation", self.host_close_requires_confirmation),
-                ("busy_tab_close_confirmed", self.busy_tab_close_confirmed),
-                ("busy_tab_close_cancelled", self.busy_tab_close_cancelled),
-                ("shown_prompt_keeps_app_responsive", self.shown_prompt_keeps_app_responsive),
+                ("busy_tab_close_forces", self.busy_tab_close_forces),
                 ("reopened_pane_attaches", self.reopened_pane_attaches),
                 ("first_pane_replays_beside_another", self.first_pane_replays_beside_another),
                 ("pane_opened_off_screen_keeps_counting", self.pane_opened_off_screen_keeps_counting),
@@ -937,7 +911,9 @@ class MirrorTabCloseE2E:
                 ("close_panes_workspace", self.close_panes_workspace),
                 ("kill_terminal_forces", self.kill_terminal_forces),
                 ("idle_tab_close_control", self.idle_tab_close_control),
+                ("offline_busy_tab_close_forces_on_reconnect", self.offline_busy_tab_close_forces_on_reconnect),
                 ("offline_close", self.offline_close),
+                ("offline_close_lands_on_a_busy_host", self.offline_close_lands_on_a_busy_host),
             ]:
                 ok = self.step(name, check) and ok
         self.cleanup()

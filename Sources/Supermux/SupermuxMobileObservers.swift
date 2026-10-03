@@ -204,6 +204,15 @@ enum SupermuxMobileHostGlue {
     /// model to snapshot at activation time.
     static let changesWatchRegistry = SupermuxMobileChangesWatchRegistry()
 
+    /// Per-workspace root-folder watchers behind `mobile.supermux.files.watch`
+    /// (another Mac's Files panel): the same leases on the folder's own
+    /// entries only, like the desktop panel's watcher, each change emitting
+    /// `supermux.files.updated {workspace_id, root}`.
+    static let filesWatchRegistry = SupermuxMobileChangesWatchRegistry(
+        makeChangeStream: { SupermuxMobileChangesWatchRegistry.rootEntryChanges($0) },
+        topic: .filesUpdated
+    )
+
     /// Constructs the fork observers once; later calls only re-check the
     /// DEBUG loopback device harness (`SupermuxDeviceLoopbackHarness`).
     static func activateIfNeeded() {
@@ -226,6 +235,9 @@ enum SupermuxMobileHostGlue {
             readSnapshots: { SupermuxComposition.runCoordinator.mobileRunSnapshots }
         )
         sidebarStatusObserver = SupermuxMobileSidebarStatusObserver()
+        // Not a mobile observer, but it needs the same once-per-app start: the
+        // per-tab working spinners follow the lifecycle relay from here on.
+        SupermuxTabActivitySync.shared.start()
         SupermuxDevicesGlue.activateIfNeeded()
     }
 }

@@ -5,17 +5,17 @@ import CmuxMobileShellModel
 enum WorkspaceListChromeKind: Hashable {
     case recoveryBanner
     case macStatusRow
-    // SUPERMUX:begin supermux-mobile-projects-table-row (fork Projects section as one leading chrome row — see SUPERMUX-TOUCHPOINTS.md)
-    /// The fork's Projects section, hosted as ONE row.
+    // SUPERMUX:begin supermux-mobile-projects-table-row (fork Projects rows in the leading run — see SUPERMUX-TOUCHPOINTS.md)
+    /// One fork row of the merged Projects list (the PROJECTS caption, a
+    /// project, or a row of its disclosure), by its fork row id.
     ///
-    /// Deliberately a chrome kind: chrome rows are already counted by
+    /// Deliberately a chrome kind: chrome rows are counted by
     /// `chromePrefixCount`, forbidden as drop targets, non-movable, and
-    /// excluded from workspace lookups — exactly the semantics this section
-    /// needs — so the UIKit↔model index mapping used by workspace
-    /// drag-reorder keeps working untouched. Its identity never varies with
-    /// project expansion, so a disclosure stays a payload change rather than
-    /// a structural `reloadData()`.
-    case supermuxProjects
+    /// excluded from workspace lookups — the semantics these rows need — so
+    /// the UIKit↔model index mapping used by workspace drag-reorder holds.
+    /// The workspaces nested under a project are the shell's own indented
+    /// workspace rows, also counted in that leading run.
+    case supermux(String)
     // SUPERMUX:end supermux-mobile-projects-table-row
 }
 
@@ -34,9 +34,9 @@ enum WorkspaceListTableItem: Hashable, Identifiable {
             "chrome.recoveryBanner"
         case .chrome(.macStatusRow):
             "chrome.macStatusRow"
-        // SUPERMUX:begin supermux-mobile-projects-table-row (stable id — never varies with project expansion, so a disclosure is a payload change, not a structural reload)
-        case .chrome(.supermuxProjects):
-            "chrome.supermuxProjects"
+        // SUPERMUX:begin supermux-mobile-projects-table-row (one stable id per fork row; namespaced so it never collides with upstream chrome)
+        case .chrome(.supermux(let id)):
+            "chrome.supermux.\(id)"
         // SUPERMUX:end supermux-mobile-projects-table-row
         case .filterEmpty:
             "filter.empty"

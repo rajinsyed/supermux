@@ -2514,6 +2514,13 @@ class TabManager: ObservableObject {
     }
 
     func closeWorkspaceForGroupDeletion(_ tab: Workspace, recordHistory: Bool) {
+        // SUPERMUX:begin device-mirror-close
+        // Delete Group closes its members (the user confirmed it): a device
+        // mirror closes here and on its Mac, like a sidebar close, instead of
+        // being hidden. Generated-anchor cleanup (recordHistory false) is untouched,
+        // and the phone's Delete Group (it never listed mirrors) hides them.
+        if recordHistory, SupermuxDeviceMirrorCloseGate.closeGroupMemberOnItsMac(tab, in: self) { return }
+        // SUPERMUX:end device-mirror-close
         closeWorkspace(tab, recordHistory: recordHistory)
     }
 
@@ -3025,11 +3032,6 @@ class TabManager: ObservableObject {
     func closeWorkspacesWithConfirmation(_ workspaceIds: [UUID], allowPinned: Bool) {
         let workspaces = orderedClosableWorkspaces(workspaceIds, allowPinned: allowPinned)
         guard !workspaces.isEmpty else { return }
-        // SUPERMUX:begin device-mirror-close
-        let supermuxMirrorBatch = SupermuxDeviceMirrorCloseGate.beginBatch(workspaces, in: self)
-        defer { supermuxMirrorBatch.end() }
-        guard !supermuxMirrorBatch.handledAll else { return }
-        // SUPERMUX:end device-mirror-close
         guard workspaces.count > 1 else {
             closeWorkspaceFromCloseTabGesture(workspaces[0])
             return
@@ -3345,9 +3347,6 @@ class TabManager: ObservableObject {
         source: CloseConfirmationSource = .workspace,
         closeAlreadyConfirmed: Bool = false
     ) -> Bool {
-        // SUPERMUX:begin device-mirror-close
-        if let handled = SupermuxDeviceMirrorCloseGate.interceptUserClose(workspace, in: self) { return handled }
-        // SUPERMUX:end device-mirror-close
         // Closing a group's anchor is non-destructive to the group: its next
         // member is promoted to anchor in closeWorkspace, so the members stay
         // grouped instead of scattering to root. No special anchor prompt is
@@ -3374,6 +3373,11 @@ class TabManager: ObservableObject {
            ) {
             return false
         }
+        // SUPERMUX:begin device-mirror-close
+        // This Mac's own close confirmations passed: a device mirror closes here
+        // and on its Mac (force), like a local workspace.
+        if SupermuxDeviceMirrorCloseGate.closeOnItsMac(workspace, in: self) { return true }
+        // SUPERMUX:end device-mirror-close
         // SUPERMUX:begin keep-window-on-last-close
         // Closing the last workspace leaves the window open as an empty home
         // (Projects sidebar) instead of closing the window — which on the last

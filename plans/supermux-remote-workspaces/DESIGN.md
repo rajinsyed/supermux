@@ -45,10 +45,14 @@ the main Mac is closed), and the same on iOS.
 2. **Mirrors are never re-exported.** The host skips device-mirror workspaces in `mobile.sync.*` and
    `mobile.workspace.list` (touchpoint). This prevents mirror-of-mirror loops between Macs and phone
    duplicates (the phone connects to both Macs directly).
-3. **Close = close on the owning Mac**, behind a confirmation ("Close on <Mac>" / "Hide Here" /
-   Cancel). "Hide Here" detaches and remembers the remote id in a hidden set so auto-mirror does not
-   re-open it. A remote workspace that disappears on its host closes its local mirror. Closing a
-   single mirrored tab already kills the remote terminal upstream (matches local).
+3. **Close = close on the owning Mac**, with this Mac's normal close confirmations only (as for a
+   local workspace; no prompt of the fork's). A close while that Mac is offline is kept (persisted)
+   and sent when it reconnects; auto-mirror does not reopen it meanwhile, and Reopen Closed Workspace
+   cancels it. Delete Group closes member mirrors on their Mac the same way (the phone's Delete Group
+   hides them instead: the phone never lists mirrors). The row menu's "Hide Here"
+   keeps it running there: it detaches and remembers the remote id in a hidden set so auto-mirror
+   does not re-open it. A remote workspace that disappears on its host closes its local mirror.
+   Closing a mirrored tab ends that terminal there (`force`), like a local tab.
 4. **Remote Mac is the source of truth for its own projects.** Remote projects are aggregated live
    (never written into `supermux-projects.json`). Projects merge across devices into one sidebar row
    when their normalized git origin URL matches (new additive DTO field `git_remote_url`), falling
@@ -69,7 +73,9 @@ the main Mac is closed), and the same on iOS.
    the fork `SupermuxWorkspaceActivityResolver` overlay; branch/PR in nested rows; additive
    `supermux_status_entries` / `supermux_progress` / `supermux_log` fields so `cmux set-status`,
    `set-progress` and `log` pills from the remote render on the mirror row. Host pokes sync on those
-   changes and on branch/PR changes.
+   changes and on branch/PR changes. A waiting agent (`backgroundWorkPending`) counts as working, and
+   the additive `supermux_working_panel_ids` lets a mirror spin exactly the tabs whose agent works
+   (re-synced on every status projector pass, so a tab projected after the record arrived spins too).
 8. **Phone push comes from the Mac that runs the agent.** The viewer Mac never forwards `.deviceMac`
    notifications to the phone (and excludes them from its phone badge: every Mac pushes and reports
    only its OWN unread count, and the phone badges the total, keeping the latest count per Mac
@@ -81,7 +87,8 @@ the main Mac is closed), and the same on iOS.
    still pushes); Macs can share push credentials + known phone tokens with each other over the
    authenticated same-account link (opt-in setting, default ON for the Supermux identity).
 9. **Notification read-state is shared.** A read/clear on the host marks the viewer's mirrored record
-   read; a focused-arrival on the viewer acknowledges the host.
+   read, and a read on the viewer (a click or typing in the mirror pane) reads the host's. A
+   focused-pane arrival rings until clicked on either Mac, as upstream does (round 4).
 10. **iOS** shows each Mac's projects (grouped per Mac when >1), navigation after Supermux RPCs maps
     Mac-local ids to scoped row ids, New Worktree has a Mac picker, push registration per Mac.
 11. **Enabled by default** for `com.supermux.app`: seed `cloud.beta.machines.enabled`,

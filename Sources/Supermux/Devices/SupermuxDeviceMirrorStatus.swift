@@ -14,6 +14,10 @@ import SupermuxMobileCore
 /// progress and log into the mirror `Workspace` itself.
 struct SupermuxDeviceMirrorStatus: Equatable {
     var activity: SupermuxWorkspaceActivity = .idle
+    /// The other Mac's terminals (upper-cased ids) whose own agent is working,
+    /// for the mirror's per-tab spinners; nil from a Mac that predates the
+    /// field or while the device is offline.
+    var workingPanelIDs: Set<String>?
     var branch: String?
     var pullRequest: SupermuxPullRequest?
     var statusEntries: [WorkspaceSyncRecord.SupermuxStatusEntry] = []
@@ -27,6 +31,7 @@ struct SupermuxDeviceMirrorStatus: Equatable {
     init(record: WorkspaceSyncRecord, isConnected: Bool) {
         if isConnected {
             activity = Self.activity(fromWire: record.supermuxActivity)
+            workingPanelIDs = record.supermuxWorkingPanelIDs.map { Set($0.map { $0.uppercased() }) }
         }
         branch = record.supermuxBranch?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
         pullRequest = Self.pullRequest(from: record.supermuxPullRequest)

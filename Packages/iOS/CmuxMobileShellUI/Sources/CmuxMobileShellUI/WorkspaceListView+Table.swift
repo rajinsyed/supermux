@@ -7,14 +7,13 @@ import SupermuxMobileUI
 import SwiftUI
 
 extension WorkspaceListView {
-    // SUPERMUX:begin supermux-mobile-projects-table-row (nil while disconnected or without supermux.projects.v1 — the table then emits no Projects row at all)
-    /// The fork's Projects payload for the table, or `nil` when the section
-    /// must not render.
-    var supermuxProjectsRowConfiguration: SupermuxProjectsTableRowConfiguration? {
-        SupermuxProjectsTableRowConfiguration(
-            section: supermuxProjects.snapshot,
-            actions: supermuxProjects.actions
-        )
+    // SUPERMUX:begin supermux-mobile-projects-table-row (nil while disconnected, without supermux.projects.v1, or while searching/filtering — the table then emits exactly upstream's rows)
+    /// The fork's merged Projects rows for the table, or `nil` when the list
+    /// has no project block.
+    var supermuxProjectsTablePayload: SupermuxProjectsTablePayload? {
+        let layout = supermuxProjectsLayout
+        guard !layout.entries.isEmpty else { return nil }
+        return SupermuxProjectsTablePayload(layout: layout, actions: supermuxProjects.actions)
     }
     // SUPERMUX:end supermux-mobile-projects-table-row
 
@@ -33,10 +32,16 @@ extension WorkspaceListView {
             && trimmedQuery.isEmpty
             && filteredWorkspaces.isEmpty
             && !workspaces.isEmpty
+            // SUPERMUX:begin supermux-mobile-projects-table-row (rows nested under a project still show for this filter)
+            && supermuxProjectsLayout.nestedWorkspaceIDs.isEmpty
+            // SUPERMUX:end supermux-mobile-projects-table-row
     }
 
     func workspaceTableItems(
-        groupedItems: [MobileWorkspaceListItem]
+        groupedItems: [MobileWorkspaceListItem],
+        // SUPERMUX:begin supermux-mobile-projects-table-row
+        supermuxLayout: SupermuxProjectsListLayout = .empty
+        // SUPERMUX:end supermux-mobile-projects-table-row
     ) -> [WorkspaceListTableItem] {
         var items: [WorkspaceListTableItem] = []
         switch connectionChrome {
@@ -50,10 +55,15 @@ extension WorkspaceListView {
             break
         }
 
-        // SUPERMUX:begin supermux-mobile-projects-table-row (Projects joins the LEADING chrome run: chromePrefixCount counts it automatically, so the UIKit↔model reorder mapping stays correct with no index-math change)
-        if supermuxProjectsRowConfiguration != nil {
-            items.append(.chrome(.supermuxProjects))
-        }
+        // SUPERMUX:begin supermux-mobile-projects-table-row (the merged Projects rows join the LEADING run: fork rows as chrome, nested workspaces as the shell's own indented rows; chromePrefixCount counts both — see supermux-mobile-projects-nested-reorder)
+        items.append(contentsOf: supermuxLayout.entries.map { entry in
+            switch entry {
+            case .fork(let id):
+                .chrome(.supermux(id))
+            case .workspace(let id):
+                .workspace(id, indented: true)
+            }
+        })
         // SUPERMUX:end supermux-mobile-projects-table-row
 
         if rendersGroupedSections {
@@ -116,7 +126,8 @@ extension WorkspaceListView {
                     openWorkspaceChanges(workspace)
                 }
         // SUPERMUX:begin supermux-mobile-projects-table-row (bound outside the memberwise init — that expression already overwhelms the type checker, see the note above)
-        let supermuxProjectsConfiguration = supermuxProjectsRowConfiguration
+        let supermuxProjectsPayload = supermuxProjectsTablePayload
+        let supermuxLayout = supermuxProjectsPayload?.layout ?? .empty
         // SUPERMUX:end supermux-mobile-projects-table-row
         let emptyStateRecoveryTarget = store?.workspaceListRecoveryTarget
         let emptyStateMacDeviceID = emptyStateRecoveryTarget?.macDeviceID
@@ -187,7 +198,9 @@ extension WorkspaceListView {
             { _ in suppliedCancel() }
         }
         return WorkspaceListTable(
-            items: workspaceTableItems(groupedItems: groupedItems),
+            // SUPERMUX:begin supermux-mobile-projects-table-row (upstream passes only groupedItems)
+            items: workspaceTableItems(groupedItems: groupedItems, supermuxLayout: supermuxLayout),
+            // SUPERMUX:end supermux-mobile-projects-table-row
             workspacesByID: workspacesByID,
             groupsByID: groupsByID,
             groupUnreadByID: workspaceTableGroupUnreadByID(
@@ -209,7 +222,7 @@ extension WorkspaceListView {
             workspaceChangeChipsByWorkspaceID: workspaceChangeChipsByWorkspaceID,
             openWorkspaceChanges: openChanges,
             // SUPERMUX:begin supermux-mobile-projects-table-row
-            supermuxProjects: supermuxProjectsConfiguration,
+            supermuxProjects: supermuxProjectsPayload,
             // SUPERMUX:end supermux-mobile-projects-table-row
             connectionRequiresReauth: store?.connectionRequiresReauth ?? false,
             connectionError: store?.connectionError,

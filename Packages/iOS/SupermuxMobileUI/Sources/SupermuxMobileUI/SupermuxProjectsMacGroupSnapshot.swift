@@ -6,6 +6,10 @@ public import SupermuxMobileKit
 public struct SupermuxProjectsMacHeader: Equatable, Sendable {
     /// The owning pairing's id.
     public let pairingID: String
+    /// The Mac's device id, or `nil` when unknown.
+    public let macDeviceID: String?
+    /// The pairing's build tag, if any.
+    public let instanceTag: String?
     /// The Mac's user-facing name.
     public let displayName: String
     /// The shell's color slot for this Mac, if assigned.
@@ -21,6 +25,8 @@ public struct SupermuxProjectsMacHeader: Equatable, Sendable {
     /// - Parameter mac: The Mac the header names.
     public init(mac: SupermuxMacInfo) {
         self.pairingID = mac.pairingID
+        self.macDeviceID = mac.macDeviceID
+        self.instanceTag = mac.instanceTag
         self.displayName = mac.displayName
         self.colorIndex = mac.colorIndex
         self.customColor = mac.customColor
@@ -78,5 +84,5 @@ public struct SupermuxProjectsMacGroupSnapshot: Equatable, Sendable, Identifiabl
     }
 
     /// Whether the group has something to show: loaded, with projects.
-    var isDisplayed: Bool { hasLoaded && !rows.isEmpty }
+    public var isDisplayed: Bool { hasLoaded && !rows.isEmpty }
 }

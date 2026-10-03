@@ -26,12 +26,32 @@ remote workspaces, so a SOURCE workspace (host side) and its local MIRROR
   6. mark_unread_survives_host_feed: Mark as Unread on that (host-read) mirror
      copy survives the next host feed update; only a NEW host read reads it.
   7. mirror_read_marks_host_read: reading the mirror copy reads the source record.
-  8. focused_mirror_arrival_acks_host: with the mirror pane focused for a
-     present user, a new source notification is recorded read on the mirror
-     and acknowledged, so the source record turns read.
+  8. focused_mirror_arrival_rings_until_click: with the mirror pane focused
+     for a present user, a new source notification arrives on the mirror
+     unread, with the pane ring and the tab badge, and the source record stays
+     unread; a click in the mirror pane reads the copy, clears the ring and
+     reads the source record.
+  8a. host_read_clears_focused_mirror_ring: with the mirror pane focused and
+     lit, reading the source record on the host reads the copy and clears the
+     mirror pane's ring and badges (no click here).
+  8a'. newer_mirror_copy_keeps_ring: with the mirror pane focused, a second
+     source notification supersedes the first on the host; the host's read of
+     the first must not wipe the ring the newer, still unread copy set.
+     Reading the newer one on the host then clears it.
+  8b. focused_pane_rings_until_click: the SOURCE pane focused for a present
+     user: the notification is unread with the ring, the tab badge and the
+     workspace badge (as on any other pane), nothing reads it on its own, the
+     phone is not pushed (`skip_focused_pane`), and a click in the pane reads
+     it and clears the ring and the badges. A window screenshot with the ring
+     is saved next to the report.
+  8c. mirror_read_clears_focused_source_ring: the SOURCE pane focused and lit
+     for a present user; reading the mirror copy (another Mac's read, sent over
+     the Mac link) reads the source record AND clears the source pane's ring
+     and badges, the way a host read clears the mirror pane's.
   9. unattended_host_keeps_unread: the SOURCE pane focused but the user away:
      the notification stays unread (and the direct lane is not skipped as
-     focused); present: it is recorded read (`skip_focused_pane`).
+     focused); present: it also stays unread, and only the phone push is
+     skipped (`skip_focused_pane`).
  10. app_focused_setting_keeps_background_unread: with upstream's
      `notifications.suppressWhenAppFocused` on and cmux frontmost for a present
      user, a notification for panes in workspaces the user is NOT looking at
@@ -86,11 +106,12 @@ APNS_BUNDLE = "com.supermux.ios"
 
 
 class NotificationsE2E(LoopbackSmoke):
-    def __init__(self, client: SocketClient, tag: str, timeout_s: float, keep: bool, push_state_dir: Path, work_dir: Path) -> None:
+    def __init__(self, client: SocketClient, tag: str, timeout_s: float, keep: bool, push_state_dir: Path, work_dir: Path, report_path: Path) -> None:
         super().__init__(client, timeout_s=timeout_s, keep=keep)
         self.tag = tag
         self.push_state_dir = push_state_dir
         self.work_dir = work_dir
+        self.report_path = report_path
         self.project_id: Optional[str] = None
         self.project_root: Optional[Path] = None
         self.burst_surfaces: List[str] = []
@@ -200,6 +221,68 @@ class NotificationsE2E(LoopbackSmoke):
     def select(self, workspace_id: str, surface_id: str) -> None:
         self.client.call("workspace.select", {"workspace_id": workspace_id})
         self.client.call("surface.focus", {"workspace_id": workspace_id, "surface_id": surface_id})
+
+    def indicators(self, surface_id: str) -> Dict[str, Any]:
+        return self.hook("notification_indicators", {"surface_id": surface_id})
+
+    @staticmethod
+    def is_lit(state: Dict[str, Any], surface_id: str) -> bool:
+        """The pane shows its notification the way any other pane does: an
+        unread record, the ring, its tab's badge and the workspace's badge."""
+        return bool(
+            state.get("has_unread_notification")
+            and state.get("has_visible_indicator")
+            and norm(state.get("focused_read_indicator_surface_id")) == norm(surface_id)
+            and state.get("tab_shows_notification_badge")
+            and state.get("ring_visible")
+            and int(state.get("workspace_unread_count") or 0) >= 1
+        )
+
+    @staticmethod
+    def is_cleared(state: Dict[str, Any]) -> bool:
+        return not (
+            state.get("has_visible_indicator")
+            or state.get("ring_visible")
+            or state.get("tab_shows_notification_badge")
+            or state.get("focused_read_indicator_surface_id")
+        )
+
+    def wait_lit(self, description: str, surface_id: str) -> Dict[str, Any]:
+        def probe() -> Optional[Dict[str, Any]]:
+            state = self.indicators(surface_id)
+            return state if self.is_lit(state, surface_id) else None
+
+        try:
+            return wait_for(description, probe, self.timeout_s)
+        except SmokeFailure as error:
+            raise SmokeFailure(f"{error}; last indicators {self.indicators(surface_id)}") from None
+
+    def click_until_cleared(self, description: str, surface_id: str) -> Dict[str, Any]:
+        clicked = self.hook("notification_click", {"surface_id": surface_id})
+
+        def probe() -> Optional[Dict[str, Any]]:
+            state = self.indicators(surface_id)
+            return state if self.is_cleared(state) else None
+
+        try:
+            cleared = wait_for(description, probe, self.timeout_s)
+        except SmokeFailure as error:
+            raise SmokeFailure(f"{error}; last indicators {self.indicators(surface_id)}") from None
+        return {"right_after_click": clicked, "cleared": cleared}
+
+    def screenshot(self, label: str) -> Optional[str]:
+        """Best effort: the app's window, copied next to the report."""
+        try:
+            shot = self.client.call("debug.window.screenshot", {"label": f"notifications-{label}"}) or {}
+        except SmokeFailure:
+            return None
+        path = str(shot.get("path") or "")
+        if not path or not Path(path).exists():
+            return None
+        kept = self.report_path.with_name(f"{self.report_path.stem}-{label}.png")
+        kept.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(path, kept)
+        return str(kept)
 
     # -- steps --------------------------------------------------------------
 
@@ -362,18 +445,149 @@ class NotificationsE2E(LoopbackSmoke):
         source = self.wait_read("the source record to turn read after the viewer read", title, self.source_workspace_id or "")
         return {"source_is_read": source.get("is_read")}
 
-    def check_focused_mirror_arrival_acks_host(self) -> Dict[str, Any]:
-        self.select(self.mirror_workspace_id or "", self.facts["mirror_surface_id"])
+    def check_focused_mirror_arrival_rings_until_click(self) -> Dict[str, Any]:
+        mirror_surface = self.facts["mirror_surface_id"]
+        self.select(self.mirror_workspace_id or "", mirror_surface)
         self.app_focus("active")
         overrides = self.overrides(presence="present", window_key="key")
         try:
             title = f"e2e-focused-mirror-{self.nonce}"
-            self.notify_socket(self.facts["source_surface_id"], title, "seen on arrival")
+            self.notify_socket(self.facts["source_surface_id"], title, "the focused mirror pane's agent finished")
             copy = self.mirror_copy(title)
-            if not copy.get("is_read"):
-                raise SmokeFailure("the mirror copy was not recorded read on the focused mirror pane")
-            source = self.wait_read("the host (source) record to be acknowledged read", title, self.source_workspace_id or "")
-            return {"overrides": overrides, "mirror_copy_is_read": True, "source_is_read": source.get("is_read")}
+            if copy.get("is_read"):
+                raise SmokeFailure("the focused mirror pane's copy was recorded read on arrival")
+            lit = self.wait_lit("the focused mirror pane's ring, tab badge and workspace badge", mirror_surface)
+            time.sleep(2)
+            source = self.record_titled(title, self.source_workspace_id or "") or {}
+            if source.get("is_read"):
+                raise SmokeFailure("the other Mac's record turned read although nobody clicked the mirror pane")
+            held = self.indicators(mirror_surface)
+            if not self.is_lit(held, mirror_surface):
+                raise SmokeFailure(f"the mirror pane's ring went away on its own: {held}")
+            clicked = self.click_until_cleared("a click to clear the mirror pane's ring and badges", mirror_surface)
+            copy = self.wait_read("the mirror copy to turn read after the click", title, self.mirror_workspace_id or "")
+            source = self.wait_read("the source record to turn read after the mirror click", title, self.source_workspace_id or "")
+            return {
+                "overrides": overrides,
+                "lit": lit,
+                **clicked,
+                "mirror_copy_is_read": copy.get("is_read"),
+                "source_is_read": source.get("is_read"),
+            }
+        finally:
+            self.reset_overrides()
+
+    def wait_cleared(self, description: str, surface_id: str) -> Dict[str, Any]:
+        def probe() -> Optional[Dict[str, Any]]:
+            state = self.indicators(surface_id)
+            return state if self.is_cleared(state) else None
+
+        try:
+            return wait_for(description, probe, self.timeout_s)
+        except SmokeFailure as error:
+            raise SmokeFailure(f"{error}; last indicators {self.indicators(surface_id)}") from None
+
+    def check_host_read_clears_focused_mirror_ring(self) -> Dict[str, Any]:
+        mirror_surface = self.facts["mirror_surface_id"]
+        self.select(self.mirror_workspace_id or "", mirror_surface)
+        self.app_focus("active")
+        overrides = self.overrides(presence="present", window_key="key")
+        try:
+            title = f"e2e-host-read-ring-{self.nonce}"
+            self.notify_socket(self.facts["source_surface_id"], title, "read on the other Mac")
+            self.mirror_copy(title)
+            lit = self.wait_lit("the focused mirror pane's ring before the host read", mirror_surface)
+            source = self.source_record(title)
+            # The read happens on the host side (the source record), not here.
+            self.client.call("notification.mark_read", {"id": source["id"]})
+            copy = self.wait_read("the mirror copy to turn read after the host read", title, self.mirror_workspace_id or "")
+            cleared = self.wait_cleared("the host read to clear the focused mirror pane's ring and badges", mirror_surface)
+            return {"overrides": overrides, "lit": lit, "cleared": cleared, "mirror_copy_is_read": copy.get("is_read")}
+        finally:
+            self.reset_overrides()
+
+    def check_newer_mirror_copy_keeps_ring(self) -> Dict[str, Any]:
+        mirror_surface = self.facts["mirror_surface_id"]
+        self.select(self.mirror_workspace_id or "", mirror_surface)
+        self.app_focus("active")
+        overrides = self.overrides(presence="present", window_key="key")
+        try:
+            older = f"e2e-older-{self.nonce}"
+            newer = f"e2e-newer-{self.nonce}"
+            self.notify_socket(self.facts["source_surface_id"], older, "the first of two")
+            self.mirror_copy(older)
+            self.wait_lit("the focused mirror pane's ring for the first copy", mirror_surface)
+            # The second notification on the same terminal supersedes the first
+            # on the host (its row turns read there); the newer copy stays unread
+            # and owns the pane's ring.
+            self.notify_socket(self.facts["source_surface_id"], newer, "the second of two")
+            newer_copy = self.mirror_copy(newer)
+            self.wait_read("the older copy to turn read after the host superseded it", older, self.mirror_workspace_id or "")
+            time.sleep(1.5)
+            held = self.indicators(mirror_surface)
+            if not self.is_lit(held, mirror_surface):
+                raise SmokeFailure(
+                    f"the host's read of the older notification wiped the ring the newer unread copy set: {held}"
+                )
+            source = self.source_record(newer)
+            self.client.call("notification.mark_read", {"id": source["id"]})
+            self.wait_read("the newer copy to turn read after the host read", newer, self.mirror_workspace_id or "")
+            cleared = self.wait_cleared("the host read of the last copy to clear the mirror pane's ring", mirror_surface)
+            return {"overrides": overrides, "held": held, "cleared": cleared, "newer_copy_id": newer_copy.get("id")}
+        finally:
+            self.reset_overrides()
+
+    def check_mirror_read_clears_focused_source_ring(self) -> Dict[str, Any]:
+        workspace_id = self.source_workspace_id or ""
+        surface_id = self.facts["source_surface_id"]
+        self.select(workspace_id, surface_id)
+        self.app_focus("active")
+        overrides = self.overrides(presence="present", window_key="key")
+        try:
+            title = f"e2e-mirror-read-ring-{self.nonce}"
+            self.notify_socket(surface_id, title, "read on the other Mac")
+            lit = self.wait_lit("the focused source pane's ring before the mirror read", surface_id)
+            copy = self.mirror_copy(title)
+            # The read happens on the viewer side (the mirror copy); it reaches
+            # the host as `notification.feed.mark_read` from a Mac peer.
+            self.client.call("notification.mark_read", {"id": copy["id"]})
+            source = self.wait_read("the source record to turn read after the mirror read", title, workspace_id)
+            cleared = self.wait_cleared("the mirror read to clear the focused source pane's ring and badges", surface_id)
+            return {"overrides": overrides, "lit": lit, "cleared": cleared, "source_is_read": source.get("is_read")}
+        finally:
+            self.reset_overrides()
+
+    def check_focused_pane_rings_until_click(self) -> Dict[str, Any]:
+        workspace_id = self.source_workspace_id or ""
+        surface_id = self.facts["source_surface_id"]
+        self.select(workspace_id, surface_id)
+        self.app_focus("active")
+        overrides = self.overrides(presence="present", window_key="key")
+        try:
+            title = f"e2e-focused-ring-{self.nonce}"
+            self.notify_socket(surface_id, title, "the focused pane's agent finished")
+            record = self.source_record(title)
+            if record.get("is_read"):
+                raise SmokeFailure("the focused pane's notification was recorded read")
+            lit = self.wait_lit("the focused pane's ring, tab badge and workspace badge", surface_id)
+            screenshot = self.screenshot("focused-ring")
+            time.sleep(1.5)
+            held = self.indicators(surface_id)
+            if not self.is_lit(held, surface_id):
+                raise SmokeFailure(f"the focused pane's ring went away on its own: {held}")
+            decision = wait_for("the focused pane's push decision", lambda: self.decision_for(record["id"]), self.timeout_s)
+            if decision.get("direct") != "skip_focused_pane":
+                raise SmokeFailure(f"direct lane verdict {decision.get('direct')!r} for a present user's focused pane")
+            clicked = self.click_until_cleared("a click to clear the focused pane's ring and badges", surface_id)
+            record = self.wait_read("the focused pane's record to turn read after the click", title, workspace_id)
+            return {
+                "overrides": overrides,
+                "lit": lit,
+                "screenshot": screenshot,
+                "direct": decision.get("direct"),
+                **clicked,
+                "is_read_after_click": record.get("is_read"),
+            }
         finally:
             self.reset_overrides()
 
@@ -396,8 +610,8 @@ class NotificationsE2E(LoopbackSmoke):
             self.notify_socket(self.facts["source_surface_id"], present_title, "someone at the Mac")
             present = self.source_record(present_title)
             present_decision = wait_for("the present decision", lambda: self.decision_for(present["id"]), self.timeout_s)
-            if not present.get("is_read"):
-                raise SmokeFailure("a present user's focused pane did not record the notification read")
+            if present.get("is_read"):
+                raise SmokeFailure("a present user's focused pane recorded the notification read")
             if present_decision.get("direct") != "skip_focused_pane":
                 raise SmokeFailure(f"present decision {present_decision.get('direct')!r}, expected skip_focused_pane")
             return {
@@ -607,7 +821,11 @@ class NotificationsE2E(LoopbackSmoke):
             ("host_read_marks_mirror_read", self.check_host_read_marks_mirror_read),
             ("mark_unread_survives_host_feed", self.check_mark_unread_survives_host_feed),
             ("mirror_read_marks_host_read", self.check_mirror_read_marks_host_read),
-            ("focused_mirror_arrival_acks_host", self.check_focused_mirror_arrival_acks_host),
+            ("focused_mirror_arrival_rings_until_click", self.check_focused_mirror_arrival_rings_until_click),
+            ("host_read_clears_focused_mirror_ring", self.check_host_read_clears_focused_mirror_ring),
+            ("newer_mirror_copy_keeps_ring", self.check_newer_mirror_copy_keeps_ring),
+            ("focused_pane_rings_until_click", self.check_focused_pane_rings_until_click),
+            ("mirror_read_clears_focused_source_ring", self.check_mirror_read_clears_focused_source_ring),
             ("unattended_host_keeps_unread", self.check_unattended_host_keeps_unread),
             ("app_focused_setting_keeps_background_unread", self.check_app_focused_setting_keeps_background_unread),
             ("burst_rows_all_delivered", self.check_burst_rows_all_delivered),
@@ -680,10 +898,11 @@ def main() -> int:
     work_dir.mkdir(parents=True, exist_ok=True)
     work_dir = work_dir.resolve()
 
+    report_path = Path(args.report) if args.report else ARTIFACTS_DIR / f"loopback_notifications_e2e-{args.tag}.json"
     started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     try:
         with SocketClient(socket_path, timeout_s=90) as client:
-            e2e = NotificationsE2E(client, args.tag, args.timeout, args.keep, push_state_dir, work_dir)
+            e2e = NotificationsE2E(client, args.tag, args.timeout, args.keep, push_state_dir, work_dir, report_path)
             passed = e2e.run()
             steps, facts = e2e.steps, e2e.facts
     except OSError as error:
@@ -698,7 +917,6 @@ def main() -> int:
         "steps": steps,
         "facts": facts,
     }
-    report_path = Path(args.report) if args.report else ARTIFACTS_DIR / f"loopback_notifications_e2e-{args.tag}.json"
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(report, indent=2))

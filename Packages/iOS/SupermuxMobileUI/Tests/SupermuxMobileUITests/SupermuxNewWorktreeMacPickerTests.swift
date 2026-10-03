@@ -164,6 +164,28 @@ import Testing
         #expect(options.map(\.pairingID) == [studio.pairingID])
     }
 
+    /// The Mac sidebar claims every unique-origin match before any
+    /// name-and-path match, so an origin-less copy at the same path that the
+    /// other Mac happens to list FIRST must not win over the real clone.
+    @Test func aUniqueOriginMatchWinsOverAnEarlierNameAndPathMatch() {
+        let origin = "git@github.com:me/app.git"
+        let options = SupermuxNewWorktreeMacOptions.options(
+            forProjectID: "a-1",
+            onPairingID: studio.pairingID,
+            sources: [
+                Source(mac: studio, supportsWorktrees: true, projects: [
+                    project("a-1", origin: origin, name: "app", rootPath: "/Users/dev/code/app"),
+                ]),
+                Source(mac: macBook, supportsWorktrees: true, projects: [
+                    project("b-copy", origin: nil, name: "app", rootPath: "/Users/dev/code/app"),
+                    project("b-dev", origin: origin, name: "app-dev", rootPath: "/Users/dev/src/app-dev"),
+                ]),
+            ]
+        )
+
+        #expect(options.map(\.projectID) == ["a-1", "b-dev"])
+    }
+
     // MARK: Picking a Mac retargets the create
 
     @Test func theSheetOffersEveryConnectedMacWithTheSameRepository() async throws {

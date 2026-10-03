@@ -6,8 +6,9 @@ import SupermuxKit
 /// Projects each mirror's remote `WorkspaceSyncRecord` onto its local mirror
 /// `Workspace`, so a mirror row shows what the owning Mac's row shows.
 ///
-/// - **Overlays** (read, never written into the workspace): agent activity,
-///   branch and PR. ``SupermuxWorkspaceActivityResolver/activity(for:)``,
+/// - **Overlays** (read, never written into the workspace): agent activity
+///   (the row's, and each tab's via `workingPanelIDs`), branch and PR.
+///   ``SupermuxWorkspaceActivityResolver/activity(for:)``,
 ///   `Workspace.supermuxSidebarBranch` and ``SupermuxWorkspaceRow`` consult
 ///   ``status(forLocal:)`` first. Activity is deliberately NOT written as an
 ///   agent lifecycle into the mirror panes: an `.idle` lifecycle would make the
@@ -51,6 +52,7 @@ final class SupermuxDeviceStatusProjector {
     func refresh() {
         var next: [UUID: SupermuxDeviceMirrorStatus] = [:]
         var overlayChanged: [UUID] = []
+        var mirrors: [Workspace] = []
         for mirror in index.mirrors() {
             let workspace = mirror.workspace
             let previous = statusByWorkspaceID[workspace.id]
@@ -70,11 +72,13 @@ final class SupermuxDeviceStatusProjector {
                 // Record gone (device offline or workspace closing): keep what
                 // the row showed, minus live activity.
                 kept.activity = .idle
+                kept.workingPanelIDs = []
                 status = kept
             } else {
                 continue
             }
             next[workspace.id] = status
+            mirrors.append(workspace)
             if Self.overlayDiffers(previous, status) { overlayChanged.append(workspace.id) }
         }
         for (id, projected) in statusByWorkspaceID where next[id] == nil {
@@ -83,6 +87,10 @@ final class SupermuxDeviceStatusProjector {
             overlayChanged.append(id)
         }
         statusByWorkspaceID = next
+        // A mirror tab projected after its overlay arrived (a tab moved in
+        // from another workspace, a mirror opened mid-turn) has no relay of its
+        // own; the catalog change that projected it re-runs this pass.
+        for workspace in mirrors { SupermuxTabActivitySync.shared.sync(workspace) }
         // After the store update, so every observer reads the new overlay.
         for id in overlayChanged {
             SupermuxWorkspaceLifecycleRelay.lifecycleDidChange.send(id)
@@ -91,6 +99,7 @@ final class SupermuxDeviceStatusProjector {
 
     private static func overlayDiffers(_ previous: SupermuxDeviceMirrorStatus?, _ status: SupermuxDeviceMirrorStatus) -> Bool {
         previous?.activity != status.activity
+            || previous?.workingPanelIDs != status.workingPanelIDs
             || previous?.branch != status.branch
             || previous?.pullRequest != status.pullRequest
     }

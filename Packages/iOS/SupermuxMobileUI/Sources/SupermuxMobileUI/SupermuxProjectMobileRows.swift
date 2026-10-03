@@ -29,6 +29,11 @@ struct SupermuxProjectMobileRow: View {
     /// Opens the New Worktree sheet (m7 sidebar create flow); `nil` hides the
     /// menu entry (no session, or no `supermux.worktrees.v1`).
     var newWorktree: (@MainActor (_ projectID: String) -> Void)?
+    /// Every Mac's copy of a project merged across Macs. With several, the
+    /// menu reaches each copy ("Open on ▸", "Project Details on ▸"), like the
+    /// Mac sidebar's "Open on" submenu; tap and the plain entries act on the
+    /// lead copy (``row``).
+    var copies: [SupermuxProjectCopyChoice] = []
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     // Not `private`: a private stored property suppresses the memberwise
@@ -169,6 +174,17 @@ struct SupermuxProjectMobileRow: View {
                 Image(systemName: "macwindow")
             }
         }
+        if copies.count > 1 {
+            copiesMenu(
+                title: String(
+                    localized: "supermux.projects.row.openOn",
+                    defaultValue: "Open on",
+                    bundle: .module
+                ),
+                systemImage: "macwindow",
+                action: openWorkspace
+            )
+        }
         if let newWorktree {
             Button {
                 newWorktree(row.id)
@@ -207,6 +223,37 @@ struct SupermuxProjectMobileRow: View {
                 ))
             } icon: {
                 Image(systemName: "info.circle")
+            }
+        }
+        if copies.count > 1 {
+            copiesMenu(
+                title: String(
+                    localized: "supermux.projects.row.detailsOn",
+                    defaultValue: "Project Details on",
+                    bundle: .module
+                ),
+                systemImage: "info.circle",
+                action: openDetail
+            )
+        }
+    }
+
+    /// A submenu with one entry per Mac's copy; an offline Mac's is disabled.
+    private func copiesMenu(
+        title: String,
+        systemImage: String,
+        action: @escaping @MainActor (_ projectID: String) -> Void
+    ) -> some View {
+        Menu {
+            ForEach(copies) { copy in
+                Button(copy.macName) { action(copy.rowID) }
+                    .disabled(!copy.isOnline)
+            }
+        } label: {
+            Label {
+                Text(title)
+            } icon: {
+                Image(systemName: systemImage)
             }
         }
     }
@@ -440,8 +487,10 @@ struct SupermuxSidebarWorkspaceRow: View {
 }
 
 /// One unopened worktree nested under an expanded project: the branch glyph in
-/// the avatar column, the branch name, a dirty marker, and the PR badge — the
-/// phone twin of the Mac sidebar's `SupermuxWorktreeRowView`. Tapping opens a
+/// the avatar column, the branch name (after the cloud-Mac icon when it lives
+/// on another Mac than the list's home Mac), a dirty marker, and the PR badge
+/// — the phone twin of the Mac sidebar's `SupermuxWorktreeRowView` and
+/// `SupermuxRemoteWorktreeRowView`. Tapping opens a
 /// workspace in the worktree (m2-f2 flow) through the passed closure.
 ///
 /// Emits only the row's CONTENT; ``SupermuxNestedRowContainer`` supplies the
@@ -453,6 +502,8 @@ struct SupermuxNestedWorktreeRow: View {
     /// directly). The long-press twin of the row's swipe action, routed
     /// through the same request so the two can never disagree.
     var requestRemoval: (@MainActor (_ worktree: SupermuxWorktreeRowSnapshot) -> Void)?
+    /// The Mac the worktree lives on, unless it is the list's home Mac.
+    var remoteMac: SupermuxRemoteMac?
 
     // Not `private`: see the note on SupermuxProjectMobileRow.metrics.
     var metrics = SupermuxScaledRowMetrics()
@@ -463,11 +514,18 @@ struct SupermuxNestedWorktreeRow: View {
             open(worktree)
         } label: {
             HStack(spacing: 6) {
-                Text(worktree.displayName)
-                    .font(.system(.subheadline))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                HStack(spacing: 4) {
+                    // The Mac it lives on, right before its branch, as on the
+                    // Mac (the name is only in the row's VoiceOver label).
+                    if let remoteMac {
+                        SupermuxMobileRemoteMacIcon(mac: remoteMac, pointSize: 12, relativeTo: .subheadline)
+                    }
+                    Text(worktree.displayName)
+                        .font(.system(.subheadline))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
                 if worktree.isDirty {
                     // The dirty marker stays: unlike the status dots this
                     // replaces, it is not duplicated anywhere else on the phone,
@@ -490,7 +548,7 @@ struct SupermuxNestedWorktreeRow: View {
         }
         .buttonStyle(SupermuxSidebarRowButtonStyle())
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(worktree.displayName)
+        .accessibilityLabel(accessibilityLabel)
         .accessibilityValue(worktree.isDirty
             ? String(
                 localized: "supermux.worktrees.row.dirty",
@@ -511,6 +569,12 @@ struct SupermuxNestedWorktreeRow: View {
             }
         }
         .supermuxSidebarContextMenu { contextMenu }
+    }
+
+    /// The branch, then the Mac it lives on when that is not the home Mac.
+    private var accessibilityLabel: String {
+        guard let remoteMac else { return worktree.displayName }
+        return "\(worktree.displayName), \(remoteMac.accessibilityLabel)"
     }
 
     /// Mirrors the Mac's worktree menu: open, then the destructive removal.

@@ -136,12 +136,15 @@ var storedBindings: [UUID: SupermuxDeviceBindingStore.Binding]
 ```
 
 - A workspace **is a device mirror** when the binding store names it (by `Workspace.stableId`), or when
-  every pane projects a device terminal (live projection, or a restored projection still pending the
-  link). A local workspace with one borrowed remote pane is not a mirror. The check is O(1) for local
-  workspaces (it first asks `catalog.projectionMachines(forWorkspace:)`).
+  every pane projects a terminal of one and the same device workspace (live projection, or a restored
+  projection still pending the link) — the set upstream's layout coordinator keeps synchronized. A local
+  workspace with one borrowed remote pane, or one borrowing terminals of several remote workspaces
+  (Open in New Pane from two of them, its own shell closed), is not a mirror: closing it closes it here
+  only. The check is O(1) for local workspaces (it first asks `catalog.projectionMachines(forWorkspace:)`).
 - `ref(forLocal:)`: binding first, else the device workspace most of its panes project (live + pending).
-- `localWorkspace(showing:)`: binding (matched to a live workspace by `stableId`) first, else the local
-  workspace holding most projections of that remote workspace.
+- `localWorkspace(showing:)`: binding (matched to a live workspace by `stableId`) first, else an unbound
+  mirror (the `mirrors()` rule) whose ref is that remote workspace. A local workspace that only borrows
+  some of its terminals does not show it, so auto-mirror and the opener still give it its own mirror.
 - **Identity across restart.** Session restore keeps both `Workspace.id` and `Workspace.stableId`
   (`TabManager` restore uses `WorkspaceSessionRestoreIdentity` with the persisted `workspaceId`;
   `restoreSessionSnapshot` adopts `stableId`); both change only for duplicate reopens. Bindings are keyed
@@ -269,15 +272,16 @@ Implemented on `remote-workspace-sync`; E2E: `tests/supermux/loopback_auto_mirro
 
 ```swift
 SupermuxComposition.deviceMirrorCoordinator   // auto-mirror loop (started by SupermuxDevicesGlue)
-SupermuxComposition.deviceMirrorCloser        // Close on <Mac> / Hide Here / programmatic + coordinator closes
+SupermuxComposition.deviceMirrorCloser        // user close on the Mac / Hide Here / programmatic + coordinator closes
 SupermuxComposition.deviceStatusProjector     // remote record -> mirror row status
 SupermuxComposition.hiddenRemoteWorkspaces    // "Hide Here" set (SupermuxKit, UserDefaults)
+SupermuxComposition.pendingRemoteWorkspaceCloses // closes waiting for their Mac (same store, own key)
 SupermuxDeviceMirrorsGlue.unhide(machineID:ref:)   // unhide + reconcile
 ```
 
 - **Auto-mirror** (`supermux.devices.autoMirror`, default on): one mirror per remote workspace with ≥1
   terminal on every authoritative device (connected and fetched since connect), skipping hidden refs and
-  refs with an open in flight, a failed open backing off (10 s) or a remote close in flight
+  refs with an open in flight, a failed open backing off (10 s) or a close pending on its Mac
   (`coordinator.busyRefs`). Opens run one at a time via `openMirror(focus: false)` into the window holding
   that device's mirrors (else the preferred main window; never a new window) and take the remote order
   among their siblings. Nothing runs until `AppDelegate.didCompleteInitialSessionRestore`; then
@@ -294,12 +298,22 @@ SupermuxDeviceMirrorsGlue.unhide(machineID:ref:)   // unhide + reconcile
 - **Scheduling**: passes coalesce to the earliest pending deadline, so a failed open's 10 s backoff never
   delays the 200 ms triggers (status, new or closed remote workspaces); every pass re-arms a pass for the
   earliest backoff expiry.
-- **User closes** of a mirror prompt "Close “X”?" (Close on <Mac> / Hide Here / Cancel, the Return and Esc
-  default; Close is a plain button, since macOS 27 does not draw the destructive red title while the sheet
-  is key; the message names the Mac once, says the files, worktree and branch stay, and explains Hide Here; one prompt per multi-close). The sidebar rows' menus also offer Hide Here (no
-  prompt) and Close on <Mac>… (this prompt). Programmatic closes (`closeWorkspace(recordHistory: true)`: socket, AppleScript) hide.
-  Every close unbinds. Window close, quit and restore never hide or close remotely. Route any new user
-  close UI through `TabManager.closeWorkspaceWithConfirmation` (or the batch variant) to get the prompt.
+- **User closes** of a mirror work like a local workspace's: only upstream's confirmations on this Mac
+  (pinned, running process, the close settings, the batch "Close workspaces?"), then
+  `closer.closeOnItsMac` (the #530 fence after them) closes the mirror here and sends
+  `workspace.close {force: true}` to its Mac; `protected` (pinned there) unpins it there
+  (`workspace.action unpin`) and closes again; any other refusal beeps and the mirror comes back. The ref
+  sits in the persisted pending set (`supermux.devices.pendingRemoteCloses.v1`, never the hidden set) until
+  that Mac's records no longer hold it, so a close made offline is sent on reconnect (also after a
+  relaunch: `closer.sendPendingCloses()` runs on every auto-mirror pass) and auto-mirror never reopens it.
+  A close not sent yet is cancelled when a live local mirror shows the ref again (Reopen Closed
+  Workspace, a manual open), so ⌘⇧T after an offline close undoes it. Delete Group (sidebar, or socket
+  `workspace.group.delete` with `close_workspaces`) closes member mirrors on their Mac the same way (#530
+  fence 3). The phone's Delete Group (mobile `workspace.group.action delete`) hides them instead (#697):
+  the phone never lists mirrors, so its confirmation never showed them. The sidebar rows' menus also offer Hide Here (no prompt). Other programmatic closes
+  (`closeWorkspace(recordHistory: true)`: socket `workspace.close`, AppleScript) hide. Every close unbinds. Window close, quit
+  and restore never hide or close remotely. Route any new user close UI through
+  `TabManager.closeWorkspaceWithConfirmation` (or the batch variant) so it closes on the Mac.
 - **Status**: `deviceStatusProjector.status(forLocal:)` → `SupermuxDeviceMirrorStatus` (activity, branch,
   PR, pills, progress, log, color, description, pin). `SupermuxWorkspaceActivityResolver.activity(for:)`,
   `Workspace.supermuxSidebarBranch` and the new `Workspace.supermuxSidebarPullRequest` already overlay it,
@@ -311,16 +325,23 @@ SupermuxDeviceMirrorsGlue.unhide(machineID:ref:)   // unhide + reconcile
   prefix `supermux.remote.` (`SupermuxDeviceStatusProjector.remoteStatusKeyPrefix`), the remote log line
   has source `supermux-remote`. Never write an agent lifecycle into mirror panes (hibernation).
 - **Record fields** (state sync v2, additive): `supermux_status_entries` `[{key,value,icon?,color?,priority?}]`,
-  `supermux_progress` `{value,label?}`, `supermux_log` `{message,level?}`; `supermux_branch` /
+  `supermux_progress` `{value,label?}`, `supermux_log` `{message,level?}`, `supermux_working_panel_ids`
+  `[terminal id]` (terminals whose own agent is running or waiting; `nil` from an older host, `[]` when
+  none: the mirror spins those tabs, #716/#717; a Claude harness pane's id can appear too and matches
+  no mirror tab); `supermux_branch` /
   `supermux_pull_request` now also travel for workspaces no project owns (v2 only; the phone reads them
   only on project rows). The host pokes sync on sidebar-metadata changes
   (`SupermuxMobileSidebarStatusObserver`).
 - **Layout sync** skips remote non-terminal panels (browser/markdown) instead of stalling (#531).
-- **Socket** (`supermux.devices.*`): `close_mirror {workspace_id, action: close_on_mac|hide}`,
-  `close_prompt {workspace_id}` (the prompt a user close would show, never shown: `message_text`,
-  `informative_text`, `buttons [{role, title, key_equivalent, destructive, enabled, hidden, alpha}]`, `escape_role`),
-  `unhide {machine?, remote_workspace_id?}`, `hidden {}`, `set_auto_mirror {enabled}`, `reconcile {}`,
-  `fail_next_open {machine, remote_workspace_id}` (DEBUG: the next auto-mirror open of that ref fails);
+- **Socket** (`supermux.devices.*`): `close_mirror {workspace_id, action: close_on_mac|hide}` (a user
+  close without this Mac's confirmations, or Hide Here; `pending_on_mac`),
+  `unhide {machine?, remote_workspace_id?}`, `hidden {}` (`hidden`, `pending_remote_closes`),
+  `set_auto_mirror {enabled}`, `reconcile {}`,
+  `fail_next_open {machine, remote_workspace_id}` (DEBUG: the next auto-mirror open of that ref fails),
+  `user_close {workspace_id | workspace_ids, answer?}` (DEBUG: a user close with upstream's confirmations
+  pre-answered and logged), `reopen_closed_workspace {}` (DEBUG: ⌘⇧T without activating; `reopened`,
+  `workspace_ids`), `hold_remote_closes {enabled}` (DEBUG: keep pending closes unsent; disabling runs a
+  pass);
   `list` gains `auto_mirror_state`; `bindings` gains `hidden` and a per-mirror `status` object.
   Palette: "Show Hidden Remote Workspaces".
 

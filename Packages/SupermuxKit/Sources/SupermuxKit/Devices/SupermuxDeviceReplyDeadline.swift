@@ -6,17 +6,20 @@ internal import SupermuxMobileCore
 /// it to every call that does not name its own deadline, so no caller can
 /// forget a long one.
 ///
-/// A missed deadline does more than fail the call. The device link treats it
-/// as a dead transport and reconnects, which drops every mirror of that Mac,
-/// and the reconnect refresh often sends the same slow call again. So each
+/// A missed deadline fails the call: the caller sees `timed_out` while the
+/// work may still be running on the owning Mac. (Before #723 the device link
+/// also took it as a dead transport and reconnected, dropping every mirror of
+/// that Mac; now it reconnects only when that Mac stops answering.) So each
 /// method's deadline must outlast everything the owning Mac may legitimately
 /// do for it. The host bounds each step itself (30 s per local git command,
 /// 30 s for a background `git fetch`, 120 s for push and pull, 30 s for an AI
 /// request, 600 s for a worktree checkout, 900 s for a clone, 30 s for a
 /// `files.*` call and 300 s for a file duplicate or trash), and the
 /// deadlines below are derived from those bounds. `nil` keeps the link's own
-/// 20 s default, which suits calls the host answers from memory: a dead link
-/// is still noticed quickly there.
+/// 20 s default, which suits calls the host answers from memory or within a
+/// few seconds of its own bounds (`projects.list`, `run.state`,
+/// `project.icon`, the `preset.*` calls and every call that names a project
+/// wait at most 2 s for the projects' first load).
 ///
 /// ```swift
 /// devices.request(.changesHistory, params: params, on: machine)   // gets `network`
@@ -67,7 +70,7 @@ public enum SupermuxDeviceReplyDeadline {
         case .projectClone:
             return clone
         case .projectsList, .projectUpdate, .projectDelete, .projectOpen, .projectIcon,
-             .projectsSetSectionCollapsed, .worktreeOpen, .changesWatch, .runState, .runStart, .runStop,
+             .projectsSetSectionCollapsed, .worktreeOpen, .changesWatch, .filesWatch, .runState, .runStart, .runStop,
              .presetCreate, .presetUpdate, .presetDelete, .presetLaunch, .actionRun,
              .workspaceSelect, .terminalSelect, .panelSelect, .paneClose, .simulatorCreate,
              .usageState, .phonePushRegister, .phonePushStatus, .phonePushShare:
