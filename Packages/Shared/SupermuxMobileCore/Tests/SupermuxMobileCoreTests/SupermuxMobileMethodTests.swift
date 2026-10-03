@@ -76,11 +76,12 @@ import Testing
         "mobile.supermux.terminal.attachment.upload",
         // Terminal streaming
         "mobile.supermux.terminal.watch",
+        "mobile.supermux.terminal.action",
     ]
 
     @Test func allExposesEveryMethodExactlyOnce() {
         #expect(SupermuxMobileMethod.all.map(\.rawValue) == Self.expectedRawValues)
-        #expect(SupermuxMobileMethod.all.count == 59)
+        #expect(SupermuxMobileMethod.all.count == 60)
         #expect(Set(SupermuxMobileMethod.all).count == SupermuxMobileMethod.all.count)
     }
 

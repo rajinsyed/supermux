@@ -75,6 +75,11 @@ public enum SupermuxMobileCapability: String, CaseIterable, Codable, Sendable, E
     /// mode picked on another Mac's mirror becomes this Mac's setting for all
     /// its terminals, as one picked here does.
     case terminalSizingPreferenceV1 = "supermux.terminal_sizing_preference.v1"
+    /// Another Mac's device mirror of a terminal here forwards the bindings
+    /// that change the terminal itself (`clear_screen`, `reset`) and its
+    /// focus changes (`focus_in`, `focus_out`) with `terminal.action`, so
+    /// they act on this terminal, not only on that Mac's view of it.
+    case terminalActionsV1 = "supermux.terminal_actions.v1"
 
     /// Every capability, in declaration order (derived from `CaseIterable`).
     public static let all: [SupermuxMobileCapability] = SupermuxMobileCapability.allCases

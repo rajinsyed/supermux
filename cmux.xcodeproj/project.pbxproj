@@ -3457,8 +3457,10 @@
 		50BE0005000000000000001E /* SupermuxDevicesSocketPayloads+MirrorStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE0005000000000000001D /* SupermuxDevicesSocketPayloads+MirrorStatus.swift */; };
 		50BE0004000000000000001A /* SupermuxDevicesSocketPayloads.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00040000000000000019 /* SupermuxDevicesSocketPayloads.swift */; };
 		50BE00050000000000000008 /* SupermuxDeviceStatusProjector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00050000000000000007 /* SupermuxDeviceStatusProjector.swift */; };
+		50BE001B0200000000000004 /* SupermuxDeviceTerminalActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE001B0200000000000003 /* SupermuxDeviceTerminalActions.swift */; };
 		50BE00170100000000000002 /* SupermuxDeviceTerminalCloseSocketCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00170100000000000001 /* SupermuxDeviceTerminalCloseSocketCommands.swift */; };
 		50BE00160000000000000002 /* SupermuxDeviceTerminalInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00160000000000000001 /* SupermuxDeviceTerminalInput.swift */; };
+		50BE001B0200000000000002 /* SupermuxDeviceTerminalLinks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE001B0200000000000001 /* SupermuxDeviceTerminalLinks.swift */; };
 		50BE001A0100000000000004 /* SupermuxDeviceTerminalUpload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE001A0100000000000003 /* SupermuxDeviceTerminalUpload.swift */; };
 		50BE00190100000000000006 /* SupermuxDeviceTunnelClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00190100000000000005 /* SupermuxDeviceTunnelClient.swift */; };
 		50BE00190100000000000002 /* SupermuxDeviceTunnelHosts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00190100000000000001 /* SupermuxDeviceTunnelHosts.swift */; };
@@ -3548,6 +3550,7 @@
 		50BE000200000000000000D6 /* SupermuxMobileHost+Run.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000200000000000000D5 /* SupermuxMobileHost+Run.swift */; };
 		50BE000A0000000000000026 /* SupermuxMobileHost+RunWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000A0000000000000025 /* SupermuxMobileHost+RunWorkspace.swift */; };
 		50BE00190500000000000014 /* SupermuxMobileHost+Simulator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00190500000000000013 /* SupermuxMobileHost+Simulator.swift */; };
+		50BE001B0200000000000006 /* SupermuxMobileHost+TerminalActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE001B0200000000000005 /* SupermuxMobileHost+TerminalActions.swift */; };
 		50BE001A0100000000000002 /* SupermuxMobileHost+TerminalAttachments.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE001A0100000000000001 /* SupermuxMobileHost+TerminalAttachments.swift */; };
 		50BE000200000000000000E2 /* SupermuxMobileHost+Usage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000200000000000000E1 /* SupermuxMobileHost+Usage.swift */; };
 		50BE000200000000000000C8 /* SupermuxMobileHost+Worktrees.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000200000000000000C7 /* SupermuxMobileHost+Worktrees.swift */; };
@@ -7952,8 +7955,10 @@
 		50BE0005000000000000001D /* SupermuxDevicesSocketPayloads+MirrorStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Devices/SupermuxDevicesSocketPayloads+MirrorStatus.swift"; sourceTree = "<group>"; };
 		50BE00040000000000000019 /* SupermuxDevicesSocketPayloads.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDevicesSocketPayloads.swift; sourceTree = "<group>"; };
 		50BE00050000000000000007 /* SupermuxDeviceStatusProjector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceStatusProjector.swift; sourceTree = "<group>"; };
+		50BE001B0200000000000003 /* SupermuxDeviceTerminalActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceTerminalActions.swift; sourceTree = "<group>"; };
 		50BE00170100000000000001 /* SupermuxDeviceTerminalCloseSocketCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceTerminalCloseSocketCommands.swift; sourceTree = "<group>"; };
 		50BE00160000000000000001 /* SupermuxDeviceTerminalInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceTerminalInput.swift; sourceTree = "<group>"; };
+		50BE001B0200000000000001 /* SupermuxDeviceTerminalLinks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceTerminalLinks.swift; sourceTree = "<group>"; };
 		50BE001A0100000000000003 /* SupermuxDeviceTerminalUpload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceTerminalUpload.swift; sourceTree = "<group>"; };
 		50BE00190100000000000005 /* SupermuxDeviceTunnelClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ports/SupermuxDeviceTunnelClient.swift; sourceTree = "<group>"; };
 		50BE00190100000000000001 /* SupermuxDeviceTunnelHosts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ports/SupermuxDeviceTunnelHosts.swift; sourceTree = "<group>"; };
@@ -8040,6 +8045,7 @@
 		50BE000200000000000000D5 /* SupermuxMobileHost+Run.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SupermuxMobileHost+Run.swift"; sourceTree = "<group>"; };
 		50BE000A0000000000000025 /* SupermuxMobileHost+RunWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SupermuxMobileHost+RunWorkspace.swift"; sourceTree = "<group>"; };
 		50BE00190500000000000013 /* SupermuxMobileHost+Simulator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SupermuxMobileHost+Simulator.swift"; sourceTree = "<group>"; };
+		50BE001B0200000000000005 /* SupermuxMobileHost+TerminalActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SupermuxMobileHost+TerminalActions.swift"; sourceTree = "<group>"; };
 		50BE001A0100000000000001 /* SupermuxMobileHost+TerminalAttachments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SupermuxMobileHost+TerminalAttachments.swift"; sourceTree = "<group>"; };
 		50BE000200000000000000E1 /* SupermuxMobileHost+Usage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SupermuxMobileHost+Usage.swift"; sourceTree = "<group>"; };
 		50BE000200000000000000C7 /* SupermuxMobileHost+Worktrees.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SupermuxMobileHost+Worktrees.swift"; sourceTree = "<group>"; };
@@ -9557,6 +9563,9 @@
 				50BE001A0100000000000003 /* SupermuxDeviceTerminalUpload.swift */,
 				50BE001A0100000000000005 /* SupermuxTerminalClipboardWrites.swift */,
 				50BE001A0100000000000007 /* SupermuxTerminalClipboardSocketCommands.swift */,
+				50BE001B0200000000000001 /* SupermuxDeviceTerminalLinks.swift */,
+				50BE001B0200000000000003 /* SupermuxDeviceTerminalActions.swift */,
+				50BE001B0200000000000005 /* SupermuxMobileHost+TerminalActions.swift */,
 				50BE0019010000000000000D /* SupermuxDeviceLoopbackTunnelLane.swift */,
 				50BE00190300000000000009 /* SupermuxDeviceBrowserRoute.swift */,
 				50BE00190300000000000007 /* SupermuxBrowserProxyErrorPage.swift */,
@@ -16470,8 +16479,10 @@
 				50BE0005000000000000001E /* SupermuxDevicesSocketPayloads+MirrorStatus.swift in Sources */,
 				50BE0004000000000000001A /* SupermuxDevicesSocketPayloads.swift in Sources */,
 				50BE00050000000000000008 /* SupermuxDeviceStatusProjector.swift in Sources */,
+				50BE001B0200000000000004 /* SupermuxDeviceTerminalActions.swift in Sources */,
 				50BE00170100000000000002 /* SupermuxDeviceTerminalCloseSocketCommands.swift in Sources */,
 				50BE00160000000000000002 /* SupermuxDeviceTerminalInput.swift in Sources */,
+				50BE001B0200000000000002 /* SupermuxDeviceTerminalLinks.swift in Sources */,
 				50BE001A0100000000000004 /* SupermuxDeviceTerminalUpload.swift in Sources */,
 				50BE00190100000000000006 /* SupermuxDeviceTunnelClient.swift in Sources */,
 				50BE00190100000000000002 /* SupermuxDeviceTunnelHosts.swift in Sources */,
@@ -16553,6 +16564,7 @@
 				50BE000200000000000000D6 /* SupermuxMobileHost+Run.swift in Sources */,
 				50BE000A0000000000000026 /* SupermuxMobileHost+RunWorkspace.swift in Sources */,
 				50BE00190500000000000014 /* SupermuxMobileHost+Simulator.swift in Sources */,
+				50BE001B0200000000000006 /* SupermuxMobileHost+TerminalActions.swift in Sources */,
 				50BE001A0100000000000002 /* SupermuxMobileHost+TerminalAttachments.swift in Sources */,
 				50BE000200000000000000E2 /* SupermuxMobileHost+Usage.swift in Sources */,
 				50BE000200000000000000C8 /* SupermuxMobileHost+Worktrees.swift in Sources */,

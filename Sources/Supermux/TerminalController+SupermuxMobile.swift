@@ -145,6 +145,8 @@ extension TerminalController {
             return await v2SupermuxPortsList(params: params, executionContext: executionContext)
         case .terminalAttachmentUpload:
             return v2SupermuxTerminalAttachmentUpload(params: params)
+        case .terminalAction:
+            return v2SupermuxTerminalAction(params: params)
         default:
             return .err(code: "method_not_found", message: "Unknown mobile method", data: [
                 "method": method

@@ -770,6 +770,11 @@ final class TerminalPanel: Panel, ObservableObject {
 
     func performBindingAction(_ action: String) -> Bool {
         guard !isAgentHibernated else { return false }
+        // SUPERMUX:begin device-terminal-actions (Cmd+K and reset in another Mac's terminal also run there)
+        if let forwarded = SupermuxDeviceTerminalActions.perform(action, on: surface, locally: {
+            surface.performExplicitInputBindingAction(action)
+        }) { return forwarded }
+        // SUPERMUX:end device-terminal-actions
         return surface.performExplicitInputBindingAction(action)
     }
 

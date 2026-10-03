@@ -182,6 +182,13 @@ public enum SupermuxMobileMethod: String, CaseIterable, Codable, Sendable, Equat
     /// Connection-scoped; a new connection starts topic-wide again.
     case terminalWatch = "mobile.supermux.terminal.watch"
 
+    // MARK: Terminal actions
+
+    /// Runs one terminal action (`action`: `clear_screen`, `reset`,
+    /// `focus_in`, `focus_out`) on terminal `terminal_id` of `workspace_id`,
+    /// forwarded by another Mac's device mirror of that terminal.
+    case terminalAction = "mobile.supermux.terminal.action"
+
     /// The shared method-name prefix; the Mac router dispatches on it.
     public static let namespacePrefix = "mobile.supermux."
 

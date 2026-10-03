@@ -7076,6 +7076,30 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         return isBinding ? flags : nil
     }
 
+    // SUPERMUX:begin device-terminal-actions
+    /// Ctrl+V of an image and the forwarded bindings in a device mirror pane
+    /// (``SupermuxDeviceTerminalActions``); `false` leaves the key to Ghostty.
+    private func handleDeviceTerminalKey(
+        _ event: NSEvent,
+        terminalSurface: TerminalSurface,
+        surface: ghostty_surface_t
+    ) -> Bool {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            .subtracting([.numericPad, .function, .capsLock])
+        if flags == [.control], event.charactersIgnoringModifiers?.lowercased() == "v",
+           SupermuxDeviceTerminalActions.pastesImageOnControlV(in: terminalSurface) {
+            paste(nil)
+            return true
+        }
+        guard SupermuxDeviceTerminalActions.forwardsActions(for: terminalSurface),
+              let action = SupermuxDeviceTerminalActions.forwardedBindings.sorted().first(where: {
+                  ghosttyConsumeMenuAction($0, for: event, surface: surface)
+              }) else { return false }
+        _ = SupermuxDeviceTerminalActions.perform(action, on: terminalSurface) { performBindingAction(action) }
+        return true
+    }
+    // SUPERMUX:end device-terminal-actions
+
     private func ghosttyConsumeMenuAction(
         _ action: String,
         for event: NSEvent,
@@ -7170,6 +7194,13 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
 #if DEBUG
         ensureSurfaceMs = (ProcessInfo.processInfo.systemUptime - ensureSurfaceStart) * 1000.0
 #endif
+        // SUPERMUX:begin device-terminal-actions (another Mac's terminal: Cmd+K and reset also run there, Ctrl+V of an image uploads it as Cmd+V does)
+        if let terminalSurface, terminalSurface.ioMode == .manualMirror,
+           !event.modifierFlags.isDisjoint(with: [.command, .control]),
+           handleDeviceTerminalKey(event, terminalSurface: terminalSurface, surface: surface) {
+            return
+        }
+        // SUPERMUX:end device-terminal-actions
         let appDelegate = AppDelegate.shared
 #if DEBUG
         let rightSidebarShortcutStart = ProcessInfo.processInfo.systemUptime

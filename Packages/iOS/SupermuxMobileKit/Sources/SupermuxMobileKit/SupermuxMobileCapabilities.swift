@@ -86,4 +86,7 @@ public struct SupermuxMobileCapabilities: Sendable, Equatable {
     /// The Mac adopts a size mode picked on another Mac's mirror as its own
     /// setting (Mac-to-Mac only; no phone UI depends on it).
     public var supportsTerminalSizingPreference: Bool { contains(.terminalSizingPreferenceV1) }
+    /// The Mac runs terminal actions forwarded from another Mac's terminal
+    /// mirror (Mac-to-Mac only; no phone UI depends on it).
+    public var supportsTerminalActions: Bool { contains(.terminalActionsV1) }
 }

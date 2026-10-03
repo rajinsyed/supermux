@@ -40,6 +40,11 @@ extension Workspace: TerminalLinkOpenContainer {
     }
 
     func deferRemoteTerminalFileLinkOpen(sourcePanelId: UUID, rawValue: String) -> Bool {
+        // SUPERMUX:begin device-terminal-file-link (a path in another Mac's terminal opens that Mac's file)
+        if SupermuxDeviceTerminalLinks.open(
+            rawValue, panelID: surfaceOwnershipTarget(for: sourcePanelId)?.surfaceID ?? sourcePanelId, in: self
+        ) { return true }
+        // SUPERMUX:end device-terminal-file-link
         guard remoteConfiguration?.transport == .ssh,
               let target = surfaceOwnershipTarget(for: sourcePanelId),
               terminalLinkIsRemoteTerminal(target.surfaceID),

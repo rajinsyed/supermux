@@ -15,6 +15,7 @@ Rules for adding a touchpoint:
 - Numbering: the highest number in use is **773**. The remote-workspaces work (#517–#599) left
 - Numbering: the highest number in use is **783** (remote terminal streaming, #777–#783; #764–#776 are
   reserved for open PRs #74/#75). The remote-workspaces work (#517–#599) left
+- Numbering: the highest number in use is **818**. The remote-workspaces work (#517–#599) left
   unassigned gaps it may still grow into: **523–524, 527–529, 539–544, 558–559, 562–569,
   578–579 and 588–589** (never assigned, not retired); #600–#601 came from the 2026-10-01 upstream merge; #620–#622 and
   #630–#639 are the remote-workspaces feedback round (602–619 and 623–629 unassigned). The second
@@ -41,7 +42,9 @@ Rules for adding a touchpoint:
   #760–#763 (remote simulators keep working while `simctl` launches stall; a new Simulator tab activates although
   another Mac's device menu refreshed meanwhile), and its remote-terminal clipboard fixes #764–#773 (a program's
   copy and the user's copy in another Mac's terminal reach this Mac's clipboard; pasted images and dropped files upload
-  to that Mac); 709, 713–714, 724, 736 and 740–749 are unassigned. The highest number in use is 773. Number **351** is unused (the notifications
+  to that Mac) and its remote-terminal polish #810–#818 (a Cmd-click on a path opens the other Mac's file; Cmd+K,
+  reset and focus reach the other Mac's terminal; Ctrl+V of an image uploads it); 709, 713–714, 724, 736 and
+  740–749 are unassigned (774–809 are held by other open branches). The highest number in use is 818. Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 82, 83, 89, 106, 121, 142, 213, 214,
   220, 229, 237, 250, 251, 252–258, 335, 470, 473–481, 483, 484, and 487** are unused; all are
@@ -725,6 +728,15 @@ Rules for adding a touchpoint:
 | 795 | `Sources/Devices/DeviceTerminalMirrorSession.swift` | `sizing-one-setting` | Three fences: the stored `supermuxHostTakesSizingPreference` closure (default `{ false }`); in the convenience init after `self.init(…)`, it is set to `SupermuxTerminalSizingDefaults.hostTakesPreference(on: .device(link.instance))` (the cached `supermux.terminal_sizing_preference.v1`); after `sharingSetPolicy`, `supermuxSendSizingChoice(_:preference:)` sends `mobile.terminal.size_policy.set` with `supermux_preference` when given. Only `SupermuxTerminalSizingDefaults.pushChoice` (a pick, never a claim) calls it |
 | 796 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/Devices/SupermuxTerminalSizingAuto.swift` into the cmux target (ids `50BE00170400000000000005`/`…06`, four entries, `Devices/…` path in the Supermux group, next to #670's) |
 | 797 | `ios/cmux/Resources/Localizable.xcstrings` | `unfenced` | Adds `supermux.terminalSizing.mode.auto` (en "Auto", ja "自動") for #793; additive only |
+| 810 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the remote-terminal polish into the cmux target, four entries each (build file, file reference, Supermux group child, Sources phase) next to #764's `SupermuxDeviceTerminalUpload.swift`: `Devices/SupermuxDeviceTerminalLinks.swift` (`50BE001B0200000000000001`/`…02`, a Cmd-click on a path in another Mac's terminal), `Devices/SupermuxDeviceTerminalActions.swift` (`…03`/`…04`, forwarded Cmd+K/reset, focus and Ctrl+V of an image) and `SupermuxMobileHost+TerminalActions.swift` (`…05`/`…06`, the host's `terminal.action`) |
+| 811 | `Sources/Workspace+TerminalLinkOpening.swift` | `device-terminal-file-link` | First thing in `deferRemoteTerminalFileLinkOpen`: `SupermuxDeviceTerminalLinks.open(rawValue, panelID:in:)` claims a file path clicked in another Mac's terminal and opens that Mac's file in the mirror's read-only preview (upstream refused it: only SSH terminals resolved a remote path) |
+| 812 | `Sources/DockSplitStore+TerminalLinkOpening.swift` | `device-terminal-file-link` | Adds `deferRemoteTerminalFileLinkOpen` to the Dock's link container (upstream relies on the protocol's `false` default): the same `SupermuxDeviceTerminalLinks.open` for another Mac's terminal moved into the Dock |
+| 813 | `Sources/Workspace.swift` | `device-terminal-actions` | In `makeRemoteTmuxPanePanel`, the manual-mirror surface's `manualInputHandler` is `SupermuxDeviceTerminalActions.inputFilter(onInput, panelID:)` (upstream: `onInput`): drops the one form feed a forwarded Cmd+K's local clear writes, so the shell repaints once (the owning Mac's clear sends its own). Only a lone 0x0C is ever inspected |
+| 814 | `Sources/Workspace.swift` | `device-terminal-focus` | In `makeRemoteTmuxPanePanel`, sets the new surface's `onFocusStateChange` (#817) to `SupermuxDeviceTerminalActions.focusChanged`, which sends a device mirror pane's settled focus to the owning Mac (`focus_in` / `focus_out`) |
+| 815 | `Sources/Panels/TerminalPanel.swift` | `device-terminal-actions` | In `performBindingAction`, `SupermuxDeviceTerminalActions.perform(action, on: surface, locally:)` runs `clear_screen`/`reset` on another Mac's terminal too (the `surface.clear_history` socket path); `nil` keeps upstream's path |
+| 816 | `Sources/GhosttyTerminalView.swift` | `device-terminal-actions` | Two fences. In `keyDown`, right after the surface is ready, a device mirror pane (`ioMode == .manualMirror`) with Cmd or Ctrl held asks `handleDeviceTerminalKey`; the second fence adds that helper next to `ghosttyConsumeMenuAction`: Ctrl+V with only an image on the clipboard runs `paste(nil)` (the Cmd+V upload), and a key bound to `clear_screen`/`reset` is consumed and runs `SupermuxDeviceTerminalActions.perform` (local clear + the owning Mac's) |
+| 817 | `Packages/macOS/CmuxTerminal/Sources/CmuxTerminal/Surface/TerminalSurface.swift` | `device-terminal-focus` | `desiredFocusState` gets a `didSet` that calls the new `public var onFocusStateChange: ((Bool) -> Void)?` when the value changes (upstream: a plain stored `var desiredFocusState: Bool = false`) |
+| 818 | `cmuxTests/SupermuxMobileAuthorizationTests.swift` | `device-terminal-actions-authz` | `classificationCoversWorkspacePaneAndMacWideMethods` expects `terminal.action` to be terminal-scoped (it names `workspace_id` and `terminal_id`, like `terminal.select`) |
 
 ## How to re-apply
 
@@ -6395,3 +6407,40 @@ connect from `SupermuxDeviceLinkEvents`. Re-apply:
 
 Verify: `CMUX_E2E_SUITES="loopback_terminal_streaming_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`
 (LOOPBACK-HARNESS.md "Terminal streaming E2E").
+
+### 810–818. Another Mac's terminal acts like a local one — `device-terminal-file-link`, `device-terminal-actions`, `device-terminal-focus`, `device-terminal-actions-authz`
+
+A device mirror is a manual-mirror Ghostty surface fed with the other Mac's output, so four things a local
+terminal does stayed local or were refused: a Cmd-click on a file path (upstream claims a remote path only for
+SSH terminals, so `sub/notes.txt:2` fell through to the URL router and opened `http://sub/…` in a browser tab),
+Cmd+K (the other Mac kept its scrollback and the next replay brought it back), focus reporting (a mirror's
+Ghostty drops every terminal response, focus reports included, so a program that asked for mode 1004 never saw
+the mirror gain or lose focus) and Ctrl+V of an image (the program on the other Mac read THAT Mac's clipboard).
+Fork code: `Sources/Supermux/Devices/SupermuxDeviceTerminalLinks.swift` (resolves the click against the
+terminal's own folder from the Mac's workspace record, verifies it over `files.list`, opens the read-only
+preview through upstream's `FileExplorerPreviewCoordinator` with a device provider),
+`Sources/Supermux/Devices/SupermuxDeviceTerminalActions.swift` (forwarded bindings, the form-feed filter, focus
+settling, the Ctrl+V decision) and `Sources/Supermux/SupermuxMobileHost+TerminalActions.swift` (the host's
+`mobile.supermux.terminal.action`, advertised as `supermux.terminal_actions.v1`). Re-apply:
+
+- **#810 `project.pbxproj`.** Re-add the four entries per file listed in the #810 row.
+- **#811–#812 `device-terminal-file-link`.** Keep the `SupermuxDeviceTerminalLinks.open` call first in the
+  workspace's `deferRemoteTerminalFileLinkOpen` and the Dock's own implementation. If upstream adds a remote-file
+  seam per transport (as it has for SSH), move the device branch into it; never let a device terminal's path
+  reach the local resolver.
+- **#813 / #815 / #816 `device-terminal-actions`.** Keep the input filter around `manualInputHandler`, the
+  `perform` call at the top of `TerminalPanel.performBindingAction`, and the keyDown fence plus
+  `handleDeviceTerminalKey`. The keyDown fence must stay after `ensureSurfaceReadyForInput` and before any
+  binding or text handling; it runs only for manual-mirror panes with Cmd or Ctrl held, so typing elsewhere
+  never reaches it. If upstream adds an app-level callback for performed bindings, hook `perform` there instead.
+- **#814 / #817 `device-terminal-focus`.** Keep `onFocusStateChange` on `TerminalSurface` and its `didSet`
+  call, and the hook in `makeRemoteTmuxPanePanel`. If upstream starts sending a mirror's focus reports itself,
+  retire both and the host's `focus_in` / `focus_out`.
+- **#818 `SupermuxMobileAuthorizationTests.swift`.** Keep `.terminalAction` in the terminal-scoped arm.
+
+Verify: `CMUX_E2E_SUITES="loopback_terminal_polish_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`
+(Cmd-click of a relative `path:line` opens the other Mac's bytes in the preview and a folder opens nothing; Cmd+K
+clears the source terminal's scrollback and a re-attach does not bring it back; focus out and in reach a mode-1004
+program once each; Ctrl+V passes text through and uploads an image). Not covered there: `reset`, the
+`surface.clear_history` socket path (same `perform`), an older host (no capability: today's local-only clear,
+no focus reports, Ctrl+V passes through).
