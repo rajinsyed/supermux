@@ -167,6 +167,11 @@ class RemoteHostModeE2E:
             raise Failure(f"{what}: a main window is visible: {visible}")
         if state.get("activation_policy") != "accessory":
             raise Failure(f"{what}: activation policy {state.get('activation_policy')}, expected accessory (no Dock icon)")
+        # Independent of the mode's own view: no terminal sits in a window on screen.
+        terminals = (self.sock.call("debug.terminals", {}) or {}).get("terminals") or []
+        shown = [t.get("surface_id") or t.get("id") for t in terminals if t.get("window_visible")]
+        if shown:
+            raise Failure(f"{what}: terminals in a visible window: {shown}")
         return state
 
     def show(self) -> Dict[str, Any]:

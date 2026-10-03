@@ -69,6 +69,18 @@ anything.** It is the contract that keeps the fork mergeable with upstream cmux.
    Mac that runs the agent, so the main Mac can be closed. Details: "Remote Macs (devices)" below and
    `plans/supermux-remote-workspaces/`.
 
+10. **Remote Host Mode (headless host).** Settings › App › Remote Host Mode lets a Mac used only as a
+   remote host (for the iPhone app or another Mac's mirrors) run with no window on screen and no Dock
+   icon, while every workspace and terminal keeps running. Windows are hidden, never closed (a window
+   owns its workspaces): turning the mode on hides every main window; while no window is on screen a new
+   one (session restore at launch, a window a device's new workspace needs) stays hidden and socket or
+   device commands neither show a window nor activate the app; the close button and Close Window hide
+   instead of closing. The menu bar item offers Show Supermux / Hide Supermux and Turn Off Remote Host
+   Mode (off shows the windows again); reopening the app also shows them. Keep Mac Awake (upstream's
+   menu bar item) keeps the Mac reachable. Needs a logged-in macOS session; a locked screen is fine.
+   Code: `Sources/Supermux/RemoteHost/`, touchpoints #830–#834,
+   `tests/supermux/loopback_remote_host_mode_e2e.py`.
+
 Where cmux already has a primitive (workspace groups, Dock, `actions`/`commands` in cmux.json,
 diff viewer, per-workspace git branch/dirty tracking), supermux **extends** it rather than
 building a parallel system.
@@ -100,6 +112,7 @@ building a parallel system.
 | A mirror's browser opens the owning Mac's localhost; a mirror's own tabs keep its layout sync | ✅ loopback-E2E | `SupermuxDeviceBrowserRoute` + `SupermuxDeviceBrowserProxy` (#707), `SupermuxDeviceLayoutSurfaceFilter.localPanelIDs` (#706), `tests/supermux/loopback_mirror_browser_e2e.py`, `loopback_mirror_local_panels_e2e.py` |
 | Notification/push parity (no duplicate pushes, shared read state, presence-aware host, push setup shared between Macs) | ✅ loopback-E2E | #545–#550, `SupermuxDeviceNotification*`, `phone_push.status/share` |
 | Remote Macs settings card (Settings › Automation) | ✅ | `SupermuxRemoteMacsSettingsCard` (#596–#598) |
+| Remote Host Mode (no window, no Dock icon; workspaces keep running for remote viewers) | ✅ loopback-E2E | `Sources/Supermux/RemoteHost/` (`SupermuxRemoteHostMode`, `SupermuxRemoteHostModeMenuItems`), Settings row `SupermuxRemoteHostModeSettingsRow`, #830–#834, `tests/supermux/loopback_remote_host_mode_e2e.py` |
 
 Both phases are verified against a live tagged build (worktree creation, the Changes panel on
 real git status, and the full ⌘G run→stop→restart cycle confirmed by an actually-listening dev

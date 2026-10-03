@@ -171,6 +171,14 @@ final class MainWindowVisibilityController {
             return false
         }
         defer { workspaceSwitchSignposts.end(switchInterval) }
+        // SUPERMUX:begin remote-host-mode
+        // A headless remote host shows a window only for the user's own show requests.
+        if SupermuxRemoteHostMode.shared.blocksWindowFocus(reason: reason) {
+            dependencies.setActiveMainWindow(window)
+            log("focus.remoteHost", reason: reason, windows: [window])
+            return true
+        }
+        // SUPERMUX:end remote-host-mode
         if respectActivationSuppression, dependencies.isActivationSuppressed() {
             dependencies.setActiveMainWindow(window)
             log("focus.suppressed", reason: reason, windows: [window])
@@ -230,6 +238,13 @@ final class MainWindowVisibilityController {
             return
         }
         defer { workspaceSwitchSignposts.end(switchInterval) }
+        // SUPERMUX:begin remote-host-mode
+        if SupermuxRemoteHostMode.shared.blocksWindowFocus(reason: reason) {
+            dependencies.setActiveMainWindow(window)
+            log("focus.inWindow.remoteHost", reason: reason, windows: [window])
+            return
+        }
+        // SUPERMUX:end remote-host-mode
         dependencies.setActiveMainWindow(window)
         guard !dependencies.windowOperations.isKeyWindow(window) else {
             log("focus.inWindow.key", reason: reason, windows: [window])

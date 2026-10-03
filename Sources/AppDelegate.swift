@@ -1629,6 +1629,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        // SUPERMUX:begin remote-host-mode
+        // Reopening a headless remote host shows its hidden windows (as Show Supermux does).
+        if SupermuxRemoteHostMode.shared.showsWindowsOnReopen() { return true }
+        // SUPERMUX:end remote-host-mode
         if hasVisibleMainTerminalWindow() {
             _ = synchronizeActiveMainWindowContext(preferredWindow: NSApp.keyWindow ?? NSApp.mainWindow)
             return true
@@ -6904,6 +6908,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             window.performClose(nil)
             return true
         }
+        // SUPERMUX:begin remote-host-mode
+        // Remote Host Mode: Close Window hides the window (nothing is lost, so no dialog).
+        if SupermuxRemoteHostMode.shared.hidesInsteadOfClosing(window, isTerminating: isTerminatingApp) {
+            return true
+        }
+        // SUPERMUX:end remote-host-mode
         // Ask only when something would be lost, counting the window Dock that
         // closes with the window. A close that skips the dialog is not
         // preconfirmed, so the last-window quit policy still applies. Without a
@@ -10791,6 +10801,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         publishCmuxWindowLifecycle(name: "window.created", windowId: windowId, origin: "create")
         installFileDropOverlay(on: window, tabManager: tabManager)
+        // SUPERMUX:begin remote-host-mode
+        // A headless remote host keeps a new window hidden (session restore, a device's new workspace).
+        if SupermuxRemoteHostMode.shared.keepsNewMainWindowHidden() {
+            window.orderOut(nil)
+        } else
+        // SUPERMUX:end remote-host-mode
         if !shouldActivate || TerminalController.shouldSuppressSocketCommandActivation() {
             window.orderFront(nil)
             if shouldActivate, TerminalController.socketCommandAllowsInAppFocusMutations() {
@@ -11108,6 +11124,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         MenuBarOnlySettings.normalizeLegacyStoredPreference(defaults: defaults)
         syncActivationPolicy(defaults: defaults)
         syncMenuBarExtraVisibility(defaults: defaults)
+        // SUPERMUX:begin remote-host-mode
+        SupermuxRemoteHostMode.shared.syncToSettings()
+        // SUPERMUX:end remote-host-mode
         computerUseUXCoordinator.install {
             [weak self] workspaceID, surfaceID, effectIsCurrent in
             _ = self?.focusTerminal(
@@ -18870,6 +18889,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         windowId: UUID,
         onCancel: (() -> Void)?
     ) -> Bool {
+        // SUPERMUX:begin remote-host-mode
+        // Remote Host Mode: the close button hides the window and keeps its workspaces;
+        // to everything else the close was cancelled.
+        if SupermuxRemoteHostMode.shared.hidesInsteadOfClosing(candidateWindow, isTerminating: isTerminatingApp) {
+            handleCancelledMainTerminalWindowClose(windowId: windowId)
+            onCancel?()
+            return false
+        }
+        // SUPERMUX:end remote-host-mode
         let cancellationAction: (() -> Void)? = onCancel.map { action in
             { [weak self] in
                 self?.handleCancelledMainTerminalWindowClose(windowId: windowId)
