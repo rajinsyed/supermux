@@ -14,6 +14,7 @@ enum SupermuxMobileCapabilities {
     nonisolated static var advertised: [String] {
         served + (servesPortForward ? [SupermuxMobileCapability.portForwardV1.rawValue] : [])
             + (servesTerminalAttachments ? [SupermuxMobileCapability.terminalAttachmentsV1.rawValue] : [])
+            + (servesTerminalStream ? [SupermuxMobileCapability.terminalStreamV1.rawValue] : [])
     }
 
     /// Files pasted or dropped into another Mac's terminal mirror are stored
@@ -22,6 +23,17 @@ enum SupermuxMobileCapabilities {
     nonisolated private static var servesTerminalAttachments: Bool {
         #if DEBUG
         if SupermuxTerminalClipboardSocketCommands.pretendsOldHost { return false }
+        #endif
+        return true
+    }
+
+    /// terminal.watch is served and mobile.terminal.replay resumes from a byte
+    /// position: another Mac's device mirror streams a terminal losslessly
+    /// instead of re-anchoring on full replays. A DEBUG E2E can withhold it to
+    /// play an older host.
+    nonisolated private static var servesTerminalStream: Bool {
+        #if DEBUG
+        if SupermuxTerminalStreamDebug.pretendsOldHost { return false }
         #endif
         return true
     }

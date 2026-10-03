@@ -209,6 +209,19 @@ public final class MobileHostConnectionEventQueue: @unchecked Sendable {
     /// Panels whose absolute snapshot was shed after the producer considered
     /// it sent. Drain progress requests one exact-session replay for each.
     private var simulatorFrameReplayAfterDrainPanelIDs: Set<String> = []
+    // SUPERMUX:begin terminal-stream-watch
+    /// The terminals whose `terminal.bytes` this connection asked for
+    /// (`mobile.supermux.terminal.watch`); nil keeps upstream's topic-wide
+    /// delivery. Their bytes ride a budget of their own, never shed.
+    private var supermuxWatchedByteSurfaceIDs: Set<String>?
+    /// Queued watched-byte events: their surface and frame size.
+    private var supermuxWatchedEvents: [UUID: (surfaceID: String, byteCount: Int)] = [:]
+    private var supermuxWatchedBytesBySurfaceID: [String: Int] = [:]
+    private var supermuxWatchedQueuedByteCount = 0
+    /// Times one watched terminal outran its budget and its queued bytes
+    /// were dropped (the viewer resumes it from its byte position).
+    public private(set) var supermuxWatchedByteResyncCount = 0
+    // SUPERMUX:end terminal-stream-watch
 
     public init(
         maximumEventCount: Int = MobileHostConnectionEventQueue.defaultMaximumEventCount,
@@ -258,6 +271,12 @@ public final class MobileHostConnectionEventQueue: @unchecked Sendable {
             lock.unlock()
             return .rejected
         }
+        // SUPERMUX:begin terminal-stream-watch
+        if let watched = supermuxEnqueueWatchedBytesLocked(topic: topic, coalesceKey: coalesceKey, stateSeq: stateSeq, frame: frame) {
+            lock.unlock()
+            return watched
+        }
+        // SUPERMUX:end terminal-stream-watch
         // A Mac grid is an absolute snapshot, so the new frame supersedes the
         // queued one and may use its room. The old entry leaves only once the
         // new frame is admitted at the back like any other grid frame, so a
@@ -617,6 +636,12 @@ public final class MobileHostConnectionEventQueue: @unchecked Sendable {
         poisonedRenderGridSurfaceIDs.removeAll()
         resyncAfterDrainSurfaceIDs.removeAll()
         simulatorFrameReplayAfterDrainPanelIDs.removeAll()
+        // SUPERMUX:begin terminal-stream-watch
+        supermuxWatchedByteSurfaceIDs = nil
+        supermuxWatchedEvents.removeAll()
+        supermuxWatchedBytesBySurfaceID.removeAll()
+        supermuxWatchedQueuedByteCount = 0
+        // SUPERMUX:end terminal-stream-watch
         subscribedTopics.removeAll()
         queuedCountByLane.removeAll()
         surfaceLaneLimit = 0
@@ -659,6 +684,9 @@ public final class MobileHostConnectionEventQueue: @unchecked Sendable {
     private func removeQueuedEventLocked(_ eventID: UUID) -> QueuedEvent? {
         guard let event = queuedEvents.removeValue(forKey: eventID) else { return nil }
         queuedByteCount -= event.frame.count
+        // SUPERMUX:begin terminal-stream-watch
+        supermuxForgetWatchedEventLocked(eventID)
+        // SUPERMUX:end terminal-stream-watch
         if event.topic == DeviceTerminalGridPublisher.eventTopic, let key = event.coalesceKey,
            gridEventIDs[key] == eventID {
             gridEventIDs.removeValue(forKey: key)
@@ -697,8 +725,10 @@ public final class MobileHostConnectionEventQueue: @unchecked Sendable {
     /// `reclaimed` is a queued event the new frame replaces on admission, so
     /// its room counts as free.
     private func hasRoomLocked(for frame: Data, reclaiming reclaimed: QueuedEvent? = nil) -> Bool {
-        let reclaimedCount = reclaimed == nil ? 0 : 1
-        let reclaimedBytes = reclaimed?.frame.count ?? 0
+        // SUPERMUX:begin terminal-stream-watch (watched bytes have their own budget; upstream's lets)
+        let reclaimedCount = (reclaimed == nil ? 0 : 1) + supermuxWatchedEvents.count
+        let reclaimedBytes = (reclaimed?.frame.count ?? 0) + supermuxWatchedQueuedByteCount
+        // SUPERMUX:end terminal-stream-watch
         return queuedEvents.count - reclaimedCount < maximumEventCount
             && queuedByteCount - reclaimedBytes + frame.count <= maximumByteCount
     }
@@ -714,6 +744,10 @@ public final class MobileHostConnectionEventQueue: @unchecked Sendable {
         // The replaced event is not droppable, so the walk never counts it twice.
         var releasedCount = reclaimed == nil ? 0 : 1
         var releasedBytes = reclaimed?.frame.count ?? 0
+        // SUPERMUX:begin terminal-stream-watch (watched bytes sit outside the shared budget)
+        releasedCount += supermuxWatchedEvents.count
+        releasedBytes += supermuxWatchedQueuedByteCount
+        // SUPERMUX:end terminal-stream-watch
         // Pick the oldest droppable events first, then remove them, so the
         // walk never sees the order compact under it.
         for eventID in arrivalOrder.ids[arrivalOrder.head...] {
@@ -721,10 +755,12 @@ public final class MobileHostConnectionEventQueue: @unchecked Sendable {
                queuedByteCount - releasedBytes + frame.count <= maximumByteCount {
                 break
             }
-            guard let event = queuedEvents[eventID],
+            // SUPERMUX:begin terminal-stream-watch (a watched terminal's bytes are never shed)
+            guard let event = queuedEvents[eventID], supermuxWatchedEvents[eventID] == nil,
                   policy.isDroppable(topic: event.topic, coalesceKey: event.coalesceKey) else {
                 continue
             }
+            // SUPERMUX:end terminal-stream-watch
             sheddable.append(eventID)
             releasedCount += 1
             releasedBytes += event.frame.count
@@ -746,4 +782,69 @@ public final class MobileHostConnectionEventQueue: @unchecked Sendable {
         removeRenderGridEventsLocked(surfaceIDs: resyncSurfaceIDs, summary: &summary)
         return summary
     }
+    // SUPERMUX:begin terminal-stream-watch
+
+    /// The most one watched terminal may have queued. Past it the terminal's
+    /// queued bytes are dropped and only its newest chunk stays, so the viewer
+    /// sees the gap at once and resumes it from its byte position (or, when
+    /// the host's byte tail no longer reaches back that far, re-anchors on a
+    /// replay). Superset disconnects a client 8 MB behind the same way.
+    public static let supermuxWatchedSurfaceByteBudget = 8 * 1024 * 1024
+
+    /// Limits this connection's `terminal.bytes` to `surfaceIDs` (nil: every
+    /// terminal again, upstream's delivery). Bytes already queued stay.
+    public func supermuxWatchTerminalBytes(surfaceIDs: Set<String>?) {
+        lock.lock()
+        supermuxWatchedByteSurfaceIDs = surfaceIDs.map { Set($0.map { $0.uppercased() }) }
+        lock.unlock()
+    }
+
+    /// The terminals this connection watches, or nil when it gets them all.
+    public var supermuxWatchedTerminalBytes: Set<String>? {
+        lock.lock()
+        defer { lock.unlock() }
+        return supermuxWatchedByteSurfaceIDs
+    }
+
+    /// Admits a `terminal.bytes` event of a connection that names its
+    /// terminals: refused for the others, appended in order on the shared
+    /// lane for the watched ones, outside the shared budget. Nil for every
+    /// other event (upstream's admission runs).
+    private func supermuxEnqueueWatchedBytesLocked(
+        topic: String,
+        coalesceKey: String?,
+        stateSeq: UInt64?,
+        frame: Data
+    ) -> MobileHostEventEnqueueResult? {
+        guard topic == "terminal.bytes", let watched = supermuxWatchedByteSurfaceIDs else { return nil }
+        guard let surfaceID = coalesceKey?.uppercased(), watched.contains(surfaceID) else { return .rejected }
+        if supermuxWatchedBytesBySurfaceID[surfaceID, default: 0] + frame.count > Self.supermuxWatchedSurfaceByteBudget {
+            let backlog = supermuxWatchedEvents.filter { $0.value.surfaceID == surfaceID }.map(\.key)
+            for eventID in backlog { _ = removeQueuedEventLocked(eventID) }
+            supermuxWatchedByteResyncCount += 1
+        }
+        let eventID = UUID()
+        queuedEvents[eventID] = QueuedEvent(topic: topic, coalesceKey: coalesceKey, frame: frame, stateSeq: stateSeq)
+        arrivalOrder.append(eventID)
+        laneOrders[.shared, default: MobileHostQueuedEventOrder()].append(eventID)
+        queuedByteCount += frame.count
+        queuedCountByLane[.shared, default: 0] += 1
+        supermuxWatchedEvents[eventID] = (surfaceID, frame.count)
+        supermuxWatchedBytesBySurfaceID[surfaceID, default: 0] += frame.count
+        supermuxWatchedQueuedByteCount += frame.count
+        let startDrain = drainingLanes.insert(.shared).inserted
+        return MobileHostEventEnqueueResult(
+            admitted: true, startDrain: startDrain, drainLane: .shared,
+            renderGridResyncSurfaceIDs: [], depthAfterEnqueue: queuedEvents.count,
+            shedEventCount: 0, shedByteCount: 0, simulatorFrameShedPanelIDs: [], overflowed: false
+        )
+    }
+
+    private func supermuxForgetWatchedEventLocked(_ eventID: UUID) {
+        guard let watched = supermuxWatchedEvents.removeValue(forKey: eventID) else { return }
+        supermuxWatchedQueuedByteCount -= watched.byteCount
+        let remaining = supermuxWatchedBytesBySurfaceID[watched.surfaceID, default: 0] - watched.byteCount
+        supermuxWatchedBytesBySurfaceID[watched.surfaceID] = remaining > 0 ? remaining : nil
+    }
+    // SUPERMUX:end terminal-stream-watch
 }

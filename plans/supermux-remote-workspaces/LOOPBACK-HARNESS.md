@@ -511,6 +511,32 @@ the whole 30 s wait; the fix resets the record in `linkDropped()`, touchpoint #6
 CMUX_E2E_SUITES="loopback_terminal_input_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
 ```
 
+## Terminal streaming E2E
+
+`tests/supermux/loopback_terminal_streaming_e2e.py` (touchpoints #777–#783, `supermux.terminal_stream.v1`)
+mirrors one source terminal (watched) and keeps another without a mirror (unwatched). Steps: `seq 1 200000`
+in the watched terminal while the unwatched one floods `seq 1 3000000` arrives with no full replay of the
+watched terminal and the mirror's last 2000 lines equal the source's; the unwatched terminal's bytes never
+cross the link (`supermux.devices.terminal_stream.stats {machine}`, DEBUG: the link's per-terminal byte
+counts, its watched set, each mirror pane's full replays / resumes / gaps); a forced re-anchor
+(`terminal_close.replay`) resumes from the byte position; two remote resizes (a fake phone's viewport) do not
+replay; 3000 history lines survive a link drop and the output printed while it was down arrives; and with
+`supermux.devices.terminal_stream.pretend_old_host {enabled}` the mirror falls back to upstream's path
+(topic-wide bytes) and streams again once the host is current. Full replays are counted from the host's
+DEBUG log line `mobile.terminal.replay surface=<id8> renderGrid=`, which every build writes.
+
+Red on cb01777ba81 (tag `streamfix`, 2/6: no stats driver, one replay per resize, a re-anchor is a full
+replay, 272 of 3000 history rows after the reconnect), green on the fix (7/7). The burst step is green on
+both: in the loopback the host and the viewer share one main thread, so the queue never backs up far enough
+to shed; between two real Macs it does. The re-anchor runs before the resizes on purpose: the other Mac
+announces a new grid only with its next output (`device.terminal.grid`), so right after a resize the mirror
+may still hold the previous grid, and a resume at a grid the mirror does not have falls back to a replay
+(the host logs `supermux.terminal.resume REFUSED … reason=grid`).
+
+```bash
+CMUX_E2E_SUITES="loopback_terminal_streaming_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
+```
+
 ## Terminal size policy E2E
 
 `tests/supermux/loopback_terminal_sizing_policy_e2e.py` (touchpoints #665–#670) checks that a

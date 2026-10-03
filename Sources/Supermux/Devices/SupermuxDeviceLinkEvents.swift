@@ -23,10 +23,15 @@ enum SupermuxDeviceLinkEvents {
     /// The link (re)connected and its post-connect `mobile.sync.fetch` ran.
     static func linkConnected(instance: SurfaceDeviceInstanceID) {
         SupermuxComposition.devices.linkDidConnect(instance)
+        // The new connection sends every terminal's bytes until it names its own.
+        if let link = SupermuxComposition.devices.provider(for: .device(instance))?.link {
+            SupermuxTerminalStreamWatch.of(link).linkConnected()
+        }
     }
 
     /// The link was live and is now gone.
     static func linkLost(instance: SurfaceDeviceInstanceID) {
+        SupermuxTerminalStreamWatch.existing(instance)?.linkLost()
         SupermuxComposition.devices.linkDidDisconnect(instance)
     }
 }
