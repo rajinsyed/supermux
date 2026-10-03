@@ -373,6 +373,13 @@ struct GhosttySurfaceRepresentable: UIViewControllerRepresentable {
         var lastViewportRetryColumns: Int?
         var lastViewportRetryRows: Int?
         var viewportLeaseHeld = false
+        // SUPERMUX:begin sizing-auto-view-appeared
+        /// Set when the surface joins a window; the next viewport report sent
+        /// says so (`view_appeared`), so the Mac's Auto mode hands the grid to
+        /// this phone even though a view that only left the window kept its
+        /// viewport lease and reports the same size.
+        private var viewAppearedReportPending = false
+        // SUPERMUX:end sizing-auto-view-appeared
         private var composerMounted = false
         private var activeViewportPolicy: MobileTerminalOutputViewportPolicy = .natural
         /// Shared by the legacy and verified apply paths: an alternating
@@ -527,11 +534,25 @@ struct GhosttySurfaceRepresentable: UIViewControllerRepresentable {
                             rows: report.rows,
                             reportID: report.id
                         )
-                    if let preparation = self.preparedViewportReportsByReportID.removeValue(
+                    // SUPERMUX:begin sizing-auto-view-appeared
+                    var preparation = self.preparedViewportReportsByReportID.removeValue(
                         forKey: report.id
-                    ) {
+                    )
+                    if self.viewAppearedReportPending {
+                        preparation = preparation ?? store.prepareTerminalViewport(
+                            surfaceID: self.surfaceID,
+                            columns: report.columns,
+                            rows: report.rows
+                        )
+                        if preparation != nil {
+                            preparation?.viewAppeared = true
+                            self.viewAppearedReportPending = false
+                        }
+                    }
+                    if let preparation {
                         return await store.updatePreparedTerminalViewport(preparation)
                     }
+                    // SUPERMUX:end sizing-auto-view-appeared
                     return await store.updateTerminalViewport(
                         surfaceID: self.surfaceID,
                         columns: report.columns,
@@ -1284,6 +1305,9 @@ struct GhosttySurfaceRepresentable: UIViewControllerRepresentable {
         ) {
             guard self.surfaceView === surfaceView else { return }
             if isAttached {
+                // SUPERMUX:begin sizing-auto-view-appeared
+                viewAppearedReportPending = true
+                // SUPERMUX:end sizing-auto-view-appeared
                 startMountedTasks(
                     surfaceView: surfaceView,
                     resetRestartFailure: true

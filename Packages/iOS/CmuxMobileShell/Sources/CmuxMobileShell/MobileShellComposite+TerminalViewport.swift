@@ -18,6 +18,13 @@ public struct MobileTerminalViewportPreparation: Sendable {
     fileprivate let surfaceID: String
     fileprivate let viewportSize: MobileTerminalViewportSize
     fileprivate let generation: UInt64
+    // SUPERMUX:begin sizing-auto-view-appeared
+    /// The terminal view came back on screen (it left the window without the
+    /// app backgrounding): the report carries `view_appeared: true`, so a
+    /// host in Auto lets this phone take the grid although the viewport is
+    /// unchanged. Older hosts ignore the key.
+    public var viewAppeared = false
+    // SUPERMUX:end sizing-auto-view-appeared
 }
 
 extension MobileShellComposite {
@@ -249,18 +256,22 @@ extension MobileShellComposite {
         )
         do {
             let remoteWorkspaceID = remoteWorkspaceID(for: preparedWorkspaceID)
+            // SUPERMUX:begin sizing-auto-view-appeared
+            var viewportParams = MobileTerminalViewportParameters(
+                clientID: clientID,
+                identity: terminalDeviceIdentity
+            ).report(
+                workspaceID: remoteWorkspaceID.rawValue,
+                surfaceID: surfaceID,
+                viewport: reportedGrid,
+                generation: requestGeneration
+            )
+            if preparation.viewAppeared { viewportParams["view_appeared"] = true }
             let request = try MobileCoreRPCClient.requestData(
                 method: "mobile.terminal.viewport",
-                params: MobileTerminalViewportParameters(
-                    clientID: clientID,
-                    identity: terminalDeviceIdentity
-                ).report(
-                    workspaceID: remoteWorkspaceID.rawValue,
-                    surfaceID: surfaceID,
-                    viewport: reportedGrid,
-                    generation: requestGeneration
-                )
+                params: viewportParams
             )
+            // SUPERMUX:end sizing-auto-view-appeared
             let data = try await client.sendRequest(request)
             guard remoteClient === client else {
                 clearTerminalReplayBarrierIfCurrent(

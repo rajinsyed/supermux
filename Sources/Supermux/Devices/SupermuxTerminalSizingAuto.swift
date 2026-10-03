@@ -23,7 +23,10 @@ import Foundation
 ///   the terminal or returning to it (its viewport report attaches it again
 ///   after it cleared it on leaving), a viewport that changed (a rotation, a
 ///   resized window), and another Mac's mirror shown again (its
-///   `counts_override` goes from false back to automatic). A report that
+///   `counts_override` goes from false back to automatic), and a phone whose
+///   terminal view came back on screen without leaving the terminal (it
+///   navigated away and back: its report repeats the viewport but carries
+///   `view_appeared: true`, ``viewAppearedClientID``). Any other report that
 ///   repeats the same viewport is no activity: the phone sends one in answer
 ///   to every grid change, which would hand the grid back and forth.
 ///
@@ -43,6 +46,11 @@ final class SupermuxTerminalSizingAuto {
     /// Set for the rest of the main-actor turn that handles a viewer's
     /// terminal input or scroll.
     private(set) var deliveringRemoteInput = false
+    /// The client whose `mobile.terminal.viewport` report is being handled
+    /// and says its terminal view just came back on screen
+    /// (`view_appeared: true`). Set by `v2MobileTerminalViewport` around the
+    /// report only (SUPERMUX-TOUCHPOINTS.md #881).
+    var viewAppearedClientID: String?
     private var observer: NSObjectProtocol?
 
     /// Starts following app activation. Later calls are no-ops.
@@ -68,7 +76,9 @@ final class SupermuxTerminalSizingAuto {
     ) {
         if let explicitParticipantID { autoCounted[surfaceID]?.remove(explicitParticipantID) }
         if host.state.policy.mode == .latest {
-            for id in host.phoneParticipantIDs where Self.startedViewing(id, now: host.state, before: previous) {
+            let appeared = viewAppearedClientID.map { LocalTerminalSizingHost.phoneParticipantID(clientID: $0) }
+            for id in host.phoneParticipantIDs
+            where id == appeared || Self.startedViewing(id, now: host.state, before: previous) {
                 host.noteActivity(id)
             }
         }
