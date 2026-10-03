@@ -331,10 +331,15 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   terminal starts as Priority with this Mac first (its own pane for a local terminal, so a phone
   defers to a Mac pane on screen); a mirror claims the other Mac's terminal when it is shown, first
   attaches while shown, or reconnects, pushing once per connection and never in answer to that Mac's
-  size events, so of two viewing Macs the one that showed it last wins. The mode, fixed size and
-  priority order chosen in the size panel or the tab menu are one sticky choice per Mac
-  (`supermux.terminalSizing.preference`; the panel says "Applies to all terminals on this Mac."),
-  applied to every local terminal and mirror, now and after a relaunch. Cloud terminals,
+  size events, so of two viewing Macs the one that showed it last wins. The claim only puts this
+  Mac first in that terminal's Priority order; a mode, fixed size or order chosen on the terminal
+  (on either Mac or the phone) stays. The mode, fixed size and priority order chosen in the size
+  panel or the tab menu are one sticky choice per Mac (`supermux.terminalSizing.preference`; the
+  panel says "Applies to all terminals on this Mac."), applied to every local terminal, now and
+  after a relaunch, and to the terminal it was chosen on; another Mac's terminals change only by a
+  choice made on them (until 2026-10-03 every mirror pushed the whole preference when shown, on
+  reconnect and on every change, so a Fit Everyone picked once on one Mac became the mode of every
+  terminal it mirrored on the other, again after each show, and any small pane shrank them). Cloud terminals,
   `terminal.size_policy.set`, a phone's or another Mac's choice, Size to My Window and Don't Resize
   from This Mac stay per terminal. A viewing Mac's pane counts up to 500x200 (a phone's, 300x120). A
   pane that is not on screen (a tab never shown on its Mac, a mirror in a background workspace, a hidden
