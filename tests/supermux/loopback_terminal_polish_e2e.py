@@ -18,7 +18,8 @@ mirror is the viewer. It snapshots this Mac's general pasteboard first and resto
   1. setup                          auto-mirror on, the loopback linked and fetched
   2. clipboard_saved                the user's clipboard is snapshotted (restored at the end)
   3. source_gets_mirror             a background source workspace gets its mirror
-  4. title_reaches_mirror           a title the program sets (OSC 2) is the mirror tab's title
+  4. title_matches_source           after the program sets a title (OSC 2) the mirror's tab is
+                                    titled as the source Mac's own tab
   5. cmd_click_file_opens_preview   a Cmd-click on a relative `path:line` in the mirror (the
                                     terminal link coordinator, as a click runs it) resolves it
                                     against the source terminal's folder and opens the other
@@ -135,20 +136,31 @@ class TerminalPolishE2E(TerminalClipboardE2E):
 
     # -- steps ------------------------------------------------------------------
 
-    def title_reaches_mirror(self) -> Dict[str, Any]:
+    def tab_title(self, workspace_id: str, surface_id: str) -> str:
+        surfaces = (self.sock.call("surface.list", {"workspace_id": workspace_id}) or {}).get("surfaces") or []
+        row = next((s for s in surfaces if up(s.get("id")) == surface_id), None)
+        return str((row or {}).get("title") or "")
+
+    def title_matches_source(self) -> Dict[str, Any]:
+        """A title the program sets (OSC 2) leaves the mirror's tab titled as the source
+        Mac's own tab: device records own a mirror's tab names, so the mirror shows what
+        the other Mac shows for that terminal."""
         title = f"T-{self.nonce}"
         wait_for("the mirror to show the source's shell", lambda: self.mirror_text().strip(), self.timeout)
-        self.send_source(f"printf '\\033]2;{title}\\007'\n")
+        # The sleep keeps the shell from setting its own title at the next prompt.
+        self.send_source(f"printf '\\033]2;{title}\\007'; sleep 6\n")
+        time.sleep(3.0)
 
-        def mirror_title() -> Optional[str]:
-            surfaces = (self.sock.call("surface.list", {"workspace_id": self.mirror_id}) or {}).get("surfaces") or []
-            row = next((s for s in surfaces if up(s.get("id")) == self.mirror_surface), None)
-            got = str((row or {}).get("title") or "")
-            if got != title:
-                raise Failure(f"the mirror tab's title is {got!r}")
-            return got
+        def same() -> Dict[str, str]:
+            source = self.tab_title(self.source_id, self.source_surface)
+            mirror = self.tab_title(self.mirror_id, self.mirror_surface)
+            if not source or source != mirror:
+                raise Failure(f"the mirror's tab is titled {mirror!r}, the source's {source!r}")
+            return {"source_title": source, "mirror_title": mirror}
 
-        return {"title": wait_for("the program's title on the mirror's tab", mirror_title, self.timeout)}
+        titles = wait_for("the mirror's tab title to match the source's", same, 10)
+        time.sleep(3.5)  # the sleep ends
+        return titles
 
     def cmd_click_file_opens_preview(self) -> Dict[str, Any]:
         self.project = self.scratch.resolve() / f"project-{self.nonce}"
@@ -291,7 +303,7 @@ class TerminalPolishE2E(TerminalClipboardE2E):
                   and self.step("clipboard_saved", self.clipboard_saved)
                   and self.step("source_gets_mirror", self.source_gets_mirror))
             if ok:
-                ok = self.step("title_reaches_mirror", self.title_reaches_mirror) and ok
+                ok = self.step("title_matches_source", self.title_matches_source) and ok
                 if self.step("cmd_click_file_opens_preview", self.cmd_click_file_opens_preview):
                     ok = self.step("cmd_click_directory_ignored", self.cmd_click_directory_ignored) and ok
                 else:
