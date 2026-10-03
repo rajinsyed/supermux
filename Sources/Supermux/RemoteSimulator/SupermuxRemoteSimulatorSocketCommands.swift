@@ -34,6 +34,9 @@ protocol SupermuxRemoteSimulatorDebugInspectable: AnyObject {
 /// - `steal {host_panel_id}` — opens a second loopback stream lane to that
 ///   host panel and sends `start`, as another device opening the same
 ///   simulator would.
+/// - `simctl_delay {seconds?}` — sets (or reads) the slow-`simctl` hook
+///   (``SupermuxSimctlDebugDelay``): every `simctl` spawn of this app's
+///   Simulator panels waits that long first; 0 turns it off.
 @MainActor
 enum SupermuxRemoteSimulatorSocketCommands {
     static let methodPrefix = "mirror.simulator."
@@ -63,6 +66,12 @@ enum SupermuxRemoteSimulatorSocketCommands {
             return try await viewer.debugPerform(action, params: params)
         case "steal":
             return try await steal(hostPanelID: try uuid(params, "host_panel_id"))
+        case "simctl_delay":
+            let previous = SupermuxSimctlDebugDelay.seconds
+            if let seconds = (params["seconds"] as? NSNumber)?.doubleValue {
+                SupermuxSimctlDebugDelay.seconds = seconds
+            }
+            return ["seconds": SupermuxSimctlDebugDelay.seconds, "previous": previous]
         default:
             throw InvalidParams(message: "unknown simulator driver \(name)")
         }

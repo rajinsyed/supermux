@@ -31,10 +31,15 @@ quit_app() {
 }
 
 launch_app() {
+  # CMUX_E2E_SLOW_SIMCTL=<seconds> arms the app's DEBUG slow-simctl hook from launch on (every simctl spawn of
+  # its Simulator panels waits that long; the simulator suite also arms it itself, see --slow-simctl there).
+  local slow=()
+  [[ -n "${CMUX_E2E_SLOW_SIMCTL:-}" ]] && slow=(--env "SUPERMUX_DEBUG_SIMCTL_DELAY_SECONDS=$CMUX_E2E_SLOW_SIMCTL")
   open -g \
     --env SUPERMUX_DEBUG_LOOPBACK_DEVICE=1 \
     --env "SUPERMUX_PROJECTS_FILE=$SCRATCH/projects.json" \
     --env "SUPERMUX_PHONE_PUSH_STATE_DIR=$SCRATCH/push-state" \
+    "${slow[@]+"${slow[@]}"}" \
     "$APP"
   for _ in $(seq 1 100); do [[ -S "$SOCKET" ]] && break; sleep 0.2; done
   [[ -S "$SOCKET" ]] || { echo "app did not open $SOCKET" >&2; exit 1; }

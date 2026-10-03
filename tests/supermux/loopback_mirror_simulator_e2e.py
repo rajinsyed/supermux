@@ -48,7 +48,11 @@ session, pump, encoder and worker ring; only QUIC is replaced.
                                             device: a new tab showing another booted simulator, the
                                             owner's first pick, is switched to it first)
  19. new_simulator_tab_bar_runs_on_owner    the pane tab bar's New Simulator button: as step 6
- 20. restore_rebinds                        (--app-path) quit (`tell application id … to quit`, as
+ 20. slow_simctl_lists_and_streams          with every `simctl` spawn of the app slowed past the link's
+                                            20 s reply deadline (the DEBUG `simctl_delay` hook, as on a Mac
+                                            whose new processes stall in dyld), a new Simulator tab's
+                                            picker still lists the owner's devices and the tab streams
+ 21. restore_rebinds                        (--app-path) quit (`tell application id … to quit`, as
                                             scripts and launchers do, with a simulator worker
                                             running) within 60s, the script seeing no error, and
                                             relaunch: the viewer comes back in M, streams S's
@@ -61,7 +65,9 @@ reuses an existing one and never deletes it). Stdlib only.
 
 Usage:
   CMUX_TAG=<tag> python3 tests/supermux/loopback_mirror_simulator_e2e.py [--app-path APP] [--udid UDID]
-      [--keep-device] [--timeout 30] [--keep] [--report PATH]
+      [--keep-device] [--timeout 30] [--keep] [--report PATH] [--slow-simctl SECONDS]
+
+--slow-simctl arms the slow-`simctl` hook for the whole run (and the relaunch), not only step 20.
 """
 
 from __future__ import annotations
@@ -87,6 +93,10 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 ARTIFACTS_DIR = REPO_ROOT / "tests" / "supermux" / "artifacts"
 WORKER_ARGUMENT = "--cmux-simulator-worker"
 SIM = "supermux.devices.mirror.simulator."
+# Step 20's delay per `simctl` spawn of the app: more than the device link's 20 s reply deadline, as on
+# the Mac where every `simctl` launch stalled 20-22 s in dyld before `main` (2026-10-03).
+SLOW_SIMCTL_SECONDS = 25.0
+SIMCTL_DELAY_ENV = "SUPERMUX_DEBUG_SIMCTL_DELAY_SECONDS"
 
 
 class Failure(Exception):
@@ -361,6 +371,13 @@ class MirrorSimulatorE2E:
             raise Failure(f"{action} was not accepted: {result}")
         return result
 
+    def set_simctl_delay(self, seconds: float) -> float:
+        """Arms the app's slow-`simctl` hook (DEBUG); returns the previous delay."""
+        result = self.sock.call(SIM + "simctl_delay", {"seconds": seconds}) or {}
+        if float(result.get("seconds", -1)) != float(seconds):
+            raise Failure(f"simctl_delay did not take {seconds}: {result}")
+        return float(result.get("previous") or 0)
+
     def stir(self) -> None:
         """Makes the simulator draw (an idle home screen sends no frames); at most every 3 s."""
         if not self.udid or time.monotonic() - self.last_stir < 3:
@@ -448,6 +465,9 @@ class MirrorSimulatorE2E:
             return device
 
         self.machine = wait_for("the loopback device to connect", ready, self.timeout)["machine"]
+        if self.args.slow_simctl:
+            self.facts["slow_simctl_whole_run"] = self.args.slow_simctl
+            self.set_simctl_delay(self.args.slow_simctl)
         sim = self.sim_state()
         self.baseline_panels = int(sim.get("simulator_panel_count") or 0)
         self.baseline_workers = self.workers()
@@ -835,6 +855,46 @@ class MirrorSimulatorE2E:
         finally:
             self.close_local_simulators_in_mirror()
 
+    def slow_simctl_lists_and_streams(self) -> Dict[str, Any]:
+        """A slow `simctl` on the owning Mac (every launch stalled 20-22 s in dyld, 2026-10-03) left the picker
+        empty (`mobile.simulator.devices.list` ran a fresh `simctl list` and missed the link's 20 s reply
+        deadline) and a new Simulator tab never picked a device. With the app's `simctl` spawns slowed past
+        that deadline, a new tab's picker must still list the owner's devices and the tab must stream."""
+        udid = self.need_udid()
+        for viewer in self.panels(self.mirror, "viewer"):
+            self.sock.call("surface.close", {"workspace_id": self.mirror, "surface_id": viewer["panel_id"], "force": True})
+        wait_for("no Simulator tab on the owner before the step", lambda: not self.panels(self.source, "local"), 20)
+        delay = max(SLOW_SIMCTL_SECONDS, self.args.slow_simctl or 0)
+        previous = self.set_simctl_delay(delay)
+        started = time.monotonic()
+        try:
+            try:
+                self.new_simulator("configured")
+                opened = self.one_viewer_on_owner()
+            finally:
+                self.close_local_simulators_in_mirror()
+            expected = available_phone_and_tablet_udids()
+
+            def listed() -> Optional[List[str]]:
+                devices = self.need_viewer(include_devices=True).get("devices") or []
+                got = sorted(up(d.get("udid")) for d in devices)
+                if got != expected:
+                    raise Failure(f"picker {got} != the owner's available iPhone/iPad simulators {expected}")
+                return got
+
+            picker = wait_for("the picker to list the owner's devices with simctl slow", listed, 30, interval_s=1.0)
+            picker_seconds = round(time.monotonic() - started, 1)
+            shown = wait_for("the owner's new Simulator tab to pick a device with simctl slow", self.host_device, 15)
+            picked_seconds = round(time.monotonic() - started, 1)
+            if shown != udid:
+                self.select_and_follow(udid, 90)
+            viewer = self.wait_streaming(0, 3, 45)
+            return {"simctl_delay_s": delay, "host_panel_id": opened["host_panel_id"], "picker": picker,
+                    "picker_s": picker_seconds, "device_picked_s": picked_seconds, "first_pick": shown,
+                    "streaming_s": round(time.monotonic() - started, 1), "frames": viewer.get("presented_frames")}
+        finally:
+            self.set_simctl_delay(previous)
+
     def restore_rebinds(self) -> Dict[str, Any]:
         if not self.args.app_path:
             raise Skipped("pass --app-path to quit and relaunch")
@@ -916,6 +976,8 @@ class MirrorSimulatorE2E:
         env_args = ["--env", "SUPERMUX_DEBUG_LOOPBACK_DEVICE=1"]
         if self.args.projects_file:
             env_args += ["--env", f"SUPERMUX_PROJECTS_FILE={self.args.projects_file}"]
+        if self.args.slow_simctl:
+            env_args += ["--env", f"{SIMCTL_DELAY_ENV}={self.args.slow_simctl}"]
         subprocess.run(["open", "-g", *env_args, app], check=True)
 
         def socket_alive() -> bool:
@@ -1009,6 +1071,7 @@ class MirrorSimulatorE2E:
                 ("owner_close_closes_viewer", self.owner_close_closes_viewer),
                 ("viewer_close_closes_owner_panel", self.viewer_close_closes_owner_panel),
                 ("new_simulator_tab_bar_runs_on_owner", self.new_simulator_tab_bar_runs_on_owner),
+                ("slow_simctl_lists_and_streams", self.slow_simctl_lists_and_streams),
                 ("restore_rebinds", self.restore_rebinds),
             ]:
                 ok = self.step(name, check) and ok
@@ -1027,6 +1090,8 @@ def main() -> int:
     parser.add_argument("--app-path", help="the tagged .app to quit and relaunch for the restore check")
     parser.add_argument("--projects-file", help="SUPERMUX_PROJECTS_FILE to relaunch with")
     parser.add_argument("--report", help="report path")
+    parser.add_argument("--slow-simctl", type=float, default=float(os.environ.get("CMUX_E2E_SLOW_SIMCTL") or 0),
+                        help="seconds every simctl spawn of the app waits, for the whole run (DEBUG hook)")
     args = parser.parse_args()
     if not args.tag and not args.socket:
         parser.error("set CMUX_TAG (or pass --tag / --socket)")
