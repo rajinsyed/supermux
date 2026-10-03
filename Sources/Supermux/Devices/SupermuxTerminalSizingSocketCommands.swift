@@ -132,7 +132,17 @@ enum SupermuxTerminalSizingSocketCommands {
         pane.isHidden = true
         SupermuxTerminalSizingVisibility.shared.recheckAll()
         Task { @MainActor in
-            try? await Task.sleep(nanoseconds: UInt64(hiddenMilliseconds) * 1_000_000)
+            // Hold the pane hidden for the whole window: a pinned grid's own
+            // layout pass may resynchronize the portal and reveal it early,
+            // which would end the hide before the visibility rule settles.
+            let deadline = ContinuousClock.now + .milliseconds(hiddenMilliseconds)
+            while ContinuousClock.now < deadline {
+                try? await Task.sleep(nanoseconds: 16_000_000)
+                if !pane.isHidden {
+                    pane.isHidden = true
+                    SupermuxTerminalSizingVisibility.shared.recheckAll()
+                }
+            }
             if silentReveal {
                 pane.isHidden = false
             } else {
