@@ -1101,13 +1101,14 @@ class WorkspaceBehaviorsE2E:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--tag", default=os.environ.get("CMUX_TAG"), help="tagged build (default: $CMUX_TAG)")
+    parser.add_argument("--socket", help="this tagged build's control socket (default: /tmp/cmux-debug-<tag>.sock; never $CMUX_SOCKET_PATH, which in a Supermux terminal names the user's own app)")
     parser.add_argument("--timeout", type=float, default=30.0, help="seconds to wait for each check")
     parser.add_argument("--keep", action="store_true", help="leave the workspaces, project and repo in place")
     parser.add_argument("--report", help="report path (default: tests/supermux/artifacts/loopback_workspace_behaviors_e2e-<tag>.json)")
     args = parser.parse_args()
     if not args.tag:
         parser.error("set CMUX_TAG (or pass --tag)")
-    socket_path = f"/tmp/cmux-debug-{tag_slug(args.tag)}.sock"
+    socket_path = args.socket or f"/tmp/cmux-debug-{tag_slug(args.tag)}.sock"
 
     started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     try:

@@ -14,10 +14,14 @@ same app's mobile host (`MobileHostService`). That has three effects:
 
 Design decision 12 in [DESIGN.md](DESIGN.md) calls for this harness.
 
-> **Verified 2026-10-01** on tag `rws-f2` (`--supermux-profile` build). The smoke script passes all
-> 10 checks, and a mirror survives an app restart (it is restored and reconnects).
-> An agent-only build (`CMUX_DEV_BACKEND_MODE=local`, not signed in) should work the same way,
-> because the link never asks for a Stack token. **That was not tested.**
+> **Agent E2E runs use agent-only builds: plain `--tag`, never `--supermux-profile` or `--prod-auth`.**
+> Those copy the user's release defaults and Stack sign-in and talk to production cmux.com, so the
+> build announces itself on the user's account (presence heartbeats and a device-registry row under
+> this Mac's device id, with the tag) and acts there as the user. The loopback device is
+> in-process and asks for no Stack token, so an unsigned agent-only build runs every suite.
+> `run_all_loopback_e2e.sh` refuses any other app before it launches anything
+> (`tests/supermux/require_isolated_app.py`), and see
+> [Agent E2E builds and the user's account](#agent-e2e-builds-and-the-users-account-2026-10-03).
 
 ## Run it
 
@@ -25,23 +29,32 @@ Design decision 12 in [DESIGN.md](DESIGN.md) calls for this harness.
 export PATH="$HOME/.cargo/bin:$PATH:$HOME/.local/zig/zig-aarch64-macos-0.16.0"
 export CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_STRIP=false
 
-# 1. Build (signed-in profile seeded from the installed Supermux app; never sign out inside it).
-./scripts/reload.sh --tag <tag> --supermux-profile
+# 1. Build an agent-only app: not signed in, development backend, nothing of the user's.
+CMUX_DEV_BACKEND_MODE=local ./scripts/reload.sh --tag <tag>
 
-# 2. Launch with the opt-in. Use the "App path:" that reload.sh printed.
+# 2. Check it is isolated, then launch with the opt-in. Use the "App path:" that reload.sh printed.
+python3 tests/supermux/require_isolated_app.py --app "<App path printed by reload.sh>" --tag <tag>
 open -g --env SUPERMUX_DEBUG_LOOPBACK_DEVICE=1 "<App path printed by reload.sh>"
 
 # 3. Verify the pipeline end to end (writes tests/supermux/artifacts/loopback_device_smoke-<tag>.json).
 CMUX_TAG=<tag> python3 tests/supermux/loopback_device_smoke.py
 ```
 
+- **Never a seeded tag.** A tag once built with `--supermux-profile` keeps the user's copied
+  defaults and `credentials.json` after a plain rebuild; the guard refuses it. Use a new tag.
+- **The suites never read `CMUX_SOCKET_PATH`.** Inside a Supermux terminal it names the user's
+  running app (`/tmp/supermux.sock`), and a suite that took it would drive that app. Each suite
+  talks to `/tmp/cmux-debug-<tag>.sock` unless `--socket` says otherwise, and the runner passes the
+  tag's socket explicitly.
+- **Raising the window.** Only ever the tagged app's own process:
+  `osascript -e 'tell application "System Events" to set frontmost of (every process whose bundle identifier is "com.cmuxterm.app.debug.<tag-with-dots>") to true'`.
+  Never `tell application id … activate`.
 - **Opt-in, choose one.**
   - Set the environment variable `SUPERMUX_DEBUG_LOOPBACK_DEVICE=1` at launch (`1`, `true` or
     `yes`).
   - Or set the default:
     `defaults write com.cmuxterm.app.debug.<tag-with-dots> supermux.debug.loopbackDevice -bool true`.
-    Write it **after** the reload: `--supermux-profile` re-imports the whole defaults domain and
-    wipes the key. Delete it afterwards with `defaults delete … supermux.debug.loopbackDevice`.
+    Delete it afterwards with `defaults delete … supermux.debug.loopbackDevice`.
 - **The window must be on screen.** Many suites check what the user sees. With another app in
   native full screen on the display, or the screen locked or asleep, the tagged app's window is
   covered and those suites fail for nothing. `run_all_loopback_e2e.sh` stops after a launch whose
@@ -1035,6 +1048,41 @@ that makes the simulator draw, screenshots) would time out, so its failures woul
 Not covered here (two real Macs): the `simulator_stream` lane over QUIC (direct and relay) through
 `DeviceIrxClient.supermuxTunnelConnection`, capture on a headless or locked owning Mac, frame rate and
 latency, the phone and a Mac taking the stream from each other, and version skew.
+
+## Agent E2E builds and the user's account (2026-10-03)
+
+**Report.** "Sometimes randomly the terminal size gets set by the remote machine": a real Claude Code
+tab showed the chip "99x35 · syedrajin905's Mac" with Fit Everyone checked, while the E2E apps of
+that night (`rws-int`, `rws-fix`, `realmac`, `turnstile`, …) were built with `--supermux-profile`.
+
+**What those builds could and could not do (checked on this Mac, read-only).**
+- They never joined the Mac-to-Mac mesh. Their v2 control ran against the development worker
+  (`CMUX_IROH_V2_ENVIRONMENT=development` is in every tagged build's Info.plist, `--supermux-profile`
+  included) and got HTTP 403 at every launch (`/tmp/cmux-irx-journal-mac-rws-int.jsonl`:
+  `socket-failed http_403`, `run-stopped-terminal`, 33 launches); no tagged app has a
+  `cmux-iroh-v2/state` directory, which the release keeps its device directory in. A link also needs
+  the same app namespace on both ends (`IrxMacPeerAuthorization`: bundle id, environment), so
+  `com.cmuxterm.app.debug.<tag>` cannot link to `com.supermux.app` at all.
+- Their logs name only the loopback machine; all 69 host admissions in `rws-int`'s log were loopback,
+  and every suite report names the tag's own socket.
+- They did reach the account. With production auth a DEBUG build posts presence heartbeats to the
+  production presence service and, with iOS pairing on (copied from the release), a device-registry
+  row to `https://cmux.com/api/devices`, under the release's own device id (the copied
+  `mobileHost.deviceID` and the Mac-wide `mobile-host-device-id` file) with its tag. The registry
+  hides an instance 180 s after its last publication (`registryDiscovery.ts`), presence keeps an
+  offline instance for 24 h, and v2 automatic discovery lists only Macs of the v2 directory, so the
+  user's other Mac never offered them as Remote Macs.
+- The chip's name is not a DEV build's: a terminal names every other Mac participant by the first
+  word of the host's own signed-in display name ("syedrajin905's Mac", `TerminalSharingPresentation`),
+  and 99x35 is the grid of any pane in an 800x600 window (background terminals live in 800x600
+  headless windows in every build, the release included).
+
+So the tagged builds did not resize the user's terminals. The cause was the product: a Mac's sticky
+size choice and its mirrors' claims changed the mode of terminals another Mac owns (SUPERMUX.md,
+"Terminal size follows the Mac you look from"; fixed with `sticky_choice_stays_on_this_mac` and
+`showing_keeps_other_macs_mode` in the sizing suite). The harness still had two ways to reach the
+user, both closed now: suites took `CMUX_SOCKET_PATH`, which in a Supermux terminal is the user's
+running app, and the documented build was `--supermux-profile`.
 
 ## Six suites failed with another app full screen (2026-10-02)
 
