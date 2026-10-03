@@ -9,7 +9,9 @@ import os
 ///
 /// Armed by `SUPERMUX_DEBUG_SIMCTL_DELAY_SECONDS=<seconds>` at launch or the
 /// `supermux.devices.mirror.simulator.simctl_delay {seconds}` driver; 0 (the
-/// default) turns it off. Release builds have no delay.
+/// default) turns it off. The driver's `coresimulator: false` also makes the
+/// panels list devices with `simctl` (the fallback on a Mac where CoreSimulator
+/// cannot be used). Release builds have no delay and always use CoreSimulator.
 enum SupermuxSimctlDebugDelay {
     #if DEBUG
     static let environmentKey = "SUPERMUX_DEBUG_SIMCTL_DELAY_SECONDS"
@@ -24,6 +26,14 @@ enum SupermuxSimctlDebugDelay {
         set { state.withLock { $0 = max(0, newValue) } }
     }
 
+    private static let coreSimulatorState = OSAllocatedUnfairLock<Bool>(initialState: true)
+
+    /// Whether the panels may list devices through CoreSimulator in-process.
+    static var allowsCoreSimulator: Bool {
+        get { coreSimulatorState.withLock { $0 } }
+        set { coreSimulatorState.withLock { $0 = newValue } }
+    }
+
     /// Waits as `spawns` slow `simctl` launches would.
     static func beforeSpawns(_ spawns: Int, _ what: String) async throws {
         let delay = seconds * Double(spawns)
@@ -32,6 +42,8 @@ enum SupermuxSimctlDebugDelay {
         try await Task.sleep(for: .seconds(delay))
     }
     #else
+    static var allowsCoreSimulator: Bool { true }
+
     @inline(__always)
     static func beforeSpawns(_ spawns: Int, _ what: String) async throws {}
     #endif

@@ -97,7 +97,7 @@ final class SupermuxRemoteSimulators {
             }
             if let udid = panel.deviceUDID {
                 for candidate in listed {
-                    let showsDevice = try await host.deviceList(panelID: candidate)
+                    let showsDevice = try await host.deviceList(panelID: candidate).devices
                         .contains { $0.isSelected && $0.udid == udid }
                     // Read after each await, so a viewer that attached meanwhile counts.
                     let shown = shownHostPanelIDs(on: panel.machine, besides: panel)
