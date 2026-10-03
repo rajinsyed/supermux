@@ -83,7 +83,8 @@ driven by `supermux.devices.terminal_sizing.*` (DEBUG), which run the panel's ow
                                          [phone, its Mac pane] (a mirror that pushed the order to the
                                          terminal it shows, its own hidden auto-mirror in the loopback,
                                          would land after the local apply under the mirror's key)
- 15. choice_survives_relaunch            (--app-path) Largest Window, then quit and relaunch: new
+ 15. choice_survives_relaunch            (--app-path; runs last, the relaunch renumbers mirror tabs)
+                                         Largest Window, then quit and relaunch: new
                                          and restored terminals start in Largest Window
  16. auto_phone_viewing_takes_the_grid  after a reset, a fresh shown terminal and one opened with
                                          `mobile.terminal.create` start in Auto; a phone (40x12) opening
@@ -1234,10 +1235,6 @@ class SizingPolicyE2E:
                 ok = self.step("sticky_choice_stays_on_this_mac", self.sticky_choice_stays_on_this_mac) and ok
             if self.local_key:
                 ok = self.step("priority_order_applies_everywhere", self.priority_order_applies_everywhere) and ok
-            if self.args.app_path:
-                ok = self.step("choice_survives_relaunch", self.choice_survives_relaunch) and ok
-            else:
-                self.steps.append({"name": "choice_survives_relaunch", "ok": None, "skipped": "pass --app-path to run"})
             ok = self.step("auto_phone_viewing_takes_the_grid", self.auto_phone_viewing_takes_the_grid) and ok
             if self.fresh_surface:
                 for name in ("auto_mac_typing_takes_it_back", "auto_phone_returning_takes_it",
@@ -1251,6 +1248,11 @@ class SizingPolicyE2E:
                 ok = self.step("other_macs_choice_becomes_this_macs_setting",
                                self.other_macs_choice_becomes_this_macs_setting) and ok
             ok = self.step("mirror_choice_reaches_the_other_mac", self.mirror_choice_reaches_the_other_mac) and ok
+            # Last: the relaunch gives the restored mirror tabs new panel ids.
+            if self.args.app_path:
+                ok = self.step("choice_survives_relaunch", self.choice_survives_relaunch) and ok
+            else:
+                self.steps.append({"name": "choice_survives_relaunch", "ok": None, "skipped": "pass --app-path to run"})
         self.cleanup()
         return ok
 
