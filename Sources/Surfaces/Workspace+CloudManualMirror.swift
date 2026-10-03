@@ -20,7 +20,9 @@ extension Workspace {
     /// A saved device terminal stays process-free until its provider reconnects:
     /// the pane is built on the same manual-mirror path as a live attachment.
     func restoreDeviceDisplayPanel(_ snapshot: SessionPanelSnapshot, in pane: PaneID) -> UUID? {
-        guard let panel = makeRemoteTmuxPanePanel(onInput: { _ in }, keyNameResolver: nil) else { return nil }
+        // SUPERMUX:begin device-mirror-clipboard (upstream passes no clipboard argument; a restored device pane keeps its program's copies)
+        guard let panel = makeRemoteTmuxPanePanel(onInput: { _ in }, keyNameResolver: nil, allowsRemoteClipboardWrites: true) else { return nil }
+        // SUPERMUX:end device-mirror-clipboard
         Self.bindCloudManualMirrorCallbacks(
             panel: panel, onResize: { _ in }, onRuntimeReady: {}, onFocus: {}, attachment: nil
         )

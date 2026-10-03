@@ -31,7 +31,8 @@ import SupermuxKit
 /// `phone_push_probe`, `phone_push_share_now`), the `mirror.*` mirror-behavior drivers
 /// (``SupermuxMirrorSocketCommands``), the `mirror.simulator.*` remote-simulator drivers
 /// (``SupermuxRemoteSimulatorSocketCommands``), the `terminal_sizing.*` size preference drivers
-/// (``SupermuxTerminalSizingSocketCommands``), and the `new_worktree.*` New Worktree
+/// (``SupermuxTerminalSizingSocketCommands``), the `terminal_clipboard.*` clipboard drivers
+/// (``SupermuxTerminalClipboardSocketCommands``), and the `new_worktree.*` New Worktree
 /// sheet drivers (`SupermuxNewWorktreeSocketCommands`).
 @MainActor
 enum SupermuxDevicesSocketCommands {
@@ -109,6 +110,7 @@ enum SupermuxDevicesSocketCommands {
             case let name where SupermuxDeviceNotificationSocketCommands.handles(name):
                 result = try await SupermuxDeviceNotificationSocketCommands.handle(String(name), params)
             case let name where SupermuxDeviceTerminalCloseSocketCommands.handles(name): result = try SupermuxDeviceTerminalCloseSocketCommands.handle(name, params)
+            case let name where SupermuxTerminalClipboardSocketCommands.handles(name): result = try SupermuxTerminalClipboardSocketCommands.handle(name, params)
             case let name where SupermuxDeviceMirrorCloseSocketCommands.handles(name): result = try SupermuxDeviceMirrorCloseSocketCommands.handle(name, params)
             case let name where SupermuxDeviceTunnelSocketCommands.handles(name): result = try await SupermuxDeviceTunnelSocketCommands.handle(name, params)
             case let name where SupermuxTerminalSizingSocketCommands.handles(name):

@@ -16,7 +16,7 @@ import SupermuxMobileCore
 ///
 /// - `push_decisions {clear?}`: the phone-forwarding decision log plus the
 ///   local unread count and the phone-facing badge.
-/// - `notification_records {}`: local records with origin, read state,
+/// - `notification_records {}`: local records with body, origin, read state,
 ///   correlation key and project (what `notification.list` leaves out).
 /// - `notification_overrides {presence?, window_key?, suppress_when_app_focused?}`:
 ///   `"present"`/`"away"` and `"key"`/`"not_key"` overrides for the
@@ -103,6 +103,7 @@ enum SupermuxDeviceNotificationSocketCommands {
                 "surface_id": notification.surfaceId.map { $0.uuidString as Any } ?? NSNull(),
                 "title": notification.title,
                 "subtitle": notification.subtitle,
+                "body": notification.body,
                 "is_read": notification.isRead,
                 "origin": notification.origin.wireValue,
                 "correlation_key": notification.correlationKey.map { $0 as Any } ?? NSNull(),
