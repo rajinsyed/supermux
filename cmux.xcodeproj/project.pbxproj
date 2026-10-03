@@ -3408,6 +3408,7 @@
 		50BE000A0000000000000018 /* SupermuxComposition+Mirrors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000A0000000000000017 /* SupermuxComposition+Mirrors.swift */; };
 		50BE0019020000000000000C /* SupermuxComposition+Ports.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE0019020000000000000B /* SupermuxComposition+Ports.swift */; };
 		50BE00060000000000000016 /* SupermuxComposition+Projects.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00060000000000000015 /* SupermuxComposition+Projects.swift */; };
+		50BE0019050000000000002A /* SupermuxCoreSimulatorCrashGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00190500000000000029 /* SupermuxCoreSimulatorCrashGuard.swift */; };
 		50BE00190500000000000024 /* SupermuxCoreSimulatorDevices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00190500000000000023 /* SupermuxCoreSimulatorDevices.swift */; };
 		50BE00040000000000000002 /* SupermuxDevice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00040000000000000001 /* SupermuxDevice.swift */; };
 		50BE00190300000000000006 /* SupermuxDeviceBrowserProxy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00190300000000000005 /* SupermuxDeviceBrowserProxy.swift */; };
@@ -7894,6 +7895,7 @@
 		50BE000A0000000000000017 /* SupermuxComposition+Mirrors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Mirrors/SupermuxComposition+Mirrors.swift"; sourceTree = "<group>"; };
 		50BE0019020000000000000B /* SupermuxComposition+Ports.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Ports/SupermuxComposition+Ports.swift"; sourceTree = "<group>"; };
 		50BE00060000000000000015 /* SupermuxComposition+Projects.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Projects/SupermuxComposition+Projects.swift"; sourceTree = "<group>"; };
+		50BE00190500000000000029 /* SupermuxCoreSimulatorCrashGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteSimulator/SupermuxCoreSimulatorCrashGuard.swift; sourceTree = "<group>"; };
 		50BE00190500000000000023 /* SupermuxCoreSimulatorDevices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteSimulator/SupermuxCoreSimulatorDevices.swift; sourceTree = "<group>"; };
 		50BE00040000000000000001 /* SupermuxDevice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDevice.swift; sourceTree = "<group>"; };
 		50BE00190300000000000005 /* SupermuxDeviceBrowserProxy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ports/SupermuxDeviceBrowserProxy.swift; sourceTree = "<group>"; };
@@ -9554,6 +9556,7 @@
 				50BE00190500000000000011 /* SupermuxRemoteSimulatorSnapshot.swift */,
 				50BE0019050000000000001B /* Workspace+SupermuxRemoteSimulator.swift */,
 				50BE00190500000000000019 /* SupermuxRemoteSimulatorQuality.swift */,
+				50BE00190500000000000029 /* SupermuxCoreSimulatorCrashGuard.swift */,
 				50BE00190500000000000027 /* SupermuxSimulatorDeviceListing.swift */,
 				50BE00190500000000000025 /* SupermuxResumeOnce.swift */,
 				50BE00190500000000000023 /* SupermuxCoreSimulatorDevices.swift */,
@@ -16394,6 +16397,7 @@
 				50BE000A0000000000000018 /* SupermuxComposition+Mirrors.swift in Sources */,
 				50BE0019020000000000000C /* SupermuxComposition+Ports.swift in Sources */,
 				50BE00060000000000000016 /* SupermuxComposition+Projects.swift in Sources */,
+				50BE0019050000000000002A /* SupermuxCoreSimulatorCrashGuard.swift in Sources */,
 				50BE00190500000000000024 /* SupermuxCoreSimulatorDevices.swift in Sources */,
 				50BE00040000000000000002 /* SupermuxDevice.swift in Sources */,
 				50BE00190300000000000006 /* SupermuxDeviceBrowserProxy.swift in Sources */,
