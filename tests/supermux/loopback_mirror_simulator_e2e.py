@@ -71,6 +71,13 @@ session, pump, encoder and worker ring; only QUIC is replaced.
                                             comes back in M, binds S's restored panel (a slow device menu
                                             is asked again, never answered by opening a second tab) and
                                             streams it, no second SimulatorPanel
+ 25. coresimulator_survives_quit_during_load (--app-path) the app quits normally while its in-process
+                                            CoreSimulator load is held open (a cold service); after
+                                            the relaunch CoreSimulator still loads in-process
+ 26. coresimulator_guard_needs_two_interrupted_loads
+                                            (--app-path) a run killed during that load once leaves
+                                            CoreSimulator in use; killed during the next load too, it
+                                            is off in-process (the crash guard still works)
 
 Writes a JSON report (default tests/supermux/artifacts/loopback_mirror_simulator_e2e-<tag>.json)
 and a window screenshot next to it (`…-viewer.png`), and exits non-zero on any failure. The
@@ -93,6 +100,7 @@ import os
 import plistlib
 import re
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -112,6 +120,9 @@ SIM = "supermux.devices.mirror.simulator."
 SLOW_SIMCTL_SECONDS = 25.0
 SIMCTL_DELAY_ENV = "SUPERMUX_DEBUG_SIMCTL_DELAY_SECONDS"
 CORESIMULATOR_DELAY_ENV = "SUPERMUX_DEBUG_CORESIMULATOR_DELAY_SECONDS"
+CORESIMULATOR_LOAD_HOLD_ENV = "SUPERMUX_DEBUG_CORESIMULATOR_LOAD_HOLD_SECONDS"
+# Steps 25-26 hold the in-process CoreSimulator load open this long: past every quit and kill they make.
+CORESIMULATOR_LOAD_HOLD_SECONDS = 90
 # Steps 22-24's hold on each in-process CoreSimulator read of the owner: 3 s loses no deadline (it only makes a
 # device-menu refresh overlap the new tab's startup discovery); 12 s is past the owner's 8 s device-menu bound.
 CORESIMULATOR_OVERLAP_SECONDS = 3.0
@@ -1071,6 +1082,77 @@ class MirrorSimulatorE2E:
                 "host_panel_id": settled["host_panel_id"], "switched_from": first_pick,
                 "quit_seconds": self.facts.get("quit_seconds")}
 
+    # -- the in-process CoreSimulator crash guard -------------------------------
+
+    def coresimulator_phase(self, load: bool = False) -> str:
+        return str((self.sock.call(SIM + "coresimulator", {"load": load}) or {}).get("phase"))
+
+    def wait_coresimulator_phase(self, description: str, done: Callable[[str], bool], timeout_s: float) -> str:
+        """Starts a device read (the app's first loads CoreSimulator) and waits for its load phase."""
+        self.coresimulator_phase(load=True)
+
+        def reached() -> Optional[str]:
+            phase = self.coresimulator_phase()
+            if not done(phase):
+                raise Failure(f"phase {phase}")
+            return phase
+
+        return wait_for(description, reached, timeout_s, interval_s=0.5)
+
+    def clear_coresimulator_guard(self) -> None:
+        """Removes the guard's files, so a run that ends in the middle of these steps poisons no later run."""
+        directory = Path.home() / "Library" / "Application Support" / self.bundle_id()
+        for name in ("supermux-coresimulator-loading", "supermux-coresimulator-crashed",
+                     "supermux-coresimulator-interrupted"):
+            (directory / name).unlink(missing_ok=True)
+
+    def coresimulator_survives_quit_during_load(self) -> Dict[str, Any]:
+        """The guard bracketed the in-process CoreSimulator load with a marker file and took a marker left behind for
+        a crash. The load is where a cold CoreSimulatorService makes the app wait, so a quit (or a logout) during it
+        left the marker too, and from the next launch on CoreSimulator was off in-process for good: every list went
+        back to `simctl`, 20 s each on the Mac of 2026-10-03, until Xcode changed."""
+        if not self.args.app_path:
+            raise Skipped("pass --app-path to quit and relaunch")
+        self.close_viewer_and_owner_tab()  # no Simulator tab: this step's read is the first load
+        self.clear_coresimulator_guard()
+        try:
+            self.relaunch({CORESIMULATOR_LOAD_HOLD_ENV: str(CORESIMULATOR_LOAD_HOLD_SECONDS)})
+            self.wait_coresimulator_phase("the CoreSimulator load to be held open", lambda p: p == "loading", 20)
+            self.relaunch()  # a normal quit, the load still open
+            quit_seconds = self.facts.get("quit_seconds")
+            phase = self.wait_coresimulator_phase("the relaunched app to finish its CoreSimulator load",
+                                                  lambda p: p != "loading" and p != "not_loaded", 30)
+            if phase != "loaded":
+                raise Failure(f"after a normal quit during the CoreSimulator load the relaunched app does not load it "
+                              f"in-process: {phase}")
+            return {"quit_seconds": quit_seconds, "phase_after_relaunch": phase}
+        finally:
+            self.clear_coresimulator_guard()
+
+    def coresimulator_guard_needs_two_interrupted_loads(self) -> Dict[str, Any]:
+        """The guard must still turn CoreSimulator off in-process when the app keeps dying inside its load (a crash
+        there), but one run that ended there (killed, or a power loss) proves nothing: it takes two in a row."""
+        if not self.args.app_path:
+            raise Skipped("pass --app-path to quit and relaunch")
+        self.clear_coresimulator_guard()
+        hold = {CORESIMULATOR_LOAD_HOLD_ENV: str(CORESIMULATOR_LOAD_HOLD_SECONDS)}
+        try:
+            self.relaunch(hold)
+            self.wait_coresimulator_phase("the CoreSimulator load to be held open", lambda p: p == "loading", 20)
+            self.relaunch(hold, kill=True)  # killed inside the load once
+            once = self.wait_coresimulator_phase("the next run to load CoreSimulator again after one killed load",
+                                                 lambda p: p != "not_loaded", 20)
+            if once != "loading":
+                raise Failure(f"one run killed while loading CoreSimulator turned it off in-process: {once}")
+            self.relaunch(kill=True)  # killed inside the next load too
+            twice = self.wait_coresimulator_phase("the CoreSimulator guard after two killed loads in a row",
+                                                  lambda p: p != "not_loaded" and p != "loading", 30)
+            if not twice.startswith("unavailable"):
+                raise Failure(f"two runs killed in a row while loading CoreSimulator left it in use in-process: {twice}")
+            return {"after_one_kill": once, "after_two_kills": twice}
+        finally:
+            self.clear_coresimulator_guard()
+
     @staticmethod
     def worker_pids(app_pid: int) -> List[int]:
         """The simulator worker processes `app_pid` started (its direct children)."""
@@ -1092,10 +1174,18 @@ class MirrorSimulatorE2E:
         except PermissionError:
             return True
 
-    def relaunch(self, extra_env: Optional[Dict[str, str]] = None) -> None:
+    def relaunch(self, extra_env: Optional[Dict[str, str]] = None, kill: bool = False) -> None:
+        """Quits the app as a script would (`kill`: SIGKILL, as a crash or a force quit ends it) and launches it
+        again with the suite's environment plus `extra_env`."""
         app = self.args.app_path
-        bundle_id = plistlib.loads((Path(app) / "Contents" / "Info.plist").read_bytes())["CFBundleIdentifier"]
+        bundle_id = self.bundle_id()
         app_pid = int(self.sim_state().get("app_pid") or 0)
+        if kill:
+            self.sock.close()
+            os.kill(app_pid, signal.SIGKILL)
+            wait_for("the killed app to exit", lambda: not self.pid_alive(app_pid), 15, interval_s=0.2)
+            self.launch(app, bundle_id, extra_env)
+            return
         workers_before = self.worker_pids(app_pid)
         self.sock.close()
         # The way a script or launcher quits an app: an Apple Event to its bundle id.
@@ -1124,6 +1214,18 @@ class MirrorSimulatorE2E:
 
         # Its workers share the bundle id: `open` would reuse a lingering one.
         wait_for("the app's workers to exit with it", quit_done, 15, interval_s=0.5)
+        self.launch(app, bundle_id, extra_env)
+
+    def bundle_id(self) -> str:
+        return plistlib.loads((Path(self.args.app_path) / "Contents" / "Info.plist").read_bytes())["CFBundleIdentifier"]
+
+    def launch(self, app: str, bundle_id: str, extra_env: Optional[Dict[str, str]]) -> None:
+        def gone() -> bool:
+            result = subprocess.run(["osascript", "-e", f'application id "{bundle_id}" is running'],
+                                    check=False, capture_output=True, text=True)
+            return result.stdout.strip() != "true"
+
+        wait_for("the app to be gone before the launch", gone, 15, interval_s=0.5)
         env_args = ["--env", "SUPERMUX_DEBUG_LOOPBACK_DEVICE=1"]
         if self.args.projects_file:
             env_args += ["--env", f"SUPERMUX_PROJECTS_FILE={self.args.projects_file}"]
@@ -1229,6 +1331,8 @@ class MirrorSimulatorE2E:
                 ("device_menu_never_empty_while_owner_starts", self.device_menu_never_empty_while_owner_starts),
                 ("slow_coresimulator_new_tab_streams", self.slow_coresimulator_new_tab_streams),
                 ("restore_rebinds", self.restore_rebinds),
+                ("coresimulator_survives_quit_during_load", self.coresimulator_survives_quit_during_load),
+                ("coresimulator_guard_needs_two_interrupted_loads", self.coresimulator_guard_needs_two_interrupted_loads),
             ]:
                 ok = self.step(name, check) and ok
         self.cleanup()
