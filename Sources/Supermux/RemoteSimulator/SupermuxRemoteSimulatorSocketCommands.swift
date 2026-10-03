@@ -145,6 +145,8 @@ enum SupermuxRemoteSimulatorSocketCommands {
                     simulatorPanels += 1
                     row["class"] = "local"
                     row["selected_device_id"] = local.selectedDeviceID ?? NSNull()
+                    row["status"] = "\(local.coordinator.status)"
+                    row["failure"] = local.coordinator.failure?.code ?? NSNull()
                 } else if let viewer = panel as? SupermuxRemoteSimulatorDebugInspectable {
                     viewers += 1
                     row["class"] = "viewer"
