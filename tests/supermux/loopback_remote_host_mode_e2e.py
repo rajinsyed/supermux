@@ -22,10 +22,15 @@ user's write paths:
                                         hides, stays registered, keeps its workspaces
   5. close_window_command_hides_window  Show Supermux, then Close Window (Shift-Cmd-W): the same,
                                         with no "Close window?" dialog
-  6. relaunch_stays_headless            quit and relaunch with the mode on: the session is restored
+  6. global_hotkey_shows_windows        while headless, the global show/hide hotkey shows the main
+                                        windows (as Show Supermux does) and the mode stays on
+                                        (red before: only the menu bar item and reopening showed them)
+  7. notification_click_shows_windows   while headless, a click on a terminal notification's banner
+                                        shows the windows with its workspace selected; the mode stays on
+  8. relaunch_stays_headless            quit and relaunch with the mode on: the session is restored
                                         (the device workspace is back), no window shows, the app does
                                         not activate, a device-created terminal works
-  7. mode_off_shows_windows             the setting off: main windows show again, regular policy
+  9. mode_off_shows_windows             the setting off: main windows show again, regular policy
 
 Writes a JSON report (default tests/supermux/artifacts/loopback_remote_host_mode_e2e-<tag>.json)
 and exits non-zero on any failure. Stdlib only.
@@ -63,6 +68,8 @@ STATE = "supermux.devices.remote_host.state"
 SET = "supermux.devices.remote_host.set"
 MENU = "supermux.devices.remote_host.menu"
 CLOSE = "supermux.devices.remote_host.close_window"
+HOTKEY = "supermux.devices.remote_host.global_hotkey"
+NOTIFICATION_CLICK = "supermux.devices.remote_host.notification_click"
 
 
 def hold(description: str, probe: Callable[[], Any], seconds: float, interval_s: float = 0.4) -> None:
@@ -301,6 +308,47 @@ class RemoteHostModeE2E:
             wait_for("Hide Supermux to hide every window", lambda: not self.visible_windows(), self.timeout)
         return {"window": window_id, "workspaces_kept": len(workspaces)}
 
+    def hide_again(self) -> None:
+        """Hide Supermux, so the next step starts headless."""
+        self.sock.call(MENU, {"action": "hide"})
+        wait_for("Hide Supermux to hide every window", lambda: not self.visible_windows(), self.timeout)
+
+    def shown_by_user_request(self, what: str) -> Dict[str, Any]:
+        visible = wait_for(f"{what} to show a main window", lambda: self.visible_windows(), self.timeout)
+        state = self.state()
+        if not state.get("enabled"):
+            raise Failure(f"{what} turned the mode off")
+        if state.get("activation_policy") != "accessory":
+            raise Failure(f"{what}: activation policy {state.get('activation_policy')}, expected accessory")
+        return {"visible_windows": len(visible), "headless": state.get("headless")}
+
+    def global_hotkey_shows_windows(self) -> Dict[str, Any]:
+        self.assert_headless("before the hotkey")
+        self.sock.call(HOTKEY, {})
+        shown = self.shown_by_user_request("the global hotkey")
+        self.hide_again()
+        return shown
+
+    def notification_click_shows_windows(self) -> Dict[str, Any]:
+        if not self.device_workspace:
+            raise Failure("no device workspace (device_workspace_works_headless failed)")
+        self.assert_headless("before the notification click")
+        surfaces = (self.sock.call("surface.list", {"workspace_id": self.device_workspace}) or {}).get("surfaces") or []
+        terminals = [up(s.get("id")) for s in surfaces if s.get("type") == "terminal"]
+        surface = terminals[0] if terminals else None
+        reply = self.sock.call(NOTIFICATION_CLICK, {"workspace_id": self.device_workspace, "surface_id": surface}) or {}
+        shown = self.shown_by_user_request("the notification click")
+        selected = wait_for("the notification's workspace selected", lambda: self.workspace_selected(self.device_workspace), self.timeout)
+        self.hide_again()
+        return {**shown, "opened": reply.get("opened"), "surface": surface, "selected": selected}
+
+    def workspace_selected(self, workspace_id: str) -> bool:
+        for window in (self.sock.call("window.list", {}) or {}).get("windows") or []:
+            for row in (self.sock.call("workspace.list", {"window_id": window.get("id")}) or {}).get("workspaces") or []:
+                if up(row.get("id")) == workspace_id:
+                    return bool(row.get("is_selected") or row.get("selected"))
+        return False
+
     def relaunch_stays_headless(self) -> Dict[str, Any]:
         self.relaunch()
         self.machine = self.loopback_machine()
@@ -345,6 +393,8 @@ class RemoteHostModeE2E:
             ok = self.step("device_workspace_works_headless", self.device_workspace_works_headless) and ok
             ok = self.step("close_button_hides_window", lambda: self.close_hides("close_button")) and ok
             ok = self.step("close_window_command_hides_window", lambda: self.close_hides("close_window_command")) and ok
+            ok = self.step("global_hotkey_shows_windows", self.global_hotkey_shows_windows) and ok
+            ok = self.step("notification_click_shows_windows", self.notification_click_shows_windows) and ok
             if self.args.app_path:
                 ok = self.step("relaunch_stays_headless", self.relaunch_stays_headless) and ok
             ok = self.step("mode_off_shows_windows", self.mode_off_shows_windows) and ok

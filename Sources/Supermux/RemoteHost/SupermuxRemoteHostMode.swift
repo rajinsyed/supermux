@@ -1,6 +1,7 @@
 import AppKit
 import CmuxSettingsUI
 import Foundation
+import UserNotifications
 
 /// SUPERMUX — Remote Host Mode: a Mac used only as a remote host for the
 /// iPhone app or another Mac runs with no window on screen and no Dock icon,
@@ -18,12 +19,13 @@ import Foundation
 ///   a new main window (session restore at launch, a window a device's new
 ///   workspace needs) stays hidden, and a focus request (a socket or device
 ///   command, launch) neither shows a window nor activates the app. Only the
-///   user's own show requests (the menu bar item, reopening the app) do.
+///   user's own show requests (the menu bar item, reopening the app, the
+///   global show/hide hotkey, a click on a notification) do.
 /// - While the mode is on, a main window's close button and Close Window hide
 ///   that window instead of closing it.
 ///
-/// Hooks (SUPERMUX-TOUCHPOINTS.md #830–#833, #835): `AppDelegate` (settings sync,
-/// new windows, close, reopen), `MainWindowVisibilityController` (focus),
+/// Hooks (SUPERMUX-TOUCHPOINTS.md #830–#833, #835, #880): `AppDelegate` (settings sync,
+/// new windows, close, reopen, the hotkey, notification clicks), `MainWindowVisibilityController` (focus),
 /// `MenuBarExtraController` (policy, menu bar item), `AppSection` (the row),
 /// `GhosttySurfaceScrollView.ensureFocus` (terminal focus).
 @MainActor
@@ -95,9 +97,27 @@ final class SupermuxRemoteHostMode {
 
     /// Reopening the app (Finder, Spotlight, `open`) while headless shows it.
     func showsWindowsOnReopen() -> Bool {
+        showsWindowsForUserRequest()
+    }
+
+    /// The user's own show requests besides the menu bar item: reopening the
+    /// app, the global show/hide hotkey, a click on a notification. While
+    /// headless each shows every window as Show Supermux does and returns
+    /// true; the mode stays on (the menu or a close hides them again). Inside
+    /// a socket command (the E2E drivers) the app stays in the background.
+    func showsWindowsForUserRequest() -> Bool {
         guard isHeadless else { return false }
-        showAllWindows(activate: true)
+        showAllWindows(activate: !TerminalController.shouldSuppressSocketCommandActivation())
         return true
+    }
+
+    /// A delivered notification was answered: a click on its banner or its
+    /// Show action shows a headless host's windows before the open brings
+    /// its terminal forward. A dismissal or an inline reply does not.
+    func notificationClicked(actionIdentifier: String) {
+        guard actionIdentifier == UNNotificationDefaultActionIdentifier
+            || actionIdentifier == TerminalNotificationStore.actionShowIdentifier else { return }
+        _ = showsWindowsForUserRequest()
     }
 
     // MARK: - Actions (menu bar item, settings sync, socket drivers)

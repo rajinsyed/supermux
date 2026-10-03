@@ -76,9 +76,10 @@ anything.** It is the contract that keeps the fork mergeable with upstream cmux.
    one (session restore at launch, a window a device's new workspace needs) stays hidden and socket or
    device commands neither show a window nor activate the app; the close button and Close Window hide
    instead of closing. The menu bar item offers Show Supermux / Hide Supermux and Turn Off Remote Host
-   Mode (off shows the windows again); reopening the app also shows them. Keep Mac Awake (upstream's
+   Mode (off shows the windows again); reopening the app, the global show/hide hotkey and a click on a
+   notification also show them (the mode stays on). Keep Mac Awake (upstream's
    menu bar item) keeps the Mac reachable. Needs a logged-in macOS session; a locked screen is fine.
-   Code: `Sources/Supermux/RemoteHost/`, touchpoints #830–#835,
+   Code: `Sources/Supermux/RemoteHost/`, touchpoints #830–#835 and #880,
    `tests/supermux/loopback_remote_host_mode_e2e.py`.
 
 Where cmux already has a primitive (workspace groups, Dock, `actions`/`commands` in cmux.json,
@@ -354,9 +355,10 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   viewport report that repeats the same grid is no activity (the phone sends one in answer to every
   grid change, which would bounce the grid), and delivering a phone's or Mac's input no longer counts
   as typing on the Mac pane. A pane merely coming on screen is no activity either: selecting a
-  workspace on the phone selects it on the Mac too. Not following yet: a phone that returns to a
-  terminal it never left (its view only left the window, so it keeps its viewport) takes the grid on
-  its next input or rotation; Cloud terminals keep upstream's rules (their host
+  workspace on the phone selects it on the Mac too. A phone that returns to a terminal it never left
+  (its view only left the window, so it keeps its viewport) flags its next report `view_appeared`,
+  which the host counts as starting to view (#881–#883; an older Mac ignores the flag and waits for the
+  next input or rotation). Not following: Cloud terminals keep upstream's rules (their host
   decides). Until 2026-10-04 the default was Fit everyone; until 2026-10-03 Priority with this Mac
   first, so a terminal opened from the phone did not fit the phone. Under Priority (this Mac first: its own pane for a local terminal, so a phone
   defers to a Mac pane on screen) a mirror claims the other Mac's terminal when it is shown, first
@@ -884,6 +886,11 @@ Constraints inherited from upstream that supermux code MUST follow:
   the help text omits it, because the displayed string comes from an upstream
   `Localizable.xcstrings` key and editing a non-`supermux.*` catalog key would add upstream merge
   surface for a cosmetic gain. Tracked as a known low-priority gap.
+- **Cmd-click in another Mac's terminal previews only files inside the workspace's folder.** A path
+  outside it answers "Outside this workspace's folder on <Mac>." This is deliberate: every `files.*`
+  read is confined to the workspace's current folder or a project's root (`SupermuxMobileFileBrowser`),
+  and the host has no read path for the user's home that other features rely on (a listing only
+  reports the home folder's path). Widening it would mean weakening that confinement, so it stays.
 - **Changes panel is single-window-active-workspace.** Each window's mount owns its own
   `SupermuxChangesModel` tracking that window's selected workspace directory. In a device mirror it
   talks to the owning Mac (`mobile.supermux.changes.*`); the full-diff and PR viewers stay local-only.

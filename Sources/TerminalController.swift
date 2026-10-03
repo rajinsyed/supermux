@@ -15897,6 +15897,11 @@ class TerminalController {
             }
             allowLiveSurfaceFallback = false
         } else {
+            // SUPERMUX:begin sizing-auto-view-appeared (a phone's terminal view back on screen starts viewing, in Auto)
+            SupermuxTerminalSizingAuto.shared.viewAppearedClientID =
+                v2Bool(params, "view_appeared") == true ? v2String(params, "client_id") : nil
+            defer { SupermuxTerminalSizingAuto.shared.viewAppearedClientID = nil }
+            // SUPERMUX:end sizing-auto-view-appeared
             reportedGrid = applyMobileViewportReport(
                 params: params,
                 terminalTarget: terminalTarget,
