@@ -408,7 +408,7 @@ class MirrorRenderE2E:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--tag", default=os.environ.get("CMUX_TAG"))
-    parser.add_argument("--socket", default=os.environ.get("CMUX_SOCKET_PATH"))
+    parser.add_argument("--socket", help="this tagged build's control socket (default: /tmp/cmux-debug-<tag>.sock; never $CMUX_SOCKET_PATH, which in a Supermux terminal names the user's own app)")
     parser.add_argument("--timeout", type=float, default=30.0, help="seconds per wait")
     parser.add_argument("--draw-timeout", type=float, default=8.0, help="seconds a selected terminal may take to draw")
     parser.add_argument("--min-ink", type=int, default=200, help="text pixels a drawn pane must show")

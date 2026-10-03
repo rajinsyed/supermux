@@ -57,6 +57,9 @@ struct SupermuxSimulatorControl: SimulatorControlling {
         if let coreSimulator {
             do {
                 return try await coreSimulator.devices(timeout: Self.discoveryBudget)
+            } catch is CancellationError {
+                // The panel closed or the app quits: no `simctl` either.
+                throw CancellationError()
             } catch SupermuxCoreSimulatorDevices.Failure.slow {
                 // CoreSimulatorService itself is not answering: `simctl` would wait on it too.
                 throw SupermuxSimulatorSlow.failure
@@ -71,6 +74,7 @@ struct SupermuxSimulatorControl: SimulatorControlling {
 
     func boot(deviceID: String) async throws {
         if await coreSimulator?.state(of: deviceID, timeout: Self.bootStateBudget) == .booted { return }
+        try Task.checkCancellation()
         try await SupermuxSimctlDebugDelay.beforeSpawns(1, "boot")
         try await service.boot(deviceID: deviceID)
     }

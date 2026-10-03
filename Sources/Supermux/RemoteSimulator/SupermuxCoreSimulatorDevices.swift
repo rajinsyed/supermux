@@ -44,15 +44,38 @@ final class SupermuxCoreSimulatorDevices: @unchecked Sendable {
     private var deviceSet: NSObject?
     /// Why CoreSimulator can never load in this process; touched only on `queue`.
     private var permanentFailure: String?
+    /// Where the in-process load stands: `not_loaded`, `loading`, `loaded` or
+    /// `unavailable: <why>` (read from any thread, for the DEBUG drivers).
+    private let phase = OSAllocatedUnfairLock<String>(initialState: "not_loaded")
+
+    var loadPhase: String { phase.withLock { $0 } }
 
     /// The installed simulators.
     /// - Parameter timeout: How long this caller waits; the read itself goes on
     ///   and answers the callers that ask meanwhile.
     /// - Throws: ``Failure/unavailable(_:)`` when CoreSimulator cannot be
-    ///   used, ``Failure/slow`` when it did not answer within `timeout`.
+    ///   used, ``Failure/slow`` when it did not answer within `timeout`, and
+    ///   `CancellationError` as soon as the calling task is cancelled (a
+    ///   Simulator tab that closes, or the app quitting, never waits on a slow
+    ///   CoreSimulator; the read goes on for the other callers).
     func devices(timeout: TimeInterval) async throws -> [SimulatorDevice] {
+        let registered = OSAllocatedUnfairLock<Waiter?>(initialState: nil)
+        return try await withTaskCancellationHandler {
+            try await waitForRead(timeout: timeout, registered: registered)
+        } onCancel: {
+            registered.withLock { $0 }?.resume(with: .failure(CancellationError()))
+        }
+    }
+
+    private func waitForRead(timeout: TimeInterval, registered: OSAllocatedUnfairLock<Waiter?>) async throws -> [SimulatorDevice] {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[SimulatorDevice], any Error>) in
             let waiter = Waiter(continuation)
+            registered.withLock { $0 = waiter }
+            // Cancelled before the waiter was registered: `onCancel` found none.
+            guard !Task.isCancelled else {
+                waiter.resume(with: .failure(CancellationError()))
+                return
+            }
             let startsRead = waiters.withLock { pending -> Bool in
                 guard pending != nil else {
                     pending = [waiter]
@@ -110,15 +133,20 @@ final class SupermuxCoreSimulatorDevices: @unchecked Sendable {
         if let permanentFailure { throw Failure.unavailable(permanentFailure) }
         let crashGuard = SupermuxCoreSimulatorCrashGuard(frameworkPath: Self.frameworkPath)
         guard crashGuard.allowsLoading() else {
-            permanentFailure = "CoreSimulator crashed this app while loading; not loaded in-process again"
+            permanentFailure = "This app ended inside the CoreSimulator load twice in a row; not loaded in-process again"
+            phase.withLock { $0 = "unavailable: interrupted while loading" }
             throw Failure.unavailable(permanentFailure ?? "")
         }
+        phase.withLock { $0 = "loading" }
         crashGuard.willLoad()
-        defer { crashGuard.didLoad() }
+        var loaded = false
+        defer { crashGuard.didLoad(succeeded: loaded) }
+        SupermuxSimctlDebugDelay.duringCoreSimulatorLoad()
         guard FileManager.default.fileExists(atPath: Self.frameworkPath),
               dlopen(Self.frameworkPath, RTLD_NOW | RTLD_GLOBAL) != nil,
               let contextClass = NSClassFromString("SimServiceContext") else {
             permanentFailure = "CoreSimulator could not be loaded"
+            phase.withLock { $0 = "unavailable: not loadable" }
             throw Failure.unavailable(permanentFailure ?? "")
         }
         let developerDirectory = Self.developerDirectory()
@@ -128,6 +156,7 @@ final class SupermuxCoreSimulatorDevices: @unchecked Sendable {
             developerDirectory as NSString
         ), let set = Self.call(loadedContext, "defaultDeviceSetWithError:") else {
             // The service may be restarting: try again on the next read.
+            phase.withLock { $0 = "not_loaded" }
             throw Failure.unavailable("CoreSimulator has no device set for \(developerDirectory)")
         }
         #if DEBUG
@@ -135,6 +164,8 @@ final class SupermuxCoreSimulatorDevices: @unchecked Sendable {
         #endif
         context = loadedContext
         deviceSet = set
+        phase.withLock { $0 = "loaded" }
+        loaded = true
         return set
     }
 

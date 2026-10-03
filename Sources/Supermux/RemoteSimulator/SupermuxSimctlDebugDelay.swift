@@ -49,6 +49,18 @@ enum SupermuxSimctlDebugDelay {
         set { coreSimulatorDelayState.withLock { $0 = max(0, newValue) } }
     }
 
+    static let coreSimulatorLoadHoldEnvironmentKey = "SUPERMUX_DEBUG_CORESIMULATOR_LOAD_HOLD_SECONDS"
+
+    /// Holds the in-process CoreSimulator load open (inside its crash-guard
+    /// marker), as the service context of a cold CoreSimulatorService would:
+    /// set at launch only, since a process loads CoreSimulator once.
+    static func duringCoreSimulatorLoad() {
+        let hold = Double(ProcessInfo.processInfo.environment[coreSimulatorLoadHoldEnvironmentKey] ?? "") ?? 0
+        guard hold > 0 else { return }
+        cmuxDebugLog("supermux.simctlDelay coresimulator: holding the load \(hold)s")
+        Thread.sleep(forTimeInterval: hold)
+    }
+
     /// Holds the CoreSimulator queue as a slow CoreSimulatorService would.
     static func beforeCoreSimulatorRead() {
         let delay = coreSimulatorDelay
@@ -69,6 +81,9 @@ enum SupermuxSimctlDebugDelay {
 
     @inline(__always)
     static func beforeCoreSimulatorRead() {}
+
+    @inline(__always)
+    static func duringCoreSimulatorLoad() {}
 
     @inline(__always)
     static func beforeSpawns(_ spawns: Int, _ what: String) async throws {}
