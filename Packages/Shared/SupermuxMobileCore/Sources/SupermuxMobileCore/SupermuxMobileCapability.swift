@@ -61,6 +61,10 @@ public enum SupermuxMobileCapability: String, CaseIterable, Codable, Sendable, E
     /// (rotate, software keyboard, appearance) is served and
     /// `simulator.create` takes `udid`.
     case remoteSimulatorV1 = "supermux.remote_simulator.v1"
+    /// A file pasted or dropped into another Mac's device mirror of a
+    /// terminal here is uploaded to this Mac (`terminal.attachment.upload`),
+    /// so the path typed into the terminal names a file that exists here.
+    case terminalAttachmentsV1 = "supermux.terminal_attachments.v1"
 
     /// Every capability, in declaration order (derived from `CaseIterable`).
     public static let all: [SupermuxMobileCapability] = SupermuxMobileCapability.allCases

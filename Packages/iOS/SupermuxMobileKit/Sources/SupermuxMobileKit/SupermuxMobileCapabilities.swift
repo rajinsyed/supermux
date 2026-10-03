@@ -76,4 +76,7 @@ public struct SupermuxMobileCapabilities: Sendable, Equatable {
     /// The Mac serves simulator controls for another Mac's simulator viewer
     /// (Mac-to-Mac only; no phone UI depends on it).
     public var supportsRemoteSimulator: Bool { contains(.remoteSimulatorV1) }
+    /// The Mac stores files pasted or dropped into another Mac's terminal
+    /// mirror (Mac-to-Mac only; no phone UI depends on it).
+    public var supportsTerminalAttachments: Bool { contains(.terminalAttachmentsV1) }
 }

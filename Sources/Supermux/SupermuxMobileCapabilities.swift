@@ -13,6 +13,17 @@ enum SupermuxMobileCapabilities {
     /// Capabilities whose backing RPC methods are implemented on this host.
     nonisolated static var advertised: [String] {
         served + (servesPortForward ? [SupermuxMobileCapability.portForwardV1.rawValue] : [])
+            + (servesTerminalAttachments ? [SupermuxMobileCapability.terminalAttachmentsV1.rawValue] : [])
+    }
+
+    /// Files pasted or dropped into another Mac's terminal mirror are stored
+    /// here (`terminal.attachment.upload`). DEBUG builds can pretend to be an
+    /// older host without it (`supermux.devices.terminal_clipboard.old_host`).
+    nonisolated private static var servesTerminalAttachments: Bool {
+        #if DEBUG
+        if SupermuxTerminalClipboardSocketCommands.pretendsOldHost { return false }
+        #endif
+        return true
     }
 
     /// Port forwarding (another Mac's `tcp_connect` lanes, `ports.list`,
