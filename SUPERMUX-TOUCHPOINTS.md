@@ -12,7 +12,7 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **772**. The remote-workspaces work (#517–#599) left
+- Numbering: the highest number in use is **773**. The remote-workspaces work (#517–#599) left
   unassigned gaps it may still grow into: **523–524, 527–529, 539–544, 558–559, 562–569,
   578–579 and 588–589** (never assigned, not retired); #600–#601 came from the 2026-10-01 upstream merge; #620–#622 and
   #630–#639 are the remote-workspaces feedback round (602–619 and 623–629 unassigned). The second
@@ -37,9 +37,9 @@ Rules for adding a touchpoint:
   reroutes) and its real-Mac fixes #757–#759 (a mirror tab's navigation starts a same-port forward; the wiring of
   its two files; a terminal link opened into a cmux browser counts as the user's), and its slow-`simctl` hardening
   #760–#763 (remote simulators keep working while `simctl` launches stall; a new Simulator tab activates although
-  another Mac's device menu refreshed meanwhile), and its remote-terminal clipboard fixes #764–#772 (a program's
+  another Mac's device menu refreshed meanwhile), and its remote-terminal clipboard fixes #764–#773 (a program's
   copy and the user's copy in another Mac's terminal reach this Mac's clipboard; pasted images and dropped files upload
-  to that Mac); 709, 713–714, 724, 736 and 740–749 are unassigned. The highest number in use is 772. Number **351** is unused (the notifications
+  to that Mac); 709, 713–714, 724, 736 and 740–749 are unassigned. The highest number in use is 773. Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 82, 83, 89, 106, 121, 142, 213, 214,
   220, 229, 237, 250, 251, 252–258, 335, 470, 473–481, 483, 484, and 487** are unused; all are
@@ -704,6 +704,7 @@ Rules for adding a touchpoint:
 | 770 | `Sources/Surfaces/Workspace+CloudManualMirror.swift` | `device-mirror-clipboard` | `restoreDeviceDisplayPanel` builds its process-free placeholder with `makeRemoteTmuxPanePanel(onInput:keyNameResolver: nil, allowsRemoteClipboardWrites: true)` (a restored device pane is another Mac's terminal) |
 | 771 | `Packages/macOS/CmuxTerminalCore/Sources/CmuxTerminalCore/SurfaceCallbacks/GhosttySurfaceCallbackContext.swift` | `terminal-user-copy-intent` | Adds `public var isDispatchingRuntimeInput: Bool`: whether this surface's native input dispatch (the paste-intent marker `withRuntimeClipboardPasteIntent` sets around keys, pointer buttons and binding actions) is running on the calling thread, which a program's OSC 52 never is |
 | 772 | `Sources/GhosttyTerminalView.swift` | `terminal-user-copy-intent` | Two fences. In `write_clipboard_cb`'s guard, upstream's `terminalSurface.allowsAutomaticClipboardWrite` becomes `SupermuxTerminalClipboardWrites.allows(terminalSurface, context: callbackContext, location: location)` (`Sources/Supermux/SupermuxTerminalClipboardWrites.swift`: upstream's check OR this Mac's own input is dispatching, so a user's copy lands from any remote projection; DEBUG builds record each decision). In `copyKeyboardCopyModeSelectionToClipboard`, `ghostty_surface_copy_selection_to_clipboard_bounded` runs inside `withPotentialClipboardPasteIntent`, so keyboard copy mode's yank counts as that input instead of being dropped while the method reported success |
+| 773 | `cmuxTests/SupermuxMobileAuthorizationTests.swift` | `device-terminal-upload-authz` | `classificationCoversWorkspacePaneAndMacWideMethods` expects `terminal.attachment.upload` to be workspace-scoped (the upload names the mirrored `workspace_id`); the test's `default: .macWide` would otherwise fail it |
 
 ## How to re-apply
 
@@ -6227,7 +6228,7 @@ app does not quit within 60 s or osascript reports an error (its report records 
 (it creates, boots, shuts down and deletes its own simulator; see LOOPBACK-HARNESS.md "Mirror
 simulator E2E"). Two real Macs are still needed for the irx lane and capture on a headless owner.
 
-### 764–772. The clipboard works in another Mac's terminal — `device-terminal-upload`, `device-mirror-clipboard`, `terminal-user-copy-intent`
+### 764–773. The clipboard works in another Mac's terminal — `device-terminal-upload`, `device-mirror-clipboard`, `terminal-user-copy-intent`, `device-terminal-upload-authz`
 
 Reported 2026-10-04: in a remote workspace, copying did not reach this MacBook's clipboard and pasting an image
 typed a path that does not exist on the other Mac. A device mirror is a manual-I/O Ghostty surface, and
@@ -6251,6 +6252,8 @@ the DEBUG drivers in `Sources/Supermux/Devices/SupermuxTerminalClipboardSocketCo
 - **#766 `TerminalSurface+ImageTransferTarget.swift`.** Keep the device check first in
   `resolvedImageTransferTarget`, right after the workspace is resolved (before the SSH and Cloud checks).
 - **#767 `TextBoxInput.swift`.** Keep the `.supermuxDevice` arm in `uploadFileAttachments`'s switch.
+- **#773 `SupermuxMobileAuthorizationTests.swift`.** Keep `.terminalAttachmentUpload` in the workspace-scoped
+  arm of `classificationCoversWorkspacePaneAndMacWideMethods`.
 - **#768–#770 `device-mirror-clipboard`.** Every place a device terminal pane is built passes
   `allowsRemoteClipboardWrites` from `SupermuxTerminalClipboardWrites.allowsProgramWrites(on:)` (or `true` for the
   restored device placeholder). If upstream starts granting it to device panes itself, retire these fences.
