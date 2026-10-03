@@ -327,9 +327,11 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   then SIGKILL), and one still running when the app quits ends with the app
   (`SupermuxGitChildProcesses`: on `willTerminate`, every git child with its process group); before,
   those were left under launchd and ran for hours.
-- **Terminal size follows the Mac you look from** (upstream's shared sizing, #633, #665–#669): every
-  terminal starts as Priority with this Mac first (its own pane for a local terminal, so a phone
-  defers to a Mac pane on screen); a mirror claims the other Mac's terminal when it is shown, first
+- **Terminal size: one choice per Mac** (upstream's shared sizing, #633, #665–#669): every
+  terminal starts as Fit everyone, so a phone or another Mac viewing it sees the whole grid (until
+  2026-10-03 the default was Priority with this Mac first, so a terminal opened from the phone did
+  not fit the phone). Under Priority (this Mac first: its own pane for a local terminal, so a phone
+  defers to a Mac pane on screen) a mirror claims the other Mac's terminal when it is shown, first
   attaches while shown, or reconnects, pushing once per connection and never in answer to that Mac's
   size events, so of two viewing Macs the one that showed it last wins. The claim only puts this
   Mac first in that terminal's Priority order; a mode, fixed size or order chosen on the terminal

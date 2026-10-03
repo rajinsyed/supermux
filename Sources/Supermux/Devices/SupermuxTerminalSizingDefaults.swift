@@ -12,11 +12,12 @@ import SwiftUI
 /// another Mac's terminal. One stored order is then right for both.
 struct SupermuxTerminalSizingPreference: Codable, Equatable {
     static let selfToken = "self"
-    /// The default: Priority with this Mac first, so a terminal fills the
-    /// Mac it is looked at from.
+    /// The default: Fit everyone, so every device viewing a terminal (this
+    /// Mac, a phone, another Mac) sees its whole grid. The order keeps this
+    /// Mac first for when Priority is chosen.
     static let standard = SupermuxTerminalSizingPreference()
 
-    var mode: TerminalSizingMode = .priority
+    var mode: TerminalSizingMode = .smallest
     var priority: [String] = [SupermuxTerminalSizingPreference.selfToken]
     var fixed: TerminalGridSize?
 
@@ -50,11 +51,11 @@ struct SupermuxTerminalSizingClaim: Equatable {
 
 /// This Mac's terminal size preference (`supermux.terminalSizing.preference`).
 ///
-/// Upstream creates every terminal as "Fit everyone" and keeps the policy in
-/// memory per terminal, so a phone or a small pane elsewhere shrank a
-/// terminal viewed full screen, and a mode chosen in the size panel changed
-/// one terminal until the next relaunch. Here the preference (default:
-/// Priority with this Mac first) applies to every local terminal as its
+/// Upstream keeps the policy in memory per terminal, so a mode chosen in the
+/// size panel changed one terminal until the next relaunch. Here the
+/// preference (default: Fit everyone, as upstream; the default was Priority
+/// with this Mac first until 2026-10-03, so a terminal opened from the phone
+/// did not fit the phone) applies to every local terminal as its
 /// sizing host is created (`sizing-default-policy`), and is replaced by a
 /// mode, fixed size or priority order chosen in the size panel or the tab
 /// menu, which re-applies it to every local terminal and to the terminal it
