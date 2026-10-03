@@ -618168,6 +618168,91 @@
         }
       }
     },
+    "supermux.remoteHost.menu.hide" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide Supermux"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Supermux を隠す"
+          }
+        }
+      }
+    },
+    "supermux.remoteHost.menu.show" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show Supermux"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Supermux を表示"
+          }
+        }
+      }
+    },
+    "supermux.remoteHost.menu.turnOff" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn Off Remote Host Mode"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "リモートホストモードをオフにする"
+          }
+        }
+      }
+    },
+    "supermux.remoteHost.settings.subtitle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Run with no windows and no Dock icon while you use this Mac from your iPhone or another Mac. Workspaces keep running; the menu bar item shows Supermux. Turn on Keep Mac Awake there so this Mac stays reachable."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iPhone や別の Mac からこの Mac を使うあいだ、ウインドウと Dock アイコンなしで実行します。ワークスペースは動作し続け、メニューバー項目から Supermux を表示できます。この Mac に接続し続けられるよう、そこで「Macをスリープさせない」をオンにしてください。"
+          }
+        }
+      }
+    },
+    "supermux.remoteHost.settings.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remote Host Mode"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "リモートホストモード"
+          }
+        }
+      }
+    },
     "supermux.terminalUpload.notAFile" : {
       "extractionState" : "manual",
       "localizations" : {

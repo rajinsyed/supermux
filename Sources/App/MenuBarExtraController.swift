@@ -47,6 +47,9 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
     private let cloudSectionSeparator = NSMenuItem.separator()
     private var cloudItems: [NSMenuItem] = []
     private var cloudItemsSignature: String?
+    // SUPERMUX:begin remote-host-mode
+    let supermuxRemoteHostItems = SupermuxRemoteHostModeMenuItems()
+    // SUPERMUX:end remote-host-mode
     init(
         notificationStore: TerminalNotificationStore,
         caffeineController: CaffeineController,
@@ -135,6 +138,9 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
         showMainWindowItem.target = self
         showMainWindowItem.action = #selector(showMainWindowAction)
         menu.addItem(showMainWindowItem)
+        // SUPERMUX:begin remote-host-mode
+        supermuxRemoteHostItems.install(in: menu, after: showMainWindowItem)
+        // SUPERMUX:end remote-host-mode
 
         taskManagerItem.target = self
         taskManagerItem.action = #selector(taskManagerAction)
@@ -229,6 +235,9 @@ final class MenuBarExtraController: NSObject, NSMenuDelegate {
 
         stateHintItem.title = snapshot.stateHintTitle
         showMainWindowItem.isHidden = !MenuBarOnlySettings.shouldShowMainWindowMenuItem()
+        // SUPERMUX:begin remote-host-mode
+        supermuxRemoteHostItems.refresh(upstreamShowItem: showMainWindowItem)
+        // SUPERMUX:end remote-host-mode
         sleepyModeItem.state = SleepyModeController.shared.isActive ? .on : .off
         caffeineItem.state = caffeineController.isEnabled ? .on : .off
 
@@ -612,7 +621,11 @@ enum MenuBarExtraSettings {
     }
 
     static func shouldInstallMenuBarExtra(defaults: UserDefaults = .standard) -> Bool {
-        MenuBarOnlySettings.isEnabled(defaults: defaults) || showsMenuBarExtra(defaults: defaults)
+        // SUPERMUX:begin remote-host-mode
+        // Remote Host Mode has no window and no Dock icon: the menu bar item is its only way back.
+        if SupermuxRemoteHostMode.isEnabled(defaults: defaults) { return true }
+        // SUPERMUX:end remote-host-mode
+        return MenuBarOnlySettings.isEnabled(defaults: defaults) || showsMenuBarExtra(defaults: defaults)
     }
 }
 
@@ -635,7 +648,11 @@ enum MenuBarOnlySettings {
     }
 
     static func activationPolicy(defaults: UserDefaults = .standard) -> NSApplication.ActivationPolicy {
-        isEnabled(defaults: defaults) ? .accessory : .regular
+        // SUPERMUX:begin remote-host-mode
+        // Remote Host Mode hides the Dock icon the same way Menu Bar Only does.
+        if SupermuxRemoteHostMode.isEnabled(defaults: defaults) { return .accessory }
+        // SUPERMUX:end remote-host-mode
+        return isEnabled(defaults: defaults) ? .accessory : .regular
     }
 
     static func shouldShowMainWindowMenuItem(defaults: UserDefaults = .standard) -> Bool {

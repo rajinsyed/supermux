@@ -3583,6 +3583,9 @@
 		50BE0006000000000000001A /* SupermuxProjectsSocketCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00060000000000000019 /* SupermuxProjectsSocketCommands.swift */; };
 		50BE00060000000000000018 /* SupermuxProjectsSocketPayloads.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00060000000000000017 /* SupermuxProjectsSocketPayloads.swift */; };
 		50BE00060000000000000014 /* SupermuxProjectSyncCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00060000000000000013 /* SupermuxProjectSyncCoordinator.swift */; };
+		50BE001A0000000000000002 /* SupermuxRemoteHostMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE001A0000000000000001 /* SupermuxRemoteHostMode.swift */; };
+		50BE001A0000000000000004 /* SupermuxRemoteHostModeMenuItems.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE001A0000000000000003 /* SupermuxRemoteHostModeMenuItems.swift */; };
+		50BE001A0000000000000006 /* SupermuxRemoteHostSocketCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE001A0000000000000005 /* SupermuxRemoteHostSocketCommands.swift */; };
 		50BE000C0000000000000004 /* SupermuxRemoteMacsSettingsFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000C0000000000000003 /* SupermuxRemoteMacsSettingsFeed.swift */; };
 		50BE000C0000000000000008 /* SupermuxRemoteMacsSocketCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000C0000000000000007 /* SupermuxRemoteMacsSocketCommands.swift */; };
 		50BE0006000000000000000E /* SupermuxRemoteProjectActionsFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE0006000000000000000D /* SupermuxRemoteProjectActionsFactory.swift */; };
@@ -8078,6 +8081,9 @@
 		50BE00060000000000000019 /* SupermuxProjectsSocketCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Projects/SupermuxProjectsSocketCommands.swift; sourceTree = "<group>"; };
 		50BE00060000000000000017 /* SupermuxProjectsSocketPayloads.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Projects/SupermuxProjectsSocketPayloads.swift; sourceTree = "<group>"; };
 		50BE00060000000000000013 /* SupermuxProjectSyncCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Projects/SupermuxProjectSyncCoordinator.swift; sourceTree = "<group>"; };
+		50BE001A0000000000000001 /* SupermuxRemoteHostMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteHost/SupermuxRemoteHostMode.swift; sourceTree = "<group>"; };
+		50BE001A0000000000000003 /* SupermuxRemoteHostModeMenuItems.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteHost/SupermuxRemoteHostModeMenuItems.swift; sourceTree = "<group>"; };
+		50BE001A0000000000000005 /* SupermuxRemoteHostSocketCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteHost/SupermuxRemoteHostSocketCommands.swift; sourceTree = "<group>"; };
 		50BE000C0000000000000003 /* SupermuxRemoteMacsSettingsFeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxRemoteMacsSettingsFeed.swift; sourceTree = "<group>"; };
 		50BE000C0000000000000007 /* SupermuxRemoteMacsSocketCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxRemoteMacsSocketCommands.swift; sourceTree = "<group>"; };
 		50BE0006000000000000000D /* SupermuxRemoteProjectActionsFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Projects/SupermuxRemoteProjectActionsFactory.swift; sourceTree = "<group>"; };
@@ -9584,6 +9590,9 @@
 				50BE00190200000000000013 /* SupermuxPortsText.swift */,
 				50BE00190200000000000015 /* SupermuxDevicePortLinks.swift */,
 				50BE00190800000000000001 /* SupermuxPortMenusSocketCommands.swift */,
+				50BE001A0000000000000001 /* SupermuxRemoteHostMode.swift */,
+				50BE001A0000000000000003 /* SupermuxRemoteHostModeMenuItems.swift */,
+				50BE001A0000000000000005 /* SupermuxRemoteHostSocketCommands.swift */,
 				50BE00190900000000000001 /* SupermuxAliasHTTPRewrite.swift */,
 				50BE00190900000000000003 /* SupermuxSamePortForwardGate.swift */,
 				50BE00190500000000000011 /* SupermuxRemoteSimulatorSnapshot.swift */,
@@ -16594,6 +16603,9 @@
 				50BE0006000000000000001A /* SupermuxProjectsSocketCommands.swift in Sources */,
 				50BE00060000000000000018 /* SupermuxProjectsSocketPayloads.swift in Sources */,
 				50BE00060000000000000014 /* SupermuxProjectSyncCoordinator.swift in Sources */,
+				50BE001A0000000000000002 /* SupermuxRemoteHostMode.swift in Sources */,
+				50BE001A0000000000000004 /* SupermuxRemoteHostModeMenuItems.swift in Sources */,
+				50BE001A0000000000000006 /* SupermuxRemoteHostSocketCommands.swift in Sources */,
 				50BE000C0000000000000004 /* SupermuxRemoteMacsSettingsFeed.swift in Sources */,
 				50BE000C0000000000000008 /* SupermuxRemoteMacsSocketCommands.swift in Sources */,
 				50BE0006000000000000000E /* SupermuxRemoteProjectActionsFactory.swift in Sources */,

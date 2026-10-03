@@ -672,6 +672,11 @@ public struct AppSection: View {
             }
             SettingsCardDivider()
 
+            // SUPERMUX:begin remote-host-mode
+            SupermuxRemoteHostModeSettingsRow(defaultsStore: defaultsStore)
+            SettingsCardDivider()
+            // SUPERMUX:end remote-host-mode
+
             // Show in Menu Bar
             SettingsCardRow(
                 configurationReview: .json("notifications.showInMenuBar"),
