@@ -16,6 +16,10 @@ import SupermuxKit
 /// synced record lists it with a non-terminal kind, or the catalog holds it as
 /// a browser. An id with no evidence yet (a new terminal whose metadata lags)
 /// stays in the layout, preserving upstream's wait-for-metadata behavior.
+///
+/// A terminal whose mirror tab was closed while the link was down is left out
+/// the same way until its held close is sent (``SupermuxDeviceHeldCloses``),
+/// so the reconcile never shows that tab again on its own.
 @MainActor
 enum SupermuxDeviceLayoutSurfaceFilter {
     static func nonTerminalSurfaceIDs(
@@ -30,7 +34,9 @@ enum SupermuxDeviceLayoutSurfaceFilter {
         for surface in SupermuxComposition.devices.record(for: ref)?.surfaces ?? [] {
             kinds[canonical(surface.surfaceID)] = surface.kind
         }
+        let held = SupermuxDeviceHeldCloses.shared.surfaceIDs(remoteWorkspaceID: remoteWorkspaceID, on: machine)
         return Set(surfaceIDs.filter { id in
+            if held.contains(SupermuxDeviceHeldCloses.canonical(id)) { return true }
             if let kind = kinds[canonical(id)] { return kind != MobileSurfaceKind.terminal.rawValue }
             return catalog.resources[SurfaceResourceID(machine: machine, kind: .browser, key: id)] != nil
         })

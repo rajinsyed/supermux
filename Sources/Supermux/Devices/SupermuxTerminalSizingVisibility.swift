@@ -56,6 +56,16 @@ final class SupermuxTerminalSizingVisibility {
                 self?.refresh(surfaceID: surfaceID)
             }
         })
+        // A workspace mounted again shows its pane before the pane is back in
+        // its window (the portal binds it a moment later), so the visibility
+        // change above can find it off screen; look again once it is in the window.
+        observers.append(center.addObserver(forName: .terminalSurfaceHostedViewDidMoveToWindow, object: nil, queue: .main) { [weak self] note in
+            let surfaceID = note.userInfo?["surfaceId"] as? UUID
+            MainActor.assumeIsolated {
+                guard let surfaceID else { return }
+                Task { @MainActor [weak self] in self?.refresh(surfaceID: surfaceID) }
+            }
+        })
         for name in [NSWindow.didChangeOcclusionStateNotification, NSApplication.didHideNotification, NSApplication.didUnhideNotification] {
             observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.refresh(surfaceID: nil) }
@@ -68,14 +78,33 @@ final class SupermuxTerminalSizingVisibility {
     func track(_ session: DeviceTerminalMirrorSession, surface: TerminalSurface) {
         start()
         mirrors[surface.id] = TrackedMirror(session: session, surface: surface)
-        refreshMirror(surface.id)
+        refreshMirror(surface.id, settled: true)
         // A pane bound while it is being mounted reaches its window a turn later.
         let surfaceID = surface.id
-        Task { @MainActor [weak self] in self?.refreshMirror(surfaceID) }
+        Task { @MainActor [weak self] in self?.refreshMirror(surfaceID, settled: true) }
     }
 
     func untrack(surfaceID: UUID) {
         mirrors[surfaceID] = nil
+    }
+
+    /// The live device mirrors, by local surface id (SupermuxTerminalSizingDefaults
+    /// applies this Mac's size preference to each).
+    func trackedMirrorSessions() -> [UUID: DeviceTerminalMirrorSession] {
+        mirrors.compactMapValues(\.session)
+    }
+
+    /// Another live pane of `session`'s terminal on the same link (client id),
+    /// on screen when `shown`: the pane that takes over speaking for this Mac
+    /// when `session`'s pane goes off screen or closes.
+    func sibling(of session: DeviceTerminalMirrorSession, shown: Bool) -> DeviceTerminalMirrorSession? {
+        guard let clientID = session.viewer?.clientID else { return nil }
+        return mirrors.values.lazy.compactMap(\.session).first { other in
+            other !== session && other.phase != .stopped
+                && other.remoteSurfaceID == session.remoteSurfaceID
+                && other.viewer?.clientID == clientID
+                && (!shown || !other.supermuxHidden)
+        }
     }
 
     // MARK: - Host (local terminals with viewers)
@@ -120,18 +149,34 @@ final class SupermuxTerminalSizingVisibility {
             refreshHost(surfaceID)
             return
         }
-        Array(mirrors.keys).forEach(refreshMirror)
+        for surfaceID in Array(mirrors.keys) { refreshMirror(surfaceID) }
         Array(TerminalController.shared.localSizingHostsBySurfaceID.keys).forEach(refreshHost)
     }
 
-    private func refreshMirror(_ surfaceID: UUID) {
+    /// Shows at once; hides only once the pane is still off screen a moment
+    /// later (`settled` skips that wait, for a pane just bound). A pane is
+    /// re-hosted, briefly out of its window, when a tab or the focus changes
+    /// beside it: hiding on that flicker made a shown pane give up speaking
+    /// for this Mac and told the other Mac this Mac does not count.
+    private func refreshMirror(_ surfaceID: UUID, settled: Bool = false) {
         guard let tracked = mirrors[surfaceID] else { return }
         guard let session = tracked.session, let surface = tracked.surface else {
             mirrors[surfaceID] = nil
             return
         }
-        session.supermuxSetHidden(!Self.isOnScreen(surface))
+        let onScreen = Self.isOnScreen(surface)
+        guard !onScreen, !session.supermuxHidden, !settled else {
+            session.supermuxSetHidden(!onScreen)
+            return
+        }
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: Self.hideSettleNanoseconds)
+            self?.refreshMirror(surfaceID, settled: true)
+        }
     }
+
+    /// How long a pane must stay off screen before it counts as hidden.
+    private static let hideSettleNanoseconds: UInt64 = 250_000_000
 
     private func refreshHost(_ surfaceID: UUID) {
         let controller = TerminalController.shared

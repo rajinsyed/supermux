@@ -230,6 +230,14 @@ extension TerminalController {
                   let paneId = workspace.paneId(forPanelId: panelId) else {
                 return .tabPaneNotFound
             }
+            // SUPERMUX:begin mirror-terminal-to-right
+            // A device mirror's tab: its Mac creates the terminal right of it there too.
+            if let routed = SupermuxMirrorTerminalPlacement.createTerminalToRight(
+                of: anchorTabId, inPane: paneId, in: workspace, focus: focus
+            ) {
+                return routed.isAccepted ? finish(.routedToRemote) : .createFailed
+            }
+            // SUPERMUX:end mirror-terminal-to-right
 
             let targetIndex = insertionIndexToRight(anchorTabId: anchorTabId, inPane: paneId)
             switch workspace.newTerminalSurfaceOutcome(

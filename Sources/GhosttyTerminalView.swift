@@ -3467,7 +3467,13 @@ class GhosttyApp {
                     )
                 }
                 DispatchQueue.main.async { [self] in
-                    surfaceView.backgroundColor = newColor
+                    // SUPERMUX:begin osc-default-bg-clears-override (on a device mirror, a change back to the default clears the override)
+                    surfaceView.backgroundColor = SupermuxDeviceMirrorColors.surfaceBackgroundOverride(
+                        for: newColor,
+                        defaultColor: defaultBackgroundColor,
+                        isMirror: surfaceView.terminalSurface?.ioMode == .manualMirror
+                    )
+                    // SUPERMUX:end osc-default-bg-clears-override
                     surfaceView.applySurfaceBackground()
                     if backgroundLogEnabled {
                         logBackground("OSC background change tab=\(surfaceView.tabId?.uuidString ?? "unknown") color=\(surfaceView.backgroundColor?.description ?? "nil")")

@@ -21,6 +21,24 @@ public struct MobileTerminalRenderGridReplay: Sendable {
         self.frame = frame
     }
 
+    // SUPERMUX:begin replay-theme-portable
+    /// Whether a full snapshot restores the frame's default colors (OSC
+    /// 10/11/12) and palette. A Mac viewing another Mac's terminal turns it
+    /// off so its own theme stands for every color the remote program did not
+    /// set; the program's colors travel separately.
+    public var includesColorState = true
+
+    /// Creates a replay over `frame`, optionally without its color state.
+    ///
+    /// - Parameters:
+    ///   - frame: The render-grid frame to synthesize bytes for.
+    ///   - includesColorState: Whether a full snapshot restores default colors and palette.
+    public init(_ frame: MobileTerminalRenderGridFrame, includesColorState: Bool) {
+        self.frame = frame
+        self.includesColorState = includesColorState
+    }
+    // SUPERMUX:end replay-theme-portable
+
     /// Synthesize a VT byte stream that reproduces ``frame`` when fed to a
     /// terminal emulator.
     ///
@@ -144,10 +162,14 @@ public struct MobileTerminalRenderGridReplay: Sendable {
         // Dynamic default colors (OSC 10/11/12). Nil frame values reset the
         // previous override so a full snapshot behaves like the old RIS path.
         // Apply them before clearing so blank cells use the captured defaults.
-        bytes.append(oscColorOrResetBytes(10, reset: 110, frame.terminalForeground))
-        bytes.append(oscColorOrResetBytes(11, reset: 111, frame.terminalBackground))
-        bytes.append(oscColorOrResetBytes(12, reset: 112, frame.terminalCursorColor))
-        appendPaletteRestore(to: &bytes)
+        // SUPERMUX:begin replay-theme-portable
+        if includesColorState {
+            bytes.append(oscColorOrResetBytes(10, reset: 110, frame.terminalForeground))
+            bytes.append(oscColorOrResetBytes(11, reset: 111, frame.terminalBackground))
+            bytes.append(oscColorOrResetBytes(12, reset: 112, frame.terminalCursorColor))
+            appendPaletteRestore(to: &bytes)
+        }
+        // SUPERMUX:end replay-theme-portable
         bytes.append(sgrBytes(for: defaultStyle))
         // A screen-anchored full without scrollback preserves the consumer's
         // local history: it repaints the active grid in place instead of
@@ -251,7 +273,15 @@ public struct MobileTerminalRenderGridReplay: Sendable {
         // The baseline also covers older frames that omitted `modes`, so stale
         // state from a reused surface cannot leak through the full replay.
         appendDefaultModeBaseline(to: &bytes)
-        for mode in frame.modes where !isReplayExcludedMode(mode) {
+        // SUPERMUX:begin replay-mouse-modes-last (Ghostty keeps one mouse event mode (?9/?1000/?1002/?1003) and one mouse format (?1005/?1006/?1015/?1016): a reset of any of them clears whichever is on, and the last one set wins, so the frame's `?1003l` after `?1002h` left a replayed mirror selecting text instead of reporting the mouse. Disabled modes go first, enabled ones after, and enabled formats last by preference (1005, 1015, 1006, 1016), so crossterm's `?1015h ?1006h` ends on SGR. Upstream: `for mode in frame.modes where !isReplayExcludedMode(mode) {`)
+        let formatPreference = [1005, 1015, 1006, 1016]
+        let enabledModes = frame.modes.filter(\.on)
+        let enabledFormats = formatPreference.flatMap { code in enabledModes.filter { !$0.ansi && $0.code == code } }
+        let replayedModes = frame.modes.filter { !$0.on }
+            + enabledModes.filter { $0.ansi || !formatPreference.contains($0.code) }
+            + enabledFormats
+        for mode in replayedModes where !isReplayExcludedMode(mode) {
+        // SUPERMUX:end replay-mouse-modes-last
             bytes.append(modeBytes(mode))
         }
 

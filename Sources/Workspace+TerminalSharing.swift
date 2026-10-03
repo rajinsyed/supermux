@@ -26,7 +26,9 @@ extension Workspace {
         let controller = TerminalController.shared
         let store = controller.terminalSharing
         if let mode = action.sizeMode.flatMap({ TerminalSizingMode(rawValue: $0.rawValue) }) {
-            if !store.setMode(mode, surfaceID: panelId) { NSSound.beep() }
+            // SUPERMUX:begin sizing-sticky-preference (a mode chosen here applies to every terminal on this Mac)
+            if !SupermuxTerminalSizingDefaults.shared.userChoseMode(mode, surfaceID: panelId, store: store) { NSSound.beep() }
+            // SUPERMUX:end sizing-sticky-preference
             if mode == .priority || mode == .fixed {
                 // Priority order and the fixed grid are edited in the panel.
                 controller.presentTerminalSizePanel(surfaceID: panelId, confirmDisconnectOthers: false)

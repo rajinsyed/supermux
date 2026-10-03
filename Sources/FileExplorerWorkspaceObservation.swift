@@ -49,6 +49,9 @@ final class FileExplorerWorkspaceObservation {
                 self.refresh()
             }
         }
+        // SUPERMUX:begin mirror-file-explorer-follow
+        SupermuxMirrorFileExplorerRoot.followDeviceChanges(for: self)
+        // SUPERMUX:end mirror-file-explorer-follow
     }
 
     func refresh(force: Bool = false) {

@@ -36,7 +36,10 @@ extension DockSplitStore {
             allowCrossPaneTabMove: true,
             autoCloseEmptyPanes: true,
             contentViewLifecycle: .keepAllAlive,
-            newTabPosition: .current,
+            // SUPERMUX:begin new-tab-at-end
+            // New tabs always append, as in workspaces (upstream: `.current`).
+            newTabPosition: .end,
+            // SUPERMUX:end new-tab-at-end
             tabBarVisibility: resolvedTabBarVisibility(),
             appearance: makeAppearance(from: config)
         )

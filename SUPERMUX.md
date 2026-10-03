@@ -93,6 +93,7 @@ building a parallel system.
 | Projects across Macs (merge by git origin, remote-only rows, project sync, Set Up on <Mac>) | ✅ loopback-E2E | `Sources/Supermux/Projects/`, `SupermuxUnifiedProjects`, host RPCs `project.probe`/`project.clone`, `plans/supermux-remote-workspaces/PROJECTS-API.md` |
 | New Worktree device picker + New Workspace on ▸ <Mac> | ✅ loopback-E2E | `SupermuxNewWorktreeSheetModel` over `SupermuxWorktreeCreationTarget` (local / remote), #570/#571, #620–#622 (plain New Workspace stays local; the empty area's menu; another Mac's home folder) |
 | Mirror workspace behaviors (⌘G run, presets, Changes panel, file tools) | ✅ loopback-E2E | `Sources/Supermux/Mirrors/`, `SupermuxChangesBackend` (local / remote over `changes.*`), #572 |
+| Files panel in a mirror browses the other Mac (list, preview, Find, git colors, live refresh, file operations) | ✅ loopback-E2E | `SupermuxDeviceFileExplorerProvider` over `files.*` (`supermux.files_read.v1`), #675–#681, `tests/supermux/loopback_mirror_files_e2e.py` |
 | Background tab sync (tabs added/closed/reordered on the owning Mac reach mirrors) | ✅ loopback-E2E | `SupermuxDeviceLayoutChangeObserver`, #595 |
 | Notification/push parity (no duplicate pushes, shared read state, presence-aware host, push setup shared between Macs) | ✅ loopback-E2E | #545–#550, `SupermuxDeviceNotification*`, `phone_push.status/share` |
 | Remote Macs settings card (Settings › Automation) | ✅ | `SupermuxRemoteMacsSettingsCard` (#596–#598) |
@@ -244,7 +245,10 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   title while the sheet is key, which left a blank gap) and the text says it closes the workspace on
   that Mac; mirror rows' menus offer Hide Here
   and Close on <Mac>… directly. Closing a single mirrored tab closes that terminal on the owning
-  Mac, like a local tab.
+  Mac, like a local tab: when that Mac says a program is still running there (by its own
+  close-confirmation setting), the viewer asks "Close “X” on <Mac>?" (Cancel, the Return/Esc default,
+  brings the tab back); Kill Terminal… forces. A tab closed while that Mac is unreachable disappears
+  at once and its close is sent first when the link is back (#640–#644).
 - **Sidebar rows:** inside a project, this Mac's workspaces come first, then each Mac's mirrors;
   every mirror row (nested or flat) marks its Mac with a small Mac + cloud icon right before its
   branch name (the Mac's name in its tooltip); nested rows show no `cmux set-status` pills or
@@ -273,14 +277,45 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   binding bytes, which reach the PTY exactly; the mirror's own answers to terminal queries are
   dropped. A pending Ghostty key sequence stays local. An older Mac on either side keeps upstream's
   text path.
-- **Terminal size follows the Mac you look from** (upstream's shared sizing, "Fit everyone"): a pane
-  that is not on screen (a tab never shown on its Mac, a mirror in a background workspace, a hidden
+- **Terminal size follows the Mac you look from** (upstream's shared sizing, #633, #665–#669): every
+  terminal starts as Priority with this Mac first (its own pane for a local terminal, so a phone
+  defers to a Mac pane on screen); a mirror claims the other Mac's terminal when it is shown, first
+  attaches while shown, or reconnects, pushing once per connection and never in answer to that Mac's
+  size events, so of two viewing Macs the one that showed it last wins. The mode, fixed size and
+  priority order chosen in the size panel or the tab menu are one sticky choice per Mac
+  (`supermux.terminalSizing.preference`; the panel says "Applies to all terminals on this Mac."),
+  applied to every local terminal and mirror, now and after a relaunch. Cloud terminals,
+  `terminal.size_policy.set`, a phone's or another Mac's choice, Size to My Window and Don't Resize
+  from This Mac stay per terminal. A viewing Mac's pane counts up to 500x200 (a phone's, 300x120). A
+  pane that is not on screen (a tab never shown on its Mac, a mirror in a background workspace, a hidden
   or fully covered window) does not count, so a tab opened from a mirror takes the mirror's size at
   once; a terminal that starts after its grid was decided gets it when it becomes ready.
+- **A mirror uses this Mac's terminal appearance** (#650–#653): the owning Mac's replay carries no
+  theme colors, so a mirror pane shares the window's (translucent) backdrop exactly like a local
+  pane; only colors a program on the other Mac set itself (OSC 4/10/11/12) are mirrored, and its
+  reset gives the backdrop back.
+- **New tabs append, on both Macs** (#660–#664): every new tab goes to the end of its tab strip
+  (workspaces and the Dock; upstream inserted after the selected tab, which a Mac hosting a mirrored
+  workspace never moves off its first tab, so tabs opened from a mirror landed second). "New
+  Terminal to the Right" in a mirror lands right of its tab there and on the owning Mac (capability
+  `supermux.terminal_placement.v1`; an older owning Mac appends it).
 - **Inside a mirror**, ⌘G/Run, presets, project actions and the Changes panel act on the owning Mac
-  over `mobile.supermux.*` (Generate & Commit follows that Mac's own AI-key rule); Finder/editor/
-  file-explorer actions and the full diff view, which need a local path, are disabled with an
-  "On <Mac>" hint.
+  over `mobile.supermux.*` (Generate & Commit follows that Mac's own AI-key rule); Finder/editor
+  actions and the full diff view, which need a local path, are disabled with an "On <Mac>" hint.
+- **The Files panel in a mirror is that Mac's folder** (#675–#681, capability
+  `supermux.files_read.v1`): the workspace's current folder there (it follows a `cd`), hidden files
+  listed as the local panel lists them (`.git` included; git internals are readable, never
+  mutable), that Mac's git colors, Find (ripgrep over there), live refresh from that Mac's folder
+  watcher, a read-only preview on double-click/Return/search hit (downloaded, 8 MB cap), and New
+  File/New Folder/Rename/Duplicate/Move to Trash run there. Every call is confined to that folder
+  (`..`, symlinks out of it and a stale folder are refused). That Mac answers every call within a
+  bound (30 s; 300 s for Duplicate and Move to Trash, which keep running there) and the link's
+  reply deadline outlasts it, runs one `git status` per folder at a time, and refuses previews and
+  Find while its `DisableFileTransfer` policy is on. Not offered: editing a preview, Open
+  Externally, Reveal in Finder, drag out; a symlink out of the folder lists but does not open; a
+  folder over 10,000 entries lists the first 10,000. The panel names the Mac when it cannot browse:
+  not connected, loading, "Update Supermux on <Mac> to browse its files here." (an older Mac), or no
+  folder reported yet.
 - **Notifications:** the owning Mac pushes to the phone (the viewer never forwards `.deviceMac`
   rows, so no duplicates); the phone badges the total over every pairable Mac build; read state
   flows both ways, and mirrored notifications (read state and Mark as Unread included) survive a

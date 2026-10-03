@@ -176,19 +176,18 @@ extension FileExplorerPanelView.Coordinator {
     }
 
     /// Maps a file-operation error to a localized title/message and shows it.
+    ///
+    /// Called from the operation's main-actor task, so never a bare
+    /// `runModal()` there: with the explorer's window gone (the panel hidden
+    /// while a slow remote operation ran), that nested modal would hold the
+    /// main queue until OK. `SupermuxAlertPresentation` shows a sheet, or an
+    /// app-modal alert from a run-loop block outside the task.
     func supermuxPresentFileOpError(_ error: Error) {
         let (title, message) = supermuxFileOpErrorText(for: error)
-        guard let window = supermuxHostWindow else {
-            let alert = NSAlert()
-            alert.messageText = title
-            alert.informativeText = message
-            alert.runModal()
-            return
-        }
         let alert = NSAlert()
         alert.messageText = title
         alert.informativeText = message
-        alert.beginSheetModal(for: window, completionHandler: nil)
+        SupermuxAlertPresentation.show(alert, preferring: supermuxHostWindow)
     }
 
     private func supermuxFileOpErrorText(for error: Error) -> (title: String, message: String) {

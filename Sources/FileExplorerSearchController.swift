@@ -487,6 +487,12 @@ final class FileSearchController: FileSearchControlling {
             startRemoteSearch(provider: provider, query: query, rootPath: rootPath)
             return
         }
+        // SUPERMUX:begin mirror-file-search-scope
+        if case .supermuxDevice(let provider) = scope {
+            startSupermuxDeviceSearch(provider: provider, query: query, rootPath: rootPath)
+            return
+        }
+        // SUPERMUX:end mirror-file-search-scope
         guard scope == .local else {
             emit(status: .unsupported, isSearching: false)
             return
