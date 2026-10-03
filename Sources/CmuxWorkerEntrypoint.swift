@@ -25,9 +25,15 @@ struct CmuxWorkerEntrypoint {
             )
         }
         if arguments.contains(SimulatorWorkerClient.workerModeArgument) {
+            // SUPERMUX:begin worker-quit-forwarding (a quit sent to the app's bundle id that reaches this worker goes on to the app)
+            SupermuxWorkerQuitForwarding.install()
+            // SUPERMUX:end worker-quit-forwarding
             runSimulatorWorker()
         }
         if arguments.contains(RenderWorkerClient.workerModeArgument) {
+            // SUPERMUX:begin worker-quit-forwarding (as above, for the other NSApplication worker)
+            SupermuxWorkerQuitForwarding.install()
+            // SUPERMUX:end worker-quit-forwarding
             runSidebarRenderWorker()
         }
         if arguments.contains(InterpreterClient.workerModeArgument) {

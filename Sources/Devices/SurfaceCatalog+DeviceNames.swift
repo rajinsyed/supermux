@@ -29,7 +29,14 @@ extension SurfaceCatalog {
                         propagateToRemoteTmux: false, propagateToCloud: false)
                 }
             }
-            guard Set(members.map(\.panelID)) == Set(workspace.panels.keys),
+            // SUPERMUX:begin device-names-local-panels
+            // A bound mirror's own panels (a remote-simulator viewer, a browser)
+            // live only on this Mac; the mirror still takes the owning Mac's
+            // workspace name. (upstream: the guard's first clause compares the
+            // members with every panel: `Set(workspace.panels.keys)`)
+            let supermuxLocalPanelIDs = SupermuxDeviceLayoutSurfaceFilter.localPanelIDs(in: workspace, machine: machine)
+            guard Set(members.map(\.panelID)) == Set(workspace.panels.keys).subtracting(supermuxLocalPanelIDs),
+            // SUPERMUX:end device-names-local-panels
                   let target = cloudWorkspaceRenameService.inferredRemoteWorkspaceTarget(
                     projections: Array(members), resources: [], resourcesByID: resources), target.machine == machine,
                   let remote = members.compactMap({ resources[$0.resource] }).flatMap(\.remoteWorkspaces)

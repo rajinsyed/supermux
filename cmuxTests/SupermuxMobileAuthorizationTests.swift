@@ -54,6 +54,10 @@ struct SupermuxMobileAuthorizationTests {
             case .filesRead, .filesSearch, .filesGitStatus, .filesWatch:
                 expected = .workspaceScopedPermitted
             // SUPERMUX:end mirror-file-explorer-authz
+            // SUPERMUX:begin remote-simulator-authz
+            case .simulatorControl:
+                expected = .workspaceScopedPermitted
+            // SUPERMUX:end remote-simulator-authz
             default:
                 expected = .macWide
             }

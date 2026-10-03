@@ -82,6 +82,7 @@ import Testing
             (.terminalPlacementV1, \.supportsTerminalPlacement),
             (.filesReadV1, \.supportsFilesRead),
             (.portForwardV1, \.supportsPortForward),
+            (.remoteSimulatorV1, \.supportsRemoteSimulator),
         ]
         #expect(accessors.count == SupermuxMobileCapability.all.count)
         for (capability, accessor) in accessors {
