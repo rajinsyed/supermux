@@ -543,7 +543,8 @@ on the fix (17/17). `choice_during_reconnect_lands` picks Priority on the mirror
 everyone and Priority already stored, so only the mirror can bring the pick; after the link is back
 the terminal must be Priority with the mirror first. Before, the pick failed on the detached link and
 the reconnect only claimed, which leaves Fit everyone; now it waits as the claim's `pending_choice`
-and goes on the next attach. It drives the DEBUG
+and goes on the next attach (red on b1114e178ad's app code, tag `sizeguard`, 17/18: the terminal stayed
+Fit everyone; green on 346d4a891f5, 18/18). It drives the DEBUG
 `supermux.devices.terminal_sizing.{state,reset,select_mode,set_priority}` methods
 (`Sources/Supermux/Devices/SupermuxTerminalSizingSocketCommands.swift`), which run the size panel's
 own actions, and resets the preference at start and end.
