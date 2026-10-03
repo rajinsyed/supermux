@@ -34,10 +34,11 @@ protocol SupermuxRemoteSimulatorDebugInspectable: AnyObject {
 /// - `steal {host_panel_id}` — opens a second loopback stream lane to that
 ///   host panel and sends `start`, as another device opening the same
 ///   simulator would.
-/// - `simctl_delay {seconds?, coresimulator?}` — sets (or reads) the
-///   slow-`simctl` hook (``SupermuxSimctlDebugDelay``): every `simctl` spawn of
-///   this app's Simulator panels waits that long first (0 turns it off);
-///   `coresimulator: false` makes them list devices with `simctl` too.
+/// - `simctl_delay {seconds?, coresimulator?, coresimulator_delay?}` — sets (or
+///   reads) the slow-`simctl` hook (``SupermuxSimctlDebugDelay``): every `simctl`
+///   spawn of this app's Simulator panels waits that long first (0 turns it off);
+///   `coresimulator: false` makes them list devices with `simctl` too, and
+///   `coresimulator_delay` holds each in-process CoreSimulator read that long.
 @MainActor
 enum SupermuxRemoteSimulatorSocketCommands {
     static let methodPrefix = "mirror.simulator."
@@ -75,10 +76,14 @@ enum SupermuxRemoteSimulatorSocketCommands {
             if let allows = params["coresimulator"] as? Bool {
                 SupermuxSimctlDebugDelay.allowsCoreSimulator = allows
             }
+            if let delay = (params["coresimulator_delay"] as? NSNumber)?.doubleValue {
+                SupermuxSimctlDebugDelay.coreSimulatorDelay = delay
+            }
             return [
                 "seconds": SupermuxSimctlDebugDelay.seconds,
                 "previous": previous,
                 "coresimulator": SupermuxSimctlDebugDelay.allowsCoreSimulator,
+                "coresimulator_delay": SupermuxSimctlDebugDelay.coreSimulatorDelay,
             ]
         default:
             throw InvalidParams(message: "unknown simulator driver \(name)")

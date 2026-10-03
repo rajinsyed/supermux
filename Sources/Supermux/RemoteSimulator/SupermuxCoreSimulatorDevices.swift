@@ -62,6 +62,7 @@ final class SupermuxCoreSimulatorDevices: @unchecked Sendable {
     // MARK: - On the queue
 
     private func readDevices() throws -> [SimulatorDevice] {
+        SupermuxSimctlDebugDelay.beforeCoreSimulatorRead()
         let set = try loadedDeviceSet()
         guard let records = Self.value(set, "devices") as? [NSObject] else {
             throw Failure.unavailable("CoreSimulator's device set has no device list")
