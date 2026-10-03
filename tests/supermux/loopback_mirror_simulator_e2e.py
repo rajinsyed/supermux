@@ -72,7 +72,8 @@ session, pump, encoder and worker ring; only QUIC is replaced.
                                             is asked again, never answered by opening a second tab) and
                                             streams it, no second SimulatorPanel
  25. coresimulator_survives_quit_during_load (--app-path) the app quits normally while its in-process
-                                            CoreSimulator load is held open (a cold service); after
+                                            CoreSimulator load is held open (a cold service) and a new
+                                            Simulator tab waits on it: it exits within 5 s, and after
                                             the relaunch CoreSimulator still loads in-process
  26. coresimulator_guard_needs_two_interrupted_loads
                                             (--app-path) a run killed during that load once leaves
@@ -123,6 +124,8 @@ CORESIMULATOR_DELAY_ENV = "SUPERMUX_DEBUG_CORESIMULATOR_DELAY_SECONDS"
 CORESIMULATOR_LOAD_HOLD_ENV = "SUPERMUX_DEBUG_CORESIMULATOR_LOAD_HOLD_SECONDS"
 # Steps 25-26 hold the in-process CoreSimulator load open this long: past every quit and kill they make.
 CORESIMULATOR_LOAD_HOLD_SECONDS = 90
+# Step 25: how long a quit may take while a Simulator tab waits on that load (a quit without one takes about 1 s).
+QUICK_QUIT_SECONDS = 5.0
 # Steps 22-24's hold on each in-process CoreSimulator read of the owner: 3 s loses no deadline (it only makes a
 # device-menu refresh overlap the new tab's startup discovery); 12 s is past the owner's 8 s device-menu bound.
 CORESIMULATOR_OVERLAP_SECONDS = 3.0
@@ -969,6 +972,10 @@ class MirrorSimulatorE2E:
         new tab on the owner."""
         for viewer in self.panels(self.mirror, "viewer"):
             self.sock.call("surface.close", {"workspace_id": self.mirror, "surface_id": viewer["panel_id"], "force": True})
+        time.sleep(1.0)
+        # A viewer that had not bound its tab yet (after a relaunch) closes nothing there: close what is left.
+        for panel in self.panels(self.source, "local"):
+            self.sock.call("surface.close", {"workspace_id": self.source, "surface_id": panel["panel_id"], "force": True})
         wait_for("no Simulator tab on the owner before the step", lambda: not self.panels(self.source, "local"), 20)
 
     def device_menu_never_empty_while_owner_starts(self) -> Dict[str, Any]:
@@ -1110,21 +1117,43 @@ class MirrorSimulatorE2E:
         """The guard bracketed the in-process CoreSimulator load with a marker file and took a marker left behind for
         a crash. The load is where a cold CoreSimulatorService makes the app wait, so a quit (or a logout) during it
         left the marker too, and from the next launch on CoreSimulator was off in-process for good: every list went
-        back to `simctl`, 20 s each on the Mac of 2026-10-03, until Xcode changed."""
+        back to `simctl`, 20 s each on the Mac of 2026-10-03, until Xcode changed.
+
+        And a Simulator tab whose start waits on that load held the quit: the app closes its Simulator tabs before
+        it quits, a tab's close waits for its start, and the start waited on a CoreSimulator read nothing could
+        cancel, up to its 30 s budget."""
         if not self.args.app_path:
             raise Skipped("pass --app-path to quit and relaunch")
-        self.close_viewer_and_owner_tab()  # no Simulator tab: this step's read is the first load
+        self.close_viewer_and_owner_tab()  # no Simulator tab: the new tab's start is the first load
         self.clear_coresimulator_guard()
         try:
             self.relaunch({CORESIMULATOR_LOAD_HOLD_ENV: str(CORESIMULATOR_LOAD_HOLD_SECONDS)})
+            try:
+                self.new_simulator("configured")
+                self.one_viewer_on_owner()
+            finally:
+                self.close_local_simulators_in_mirror()
             self.wait_coresimulator_phase("the CoreSimulator load to be held open", lambda p: p == "loading", 20)
+            time.sleep(3.0)  # the owner tab's start now waits on the held load
+            self.sock.call("workspace.select", {"workspace_id": self.mirror})
+            time.sleep(1.0)  # let the session autosave see the tabs
             self.relaunch()  # a normal quit, the load still open
-            quit_seconds = self.facts.get("quit_seconds")
+            quit_seconds = float(self.facts.get("quit_seconds") or 0)
             phase = self.wait_coresimulator_phase("the relaunched app to finish its CoreSimulator load",
                                                   lambda p: p != "loading" and p != "not_loaded", 30)
+            # The relaunch restores the mirror (maybe with a new id) and its Simulator tab: close them for step 26.
+            self.mirror = up(wait_for("the restored mirror", lambda: (self.mirrors_of(self.source) or [None])[0],
+                                      60)["workspace_id"])
+            self.close_viewer_and_owner_tab()
+            problems = []
+            if quit_seconds > QUICK_QUIT_SECONDS:
+                problems.append(f"the quit took {quit_seconds}s with a Simulator tab waiting on the held CoreSimulator "
+                                f"load (want <= {QUICK_QUIT_SECONDS}s)")
             if phase != "loaded":
-                raise Failure(f"after a normal quit during the CoreSimulator load the relaunched app does not load it "
-                              f"in-process: {phase}")
+                problems.append(f"after a normal quit during the CoreSimulator load the relaunched app does not load "
+                                f"it in-process: {phase}")
+            if problems:
+                raise Failure("; ".join(problems))
             return {"quit_seconds": quit_seconds, "phase_after_relaunch": phase}
         finally:
             self.clear_coresimulator_guard()
