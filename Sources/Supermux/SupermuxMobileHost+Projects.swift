@@ -11,6 +11,11 @@ import SupermuxMobileCore
 /// by ``SupermuxMobileProjectsObserver`` watching the model, so every write
 /// path (mobile or desktop) pokes the phone exactly once.
 extension TerminalController {
+    /// The icon reads `project.icon` runs, one per icon and etag at a time.
+    nonisolated static let supermuxProjectIconReads = SupermuxBoundedLookups<SupermuxProjectIconPayload>()
+    /// How long `project.icon` waits for its read.
+    nonisolated static let supermuxProjectIconTimeout: TimeInterval = 10
+
     /// `mobile.supermux.projects.list`: the registered projects, the global
     /// terminal presets (the same set the desktop bar shows above every
     /// workspace), and the sidebar section's collapse state, as
@@ -27,17 +32,19 @@ extension TerminalController {
         let gitRemoteURLs = await SupermuxComposition.gitRemoteResolver.remoteURLs(
             forRoots: projects.map(\.rootPath)
         )
+        // has_custom_icon, the icon token and the config marker are file I/O in
+        // each project's folder, which blocks while a macOS privacy prompt for
+        // it is unanswered: probed on bounded lookups off the cooperative pool,
+        // so no project holds the list past the caller's deadline.
+        let fileFacts = await SupermuxProjectFileFacts.shared.facts(for: projects)
         do {
-            // has_custom_icon stats candidate icon paths per project; keep
-            // that file I/O off the main actor.
-            let payload = try await Task.detached(priority: .userInitiated) {
-                try SupermuxMobileProjectsPayloadBuilder().projectsList(
-                    projects: projects,
-                    presets: presets,
-                    isSectionCollapsed: isSectionCollapsed,
-                    gitRemoteURLs: gitRemoteURLs
-                )
-            }.value
+            let payload = try SupermuxMobileProjectsPayloadBuilder().projectsList(
+                projects: projects,
+                presets: presets,
+                isSectionCollapsed: isSectionCollapsed,
+                gitRemoteURLs: gitRemoteURLs,
+                fileFacts: fileFacts
+            )
             return .ok(payload)
         } catch {
             return .err(code: "unavailable", message: "Failed to encode projects list", data: nil)
@@ -92,11 +99,14 @@ extension TerminalController {
         guard let patchObject = params["patch"] as? [String: Any] else {
             return .err(code: "invalid_params", message: "patch must be an object", data: nil)
         }
-        // The read-only marker probes the filesystem; keep it off the main actor.
-        let rootPath = project.rootPath
-        let isConfigManaged = await Task.detached(priority: .userInitiated) {
-            SupermuxMobileProjectConfigMarker.managedRelativePath(projectRoot: rootPath) != nil
-        }.value
+        // The read-only marker probes the project's folder: a bounded probe off
+        // the cooperative pool (a pending privacy prompt can block it), and no
+        // patch while it is unknown.
+        let facts = await SupermuxProjectFileFacts.shared.facts(for: [project])
+        guard let projectFacts = facts[SupermuxMobileProjectsPayloadBuilder.fileFactsKey(for: project)] else {
+            return .err(code: "timed_out", message: "The project's folder could not be read on this Mac in time", data: nil)
+        }
+        let isConfigManaged = projectFacts.configPath != nil
         // Re-read the record AFTER the awaited probe: a desktop or other-client
         // edit to a DIFFERENT field during that suspension must survive. The
         // patch replaces only its own keys; writing back the pre-await snapshot
@@ -154,14 +164,17 @@ extension TerminalController {
         return .ok(["section_collapsed": collapsed])
     }
 
-    /// The `{project: SupermuxProjectDTO}` result for one record, built off
-    /// the main actor (icon and config probes are file I/O).
+    /// The `{project: SupermuxProjectDTO}` result for one record (its icon and
+    /// config probes are bounded file I/O, as in `projects.list`).
     func supermuxProjectResult(_ project: SupermuxProject) async -> V2CallResult {
         let gitRemoteURL = await SupermuxComposition.gitRemoteResolver.remoteURL(forRoot: project.rootPath)
+        let fileFacts = await SupermuxProjectFileFacts.shared.facts(for: [project])
         do {
-            let payload = try await Task.detached(priority: .userInitiated) {
-                try SupermuxMobileProjectsPayloadBuilder().projectPayload(project: project, gitRemoteURL: gitRemoteURL)
-            }.value
+            let payload = try SupermuxMobileProjectsPayloadBuilder().projectPayload(
+                project: project,
+                gitRemoteURL: gitRemoteURL,
+                fileFacts: fileFacts[SupermuxMobileProjectsPayloadBuilder.fileFactsKey(for: project)] ?? .unknown
+            )
             return .ok(payload)
         } catch {
             return .err(code: "unavailable", message: "Failed to encode project", data: nil)
@@ -220,14 +233,22 @@ extension TerminalController {
         let requestedETag = params["etag"] as? String
         let rootPath = project.rootPath
         let customIconPath = project.customIconPath
-        // File probing, hashing, and PNG re-encoding run off the main actor.
-        let outcome = await Task.detached(priority: .userInitiated) {
+        // Reading, hashing and re-encoding the icon run on a bounded lookup off
+        // the main actor and the cooperative pool: a read stuck behind an
+        // unanswered privacy prompt answers `timed_out` instead of holding the
+        // reply past the caller's deadline, and is never started twice.
+        let key = [rootPath, customIconPath ?? "", requestedETag ?? ""].joined(separator: "\n")
+        guard let outcome = await Self.supermuxProjectIconReads.value(key, timeout: Self.supermuxProjectIconTimeout, lookup: {
             SupermuxProjectIconPayloadBuilder().payload(
                 rootPath: rootPath,
                 customIconPath: customIconPath,
                 ifNoneMatch: requestedETag
             )
-        }.value
+        }) else {
+            return .err(code: "timed_out", message: "The project's icon could not be read on this Mac in time", data: [
+                "project_id": idString
+            ])
+        }
         switch outcome {
         case .notFound:
             return .err(code: "not_found", message: "Project has no icon image", data: [

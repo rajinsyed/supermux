@@ -99,6 +99,9 @@ extension Workspace {
         for panelId in panels.keys.sorted(by: { $0.uuidString < $1.uuidString }) where seen.insert(panelId).inserted {
             allPanelIds.append(panelId)
         }
+        // SUPERMUX:begin device-reserved-pane-not-saved (a mirror tab still waiting for, or failed to get, its terminal on another Mac is not saved: restored, it came back as a LOCAL shell in the mirror)
+        allPanelIds.removeAll { cloudPendingCreations[$0]?.machine.isDevice == true }
+        // SUPERMUX:end device-reserved-pane-not-saved
         let terminalFontSizeSnapshotProjection =
             terminalFontSizeChangeArbiter?.snapshotProjection(
                 for: self,
@@ -4197,7 +4200,11 @@ final class Workspace: Identifiable, ObservableObject, FilePreviewTabMetadataHos
             allowCrossPaneTabMove: true,
             autoCloseEmptyPanes: true,
             contentViewLifecycle: .keepAllAlive,
-            newTabPosition: .current,
+            // SUPERMUX:begin new-tab-at-end
+            // New tabs always append (upstream: `.current`, after the selected tab,
+            // which a Mac hosting a mirrored workspace never moves off its first tab).
+            newTabPosition: .end,
+            // SUPERMUX:end new-tab-at-end
             tabBarVisibility: Self.tabBarVisibility(defaults: closeTabWarningDefaults),
             appearance: appearance
         )
@@ -13071,6 +13078,12 @@ final class Workspace: Identifiable, ObservableObject, FilePreviewTabMetadataHos
     }
 
     private func createTerminalToRight(of anchorTabId: TabID, inPane paneId: PaneID) {
+        // SUPERMUX:begin mirror-terminal-to-right
+        // A device mirror's tab: its Mac creates the terminal right of it there too.
+        if SupermuxMirrorTerminalPlacement.createTerminalToRight(of: anchorTabId, inPane: paneId, in: self, focus: true) != nil {
+            return
+        }
+        // SUPERMUX:end mirror-terminal-to-right
         let sourcePanelId = panelIdFromSurfaceId(anchorTabId)
         guard let newPanel = newTerminalSurface(
             inPane: paneId,
@@ -14215,6 +14228,9 @@ extension Workspace: BonsplitDelegate {
             }
         }
 
+        // SUPERMUX:begin device-close-cancel-restores-tab (whether another Mac's tab was selected as it closes, so a Cancel in "Close “X” on <Mac>?" selects it again)
+        SupermuxDeviceClosedTabs.shared.noteClosing(tab.id, inPane: pane, workspace: self)
+        // SUPERMUX:end device-close-cancel-restores-tab
         let tabCloseButtonClose = tabStripCloseButtonByTabId.removeValue(forKey: tab.id)
         let tabStripClose = tabCloseButtonClose != nil
         let explicitUserClose = explicitUserCloseTabIds.remove(tab.id) != nil || tabStripClose

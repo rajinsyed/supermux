@@ -6,12 +6,22 @@ import SupermuxKit
 /// bounded so an orphaned reveal cannot linger for the whole session.
 private let supermuxRevealTimeout: TimeInterval = 10
 
+/// The disk a file operation runs on, captured when the user starts it.
+private enum SupermuxFileOpDisk: Sendable {
+    /// This Mac's disk.
+    case thisMac
+    /// A device mirror's folder, on the Mac that owns it.
+    case device(SupermuxDeviceFileExplorerProvider)
+}
+
 // MARK: - Context-menu population
 
 extension NSMenu {
     /// Appends the supermux file-operation items for a clicked tree node:
     /// New File / New Folder (scoped to the node's directory), Rename, Duplicate,
-    /// and Move to Trash. No-op for non-local providers (SSH file ops unsupported).
+    /// and Move to Trash. Offered for this Mac's disk and for a device mirror's
+    /// folder (the operations run on its Mac, root-confined); no-op for SSH and
+    /// Cloud providers.
     /// `@MainActor`: reads `coordinator.store`, which upstream made
     /// main-actor-isolated. Both call sites are AppKit menu construction on the
     /// main actor already.
@@ -20,7 +30,7 @@ extension NSMenu {
         coordinator: FileExplorerPanelView.Coordinator,
         clickedNode node: FileExplorerNode
     ) {
-        guard coordinator.store.provider is LocalFileExplorerProvider else { return }
+        guard coordinator.supermuxSupportsFileOperations else { return }
 
         let parentDirectory: URL
         let expandNode: FileExplorerNode?
@@ -46,7 +56,7 @@ extension NSMenu {
     /// the user right-clicks the empty area below the tree (no node clicked).
     @MainActor
     func addSupermuxRootFileOperationItems(coordinator: FileExplorerPanelView.Coordinator) {
-        guard coordinator.store.provider is LocalFileExplorerProvider,
+        guard coordinator.supermuxSupportsFileOperations,
               !coordinator.store.rootPath.isEmpty else { return }
         let request = SupermuxFileOpRequest(
             parentDirectory: URL(fileURLWithPath: coordinator.store.rootPath),
@@ -68,25 +78,52 @@ extension NSMenu {
 
 @MainActor
 extension FileExplorerPanelView.Coordinator {
+    /// Whether the panel's provider takes file operations: this Mac's disk, or
+    /// a device mirror's folder (run on its Mac over `files.create/rename/
+    /// duplicate/trash`, the same root-confined engine the phone uses).
+    var supermuxSupportsFileOperations: Bool {
+        supermuxFileOpDisk != nil
+    }
+
+    /// The disk the panel shows right now; `nil` for providers without file
+    /// operations. Every operation captures it when the user starts it,
+    /// before any sheet, and runs only there.
+    private var supermuxFileOpDisk: SupermuxFileOpDisk? {
+        if let device = store.provider as? SupermuxDeviceFileExplorerProvider { return .device(device) }
+        return store.provider is LocalFileExplorerProvider ? .thisMac : nil
+    }
+
     @objc func supermuxNewFile(_ sender: NSMenuItem) {
-        guard let request = sender.representedObject as? SupermuxFileOpRequest else { return }
+        guard let request = sender.representedObject as? SupermuxFileOpRequest,
+              let disk = supermuxFileOpDisk else { return }
         supermuxPromptAndCreate(
             title: SupermuxFileOpText.newFileTitle,
             messageFormat: SupermuxFileOpText.newFileMessageFormat,
             request: request
         ) { name, directory in
-            try SupermuxFileSystemOperations.createFile(named: name, in: directory)
+            switch disk {
+            case .device(let device):
+                return URL(fileURLWithPath: try await device.create(at: (directory.path as NSString).appendingPathComponent(name), folder: false))
+            case .thisMac:
+                return try SupermuxFileSystemOperations.createFile(named: name, in: directory)
+            }
         }
     }
 
     @objc func supermuxNewFolder(_ sender: NSMenuItem) {
-        guard let request = sender.representedObject as? SupermuxFileOpRequest else { return }
+        guard let request = sender.representedObject as? SupermuxFileOpRequest,
+              let disk = supermuxFileOpDisk else { return }
         supermuxPromptAndCreate(
             title: SupermuxFileOpText.newFolderTitle,
             messageFormat: SupermuxFileOpText.newFolderMessageFormat,
             request: request
         ) { name, directory in
-            try SupermuxFileSystemOperations.createDirectory(named: name, in: directory)
+            switch disk {
+            case .device(let device):
+                return URL(fileURLWithPath: try await device.create(at: (directory.path as NSString).appendingPathComponent(name), folder: true))
+            case .thisMac:
+                return try SupermuxFileSystemOperations.createDirectory(named: name, in: directory)
+            }
         }
     }
 
@@ -100,7 +137,7 @@ extension FileExplorerPanelView.Coordinator {
         title: String,
         messageFormat: String,
         request: SupermuxFileOpRequest,
-        make: @escaping @Sendable (String, URL) throws -> URL
+        make: @escaping @Sendable (String, URL) async throws -> URL
     ) {
         let identity = store.workspaceRootIdentity
         let rootPath = store.rootPath
@@ -122,7 +159,7 @@ extension FileExplorerPanelView.Coordinator {
                     if let expandNode { self?.store.expand(node: expandNode) }
                 }
             ) {
-                let created = try make(name, parentDirectory)
+                let created = try await make(name, parentDirectory)
                 return SupermuxFileExplorerSelection.revealForCreatedItem(
                     path: created.path, showHiddenFiles: showHiddenFiles)
             }
@@ -142,7 +179,8 @@ extension FileExplorerPanelView.Coordinator {
     }
 
     @objc func supermuxDuplicate(_ sender: NSMenuItem) {
-        guard let node = sender.representedObject as? FileExplorerNode else { return }
+        guard let node = sender.representedObject as? FileExplorerNode,
+              let disk = supermuxFileOpDisk else { return }
         // Honor the active multi-selection, like Move to Trash, so Duplicate is
         // not silently partial. Each item is duplicated independently (Finder
         // duplicates a selected folder and a selected child separately).
@@ -153,7 +191,12 @@ extension FileExplorerPanelView.Coordinator {
             mutatedParentPaths: urls.map { $0.deletingLastPathComponent().path }
         ) {
             var reveal: SupermuxFileExplorerSelection.FileOpReveal = .none
-            for url in urls { reveal = .reveal(try SupermuxFileSystemOperations.duplicate(url).path) }
+            for url in urls {
+                switch disk {
+                case .device(let device): reveal = .reveal(try await device.duplicate(url.path))
+                case .thisMac: reveal = .reveal(try SupermuxFileSystemOperations.duplicate(url).path)
+                }
+            }
             return reveal
         }
     }
@@ -166,8 +209,11 @@ extension FileExplorerPanelView.Coordinator {
     /// Shared rename entrypoint used by both the context menu and the keyboard.
     /// The move itself runs off the main actor via `supermuxRunFileOperation`
     /// (a `moveItem` on a stalled network volume can block for seconds),
-    /// mirroring create/duplicate/trash.
+    /// mirroring create/duplicate/trash. The disk is chosen before the sheet
+    /// opens: a link drop while it is open must never rename the other Mac's
+    /// path on this Mac's disk (or the reverse).
     func supermuxBeginRename(_ node: FileExplorerNode) {
+        guard let disk = supermuxFileOpDisk else { return }
         let identity = store.workspaceRootIdentity
         let rootPath = store.rootPath
         supermuxPromptForName(
@@ -182,15 +228,20 @@ extension FileExplorerPanelView.Coordinator {
             // name validation's whitespace-trim silently retarget a padded name).
             guard name != node.name else { return }
             let showHiddenFiles = self.store.showHiddenFiles
-            let source = URL(fileURLWithPath: node.path)
+            let sourcePath = node.path
+            let source = URL(fileURLWithPath: sourcePath)
             self.supermuxRunFileOperation(
                 identity: identity,
                 rootPath: rootPath,
                 mutatedParentPaths: [source.deletingLastPathComponent().path]
             ) {
-                let renamed = try SupermuxFileSystemOperations.rename(source, to: name)
+                let renamed: String
+                switch disk {
+                case .device(let device): renamed = try await device.rename(sourcePath, to: name)
+                case .thisMac: renamed = try SupermuxFileSystemOperations.rename(source, to: name).path
+                }
                 return SupermuxFileExplorerSelection.revealForRenamedItem(
-                    path: renamed.path, showHiddenFiles: showHiddenFiles)
+                    path: renamed, showHiddenFiles: showHiddenFiles)
             }
         }
     }
@@ -198,7 +249,7 @@ extension FileExplorerPanelView.Coordinator {
     /// Shared trash entrypoint used by both the context menu and the keyboard.
     func supermuxMoveNodesToTrash(_ nodes: [FileExplorerNode]) {
         let targets = supermuxTopLevelNodes(nodes)
-        guard !targets.isEmpty else { return }
+        guard !targets.isEmpty, let disk = supermuxFileOpDisk else { return }
         let urls = targets.map { URL(fileURLWithPath: $0.path) }
         // After trashing, retarget the selection to a surviving parent so the
         // authoritative store selection no longer points at a deleted path — which
@@ -217,15 +268,19 @@ extension FileExplorerPanelView.Coordinator {
                 rootPath: rootPath,
                 mutatedParentPaths: urls.map { $0.deletingLastPathComponent().path }
             ) {
-                try SupermuxFileSystemOperations.moveToTrash(urls)
+                switch disk {
+                case .device(let device): try await device.trash(urls.map(\.path))
+                case .thisMac: try SupermuxFileSystemOperations.moveToTrash(urls)
+                }
                 return revealAfter
             }
         }
     }
 
     /// Runs a filesystem mutation off the main actor (so file I/O on a stalled
-    /// volume, duplicating a large folder, or trashing many items never blocks
-    /// the UI), then reconciles the (window-lifetime, reused) store against a
+    /// volume, duplicating a large folder, trashing many items, or a call to a
+    /// device mirror's Mac never blocks the UI), then reconciles the
+    /// (window-lifetime, reused) store against a
     /// possible mid-op workspace/root switch. `identity`/`rootPath` are captured
     /// by the caller BEFORE any confirmation sheet, so the staleness check
     /// reflects the workspace the user actually acted in. On success `onApply`
@@ -238,12 +293,12 @@ extension FileExplorerPanelView.Coordinator {
         rootPath: String,
         mutatedParentPaths: [String],
         onApply: (() -> Void)? = nil,
-        _ work: @escaping @Sendable () throws -> SupermuxFileExplorerSelection.FileOpReveal
+        _ work: @escaping @Sendable () async throws -> SupermuxFileExplorerSelection.FileOpReveal
     ) {
         Task { [weak self] in
             let result: Result<SupermuxFileExplorerSelection.FileOpReveal, any Error>
             do {
-                result = .success(try await Task.detached(priority: .userInitiated) { try work() }.value)
+                result = .success(try await Task.detached(priority: .userInitiated) { try await work() }.value)
             } catch {
                 result = .failure(error)
             }
@@ -304,7 +359,7 @@ extension FileExplorerPanelView.Coordinator {
     /// Handles ⌘⌫ (Move to Trash) and Return (Rename) while the outline view is
     /// first responder. Returns `true` when the event was consumed.
     func handleSupermuxFileOperationKey(_ event: NSEvent, in outlineView: NSOutlineView) -> Bool {
-        guard store.provider is LocalFileExplorerProvider else { return false }
+        guard supermuxSupportsFileOperations else { return false }
         // Check only the command/control/option modifiers, matching
         // RightSidebarKeyboardNavigation's plain-key convention. This ignores
         // .numericPad (set on keypad Enter, keyCode 76), .shift, and capsLock —

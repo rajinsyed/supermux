@@ -26,8 +26,9 @@ DEBUG `supermux.devices.mirror.*` socket drivers):
      local mirror opens titled like it (never "Cloud VM").
   5. mirror_target — the mirror resolves to the remote workspace and project.
   6. local_path_actions_off_in_mirror — Show in Finder and Open in Editor are
-     disabled and the Files panel is unavailable naming the Mac, while the
-     SOURCE (a local workspace) keeps them.
+     disabled and the Files panel shows the other Mac's folder (the device
+     provider, naming the Mac), while the SOURCE (a local workspace) keeps
+     this Mac's actions.
   7. run_start_from_mirror_shortcut — ⌘G in the mirror starts the run on the
      source side (the port listens; run.state names the source workspace;
      the mirror still holds only panes projected from the other Mac).
@@ -88,8 +89,9 @@ DEBUG `supermux.devices.mirror.*` socket drivers):
  17f. empty_area_menu_this_mac_creates_local — its This Mac row, clicked
      while the mirror is selected, creates a local workspace (not a mirror),
      selected, after every existing row.
- 18. files_panel_names_mac — the Files panel on the mirror is unavailable and
-     says the files are on the loopback Mac (screenshot).
+ 18. files_panel_names_mac — the Files panel on the mirror browses the
+     loopback Mac's folder and names that Mac (screenshot; the panel itself is
+     covered by loopback_mirror_files_e2e.py).
  19. file_diff_viewer_opens_for_remote_diff — clicking a file row's diff
      (the panel's path) opens the diff viewer tab in the mirror from the
      other Mac's patch (screenshot). Last, because the viewer is a local
@@ -426,18 +428,31 @@ class WorkspaceBehaviorsE2E:
             raise CheckFailure("the source workspace resolves as a mirror")
         return {"target": info["target"], "presets_bar_host_label": info.get("presets_bar_host_label")}
 
+    def mirror_files_on_mac(self) -> Dict[str, Any]:
+        """The mirror's Files root once the host's capabilities are known: the
+        device provider at the other Mac's folder, naming that Mac."""
+        def probe() -> Dict[str, Any]:
+            files = self.inspect(self.mirror_id)["local_path_actions"].get("file_explorer") or {}
+            if files.get("kind") != "device" or not files.get("is_available"):
+                raise CheckFailure(f"mirror Files panel {files}")
+            return files
+
+        return wait_for("the mirror's Files panel to browse the other Mac", probe, self.timeout_s)
+
     def local_path_actions(self) -> Dict[str, Any]:
         mirror = self.inspect(self.mirror_id)["local_path_actions"]
         source = self.inspect(self.source_id)["local_path_actions"]
-        files = mirror.get("file_explorer") or {}
         problems = []
         if mirror.get("show_in_finder_enabled"):
             problems.append(f"mirror Show in Finder enabled ({mirror.get('show_in_finder_path')})")
         if mirror.get("open_in_editor_enabled"):
             problems.append("mirror Open in Editor enabled")
-        if files.get("is_available") or files.get("kind") != "remote":
-            problems.append(f"mirror Files panel {files}")
-        if "Loopback Mac" not in str(files.get("display_target")) or "Loopback Mac" not in str(files.get("detail")):
+        try:
+            files = self.mirror_files_on_mac()
+        except CheckFailure as error:
+            files = {}
+            problems.append(str(error))
+        if files and "Loopback Mac" not in str(files.get("display_target")):
             problems.append(f"mirror Files panel does not name the Mac: {files}")
         if not source.get("show_in_finder_enabled") or (source.get("file_explorer") or {}).get("kind") != "local":
             problems.append(f"source (local) lost its local-path actions: {source}")
@@ -1008,8 +1023,8 @@ class WorkspaceBehaviorsE2E:
         self.rpc("workspace.select", {"workspace_id": self.mirror_id})
         self.cli("right-sidebar", "set", "files")
         time.sleep(1.5)
-        files = self.inspect(self.mirror_id)["local_path_actions"]["file_explorer"]
-        if files.get("is_available") or "Loopback Mac" not in str(files.get("detail")):
+        files = self.mirror_files_on_mac()
+        if "Loopback Mac" not in str(files.get("display_target")):
             raise CheckFailure(f"Files panel: {files}")
         shot = self.screenshot("files-panel-mirror")
         self.cli("right-sidebar", "set", "changes")

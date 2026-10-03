@@ -48,6 +48,9 @@ struct TerminalSizePanelView: View {
         return VStack(alignment: .leading, spacing: 8) {
             header(presentation)
             modeRow(snapshot.state.policy.mode)
+            // SUPERMUX:begin sizing-sticky-preference (the mode is one choice for every terminal on this Mac)
+            if !snapshot.isCloud { SupermuxTerminalSizingScopeNote() }
+            // SUPERMUX:end sizing-sticky-preference
             if snapshot.state.policy.mode == .fixed {
                 fixedSizeEditor(snapshot.state.policy.fixed ?? snapshot.state.size)
             }
@@ -82,7 +85,9 @@ struct TerminalSizePanelView: View {
                 String(localized: "terminalSharing.panel.sizeLabel", defaultValue: "Size"),
                 selection: Binding(
                     get: { mode },
-                    set: { _ = store.setMode($0, surfaceID: surfaceID) }
+                    // SUPERMUX:begin sizing-sticky-preference (a mode chosen here applies to every terminal on this Mac)
+                    set: { _ = SupermuxTerminalSizingDefaults.shared.userChoseMode($0, surfaceID: surfaceID, store: store) }
+                    // SUPERMUX:end sizing-sticky-preference
                 )
             ) {
                 ForEach(TerminalSizingMode.allCases, id: \.self) { mode in
@@ -122,13 +127,16 @@ struct TerminalSizePanelView: View {
     private func applyFixedSize(_ fixed: TerminalGridSize) {
         let cols = Int(fixedColumns.trimmingCharacters(in: .whitespaces)) ?? fixed.cols
         let rows = Int(fixedRows.trimmingCharacters(in: .whitespaces)) ?? fixed.rows
-        _ = store.setFixedSize(
+        // SUPERMUX:begin sizing-sticky-preference (a fixed size chosen here applies to every terminal on this Mac)
+        _ = SupermuxTerminalSizingDefaults.shared.userChoseFixedSize(
             TerminalGridSize(
                 cols: min(max(cols, 20), TerminalSizingPolicy.maximumFixedSize.cols),
                 rows: min(max(rows, 5), TerminalSizingPolicy.maximumFixedSize.rows)
             ),
-            surfaceID: surfaceID
+            surfaceID: surfaceID,
+            store: store
         )
+        // SUPERMUX:end sizing-sticky-preference
         fixedColumns = ""
         fixedRows = ""
     }
@@ -183,7 +191,11 @@ struct TerminalSizePanelView: View {
         let key = keys.remove(at: from)
         keys.insert(key, at: to)
         var seen = Set<String>()
-        _ = store.setPriority(keys.filter { seen.insert($0).inserted }, surfaceID: surfaceID)
+        // SUPERMUX:begin sizing-sticky-preference (an order chosen here applies to every terminal on this Mac)
+        _ = SupermuxTerminalSizingDefaults.shared.userChosePriority(
+            keys.filter { seen.insert($0).inserted }, surfaceID: surfaceID, store: store
+        )
+        // SUPERMUX:end sizing-sticky-preference
     }
 
     @ViewBuilder

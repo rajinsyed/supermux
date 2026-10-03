@@ -31,6 +31,21 @@ extension DeviceSurfaceProvider: SurfaceLayoutTerminalCreating {
             "request_id": request.id.uuidString
         ]
         if let splitDirection { params["direction"] = splitDirection.rawValue }
+        // SUPERMUX:begin mirror-terminal-to-right
+        // "New Terminal to the Right": the new tab goes right of this terminal there too.
+        if splitDirection == nil, let after = SupermuxMirrorTerminalPlacement.afterSurfaceID(
+            for: request, remoteWorkspaceID: workspace.id, on: machine, catalog: catalog
+        ) {
+            params[SupermuxMirrorTerminalPlacement.paramKey] = after
+        }
+        #if DEBUG
+        // E2E fault: the Mac makes the terminal, and its reply is lost on the way back.
+        if SupermuxTabOrderDebug.takeLostReply() {
+            _ = try? await link.request("device.workspace.terminal.create", params: params)
+            throw DeviceLinkError.notConnected
+        }
+        #endif
+        // SUPERMUX:end mirror-terminal-to-right
         let response = try await link.request("device.workspace.terminal.create", params: params)
         guard let terminalID = response["created_terminal_id"] as? String, UUID(uuidString: terminalID) != nil else {
             throw DeviceLinkError.malformedResponse("device.workspace.terminal.create")

@@ -105,6 +105,11 @@ final class DeviceWorkspaceLayoutCoordinator {
     private var reconcileRequested = false
     private var wasConnected = false
     private var stopped = false
+    // SUPERMUX:begin device-terminal-close-deferred
+    /// The deliveries from before the link dropped: a mirror tab closed while
+    /// offline still proves its workspace was synchronized.
+    private var supermuxOfflineDeliveries: [UUID: Delivery] = [:]
+    // SUPERMUX:end device-terminal-close-deferred
 
     init(
         machine: SurfaceMachineID,
@@ -163,12 +168,18 @@ final class DeviceWorkspaceLayoutCoordinator {
         wasConnected = connected
         sequences.removeAll()
         metadataRefreshes.removeAll()
+        // SUPERMUX:begin device-terminal-close-deferred
+        supermuxOfflineDeliveries = connected ? [:] : deliveries
+        // SUPERMUX:end device-terminal-close-deferred
         deliveries.removeAll()
         if !connected {
             for task in writers.values { task.cancel() }
             pending.removeAll()
             cancelPendingCloses()
         } else {
+            // SUPERMUX:begin device-terminal-close-deferred (closes made while the link was down go first, ahead of any reconcile)
+            for held in SupermuxDeviceHeldCloses.shared.take(on: machine) { supermuxSendHeldClose(held) }
+            // SUPERMUX:end device-terminal-close-deferred
             scheduleReconcile()
         }
     }
@@ -188,6 +199,14 @@ final class DeviceWorkspaceLayoutCoordinator {
 
     /// Only an explicit close in a synchronized whole-workspace mirror edits its owner.
     func projectionDidEnd(_ projection: SurfaceProjection, reason: SurfaceProjectionEndReason) {
+        // SUPERMUX:begin device-terminal-close-deferred
+        // Offline, the delivery that proves this mirror was synchronized went
+        // with the link; the one from before the drop still does.
+        if reason == .paneClosed, !isConnected(), deliveries[projection.workspaceID] == nil,
+           let supermuxDelivery = supermuxOfflineDeliveries[projection.workspaceID] {
+            deliveries[projection.workspaceID] = supermuxDelivery
+        }
+        // SUPERMUX:end device-terminal-close-deferred
         guard reason == .paneClosed, projection.resource.machine == machine,
               !projection.isLocalWorkspaceView, let native = workspace(projection.workspaceID), let catalog,
               let remoteID = projection.remoteWorkspaceID,
@@ -221,10 +240,40 @@ final class DeviceWorkspaceLayoutCoordinator {
         let operation = enqueueClose(surfaceID: surfaceID, remoteID: remoteWorkspaceID, workspaceID: nil)
         try await operation.result.value
     }
+    // SUPERMUX:begin device-terminal-close-deferred
+
+    /// Sends a mirror-tab close held while the link was down, through the same
+    /// queue and rules as a live one; its failure shows like a live close's.
+    private func supermuxSendHeldClose(_ held: SupermuxDeviceHeldCloses.Close) {
+        let operation = enqueueClose(surfaceID: held.surfaceID, remoteID: held.remoteWorkspaceID, workspaceID: held.localWorkspaceID)
+        Task { @MainActor [weak self] in
+            do {
+                try await operation.result.value
+            } catch let error where !(error is CancellationError) && !SupermuxDeviceHeldCloses.isGone(error) {
+                guard let self else { return }
+                self.workspace(held.localWorkspaceID)?.presentDeviceLayoutFailure(error, machine: self.machine)
+            } catch {
+                // A declined prompt, another drop (held again), or a terminal or
+                // workspace that is already gone there shows no card.
+            }
+        }
+    }
+    // SUPERMUX:end device-terminal-close-deferred
 
     private func enqueueClose(surfaceID: String, remoteID: String, workspaceID: UUID?) -> CloseOperation {
         let operation = CloseOperation(surfaceID: surfaceID, workspaceID: workspaceID)
         guard !stopped, isConnected() else {
+            // SUPERMUX:begin device-terminal-close-deferred
+            // A mirror tab closed while the link is down stays closed: its close
+            // is held and sent first when the link is back, with no failure card.
+            if !stopped, let workspaceID {
+                SupermuxDeviceHeldCloses.shared.hold(
+                    .init(remoteWorkspaceID: remoteID, surfaceID: surfaceID, localWorkspaceID: workspaceID), on: machine
+                )
+                operation.fail(CancellationError())
+                return operation
+            }
+            // SUPERMUX:end device-terminal-close-deferred
             operation.fail(DeviceLinkError.notConnected)
             return operation
         }
@@ -239,7 +288,18 @@ final class DeviceWorkspaceLayoutCoordinator {
     private func cancelPendingCloses() {
         var abandoned: [CloseOperation] = []
         for remoteID in pendingCloses.keys {
-            abandoned.append(contentsOf: pendingCloses[remoteID]?.removeAll() ?? [])
+            // SUPERMUX:begin device-terminal-close-deferred
+            // A queued mirror-tab close the link dropped is held for the reconnect.
+            // (upstream: `abandoned.append(contentsOf: pendingCloses[remoteID]?.removeAll() ?? [])`)
+            let supermuxRemoved = pendingCloses[remoteID]?.removeAll() ?? []
+            for close in supermuxRemoved where !stopped {
+                guard let id = close.workspaceID else { continue }
+                SupermuxDeviceHeldCloses.shared.hold(
+                    .init(remoteWorkspaceID: remoteID, surfaceID: close.surfaceID, localWorkspaceID: id), on: machine
+                )
+            }
+            abandoned.append(contentsOf: supermuxRemoved)
+            // SUPERMUX:end device-terminal-close-deferred
         }
         pendingCloses.removeAll()
         for close in abandoned { close.fail(CancellationError()) }
@@ -266,7 +326,16 @@ final class DeviceWorkspaceLayoutCoordinator {
                 throw DeviceLinkError.malformedResponse("mobile.terminal.close")
             }
             if present {
-                let data = try await request("mobile.terminal.close", ["workspace_id": remoteID, "surface_id": close.surfaceID])
+                // SUPERMUX:begin device-terminal-close-confirm
+                // A mirror tab's close asks first when the Mac reports a running
+                // program, as a local tab does; every other close forces. (upstream:
+                // `request("mobile.terminal.close", ["workspace_id": remoteID, "surface_id": close.surfaceID])`)
+                let data = try await SupermuxDeviceTerminalClose.request(
+                    surfaceID: close.surfaceID, remoteWorkspaceID: remoteID, machine: machine,
+                    asksFirst: close.workspaceID != nil, localWorkspaceID: close.workspaceID,
+                    catalog: catalog, send: request
+                )
+                // SUPERMUX:end device-terminal-close-confirm
                 guard let reply = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                       reply["closed"] as? Bool == true,
                       (reply["workspace_id"] as? String)?.caseInsensitiveCompare(remoteID) == .orderedSame,
@@ -280,6 +349,17 @@ final class DeviceWorkspaceLayoutCoordinator {
             if let id = close.workspaceID { deliveries[id] = nil }
             close.succeed()
         } catch {
+            // SUPERMUX:begin device-terminal-close-deferred
+            // The link dropped under a mirror tab's close: hold it for the
+            // reconnect instead of bringing the tab back with a failure card.
+            if let id = close.workspaceID, !stopped, !isConnected(), !(error is SupermuxDeviceTerminalClose.Declined) {
+                SupermuxDeviceHeldCloses.shared.hold(
+                    .init(remoteWorkspaceID: remoteID, surfaceID: close.surfaceID, localWorkspaceID: id), on: machine
+                )
+                close.fail(CancellationError())
+                return
+            }
+            // SUPERMUX:end device-terminal-close-deferred
             if !Task.isCancelled, !stopped {
                 try? await fetch(remoteID)
                 await refresh()
@@ -287,7 +367,12 @@ final class DeviceWorkspaceLayoutCoordinator {
                 // of treating its missing local pane as a permanent detach.
                 if let id = close.workspaceID { deliveries[id] = nil }
             }
-            close.fail(error)
+            // SUPERMUX:begin device-terminal-close-confirm (a declined prompt restores the tab above without a failure card, selected again if it was)
+            if error is SupermuxDeviceTerminalClose.Declined, let id = close.workspaceID {
+                SupermuxDeviceClosedTabs.shared.closeDeclined(surfaceKey: close.surfaceID, workspaceID: id, machine: machine)
+            }
+            close.fail(error is SupermuxDeviceTerminalClose.Declined ? CancellationError() as any Error : error)
+            // SUPERMUX:end device-terminal-close-confirm
         }
     }
 

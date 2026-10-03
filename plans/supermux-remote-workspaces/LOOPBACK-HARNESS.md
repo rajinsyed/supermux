@@ -133,6 +133,24 @@ restore: quit the app, relaunch it with the opt-in, and the mirror reconnects.
   Close on <Mac>, Cancel as the Return/Esc default, the Mac named once, the worktree outcome and Hide
   Here explained). Hover behavior and the footer are checked visually.
 
+## New tab order E2E
+
+`tests/supermux/loopback_new_tab_order_e2e.py` checks where a new terminal tab lands, on the
+owning side and in the mirror (read as source ids through `surface.catalog`), for every entry
+point: `surface.create` and `mobile.terminal.create` in a background source; in its mirror, Cmd+T
+from the last and the first tab, the tab bar `+` (`supermux.devices.mirror.tab_bar_new_tab`, the
+exact `requestNewTab` call), `surface.create` on the mirror, and "New Terminal to the Right" from
+the tab menu (`supermux.devices.mirror.tab_context_action`, action `newTerminalToRight`) and from
+`tab.action new_terminal_right`; and in a focused local workspace, Cmd+T and `+` from its first tab
+and "New Terminal to the Right". Plain new tabs must append, "to the right" must land right of its
+tab, and both sides must still agree 1.5 s later. The source never selects a tab, so its pane stays
+on its first tab, the headless-Mac state that put every new tab second (touchpoints #660–#664). Each
+step records the before/after orders, the owning pane's selected tab and the latency.
+
+```bash
+CMUX_E2E_SUITES="loopback_new_tab_order_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
+```
+
 ## Mirror rendering E2E
 
 `tests/supermux/loopback_mirror_render_e2e.py` checks what the user sees, not the buffer: it selects
@@ -142,11 +160,37 @@ workspace draws (the detector's control); its auto-mirror, opened in the backgro
 background local terminal that set OSC 11 draws; and with `--app-path`, after a quit and relaunch,
 the restored mirror draws. Each sampled screenshot is copied next to the JSON report. It guards
 touchpoint #538: a terminal whose pane-local OSC 11 fill arrived off screen used to stay blank when
-shown, and mirrors always hit that because the owning Mac's replay carries its colors.
+shown, and mirrors always hit that because the owning Mac's replay carried its colors. Since #651 a
+mirror's replay carries none, so the mirror steps guard that mirrors draw and the background OSC 11
+terminal step is the one that exercises the cutout.
 
 ```bash
 CMUX_TAG=<tag> python3 tests/supermux/loopback_mirror_render_e2e.py \
   --app-path "<App path>" --projects-file /tmp/<tag>/projects.json
+```
+
+## Mirror appearance E2E
+
+`tests/supermux/loopback_mirror_appearance_e2e.py` checks that a device mirror paints its
+background like the local pane it mirrors (#650–#653). The DEBUG driver
+`supermux.devices.mirror.terminal_background {surface_id}` reports how a terminal paints:
+`background_override` (the pane-local OSC 11 color), `fill_owner` (`shared` window backdrop or
+`terminal` host layer), `host_layer_alpha`, `backdrop_cutout_present`, this Mac's
+`app_background_opacity`, and for a mirror the colors its replays applied
+(`applied_remote_colors`, sparse) and whether the last replay's own bytes carried color OSC
+(`last_replay_color_osc`). Steps: a translucency precondition (skipped, not failed, when this Mac's
+Ghostty background is opaque; the driver checks still run); the source's local pane as the control
+and pixel baseline; its auto-mirror matching it (driver fields and the pane's modal RGBA fill in a
+`debug.window.screenshot`, within `--fill-tolerance`, default 6); the same after a fresh replay
+(`supermux.devices.link` stop + restore); a program's `OSC 11` reaching the mirror live and through
+the replay's authored-color sidecar; its `OSC 111` giving the mirror the shared backdrop back; and
+with `--app-path`, the restored background mirror after a relaunch. Loopback shares one Ghostty
+config between both ends, so a host color equal to this Mac's default could look right by accident:
+`applied_remote_colors == {}` and `last_replay_color_osc == false` are the hard proof. Screenshots
+are kept next to the JSON report (default `tests/supermux/artifacts/loopback_mirror_appearance_e2e-<tag>.json`).
+
+```bash
+CMUX_E2E_SUITES="loopback_mirror_appearance_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
 ```
 
 ## Notification and phone-push parity E2E
@@ -221,6 +265,94 @@ while its mirror is. `--only a,b` runs a subset of steps.
 ```bash
 open -g --env SUPERMUX_DEBUG_LOOPBACK_DEVICE=1 --env SUPERMUX_PROJECTS_FILE=/tmp/<tag>/projects.json "<App path>"
 CMUX_TAG=<tag> python3 tests/supermux/loopback_new_worktree_picker_e2e.py --scratch /tmp/<tag>
+```
+
+## Mirror tab close E2E
+
+`tests/supermux/loopback_mirror_tab_close_e2e.py` closes mirror tabs whose terminals run a program.
+Three of a source workspace's five terminals run a Claude Code stand-in (alternate screen, kitty
+keyboard flags, a marker line, a sleeping child; `--claude` runs the real CLI). The DEBUG drivers
+`supermux.devices.terminal_close.{inspect, answer, needs_confirm}` report each mirror pane's
+attachment and overlay plus the workspace's failure card, pre-answer the "Close “X” on <Mac>?"
+prompt so no modal shows (and log every prompt asked), and say whether the source would confirm a
+close. The suite checks that `mobile.terminal.close` without force answers `confirmation_required`
+for a busy terminal; Close on the prompt closes it there and the tab stays gone; Cancel keeps it and
+the re-projected pane attaches and renders (no "Mac disconnected", no card); a terminal projected
+again into another workspace after a close on the same link attaches; Kill Terminal… (`vm.terminal_close`)
+forces without asking; an idle tab closes without asking; and a tab closed while the link is down
+(`supermux.devices.link stop`) disappears with no card and is closed there on reconnect, never coming back.
+
+```bash
+CMUX_TAG=<tag> python3 tests/supermux/loopback_mirror_tab_close_e2e.py [--claude]
+```
+
+## Terminal size policy E2E
+
+`tests/supermux/loopback_terminal_sizing_policy_e2e.py` (touchpoints #665–#670) checks that a
+terminal fills the Mac it is viewed from and that the size mode is one sticky choice per Mac. In the
+loopback the source workspace is the "other Mac" and its auto mirror the viewer; DEBUG builds give
+the loopback's mirrors a distinct sizing device id, so the two "Macs" have distinct priority keys. A
+fake phone (`e2e-phone-…`, 40x12) and a fake second Mac (`e2e-mac-b-…`) report viewports
+(`mobile.terminal.viewport`) on the control socket, their own connection as a real phone's or Mac's
+link is: through `supermux.devices.request` they would share the mirror's device-link connection,
+and the host names one client of a connection as its `self_participant_id`, so the mirror could take
+the phone for itself. Steps: the source
+terminal is Priority with the shown mirror first and takes its grid (decided and real PTY grid), even
+while the other Mac's own small pane counts; a local terminal keeps its Mac pane's grid while the
+phone views it; Follow Latest chosen on one mirror reaches every terminal, and new terminals (local
+and over the link) start in it; a second Mac's own Priority choice is not pushed back by the shown
+mirror (3 s hold, generation barely moves); its 400x150 pane is not clamped to 300x120; hiding then
+showing the mirror, and a link drop after the other Mac reset the policy, claim the terminal again; a
+priority order dragged on the mirror is stored relative to this Mac (`[phone, self]`) and reaches the
+local terminal relative to its own view here (in the loopback its hidden auto-mirror, whose push of
+the same order lands after the local apply, as for the source terminal); and with
+`--app-path`, Largest Window survives a quit and relaunch. It drives the DEBUG
+`supermux.devices.terminal_sizing.{state,reset,select_mode,set_priority}` methods
+(`Sources/Supermux/Devices/SupermuxTerminalSizingSocketCommands.swift`), which run the size panel's
+own actions, and resets the preference at start and end.
+
+```bash
+CMUX_TAG=<tag> python3 tests/supermux/loopback_terminal_sizing_policy_e2e.py --app-path "<App path>"
+```
+
+## Mirror Files panel E2E
+
+`tests/supermux/loopback_mirror_files_e2e.py` checks that a device mirror's Files panel shows the
+other Mac's folder. It drives the DEBUG `supermux.devices.mirror.files {workspace_id, action}` driver
+(`Sources/Supermux/Mirrors/SupermuxMirrorFilesSocket.swift`), which keeps a Files store per workspace
+and syncs it exactly like the right sidebar (`showHiddenFiles`, `syncWorkspaceRoot`), so the resolver,
+provider, follow-the-folder observation and live refresh are the real ones. Actions: `state`,
+`expand`, `open` (the double-click path, after a download probe so a failure is a reply; with
+`probe: false` it only starts the open and a refusal is the coordinator's alert), `preview` (the open
+previews of a path and what each shows), `alert` / `dismiss_alert` (the alert up on the workspace's
+window, and its OK), `materialize`, `search`, `menu` / `operation` (the context menu's file
+operations), `local_rows` / `local_git_status` (what THIS Mac's panel shows for the same folder) and
+`unmount`.
+
+On a scratch git repo (dotfiles, a nested match, an image, a 9 MiB file, a symlink to `/etc` and a
+sibling `outside/` folder) it checks: the Loopback Mac advertises `supermux.files_read.v1`; the
+mirror's panel is the device provider at the source's folder and lists exactly what the local panel
+lists there (hidden files, order); `src/` expands the same; the symlink out cannot be expanded (an
+error naming the Mac); the git colors equal the local panel's; README.md opens a read-only preview in
+the mirror with the file's exact bytes, and after it changes there reopening reuses that preview,
+which shows the new bytes with no alert; the 9 MiB file is refused (8 MB), and opened the double-click
+way the refusal is a sheet naming the limit while the app keeps answering, which OK dismisses;
+Find returns the one nested hit and a query like `--version` is only a pattern; raw `files.*`
+confinement probes (`..`, the symlink, a directory read, a wrong `expected_root`, renaming
+`.git/HEAD`) are refused while chunked reads, `.git/HEAD` reads, hidden listing (with `home`), the
+phone's dotfile-free listing, git status and search answer; a `files.read` of a named pipe in the
+folder is refused at once (it never waits for a writer) and the link stays up; `cd src` / `cd ..` in the source
+terminal re-roots the panel; a new file appears with no action (`--refresh-timeout`, default 6 s);
+the menu offers New File / New Folder / Rename / Duplicate / Move to Trash and each changes the
+disk; with the link held down the panel names the Mac and says it is not connected (no rows), and
+the redial brings the rows back; with `--app-path`, a relaunch with
+`CMUX_DEBUG_SUPPRESS_MOBILE_CAPS=supermux.files_read.v1` shows "Update Supermux on Loopback Mac to
+browse its files here." Move to Trash moves the scratch files to this Mac's Trash.
+
+```bash
+CMUX_E2E_SUITES="loopback_mirror_files_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
+CMUX_TAG=<tag> python3 tests/supermux/loopback_mirror_files_e2e.py --scratch /tmp/<tag>/files \
+  --app-path "<App path>" --projects-file /tmp/<tag>/projects.json
 ```
 
 Every suite at once: `CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh` (launches, runs and

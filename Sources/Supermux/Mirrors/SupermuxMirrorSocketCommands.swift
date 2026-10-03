@@ -26,6 +26,12 @@ import SupermuxKit
 /// - `preset_launch {workspace_id, name, command}` — a presets-bar chip.
 /// - `action_run {workspace_id, action_id}` — a remote project action.
 /// - `changes {workspace_id, action: status|stage|unstage|diff|fetch, path?, staged?, open_viewer?}`.
+/// - `terminal_background {surface_id}` — how a terminal paints its background
+///   (``SupermuxMirrorAppearanceSocket``; DEBUG builds only).
+/// - `tab_bar_new_tab`, `tab_context_action` — where a new tab lands
+///   (``SupermuxTabOrderSocketCommands``, DEBUG builds only).
+/// - `files {workspace_id, action: state|expand|open|materialize|search|local_rows|local_git_status|unmount, …}`
+///   (``SupermuxMirrorFilesSocket``).
 @MainActor
 enum SupermuxMirrorSocketCommands {
     static let methodPrefix = "mirror."
@@ -67,6 +73,14 @@ enum SupermuxMirrorSocketCommands {
             return try await actionRun(params)
         case "changes":
             return try await SupermuxMirrorChangesSocket.handle(params, workspace: try mirrorWorkspace(params))
+        #if DEBUG
+        case "terminal_background":
+            return try SupermuxMirrorAppearanceSocket.terminalBackground(params)
+        case let sub where SupermuxTabOrderSocketCommands.methods.contains(sub):
+            return try SupermuxTabOrderSocketCommands.handle(sub, params: params)
+        #endif
+        case "files":
+            return try await SupermuxMirrorFilesSocket.handle(params, workspace: try mirrorWorkspace(params))
         default:
             throw InvalidParams(message: "unknown mirror method \(method)")
         }
