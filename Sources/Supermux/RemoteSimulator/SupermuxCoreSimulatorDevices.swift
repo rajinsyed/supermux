@@ -16,8 +16,8 @@ import os
 ///
 /// Private API, reached through the Objective-C runtime as upstream's worker
 /// does (`SimulatorDeviceResolver`, `SimulatorFrameworkLoader`). Every call
-/// runs on one serial queue, never the main thread, and a caller waits at most
-/// a few seconds for it.
+/// runs on one serial queue, never the main thread; callers that ask while a
+/// read runs share its answer, and each caller waits at most its own timeout.
 final class SupermuxCoreSimulatorDevices: @unchecked Sendable {
     static let shared = SupermuxCoreSimulatorDevices()
 
@@ -29,9 +29,13 @@ final class SupermuxCoreSimulatorDevices: @unchecked Sendable {
         case slow
     }
 
+    private typealias Waiter = SupermuxResumeOnce<[SimulatorDevice], any Error>
+
     private static let frameworkPath = "/Library/Developer/PrivateFrameworks/CoreSimulator.framework/CoreSimulator"
 
     private let queue = DispatchQueue(label: "supermux.coresimulator.devices", qos: .userInitiated)
+    /// The callers waiting for the read in flight, or nil when none runs.
+    private let waiters = OSAllocatedUnfairLock<[Waiter]?>(initialState: nil)
     /// The service context and its default device set once loaded; touched only on `queue`.
     private var context: NSObject?
     private var deviceSet: NSObject?
@@ -39,27 +43,46 @@ final class SupermuxCoreSimulatorDevices: @unchecked Sendable {
     private var permanentFailure: String?
 
     /// The installed simulators.
+    /// - Parameter timeout: How long this caller waits; the read itself goes on
+    ///   and answers the callers that ask meanwhile.
     /// - Throws: ``Failure/unavailable(_:)`` when CoreSimulator cannot be
     ///   used, ``Failure/slow`` when it did not answer within `timeout`.
-    func devices(timeout: TimeInterval = 8) async throws -> [SimulatorDevice] {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[SimulatorDevice], Error>) in
-            let once = SupermuxResumeOnce(continuation)
-            queue.async {
-                once.resume(with: Result { try self.readDevices() })
+    func devices(timeout: TimeInterval) async throws -> [SimulatorDevice] {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[SimulatorDevice], any Error>) in
+            let waiter = Waiter(continuation)
+            let startsRead = waiters.withLock { pending -> Bool in
+                guard pending != nil else {
+                    pending = [waiter]
+                    return true
+                }
+                pending?.append(waiter)
+                return false
+            }
+            if startsRead {
+                queue.async { self.answerWaiters() }
             }
             DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + timeout) {
-                once.resume(with: .failure(Failure.slow))
+                waiter.resume(with: .failure(Failure.slow))
             }
         }
     }
 
-    /// The live state of `udid`, or nil when CoreSimulator cannot say.
-    func state(of udid: String) async -> SimulatorDeviceState? {
-        guard let devices = try? await devices() else { return nil }
+    /// The live state of `udid`, or nil when CoreSimulator cannot say within `timeout`.
+    func state(of udid: String, timeout: TimeInterval) async -> SimulatorDeviceState? {
+        guard let devices = try? await devices(timeout: timeout) else { return nil }
         return devices.first { $0.id.caseInsensitiveCompare(udid) == .orderedSame }?.state
     }
 
     // MARK: - On the queue
+
+    private func answerWaiters() {
+        let result = Result { try readDevices() }
+        let answered = waiters.withLock { pending -> [Waiter] in
+            defer { pending = nil }
+            return pending ?? []
+        }
+        for waiter in answered { waiter.resume(with: result) }
+    }
 
     private func readDevices() throws -> [SimulatorDevice] {
         SupermuxSimctlDebugDelay.beforeCoreSimulatorRead()
