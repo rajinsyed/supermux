@@ -18,9 +18,23 @@ enum SupermuxPortsText {
                 localized: "supermux.ports.unavailable.directLink",
                 defaultValue: "Port forwarding needs a direct connection to \(macName)."
             )
+        case .unreachable:
+            return String(
+                localized: "supermux.ports.unavailable.unreachable",
+                defaultValue: "Can't reach \(macName) right now. Trying again…"
+            )
         case .offline, nil:
             return String(localized: "supermux.ports.unavailable.offline", defaultValue: "\(macName) is offline.")
         }
+    }
+
+    /// Why a mirror's port chip opens nothing outside cmux: the port has no
+    /// active forward on this Mac.
+    static func notForwarded(remotePort: Int, macName: String) -> String {
+        String(
+            localized: "supermux.ports.chip.notForwarded",
+            defaultValue: "Port \(String(remotePort)) from \(macName) isn't forwarded to this Mac. Forward it with Ports on \(macName) › Forward to This Mac."
+        )
     }
 
     /// A port in a menu: `localhost:3000`, or `localhost:3000 → here :3001`

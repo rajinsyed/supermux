@@ -67,6 +67,14 @@ Steps:
      caller's 20 s deadline while the launch still runs there later.
  15. sidebar_screenshot: captures the window (nested mirror + device chip) to
      tests/supermux/artifacts/loopback_projects_e2e-<tag>.png.
+ 16. blocked_folder_git_never_outlives_its_bound (with --app-path): no git process
+     the app starts in the blocked folder (named in its command line or running
+     there) outlives its bound, checked while the pipe still blocks (the cleanup
+     opens it for writing). None is left orphaned by step 14c's quit; the origin
+     lookups projects.list starts there are gone 10 s later (the host kills each
+     at 5 s); and a `git worktree list` still running there when the app quits
+     (worktrees.list for the blocked project, 30 s kill) ends with the app. The
+     app is then opened again for the cleanup.
 
 Prints a JSON report, writes it to tests/supermux/artifacts/, exits non-zero on
 any failed check. Stdlib only (the screenshot shells out to swiftc and
@@ -84,7 +92,9 @@ import fcntl
 import json
 import os
 import plistlib
+import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -121,6 +131,11 @@ BLOCKED_FOLDER_LIST_BOUND_S = 4.0
 FIRST_LOAD_BOUND_S = 8.0
 # Step 14c is vacuous once the first load may have finished.
 FIRST_LOAD_WINDOW_S = 25.0
+# Step 16: the host kills an origin lookup (`git -C <root> config …`) at 5 s; a
+# lookup in the blocked folder must be gone this long after it was seen.
+ORIGIN_LOOKUP_GONE_S = 10.0
+# Step 16: how long after the app is gone its git processes may take to be reaped.
+GIT_AFTER_QUIT_S = 5.0
 
 WINDOW_ID_SWIFT = r"""
 import CoreGraphics
@@ -145,6 +160,24 @@ def git(*args: str, cwd: Optional[Path] = None) -> str:
     if result.returncode != 0:
         raise SmokeFailure(f"git {' '.join(args)}: {result.stderr.strip()}")
     return result.stdout.strip()
+
+
+def git_working_directories() -> Dict[int, str]:
+    """{pid: working directory} of every running process named git (lsof
+    exits 1 when there is none)."""
+    listing = subprocess.run(
+        ["lsof", "-a", "-c", "git", "-d", "cwd", "-Fpcn"], capture_output=True, text=True, timeout=60
+    ).stdout
+    directories: Dict[int, str] = {}
+    pid, name = 0, ""
+    for line in listing.splitlines():
+        if line.startswith("p"):
+            pid, name = int(line[1:]), ""
+        elif line.startswith("c"):
+            name = line[1:]
+        elif line.startswith("n") and name == "git":
+            directories[pid] = line[1:]
+    return directories
 
 
 def update_shared_json(path: Path, mutate: Callable[[Dict[str, Any]], None]) -> None:
@@ -196,6 +229,7 @@ class ProjectsE2E:
         self.readded_project_id: Optional[str] = None
         self.suppressed_root: Optional[str] = None
         self.blocked_project_id: Optional[str] = None
+        self.blocked_repo = self.root / "blocked"
         self.blocked_fifo = self.root / "blocked.fifo"
         self.worktree_path: Optional[str] = None
         self.opened_workspaces: List[str] = []
@@ -533,7 +567,7 @@ class ProjectsE2E:
         return {"report": report}
 
     def check_blocked_folder_list(self) -> Dict[str, Any]:
-        repo = self.root / "blocked"
+        repo = self.blocked_repo
         repo.mkdir(parents=True)
         git("init", "-q", "-b", "main", cwd=repo)
         os.mkfifo(self.blocked_fifo)
@@ -644,6 +678,60 @@ class ProjectsE2E:
             "calls": {name: outcome["seconds"] for name, outcome in outcomes.items()},
         }
 
+    def check_blocked_git_bounded(self) -> Dict[str, Any]:
+        """No git process the app starts in the blocked folder outlives its bound,
+        checked while the pipe still blocks every reader: none left by step 14c's
+        quit (launchd is its parent), the origin lookups projects.list starts are
+        gone after the host's 5 s kill, and a git still running there when the
+        app quits ends with the app."""
+        if not self.app_path:
+            return {"skipped": True, "reason": "needs --app-path to quit the app"}
+        if not self.blocked_fifo.exists():
+            raise SmokeFailure("step 14b's blocked project is gone; this step needs its folder still blocking")
+        problems: List[str] = []
+        orphans = [p for p in self.blocked_git_processes() if p["ppid"] == 1]
+        if orphans:
+            problems.append(f"git left running in the blocked folder by the app step 14c quit: {orphans}")
+
+        lookups: List[Dict[str, Any]] = []
+        for _ in range(3):  # a lookup that just ended is not shared: the next call starts one
+            self.request("mobile.supermux.projects.list", {})
+            lookups = [p for p in self.blocked_git_processes() if p["names_folder"] and p["ppid"] != 1]
+            if lookups:
+                break
+        if not lookups:
+            raise SmokeFailure("projects.list started no origin lookup (git -C <folder>) in the blocked folder")
+        time.sleep(ORIGIN_LOOKUP_GONE_S)
+        alive = {(p["pid"], p["command"]) for p in self.blocked_git_processes()}
+        lingering = [p for p in lookups if (p["pid"], p["command"]) in alive]
+        if lingering:
+            problems.append(f"origin lookups in the blocked folder still run {ORIGIN_LOOKUP_GONE_S:.0f} s later: {lingering}")
+
+        # worktrees.list runs `git worktree list` there (killed at 30 s): it still
+        # runs when the app quits right after.
+        before = {p["pid"] for p in self.blocked_git_processes()}
+        self.request_in_background("mobile.supermux.worktrees.list", {"project_id": self.blocked_project_id})
+        started = wait_for(
+            "the git worktree list worktrees.list starts in the blocked folder",
+            lambda: [p for p in self.blocked_git_processes() if p["pid"] not in before and "worktree" in p["command"]],
+            self.timeout_s,
+        )
+        self.quit_app()
+        try:
+            survivors = self.blocked_git_processes()
+            deadline = time.monotonic() + GIT_AFTER_QUIT_S
+            while survivors and time.monotonic() < deadline:
+                time.sleep(0.5)
+                survivors = self.blocked_git_processes()
+        finally:
+            self.launch_app()
+        if survivors:
+            problems.append(f"git still runs in the blocked folder after the app quit: {survivors}")
+        self.check_device()
+        if problems:
+            raise SmokeFailure("; ".join(problems))
+        return {"origin_lookups": [p["pid"] for p in lookups], "worktree_lists": [p["pid"] for p in started]}
+
     def terminal_ids(self, workspace_id: str) -> List[str]:
         result = self.client.call("surface.list", {"workspace_id": workspace_id}) or {}
         return [norm(s["id"]) for s in result.get("surfaces") or [] if s.get("type") == "terminal"]
@@ -681,9 +769,53 @@ class ProjectsE2E:
             raise SmokeFailure(f"no answer at all for {missing}")
         return outcomes
 
+    def request_in_background(self, method: str, params: Dict[str, Any]) -> None:
+        """Sends one call over the link on a socket of its own and never waits
+        for its answer (the app may quit before it answers)."""
+
+        def send() -> None:
+            try:
+                with SocketClient(self.client.path, timeout_s=90) as other:
+                    other.call(
+                        "supermux.devices.request",
+                        {"machine": self.machine, "method": method, "params": params, "timeout_seconds": 60},
+                        timeout_s=70,
+                    )
+            except (SmokeFailure, OSError, ValueError):
+                pass  # the app quit first
+
+        threading.Thread(target=send, daemon=True).start()
+
+    def blocked_git_processes(self) -> List[Dict[str, Any]]:
+        """Live git processes working in the blocked folder: named in their
+        command line (`git -C <folder> …`) or running there (`git worktree list`)."""
+        folders = {str(self.blocked_repo), os.path.realpath(self.blocked_repo)}
+        in_folder = re.compile("(" + "|".join(re.escape(folder) for folder in folders) + r")(/|\s|$)")
+        working_directories = git_working_directories()
+        table = subprocess.run(
+            ["ps", "-axo", "pid=,ppid=,stat=,etime=,command="], capture_output=True, text=True, timeout=30
+        ).stdout
+        found: List[Dict[str, Any]] = []
+        for row in table.splitlines():
+            fields = row.split(None, 4)
+            if len(fields) < 5 or fields[2].startswith("Z") or int(fields[0]) not in working_directories:
+                continue
+            pid, command = int(fields[0]), fields[4]
+            names_folder = in_folder.search(command) is not None
+            if names_folder or in_folder.match(working_directories[pid]):
+                found.append(
+                    {"pid": pid, "ppid": int(fields[1]), "elapsed": fields[3], "command": command, "names_folder": names_folder}
+                )
+        return found
+
     def relaunch(self) -> float:
         """Quits the app and opens it again with the runner's environment;
         returns when its socket answers, with the moment it was opened."""
+        self.quit_app()
+        return self.launch_app()
+
+    def quit_app(self) -> None:
+        """Quits the app; returns once it no longer runs."""
         app = str(self.app_path)
         bundle_id = plistlib.loads((Path(app) / "Contents" / "Info.plist").read_bytes())["CFBundleIdentifier"]
         self.client.__exit__()
@@ -695,6 +827,11 @@ class ProjectsE2E:
             return result.stdout.strip() == "true"
 
         wait_for("the app to quit", lambda: not running(), 60)
+
+    def launch_app(self) -> float:
+        """Opens the app with the runner's environment; returns when its socket
+        answers, with the moment it was opened."""
+        app = str(self.app_path)
         env = {"SUPERMUX_DEBUG_LOOPBACK_DEVICE": "1", "SUPERMUX_PROJECTS_FILE": str(self.projects_file)}
         if self.push_state_dir:
             env["SUPERMUX_PHONE_PUSH_STATE_DIR"] = self.push_state_dir
@@ -716,9 +853,23 @@ class ProjectsE2E:
 
     def _unblock_folder(self) -> None:
         """Lets every git process waiting on the pipe go (an empty include) and
-        removes it, so the blocked project deletes like any other."""
+        removes it, so the blocked project deletes like any other. A git that an
+        app which quit left behind there (launchd its parent: no deadline ends it
+        any more, and the pipe may not wake it) is ended first."""
         if not self.blocked_fifo.exists():
             return
+        try:
+            orphans = [p["pid"] for p in self.blocked_git_processes() if p["ppid"] == 1]
+        except (OSError, ValueError, subprocess.SubprocessError) as error:
+            orphans = []
+            self.facts.setdefault("cleanup_errors", []).append(f"listing blocked git processes: {error}")
+        for pid in orphans:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except OSError:
+                pass  # already gone
+        if orphans:
+            self.facts["ended_orphaned_git"] = orphans
         try:
             os.close(os.open(self.blocked_fifo, os.O_WRONLY | os.O_NONBLOCK))
         except OSError:
@@ -795,6 +946,7 @@ class ProjectsE2E:
             self.step("projects_list_answers_while_a_folder_blocks", self.check_blocked_folder_list)
             self.step("first_load_is_bounded_while_a_folder_blocks", self.check_first_load_bounded)
             self.step("sidebar_screenshot", self.capture_screenshot)
+            self.step("blocked_folder_git_never_outlives_its_bound", self.check_blocked_git_bounded)
             return True
         except SmokeFailure:
             return False

@@ -17,17 +17,27 @@ open tunnels the way a forward does; this suite runs its own servers:
                                            the whole page, then end of stream (host journal `closed clean`)
    5. ipv6_only_server                     a ::1-only server answers localhost:Q (v4 refused, then v6)
    6. journal_scoped                       the host journals `opened {scope: loopback, port: P}`, no host names
-   7. policy_denies                        169.254.169.254:80 and example.com:80 are denied (never resolved)
+   7. policy_denies                        with "iOS Browser Reaches Other Hosts" on (`tunnel.allow_other_hosts`),
+                                           169.254.169.254:80, example.com:80 and 192.0.2.1:80 are still
+                                           denied (journal `refused {scope: policy}`, never resolved)
    8. closed_port                          a closed port answers `refused`
    9. loop_guard                           a port this app listens on for forwards is denied
   10. revoked                              a revoked peer's opens are denied (`unauthorized`)
   11. ports_list_attributes_workspace_port a server started in a workspace's terminal is listed with
                                            that workspace by mobile.supermux.ports.list
   12. other_ports_lists_unattributed       include_other lists live listeners in no workspace
-  13. stale_port_dropped                   an injected (non-listening) port is listed, then gone
+  13. injected_port_listed_then_cleared    an injected (non-listening) port is listed, then gone
   14. link_drop_ends_tunnels               a held tunnel ends when the link drops
   15. old_host_hides_capability            a host that predates port forwarding: no capability, tunnels
                                            answer `needs_update`; back to normal afterwards
+  16. unknown_capabilities_are_retryable   every capability request after a relink fails (`timed_out`,
+                                           tunnel.fail_requests): tunnels answer `unreachable`, never
+                                           `needs_update`; the browser page, the forwards' availability and
+                                           the Settings note do not ask for an update; once the host answers
+                                           again the forwards find it available with no relink
+  17. stale_port_dropped                   step 11's terminal reports its live port and a dead one
+                                           (`report_ports`, no port scan): ports.list keeps the live
+                                           one and drops the dead one (the live-listener filter)
 
 Writes a JSON report (default tests/supermux/artifacts/loopback_device_tunnel_e2e-<tag>.json)
 and exits non-zero on any failure. Stdlib only; shares the socket client with
@@ -66,16 +76,38 @@ from loopback_tab_sync_e2e import (  # noqa: E402
 )
 
 CAPABILITY = "supermux.port_forward.v1"
+HOST_STATUS = "mobile.host.status"
 PORTS_LIST = "mobile.supermux.ports.list"
+# Words of the "Update Supermux on <Mac>" texts (en, ja), which only an older Mac may get.
+UPDATE_WORDS = ("Update Supermux", "アップデート")
+# Armed failures that outlast the step (it disarms them itself).
+UNTIL_DISARMED = 1000
 REPEATED_GETS = 30
 # Host names that must never reach the host's journal.
 HOST_NAMES = ("localhost", "example.com", "127.0.0.1", "169.254", "::1")
+# Destinations another Mac never reaches, even with the iPhone's "iOS Browser
+# Reaches Other Hosts" on: cloud metadata (forbidden for the phone too), a
+# public name (the phone's tunnel would resolve it) and a non-loopback literal
+# (TEST-NET-1: the phone's tunnel would try it; never DNS or a real network).
+POLICY_DENIED = (("metadata", "169.254.169.254"), ("public", "example.com"), ("non_loopback_literal", "192.0.2.1"))
 
 
 def free_port(family: int = socket.AF_INET, address: str = "127.0.0.1") -> int:
     with socket.socket(family, socket.SOCK_STREAM) as probe:
         probe.bind((address, 0))
         return probe.getsockname()[1]
+
+
+class TunnelSocket(Socket):
+    """The shared socket client plus v1 text commands (the sidebar's `report_ports`)."""
+
+    def v1(self, line: str) -> str:
+        assert self._sock is not None, "not connected"
+        self._sock.sendall((line + "\n").encode("utf-8"))
+        reply = self._read_line(self.timeout_s).strip()
+        if reply.startswith("ERROR"):
+            raise Failure(f"v1 `{line.split(' ')[0]}`: {reply}")
+        return reply
 
 
 class MarkerServer:
@@ -122,7 +154,7 @@ class MarkerServer:
 
 
 class DeviceTunnelE2E:
-    def __init__(self, sock: Socket, args: argparse.Namespace) -> None:
+    def __init__(self, sock: TunnelSocket, args: argparse.Namespace) -> None:
         self.sock = sock
         self.args = args
         self.timeout = args.timeout
@@ -135,6 +167,7 @@ class DeviceTunnelE2E:
         self.workdir = Path(tempfile.mkdtemp(prefix=f"tunnel-e2e-{self.nonce}-"))
         self.workspace_port = 0
         self.source = ""
+        self.source_terminal = ""
 
     # -- reads and actions ----------------------------------------------------
 
@@ -164,8 +197,39 @@ class DeviceTunnelE2E:
     def ports_list(self, include_other: bool = False) -> Dict[str, Any]:
         return self.host_request(PORTS_LIST, {"include_other": include_other} if include_other else {})
 
+    def workspace_ports(self, workspace_id: str) -> List[int]:
+        """The ports a workspace reports right now (its sidebar ports, unfiltered)."""
+        rows = (self.sock.call("workspace.list", {"workspace_id": workspace_id}) or {}).get("workspaces") or []
+        row = next((r for r in rows if up(r.get("id")) == up(workspace_id)), None)
+        if row is None:
+            raise Failure(f"workspace.list has no {workspace_id}")
+        return list(row.get("listening_ports") or [])
+
     def journal(self) -> List[Dict[str, Any]]:
         return self.tunnel("journal").get("events") or []
+
+    def fail_requests(self, method: str, count: Optional[int] = None) -> Dict[str, Any]:
+        """The loopback host answers the next `count` `method` requests `timed_out` (0 disarms);
+        without `count`, how many it failed so far."""
+        params: Dict[str, Any] = {"method": method}
+        if count is not None:
+            params["count"] = count
+        return self.tunnel("fail_requests", **params)
+
+    def forwards_availability(self) -> Optional[str]:
+        """Whether the port forwards think this Mac can forward (`supermux.devices.ports.list`)."""
+        listing = self.sock.call("supermux.devices.ports.list", {"machine": self.machine}) or {}
+        return (listing.get("availability") or {}).get(self.machine)
+
+    def ports_note(self) -> Optional[str]:
+        """The Settings card's ports note for this Mac (the "Ports on <Mac>" menu says the same)."""
+        settings = self.sock.call("supermux.devices.remote_macs_settings", {}) or {}
+        mac = next((m for m in settings.get("macs") or [] if m.get("machine") == self.machine), {})
+        return mac.get("ports_note")
+
+    def expect_no_update_text(self, text: Any, what: str) -> None:
+        if any(word in str(text or "") for word in UPDATE_WORDS):
+            raise Failure(f"{what} asks for an update: {text!r}")
 
     def loopback_device(self) -> Dict[str, Any]:
         for device in (self.sock.call("supermux.devices.list", {}) or {}).get("devices") or []:
@@ -233,7 +297,9 @@ class DeviceTunnelE2E:
         self.tunnel("release_held")
         self.tunnel("revoke", revoked=False)
         self.tunnel("pretend_old_host", enabled=False)
+        self.tunnel("allow_other_hosts", enabled=False)
         self.tunnel("clear_injected")
+        self.fail_requests(HOST_STATUS, 0)
         if self.servers.get("guard"):
             self.tunnel("own_port", port=self.servers["guard"].port, registered=False)
 
@@ -290,15 +356,27 @@ class DeviceTunnelE2E:
         return {"opened": opened[-1], "event_count": len(events)}
 
     def policy_denies(self) -> Dict[str, Any]:
+        """Another Mac reaches only loopback, whatever the iPhone's "iOS Browser
+        Reaches Other Hosts" says: with it on, the phone's policy would resolve
+        example.com and try 192.0.2.1, so only the Mac-peer policy denies both."""
         before = len(self.refusals("policy", 80))
-        metadata = self.get(80, host="169.254.169.254")
-        self.expect_status(metadata, "denied", "the metadata address")
-        public = self.get(80, host="example.com")
-        self.expect_status(public, "denied", "a public host name")
+        enabled = self.tunnel("allow_other_hosts", enabled=True)
+        if enabled.get("enabled") is not True:
+            raise Failure(f"the driver did not turn on mobile.browserTunnel.allowOtherHosts: {enabled}")
+        results: Dict[str, Any] = {}
+        try:
+            for name, host in POLICY_DENIED:
+                results[name] = self.get(80, host=host)
+                self.expect_status(results[name], "denied", f"{host}:80 with allowOtherHosts on")
+            still = self.tunnel("allow_other_hosts")
+            if still.get("enabled") is not True:
+                raise Failure(f"allowOtherHosts did not stay on during the opens (does cmux.json manage it?): {still}")
+        finally:
+            self.tunnel("allow_other_hosts", enabled=False)
         after = len(self.refusals("policy", 80))
-        if after < before + 2:
-            raise Failure(f"expected two `refused {{scope: policy}}` journal events, found {after - before}")
-        return {"metadata": metadata, "public": public}
+        if after < before + len(POLICY_DENIED):
+            raise Failure(f"expected {len(POLICY_DENIED)} `refused {{scope: policy}}` journal events, found {after - before}")
+        return results
 
     def closed_port(self) -> Dict[str, Any]:
         port = free_port()
@@ -348,6 +426,7 @@ class DeviceTunnelE2E:
             return next((up(s.get("id")) for s in surfaces if s.get("type") == "terminal"), None)
 
         surface = wait_for("the workspace's terminal", terminal, self.timeout)
+        self.source_terminal = surface
         wait_for("the terminal's prompt", lambda: (self.sock.call("surface.read_text", {
             "workspace_id": self.source, "surface_id": surface}) or {}).get("text", "").strip(), self.timeout)
         port = free_port()
@@ -390,7 +469,8 @@ class DeviceTunnelE2E:
             raise Failure(f"other_ports came back without include_other: {plain.get('other_ports')[:5]}")
         return {"other_count": len(other)}
 
-    def stale_port_dropped(self) -> Dict[str, Any]:
+    def injected_port_listed_then_cleared(self) -> Dict[str, Any]:
+        """The DEBUG injection other suites use (it bypasses the live-listener filter)."""
         if not self.source:
             raise Failure("no source workspace (ports_list_attributes_workspace_port failed)")
         port = free_port()
@@ -446,6 +526,68 @@ class DeviceTunnelE2E:
         self.expect_marker(self.get(self.servers["marker"].port), self.servers["marker"].marker, "after the update")
         return {"old_host_result": result}
 
+    def unknown_capabilities_are_retryable(self) -> Dict[str, Any]:
+        """A capability request that fails (a Mac stalled past the reply deadline, or still busy after
+        the link's retries) leaves the capabilities unknown, not absent: nothing may say "Update
+        Supermux", a tunnel open is retryable, and the forwards ask again by themselves."""
+        marker = self.servers["marker"]
+        self.fail_requests(HOST_STATUS, UNTIL_DISARMED)
+        try:
+            self.relink()
+            result = self.get(marker.port)
+            self.expect_status(result, "unreachable", "a tunnel while the capabilities are unknown")
+            if result.get("page_reason") != "unreachable":
+                raise Failure(f"the browser page's reason is {result.get('page_reason')!r}, not unreachable: {result}")
+            self.expect_no_update_text(result.get("page_headline"), "the browser page")
+            def checked() -> Optional[str]:
+                value = self.forwards_availability()
+                if value == "available":
+                    raise Failure("the forwards still hold 'available' from before the relink")
+                return value
+
+            availability = wait_for("the forwards to check this Mac", checked, self.timeout)
+            if availability != "unreachable":
+                raise Failure(f"the forwards' availability is {availability!r} while the capabilities are unknown")
+            note = self.ports_note()
+            self.expect_no_update_text(note, "the Settings ports note")
+            failed = self.fail_requests(HOST_STATUS).get("failed")
+        finally:
+            self.fail_requests(HOST_STATUS, 0)
+        wait_for("the forwards to find this Mac available again without a relink",
+                 lambda: self.forwards_availability() == "available", self.timeout)
+        self.expect_marker(self.get(marker.port), marker.marker, "once the host answers again")
+        return {"unknown_result": result, "settings_note": note, "failed_status_requests": failed}
+
+    def stale_port_dropped(self) -> Dict[str, Any]:
+        """A port a workspace still reports that nothing serves (a port restored
+        from a session snapshot, before the next scan) is not listed: the
+        live-listener filter, not a port scan, drops it. `report_ports` sets
+        the terminal's ports to its live server's and a dead one without a
+        scan; the workspace still reporting the dead port after the listing
+        proves it was there when ports.list read it (a scan in between
+        replaces it, so the seed is retried)."""
+        if not (self.source and self.source_terminal and self.workspace_port):
+            raise Failure("no workspace server (ports_list_attributes_workspace_port failed)")
+        live, dead = self.workspace_port, free_port()
+        seed = f"report_ports {live} {dead} --tab={self.source} --panel={self.source_terminal}"
+
+        def listed_while_seeded() -> Optional[Dict[str, Any]]:
+            self.sock.v1(seed)
+            entries = self.ports_list().get("ports") or []
+            return {"entries": entries} if dead in self.workspace_ports(self.source) else None
+
+        try:
+            entries = wait_for(f"a listing while the workspace reports the dead port {dead}",
+                               listed_while_seeded, self.timeout)["entries"]
+        finally:
+            # A scan puts the terminal's real ports back.
+            self.sock.call("surface.ports_kick", {"workspace_id": self.source, "surface_id": self.source_terminal})
+        if any(e.get("port") == dead for e in entries):
+            raise Failure(f"ports.list lists {dead}, which the workspace reports but nothing serves: {entries}")
+        if not any(e.get("port") == live and up(e.get("workspace_id")) == self.source for e in entries):
+            raise Failure(f"ports.list no longer attributes the live {live} to the workspace: {entries}")
+        return {"live_port": live, "dead_port": dead}
+
     # -- run ------------------------------------------------------------------
 
     def cleanup(self) -> None:
@@ -477,9 +619,11 @@ class DeviceTunnelE2E:
                 ("revoked", self.revoked),
                 ("ports_list_attributes_workspace_port", self.ports_list_attributes_workspace_port),
                 ("other_ports_lists_unattributed", self.other_ports_lists_unattributed),
-                ("stale_port_dropped", self.stale_port_dropped),
+                ("injected_port_listed_then_cleared", self.injected_port_listed_then_cleared),
                 ("link_drop_ends_tunnels", self.link_drop_ends_tunnels),
                 ("old_host_hides_capability", self.old_host_hides_capability),
+                ("unknown_capabilities_are_retryable", self.unknown_capabilities_are_retryable),
+                ("stale_port_dropped", self.stale_port_dropped),
             ]:
                 ok = self.step(name, check) and ok
         self.cleanup()
@@ -497,7 +641,7 @@ def main() -> int:
         parser.error("set CMUX_TAG (or pass --tag / --socket)")
     path = args.socket or socket_path_for_tag(args.tag)
     started = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    sock = Socket(path)
+    sock = TunnelSocket(path)
     try:
         sock.connect()
         test = DeviceTunnelE2E(sock, args)

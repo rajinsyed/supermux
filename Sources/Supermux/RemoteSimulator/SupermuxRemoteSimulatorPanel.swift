@@ -72,6 +72,9 @@ final class SupermuxRemoteSimulatorPanel: Panel {
     @ObservationIgnored private var rebindTask: Task<Void, Never>?
     @ObservationIgnored private var autoLongSide = SimStreamQualityPreset.high.maximumLongSidePixels
     @ObservationIgnored private var autoQualityTask: Task<Void, Never>?
+    /// Host panels this tab already asked to recover on its own (once each).
+    @ObservationIgnored private var autoRecoveredHostPanelIDs: Set<UUID> = []
+    @ObservationIgnored private var autoRecoverTask: Task<Void, Never>?
 
     var displayTitle: String {
         String(localized: "simulator.pane.title", defaultValue: "Simulator")
@@ -159,6 +162,7 @@ final class SupermuxRemoteSimulatorPanel: Panel {
         if let presenter { newStore.bindPresenter(presenter) }
         store = newStore
         observeStore(newStore)
+        observeHostStatus(newStore)
         if isVisible { newStore.activate() }
         Task { await refreshDevices() }
     }
@@ -331,6 +335,38 @@ final class SupermuxRemoteSimulatorPanel: Panel {
         }
     }
 
+    private func observeHostStatus(_ store: SimulatorStreamV2Store) {
+        withObservationTracking {
+            _ = store.hostStatus
+        } onChange: { [weak self, weak store] in
+            Task { @MainActor in
+                guard let self, let store, self.store === store else { return }
+                self.hostStatusChanged(store.hostStatus)
+                self.observeHostStatus(store)
+            }
+        }
+    }
+
+    /// A Simulator tab the owning Mac restored in a background workspace
+    /// first starts when this stream asks for frames, and there it can lose
+    /// its first worker (replaced as the device attaches) and stay "worker
+    /// stopped" although a new worker runs: the stream never begins. When
+    /// the owning Mac reports that for 5 s, ask it to recover once, as the
+    /// Recover button does; a device switch passes through it briefly. A
+    /// later stop of the same panel keeps the button.
+    private func hostStatusChanged(_ status: SimStreamHostStatus?) {
+        autoRecoverTask?.cancel()
+        autoRecoverTask = nil
+        guard status == .workerCrashed, let hostPanelID, !autoRecoveredHostPanelIDs.contains(hostPanelID) else { return }
+        autoRecoverTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(5))
+            guard let self, !Task.isCancelled, !self.isClosed, self.hostPanelID == hostPanelID,
+                  self.store?.hostStatus == .workerCrashed else { return }
+            self.autoRecoveredHostPanelIDs.insert(hostPanelID)
+            self.recover()
+        }
+    }
+
     /// The owning Mac ended the stream for good (`closed`): it closed the
     /// panel, lost it, or another viewer took it.
     private func storePhaseChanged(_ phase: SimStreamViewerPhase) {
@@ -404,6 +440,7 @@ final class SupermuxRemoteSimulatorPanel: Panel {
         rebindTask?.cancel()
         rebindTask = nil
         autoQualityTask?.cancel()
+        autoRecoverTask?.cancel()
         store?.deactivate()
         store = nil
         // The focus callback holds the workspace's view state, which holds this panel.

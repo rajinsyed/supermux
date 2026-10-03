@@ -1,5 +1,6 @@
 #if DEBUG
 import CmuxIrxTransport
+import CmuxSettings
 import CmuxSurfaceCatalogModel
 import Foundation
 
@@ -12,7 +13,9 @@ import Foundation
 ///   GET through a tunnel to `host:port` (default `localhost`) on that Mac's
 ///   loopback → `{status, http_status?, body?}`. `status` is `connected`, or
 ///   why the open failed (`denied`, `refused`, `busy`, `failed`, or the tunnel's
-///   availability: `offline`, `needs_update`, `no_direct_link`).
+///   availability: `offline`, `needs_update`, `no_direct_link`, …); a failed
+///   open also answers what a mirror's browser would show for it
+///   (`page_reason`, `page_headline` of ``SupermuxBrowserProxyErrorPage``).
 /// - `tunnel.hold {machine, host?, port}`: opens a tunnel and keeps it open →
 ///   `{status, held}`; `tunnel.release_held {}` aborts every held tunnel.
 /// - `tunnel.host_state {machine}`: the newest loopback connection's tunnel host
@@ -26,6 +29,14 @@ import Foundation
 /// - `tunnel.host_ports {include_other?}`: this Mac's `ports.list` payload.
 /// - `tunnel.own_port {port, registered}`: marks a port as one this app
 ///   listens on for forwards (the tunnel host's loop guard refuses it).
+/// - `tunnel.fail_requests {method, count?}`: the loopback host answers the
+///   next `count` requests for `method` (after each connection's sync fetch)
+///   `timed_out`, as a stalled Mac does (0 disarms; arming restarts the tally)
+///   → `{method, remaining, failed}`; without `count` it only reports.
+/// - `tunnel.allow_other_hosts {enabled?}`: turns this build's iPhone-labelled
+///   `mobile.browserTunnel.allowOtherHosts` on; off puts back what was stored
+///   before the driver turned it on; without `enabled` it changes nothing
+///   → `{enabled}` (the setting's value now).
 @MainActor
 enum SupermuxDeviceTunnelSocketCommands {
     static let methodPrefix = "tunnel."
@@ -39,6 +50,15 @@ enum SupermuxDeviceTunnelSocketCommands {
     private static var held: [Stream] = []
     /// Ports `own_port` registered, so it never unregisters a real listener's.
     private static var registeredByDriver: Set<Int> = []
+
+    /// A setting's stored value (nil: none was stored) before a driver changed it.
+    private struct SavedSetting {
+        let stored: Bool?
+    }
+
+    /// `allowOtherHosts` before `allow_other_hosts` turned it on; nil while the
+    /// driver has not changed it, so turning it off never touches a user's value.
+    private static var allowOtherHostsSaved: SavedSetting?
 
     struct HookError: LocalizedError {
         let message: String
@@ -63,6 +83,7 @@ enum SupermuxDeviceTunnelSocketCommands {
         case "pretend_old_host":
             pretendsOldHost = try flag(params, "enabled")
             return ["enabled": pretendsOldHost]
+        case "allow_other_hosts": return try allowOtherHosts(params)
         case "inject_port":
             let workspaceID = try uuid(params, "workspace_id")
             injectedHostPorts[workspaceID, default: []].append(try port(params))
@@ -72,6 +93,7 @@ enum SupermuxDeviceTunnelSocketCommands {
             return ["injected": [Int]()]
         case "host_ports": return await hostPorts(params)
         case "own_port": return try ownPort(params)
+        case "fail_requests": return try failRequests(params)
         default: throw HookError(message: "unknown tunnel method \(name)")
         }
     }
@@ -91,7 +113,13 @@ enum SupermuxDeviceTunnelSocketCommands {
         } catch let error as HookError {
             throw error
         } catch {
-            return ["status": status(of: error)]
+            let reason = SupermuxBrowserProxyErrorPage.Reason(error)
+            let name = SupermuxComposition.devices.device(for: try machine(params))?.displayName ?? ""
+            return [
+                "status": status(of: error),
+                "page_reason": reason.rawValue,
+                "page_headline": SupermuxBrowserProxyErrorPage.headline(reason: reason, machineName: name, port: targetPort),
+            ]
         }
         let path = (params["path"] as? String) ?? "/"
         let seconds = min(max((params["timeout_seconds"] as? NSNumber)?.doubleValue ?? 10, 1), 60)
@@ -201,6 +229,48 @@ enum SupermuxDeviceTunnelSocketCommands {
             ports.remove(target)
         }
         return ["registered": ports.contains(target)]
+    }
+
+    /// Arms (or, without `count`, only reports) the loopback host's failed
+    /// answers for one method (``SupermuxDeviceLoopbackHostAcceptor/failingRequests``).
+    private static func failRequests(_ params: [String: Any]) throws -> [String: Any] {
+        guard let method = params["method"] as? String, !method.isEmpty else {
+            throw HookError(message: "method is required")
+        }
+        if let count = (params["count"] as? NSNumber)?.intValue {
+            SupermuxDeviceLoopbackHostAcceptor.failingRequests[method] = max(count, 0)
+            SupermuxDeviceLoopbackHostAcceptor.failedRequests[method] = 0
+        }
+        return [
+            "method": method,
+            "remaining": SupermuxDeviceLoopbackHostAcceptor.failingRequests[method] ?? 0,
+            "failed": SupermuxDeviceLoopbackHostAcceptor.failedRequests[method] ?? 0,
+        ]
+    }
+
+    /// Turns "iOS Browser Reaches Other Hosts" on, which must not widen what
+    /// another Mac reaches (``SupermuxDeviceTunnelHosts``). Off puts back the
+    /// value stored before (or none), and does nothing unless this turned it on.
+    /// Without `enabled` it only reports the value (a cmux.json that manages
+    /// the key puts its own value back after every defaults change).
+    private static func allowOtherHosts(_ params: [String: Any]) throws -> [String: Any] {
+        let key = SettingCatalog().mobile.browserTunnelAllowOtherHosts
+        let defaults = UserDefaults.standard
+        guard params["enabled"] != nil else { return ["enabled": key.value(in: defaults)] }
+        if try flag(params, "enabled") {
+            if allowOtherHostsSaved == nil {
+                allowOtherHostsSaved = SavedSetting(stored: key.hasStoredValue(in: defaults) ? key.value(in: defaults) : nil)
+            }
+            key.set(true, in: defaults)
+        } else if let saved = allowOtherHostsSaved {
+            allowOtherHostsSaved = nil
+            if let stored = saved.stored {
+                key.set(stored, in: defaults)
+            } else {
+                key.removeValue(in: defaults)
+            }
+        }
+        return ["enabled": key.value(in: defaults)]
     }
 
     // MARK: - Params

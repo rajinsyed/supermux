@@ -206,7 +206,8 @@ func openWhenAvailable(_ ref:, in tabManager:, focus:, timeout: Duration = .seco
   `host/owner/repo` key). Omitted when the project has no origin (legacy wire shape).
 - Resolution: `SupermuxGitRemoteURLResolver` (actor) runs `git -C <root> config --get remote.origin.url`,
   caches per standardized root for 10 min (definitive "no origin" cached; transient failures not), coalesces
-  concurrent lookups; `invalidate(root:)` / `invalidateAll()`.
+  concurrent lookups; `invalidate(root:)` / `invalidateAll()`. Each git run is killed at 5 s (SIGTERM,
+  then SIGKILL), and a lookup still running when the app quits ends with it (`SupermuxGitChildProcesses`).
 - Local Mac UI: `SupermuxComposition.projectGitRemotes` (`@Observable`): `urlsByProjectID`,
   `url(for:)`, `identity(for:)` — match a local project with a remote `SupermuxProjectDTO` by
   `projectGitRemotes.identity(for: local.id) == remote.gitRemoteIdentity` (fall back to `name` +
@@ -334,10 +335,18 @@ SupermuxDeviceMirrorsGlue.unhide(machineID:ref:)   // unhide + reconcile
   (`SupermuxMobileSidebarStatusObserver`).
 - **Layout sync** skips remote non-terminal panels (browser/markdown) instead of stalling (#531), and
   a bound mirror's own non-terminal panels stay local (reserved: never pushed, grafted back) instead of
-  stopping it (#706, `SupermuxDeviceLayoutSurfaceFilter.localPanelIDs`).
-- **Mirror browsers** use upstream's remote-workspace mode with the owning Mac's proxy and a per-Mac data
-  store (#707, `SupermuxDeviceBrowserRoute`, `SupermuxDeviceBrowserProxies`), so their `localhost` is
-  that Mac's.
+  stopping it (#706, `SupermuxDeviceLayoutSurfaceFilter.localPanelIDs`). Closing such a mirror's last
+  terminal tab (or its last terminals at once) while its own panels stay sends `mobile.terminal.close`
+  as usual; the owning Mac refuses a workspace's last surface, and when the layout fetched for that
+  close holds only that terminal, `SupermuxDeviceMirrorCloseGate.closeOnItsMacAfterLastSurfaceRefusal`
+  has `SupermuxDeviceMirrorCloser.closeOnItsMacKeepingHere` close the workspace there as a user close
+  does (pending, `force`) and unbind the mirror, which stays open with its own panels as a local
+  workspace; the close succeeds with no failure card. While such a close is in flight
+  (`SupermuxDeviceMirrorCloser.lastTerminalClosesInFlight`) auto-mirror counts the ref as busy, so a slow
+  link never gets the mirror closed as an orphan.
+- **Mirror browsers** (bound or unbound mirrors) use upstream's remote-workspace mode with the owning
+  app instance's proxy and a per-instance data store (#707, `SupermuxDeviceBrowserRoute`,
+  `SupermuxDeviceBrowserProxies`), so their `localhost` is that Mac's.
 - **Socket** (`supermux.devices.*`): `close_mirror {workspace_id, action: close_on_mac|hide}` (a user
   close without this Mac's confirmations, or Hide Here; `pending_on_mac`),
   `unhide {machine?, remote_workspace_id?}`, `hidden {}` (`hidden`, `pending_remote_closes`),
