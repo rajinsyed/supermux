@@ -15,6 +15,19 @@ enum SupermuxMobileCapabilities {
         served + (servesPortForward ? [SupermuxMobileCapability.portForwardV1.rawValue] : [])
             + (servesTerminalAttachments ? [SupermuxMobileCapability.terminalAttachmentsV1.rawValue] : [])
             + (servesTerminalStream ? [SupermuxMobileCapability.terminalStreamV1.rawValue] : [])
+            + (servesTerminalInputPipeline ? [SupermuxMobileCapability.terminalInputPipelineV1.rawValue] : [])
+    }
+
+    /// Another Mac's device mirror keeps several input requests in flight:
+    /// this host's ordered per-terminal input queue and exactly-once ledger
+    /// (`MobileHostTerminalInputApplier`) apply them in sequence, once each.
+    /// A DEBUG E2E can withhold it to play an older host
+    /// (`supermux.devices.terminal_input.pretend_old_host`).
+    nonisolated private static var servesTerminalInputPipeline: Bool {
+        #if DEBUG
+        if SupermuxTerminalInputDebug.pretendsOldHost { return false }
+        #endif
+        return true
     }
 
     /// Files pasted or dropped into another Mac's terminal mirror are stored

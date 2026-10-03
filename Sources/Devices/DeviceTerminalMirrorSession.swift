@@ -43,10 +43,16 @@ final class DeviceTerminalMirrorSession {
     let remoteWorkspaceID: String
     let remoteSurfaceID: UUID
     let inputRouter: DeviceTerminalInputRouter
+    // SUPERMUX:begin terminal-input-pipeline
+    let supermuxInputPipeline: SupermuxTerminalInputPipeline
+    // SUPERMUX:end terminal-input-pipeline
     let attachment: DeviceTerminalAttachmentStatus
     private(set) var phase: Phase = .idle {
         didSet {
             inputRouter.setEnabled(phase == .attached)
+            // SUPERMUX:begin terminal-input-pipeline
+            supermuxInputPipeline.setEnabled(phase == .attached)
+            // SUPERMUX:end terminal-input-pipeline
             attachment.update(connected: phase == .attached, connecting: phase == .attaching)
         }
     }
@@ -126,8 +132,13 @@ final class DeviceTerminalMirrorSession {
             ),
             supportsSupermuxInput: { [instance = link.instance] in
                 SupermuxDeviceTerminalInput.supportsForwardedInput(on: .device(instance))
-            }
+            },
             // SUPERMUX:end device-mirror-input-batch
+            // SUPERMUX:begin terminal-input-pipeline
+            supportsInputPipeline: { [instance = link.instance] in
+                SupermuxTerminalInputPipeline.hostSupportsPipeline(on: .device(instance))
+            }
+            // SUPERMUX:end terminal-input-pipeline
         )
         // SUPERMUX:begin terminal-stream-viewer
         supermuxStream = SupermuxTerminalStream(link: link, surfaceID: remoteSurfaceID)
@@ -147,8 +158,11 @@ final class DeviceTerminalMirrorSession {
         requestData: @escaping @MainActor @Sendable (String, [String: Any]) async throws -> Data,
         // SUPERMUX:begin device-mirror-input-batch (upstream's viewer parameter gains a trailing comma)
         viewer: RemoteMacTerminalViewer? = nil,
-        supportsSupermuxInput: @escaping @MainActor @Sendable () -> Bool = { false }
+        supportsSupermuxInput: @escaping @MainActor @Sendable () -> Bool = { false },
         // SUPERMUX:end device-mirror-input-batch
+        // SUPERMUX:begin terminal-input-pipeline
+        supportsInputPipeline: @escaping @MainActor @Sendable () -> Bool = { false }
+        // SUPERMUX:end terminal-input-pipeline
     ) {
         self.remoteWorkspaceID = remoteWorkspaceID
         self.remoteSurfaceID = remoteSurfaceID
@@ -159,6 +173,23 @@ final class DeviceTerminalMirrorSession {
         let attachment = DeviceTerminalAttachmentStatus()
         self.attachment = attachment
         let clientID = viewer?.clientID
+        // SUPERMUX:begin terminal-input-pipeline
+        var pipelineParams: [String: Any] = ["workspace_id": remoteWorkspaceID, "surface_id": remoteSurfaceID.uuidString]
+        if let clientID { pipelineParams["client_id"] = clientID }
+        let pipeline = SupermuxTerminalInputPipeline.forMirror(
+            surfaceID: remoteSurfaceID,
+            baseParams: pipelineParams,
+            isSupported: supportsInputPipeline,
+            canSend: { attachment.isConnected && isConnected() },
+            request: { params in
+                try Self.responseObject(try await requestData("mobile.terminal.input", params), method: "mobile.terminal.input")
+            },
+            onFailure: { error in
+                deviceMirrorLog.error("device terminal input failed: \(String(describing: error), privacy: .private)")
+            }
+        )
+        supermuxInputPipeline = pipeline
+        // SUPERMUX:end terminal-input-pipeline
         inputRouter = DeviceTerminalInputRouter(
             // SUPERMUX:begin device-mirror-input-batch (an ordered batch: forwarded keys and exact bytes when the host takes them, else text)
             sendBatch: { @MainActor batch in
@@ -177,7 +208,10 @@ final class DeviceTerminalMirrorSession {
             },
             onFailure: { error in
                 deviceMirrorLog.error("device terminal input failed: \(String(describing: error), privacy: .private)")
-            }
+            },
+            // SUPERMUX:begin terminal-input-pipeline
+            pipelined: { batch in await pipeline.offer(batch) }
+            // SUPERMUX:end terminal-input-pipeline
         )
     }
 
@@ -233,6 +267,9 @@ final class DeviceTerminalMirrorSession {
         supermuxStream?.stop()
         // SUPERMUX:end terminal-stream-viewer
         inputRouter.invalidate()
+        // SUPERMUX:begin terminal-input-pipeline
+        supermuxInputPipeline.invalidate()
+        // SUPERMUX:end terminal-input-pipeline
         onAttached = nil
         adoptedRelay?.discard()
         adoptedRelay = nil

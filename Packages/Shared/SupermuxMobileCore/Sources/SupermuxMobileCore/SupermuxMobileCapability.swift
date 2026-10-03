@@ -80,6 +80,12 @@ public enum SupermuxMobileCapability: String, CaseIterable, Codable, Sendable, E
     /// focus changes (`focus_in`, `focus_out`) with `terminal.action`, so
     /// they act on this terminal, not only on that Mac's view of it.
     case terminalActionsV1 = "supermux.terminal_actions.v1"
+    /// Another Mac's device mirror may keep several `mobile.terminal.input`
+    /// requests in flight for one terminal: each carries upstream's
+    /// exactly-once delivery identity (`input_stream_id` / `input_stream_seq`),
+    /// and this host applies them in sequence order, once each, answering
+    /// with `input_ack`. Without it the mirror sends one request at a time.
+    case terminalInputPipelineV1 = "supermux.terminal_input_pipeline.v1"
 
     /// Every capability, in declaration order (derived from `CaseIterable`).
     public static let all: [SupermuxMobileCapability] = SupermuxMobileCapability.allCases

@@ -39,6 +39,15 @@ final class DeviceTerminalInputRouter: @unchecked Sendable {
     // SUPERMUX:begin device-mirror-input-batch (the batch enforces the 256 KiB limit; upstream's Data init sends only the bytes)
     private let send: @Sendable (SupermuxTerminalInputBatch) async throws -> Void
     private let onFailure: @Sendable (any Error) -> Void
+    // SUPERMUX:end device-mirror-input-batch
+    // SUPERMUX:begin terminal-input-pipeline
+    /// Hands a batch to the pane's ``SupermuxTerminalInputPipeline``, which
+    /// sends it without waiting for earlier replies; false when the other
+    /// Mac does not take pipelined input, and the batch goes the
+    /// one-at-a-time way below.
+    private let pipelined: (@Sendable (SupermuxTerminalInputBatch) async -> Bool)?
+    // SUPERMUX:end terminal-input-pipeline
+    // SUPERMUX:begin device-mirror-input-batch
 
     convenience init(
         send: @escaping @Sendable (Data) async throws -> Void,
@@ -49,10 +58,16 @@ final class DeviceTerminalInputRouter: @unchecked Sendable {
 
     init(
         sendBatch: @escaping @Sendable (SupermuxTerminalInputBatch) async throws -> Void,
-        onFailure: @escaping @Sendable (any Error) -> Void
+        onFailure: @escaping @Sendable (any Error) -> Void,
+        // SUPERMUX:begin terminal-input-pipeline
+        pipelined: (@Sendable (SupermuxTerminalInputBatch) async -> Bool)? = nil
+        // SUPERMUX:end terminal-input-pipeline
     ) {
         self.send = sendBatch
         self.onFailure = onFailure
+        // SUPERMUX:begin terminal-input-pipeline
+        self.pipelined = pipelined
+        // SUPERMUX:end terminal-input-pipeline
     }
     // SUPERMUX:end device-mirror-input-batch
 
@@ -113,8 +128,17 @@ final class DeviceTerminalInputRouter: @unchecked Sendable {
 
     private func drain() async {
         while let batch = takePending() {
+            // SUPERMUX:begin terminal-input-pipeline (keys typed during the main-actor hop join the next batch)
+            if let pipelined, await pipelined(batch) { continue }
+            // SUPERMUX:end terminal-input-pipeline
             do {
                 try Task.checkCancellation()
+                // SUPERMUX:begin terminal-input-pipeline (DEBUG in-flight counters for the pipeline E2E)
+                #if DEBUG
+                SupermuxTerminalInputDebug.requestStarted()
+                defer { SupermuxTerminalInputDebug.requestFinished() }
+                #endif
+                // SUPERMUX:end terminal-input-pipeline
                 try await send(batch)
             } catch {
                 if !Task.isCancelled { onFailure(error) }
