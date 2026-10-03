@@ -166,6 +166,14 @@ public enum SupermuxMobileMethod: String, CaseIterable, Codable, Sendable, Equat
     /// too (for a manual forward). Served only to an admitted Mac peer.
     case portsList = "mobile.supermux.ports.list"
 
+    // MARK: Terminal streaming
+
+    /// Names the terminals this connection mirrors (`surface_ids`): the host
+    /// then sends `terminal.bytes` only for those, and never sheds them from
+    /// the event queue (``SupermuxMobileCapability/terminalStreamV1``).
+    /// Connection-scoped; a new connection starts topic-wide again.
+    case terminalWatch = "mobile.supermux.terminal.watch"
+
     /// The shared method-name prefix; the Mac router dispatches on it.
     public static let namespacePrefix = "mobile.supermux."
 

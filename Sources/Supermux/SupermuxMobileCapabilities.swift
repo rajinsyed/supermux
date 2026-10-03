@@ -13,6 +13,18 @@ enum SupermuxMobileCapabilities {
     /// Capabilities whose backing RPC methods are implemented on this host.
     nonisolated static var advertised: [String] {
         served + (servesPortForward ? [SupermuxMobileCapability.portForwardV1.rawValue] : [])
+            + (servesTerminalStream ? [SupermuxMobileCapability.terminalStreamV1.rawValue] : [])
+    }
+
+    /// terminal.watch is served and mobile.terminal.replay resumes from a byte
+    /// position: another Mac's device mirror streams a terminal losslessly
+    /// instead of re-anchoring on full replays. A DEBUG E2E can withhold it to
+    /// play an older host.
+    nonisolated private static var servesTerminalStream: Bool {
+        #if DEBUG
+        if SupermuxTerminalStreamDebug.pretendsOldHost { return false }
+        #endif
+        return true
     }
 
     /// Port forwarding (another Mac's `tcp_connect` lanes, `ports.list`,

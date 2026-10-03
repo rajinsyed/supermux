@@ -73,11 +73,13 @@ import Testing
         "mobile.supermux.phone_push.share",
         // Ports
         "mobile.supermux.ports.list",
+        // Terminal streaming
+        "mobile.supermux.terminal.watch",
     ]
 
     @Test func allExposesEveryMethodExactlyOnce() {
         #expect(SupermuxMobileMethod.all.map(\.rawValue) == Self.expectedRawValues)
-        #expect(SupermuxMobileMethod.all.count == 57)
+        #expect(SupermuxMobileMethod.all.count == 58)
         #expect(Set(SupermuxMobileMethod.all).count == SupermuxMobileMethod.all.count)
     }
 

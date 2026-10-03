@@ -2095,6 +2095,10 @@ actor MobileHostConnection {
                 "stream_id": streamID,
                 "removed": removed,
             ])
+        // SUPERMUX:begin terminal-stream-watch
+        case SupermuxTerminalStreamHost.watchMethod:
+            return SupermuxTerminalStreamHost.watch(request.params, queue: eventQueue)
+        // SUPERMUX:end terminal-stream-watch
         default:
             return nil
         }

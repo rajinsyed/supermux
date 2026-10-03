@@ -103,6 +103,10 @@ final class DeviceTerminalMirrorSession {
     /// this Mac's size preference on this connection (SupermuxTerminalSizingDefaults).
     var supermuxSizingClaim = SupermuxTerminalSizingClaim()
     // SUPERMUX:end device-mirror-sizing-claim
+    // SUPERMUX:begin terminal-stream-viewer
+    /// Lossless streaming when the other Mac's host streams (SupermuxTerminalStream).
+    private(set) var supermuxStream: SupermuxTerminalStream?
+    // SUPERMUX:end terminal-stream-viewer
 
     convenience init(link: DeviceLink, remoteWorkspaceID: String, remoteSurfaceID: UUID) {
         self.init(
@@ -120,6 +124,9 @@ final class DeviceTerminalMirrorSession {
             }
             // SUPERMUX:end device-mirror-input-batch
         )
+        // SUPERMUX:begin terminal-stream-viewer
+        supermuxStream = SupermuxTerminalStream(link: link, surfaceID: remoteSurfaceID)
+        // SUPERMUX:end terminal-stream-viewer
     }
 
     init(
@@ -212,6 +219,9 @@ final class DeviceTerminalMirrorSession {
         attachTask = nil
         eventTask?.cancel()
         eventTask = nil
+        // SUPERMUX:begin terminal-stream-viewer
+        supermuxStream?.stop()
+        // SUPERMUX:end terminal-stream-viewer
         inputRouter.invalidate()
         onAttached = nil
         adoptedRelay?.discard()
@@ -260,7 +270,12 @@ final class DeviceTerminalMirrorSession {
         switch event {
         case .bytes(let sequence, let data):
             if phase == .attaching {
-                guard sequence != nil, attachingBytes.count < 512, attachingByteCount + data.count <= 256 * 1_024 else {
+                // SUPERMUX:begin terminal-stream-viewer (a streaming mirror holds far more while its resume is in flight; upstream: 512 chunks, 256 KB)
+                let supermuxStreams = supermuxStream?.isActive == true
+                let supermuxChunkLimit = supermuxStreams ? SupermuxTerminalStream.attachBufferChunkLimit : 512
+                let supermuxByteLimit = supermuxStreams ? SupermuxTerminalStream.attachBufferByteLimit : 256 * 1_024
+                guard sequence != nil, attachingBytes.count < supermuxChunkLimit, attachingByteCount + data.count <= supermuxByteLimit else {
+                // SUPERMUX:end terminal-stream-viewer
                     replayNeeded = true
                     attachingBytes.removeAll()
                     attachingByteCount = 0
@@ -280,6 +295,9 @@ final class DeviceTerminalMirrorSession {
             if sequence > expected {
                 // A dropped chunk: the byte stream is not self-healing, so
                 // re-anchor on a fresh replay instead of rendering a hole.
+                // SUPERMUX:begin terminal-stream-viewer (a streaming host resumes from `expected` instead)
+                supermuxStream?.noteGap()
+                // SUPERMUX:end terminal-stream-viewer
                 scheduleAttach()
                 return
             }
@@ -291,6 +309,9 @@ final class DeviceTerminalMirrorSession {
             if let assigned = assignedGrid, assigned.columns == columns, assigned.rows == rows { return }
             // Repaint at the geometry the source Mac reports.
             pin(columns: columns, rows: rows)
+            // SUPERMUX:begin terminal-stream-viewer (streamed bytes repaint it, as on the other Mac itself)
+            if supermuxStream?.isActive == true, phase == .attached { return }
+            // SUPERMUX:end terminal-stream-viewer
             scheduleAttach()
         case .resyncRequired:
             if isConnected() {
@@ -354,8 +375,19 @@ final class DeviceTerminalMirrorSession {
         attachingBytes.removeAll(keepingCapacity: true)
         attachingByteCount = 0
         guard !Task.isCancelled, phase != .stopped else { return }
+        // SUPERMUX:begin terminal-stream-viewer (watch this terminal on the connection before its replay captures)
+        if let supermuxStream {
+            _ = await supermuxStream.prepare()
+            guard !Task.isCancelled, phase == .attaching else { return }
+        }
+        // SUPERMUX:end terminal-stream-viewer
         do {
             var params = surfaceParams
+            // SUPERMUX:begin terminal-stream-viewer
+            if let supermuxStream {
+                params.merge(supermuxStream.replayParams(expectedSequence: expectedSequence, grid: assignedGrid)) { _, new in new }
+            }
+            // SUPERMUX:end terminal-stream-viewer
             // SUPERMUX:begin device-mirror-viewport-generations
             // Only the pane that speaks for this Mac on the terminal registers its
             // grid, above the link's floor; another pane follows the host's grid.
@@ -377,17 +409,37 @@ final class DeviceTerminalMirrorSession {
                 // SUPERMUX:end device-mirror-hidden-counts
             }
             let response = try await requestData("mobile.terminal.replay", params)
-            let replay = try await Self.decodeReplay(response)
+            // SUPERMUX:begin terminal-stream-viewer (a resumed reply carries the bytes since the mirror's position; upstream: `let replay = try await Self.decodeReplay(response)`)
+            let supermuxReply = await SupermuxTerminalStream.decodeReply(response)
+            let replay: Replay
+            if let resumed = supermuxReply.resumed {
+                replay = Replay(bytes: resumed.bytes, columns: resumed.columns, rows: resumed.rows, sequence: resumed.sequence, supermuxResumed: true)
+            } else {
+                replay = try await Self.decodeReplay(response)
+            }
+            // SUPERMUX:end terminal-stream-viewer
             guard !Task.isCancelled, phase == .attaching, isConnected() else { return }
+            // SUPERMUX:begin terminal-stream-viewer
+            supermuxStream?.noteReply(supermuxReply)
+            // SUPERMUX:end terminal-stream-viewer
             viewportTransitionRetries = 0
             // SUPERMUX:begin device-mirror-replay-timed-out
             supermuxTimedOutRetries = 0
             // SUPERMUX:end device-mirror-replay-timed-out
             receiveReplaySizing(response)
             if let columns = replay.columns, let rows = replay.rows { pin(columns: columns, rows: rows) }
+            // SUPERMUX:begin terminal-stream-viewer (resumed bytes continue the screen as they are; a full replay first drops this Mac's history)
+            if replay.supermuxResumed {
+                surface?.processRemoteOutput(replay.bytes)
+            } else {
+            if supermuxStream?.isActive == true { surface?.processRemoteOutput(SupermuxTerminalStream.historyReset) }
+            // SUPERMUX:end terminal-stream-viewer
             // SUPERMUX:begin device-mirror-viewer-colors (the replay, then every color settled to this Mac's theme plus the authored ones)
             surface?.processRemoteOutput(supermuxColors.bytes(applying: replay.bytes, colors: replay.colors))
             // SUPERMUX:end device-mirror-viewer-colors
+            // SUPERMUX:begin terminal-stream-viewer
+            }
+            // SUPERMUX:end terminal-stream-viewer
             expectedSequence = replay.sequence
             phase = .attached
             // SUPERMUX:begin device-mirror-hidden-counts (a show or hide during the replay round trip)
@@ -452,6 +504,11 @@ final class DeviceTerminalMirrorSession {
         /// legacy replay, whose leading RIS resets every color.
         var colors: CloudTuiRemoteColors?
         // SUPERMUX:end device-mirror-viewer-colors
+        // SUPERMUX:begin terminal-stream-viewer
+        /// The host resumed from the mirror's byte position: `bytes` continue
+        /// the screen as it is.
+        var supermuxResumed = false
+        // SUPERMUX:end terminal-stream-viewer
     }
 
     #if compiler(>=6.2)

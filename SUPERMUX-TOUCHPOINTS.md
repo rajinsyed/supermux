@@ -12,7 +12,8 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **763**. The remote-workspaces work (#517–#599) left
+- Numbering: the highest number in use is **783** (remote terminal streaming, #777–#783; #764–#776 are
+  reserved for open PRs #74/#75). The remote-workspaces work (#517–#599) left
   unassigned gaps it may still grow into: **523–524, 527–529, 539–544, 558–559, 562–569,
   578–579 and 588–589** (never assigned, not retired); #600–#601 came from the 2026-10-01 upstream merge; #620–#622 and
   #630–#639 are the remote-workspaces feedback round (602–619 and 623–629 unassigned). The second
@@ -694,6 +695,13 @@ Rules for adding a touchpoint:
 | 761 | `Sources/Panels/SimulatorPanel.swift` | `simulator-panel-control` | In `init`'s default `clientFactory`, the closing `).makeClient()` of upstream's `SimulatorWorkerClientFactory(...)` becomes `).makeClient(simulatorControl: SupermuxSimulatorControl.make())` (`Sources/Supermux/RemoteSimulator/SupermuxSimulatorControl.swift`): every Simulator panel's worker client runs its `simctl` calls through the fork's control, which builds upstream's `SimulatorControlService` with the same location and camera cleanup scopes the factory would use |
 | 762 | `Sources/TerminalController+MobileSimulator.swift` | `simulator-devices-list-bounded` | Two fences in `v2MobileSimulatorDevicesList`. The first replaces upstream's `let coordinator = resolved.panel.coordinator`, `await coordinator.reloadDevices()`, `let selectedID = coordinator.selectedDeviceID` and the head of `let devices = coordinator.devices.map { device -> [String: Any] in` with `let supermuxListing = await SupermuxSimulatorDeviceListing.listing(for: resolved.panel)`, `let selectedID = supermuxListing.selectedID` and `let devices = supermuxListing.devices.map { device -> [String: Any] in` (upstream's row fields stay as they are); the second makes the final return `return .ok(SupermuxSimulatorDeviceListing.reply(devices: devices, current: supermuxListing.current))`. `SupermuxSimulatorDeviceListing` (`Sources/Supermux/RemoteSimulator/`) waits at most 8 s: a panel that has a device gets upstream's refresh (one at a time per panel, current only when that refresh landed, not when another superseded it), a panel that is not started or still runs its startup discovery gets the list read beside it with its saved or requested device marked (a refresh then would supersede that discovery, and #763's retry would supersede it back), and a refresh or read that outlasted the 8 s answers the next ask. It adds `slow: true` when the list may be out of date; another Mac's viewer then says "Simulators on <Mac> are slow to respond…" and asks again, and its rebind never opens a second tab on a slow answer. Older viewers and the phone ignore the extra key |
 | 763 | `Packages/macOS/CmuxSimulator/Sources/CmuxSimulatorUI/Coordinator/SimulatorPaneCoordinator+Lifecycle.swift` | `simulator-startup-discovery-retry` | In `runStartup(activatingSelectedDevice:)`, upstream's `await reloadDevices()` becomes `while !(await reloadDevices()), !closed, !Task.isCancelled {}`. A refresh started while the startup discovery runs (another Mac's viewer asks `mobile.simulator.devices.list` as soon as it attaches; the phone does too) supersedes it: `reloadDevices` returns false without selecting a device, `runStartup` found `selectedDeviceID == nil` and never called `selectDevice`, and the panel stayed idle (the viewer: `preparing`, no frames). Measured with a temporary log on 2026-10-03: the failing order was startup gen 1, menu gen 2, gen 1 discarded, `selected=nil`; the passing order was menu gen 1, startup gen 2. Retrying lands a discovery and activates as before |
+| 777 | `Packages/macOS/CmuxMobileHost/Sources/CmuxMobileHost/MobileHostConnectionEventQueue.swift` | `terminal-stream-watch` | A connection that named its terminals (`supermuxWatchTerminalBytes(surfaceIDs:)`, set by #778) gets `terminal.bytes` only for those: `enqueue` first runs `supermuxEnqueueWatchedBytesLocked`, which refuses the others and admits the watched ones in order on the shared lane outside the shared 256-event / 8 MB budget, never shed (`hasRoomLocked` and the shed walk subtract them, the walk skips them, `removeQueuedEventLocked` forgets them, `close()` clears them). Past 8 MB queued for one terminal its queued bytes go and only the newest chunk stays, so the viewer sees the gap and resumes (`supermuxWatchedByteResyncCount`). A connection that never names terminals (the phone, an older Mac) keeps upstream's topic-wide, droppable delivery |
+| 778 | `Sources/Mobile/MobileHostService.swift` | `terminal-stream-watch` | `MobileHostConnection.handleSubscriptionRPC` answers `mobile.supermux.terminal.watch {surface_ids}` on the connection itself (`SupermuxTerminalStreamHost.watch`, `Sources/Supermux/Devices/SupermuxTerminalStreamHost.swift`), since its event queue is the filter |
+| 779 | `Sources/Mobile/MobileTerminalByteTee.swift` | `terminal-stream-resume`, `terminal-stream-coalesce` | `SurfaceState` gains `supermuxStreamEpoch` / `supermuxSkipGeneration`; the no-subscriber early return in `append` calls `SupermuxTerminalStreamContinuity.noteSkipped()` (an atomic flag) and `publishFromMain` refreshes the epoch first, so a stretch the tee did not record starts a new epoch and no byte position from before it is resumed. Upstream's JSON+base64 `terminal.bytes` emit at the end of `publishFromMain` becomes `SupermuxTerminalByteCoalescer.shared.append(...)`: the first chunk after a quiet spell goes out at once, later ones within ~2 ms join one event per terminal (up to 32 KB); sequences are unchanged |
+| 780 | `Sources/TerminalController.swift` | `terminal-stream-resume` | Two fences in `v2MobileTerminalReplay`. Before `let state = MobileTerminalByteTee.shared.replayState(...)`: a request with `supermux_resume_from_seq` / `supermux_resume_epoch` / `supermux_resume_columns` / `supermux_resume_rows` is answered by `supermuxTerminalStreamResume(...)` (the bytes since that position from the tee's tail, `supermux_resumed: true`, plus upstream's sizing fields) when the tail holds them, the epoch matches and the PTY grid is the viewer's; otherwise upstream's render-grid replay runs. After `addSharedSizingReplayFields`: `supermuxAddTerminalStreamEpoch` adds `supermux_stream_epoch` to replays that sent `supermux_stream` |
+| 781 | `Sources/Devices/DeviceTerminalMirrorSession.swift` | `terminal-stream-viewer` | The session owns a `SupermuxTerminalStream` (made in `init(link:…)`, stopped in `stop()`). `attach()` awaits `prepare()` (watch this terminal on the connection, capability `supermux.terminal_stream.v1`) before its replay, merges `replayParams` (screen anchor, 10000 history rows, resume position), decodes the reply with `SupermuxTerminalStream.decodeReply` (a resumed reply becomes a `Replay` with `supermuxResumed`; else upstream's `decodeReplay`), feeds resumed bytes as they are and a full replay after `ESC[3J`. While attaching a streaming mirror buffers up to 16 MB (upstream 256 KB); a gap is counted; a `terminal.updated` grid change only re-pins an attached streaming mirror. Without the capability every path is upstream's |
+| 782 | `Sources/Devices/DeviceLinkTerminalEvents.swift` | `terminal-stream-viewer` | Each session's event stream holds `SupermuxTerminalStream.sessionEventBufferLimit` (4096; upstream 512) events; DEBUG builds count every decoded `terminal.bytes` payload per surface through `supermuxOnBytes` (`supermux.devices.terminal_stream.stats`) |
+| 783 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `SupermuxTerminalStream.swift` (`50BE00191000000000000001`/`…02`), `SupermuxTerminalStreamHost.swift` (`…03`/`…04`) and `SupermuxTerminalStreamSocketCommands.swift` (`…05`/`…06`, DEBUG drivers) into the cmux target, four entries each in the Supermux group next to `SupermuxDeviceTunnelSocketCommands.swift` (`path = Devices/<file>`) |
 
 ## How to re-apply
 
@@ -6221,3 +6229,47 @@ quits the app with `tell application id … to quit` while a simulator worker ru
 app does not quit within 60 s or osascript reports an error (its report records `quit_seconds`).
 (it creates, boots, shuts down and deletes its own simulator; see LOOPBACK-HARNESS.md "Mirror
 simulator E2E"). Two real Macs are still needed for the irx lane and capture on a headless owner.
+
+### 777–783. A device mirror streams its terminal like a local one — `terminal-stream-watch`, `terminal-stream-resume`, `terminal-stream-coalesce`, `terminal-stream-viewer`
+
+Before, the host sent every terminal's PTY reads as droppable `terminal.bytes` events in one shared
+256-event queue, the viewer dropped more (512-event streams, 256 KB attach buffer), and every seq gap,
+remote resize, resync or reconnect re-anchored the mirror on a render-grid replay that wiped this Mac's
+scrollback to ~240 rows. Capability `supermux.terminal_stream.v1` (both sides gate on it; an older host or
+viewer keeps upstream's path): the viewer names the terminals it mirrors (`mobile.supermux.terminal.watch`),
+the host sends only their bytes and never sheds them, a gap or reconnect resumes from the mirror's byte
+position from the tee's tail (`supermux_resume_from_seq`), a full replay asks for 10000 screen-anchored
+history rows, a remote grid change only re-pins, and PTY reads are coalesced. Fork code:
+`Sources/Supermux/Devices/SupermuxTerminalStreamHost.swift` (host), `SupermuxTerminalStream.swift`
+(viewer), `SupermuxTerminalStreamSocketCommands.swift` (DEBUG drivers); the watch set is re-sent on every
+connect from `SupermuxDeviceLinkEvents`. Re-apply:
+
+- **#777 `MobileHostConnectionEventQueue.swift`.** Re-add the fenced state block after
+  `simulatorFrameReplayAfterDrainPanelIDs`, the early `supermuxEnqueueWatchedBytesLocked` call right after
+  `enqueue`'s subscribed-topic guard, `supermuxForgetWatchedEventLocked(eventID)` right after
+  `removeQueuedEventLocked` subtracts the frame, the watched totals added to `reclaimedCount` /
+  `reclaimedBytes` in `hasRoomLocked` and to `releasedCount` / `releasedBytes` in
+  `shedDroppableEventsLocked`, `supermuxWatchedEvents[eventID] == nil` in the shed walk's guard, the reset in
+  `close()`, and the helpers at the end of the class. If upstream gives `terminal.bytes` its own per-surface
+  lane or makes it lossless itself, keep the filter and drop the budget.
+- **#778 `MobileHostService.swift`.** In `handleSubscriptionRPC`, the `SupermuxTerminalStreamHost.watchMethod`
+  case before `default`.
+- **#779 `MobileTerminalByteTee.swift`.** The two `SurfaceState` fields, `noteSkipped()` in `append`'s
+  no-demand return, `_ = supermuxContinuousEpoch(state)` at the top of `publishFromMain`, and the coalescer
+  call in place of upstream's final `terminal.bytes` emit. If upstream moves the emit off the main actor or
+  coalesces itself, keep its emit and drop the coalescer; if upstream records bytes without subscribers,
+  the continuity fence can go.
+- **#780 `TerminalController.swift`.** In `v2MobileTerminalReplay`, the resume early return after the
+  viewport report and Cloud relay checks (before the tee's `replayState` read), and the epoch line after
+  `addSharedSizingReplayFields`.
+- **#781 `DeviceTerminalMirrorSession.swift`.** The `supermuxStream` property, its creation at the end of
+  `init(link:…)`, `stop()`'s call, the attach-buffer limits, `noteGap()` before the gap's
+  `scheduleAttach()`, the re-pin-only return in `.updated`, `prepare()` + `replayParams` before the replay
+  request, `decodeReply` around upstream's `decodeReplay`, the resumed/full branch around the
+  `device-mirror-viewer-colors` output line, and the `supermuxResumed` field on `Replay`.
+- **#782 `DeviceLinkTerminalEvents.swift`.** The DEBUG `supermuxOnBytes` hook and its call in `receive`, and
+  the stream's buffer limit.
+- **#783 `project.pbxproj`.** Re-add the four entries per file listed in the #783 row.
+
+Verify: `CMUX_E2E_SUITES="loopback_terminal_streaming_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`
+(LOOPBACK-HARNESS.md "Terminal streaming E2E").

@@ -61,6 +61,12 @@ public enum SupermuxMobileCapability: String, CaseIterable, Codable, Sendable, E
     /// (rotate, software keyboard, appearance) is served and
     /// `simulator.create` takes `udid`.
     case remoteSimulatorV1 = "supermux.remote_simulator.v1"
+    /// Another Mac's device mirror streams a terminal like a local one:
+    /// `terminal.watch` limits `terminal.bytes` to the mirrored terminals and
+    /// keeps them lossless, and `mobile.terminal.replay` takes
+    /// `supermux_resume_from_seq` (answering with the bytes since then while
+    /// the host's byte tail still holds them) and reports `supermux_stream_epoch`.
+    case terminalStreamV1 = "supermux.terminal_stream.v1"
 
     /// Every capability, in declaration order (derived from `CaseIterable`).
     public static let all: [SupermuxMobileCapability] = SupermuxMobileCapability.allCases

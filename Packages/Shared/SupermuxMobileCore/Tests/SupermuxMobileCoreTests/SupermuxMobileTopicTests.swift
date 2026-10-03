@@ -42,11 +42,12 @@ import Testing
         #expect(SupermuxMobileCapability.filesReadV1.rawValue == "supermux.files_read.v1")
         #expect(SupermuxMobileCapability.portForwardV1.rawValue == "supermux.port_forward.v1")
         #expect(SupermuxMobileCapability.remoteSimulatorV1.rawValue == "supermux.remote_simulator.v1")
+        #expect(SupermuxMobileCapability.terminalStreamV1.rawValue == "supermux.terminal_stream.v1")
     }
 
     @Test func allExposesEveryCapabilityExactlyOnce() {
         #expect(SupermuxMobileCapability.all == SupermuxMobileCapability.allCases)
-        #expect(SupermuxMobileCapability.all.count == 21)
-        #expect(Set(SupermuxMobileCapability.all).count == 21)
+        #expect(SupermuxMobileCapability.all.count == 22)
+        #expect(Set(SupermuxMobileCapability.all).count == 22)
     }
 }

@@ -67,7 +67,7 @@ enum SupermuxMobileAuthorization {
              .runState, .runStart, .runStop,
              .presetCreate, .presetUpdate, .presetDelete, .presetLaunch,
              .actionRun, .phonePushRegister, .phonePushStatus, .phonePushShare,
-             .usageState, .portsList:
+             .usageState, .portsList, .terminalWatch:
             return .macWide
         }
     }

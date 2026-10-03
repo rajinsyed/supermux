@@ -73,7 +73,8 @@ public enum SupermuxDeviceReplyDeadline {
              .projectsSetSectionCollapsed, .worktreeOpen, .changesWatch, .filesWatch, .runState, .runStart, .runStop,
              .presetCreate, .presetUpdate, .presetDelete, .presetLaunch, .actionRun,
              .workspaceSelect, .terminalSelect, .panelSelect, .paneClose, .simulatorCreate, .simulatorControl,
-             .usageState, .phonePushRegister, .phonePushStatus, .phonePushShare, .portsList:
+             .usageState, .phonePushRegister, .phonePushStatus, .phonePushShare, .portsList,
+             .terminalWatch:
             return nil
         }
     }
