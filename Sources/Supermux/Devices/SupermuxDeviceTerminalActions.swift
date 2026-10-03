@@ -52,6 +52,8 @@ enum SupermuxDeviceTerminalActions {
         guard forwardedBindings.contains(action), let target = forwardingTarget(for: surface) else { return nil }
         if action == "clear_screen" { armFormFeedDrop(panelID: surface.id) }
         let performed = locally()
+        // The alternate screen is never cleared, so no form feed comes.
+        if !performed { disarmFormFeedDrop(panelID: surface.id) }
         send(action, to: target)
         return performed
     }
@@ -179,6 +181,10 @@ enum SupermuxDeviceTerminalActions {
     nonisolated private static func armFormFeedDrop(panelID: UUID) {
         let deadline = ContinuousClock.now + formFeedWindow
         armedDrops.withLock { $0[panelID] = deadline }
+    }
+
+    nonisolated private static func disarmFormFeedDrop(panelID: UUID) {
+        armedDrops.withLock { _ = $0.removeValue(forKey: panelID) }
     }
 
     nonisolated private static func consumeFormFeedDrop(panelID: UUID) -> Bool {
