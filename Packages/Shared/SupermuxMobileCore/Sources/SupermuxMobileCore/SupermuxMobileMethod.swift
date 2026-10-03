@@ -174,6 +174,13 @@ public enum SupermuxMobileMethod: String, CaseIterable, Codable, Sendable, Equat
     /// and chunk contract as upstream's `mobile.task.attachment.upload`
     /// (`~/.cache/cmux/task-attachments`), without its Task Composer gate.
     case terminalAttachmentUpload = "mobile.supermux.terminal.attachment.upload"
+    // MARK: Terminal streaming
+
+    /// Names the terminals this connection mirrors (`surface_ids`): the host
+    /// then sends `terminal.bytes` only for those, and never sheds them from
+    /// the event queue (``SupermuxMobileCapability/terminalStreamV1``).
+    /// Connection-scoped; a new connection starts topic-wide again.
+    case terminalWatch = "mobile.supermux.terminal.watch"
 
     // MARK: Terminal actions
 

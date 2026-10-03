@@ -3,6 +3,7 @@ import CmuxSurfaceCatalogModel
 import CmuxTerminalSharing
 import CmuxTerminalSizing
 import Foundation
+import SupermuxMobileCore
 import SwiftUI
 
 /// How this Mac sizes the terminals it shows: one choice for every terminal.
@@ -12,19 +13,55 @@ import SwiftUI
 /// another Mac's terminal. One stored order is then right for both.
 struct SupermuxTerminalSizingPreference: Codable, Equatable {
     static let selfToken = "self"
-    /// The default: Priority with this Mac first, so a terminal fills the
-    /// Mac it is looked at from.
+    /// The default: Auto (`latest`, ``SupermuxTerminalSizingAuto``), so the
+    /// device the user is viewing a terminal from (this Mac, a phone, another
+    /// Mac) sets its grid. The order keeps this Mac first for when Priority
+    /// is chosen.
     static let standard = SupermuxTerminalSizingPreference()
 
-    var mode: TerminalSizingMode = .priority
+    var mode: TerminalSizingMode = .latest
     var priority: [String] = [SupermuxTerminalSizingPreference.selfToken]
     var fixed: TerminalGridSize?
+
+    init(
+        mode: TerminalSizingMode = .latest,
+        priority: [String] = [SupermuxTerminalSizingPreference.selfToken],
+        fixed: TerminalGridSize? = nil
+    ) {
+        self.mode = mode
+        self.priority = priority
+        self.fixed = fixed
+    }
+
+    /// A policy picked on one terminal, its own view on this Mac (`selfKey`)
+    /// stored as ``selfToken``.
+    init(policy: TerminalSizingPolicy, selfKey: String) {
+        self.init(
+            mode: policy.mode,
+            priority: policy.priority.map { $0 == selfKey ? Self.selfToken : $0 },
+            fixed: policy.fixed
+        )
+    }
 
     /// The policy for one terminal, ``selfToken`` resolved to `selfKey`.
     func policy(selfKey: String) -> TerminalSizingPolicy {
         var seen = Set<String>()
         let keys = priority.map { $0 == Self.selfToken ? selfKey : $0 }.filter { seen.insert($0).inserted }
         return TerminalSizingPolicy(mode: mode, priority: keys, fixed: fixed)
+    }
+
+    /// As JSON for `supermux_preference` (`{mode, priority, fixed}`).
+    var wireObject: [String: Any]? {
+        (try? JSONEncoder().encode(self)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+    }
+
+    /// From `supermux_preference`; nil when malformed or its fixed size is too large.
+    init?(wire: Any?) {
+        guard let wire, JSONSerialization.isValidJSONObject(wire),
+              let data = try? JSONSerialization.data(withJSONObject: wire),
+              let decoded = try? JSONDecoder().decode(Self.self, from: data),
+              decoded.policy(selfKey: Self.selfToken).fixedSizeIsWithinLimit else { return nil }
+        self = decoded
     }
 }
 
@@ -50,28 +87,40 @@ struct SupermuxTerminalSizingClaim: Equatable {
 
 /// This Mac's terminal size preference (`supermux.terminalSizing.preference`).
 ///
-/// Upstream creates every terminal as "Fit everyone" and keeps the policy in
-/// memory per terminal, so a phone or a small pane elsewhere shrank a
-/// terminal viewed full screen, and a mode chosen in the size panel changed
-/// one terminal until the next relaunch. Here the preference (default:
-/// Priority with this Mac first) applies to every local terminal as its
+/// Upstream keeps the policy in memory per terminal, so a mode chosen in the
+/// size panel changed one terminal until the next relaunch. Here the
+/// preference (default: Auto, where the device the user is viewing from sets
+/// the grid, ``SupermuxTerminalSizingAuto``; it was Fit everyone until
+/// 2026-10-04, and Priority with this Mac first until 2026-10-03, so a
+/// terminal opened from the phone did not fit the phone) applies to every
+/// local terminal as its
 /// sizing host is created (`sizing-default-policy`), and is replaced by a
 /// mode, fixed size or priority order chosen in the size panel or the tab
 /// menu, which re-applies it to every local terminal and to the terminal it
 /// was chosen on (`sizing-sticky-preference`).
 ///
-/// Another Mac's terminal changes policy only by a choice made on it: the
-/// size panel or tab menu of the mirror that shows it. A sticky choice made
-/// here never reaches the other terminals this Mac mirrors, and a mirror's
-/// claim (`device-mirror-sizing-claim`) only puts this Mac first in a
-/// Priority order. Before, every mirror pushed this Mac's whole preference
-/// whenever it was shown, reconnected or the preference changed, so one
-/// "Fit Everyone" picked on one Mac became the mode of every terminal of the
-/// Macs it mirrors, again after each show, and any small pane then shrank them.
+/// One setting, wherever it is picked (`sizing-one-setting`, 2026-10-04): a
+/// mode the phone's size sheet sends (`mobile.terminal.size_policy.set` from
+/// a handheld client) is this Mac's preference too, and a mode picked on a
+/// mirror of another Mac's terminal also becomes that Mac's preference: the
+/// mirror sends it once, on the pick, with `supermux_preference` to a Mac
+/// that advertises `supermux.terminal_sizing_preference.v1` (an older Mac
+/// keeps it on that one terminal). A preference that arrives is stored and
+/// applied to this Mac's terminals and never sent on, and nothing is sent on
+/// a show, a reconnect or a size event, so two Macs cannot bounce it.
 ///
-/// Per terminal, as upstream: Cloud terminals, `terminal.size_policy.set`,
-/// a phone's or another Mac's choice, Size to My Window, and the counts
-/// override ("Don't Resize from This Mac").
+/// A mirror's claim (`device-mirror-sizing-claim`) is no pick: it only puts
+/// this Mac first in one terminal's Priority order. Before 2026-10-03 every
+/// mirror pushed this Mac's whole preference whenever it was shown,
+/// reconnected or the preference changed, so one "Fit Everyone" picked once
+/// on one Mac became the mode of every terminal of the Macs it mirrors, again
+/// after each show, and any small pane then shrank them.
+///
+/// Fixed keeps its size in the one setting (picking Fixed or a fixed size
+/// sizes every terminal of this Mac alike, as the panel always did here).
+/// Per terminal, as upstream: Cloud terminals, `terminal.size_policy.set`
+/// (socket and CLI), Size to My Window, and the counts override ("Don't
+/// Resize from This Mac", a device's own "Counts toward size").
 @MainActor
 final class SupermuxTerminalSizingDefaults {
     static let shared = SupermuxTerminalSizingDefaults()
@@ -94,6 +143,7 @@ final class SupermuxTerminalSizingDefaults {
 
     /// Called as a local terminal's sizing host is created, before its first grid.
     func prepareHost(_ host: inout LocalTerminalSizingHost) {
+        SupermuxTerminalSizingAuto.shared.start()
         host.setPolicy(preference.policy(selfKey: Self.selfKey(of: host)))
     }
 
@@ -165,21 +215,29 @@ final class SupermuxTerminalSizingDefaults {
     /// Priority and Fixed (which mostly open the panel) never take back
     /// terminals other Macs claimed.
     private func choose(_ next: SupermuxTerminalSizingPreference, surfaceID: UUID) {
+        store(next)
+        apply(to: surfaceID)
+    }
+
+    /// Stores a new preference and applies it to every local terminal when it changed.
+    private func store(_ next: SupermuxTerminalSizingPreference) {
         let changed = next != preference
         preference = next
         if let data = try? JSONEncoder().encode(next) { defaults.set(data, forKey: Self.defaultsKey) }
         if changed { applyToLocalTerminals() }
-        apply(to: surfaceID)
     }
 
     /// The preference on the one terminal the user acted on: a device mirror
-    /// pushes it to the other Mac's terminal (a choice made on that terminal);
-    /// a local terminal's sizing host takes it.
+    /// pushes it to the other Mac's terminal (a choice made on that terminal),
+    /// with the whole preference for a Mac that adopts it; a local terminal's
+    /// sizing host takes it.
     private func apply(to surfaceID: UUID) {
         let controller = TerminalController.shared
         if let session = SupermuxTerminalSizingVisibility.shared.trackedMirrorSessions()[surfaceID] {
             guard let viewer = session.viewer else { return }
-            guard viewer.state?.policy != preference.policy(selfKey: Self.selfKey(of: viewer)) else {
+            // A Mac that adopts the pick always gets it: its other terminals may differ.
+            guard session.supermuxHostTakesSizingPreference()
+                || viewer.state?.policy != preference.policy(selfKey: Self.selfKey(of: viewer)) else {
                 // The terminal already has it: an earlier pick still waiting is outdated.
                 session.supermuxSizingClaim.pendingChoice = nil
                 return
@@ -279,7 +337,64 @@ final class SupermuxTerminalSizingDefaults {
     /// policy it already has.
     private func pushChoice(_ session: DeviceTerminalMirrorSession, _ choice: SupermuxTerminalSizingPreference) -> Bool {
         guard session.phase == .attached, let viewer = session.viewer, viewer.detachment == nil else { return false }
-        return session.sharingSetPolicy(choice.policy(selfKey: Self.selfKey(of: viewer)))
+        return session.supermuxSendSizingChoice(
+            choice.policy(selfKey: Self.selfKey(of: viewer)),
+            preference: session.supermuxHostTakesSizingPreference() ? choice.wireObject : nil
+        )
+    }
+
+    // MARK: - A pick made elsewhere (the phone, another Mac's mirror)
+
+    /// The `mobile.terminal.size_policy.set` field that carries another Mac's
+    /// whole setting, as that Mac stores it.
+    nonisolated static let preferenceParam = "supermux_preference"
+
+    /// Mirror picks this Mac adopted (DEBUG drivers report it).
+    private(set) var adoptedRemoteChoices = 0
+
+    /// Whether `machine` adopts a pick made on its mirror as its own setting.
+    static func hostTakesPreference(on machine: SurfaceMachineID) -> Bool {
+        SupermuxComposition.devices.cachedHostCapabilities(on: machine)?
+            .contains(SupermuxMobileCapability.terminalSizingPreferenceV1.rawValue) == true
+    }
+
+    /// `mobile.terminal.size_policy.set` on a terminal of this Mac. Another
+    /// Mac's pick (with ``preferenceParam``) or the phone's (a handheld client)
+    /// becomes this Mac's preference, applied to every local terminal, and the
+    /// terminal it was picked on takes `policy` as sent. False leaves the
+    /// request to upstream's per-terminal path: a claim, an older Mac, a Cloud
+    /// terminal or a caller that is not a phone.
+    func remoteChose(_ policy: TerminalSizingPolicy, params: [String: Any], surfaceID: UUID) -> Bool {
+        let controller = TerminalController.shared
+        guard let host = controller.localSizingHost(surfaceID: surfaceID, create: true) else { return false }
+        if let shared = SupermuxTerminalSizingPreference(wire: params[Self.preferenceParam]) {
+            adoptedRemoteChoices += 1
+            store(shared)
+        } else if Self.isPhone(params["client_id"] as? String, host: host, surfaceID: surfaceID) {
+            store(SupermuxTerminalSizingPreference(policy: policy, selfKey: Self.selfKey(of: host)))
+        } else {
+            return false
+        }
+        if controller.localSizingHostsBySurfaceID[surfaceID]?.state.policy != policy {
+            _ = controller.localSizingSetPolicy(surfaceID: surfaceID, policy: policy)
+        }
+        return true
+    }
+
+    /// A phone or iPad by the device kind it attached (or last reported) with.
+    private static func isPhone(_ clientID: String?, host: LocalTerminalSizingHost, surfaceID: UUID) -> Bool {
+        guard let clientID else { return false }
+        let id = LocalTerminalSizingHost.phoneParticipantID(clientID: clientID)
+        let kind = host.state.participant(id)?.participant.deviceKind
+            ?? TerminalController.shared.mobileViewportReportsBySurfaceID[surfaceID]?[clientID]?.deviceKind
+        return kind?.isHandheld == true
+    }
+
+    /// Whether a pick on this terminal's panel reaches another Mac's terminals
+    /// too: a mirror of a Mac that adopts it.
+    static func reachesOtherMac(surfaceID: UUID) -> Bool {
+        SupermuxTerminalSizingVisibility.shared.trackedMirrorSessions()[surfaceID]?
+            .supermuxHostTakesSizingPreference() == true
     }
 
     /// This Mac's priority key in another Mac's terminal: as that Mac
@@ -323,14 +438,38 @@ final class SupermuxTerminalSizingDefaults {
     }
 }
 
-/// The size panel's note under the mode picker: the mode is this Mac's
-/// choice for every terminal, not this terminal's alone.
+/// The size panel's note under the mode picker: what Auto does, and that the
+/// mode is one choice for every terminal (on both Macs, picked on a mirror of
+/// a Mac that adopts it), not this terminal's alone.
 struct SupermuxTerminalSizingScopeNote: View {
+    var mode: TerminalSizingMode
+    var surfaceID: UUID
+
+    /// Upstream's "Follow Latest" (`latest`), named for what it does here.
+    nonisolated static var autoTitle: String {
+        String(localized: "supermux.terminalSizing.mode.auto", defaultValue: "Auto")
+    }
+
     var body: some View {
-        Text(String(
-            localized: "supermux.terminalSizing.appliesToAll",
-            defaultValue: "Applies to all terminals on this Mac."
-        ))
+        VStack(alignment: .leading, spacing: 2) {
+            if mode == .latest {
+                Text(String(
+                    localized: "supermux.terminalSizing.autoDescription",
+                    defaultValue: "The device you're using sets the size."
+                ))
+            }
+            if SupermuxTerminalSizingDefaults.reachesOtherMac(surfaceID: surfaceID) {
+                Text(String(
+                    localized: "supermux.terminalSizing.appliesToBothMacs",
+                    defaultValue: "Applies to all terminals on both Macs."
+                ))
+            } else {
+                Text(String(
+                    localized: "supermux.terminalSizing.appliesToAll",
+                    defaultValue: "Applies to all terminals on this Mac."
+                ))
+            }
+        }
         .font(.caption)
         .foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)

@@ -2598,6 +2598,9 @@ final class WindowTerminalPortal: NSObject {
             )
 #endif
             hostedView.isHidden = false
+            // SUPERMUX:begin sizing-portal-reveal (a reveal posts no visibility change: shared sizing looks again)
+            SupermuxTerminalSizingVisibility.shared.paneRevealed(hostedView.surfaceView.terminalSurface?.id)
+            // SUPERMUX:end sizing-portal-reveal
             // A reveal can happen without any frame delta (same targetFrame), which means the
             // normal frame-change refresh path won't run. Nudge geometry + redraw so newly
             // revealed terminals don't sit on a stale/blank IOSurface until later focus churn.

@@ -114,7 +114,9 @@ struct TerminalSizingText {
 
     static func modeName(_ mode: TerminalSizingMode) -> String {
         switch mode {
-        case .latest: L10n.string("mobile.terminal.sizing.mode.latest", defaultValue: "Follow latest")
+        // SUPERMUX:begin sizing-auto-label (upstream's "Follow latest" is Auto on a Supermux Mac: the device you're using sets the size)
+        case .latest: L10n.string("supermux.terminalSizing.mode.auto", defaultValue: "Auto")
+        // SUPERMUX:end sizing-auto-label
         case .smallest: L10n.string("mobile.terminal.sizing.mode.smallest", defaultValue: "Fit everyone")
         case .largest: L10n.string("mobile.terminal.sizing.mode.largest", defaultValue: "Largest window")
         case .priority: L10n.string("mobile.terminal.sizing.mode.priority", defaultValue: "Priority")
