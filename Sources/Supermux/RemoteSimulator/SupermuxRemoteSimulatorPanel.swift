@@ -46,6 +46,10 @@ final class SupermuxRemoteSimulatorPanel: Panel {
     private(set) var deviceUDID: String?
     /// The owning Mac's simulators, for the device menu.
     private(set) var devices: [SupermuxRemoteSimulatorHostClient.Device] = []
+    /// The owning Mac's simulators were slow to answer, so the device menu
+    /// may be incomplete ("Simulators on <Mac> are slow to respond…"); the
+    /// tab asks again every few seconds until they answer.
+    private(set) var devicesAreSlow = false
     private(set) var store: SimulatorStreamV2Store?
     private(set) var lastConfig: SimStreamConfig?
     private(set) var configsApplied = 0
@@ -75,6 +79,8 @@ final class SupermuxRemoteSimulatorPanel: Panel {
     /// Host panels this tab already asked to recover on its own (once each).
     @ObservationIgnored private var autoRecoveredHostPanelIDs: Set<UUID> = []
     @ObservationIgnored private var autoRecoverTask: Task<Void, Never>?
+    @ObservationIgnored private var devicesRetryTask: Task<Void, Never>?
+    @ObservationIgnored private var devicesRetries = 0
 
     var displayTitle: String {
         String(localized: "simulator.pane.title", defaultValue: "Simulator")
@@ -271,12 +277,48 @@ final class SupermuxRemoteSimulatorPanel: Panel {
     /// Reloads the owning Mac's device menu (and which device it shows).
     func refreshDevices() async {
         guard let hostPanelID else { return }
-        guard let listed = try? await hostClient.deviceList(panelID: hostPanelID),
-              self.hostPanelID == hostPanelID else { return }
-        devices = listed
-        if let selected = listed.first(where: \.isSelected) {
+        let listing: SupermuxRemoteSimulatorHostClient.DeviceListing
+        do {
+            listing = try await hostClient.deviceList(panelID: hostPanelID)
+        } catch {
+            if self.hostPanelID == hostPanelID, Self.isSlowAnswer(error) { devicesAnsweredSlowly() }
+            return
+        }
+        guard self.hostPanelID == hostPanelID else { return }
+        devices = listing.devices
+        if let selected = listing.devices.first(where: \.isSelected) {
             deviceUDID = selected.udid
         }
+        if listing.isSlow {
+            devicesAnsweredSlowly()
+        } else {
+            devicesAreSlow = false
+            devicesRetries = 0
+        }
+    }
+
+    /// The owning Mac's simulators did not answer in time: say so and ask
+    /// again shortly, one retry at a time and at most ``maximumDevicesRetries``
+    /// in a row (reopening the tab asks again after that).
+    private func devicesAnsweredSlowly() {
+        devicesAreSlow = true
+        guard !isClosed, devicesRetryTask == nil, devicesRetries < Self.maximumDevicesRetries else { return }
+        devicesRetries += 1
+        devicesRetryTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(3))
+            guard let self, !Task.isCancelled else { return }
+            self.devicesRetryTask = nil
+            await self.refreshDevices()
+        }
+    }
+
+    private static let maximumDevicesRetries = 20
+
+    /// A reply that came too late, or a host too busy to answer: the owning
+    /// Mac's simulators are slow, not missing.
+    private static func isSlowAnswer(_ error: any Error) -> Bool {
+        guard case SupermuxDeviceError.hostRejected(let code, _) = error else { return false }
+        return code == SupermuxDeviceLinkEvents.missedDeadlineCode || code == "server_busy"
     }
 
     /// Shows another simulator, booting it on the owning Mac when needed.
@@ -441,6 +483,7 @@ final class SupermuxRemoteSimulatorPanel: Panel {
         rebindTask = nil
         autoQualityTask?.cancel()
         autoRecoverTask?.cancel()
+        devicesRetryTask?.cancel()
         store?.deactivate()
         store = nil
         // The focus callback holds the workspace's view state, which holds this panel.

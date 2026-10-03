@@ -77,7 +77,9 @@ struct SupermuxRemoteSimulatorPanelView: View {
     private var deviceMenu: some View {
         Menu {
             Section(Strings.devicesTitle(panel.macName)) {
-                if panel.devices.isEmpty {
+                if panel.devicesAreSlow {
+                    Text(Strings.slow(panel.macName))
+                } else if panel.devices.isEmpty {
                     Text(Strings.noSimulators(panel.macName))
                 }
                 ForEach(panel.devices, id: \.udid) { device in
@@ -187,6 +189,9 @@ struct SupermuxRemoteSimulatorPanelView: View {
         case .streaming:
             return needsRecover ? Status(text: Strings.failed(mac), actionTitle: Strings.recover, action: { panel.recover() }) : nil
         case .idle, .connecting:
+            if panel.devicesAreSlow, panel.devices.isEmpty {
+                return Status(text: Strings.slow(mac))
+            }
             if store.hostStatus == .deviceUnavailable, panel.devices.isEmpty {
                 return Status(text: Strings.noSimulators(mac))
             }
@@ -308,6 +313,13 @@ private enum Strings {
 
     static func devicesTitle(_ mac: String) -> String {
         String(localized: "supermux.remoteSimulator.devices.title", defaultValue: "Simulators on \(mac)")
+    }
+
+    static func slow(_ mac: String) -> String {
+        String(
+            localized: "supermux.remoteSimulator.devices.slow",
+            defaultValue: "Simulators on \(mac) are slow to respond…"
+        )
     }
 
     static func noSimulators(_ mac: String) -> String {

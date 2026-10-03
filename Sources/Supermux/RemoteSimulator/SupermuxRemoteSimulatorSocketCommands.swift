@@ -34,9 +34,10 @@ protocol SupermuxRemoteSimulatorDebugInspectable: AnyObject {
 /// - `steal {host_panel_id}` — opens a second loopback stream lane to that
 ///   host panel and sends `start`, as another device opening the same
 ///   simulator would.
-/// - `simctl_delay {seconds?}` — sets (or reads) the slow-`simctl` hook
-///   (``SupermuxSimctlDebugDelay``): every `simctl` spawn of this app's
-///   Simulator panels waits that long first; 0 turns it off.
+/// - `simctl_delay {seconds?, coresimulator?}` — sets (or reads) the
+///   slow-`simctl` hook (``SupermuxSimctlDebugDelay``): every `simctl` spawn of
+///   this app's Simulator panels waits that long first (0 turns it off);
+///   `coresimulator: false` makes them list devices with `simctl` too.
 @MainActor
 enum SupermuxRemoteSimulatorSocketCommands {
     static let methodPrefix = "mirror.simulator."
@@ -71,7 +72,14 @@ enum SupermuxRemoteSimulatorSocketCommands {
             if let seconds = (params["seconds"] as? NSNumber)?.doubleValue {
                 SupermuxSimctlDebugDelay.seconds = seconds
             }
-            return ["seconds": SupermuxSimctlDebugDelay.seconds, "previous": previous]
+            if let allows = params["coresimulator"] as? Bool {
+                SupermuxSimctlDebugDelay.allowsCoreSimulator = allows
+            }
+            return [
+                "seconds": SupermuxSimctlDebugDelay.seconds,
+                "previous": previous,
+                "coresimulator": SupermuxSimctlDebugDelay.allowsCoreSimulator,
+            ]
         default:
             throw InvalidParams(message: "unknown simulator driver \(name)")
         }
@@ -135,10 +143,11 @@ enum SupermuxRemoteSimulatorSocketCommands {
                 } else if let viewer = panel as? SupermuxRemoteSimulatorDebugInspectable {
                     viewers += 1
                     row["class"] = "viewer"
-                    row.merge(viewer.debugState()) { _, new in new }
                     if includeDevices {
                         row["devices"] = (try? await viewer.debugPerform("devices", params: [:]))?["devices"] ?? NSNull()
                     }
+                    // After the device menu's refresh, so `devices_slow` describes its answer.
+                    row.merge(viewer.debugState()) { _, new in new }
                 } else {
                     continue
                 }
