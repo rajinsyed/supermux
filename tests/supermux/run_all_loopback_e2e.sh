@@ -2,9 +2,18 @@
 # Runs every remote-workspaces loopback E2E suite against ONE tagged DEBUG build
 # and writes a combined JSON summary.
 #
-#   ./scripts/reload.sh --tag <tag> --supermux-profile      # build (never sign out in it)
-#   CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh    # launch, run, quit
+#   CMUX_DEV_BACKEND_MODE=local ./scripts/reload.sh --tag <tag>   # agent-only build
+#   CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh            # launch, run, quit
 #   CMUX_E2E_SUITES="loopback_terminal_input_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
+#
+# Only an agent-only build: never --supermux-profile or --prod-auth. Those copy the
+# user's release defaults and sign-in and talk to production cmux.com, so the build
+# shows up on the user's account. require_isolated_app.py refuses such an app (or a
+# tag that was seeded once) before anything launches; the loopback device is
+# in-process and needs no sign-in.
+#
+# Every suite talks to this tag's socket, passed explicitly: a shell inside a
+# Supermux terminal exports CMUX_SOCKET_PATH (the user's running app).
 #
 # Scratch state lives in /tmp/<tag>-e2e (projects file, push state, repos), so
 # the user's real project list and push credentials are never touched.
@@ -17,6 +26,9 @@ BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Conten
 SCRATCH="/tmp/${TAG}-e2e"
 SOCKET="/tmp/cmux-debug-${TAG}.sock"
 REPORTS="$SCRATCH/reports"
+
+# Never a build that can reach the user's real account, Macs or app (see the header).
+python3 "$ROOT/tests/supermux/require_isolated_app.py" --app "$APP" --tag "$TAG" || exit 1
 
 app_running() {
   [[ "$(osascript -e "application id \"$BUNDLE_ID\" is running" 2>/dev/null)" == "true" ]]
@@ -155,7 +167,8 @@ for name in "${SUITES[@]}"; do
   quit_app
   launch_app
   echo "==> $name"
-  if CMUX_TAG="$TAG" python3 "tests/supermux/$name.py" "${args[@]+"${args[@]}"}" --report "$REPORTS/$name.json" >"$REPORTS/$name.log" 2>&1; then
+  if CMUX_TAG="$TAG" CMUX_SOCKET_PATH="$SOCKET" python3 "tests/supermux/$name.py" --socket "$SOCKET" \
+      "${args[@]+"${args[@]}"}" --report "$REPORTS/$name.json" >"$REPORTS/$name.log" 2>&1; then
     echo "    PASS"
   else
     echo "    FAIL (see $REPORTS/$name.log)"

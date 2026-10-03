@@ -622,7 +622,7 @@ class AgentActivityE2E:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--tag", default=os.environ.get("CMUX_TAG"))
-    parser.add_argument("--socket", default=os.environ.get("CMUX_SOCKET_PATH"))
+    parser.add_argument("--socket", help="this tagged build's control socket (default: /tmp/cmux-debug-<tag>.sock; never $CMUX_SOCKET_PATH, which in a Supermux terminal names the user's own app)")
     parser.add_argument("--scratch", default=None, help="scratch folder (default /tmp/<tag>-activity)")
     parser.add_argument("--timeout", type=float, default=30.0, help="seconds per wait")
     parser.add_argument("--keep", action="store_true", help="keep the scratch folder")

@@ -606,8 +606,11 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   with Supermux running on the Mac that hosts the work.
 - **Testing:** real links need two machines, so DEBUG builds have a loopback device
   (`SUPERMUX_DEBUG_LOOPBACK_DEVICE=1`) whose link talks in-process to the same app's host. Run
-  `CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh` against a `--supermux-profile` tagged
-  build; see `plans/supermux-remote-workspaces/LOOPBACK-HARNESS.md`.
+  `CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh` against an agent-only tagged build
+  (`CMUX_DEV_BACKEND_MODE=local ./scripts/reload.sh --tag <tag>`), never a `--supermux-profile` or
+  `--prod-auth` one: those copy the user's sign-in and appear on the user's account, and the runner
+  refuses them (`tests/supermux/require_isolated_app.py`). See
+  `plans/supermux-remote-workspaces/LOOPBACK-HARNESS.md`.
 
 ## Fork management — THE RULES
 
