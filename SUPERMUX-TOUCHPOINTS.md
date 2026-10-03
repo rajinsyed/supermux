@@ -12,7 +12,7 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **762**. The remote-workspaces work (#517–#599) left
+- Numbering: the highest number in use is **763**. The remote-workspaces work (#517–#599) left
   unassigned gaps it may still grow into: **523–524, 527–529, 539–544, 558–559, 562–569,
   578–579 and 588–589** (never assigned, not retired); #600–#601 came from the 2026-10-01 upstream merge; #620–#622 and
   #630–#639 are the remote-workspaces feedback round (602–619 and 623–629 unassigned). The second
@@ -36,8 +36,9 @@ Rules for adding a touchpoint:
   same-port forward's own `localhost` origin) with its review fixes #755–#756 (an as-written page's bridge, main-frame
   reroutes) and its real-Mac fixes #757–#759 (a mirror tab's navigation starts a same-port forward; the wiring of
   its two files; a terminal link opened into a cmux browser counts as the user's), and its slow-`simctl` hardening
-  #760–#762 (remote simulators keep working while `simctl` launches stall); 709, 713–714, 724, 736, 740–749
-  and 763–769 are unassigned. The highest number in use is 762. Number **351** is unused (the notifications
+  #760–#763 (remote simulators keep working while `simctl` launches stall; a new Simulator tab activates although
+  another Mac's device menu refreshed meanwhile); 709, 713–714, 724, 736, 740–749 and 764–769 are unassigned. The highest
+  number in use is 763. Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 82, 83, 89, 106, 121, 142, 213, 214,
   220, 229, 237, 250, 251, 252–258, 335, 470, 473–481, 483, 484, and 487** are unused; all are
@@ -692,6 +693,7 @@ Rules for adding a touchpoint:
 | 760 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the remote-simulator slow-`simctl` work into the cmux target, four entries each in the Supermux group next to #737's (`path = RemoteSimulator/<file>`): `SupermuxSimulatorControl.swift` (`50BE0019050000000000001F`/`…20`, the `SimulatorControlling` every `SimulatorPanel` gets, #761), `SupermuxSimctlDebugDelay.swift` (`…21`/`…22`, the DEBUG slow-`simctl` hook; a no-op in Release), `SupermuxCoreSimulatorDevices.swift` (`…23`/`…24`, the device list read from CoreSimulator in-process), `SupermuxResumeOnce.swift` (`…25`/`…26`) and `SupermuxSimulatorDeviceListing.swift` (`…27`/`…28`, the bounded `mobile.simulator.devices.list` answer, #762) |
 | 761 | `Sources/Panels/SimulatorPanel.swift` | `simulator-panel-control` | In `init`'s default `clientFactory`, the closing `).makeClient()` of upstream's `SimulatorWorkerClientFactory(...)` becomes `).makeClient(simulatorControl: SupermuxSimulatorControl.make())` (`Sources/Supermux/RemoteSimulator/SupermuxSimulatorControl.swift`): every Simulator panel's worker client runs its `simctl` calls through the fork's control, which builds upstream's `SimulatorControlService` with the same location and camera cleanup scopes the factory would use |
 | 762 | `Sources/TerminalController+MobileSimulator.swift` | `simulator-devices-list-bounded` | Two fences in `v2MobileSimulatorDevicesList`: upstream's `await coordinator.reloadDevices()` becomes `let supermuxCurrent = await SupermuxSimulatorDeviceListing.reload(coordinator)` (`Sources/Supermux/RemoteSimulator/`: the same refresh, waited for at most 8 s, one at a time per panel, and a refresh that outlasted that is the answer to the next ask), and its `return .ok(["devices": devices])` becomes `return .ok(SupermuxSimulatorDeviceListing.reply(devices: devices, current: supermuxCurrent))`, which adds `slow: true` when the list may be out of date. The reply always comes within the device link's 20 s deadline; another Mac's viewer then says "Simulators on <Mac> are slow to respond…" and asks again; older viewers and the phone ignore the extra key |
+| 763 | `Packages/macOS/CmuxSimulator/Sources/CmuxSimulatorUI/Coordinator/SimulatorPaneCoordinator+Lifecycle.swift` | `simulator-startup-discovery-retry` | In `runStartup(activatingSelectedDevice:)`, upstream's `await reloadDevices()` becomes `while !(await reloadDevices()), !closed, !Task.isCancelled {}`. A refresh started while the startup discovery runs (another Mac's viewer asks `mobile.simulator.devices.list` as soon as it attaches; the phone does too) supersedes it: `reloadDevices` returns false without selecting a device, `runStartup` found `selectedDeviceID == nil` and never called `selectDevice`, and the panel stayed idle (the viewer: `preparing`, no frames). Measured with a temporary log on 2026-10-03: the failing order was startup gen 1, menu gen 2, gen 1 discarded, `selected=nil`; the passing order was menu gen 1, startup gen 2. Retrying lands a discovery and activates as before |
 
 ## How to re-apply
 
@@ -6141,7 +6143,7 @@ Verify: `swift test` in `Packages/Shared/SupermuxMobileCore`, `Packages/iOS/Supe
 `Packages/iOS/CmuxMobileSimulatorStream`, then
 `CMUX_E2E_SUITES="loopback_mirror_simulator_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`
 
-### 760–762. Remote simulators keep working while `simctl` is slow — `simulator-panel-control`, `simulator-devices-list-bounded`
+### 760–763. Remote simulators keep working while `simctl` is slow — `simulator-panel-control`, `simulator-devices-list-bounded`, `simulator-startup-discovery-retry`
 
 Found 2026-10-03: twice in one night every `simctl` launch on the owning Mac took 4–5 s, then 20–22 s (a
 `sample` had the main thread in `_dyld_start`, `dyld4::RemoteNotificationResponder::blockOnSynchronousEvent`;
@@ -6169,6 +6171,11 @@ Simulator tab never picked a device. Fork code in `Sources/Supermux/RemoteSimula
   `return .ok(SupermuxSimulatorDeviceListing.reply(devices: devices, current: supermuxCurrent))`. If upstream answers
   from a cached inventory itself (no fresh discovery per request), keep its answer and drop the first fence. Verify with
   step 21 (`slow_simctl_device_menu_says_so`).
+- **#763 `SimulatorPaneCoordinator+Lifecycle.swift`.** In `runStartup(activatingSelectedDevice:)`, replace
+  `await reloadDevices()` with `while !(await reloadDevices()), !closed, !Task.isCancelled {}`. Retire it when upstream's
+  startup survives a concurrent `reloadDevices()` itself (it selects and activates after a superseded discovery). Verify
+  with `streams_video` and `viewer_close_closes_owner_panel` of `loopback_mirror_simulator_e2e`: a new tab's viewer asks
+  for the device menu right after it attaches, so without this fence about half of all new tabs never stream.
 
 ### 735. A quit that reaches a worker goes to the app — `worker-quit-forwarding`
 
