@@ -16,6 +16,7 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../../Shared/CMUXMobileCore"),
+        .package(path: "../../Shared/CmuxTerminalSizing"),
         .package(path: "../CmuxMobileShellModel"),
         .package(path: "../CmuxMobileSupport"),
         // SUPERMUX:begin notification-feed-project-wire
@@ -29,6 +30,7 @@ let package = Package(
             name: "CmuxMobileRPC",
             dependencies: [
                 "CMUXMobileCore",
+                "CmuxTerminalSizing",
                 "CmuxMobileShellModel",
                 "CmuxMobileSupport",
                 // SUPERMUX:begin notification-feed-project-wire
@@ -47,6 +49,7 @@ let package = Package(
                 "CmuxMobileRPC",
                 "CMUXMobileCore",
                 "CmuxMobileShellModel",
+                "CmuxTerminalSizing",
             ],
             swiftSettings: [
                 .swiftLanguageMode(.v6),

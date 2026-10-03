@@ -90,7 +90,8 @@ extension WorkspaceDetailView {
             if artifactGalleryRefreshSignal != signal {
                 artifactGalleryRefreshSignal = signal
             }
-        }
+        },
+        onSharedSizingChipTapped: presentTerminalSizeSheet
     )
     .popover(
         isPresented: terminalArtifactFilesPresentation.isPresented,

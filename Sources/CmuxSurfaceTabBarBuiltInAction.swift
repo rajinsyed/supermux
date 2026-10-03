@@ -16,6 +16,9 @@ enum CmuxSurfaceTabBarBuiltInAction: String, Codable, Sendable, CaseIterable, Ha
     // SUPERMUX:end claude-harness-builtin-action
     case splitRight = "cmux.splitRight"
     case splitDown = "cmux.splitDown"
+    case copyWorkingDirectory = "cmux.copyWorkingDirectory"
+    case copyProjectRoot = "cmux.copyProjectRoot"
+    case copyScreen = "cmux.copyScreen"
 
     init?(configID: String) {
         switch configID {
@@ -49,6 +52,12 @@ enum CmuxSurfaceTabBarBuiltInAction: String, Codable, Sendable, CaseIterable, Ha
             self = .splitRight
         case "cmux.splitDown", "splitDown":
             self = .splitDown
+        case "cmux.copyWorkingDirectory", "copyWorkingDirectory":
+            self = .copyWorkingDirectory
+        case "cmux.copyProjectRoot", "copyProjectRoot":
+            self = .copyProjectRoot
+        case "cmux.copyScreen", "copyScreen":
+            self = .copyScreen
         default:
             return nil
         }
@@ -89,6 +98,12 @@ enum CmuxSurfaceTabBarBuiltInAction: String, Codable, Sendable, CaseIterable, Ha
             return (String(localized: "command.terminalSplitRight.title", defaultValue: "Split Right"), ["terminal", "split", "right"])
         case .splitDown:
             return (String(localized: "command.terminalSplitDown.title", defaultValue: "Split Down"), ["terminal", "split", "down"])
+        case .copyWorkingDirectory:
+            return (String(localized: "command.copyWorkingDirectory.title", defaultValue: "Copy Working Directory"), ["copy", "clipboard", "path", "directory", "cwd", "pwd"])
+        case .copyProjectRoot:
+            return (String(localized: "command.copyProjectRoot.title", defaultValue: "Copy Project Root"), ["copy", "clipboard", "project", "git", "root", "repository", "path"])
+        case .copyScreen:
+            return (String(localized: "command.copyScreen.title", defaultValue: "Copy Visible Screen"), ["copy", "clipboard", "screen", "output", "terminal", "visible"])
         }
     }
 
@@ -120,13 +135,20 @@ enum CmuxSurfaceTabBarBuiltInAction: String, Codable, Sendable, CaseIterable, Ha
             return "square.split.2x1"
         case .splitDown:
             return "square.split.1x2"
+        case .copyWorkingDirectory:
+            return "doc.on.doc"
+        case .copyProjectRoot:
+            return "arrow.triangle.branch"
+        case .copyScreen:
+            return "text.viewfinder"
         }
     }
 
     var bonsplitAction: BonsplitConfiguration.SplitActionButton.Action? {
         switch self {
         // SUPERMUX:begin claude-harness-builtin-action
-        case .newWorkspace, .newAgentChat, .cloudVM, .newCloudWorkspace, .newCloudMachine, .mobileConnect, .newSimulator, .newClaudeHarness:
+        case .newWorkspace, .newAgentChat, .cloudVM, .newCloudWorkspace, .newCloudMachine, .mobileConnect, .newSimulator,
+             .copyWorkingDirectory, .copyProjectRoot, .copyScreen, .newClaudeHarness:
             return nil
         // SUPERMUX:end claude-harness-builtin-action
         case .newTerminal:
@@ -156,7 +178,8 @@ extension CmuxSurfaceTabBarBuiltInAction {
         case .newBrowser: return .openBrowser
         case .splitRight: return .splitRight
         case .splitDown: return .splitDown
-        case .newAgentChat, .cloudVM, .mobileConnect, .newSimulator: return nil
+        case .newAgentChat, .cloudVM, .mobileConnect, .newSimulator,
+             .copyWorkingDirectory, .copyProjectRoot, .copyScreen: return nil
         // SUPERMUX:begin claude-harness-builtin-action
         case .newClaudeHarness: return .supermuxNewClaudeHarness
         // SUPERMUX:end claude-harness-builtin-action

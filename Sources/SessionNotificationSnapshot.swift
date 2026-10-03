@@ -12,6 +12,8 @@ struct SessionNotificationSnapshot: Codable, Sendable {
     var createdAt: TimeInterval
     var isRead: Bool
     var paneFlash: Bool?
+    /// Optional so snapshots written before the flag existed still decode.
+    var isAgentEvent: Bool?
     var retargetsToLiveSurfaceOwner: Bool?
     var correlationKey: String?
     var scrollPosition: TerminalNotificationScrollPosition?
@@ -19,6 +21,9 @@ struct SessionNotificationSnapshot: Codable, Sendable {
     /// Agent/alert identity used if a restored notification is redelivered.
     /// Optional keeps snapshots written before per-agent sounds compatible.
     var soundContext: NotificationSoundOverrideContext?
+    var agentKind: String?
+    var agentCategory: String?
+    var agentSessionId: String?
     // SUPERMUX:begin notification-project-identity
     var project: SupermuxNotificationProject?
     // SUPERMUX:end notification-project-identity
@@ -31,11 +36,15 @@ struct SessionNotificationSnapshot: Codable, Sendable {
         createdAt: TimeInterval,
         isRead: Bool,
         paneFlash: Bool? = nil,
+        isAgentEvent: Bool? = nil,
         retargetsToLiveSurfaceOwner: Bool? = nil,
         correlationKey: String? = nil,
         scrollPosition: TerminalNotificationScrollPosition? = nil,
         clickAction: TerminalNotificationClickAction? = nil,
         soundContext: NotificationSoundOverrideContext? = nil,
+        agentKind: String? = nil,
+        agentCategory: String? = nil,
+        agentSessionId: String? = nil,
         // SUPERMUX:begin notification-project-identity
         project: SupermuxNotificationProject? = nil
         // SUPERMUX:end notification-project-identity
@@ -47,11 +56,15 @@ struct SessionNotificationSnapshot: Codable, Sendable {
         self.createdAt = createdAt
         self.isRead = isRead
         self.paneFlash = paneFlash
+        self.isAgentEvent = isAgentEvent
         self.retargetsToLiveSurfaceOwner = retargetsToLiveSurfaceOwner
         self.correlationKey = correlationKey
         self.scrollPosition = scrollPosition
         self.clickAction = clickAction
         self.soundContext = soundContext
+        self.agentKind = agentKind
+        self.agentCategory = agentCategory
+        self.agentSessionId = agentSessionId
         // SUPERMUX:begin notification-project-identity
         self.project = project
         // SUPERMUX:end notification-project-identity
@@ -69,11 +82,15 @@ struct SessionNotificationSnapshot: Codable, Sendable {
             createdAt: notification.createdAt.timeIntervalSince1970,
             isRead: notification.isRead,
             paneFlash: notification.paneFlash,
+            isAgentEvent: notification.isAgentEvent,
             retargetsToLiveSurfaceOwner: notification.retargetsToLiveSurfaceOwner,
             correlationKey: notification.correlationKey,
             scrollPosition: persistedScrollPosition,
             clickAction: notification.clickAction,
             soundContext: notification.soundContext,
+            agentKind: notification.agentKind,
+            agentCategory: notification.agentCategory,
+            agentSessionId: notification.agentSessionId,
             // SUPERMUX:begin notification-project-identity
             project: notification.project
             // SUPERMUX:end notification-project-identity
@@ -96,10 +113,17 @@ struct SessionNotificationSnapshot: Codable, Sendable {
             body: body,
             createdAt: Date(timeIntervalSince1970: createdAt),
             isRead: isRead,
+            // Unknown provenance restores as agent-produced so a legacy
+            // banner cannot re-enter the mobile Feed; it stays in the
+            // Notifications screen either way.
+            isAgentEvent: isAgentEvent ?? true,
             paneFlash: paneFlash ?? true,
             scrollPosition: restoredScrollPosition,
             clickAction: clickAction,
             soundContext: soundContext,
+            agentKind: agentKind,
+            agentCategory: agentCategory,
+            agentSessionId: agentSessionId,
             // SUPERMUX:begin notification-project-identity
             project: project
             // SUPERMUX:end notification-project-identity
