@@ -28,6 +28,20 @@ quit_app() {
   # the socket goes before the process: relaunching then makes `open` reuse the
   # dying app without the environment. Wait for the process itself.
   for _ in $(seq 1 150); do app_running || [[ -S "$SOCKET" ]] || return 0; sleep 0.2; done
+  stop_hung_app
+}
+
+# A tagged build that does not quit within 30 s is hung. Never leave it behind: macOS keeps taking hang
+# reports (spindump) of a hung app, and a spindump busy for hours is the likely cause of a Mac where every
+# new process stalls in dyld before main (LOOPBACK-HARNESS.md "A slow simctl"). Only this tagged build's
+# executable (the app and its simulator workers) is stopped, never another app.
+stop_hung_app() {
+  local exe="$APP/Contents/MacOS/"
+  pgrep -f "$exe" >/dev/null || return 0
+  echo "the tagged app did not quit within 30 s (hung?); stopping it: $(pgrep -f "$exe" | tr '\n' ' ')" >&2
+  pkill -TERM -f "$exe" 2>/dev/null || true
+  for _ in $(seq 1 25); do pgrep -f "$exe" >/dev/null || return 0; sleep 0.2; done
+  pkill -KILL -f "$exe" 2>/dev/null || true
 }
 
 launch_app() {
@@ -79,6 +93,25 @@ while True:
 PY
 }
 
+# On a Mac where new processes stall in dyld before main (every `simctl` took 20-22 s on 2026-10-03 while ls and
+# xcrun stayed fast), the simulator suite's own `simctl` calls (create, boot, bootstatus, the stir that makes the
+# simulator draw, screenshots) time out, so its result would say nothing about the app; the app itself keeps
+# working (steps 20-21 check it with the app's simctl slowed down). So check `simctl help` before that suite and stop
+# with the cause. CMUX_E2E_ALLOW_SLOW_SIMCTL=1 runs anyway; CMUX_E2E_SIMCTL_THRESHOLD (seconds, default 2) sets the bar.
+require_fast_simctl() {
+  [[ "${CMUX_E2E_ALLOW_SLOW_SIMCTL:-}" == "1" ]] && return 0
+  local check
+  check="$("$ROOT/tests/supermux/simctl_stall_monitor.sh" --once --threshold "${CMUX_E2E_SIMCTL_THRESHOLD:-2}" 2>&1)" \
+    && return 0
+  echo "STOPPED before loopback_mirror_simulator_e2e: simctl is slow on this Mac ($check)." >&2
+  echo "New processes are stalling in dyld before main: an image-load observer (likely spindump or a stray sample)" \
+    "holds up every launch it attaches to, so this suite's own simctl calls would time out and its failures would" \
+    "not be the app's. Evidence was captured in the dir above. A reboot clears it (see LOOPBACK-HARNESS.md" \
+    "\"A slow simctl\"); CMUX_E2E_ALLOW_SLOW_SIMCTL=1 runs the suite anyway." >&2
+  quit_app
+  exit 1
+}
+
 quit_app
 rm -rf "$SCRATCH"
 mkdir -p "$SCRATCH/push-state" "$REPORTS"
@@ -118,6 +151,7 @@ status=0
 for name in "${SUITES[@]}"; do
   args=()
   while IFS= read -r line; do [[ -n "$line" ]] && args+=("$line"); done < <(suite_args "$name")
+  [[ "$name" == loopback_mirror_simulator_e2e ]] && require_fast_simctl
   quit_app
   launch_app
   echo "==> $name"
