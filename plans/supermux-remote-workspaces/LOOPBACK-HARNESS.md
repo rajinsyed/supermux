@@ -1092,8 +1092,15 @@ failed (no device picked in 45 s), step 24 failed ("source SimulatorPanels=2"). 
 with `CMUX_E2E_SLOW_SIMCTL=25` for the whole run (step 23 streaming at 44.9 s, step 24 97 s). The first round's results
 above came from a `--supermux-profile` build, which these suites must no longer use (see the top of this file).
 CoreSimulator stays in the app process: listing in the worker would need a request and reply in upstream's worker protocol
-(about five fences in CmuxSimulator), and the worker's own launch is a process launch that stalls on such a Mac; a crash
-while CoreSimulator loads turns that CoreSimulator build off in-process for good (`SupermuxCoreSimulatorCrashGuard`). The
+(about five fences in CmuxSimulator), and the worker's own launch is a process launch that stalls on such a Mac; when the
+app ends inside the CoreSimulator load twice in a row, that CoreSimulator build is off in-process until a new Xcode
+(`SupermuxCoreSimulatorCrashGuard`; a quit or logout during the load removes its marker, a successful load clears the
+count, and steps 25–26 check both; the first version took one quit during a slow load for a crash). A Simulator tab's
+start no longer holds a quit while it waits on a slow CoreSimulator read (the read is cancelled; step 25 quits with a tab
+waiting on the held load and wants the app gone within 5 s, where it took up to 30 s). Measured: red (1f6cad0a6e9 with the
+suite of 035a8fee3df) step 25 failed (quit 26.86 s; CoreSimulator `unavailable` after the relaunch) and step 26 failed (off
+after one killed load); green (035a8fee3df, plain `--tag`) 26 of 26 twice and with `CMUX_E2E_SLOW_SIMCTL=25` (quit 0.5 s,
+`loaded` after it; on after one kill, off after two). The
 hooks slow `simctl` and CoreSimulator, not the worker's launch: on a really stalled Mac a new tab may still wait for its
 worker before it streams.
 
