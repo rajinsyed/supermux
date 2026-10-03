@@ -16,8 +16,18 @@ Design decision 12 in [DESIGN.md](DESIGN.md) calls for this harness.
 
 > **Verified 2026-10-01** on tag `rws-f2` (`--supermux-profile` build). The smoke script passes all
 > 10 checks, and a mirror survives an app restart (it is restored and reconnects).
-> An agent-only build (`CMUX_DEV_BACKEND_MODE=local`, not signed in) should work the same way,
-> because the link never asks for a Stack token. **That was not tested.**
+> **Verified 2026-10-03** on tag `simrobust`, a plain agent-only build (`CMUX_DEV_BACKEND_MODE=local`, no
+> `~/.secrets`, not signed in): the loopback device connects and fetches (the link never asks for a Stack token),
+> and `loopback_mirror_simulator_e2e` passes 24 of 24.
+>
+> **Agents: never run the suites on a `--supermux-profile` build.** It is signed in to the user's real account, so
+> it is a real device in their Mac mesh: it auto-mirrors their real workspaces, and with its window raised for the
+> suites its small panes count toward, and claim, their real terminals' size (2026-10-03: a real terminal shrank to
+> "99x35 · <Mac>" with the policy switched to Fit Everyone). Build agent runs with plain `--tag`. A tag that was once
+> built with the profile keeps its seeded identity: quit it, then delete its defaults domain
+> (`defaults delete com.cmuxterm.app.debug.<tag-with-dots>`) and
+> `~/Library/Application Support/cmux/com.cmuxterm.app.debug.<tag-with-dots>/credentials.json` (that is not a
+> sign-out: nothing is revoked) before the plain rebuild.
 
 ## Run it
 
@@ -25,8 +35,8 @@ Design decision 12 in [DESIGN.md](DESIGN.md) calls for this harness.
 export PATH="$HOME/.cargo/bin:$PATH:$HOME/.local/zig/zig-aarch64-macos-0.16.0"
 export CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_STRIP=false
 
-# 1. Build (signed-in profile seeded from the installed Supermux app; never sign out inside it).
-./scripts/reload.sh --tag <tag> --supermux-profile
+# 1. Build a plain tag, not signed in (never --supermux-profile for a test run; see above).
+CMUX_DEV_BACKEND_MODE=local ./scripts/reload.sh --tag <tag>
 
 # 2. Launch with the opt-in. Use the "App path:" that reload.sh printed.
 open -g --env SUPERMUX_DEBUG_LOOPBACK_DEVICE=1 "<App path printed by reload.sh>"
@@ -946,13 +956,19 @@ first switched to the suite's device: the suite never stirs or touches another s
 with every `simctl` launch of the app slowed past the link's 20 s reply deadline (the DEBUG `simctl_delay` hook, 25 s), a
 new Simulator tab's picker lists the owner's devices within 30 s and the tab streams (`slow_simctl_lists_and_streams`), and
 with CoreSimulator off on the owner (the `simctl` fallback) the device menu still answers within 15 s, marked slow, and the
-viewer asks again until the list is current (`slow_simctl_device_menu_says_so`);
-with `--app-path`, the app quits within 60 s of `tell application id … to quit` while a simulator worker runs,
+viewer asks again until the list is current (`slow_simctl_device_menu_says_so`); with each in-process CoreSimulator read on the
+owner held 3 s (the DEBUG `coresimulator_delay`), a new tab's first device-menu answer is the owner's list or marked slow,
+never an empty list as current (`device_menu_never_empty_while_owner_starts`), and held 12 s (past the 8 s menu bound, as
+a cold CoreSimulatorService after a reboot) a new tab picks a device, fills its picker and streams
+(`slow_coresimulator_new_tab_streams`);
+with `--app-path`, starting from a new streaming tab, the app quits within 60 s of `tell application id … to quit` while a simulator worker runs,
 and osascript reports no error (the worker shares the app's bundle id and forwards the quit, #735; a failure names the
 app pid and the worker pids before and after; the report records `quit_seconds`) and a relaunch restores the viewer in M, which streams S's
 restored panel (on the suite's device) with no second `SimulatorPanel` (S's restored Simulator tab starts hidden, from
 the stream; its first worker is replaced as the device attaches and the panel reports "worker stopped" until the
-viewer asks it to recover after 5 s; a viewer that never streams reports the owner's status and its attachment).
+viewer asks it to recover after 5 s, and again 20 s apart while it stays stopped; a viewer that never streams reports the owner's status and its attachment).
+The relaunch holds the owner's CoreSimulator reads 12 s (`SUPERMUX_DEBUG_CORESIMULATOR_DELAY_SECONDS`): the viewer's rebind gets
+slow answers first and must ask again, never open a second Simulator tab there.
 After a failed relaunch the suite reconnects
 for its cleanup, so it still closes its workspaces, deletes its simulators and writes its report. The app drops a
 control-socket client that sent nothing for 30 s and step 4 waits on `simctl bootstatus`, so the suite's client
@@ -1026,6 +1042,28 @@ slow), and `streams_video` and `restore_rebinds` failed too. Fixed build 03d35bc
 picker 0.7 s, device picked 0.7 s, streaming 2.0 s with `simctl` slowed 25 s; step 21: first answer 8.1 s marked slow,
 current after 50.5 s), and 22 of 22 with `CMUX_E2E_SLOW_SIMCTL=25` armed for the whole run (`device_picker_lists_owner_devices`
 61 s for its cold boot).
+
+**Review round (2026-10-03, branch `sim-robust2`).** A review of the first fix found four defects, each now with a step:
+a rebind answered `{devices: [], slow: true}` with a second Simulator tab on the owner (step 24); a menu refresh that the
+new tab's startup discovery superseded (#763 retries it, so it always wins) answered the tab's still empty list as current
+(step 22); a panel's discovery gave CoreSimulator only 8 s, so a cold CoreSimulatorService left a new tab failed, never
+activated (step 23); and the runner's 30 s stop for a hung app waited out AppleScript's 120 s reply timeout first. Fixes:
+the owner answers a starting tab's menu from a list read beside it (no refresh of the tab, so nothing to supersede) and is
+current only when its refresh landed; a panel waits 30 s for CoreSimulator, and callers share one read; a rebind asks a
+slow Mac again every 3 s and shows "slow to respond…" rather than creating a tab; the runner sends the quit without
+waiting for its reply. Running step 24 on the fix showed one more: the restored tab reported "worker stopped"
+(`worker_protocol_queue_overflow` while its start waited on the slow reads), and the viewer's one automatic recovery lost to
+that slow start; it now asks again, 20 s apart, three times in all (recoveries at 18 s and 38 s, streaming at 56 s). Red
+(cdd4b3ac9fd plus the restore setup of 1eabc08a0c7): step 22 failed (first answer empty and current after 6.1 s), step 23
+failed (no device picked in 45 s), step 24 failed ("source SimulatorPanels=2"). Green (228ae002d19, a plain `--tag` build):
+24 of 24 twice (step 22: first answer 3.3 s with 13 devices; step 23: streaming at 21.4 s; step 24: 66 s), and 24 of 24
+with `CMUX_E2E_SLOW_SIMCTL=25` for the whole run (step 23 streaming at 44.9 s, step 24 97 s). The first round's results
+above came from a `--supermux-profile` build, which these suites must no longer use (see the top of this file).
+CoreSimulator stays in the app process: listing in the worker would need a request and reply in upstream's worker protocol
+(about five fences in CmuxSimulator), and the worker's own launch is a process launch that stalls on such a Mac; a crash
+while CoreSimulator loads turns that CoreSimulator build off in-process for good (`SupermuxCoreSimulatorCrashGuard`). The
+hooks slow `simctl` and CoreSimulator, not the worker's launch: on a really stalled Mac a new tab may still wait for its
+worker before it streams.
 
 **The runner checks first.** Before this suite, `run_all_loopback_e2e.sh` runs the monitor once and stops when
 `simctl help` takes more than 2 s, naming the cause: the suite's own `simctl` calls (create, boot, bootstatus, the stir
