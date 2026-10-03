@@ -673,16 +673,19 @@ class SizingPolicyE2E:
         self.wait_state("the mirror to stop counting while hidden", self.source_surface, self.mirror_counts(False))
         self.select(self.mirror_id)
         self.wait_state("the shown mirror to count again", self.source_surface, self.mirror_counts(True))
-        shown = self.hold(self.source_surface, self.expect_mode("smallest"), steady=False)
-        self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "stop"})
-        time.sleep(1.0)
-        self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "restore"})
-        wait_for("the loopback link to reconnect", lambda: self.device().get("link_state") == "connected", self.timeout)
-        self.wait_state("the reconnected mirror to count again", self.source_surface, self.mirror_counts(True))
-        reconnected = self.hold(self.source_surface, self.expect_mode("smallest"), steady=False)
-        # Leave the terminal as the next step expects: the second Mac holds it in Priority.
-        self.other_mac_sets({"mode": "priority", "priority": [b_key], "fixed": None})
-        self.wait_state("the second Mac to hold the terminal again", self.source_surface, self.expect_first(b_key))
+        try:
+            shown = self.hold(self.source_surface, self.expect_mode("smallest"), steady=False)
+            self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "stop"})
+            time.sleep(1.0)
+            self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "restore"})
+            wait_for("the loopback link to reconnect", lambda: self.device().get("link_state") == "connected",
+                     self.timeout)
+            self.wait_state("the reconnected mirror to count again", self.source_surface, self.mirror_counts(True))
+            reconnected = self.hold(self.source_surface, self.expect_mode("smallest"), steady=False)
+        finally:
+            # Leave the terminal as the next step expects: the second Mac holds it in Priority.
+            self.other_mac_sets({"mode": "priority", "priority": [b_key], "fixed": None})
+            self.wait_state("the second Mac to hold the terminal again", self.source_surface, self.expect_first(b_key))
         return {"fit": fit, "after_show": shown, "after_reconnect": reconnected}
 
     def showing_again_reclaims(self) -> Dict[str, Any]:
@@ -729,15 +732,17 @@ class SizingPolicyE2E:
                 raise Failure(f"policy is {self.policy(state)}, expected this Mac's choice for its own pane {pane_key}")
 
         chosen = self.select_mode(self.local_surface, "largest")
-        local = self.wait_state("Largest Window on the local terminal it was chosen on", self.local_surface,
-                                self.expect_mode("largest"))
-        source = self.wait_state("the source terminal to take it as this Mac's own terminal", self.source_surface,
-                                 own_pane)
-        held = self.hold(self.source_surface, own_pane, steady=False)
-        # Back to Priority, chosen on the mirror (a choice on that very terminal), for the next steps.
-        self.select_mode(self.mirror_surface, "priority")
-        restored = self.wait_state("Priority chosen on the mirror to reach its terminal", self.source_surface,
-                                   self.expect_first(self.mirror_key))
+        try:
+            local = self.wait_state("Largest Window on the local terminal it was chosen on", self.local_surface,
+                                    self.expect_mode("largest"))
+            source = self.wait_state("the source terminal to take it as this Mac's own terminal",
+                                     self.source_surface, own_pane)
+            held = self.hold(self.source_surface, own_pane, steady=False)
+        finally:
+            # Back to Priority, chosen on the mirror (a choice on that very terminal), for the next steps.
+            self.select_mode(self.mirror_surface, "priority")
+            restored = self.wait_state("Priority chosen on the mirror to reach its terminal", self.source_surface,
+                                       self.expect_first(self.mirror_key))
         return {"accepted": chosen.get("accepted"), "before": before, "local": local, "source": source,
                 **held, "restored": restored}
 
