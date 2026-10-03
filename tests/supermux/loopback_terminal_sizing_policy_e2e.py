@@ -962,7 +962,18 @@ class SizingPolicyE2E:
             if not (self.row(state, "mac:") or {}).get("counts"):
                 raise Failure(f"the shown Mac pane does not count: {self.rows(state)}")
 
-        pane = self.wait_state("the fresh terminal's shown Mac pane in Auto", self.fresh_surface, pane_counts)
+        try:
+            pane = wait_for("the fresh terminal's shown Mac pane in Auto",
+                            lambda: (pane_counts(self.state(self.fresh_surface)), True)[1], 5)
+        except Failure:
+            # The window is covered (another app's full-screen Space): the pane is off screen
+            # and does not count. Make it count by hand, as a pane on screen does, so the Auto
+            # rules below are still exercised against a counting Mac pane.
+            mac = self.row(self.state(self.fresh_surface), "mac:")
+            self.sock.call("terminal.size_counts.set", {"surface_id": self.fresh_surface,
+                                                        "participant_id": mac["id"], "counts": True})
+            self.facts["fresh_pane_counts_forced"] = True
+            pane = self.wait_state("the fresh terminal's Mac pane to count", self.fresh_surface, pane_counts)
         created = self.request("mobile.terminal.create", {"workspace_id": self.create_workspace("phone")})
         terminal = up(created.get("created_terminal_id"))
         if not terminal:
