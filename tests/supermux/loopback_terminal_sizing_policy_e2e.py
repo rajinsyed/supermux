@@ -99,6 +99,11 @@ driven by `supermux.devices.terminal_sizing.*` (DEBUG), which run the panel's ow
                                          as typing on the Mac pane, which then won)
  20. auto_rotated_phone_takes_it         the Mac takes it back, then the phone reports a new viewport
                                          (60x20, a rotation): 60x20
+ 20b. auto_reappearing_phone_takes_it the Mac takes it back, then the phone's terminal view comes back
+                                         on screen without the app backgrounding (navigated away and
+                                         back): its report repeats the same viewport with
+                                         `view_appeared: true` and takes the grid (60x20) (red before:
+                                         a same-size report is no activity, so the Mac pane kept it)
  21. auto_opted_out_phone_never_sizes    a second phone that chose not to resize (counts_override
                                          false, 30x10) never takes the grid and keeps its choice
  22. auto_viewing_mac_takes_it           a second Mac attaching (100x30) takes it; the Mac pane takes
@@ -1048,6 +1053,23 @@ class SizingPolicyE2E:
         rotated = self.wait_state("the rotated phone to set the size", self.fresh_surface, self.phone_owns((60, 20)))
         return {"mac": mac, "rotated": rotated}
 
+    def auto_reappearing_phone_takes_it(self) -> Dict[str, Any]:
+        self.mac_types(self.fresh_id, self.fresh_surface)
+        mac = self.wait_state("the Mac pane to take it back", self.fresh_surface, self.mac_owns())
+        # The phone's terminal view left the window and came back: same viewport, flagged.
+        key = (self.fresh_id, self.fresh_surface, self.phone_client)
+        generation = self.reports.get(key, 0) + 1
+        self.sock.call("mobile.terminal.viewport", {
+            "workspace_id": self.fresh_id, "surface_id": self.fresh_surface, "client_id": self.phone_client,
+            "viewport_columns": 60, "viewport_rows": 20, "viewport_generation": generation,
+            "device_kind": "iphone", "device_id": self.phone_client, "device_name": "E2E iphone",
+            "view_appeared": True,
+        })
+        self.reports[key] = generation
+        back = self.wait_state("the phone's terminal view re-appearing to set the size", self.fresh_surface,
+                               self.phone_owns((60, 20)))
+        return {"mac": mac, "back": back}
+
     def auto_opted_out_phone_never_sizes(self) -> Dict[str, Any]:
         phone2 = f"e2e-phone2-{self.nonce}"
         self.mac_types(self.fresh_id, self.fresh_surface)
@@ -1345,6 +1367,7 @@ class SizingPolicyE2E:
             if self.fresh_surface:
                 for name in ("auto_mac_typing_takes_it_back", "auto_phone_returning_takes_it",
                              "auto_phone_typing_takes_it", "auto_rotated_phone_takes_it",
+                             "auto_reappearing_phone_takes_it",
                              "auto_opted_out_phone_never_sizes", "auto_viewing_mac_takes_it",
                              "auto_shown_mirror_takes_it"):
                     ok = self.step(name, getattr(self, name)) and ok
