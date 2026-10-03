@@ -34,6 +34,11 @@ protocol SupermuxRemoteSimulatorDebugInspectable: AnyObject {
 /// - `steal {host_panel_id}` — opens a second loopback stream lane to that
 ///   host panel and sends `start`, as another device opening the same
 ///   simulator would.
+/// - `simctl_delay {seconds?, coresimulator?, coresimulator_delay?}` — sets (or
+///   reads) the slow-`simctl` hook (``SupermuxSimctlDebugDelay``): every `simctl`
+///   spawn of this app's Simulator panels waits that long first (0 turns it off);
+///   `coresimulator: false` makes them list devices with `simctl` too, and
+///   `coresimulator_delay` holds each in-process CoreSimulator read that long.
 @MainActor
 enum SupermuxRemoteSimulatorSocketCommands {
     static let methodPrefix = "mirror.simulator."
@@ -63,6 +68,23 @@ enum SupermuxRemoteSimulatorSocketCommands {
             return try await viewer.debugPerform(action, params: params)
         case "steal":
             return try await steal(hostPanelID: try uuid(params, "host_panel_id"))
+        case "simctl_delay":
+            let previous = SupermuxSimctlDebugDelay.seconds
+            if let seconds = (params["seconds"] as? NSNumber)?.doubleValue {
+                SupermuxSimctlDebugDelay.seconds = seconds
+            }
+            if let allows = params["coresimulator"] as? Bool {
+                SupermuxSimctlDebugDelay.allowsCoreSimulator = allows
+            }
+            if let delay = (params["coresimulator_delay"] as? NSNumber)?.doubleValue {
+                SupermuxSimctlDebugDelay.coreSimulatorDelay = delay
+            }
+            return [
+                "seconds": SupermuxSimctlDebugDelay.seconds,
+                "previous": previous,
+                "coresimulator": SupermuxSimctlDebugDelay.allowsCoreSimulator,
+                "coresimulator_delay": SupermuxSimctlDebugDelay.coreSimulatorDelay,
+            ]
         default:
             throw InvalidParams(message: "unknown simulator driver \(name)")
         }
@@ -123,13 +145,16 @@ enum SupermuxRemoteSimulatorSocketCommands {
                     simulatorPanels += 1
                     row["class"] = "local"
                     row["selected_device_id"] = local.selectedDeviceID ?? NSNull()
+                    row["status"] = "\(local.coordinator.status)"
+                    row["failure"] = local.coordinator.failure?.code ?? NSNull()
                 } else if let viewer = panel as? SupermuxRemoteSimulatorDebugInspectable {
                     viewers += 1
                     row["class"] = "viewer"
-                    row.merge(viewer.debugState()) { _, new in new }
                     if includeDevices {
                         row["devices"] = (try? await viewer.debugPerform("devices", params: [:]))?["devices"] ?? NSNull()
                     }
+                    // After the device menu's refresh, so `devices_slow` describes its answer.
+                    row.merge(viewer.debugState()) { _, new in new }
                 } else {
                     continue
                 }

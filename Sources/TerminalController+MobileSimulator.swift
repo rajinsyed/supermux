@@ -128,13 +128,15 @@ extension TerminalController {
               let resolved = mobileSimulatorPanel(id: panelIDString, workspaceID: workspaceID) else {
             return mobileSimulatorPanelResolutionError(params: params)
         }
-        let coordinator = resolved.panel.coordinator
-        // The inventory is discovery-time state; refresh it like the Mac
-        // pane's picker does on open, so simulators created after the panel
-        // started still appear.
-        await coordinator.reloadDevices()
-        let selectedID = coordinator.selectedDeviceID
-        let devices = coordinator.devices.map { device -> [String: Any] in
+        // SUPERMUX:begin simulator-devices-list-bounded
+        // The panel's list, refreshed like the Mac pane's picker does on open
+        // (or, while the panel still starts, read beside it), for at most a few
+        // seconds, so a Mac whose simulators are slow still answers in time and
+        // the answer never races the panel's startup discovery.
+        let supermuxListing = await SupermuxSimulatorDeviceListing.listing(for: resolved.panel)
+        let selectedID = supermuxListing.selectedID
+        let devices = supermuxListing.devices.map { device -> [String: Any] in
+        // SUPERMUX:end simulator-devices-list-bounded
             [
                 "udid": device.id,
                 "name": device.name,
@@ -144,7 +146,9 @@ extension TerminalController {
                 "is_selected": device.id == selectedID,
             ]
         }
-        return .ok(["devices": devices])
+        // SUPERMUX:begin simulator-devices-list-bounded
+        return .ok(SupermuxSimulatorDeviceListing.reply(devices: devices, current: supermuxListing.current))
+        // SUPERMUX:end simulator-devices-list-bounded
     }
 
     /// Restarts a crash-fused simulator worker session, the same recovery
