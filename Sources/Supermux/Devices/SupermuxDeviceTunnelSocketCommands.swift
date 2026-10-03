@@ -26,9 +26,23 @@ import Foundation
 ///   `supermux.port_forward.v1`, as a host that predates port forwarding.
 /// - `tunnel.inject_port {workspace_id, port}` / `tunnel.clear_injected {}`:
 ///   a port reported as that workspace's, without the live-listener check.
+/// - `tunnel.inject_other_port {port, remove?}`: a port `ports.list` reports under
+///   `other_ports` when asked for them (a server this Mac runs outside its
+///   workspaces' terminals: started by an agent, orphaned, in Docker), without
+///   the live-listener check (`remove: true` takes it back); `clear_injected`
+///   clears these too.
 /// - `tunnel.host_ports {include_other?}`: this Mac's `ports.list` payload.
+/// - `tunnel.listings_served {}`: how many `mobile.supermux.ports.list` requests
+///   this Mac's host answered since launch → `{count}`.
+/// - `tunnel.live_checks {}`: how many times this Mac compared its loopback
+///   listeners for its ports' late attribution (`SupermuxHostPortsObserver`)
+///   → `{count}`.
 /// - `tunnel.own_port {port, registered}`: marks a port as one this app
 ///   listens on for forwards (the tunnel host's loop guard refuses it).
+/// - `tunnel.serve_port {port, from?}`: the loopback owner's tunnel host serves
+///   its `port` from this machine's `from` (as itself again without `from`),
+///   so `port` stays free here and a forward of it can listen on it
+///   (``SupermuxLoopbackServedPorts``) → `{port, from}`.
 /// - `tunnel.fail_requests {method, count?}`: the loopback host answers the
 ///   next `count` requests for `method` (after each connection's sync fetch)
 ///   `timed_out`, as a stalled Mac does (0 disarms; arming restarts the tally)
@@ -45,6 +59,12 @@ enum SupermuxDeviceTunnelSocketCommands {
     nonisolated(unsafe) static var pretendsOldHost = false
     /// Ports reported as a workspace's by `ports.list`, live or not.
     static var injectedHostPorts: [UUID: [Int]] = [:]
+    /// Ports reported under `other_ports` by `ports.list`, live or not.
+    static var injectedOtherPorts: Set<Int> = []
+    /// `mobile.supermux.ports.list` requests the host answered.
+    nonisolated static let listingsServed = SupermuxDebugCounter()
+    /// Loopback listener checks `SupermuxHostPortsObserver` ran.
+    nonisolated static let liveChecks = SupermuxDebugCounter()
 
     private typealias Stream = any SupermuxByteStream
     private static var held: [Stream] = []
@@ -88,11 +108,22 @@ enum SupermuxDeviceTunnelSocketCommands {
             let workspaceID = try uuid(params, "workspace_id")
             injectedHostPorts[workspaceID, default: []].append(try port(params))
             return ["injected": injectedHostPorts[workspaceID] ?? []]
+        case "inject_other_port":
+            if params["remove"] as? Bool == true {
+                injectedOtherPorts.remove(try port(params))
+            } else {
+                injectedOtherPorts.insert(try port(params))
+            }
+            return ["injected_other": injectedOtherPorts.sorted()]
         case "clear_injected":
             injectedHostPorts = [:]
+            injectedOtherPorts = []
             return ["injected": [Int]()]
         case "host_ports": return await hostPorts(params)
+        case "listings_served": return ["count": listingsServed.value]
+        case "live_checks": return ["count": liveChecks.value]
         case "own_port": return try ownPort(params)
+        case "serve_port": return try servePort(params)
         case "fail_requests": return try failRequests(params)
         default: throw HookError(message: "unknown tunnel method \(name)")
         }
@@ -231,6 +262,14 @@ enum SupermuxDeviceTunnelSocketCommands {
         return ["registered": ports.contains(target)]
     }
 
+    private static func servePort(_ params: [String: Any]) throws -> [String: Any] {
+        let target = try port(params)
+        var source: Int?
+        if let from = params["from"] as? NSNumber { source = try port(["port": from]) }
+        SupermuxLoopbackServedPorts.shared.serve(target, from: source)
+        return ["port": target, "from": source ?? NSNull()]
+    }
+
     /// Arms (or, without `count`, only reports) the loopback host's failed
     /// answers for one method (``SupermuxDeviceLoopbackHostAcceptor/failingRequests``).
     private static func failRequests(_ params: [String: Any]) throws -> [String: Any] {
@@ -304,5 +343,14 @@ enum SupermuxDeviceTunnelSocketCommands {
         guard let value = params[key] as? Bool else { throw HookError(message: "\(key) must be true or false") }
         return value
     }
+}
+/// A thread-safe count (DEBUG E2E evidence).
+final class SupermuxDebugCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+
+    var value: Int { lock.withLock { count } }
+
+    func increment() { lock.withLock { count += 1 } }
 }
 #endif

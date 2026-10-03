@@ -13,6 +13,8 @@ this same app's own mobile host), so every remote port is also busy here: each
 forward must land on another local port.
 
   0. setup                              auto-mirror and auto-forward on; source S and its mirror M
+ 0b. idle_owner_does_not_scan_listeners  with no command started in a terminal, the owner runs no
+                                        loopback listener check for 10 s (`tunnel.live_checks`)
   1. auto_forward_busy_port_lands_elsewhere   the suite holds R+1..R+3; a server on R in S -> forward R
                                         active at L, neither R nor a held port;
                                         127.0.0.1:L and [::1]:L serve the owner's page
@@ -30,6 +32,17 @@ forward must land on another local port.
   8. disconnect_stops_listeners         link down -> waiting, L refuses, M's chips empty; the suite
                                         frees R+1..R+3 (the first free port above R is now below L);
                                         link back -> active on its last local port L
+ 8b. moved_forward_returns_to_remote_port  a forward that landed above P (P busy here) comes back on P once
+                                        P is free: on Resume after Stop, and after a relink (the owner
+                                        serves P from another port, `tunnel.serve_port`)
+ 8c. stop_survives_server_restart      a stopped automatic forward stays stopped while its server
+                                        restarts (unlisted, then listed again), the stop recording S;
+                                        Resume starts it
+ 8d. stop_forgotten_with_its_workspace  the stop of a second source's port is forgotten once the port is
+                                        unlisted and that source's mirror hidden; shown and listed again,
+                                        it is forwarded automatically
+ 8e. late_bind_is_attributed            a server binding 12 s after its command (past the terminal's port
+                                        scans) is still listed as S's within 15 s
   9. auto_off_keeps_manual              auto-forward off -> automatic forwards go, a manual one stays
  10. external_link_uses_local_port      a localhost:R link in M's terminal opened in the default
                                         browser -> http://localhost:L/... (C's `mirror.link_open`)
@@ -98,6 +111,10 @@ HELD_ABOVE_REMOTE = 3
 # The highest R step 1 takes: the held ports and the forward's candidates
 # (R+1 … R+50) must stay valid port numbers.
 MAX_REMOTE_PORT = 65_535 - 50
+# How long after a late server binds the owner may take to attribute it to its workspace.
+LATE_BIND_ATTRIBUTION_S = 15.0
+# How long idle_owner_does_not_scan_listeners watches for listener checks.
+IDLE_CHECK_SECONDS = 10.0
 
 
 class Failure(Exception):
@@ -458,6 +475,20 @@ class PortForwardE2E:
         self.facts.update(machine=self.machine, source_workspace_id=self.source_id, mirror_workspace_id=self.mirror_id)
         return {"machine": self.machine, "source": self.source_id, "mirror": self.mirror_id}
 
+    def idle_owner_does_not_scan_listeners(self) -> Dict[str, Any]:
+        """With another Mac linked but no command started in this Mac's terminals,
+        the owner does not scan its loopback listeners at all (the check that
+        catches a server binding after its terminal's port scans runs only for a
+        while after a command starts). Before, every linked Mac ran a full
+        process scan every 4 s for as long as the link lived."""
+        before = int((self.tunnel("live_checks") or {}).get("count") or 0)
+        time.sleep(IDLE_CHECK_SECONDS)
+        checks = int((self.tunnel("live_checks") or {}).get("count") or 0) - before
+        if checks:
+            raise Failure(f"the owner checked its loopback listeners {checks} times in {IDLE_CHECK_SECONDS:.0f} s "
+                          f"with no command started")
+        return {"checks": checks, "seconds": IDLE_CHECK_SECONDS}
+
     def auto_forward_busy_port(self) -> Dict[str, Any]:
         self.remote_port = self.owner_port_holding_above()
         self.start_owner_server(self.remote_port)
@@ -610,6 +641,219 @@ class PortForwardE2E:
             raise Failure(f"came back on {row['local_port']}, not its last local port {local} "
                           f"(the first free port above {port} was {first_free})")
         return {"local_port": local, "first_free_above_remote": first_free}
+
+    def moved_forward_returns(self) -> Dict[str, Any]:
+        """A forward that landed above its port P because P was busy here comes back
+        to P once P is free: on Resume after Stop, and after a relink. Before, a
+        forward tried its last local port first, so it stayed on P+1 for good, and
+        a mirror tab of P kept the alias (the user's Turnstile login failed there).
+        The owner serves P from another port (`tunnel.serve_port`), so P is free
+        here once this Mac's own server on it goes, as between two Macs. A forward
+        whose P is still busy here keeps its last local port
+        (disconnect_stops_listeners)."""
+        owner = MarkerServer(f"moved-owner-{self.nonce}")
+        self.servers.append(owner)
+        here: Optional[MarkerServer] = MarkerServer(f"moved-here-{self.nonce}")
+        port = here.port
+        self.tunnel("serve_port", port=port, **{"from": owner.port})
+        self.tunnel("inject_port", workspace_id=self.source_id, port=port)
+        self.ports_call("refresh")
+        report: Dict[str, Any] = {"port": port}
+
+        def take_port_here() -> MarkerServer:
+            return MarkerServer(f"moved-here-{self.nonce}", port=port)
+
+        def free_port_here() -> None:
+            nonlocal here
+            if here:
+                here.close()
+                here = None
+            wait_for(f"{port} to be free here", lambda: not accepts("127.0.0.1", port) and not accepts("::1", port),
+                     self.timeout)
+
+        def stopped() -> None:
+            self.ports_call("stop", port=port)
+            wait_for(f"forward of {port} to be stopped", lambda: (self.forward(port) or {}).get("state") == "stopped",
+                     self.timeout)
+
+        try:
+            row = wait_for(f"a forward of {port}", lambda: self.active_forward(port), self.timeout)
+            report["moved_to"] = moved = int(row["local_port"])
+            if moved == port:
+                raise Failure(f"precondition: the forward took {port}, which this Mac's own server holds")
+            free_port_here()
+            stopped()
+            self.ports_call("resume", port=port)
+            row = wait_for(f"forward of {port} to resume", lambda: self.active_forward(port), self.timeout)
+            report["after_resume"] = int(row["local_port"])
+            if int(row["local_port"]) != port:
+                raise Failure(f"Resume brought the forward back on {row['local_port']} (its last local port), not on "
+                              f"{port}, which is free here now")
+            if http_get("127.0.0.1", port, "/") != f"moved-owner-{self.nonce}":
+                raise Failure(f"127.0.0.1:{port} does not serve the owner's page")
+            # Moved again (this Mac takes P back meanwhile), then a relink after P is free.
+            stopped()
+            here = take_port_here()
+            self.ports_call("resume", port=port)
+            row = wait_for(f"forward of {port} to resume elsewhere", lambda: self.active_forward(port), self.timeout)
+            report["moved_again_to"] = int(row["local_port"])
+            if int(row["local_port"]) == port:
+                raise Failure(f"precondition: the forward took {port}, which this Mac's own server holds")
+            free_port_here()
+            self.relink()
+            row = wait_for(f"forward of {port} back after the relink", lambda: self.active_forward(port), self.timeout)
+            report["after_relink"] = int(row["local_port"])
+            if int(row["local_port"]) != port:
+                raise Failure(f"after a relink the forward came back on {row['local_port']} (its last local port), not "
+                              f"on {port}, which is free here")
+            return report
+        finally:
+            if here:
+                here.close()
+            self.tunnel("serve_port", port=port)
+            self.tunnel("clear_injected")
+            self.ports_call("refresh")
+
+    def stop_survives_server_restart(self) -> Dict[str, Any]:
+        """The user stops an automatic forward of P; then the owner's server on P
+        restarts (the owner unlists P, then lists it again, each with a poke). The
+        forward must stay stopped: the stop lasts while the workspace that listed
+        P is mirrored here, until Resume. Before, the stop was forgotten as soon
+        as P left the listing, so the restart forwarded P again."""
+        owner = MarkerServer(f"stop-restart-{self.nonce}")
+        self.servers.append(owner)
+        port = free_port()
+        self.tunnel("serve_port", port=port, **{"from": owner.port})
+        self.tunnel("inject_port", workspace_id=self.source_id, port=port)
+        self.ports_call("refresh")
+
+        def listed() -> bool:
+            rows = (self.ports().get("host_ports") or {}).get(self.machine) or []
+            return any(int(row.get("port") or 0) == port for row in rows)
+
+        try:
+            row = wait_for(f"an automatic forward of {port}", lambda: self.active_forward(port), self.timeout)
+            if int(row["local_port"]) != port:
+                raise Failure(f"precondition: the forward listens on {row['local_port']}, not on {port}")
+            self.ports_call("stop", port=port)
+            wait_for(f"forward of {port} to be stopped", lambda: (self.forward(port) or {}).get("state") == "stopped",
+                     self.timeout)
+            recorded = self.stop_workspaces(port)
+            if recorded != [up(self.source_id)]:
+                raise Failure(f"the stop of {port} recorded the workspaces {recorded}, want S {up(self.source_id)}")
+            self.tunnel("clear_injected")
+            self.ports_call("refresh")
+            wait_for(f"the owner to unlist {port}", lambda: not listed(), self.timeout)
+            self.tunnel("inject_port", workspace_id=self.source_id, port=port)
+            self.ports_call("refresh")
+            wait_for(f"the owner to list {port} again", listed, self.timeout)
+            deadline = time.monotonic() + 3.0
+            while time.monotonic() < deadline:
+                row = self.forward(port) or {}
+                if row.get("state") != "stopped" or accepts("127.0.0.1", port):
+                    raise Failure(f"after the server's restart the stopped forward of {port} is {row or 'gone'} "
+                                  f"(listening: {accepts('127.0.0.1', port)}): the user's stop was forgotten")
+                time.sleep(0.3)
+            self.ports_call("resume", port=port)
+            resumed = wait_for(f"forward of {port} to resume", lambda: self.active_forward(port), self.timeout)
+            return {"port": port, "resumed_on": resumed.get("local_port")}
+        finally:
+            self.ports_call("stop", port=port)
+            self.tunnel("serve_port", port=port)
+            self.tunnel("clear_injected")
+            self.ports_call("refresh")
+
+    def stop_workspaces(self, port: int) -> Optional[List[str]]:
+        """The workspaces the user's stop of `port` recorded, or None when there is no such stop."""
+        for stop in self.ports().get("stops") or []:
+            if stop.get("machine") == self.machine and int(stop.get("remote_port") or 0) == port:
+                return [up(w) for w in stop.get("workspaces") or []]
+        return None
+
+    def stop_forgotten_with_its_workspace(self) -> Dict[str, Any]:
+        """A stop lasts while a workspace that listed the port at the stop is
+        mirrored here. A second source S2 serves P2 (automatic forward); the user
+        stops it; then the owner unlists P2 and S2's mirror is hidden here: the
+        stop is forgotten, and with S2 shown again and P2 listed again, P2 is
+        forwarded automatically. (A stop that recorded no workspace would last
+        until Resume and fail this.)"""
+        created = self.sock.call("workspace.create", {"title": f"port-forward-s2-{self.nonce}", "focus": False}) or {}
+        source = up(created.get("workspace_id") or created.get("created_workspace_id"))
+        if not source:
+            raise Failure(f"workspace.create returned no id: {created}")
+        owner = MarkerServer(f"stop-forget-{self.nonce}")
+        self.servers.append(owner)
+        port = free_port()
+
+        def mirror_of_source() -> Optional[Dict[str, Any]]:
+            rows = (self.sock.call("supermux.devices.bindings", {}) or {}).get("mirrors") or []
+            return next((m for m in rows if m.get("machine") == self.machine and up(m.get("remote_workspace_id")) == source), None)
+
+        try:
+            mirror = wait_for("S2's auto-mirror", mirror_of_source, self.timeout)
+            self.tunnel("serve_port", port=port, **{"from": owner.port})
+            self.tunnel("inject_port", workspace_id=source, port=port)
+            self.ports_call("refresh")
+            wait_for(f"an automatic forward of {port}", lambda: self.active_forward(port), self.timeout)
+            self.ports_call("stop", port=port)
+            wait_for(f"the stop of {port} with S2 recorded", lambda: self.stop_workspaces(port) == [source], self.timeout)
+            self.tunnel("clear_injected")
+            self.ports_call("refresh")
+            self.sock.call("supermux.devices.close_mirror", {"workspace_id": mirror.get("workspace_id"), "action": "hide"})
+            wait_for(f"the stop of {port} to be forgotten (unlisted, S2 not mirrored)",
+                     lambda: self.stop_workspaces(port) is None, self.timeout)
+            self.sock.call("supermux.devices.unhide", {"machine": self.machine, "remote_workspace_id": source})
+            wait_for("S2's mirror again", mirror_of_source, self.timeout)
+            self.tunnel("inject_port", workspace_id=source, port=port)
+            self.ports_call("refresh")
+            row = wait_for(f"{port} forwarded again, its stop forgotten", lambda: self.active_forward(port), self.timeout)
+            return {"port": port, "forward": row}
+        finally:
+            self.ports_call("stop", port=port)
+            self.tunnel("serve_port", port=port)
+            self.tunnel("clear_injected")
+            self.ports_call("refresh")
+            rows = (self.sock.call("supermux.devices.bindings", {}) or {}).get("mirrors") or []
+            for workspace_id in [up(m.get("workspace_id")) for m in rows if up(m.get("remote_workspace_id")) == source] + [source]:
+                try:
+                    self.sock.call("workspace.close", {"workspace_id": workspace_id, "force": True})
+                except Failure:
+                    pass
+
+    def late_bind_is_attributed(self) -> Dict[str, Any]:
+        """A server that binds after its terminal's port scans are over (a dev script
+        doing other work first: here `sleep 12`, past the scans of the ~10 s after
+        the command's kick) is still attributed to its workspace: the owner sees a
+        new loopback listener (it checks every few seconds while another Mac
+        follows its ports), scans its terminals again and pokes. Before, it was
+        never the workspace's port, only one of the owner's other ports."""
+        panes = (self.sock.call("pane.list", {"workspace_id": self.source_id}) or {}).get("panes") or []
+        pane = (panes[0].get("id") or panes[0].get("pane_id")) if panes else None
+        made = self.sock.call("surface.create", {"workspace_id": self.source_id, "pane_id": pane, "type": "terminal"}) or {}
+        terminal = up(made.get("surface_id"))
+        if not terminal:
+            raise Failure(f"surface.create returned no surface_id: {made}")
+        time.sleep(2.0)  # let the shell reach its prompt (and report its tty)
+        port = free_port()
+        command = f"sleep 12; python3 -m http.server {port} --bind 127.0.0.1 --directory {shlex.quote(str(self.www))}\n"
+        self.sock.call("surface.send_text", {"workspace_id": self.source_id, "surface_id": terminal, "text": command})
+
+        def attributed() -> bool:
+            listing = (self.tunnel("host_ports") or {}).get("ports") or {}
+            return any(int(row.get("port") or 0) == port and up(row.get("workspace_id")) == up(self.source_id)
+                       for row in listing.get("ports") or [])
+
+        try:
+            wait_for(f"the late server on {port}", lambda: accepts("127.0.0.1", port), 30)
+            bound = time.monotonic()
+            wait_for(f"the owner to list {port} as S's", attributed, LATE_BIND_ATTRIBUTION_S, interval_s=0.5)
+            return {"port": port, "attributed_after_bind_seconds": round(time.monotonic() - bound, 2)}
+        finally:
+            self.stop_owner_server(port) if accepts("127.0.0.1", port) else None
+            try:
+                self.sock.call("surface.close", {"surface_id": terminal})
+            except Failure:
+                pass
 
     def auto_off(self) -> Dict[str, Any]:
         self.require_forwarded()
@@ -881,6 +1125,8 @@ class PortForwardE2E:
         ok = self.step("setup", self.setup)
         if ok:
             for name, check in [
+                # First: no command has run in this Mac's terminals yet.
+                ("idle_owner_does_not_scan_listeners", self.idle_owner_does_not_scan_listeners),
                 ("auto_forward_busy_port_lands_elsewhere", self.auto_forward_busy_port),
                 ("dual_stack_busy_not_stolen", self.dual_stack_busy),
                 ("pill_names_local_port", self.pill),
@@ -889,6 +1135,10 @@ class PortForwardE2E:
                 ("paused_auto_stays_paused", self.paused_auto),
                 ("port_disappears_forward_stops", self.port_disappears),
                 ("disconnect_stops_listeners", self.disconnect),
+                ("moved_forward_returns_to_remote_port", self.moved_forward_returns),
+                ("stop_survives_server_restart", self.stop_survives_server_restart),
+                ("stop_forgotten_with_its_workspace", self.stop_forgotten_with_its_workspace),
+                ("late_bind_is_attributed", self.late_bind_is_attributed),
                 ("auto_off_keeps_manual", self.auto_off),
                 ("external_link_uses_local_port", self.external_link),
                 ("old_host_disables", self.old_host),

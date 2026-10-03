@@ -47,6 +47,9 @@ struct SupermuxLoopGuardConnector: IrxTunnelConnecting {
 
     func connect(to addresses: [IrxTunnelIPAddress], port: Int, timeout: Duration)
         async throws(IrxTunnelOpenError) -> any IrxTunnelByteChannel {
+        #if DEBUG
+        let port = SupermuxLoopbackServedPorts.shared.source(for: port)
+        #endif
         guard !SupermuxOwnListenerPorts.shared.contains(port) else { throw IrxTunnelOpenError(status: .denied) }
         return SupermuxEndOfStreamChannel(base: try await base.connect(to: addresses, port: port, timeout: timeout))
     }
@@ -71,3 +74,32 @@ struct SupermuxEndOfStreamChannel: IrxTunnelByteChannel {
     func finishSending() async { await base.finishSending() }
     func cancel() { base.cancel() }
 }
+
+#if DEBUG
+/// E2E (`supermux.devices.tunnel.serve_port`): gives the loopback owner a port of
+/// its own. In the loopback harness the owning Mac and this Mac are one machine,
+/// so the owner's port P is always busy here and a forward of P can never listen
+/// on P, as it does between two Macs whenever P is free on the viewing one. With
+/// P served from another port Q of this machine, the owner's tunnel host dials Q
+/// when asked for P, so P stays free here. Empty unless a suite sets it.
+final class SupermuxLoopbackServedPorts: @unchecked Sendable {
+    static let shared = SupermuxLoopbackServedPorts()
+
+    private let lock = NSLock()
+    private var sources: [Int: Int] = [:]
+
+    /// Serves `port` from `source`, or as itself again when `source` is nil.
+    func serve(_ port: Int, from source: Int?) {
+        lock.lock()
+        defer { lock.unlock() }
+        sources[port] = source
+    }
+
+    /// The port of this machine that serves the owner's `port`.
+    func source(for port: Int) -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return sources[port] ?? port
+    }
+}
+#endif

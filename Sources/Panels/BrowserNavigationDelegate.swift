@@ -345,6 +345,17 @@ import WebKit
             return
         }
 
+        // SUPERMUX:begin device-mirror-browser-reroute
+        if navigationAction.targetFrame?.isMainFrame == true, let url = navigationAction.request.url,
+           let rerouted = SupermuxDeviceBrowserRoute.reroutedURL(url, dataStoreID: webView.configuration.websiteDataStore.identifier) {
+            var request = navigationAction.request
+            request.url = rerouted
+            decisionHandler(.cancel)
+            requestNavigation?(request, .currentTab, nil)
+            return
+        }
+        // SUPERMUX:end device-mirror-browser-reroute
+
         if let url = navigationAction.request.url,
            url.scheme == "cmux-browser-action",
            url.host == "bypass-ssl" {

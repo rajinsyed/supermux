@@ -31,11 +31,16 @@ enum SupermuxDeviceBrowserRoute {
     }
 
     /// The parameters a browser of `workspaceID` is created (or reattached) with.
+    /// A browser that bypasses the workspace proxy (the http diff viewer, a
+    /// `local`-context split) keeps upstream's: this Mac's profile store. On the
+    /// mirror's store with no endpoint its loopback navigations were rerouted
+    /// forever (``reroutedURL(_:dataStoreID:)``), and its proxy configuration
+    /// (this Mac's system proxies) replaced the one every mirror tab shares.
     static func route(
         workspaceID: UUID, isRemoteWorkspace: Bool,
-        proxyEndpoint: BrowserProxyEndpoint?, dataStoreID: UUID?
+        proxyEndpoint: BrowserProxyEndpoint?, dataStoreID: UUID?, bypassesProxy: Bool
     ) -> Route {
-        guard !isRemoteWorkspace, let machine = mirroredMachine(workspaceID: workspaceID),
+        guard !bypassesProxy, !isRemoteWorkspace, let machine = mirroredMachine(workspaceID: workspaceID),
               let store = websiteDataStoreID(for: machine) else {
             return Route(isRemoteWorkspace: isRemoteWorkspace, proxyEndpoint: proxyEndpoint, dataStoreID: dataStoreID)
         }
@@ -46,6 +51,110 @@ enum SupermuxDeviceBrowserRoute {
             proxyEndpoint: SupermuxDeviceBrowserProxies.shared.endpoint(for: machine),
             dataStoreID: store
         )
+    }
+
+    // MARK: - As written
+
+    /// Whether a mirror browser loads `url` as written instead of upstream's
+    /// `localhost` alias (`http://cmux-loopback.localtest.me:P`, which the proxy
+    /// sends to the owning Mac): an `http` URL on `localhost`, `127.0.0.1` or
+    /// `[::1]` whose port P is one of ``asWrittenPorts(of:)``. This Mac's
+    /// `localhost:P` then already is that Mac's, so the page keeps its own
+    /// origin: a secure context, and the hostname a dev app's Cloudflare
+    /// Turnstile sitekey, cookies and OAuth redirects name. The alias is neither,
+    /// so a Turnstile login there failed (110200, Domain not authorized). WebKit
+    /// never asks a proxy for a loopback host, so the load goes straight to the
+    /// forward. Nil `dataStoreID` (or a store of no mirror) keeps upstream's.
+    static func loadsAsWritten(_ url: URL, dataStoreID: UUID?) -> Bool {
+        guard let machine = dataStoreID.flatMap(machine(forDataStore:)) else { return false }
+        return loadsAsWritten(url, machine: machine)
+    }
+
+    /// The owning Mac's ports this Mac's `localhost` reaches as they are: each
+    /// forwarded here on the same port, by an active forward, while that Mac's
+    /// latest port listing still has it, as a workspace's port or one of its
+    /// other loopback ports (a server an agent started, in Docker): a port
+    /// nothing serves there keeps the alias, whose proxy explains why it does
+    /// not answer.
+    static func asWrittenPorts(of machine: SurfaceMachineID) -> Set<Int> {
+        let forwards = SupermuxComposition.portForwards
+        return Set(forwards.forwards.values.compactMap { forward in
+            guard forward.key.machine == machine, forward.localPort == forward.key.remotePort,
+                  forwards.lists(machine: machine, port: forward.key.remotePort) else { return nil }
+            return forward.key.remotePort
+        })
+    }
+
+    /// The URL a mirror browser's main frame must be sent to instead of `url`
+    /// (the panel's own navigation then routes it), or nil when `url` already
+    /// is where the route sends it: a loopback `http` URL that is not loaded as
+    /// written would reach this Mac, so it goes back to the panel, which sends
+    /// it through the alias unless a same-port forward can start for it
+    /// (``SupermuxSamePortForwardGate``); an alias URL whose port is now loaded
+    /// as written, or may get a same-port forward (a reload of a page that
+    /// landed on the alias while its server restarted), becomes `localhost`
+    /// again. Checked on every main-frame navigation
+    /// (`device-mirror-browser-reroute`: reloads, links, redirects, back and
+    /// forward).
+    static func reroutedURL(_ url: URL, dataStoreID: UUID?) -> URL? {
+        guard let machine = dataStoreID.flatMap(machine(forDataStore:)) else { return nil }
+        return reroutedURL(url, machine: machine, startsForwards: true)
+    }
+
+    /// ``reroutedURL(_:dataStoreID:)`` for `machine`'s browsers. With
+    /// `startsForwards` false (``forwardsChanged()``, which runs for every open
+    /// tab), an alias page moves only once its port is loaded as written.
+    private static func reroutedURL(_ url: URL, machine: SurfaceMachineID, startsForwards: Bool) -> URL? {
+        guard url.scheme?.lowercased() == "http",
+              let host = RemoteLoopbackProxyAlias.normalizeHost(url.host ?? "") else { return nil }
+        if RemoteLoopbackProxyAlias.isLoopbackHost(host) {
+            return loadsAsWritten(url, machine: machine) ? nil : url
+        }
+        guard host == RemoteLoopbackProxyAlias.aliasHost,
+              var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
+        components.host = RemoteLoopbackProxyAlias.canonicalLoopbackHost
+        guard let local = components.url else { return nil }
+        if loadsAsWritten(local, machine: machine) { return local }
+        return startsForwards && SupermuxSamePortForwardGate.mayForward(local, machine: machine) ? local : nil
+    }
+
+    /// The as-written ports last handed to each Mac's mirror browsers.
+    private static var deliveredPorts: [SurfaceMachineID: Set<Int>] = [:]
+
+    /// After a change of the forwards or the Macs' listings: each Mac whose
+    /// as-written ports changed gets them in its mirror browsers' bridge
+    /// (``SupermuxMirrorLoopbackBridge``), and every open page of it on the wrong
+    /// side moves (``reroutedURL(_:dataStoreID:)``): a tab on `localhost:P`
+    /// whose forward stopped, moved or lost its listing goes through the alias,
+    /// one on the alias goes to `localhost:P` once its forward is active (a tab
+    /// opened, restored or linked before the forward came up).
+    static func forwardsChanged() {
+        for machine in SupermuxDeviceBrowserProxies.shared.machines {
+            let ports = asWrittenPorts(of: machine)
+            guard deliveredPorts[machine] != ports else { continue }
+            deliveredPorts[machine] = ports
+            for browser in SupermuxDeviceBrowserProxies.browsers(of: machine) {
+                SupermuxMirrorLoopbackBridge.update(browser.webView, ports: ports)
+                // A held navigation (waiting for this very forward) resumes by
+                // itself; moving its old page would drop it.
+                guard !SupermuxSamePortForwardGate.isHolding(browser) else { continue }
+                if let url = browser.webView.url, let target = reroutedURL(url, machine: machine, startsForwards: false) {
+                    browser.navigateWithoutInsecureHTTPPrompt(to: target, recordTypedNavigation: false)
+                }
+            }
+        }
+    }
+
+    /// The mirror Mac whose app instance owns this data store, if any.
+    static func machine(forDataStore id: UUID) -> SurfaceMachineID? {
+        SupermuxDeviceBrowserProxies.shared.machines.first { websiteDataStoreID(for: $0) == id }
+    }
+
+    private static func loadsAsWritten(_ url: URL, machine: SurfaceMachineID) -> Bool {
+        guard url.scheme?.lowercased() == "http",
+              let host = RemoteLoopbackProxyAlias.normalizeHost(url.host ?? ""),
+              ["localhost", "127.0.0.1", "::1"].contains(host) else { return false }
+        return asWrittenPorts(of: machine).contains(url.port ?? 80)
     }
 
     /// The website data store of an app instance's mirror browsers: a
@@ -112,6 +221,24 @@ final class SupermuxDeviceBrowserProxies {
         proxies[machine]
     }
 
+    /// The Macs whose mirror browsers have a proxy (every one that opened a mirror browser).
+    var machines: [SurfaceMachineID] { Array(proxies.keys) }
+
+    /// Every browser on `machine`'s app instance data store, in each window's
+    /// workspaces and their Docks.
+    static func browsers(of machine: SurfaceMachineID) -> [BrowserPanel] {
+        guard let store = SupermuxDeviceBrowserRoute.websiteDataStoreID(for: machine) else { return [] }
+        var browsers: [BrowserPanel] = []
+        for workspace in SupermuxDeviceWorkspaceIndex.allMainWindowWorkspaces() {
+            var panels = Array(workspace.panels.values)
+            workspace._dockSplit?.forEachPanel { _, panel in panels.append(panel) }
+            for case let browser as BrowserPanel in panels where browser.websiteDataStore.identifier == store {
+                browsers.append(browser)
+            }
+        }
+        return browsers
+    }
+
     private func makeProxy(for machine: SurfaceMachineID) -> SupermuxDeviceBrowserProxy {
         let proxy = SupermuxDeviceBrowserProxy(machine: machine) { endpoint in
             Self.deliver(endpoint, to: machine)
@@ -128,13 +255,131 @@ final class SupermuxDeviceBrowserProxies {
     /// browser's whole data store, so a local browser (its profile's store)
     /// must never get one.
     private static func deliver(_ endpoint: BrowserProxyEndpoint, to machine: SurfaceMachineID) {
-        guard let store = SupermuxDeviceBrowserRoute.websiteDataStoreID(for: machine) else { return }
-        for workspace in SupermuxDeviceWorkspaceIndex.allMainWindowWorkspaces() {
-            var panels = Array(workspace.panels.values)
-            workspace._dockSplit?.forEachPanel { _, panel in panels.append(panel) }
-            for case let browser as BrowserPanel in panels where browser.websiteDataStore.identifier == store {
-                browser.setRemoteProxyEndpoint(endpoint)
-            }
+        for browser in browsers(of: machine) { browser.setRemoteProxyEndpoint(endpoint) }
+    }
+}
+
+/// What sends a mirror page's requests to the owning Mac when the page itself
+/// was loaded as written (`http://localhost:P`,
+/// ``SupermuxDeviceBrowserRoute/loadsAsWritten(_:dataStoreID:)``).
+///
+/// Upstream's `RemoteLoopbackRuntimeBridge` does this only on alias pages: its
+/// `fetch`, `XMLHttpRequest`, `WebSocket` and `EventSource` send `localhost:Q`
+/// to the alias, which the proxy takes to the owning Mac. On an as-written page
+/// it stands aside, so every `localhost:Q` call went to this Mac's own port Q
+/// (a Supabase on 54321 there, with the page's cookies). This variant, in every
+/// loopback frame of a mirror browser, sends a cleartext loopback request on to
+/// `localhost:Q` when Q is an as-written port (same-port forward, so cookies on
+/// `localhost` reach it too) and through the alias otherwise, as upstream does
+/// on an alias page. Like upstream's, it covers script requests, not markup.
+/// `BrowserPanel.bindWebView` installs it (`device-mirror-browser-bridge`);
+/// ``SupermuxDeviceBrowserRoute/forwardsChanged()`` hands it new ports.
+@MainActor
+enum SupermuxMirrorLoopbackBridge {
+    private static var scriptKey: UInt8 = 0
+
+    /// Adds the bridge to a mirror browser's web view (no-op for any other).
+    static func install(on webView: WKWebView) {
+        guard let store = webView.configuration.websiteDataStore.identifier,
+              let machine = SupermuxDeviceBrowserRoute.machine(forDataStore: store) else { return }
+        update(webView, ports: SupermuxDeviceBrowserRoute.asWrittenPorts(of: machine))
+    }
+
+    /// Gives the web view's bridge `ports`: the current page at once, and
+    /// every page from the next on through a replaced user script.
+    static func update(_ webView: WKWebView, ports: Set<Int>) {
+        let controller = webView.configuration.userContentController
+        let previous = objc_getAssociatedObject(controller, &scriptKey) as? WKUserScript
+        // Every frame: a same-origin localhost iframe calls other ports too. The
+        // script stands aside at once in any frame not on a loopback host.
+        let script = WKUserScript(source: scriptSource(ports: ports), injectionTime: .atDocumentStart, forMainFrameOnly: false)
+        if let previous {
+            let others = controller.userScripts.filter { $0 !== previous }
+            controller.removeAllUserScripts()
+            others.forEach(controller.addUserScript)
         }
+        controller.addUserScript(script)
+        objc_setAssociatedObject(controller, &scriptKey, script, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        let list = ports.sorted().map(String.init).joined(separator: ",")
+        // Only a page on a loopback host gets them: any other page could define
+        // the setter itself and read the owner's ports.
+        webView.evaluateJavaScript("""
+        (() => {
+          const host = window.location.hostname;
+          if (host !== 'localhost' && host !== '127.0.0.1' && host !== '[::1]' && host !== '::1') return true;
+          if (window.__cmuxSetMirrorLoopbackPorts) window.__cmuxSetMirrorLoopbackPorts([\(list)]);
+          return true;
+        })();
+        """)
+    }
+
+    static func scriptSource(ports: Set<Int>) -> String {
+        let list = ports.sorted().map(String.init).joined(separator: ",")
+        return """
+        (() => {
+          const normalizeHost = (host) => {
+            let value = String(host || '').trim().toLowerCase();
+            if (value.endsWith('.')) value = value.slice(0, -1);
+            if (value.startsWith('[') && value.endsWith(']')) value = value.slice(1, -1);
+            return value;
+          };
+          const pageHost = normalizeHost(window.location.hostname);
+          if (pageHost !== 'localhost' && pageHost !== '127.0.0.1' && pageHost !== '::1') return true;
+          if (window.__cmuxSetMirrorLoopbackPorts) return true;
+          const aliasHost = '\(RemoteLoopbackProxyAlias.aliasHost)';
+          const exactHosts = new Set(['localhost', '127.0.0.1', '::1', '0.0.0.0']);
+          let asWritten = new Set([\(list)]);
+          Object.defineProperty(window, '__cmuxSetMirrorLoopbackPorts', {
+            value: (ports) => { asWritten = new Set((ports || []).map(Number)); },
+          });
+          const route = (input) => {
+            if (typeof input !== 'string' && !(input instanceof URL)) return input;
+            let parsed;
+            try { parsed = new URL(input instanceof URL ? input.href : input, document.baseURI); } catch { return input; }
+            // Cleartext only, as upstream: TLS checks the URL's host name.
+            if (parsed.protocol !== 'http:' && parsed.protocol !== 'ws:') return input;
+            const host = normalizeHost(parsed.hostname);
+            let alias;
+            if (exactHosts.has(host)) {
+              if (host !== '0.0.0.0' && asWritten.has(Number(parsed.port || 80))) return input;
+              alias = aliasHost;
+            } else if (host.endsWith('.localhost') && host.length > '.localhost'.length) {
+              alias = `${host.slice(0, -'.localhost'.length)}.${aliasHost}`;
+            } else {
+              return input;
+            }
+            parsed.hostname = alias;
+            return parsed.href;
+          };
+          const nativeFetch = window.fetch ? window.fetch.bind(window) : null;
+          if (nativeFetch) {
+            window.fetch = (input, init) => {
+              if (typeof Request !== 'undefined' && input instanceof Request) {
+                const routed = route(input.url);
+                return nativeFetch(routed !== input.url ? new Request(routed, input) : input, init);
+              }
+              return nativeFetch(route(input), init);
+            };
+          }
+          const nativeOpen = window.XMLHttpRequest && window.XMLHttpRequest.prototype.open;
+          if (nativeOpen) {
+            window.XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+              return nativeOpen.call(this, method, route(url), ...rest);
+            };
+          }
+          const wrap = (Native) => {
+            if (typeof Native !== 'function') return Native;
+            const Wrapped = function(url, options) {
+              return options === undefined ? new Native(route(url)) : new Native(route(url), options);
+            };
+            Wrapped.prototype = Native.prototype;
+            Object.setPrototypeOf(Wrapped, Native);
+            return Wrapped;
+          };
+          window.WebSocket = wrap(window.WebSocket);
+          window.EventSource = wrap(window.EventSource);
+          return true;
+        })();
+        """
     }
 }
