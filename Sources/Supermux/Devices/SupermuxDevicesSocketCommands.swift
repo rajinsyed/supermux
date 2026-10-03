@@ -41,6 +41,17 @@ enum SupermuxDevicesSocketCommands {
         method.hasPrefix(methodPrefix)
     }
 
+    /// Republishes the control socket's read snapshot after a fork method and
+    /// waits for it, so the caller's next `window.list` / `workspace.list`
+    /// (answered from that snapshot, off the main actor) sees what the method
+    /// did. Upstream refreshes it after its own mutating calls; without this a
+    /// read right after `request` or `open` could still show the selection
+    /// from before the call, until an unrelated layout change republished.
+    static func republishReadSnapshot(of controller: TerminalController) async {
+        controller.scheduleSocketReadSnapshotRefresh()
+        await controller.socketReadSnapshotRefreshTask?.value
+    }
+
     private struct InvalidParams: Error {
         let message: String
     }
@@ -98,8 +109,10 @@ enum SupermuxDevicesSocketCommands {
                 result = try await SupermuxDeviceNotificationSocketCommands.handle(String(name), params)
             case let name where SupermuxDeviceTerminalCloseSocketCommands.handles(name): result = try SupermuxDeviceTerminalCloseSocketCommands.handle(name, params)
             case let name where SupermuxDeviceMirrorCloseSocketCommands.handles(name): result = try SupermuxDeviceMirrorCloseSocketCommands.handle(name, params)
+            case let name where SupermuxDeviceTunnelSocketCommands.handles(name): result = try await SupermuxDeviceTunnelSocketCommands.handle(name, params)
             case let name where SupermuxTerminalSizingSocketCommands.handles(name):
                 result = try SupermuxTerminalSizingSocketCommands.handle(name, params: params)
+            case let name where SupermuxDevicePortsSocketCommands.handles(name): result = try await SupermuxDevicePortsSocketCommands.handle(name, params)
             #endif
             case let name where SupermuxRemoteMacsSocketCommands.methods.contains(name):
                 // Settings "Remote Macs" card and the flat-row device chip.

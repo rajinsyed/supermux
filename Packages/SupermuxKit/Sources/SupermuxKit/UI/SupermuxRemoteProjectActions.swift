@@ -1,5 +1,6 @@
 public import Foundation
 public import SupermuxMobileCore
+public import SwiftUI
 
 /// The fields of a worktree create on another Mac.
 public struct SupermuxRemoteWorktreeRequest: Hashable, Sendable {
@@ -65,6 +66,9 @@ public struct SupermuxRemoteProjectActions {
     /// keeps running on its Mac, leaves this sidebar, and auto-mirror leaves
     /// it closed until "Show Hidden Remote Workspaces".
     public var hideMirror: (UUID) -> Void
+    /// The extra context-menu items of a nested device mirror (by local
+    /// workspace id), under Hide Here: the host's "Ports on <Mac>" menu.
+    public var mirrorMenu: @MainActor (UUID) -> AnyView
 
     /// Creates the bundle.
     public init(
@@ -77,7 +81,8 @@ public struct SupermuxRemoteProjectActions {
         makeWorktreeTarget: @escaping @MainActor (SupermuxProjectLocation) -> (any SupermuxWorktreeCreationTarget)?,
         addExistingFolder: @escaping (SupermuxProjectSetupDestination, String) async throws -> Void,
         cloneRepository: @escaping (SupermuxProjectSetupDestination, String, String) async throws -> Void,
-        hideMirror: @escaping (UUID) -> Void = { _ in }
+        hideMirror: @escaping (UUID) -> Void = { _ in },
+        mirrorMenu: @escaping @MainActor (UUID) -> AnyView = { _ in AnyView(EmptyView()) }
     ) {
         self.openProject = openProject
         self.openWorktree = openWorktree
@@ -89,6 +94,7 @@ public struct SupermuxRemoteProjectActions {
         self.addExistingFolder = addExistingFolder
         self.cloneRepository = cloneRepository
         self.hideMirror = hideMirror
+        self.mirrorMenu = mirrorMenu
     }
 
     /// No-op callbacks (previews, and hosts without devices).

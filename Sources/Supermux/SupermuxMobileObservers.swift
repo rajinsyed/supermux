@@ -197,6 +197,7 @@ enum SupermuxMobileHostGlue {
     private static var worktreesObserver: SupermuxMobileWorktreesObserver?
     private static var runObserver: SupermuxMobileRunObserver?
     private static var sidebarStatusObserver: SupermuxMobileSidebarStatusObserver?
+    private static var portsObserver: SupermuxHostPortsObserver?
 
     /// Per-workspace repository watchers behind `mobile.supermux.changes.watch`
     /// (leased, TTL-swept; see ``SupermuxMobileChangesWatchRegistry``). Lazily
@@ -235,6 +236,7 @@ enum SupermuxMobileHostGlue {
             readSnapshots: { SupermuxComposition.runCoordinator.mobileRunSnapshots }
         )
         sidebarStatusObserver = SupermuxMobileSidebarStatusObserver()
+        portsObserver = SupermuxHostPortsObserver()
         // Not a mobile observer, but it needs the same once-per-app start: the
         // per-tab working spinners follow the lifecycle relay from here on.
         SupermuxTabActivitySync.shared.start()
