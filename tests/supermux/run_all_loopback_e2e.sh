@@ -149,6 +149,7 @@ suite_args() {
     loopback_mirror_appearance_e2e) printf '%s\n' --app-path "$APP" --projects-file "$SCRATCH/projects.json" ;;
     loopback_sidebar_rows_e2e) printf '%s\n' --scratch "$SCRATCH/rows" ;;
     loopback_terminal_input_e2e) printf '%s\n' --scratch "$SCRATCH/terminal-input" ;;
+    loopback_terminal_clipboard_e2e) printf '%s\n' --scratch "$SCRATCH/terminal-clipboard" ;;
     loopback_terminal_sizing_policy_e2e) printf '%s\n' --app-path "$APP" --projects-file "$SCRATCH/projects.json" ;;
     loopback_new_tab_order_e2e) printf '%s\n' --app-path "$APP" --projects-file "$SCRATCH/projects.json" ;;
     loopback_agent_activity_e2e) printf '%s\n' --scratch "$SCRATCH/activity" ;;
@@ -160,7 +161,7 @@ suite_args() {
 
 # The mirror-render and auto-mirror suites run last: they quit and relaunch the app for their restart checks.
 # CMUX_E2E_SUITES="a b" runs only those suites (same order rules).
-SUITES=(${CMUX_E2E_SUITES:-loopback_device_smoke loopback_projects_e2e loopback_worktree_disclosure_e2e loopback_new_worktree_picker_e2e loopback_workspace_behaviors_e2e loopback_notifications_e2e loopback_tab_sync_e2e loopback_remote_macs_settings_e2e loopback_sidebar_rows_e2e loopback_terminal_input_e2e loopback_terminal_streaming_e2e loopback_mirror_tab_close_e2e loopback_mirror_workspace_close_e2e loopback_mirror_appearance_e2e loopback_new_tab_order_e2e loopback_terminal_sizing_policy_e2e loopback_mirror_files_e2e loopback_agent_activity_e2e loopback_mirror_simulator_e2e loopback_port_forward_e2e loopback_mirror_local_panels_e2e loopback_mirror_browser_e2e loopback_device_tunnel_e2e loopback_mirror_render_e2e loopback_auto_mirror_e2e})
+SUITES=(${CMUX_E2E_SUITES:-loopback_device_smoke loopback_projects_e2e loopback_worktree_disclosure_e2e loopback_new_worktree_picker_e2e loopback_workspace_behaviors_e2e loopback_notifications_e2e loopback_tab_sync_e2e loopback_remote_macs_settings_e2e loopback_sidebar_rows_e2e loopback_terminal_input_e2e loopback_terminal_clipboard_e2e loopback_mirror_tab_close_e2e loopback_mirror_workspace_close_e2e loopback_mirror_appearance_e2e loopback_new_tab_order_e2e loopback_terminal_sizing_policy_e2e loopback_mirror_files_e2e loopback_agent_activity_e2e loopback_mirror_simulator_e2e loopback_port_forward_e2e loopback_mirror_local_panels_e2e loopback_mirror_browser_e2e loopback_device_tunnel_e2e loopback_mirror_render_e2e loopback_auto_mirror_e2e loopback_terminal_streaming_e2e})
 
 status=0
 for name in "${SUITES[@]}"; do

@@ -12,6 +12,7 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
+- Numbering: the highest number in use is **773**. The remote-workspaces work (#517–#599) left
 - Numbering: the highest number in use is **783** (remote terminal streaming, #777–#783; #764–#776 are
   reserved for open PRs #74/#75). The remote-workspaces work (#517–#599) left
   unassigned gaps it may still grow into: **523–524, 527–529, 539–544, 558–559, 562–569,
@@ -38,8 +39,9 @@ Rules for adding a touchpoint:
   reroutes) and its real-Mac fixes #757–#759 (a mirror tab's navigation starts a same-port forward; the wiring of
   its two files; a terminal link opened into a cmux browser counts as the user's), and its slow-`simctl` hardening
   #760–#763 (remote simulators keep working while `simctl` launches stall; a new Simulator tab activates although
-  another Mac's device menu refreshed meanwhile); 709, 713–714, 724, 736, 740–749 and 764–769 are unassigned. The highest
-  number in use is 763. Number **351** is unused (the notifications
+  another Mac's device menu refreshed meanwhile), and its remote-terminal clipboard fixes #764–#773 (a program's
+  copy and the user's copy in another Mac's terminal reach this Mac's clipboard; pasted images and dropped files upload
+  to that Mac); 709, 713–714, 724, 736 and 740–749 are unassigned. The highest number in use is 773. Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 82, 83, 89, 106, 121, 142, 213, 214,
   220, 229, 237, 250, 251, 252–258, 335, 470, 473–481, 483, 484, and 487** are unused; all are
@@ -695,6 +697,19 @@ Rules for adding a touchpoint:
 | 761 | `Sources/Panels/SimulatorPanel.swift` | `simulator-panel-control` | In `init`'s default `clientFactory`, the closing `).makeClient()` of upstream's `SimulatorWorkerClientFactory(...)` becomes `).makeClient(simulatorControl: SupermuxSimulatorControl.make())` (`Sources/Supermux/RemoteSimulator/SupermuxSimulatorControl.swift`): every Simulator panel's worker client runs its `simctl` calls through the fork's control, which builds upstream's `SimulatorControlService` with the same location and camera cleanup scopes the factory would use |
 | 762 | `Sources/TerminalController+MobileSimulator.swift` | `simulator-devices-list-bounded` | Two fences in `v2MobileSimulatorDevicesList`. The first replaces upstream's `let coordinator = resolved.panel.coordinator`, `await coordinator.reloadDevices()`, `let selectedID = coordinator.selectedDeviceID` and the head of `let devices = coordinator.devices.map { device -> [String: Any] in` with `let supermuxListing = await SupermuxSimulatorDeviceListing.listing(for: resolved.panel)`, `let selectedID = supermuxListing.selectedID` and `let devices = supermuxListing.devices.map { device -> [String: Any] in` (upstream's row fields stay as they are); the second makes the final return `return .ok(SupermuxSimulatorDeviceListing.reply(devices: devices, current: supermuxListing.current))`. `SupermuxSimulatorDeviceListing` (`Sources/Supermux/RemoteSimulator/`) waits at most 8 s: a panel that has a device gets upstream's refresh (one at a time per panel, current only when that refresh landed, not when another superseded it), a panel that is not started or still runs its startup discovery gets the list read beside it with its saved or requested device marked (a refresh then would supersede that discovery, and #763's retry would supersede it back), and a refresh or read that outlasted the 8 s answers the next ask. It adds `slow: true` when the list may be out of date; another Mac's viewer then says "Simulators on <Mac> are slow to respond…" and asks again, and its rebind never opens a second tab on a slow answer. Older viewers and the phone ignore the extra key |
 | 763 | `Packages/macOS/CmuxSimulator/Sources/CmuxSimulatorUI/Coordinator/SimulatorPaneCoordinator+Lifecycle.swift` | `simulator-startup-discovery-retry` | In `runStartup(activatingSelectedDevice:)`, upstream's `await reloadDevices()` becomes `while !(await reloadDevices()), !closed, !Task.isCancelled {}`. A refresh started while the startup discovery runs (another Mac's viewer asks `mobile.simulator.devices.list` as soon as it attaches; the phone does too) supersedes it: `reloadDevices` returns false without selecting a device, `runStartup` found `selectedDeviceID == nil` and never called `selectDevice`, and the panel stayed idle (the viewer: `preparing`, no frames). Measured with a temporary log on 2026-10-03: the failing order was startup gen 1, menu gen 2, gen 1 discarded, `selected=nil`; the passing order was menu gen 1, startup gen 2. Retrying lands a discovery and activates as before |
+| 764 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the remote-terminal clipboard work into the cmux target, four entries each (build file, file reference, Supermux group child, Sources phase) next to #693's `SupermuxDeviceTunnelSocketCommands.swift`: `SupermuxMobileHost+TerminalAttachments.swift` (`50BE001A0100000000000001`/`…02`, the host's `terminal.attachment.upload`), `Devices/SupermuxDeviceTerminalUpload.swift` (`…03`/`…04`, the viewer's upload, #765–#767), `SupermuxTerminalClipboardWrites.swift` (`…05`/`…06`, the clipboard write policy, #768–#772) and `Devices/SupermuxTerminalClipboardSocketCommands.swift` (`…07`/`…08`, DEBUG drivers). `grep -c 50BE001A cmux.xcodeproj/project.pbxproj` prints 16 |
+| 765 | `Sources/TerminalImageTransfer.swift` | `device-terminal-upload` | Three fences: `TerminalRemoteUploadTarget` gains `case supermuxDevice(SupermuxDeviceUploadTarget)` (a terminal another of the user's Macs runs); in `plan(fileURLs:target:mode:)`'s `.remote` branch a `.supermuxDevice` target always plans `.uploadFiles` (never upstream's local-path text for a folder; the upload says why it cannot go); and `execute(plan:…)` gains `case .uploadFiles(let fileURLs, .supermuxDevice(let target))`, which runs `SupermuxDeviceTerminalUpload.upload` (`Sources/Supermux/Devices/SupermuxDeviceTerminalUpload.swift`), cleans the transfer's temporary files and finishes through upstream's `finishUpload` (shell-escaped remote paths, or `onFailure`) |
+| 766 | `Sources/TerminalSurface+ImageTransferTarget.swift` | `device-terminal-upload` | At the top of `resolvedImageTransferTarget(mode:in:)`, after the workspace is resolved: a pane `SupermuxDeviceTerminalUpload.target(forPanel:in:)` names as another Mac's terminal returns `.remote(.supermuxDevice(target))`, so a pasted image or a dropped file uploads to that Mac instead of typing a path on this one (upstream returned `.local`) |
+| 767 | `Sources/TextBoxInput.swift` | `device-terminal-upload` | In `uploadFileAttachments`'s `switch remoteTarget`, `case .supermuxDevice(let target)` runs `SupermuxDeviceTerminalUpload.upload(fileURLs, to: target, operation:, completion: finish)`: an image pasted into the text box of another Mac's terminal becomes an attachment whose submission text is the uploaded file's path there |
+| 768 | `Sources/Devices/DeviceSurfaceProvider.swift` | `device-mirror-clipboard` | The device provider's `SurfacePaneFactory.makeCloudManualMirrorPane(…)` call passes `allowsRemoteClipboardWrites: SupermuxTerminalClipboardWrites.allowsProgramWrites(on: machine)` (true for another of the user's Macs, as upstream does for Cloud): a program's OSC 52 copy in another Mac's terminal reaches this Mac's clipboard |
+| 769 | `Sources/Surfaces/Workspace+CloudTerminalReservation.swift` | `device-mirror-clipboard` | Two fences, in `reserveRestoredCloudTerminalPane` and `reserveCloudTerminalPane`: upstream's `allowsRemoteClipboardWrites: <machine>.cloudMachineID != nil` becomes `SupermuxTerminalClipboardWrites.allowsProgramWrites(on: <machine>)`, so a reserved pane a device terminal later adopts keeps its program's copies |
+| 770 | `Sources/Surfaces/Workspace+CloudManualMirror.swift` | `device-mirror-clipboard` | `restoreDeviceDisplayPanel` builds its process-free placeholder with `makeRemoteTmuxPanePanel(onInput:keyNameResolver: nil, allowsRemoteClipboardWrites: true)` (a restored device pane is another Mac's terminal) |
+| 771 | `Packages/macOS/CmuxTerminalCore/Sources/CmuxTerminalCore/SurfaceCallbacks/GhosttySurfaceCallbackContext.swift` | `terminal-user-copy-intent` | Adds `public var isDispatchingRuntimeInput: Bool`: whether this surface's native input dispatch (the paste-intent marker `withRuntimeClipboardPasteIntent` sets around keys, pointer buttons and binding actions) is running on the calling thread, which a program's OSC 52 never is |
+| 772 | `Sources/GhosttyTerminalView.swift` | `terminal-user-copy-intent` | Two fences. In `write_clipboard_cb`'s guard, upstream's `terminalSurface.allowsAutomaticClipboardWrite` becomes `SupermuxTerminalClipboardWrites.allows(terminalSurface, context: callbackContext, location: location)` (`Sources/Supermux/SupermuxTerminalClipboardWrites.swift`: upstream's check OR this Mac's own input is dispatching, so a user's copy lands from any remote projection; DEBUG builds record each decision). In `copyKeyboardCopyModeSelectionToClipboard`, `ghostty_surface_copy_selection_to_clipboard_bounded` runs inside `withPotentialClipboardPasteIntent`, so keyboard copy mode's yank counts as that input instead of being dropped while the method reported success |
+| 773 | `cmuxTests/SupermuxMobileAuthorizationTests.swift` | `device-terminal-upload-authz` | `classificationCoversWorkspacePaneAndMacWideMethods` expects `terminal.attachment.upload` to be workspace-scoped (the upload names the mirrored `workspace_id`); the test's `default: .macWide` would otherwise fail it |
+| 774 | `Sources/TerminalController+SharedSizing.swift` | `sizing-mac-pane-recheck` | At the top of `applyLocalSizing(surfaceID:previous:immediate:reason:)`: `SupermuxTerminalSizingVisibility.shared.hostWillApply(surfaceID:)`, a set lookup unless #633's rule marked the Mac pane off screen; then a pane on screen again gets its automatic `counts_override: false` lifted before the decision applies. Nobody counting holds the grid (`TerminalSizingEngine`, reason `held`) and `applyTarget` pinned the pane to it, so a shown pane still marked off screen kept a departed phone's or mirror's size (99x38) |
+| 775 | `Sources/TerminalController+SharedSizing.swift` | `sizing-mac-pane-input-recheck` | At the top of `noteLocalTerminalSizingActivity(surfaceID:)`: `SupermuxTerminalSizingVisibility.shared.macPaneInput(surfaceID)`, a set lookup unless the pane is marked off screen, then a visibility re-check (input on a pane shows it is in view; a missed reveal must not keep it from counting) |
+| 776 | `Sources/TerminalWindowPortal.swift` | `sizing-portal-reveal` | In `synchronizeHostedView`'s reveal branch, right after `hostedView.isHidden = false`: `SupermuxTerminalSizingVisibility.shared.paneRevealed(hostedView.surfaceView.terminalSurface?.id)`. The portal hides a pane during layout, split and remount churn and reveals it with no visibility notification and often no frame change, so a pane found off screen meanwhile (any window's occlusion change re-checks every pane) stayed "off screen" and stopped counting while shown |
 | 777 | `Packages/macOS/CmuxMobileHost/Sources/CmuxMobileHost/MobileHostConnectionEventQueue.swift` | `terminal-stream-watch` | A connection that named its terminals (`supermuxWatchTerminalBytes(surfaceIDs:)`, set by #778) gets `terminal.bytes` only for those: `enqueue` first runs `supermuxEnqueueWatchedBytesLocked`, which refuses the others and admits the watched ones in order on the shared lane outside the shared 256-event / 8 MB budget, never shed (`hasRoomLocked` and the shed walk subtract them, the walk skips them, `removeQueuedEventLocked` forgets them, `close()` clears them). Past 8 MB queued for one terminal its queued bytes go and only the newest chunk stays, so the viewer sees the gap and resumes (`supermuxWatchedByteResyncCount`). A connection that never names terminals (the phone, an older Mac) keeps upstream's topic-wide, droppable delivery |
 | 778 | `Sources/Mobile/MobileHostService.swift` | `terminal-stream-watch` | `MobileHostConnection.handleSubscriptionRPC` answers `mobile.supermux.terminal.watch {surface_ids}` on the connection itself (`SupermuxTerminalStreamHost.watch`, `Sources/Supermux/Devices/SupermuxTerminalStreamHost.swift`), since its event queue is the filter |
 | 779 | `Sources/Mobile/MobileTerminalByteTee.swift` | `terminal-stream-resume`, `terminal-stream-coalesce` | `SurfaceState` gains `supermuxStreamEpoch` / `supermuxSkipGeneration`; the no-subscriber early return in `append` calls `SupermuxTerminalStreamContinuity.noteSkipped()` (an atomic flag) and `publishFromMain` refreshes the epoch first, so a stretch the tee did not record starts a new epoch and no byte position from before it is resumed. Upstream's JSON+base64 `terminal.bytes` emit at the end of `publishFromMain` becomes `SupermuxTerminalByteCoalescer.shared.append(...)`: the first chunk after a quiet spell goes out at once, later ones within ~2 ms join one event per terminal (up to 32 KB); sequences are unchanged |
@@ -5244,6 +5259,30 @@ Re-apply after an upstream merge:
 - **#636**: keep the rewritten reservation test in step with #635.
 
 
+### 774–776. A shown Mac pane keeps counting; a departed viewer's size does not stick — `sizing-mac-pane-recheck`, `sizing-mac-pane-input-recheck`, `sizing-portal-reveal`
+
+User feedback (2026-10-04): a terminal randomly became small (99x38), the size panel saying "held".
+The portal hides a hosted pane briefly during layout churn (`isHidden = true` in
+`synchronizeHostedView`) and reveals it without posting anything. `SupermuxTerminalSizingVisibility`
+(#633) re-checks every pane on any window's occlusion change, found the hidden pane off screen, marked
+it not counting at once, and nothing looked again after the reveal. A phone or mirror then sized the
+terminal alone; once it left (or its mirror was hidden) nobody counted, the engine held its size and
+the shown Mac pane stayed pinned to it. Fork code in `SupermuxTerminalSizingVisibility`: a Mac pane goes
+off screen only after 250 ms, as a mirror does; a reveal, input on the pane and every sizing decision
+look again; a runtime-ready re-apply is recorded with the apply governor so the pin it sets is lifted
+like any other. A pane really off screen still holds (nobody sees it, and the other Mac's hidden
+auto-mirror is attached to every terminal: re-sizing to the hidden pane would resize the terminal on
+each tab switch there). E2E: steps 17–19 of `loopback_terminal_sizing_policy_e2e` (DEBUG driver
+`supermux.devices.terminal_sizing.portal_flicker`). Re-apply after an upstream merge:
+
+- **#774**: call `hostWillApply(surfaceID:)` before `applyLocalSizing` reads the host, so a change it
+  makes is published and applied with the decision.
+- **#775**: keep the call first in the Mac pane's input hook, before the host guard; it must stay a
+  set lookup for a pane not marked off screen (typing latency).
+- **#776**: wherever upstream un-hides a portal-hosted terminal view, call `paneRevealed(_:)` with its
+  surface id. Retire it if upstream posts `terminalPortalVisibilityDidChange` (or another notification
+  the class observes) on that reveal.
+
 ### 660–664. New tabs append; New Terminal to the Right keeps its spot in a mirror — `new-tab-at-end`, `mirror-terminal-to-right`
 
 User feedback: every terminal tab opened from a remote workspace (⌘T, `+`, the phone) landed second
@@ -6274,6 +6313,45 @@ app does not quit within 60 s or osascript reports an error (its report records 
 (it creates, boots, shuts down and deletes its own simulator; see LOOPBACK-HARNESS.md "Mirror
 simulator E2E"). Two real Macs are still needed for the irx lane and capture on a headless owner.
 
+### 764–773. The clipboard works in another Mac's terminal — `device-terminal-upload`, `device-mirror-clipboard`, `terminal-user-copy-intent`, `device-terminal-upload-authz`
+
+Reported 2026-10-04: in a remote workspace, copying did not reach this MacBook's clipboard and pasting an image
+typed a path that does not exist on the other Mac. A device mirror is a manual-I/O Ghostty surface, and
+upstream's `write_clipboard_cb` drops every write from such a surface unless it was made with remote clipboard
+writes (only Cloud panes were): a program's OSC 52 copy (Claude Code, tmux, nvim) never landed, keyboard copy
+mode's yank reported success and wrote nothing, and copy-on-select was dropped. A pasted image or a dropped file
+resolved to the `.local` transfer target and typed this Mac's (temporary) path. Fork code:
+`Sources/Supermux/SupermuxTerminalClipboardWrites.swift` (which writes land),
+`Sources/Supermux/Devices/SupermuxDeviceTerminalUpload.swift` (the upload, chunked 3 MB with
+`mobile.supermux.terminal.attachment.upload`), `Sources/Supermux/SupermuxMobileHost+TerminalAttachments.swift`
+(the host: upstream's `MobileTaskAttachmentStore` under `~/.cache/cmux/task-attachments`, without upstream's
+Task Composer gate on `mobile.task.attachment.upload`; advertised as `supermux.terminal_attachments.v1`), and
+the DEBUG drivers in `Sources/Supermux/Devices/SupermuxTerminalClipboardSocketCommands.swift`. Re-apply:
+
+- **#764 `project.pbxproj`.** Re-add the four entries per file listed in the #764 row.
+- **#765 `TerminalImageTransfer.swift`.** Keep the `supermuxDevice` case on `TerminalRemoteUploadTarget`, the
+  `.supermuxDevice` early return in `plan(fileURLs:target:mode:)`'s `.remote` branch, and the `execute` case that
+  runs `SupermuxDeviceTerminalUpload.upload` then upstream's `finishUpload`. If upstream adds an upload seam per
+  target (a closure per transport), move the device upload into it. Any new exhaustive switch over
+  `TerminalRemoteUploadTarget` needs a `.supermuxDevice` arm that uploads, never one that types a local path.
+- **#766 `TerminalSurface+ImageTransferTarget.swift`.** Keep the device check first in
+  `resolvedImageTransferTarget`, right after the workspace is resolved (before the SSH and Cloud checks).
+- **#767 `TextBoxInput.swift`.** Keep the `.supermuxDevice` arm in `uploadFileAttachments`'s switch.
+- **#773 `SupermuxMobileAuthorizationTests.swift`.** Keep `.terminalAttachmentUpload` in the workspace-scoped
+  arm of `classificationCoversWorkspacePaneAndMacWideMethods`.
+- **#768–#770 `device-mirror-clipboard`.** Every place a device terminal pane is built passes
+  `allowsRemoteClipboardWrites` from `SupermuxTerminalClipboardWrites.allowsProgramWrites(on:)` (or `true` for the
+  restored device placeholder). If upstream starts granting it to device panes itself, retire these fences.
+- **#771–#772 `terminal-user-copy-intent`.** Keep `isDispatchingRuntimeInput` next to upstream's
+  `withRuntimeClipboardPasteIntent`, the `SupermuxTerminalClipboardWrites.allows` call in `write_clipboard_cb`'s
+  guard, and the paste-intent wrapper around keyboard copy mode's
+  `ghostty_surface_copy_selection_to_clipboard_bounded`. If upstream lets user copies from remote projections
+  through itself, keep only #768–#770.
+
+Verify: `CMUX_E2E_SUITES="loopback_terminal_clipboard_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`
+(OSC 52 written by the mirror, Cmd+V text, copy mode's yank, image paste and file drop upload to the owning Mac,
+an owning Mac without uploads types nothing and says to update). Not covered there: copy-on-select (the same
+`write_clipboard_cb` guard, inside the pointer dispatch) and the text box paste (same upload).
 ### 777–783. A device mirror streams its terminal like a local one — `terminal-stream-watch`, `terminal-stream-resume`, `terminal-stream-coalesce`, `terminal-stream-viewer`
 
 Before, the host sent every terminal's PTY reads as droppable `terminal.bytes` events in one shared
