@@ -20,6 +20,16 @@ struct SupermuxSimulatorControl: SimulatorControlling {
     let service: SimulatorControlService
     var devices: SupermuxCoreSimulatorDevices = .shared
 
+    /// How long a panel's discovery waits for CoreSimulator: upstream's 30 s
+    /// `simctl` command timeout. A cold CoreSimulatorService (after a reboot)
+    /// can take longer than the 8 s another Mac's device menu waits
+    /// (``SupermuxSimulatorDeviceListing``), and a panel that gave up at 8 s
+    /// failed and never activated its device.
+    static let discoveryBudget: TimeInterval = 30
+    /// How long `boot` asks CoreSimulator whether the device already runs
+    /// before it runs `simctl boot` anyway.
+    static let bootStateBudget: TimeInterval = 5
+
     /// CoreSimulator, unless a DEBUG test turned it off to exercise the `simctl` fallback.
     private var coreSimulator: SupermuxCoreSimulatorDevices? {
         SupermuxSimctlDebugDelay.allowsCoreSimulator ? devices : nil
@@ -35,10 +45,18 @@ struct SupermuxSimulatorControl: SimulatorControlling {
         ))
     }
 
+    /// This Mac's simulators, read as a panel's discovery reads them but
+    /// without touching any panel (another Mac's device menu while a panel
+    /// still starts, ``SupermuxSimulatorDeviceListing``).
+    @MainActor
+    static func listDevices() async throws -> [SimulatorDevice] {
+        try await make().discoverDevices()
+    }
+
     func discoverDevices() async throws -> [SimulatorDevice] {
         if let coreSimulator {
             do {
-                return try await coreSimulator.devices()
+                return try await coreSimulator.devices(timeout: Self.discoveryBudget)
             } catch SupermuxCoreSimulatorDevices.Failure.slow {
                 // CoreSimulatorService itself is not answering: `simctl` would wait on it too.
                 throw SupermuxSimulatorSlow.failure
@@ -52,7 +70,7 @@ struct SupermuxSimulatorControl: SimulatorControlling {
     }
 
     func boot(deviceID: String) async throws {
-        if await coreSimulator?.state(of: deviceID) == .booted { return }
+        if await coreSimulator?.state(of: deviceID, timeout: Self.bootStateBudget) == .booted { return }
         try await SupermuxSimctlDebugDelay.beforeSpawns(1, "boot")
         try await service.boot(deviceID: deviceID)
     }
