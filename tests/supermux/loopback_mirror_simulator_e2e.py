@@ -1106,6 +1106,15 @@ class MirrorSimulatorE2E:
 
         return wait_for(description, reached, timeout_s, interval_s=0.5)
 
+    def rejoin_mirror(self) -> None:
+        """After a relaunch: waits for the loopback link and the restored mirror (its id may change), and shows it."""
+        wait_for("the loopback device to reconnect after the relaunch",
+                 lambda: self.device().get("link_state") == "connected" and self.device().get("has_fetched_records"),
+                 60)
+        self.mirror = up(wait_for("the restored mirror", lambda: (self.mirrors_of(self.source) or [None])[0],
+                                  60)["workspace_id"])
+        self.sock.call("workspace.select", {"workspace_id": self.mirror})
+
     def clear_coresimulator_guard(self) -> None:
         """Removes the guard's files, so a run that ends in the middle of these steps poisons no later run."""
         directory = Path.home() / "Library" / "Application Support" / self.bundle_id()
@@ -1128,6 +1137,7 @@ class MirrorSimulatorE2E:
         self.clear_coresimulator_guard()
         try:
             self.relaunch({CORESIMULATOR_LOAD_HOLD_ENV: str(CORESIMULATOR_LOAD_HOLD_SECONDS)})
+            self.rejoin_mirror()
             try:
                 self.new_simulator("configured")
                 self.one_viewer_on_owner()
@@ -1142,8 +1152,7 @@ class MirrorSimulatorE2E:
             phase = self.wait_coresimulator_phase("the relaunched app to finish its CoreSimulator load",
                                                   lambda p: p != "loading" and p != "not_loaded", 30)
             # The relaunch restores the mirror (maybe with a new id) and its Simulator tab: close them for step 26.
-            self.mirror = up(wait_for("the restored mirror", lambda: (self.mirrors_of(self.source) or [None])[0],
-                                      60)["workspace_id"])
+            self.rejoin_mirror()
             self.close_viewer_and_owner_tab()
             problems = []
             if quit_seconds > QUICK_QUIT_SECONDS:
