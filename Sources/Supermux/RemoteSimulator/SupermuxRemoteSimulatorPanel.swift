@@ -308,7 +308,7 @@ final class SupermuxRemoteSimulatorPanel: Panel {
         guard !isClosed, devicesRetryTask == nil, devicesRetries < Self.maximumDevicesRetries else { return }
         devicesRetries += 1
         devicesRetryTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(3))
+            try? await Task.sleep(for: SupermuxRemoteSimulatorHostClient.slowRetryDelay)
             guard let self, !Task.isCancelled else { return }
             self.devicesRetryTask = nil
             await self.refreshDevices()
