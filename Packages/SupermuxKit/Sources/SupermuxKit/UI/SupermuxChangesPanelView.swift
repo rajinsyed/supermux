@@ -15,6 +15,10 @@ public struct SupermuxChangesPanelView: View {
     // still the snapshot boundary and only hands value snapshots to rows.
     @Bindable var model: SupermuxChangesModel
     private let onOpenDiff: (() -> Void)?
+    /// Why "Open Diff" is unavailable here (e.g. the repository is on another
+    /// Mac): the header shows the button dimmed with this as its help instead
+    /// of dropping it. Used only while `onOpenDiff` is `nil`.
+    private let openDiffUnavailableHelp: String?
     /// Host-app presenter for one file's patch (a click on a file row). `nil`
     /// leaves rows inert.
     private let onOpenFileDiff: ((SupermuxFileDiffPatch) -> Void)?
@@ -76,6 +80,8 @@ public struct SupermuxChangesPanelView: View {
     ///   - commitShortcutHint: Display string for the primary chord (button help).
     ///   - onOpenDiff: Host-app callback that opens a full diff view; the
     ///     "Open Diff" header button is hidden when `nil`.
+    ///   - openDiffUnavailableHelp: With `onOpenDiff` `nil`, shows the button
+    ///     dimmed and inert with this help (why it is unavailable) instead.
     ///   - pullRequests: The PR viewer model; `nil` disables the PR buttons.
     ///   - knownPullRequest: The workspace's PR from cmux's own probe, if any.
     ///   - onOpenURL: Opens a URL in the browser; defaults to `NSWorkspace`.
@@ -88,6 +94,7 @@ public struct SupermuxChangesPanelView: View {
         commitAcceleratorShortcut: KeyboardShortcut? = KeyboardShortcut(.return, modifiers: [.command, .shift]),
         commitShortcutHint: String = "⌘↩",
         onOpenDiff: (() -> Void)?,
+        openDiffUnavailableHelp: String? = nil,
         pullRequests: SupermuxPullRequestViewerModel? = nil,
         knownPullRequest: SupermuxPullRequest? = nil,
         onOpenURL: @escaping (URL) -> Void = { NSWorkspace.shared.open($0) },
@@ -99,6 +106,7 @@ public struct SupermuxChangesPanelView: View {
         self.commitAcceleratorShortcut = commitAcceleratorShortcut
         self.commitShortcutHint = commitShortcutHint
         self.onOpenDiff = onOpenDiff
+        self.openDiffUnavailableHelp = openDiffUnavailableHelp
         self.pullRequests = pullRequests
         self.knownPullRequest = knownPullRequest
         self.onOpenURL = onOpenURL
@@ -242,6 +250,13 @@ public struct SupermuxChangesPanelView: View {
                     help: String(localized: "supermux.changes.openDiff.help", defaultValue: "Open diff view"),
                     action: onOpenDiff
                 )
+            } else if let openDiffUnavailableHelp {
+                // Not a disabled Button: its tooltip would not show.
+                Image(systemName: "doc.text.magnifyingglass")
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(.quaternary)
+                    .help(openDiffUnavailableHelp)
+                    .accessibilityLabel(openDiffUnavailableHelp)
             }
             headerButton(
                 "arrow.clockwise",

@@ -22,7 +22,12 @@ enum SupermuxWorkspaceActivityResolver {
     /// The agent activity to surface across all of the workspace's panels.
     /// - Parameter workspace: The workspace to inspect.
     static func activity(for workspace: Workspace) -> SupermuxWorkspaceActivity {
-        activity(fromStatesByPanelId: workspace.agentLifecycleStatesByPanelId)
+        // A device mirror shows its remote workspace's activity (the remote
+        // record's `supermux_activity`); its panes never carry a lifecycle.
+        if let mirror = SupermuxComposition.deviceStatusProjector.status(forLocal: workspace.id) {
+            return mirror.activity
+        }
+        return activity(fromStatesByPanelId: workspace.agentLifecycleStatesByPanelId)
     }
 
     /// Pure core of ``activity(for:)``, split out for unit testing.

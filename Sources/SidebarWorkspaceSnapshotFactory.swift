@@ -34,14 +34,23 @@ struct SidebarWorkspaceSnapshotFactory {
                   settings.showsGitBranch else {
                 return nil
             }
+            // SUPERMUX:begin device-mirror-flatrow-status
             return gitBranchSummaryText(orderedPanelIds: orderedPanelIds)
+                ?? SupermuxDeviceMirrorSidebar.branch(for: workspace)
+            // SUPERMUX:end device-mirror-flatrow-status
         }()
         let compactDirectoryCandidates: [String] = {
             guard showsBranchDirectoryRows,
                   settings.branchDirectory.branchLayout == .inline else {
                 return []
             }
-            return cloud?.directoryCandidates ?? compactDirectoryCandidatesList(orderedPanelIds: orderedPanelIds)
+            // SUPERMUX:begin device-mirror-flatrow-status
+            // (upstream: `return cloud?.directoryCandidates ?? …` — a device
+            // mirror's line drops the Mac name, which its Mac icon's tooltip names)
+            return SupermuxDeviceMirrorSidebar.directoryCandidates(
+                for: workspace, orderedPanelIds: orderedPanelIds, usesLastSegmentPath: settings.usesLastSegmentPath
+            ) ?? cloud?.directoryCandidates ?? compactDirectoryCandidatesList(orderedPanelIds: orderedPanelIds)
+            // SUPERMUX:end device-mirror-flatrow-status
         }()
         let compactBranchDirectoryCandidates = compactBranchDirectoryCandidatesList(
             gitSummary: compactGitBranchSummaryText,
@@ -52,12 +61,25 @@ struct SidebarWorkspaceSnapshotFactory {
                   settings.branchDirectory.branchLayout == .vertical else {
                 return []
             }
-            if let cloud { return [.init(branch: nil, directoryCandidates: cloud.directoryCandidates)] }
+            // SUPERMUX:begin device-mirror-flatrow-status
+            // (upstream: `branch: nil` — a device mirror shows its remote branch,
+            // and its directory without the Mac name, which its Mac icon's tooltip names)
+            if let cloud {
+                let branch = settings.showsGitBranch ? SupermuxDeviceMirrorSidebar.branch(for: workspace) : nil
+                let directories = SupermuxDeviceMirrorSidebar.directoryCandidates(
+                    for: workspace, orderedPanelIds: orderedPanelIds, usesLastSegmentPath: settings.usesLastSegmentPath
+                ) ?? cloud.directoryCandidates
+                return [.init(branch: branch, directoryCandidates: directories)]
+            }
+            // SUPERMUX:end device-mirror-flatrow-status
             return verticalBranchDirectoryLines(orderedPanelIds: orderedPanelIds)
         }()
         let pullRequestRows: [SidebarWorkspaceSnapshotBuilder.PullRequestDisplay] = {
             guard showsPullRequestRows else { return [] }
+            // SUPERMUX:begin device-mirror-flatrow-status
             return pullRequestDisplays(orderedPanelIds: orderedPanelIds)
+                + SupermuxDeviceMirrorSidebar.pullRequestDisplays(for: workspace)
+            // SUPERMUX:end device-mirror-flatrow-status
         }()
         let todoControlsEnabled = WorkspaceTodoFeature.isEnabled
         let workspaceStatusVisible = todoControlsEnabled && !workspace.todoState.statusHidden

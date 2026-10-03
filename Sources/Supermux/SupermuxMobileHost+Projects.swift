@@ -22,6 +22,11 @@ extension TerminalController {
         let projects = model.projects
         let presets = model.presets
         let isSectionCollapsed = model.isSectionCollapsed
+        // Additive `git_remote_url` (cross-Mac repo identity): cached `git
+        // config` lookups on the resolver actor, never on the main actor.
+        let gitRemoteURLs = await SupermuxComposition.gitRemoteResolver.remoteURLs(
+            forRoots: projects.map(\.rootPath)
+        )
         do {
             // has_custom_icon stats candidate icon paths per project; keep
             // that file I/O off the main actor.
@@ -29,7 +34,8 @@ extension TerminalController {
                 try SupermuxMobileProjectsPayloadBuilder().projectsList(
                     projects: projects,
                     presets: presets,
-                    isSectionCollapsed: isSectionCollapsed
+                    isSectionCollapsed: isSectionCollapsed,
+                    gitRemoteURLs: gitRemoteURLs
                 )
             }.value
             return .ok(payload)
@@ -150,10 +156,11 @@ extension TerminalController {
 
     /// The `{project: SupermuxProjectDTO}` result for one record, built off
     /// the main actor (icon and config probes are file I/O).
-    private func supermuxProjectResult(_ project: SupermuxProject) async -> V2CallResult {
+    func supermuxProjectResult(_ project: SupermuxProject) async -> V2CallResult {
+        let gitRemoteURL = await SupermuxComposition.gitRemoteResolver.remoteURL(forRoot: project.rootPath)
         do {
             let payload = try await Task.detached(priority: .userInitiated) {
-                try SupermuxMobileProjectsPayloadBuilder().projectPayload(project: project)
+                try SupermuxMobileProjectsPayloadBuilder().projectPayload(project: project, gitRemoteURL: gitRemoteURL)
             }.value
             return .ok(payload)
         } catch {
@@ -165,7 +172,8 @@ extension TerminalController {
     /// project root through the same ``SupermuxTabManagerOpener`` path the
     /// desktop uses — which records the workspace→project association via
     /// ``SupermuxWorkspaceAssociationStore`` so the workspace nests under the
-    /// project in the Mac sidebar. Result: `{workspace_id, project_id}`.
+    /// project in the Mac sidebar. `select: false` (another Mac asking) opens
+    /// it without selecting it. Result: `{workspace_id, project_id}`.
     @MainActor
     func v2SupermuxProjectOpen(params: [String: Any]) async -> V2CallResult {
         let project: SupermuxProject
@@ -183,7 +191,8 @@ extension TerminalController {
                 directory: project.rootPath,
                 colorHex: project.colorHex,
                 projectId: project.id,
-                preservesUserFocus: true
+                preservesUserFocus: true,
+                selectsWorkspace: supermuxSelectsWorkspace(params: params)
             )) else {
             return .err(code: "unavailable", message: "Workspace context is unavailable", data: nil)
         }

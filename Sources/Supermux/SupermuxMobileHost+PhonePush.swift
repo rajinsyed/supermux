@@ -25,6 +25,11 @@ extension TerminalController {
                 environment: environment,
                 enabled: enabled
             )
+            // Relay a new or rotated token to this user's other Macs, so the Mac
+            // that runs an agent can push even if the phone never focused it.
+            if registered {
+                SupermuxComposition.phonePushShareCoordinator.shareWithConnectedDevices()
+            }
             return .ok(["registered": registered])
         } catch {
             return .err(

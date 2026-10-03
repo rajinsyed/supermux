@@ -214,6 +214,9 @@ final class DeviceSurfaceProvider: SurfaceProvider {
                             return
                         }
                         self.catalog.replaceProjection(projection, withPanel: created.panelID, in: created.workspaceID, remotePlacement: nil)
+                        // SUPERMUX:begin device-restored-pane-notifications
+                        SupermuxRestoredMirrorNotifications.carry(fromPanel: projection.panelID, toPanel: created.panelID, inWorkspace: projection.workspaceID)
+                        // SUPERMUX:end device-restored-pane-notifications
                         SurfacePaneFactory.close(panelID: projection.panelID, in: projection.workspaceID)
                     } catch {
                         // The next authoritative catalog update retries an unavailable pane.
@@ -290,7 +293,10 @@ final class DeviceSurfaceProvider: SurfaceProvider {
                 created = try workspace.performRemoteTmuxMirrorMutation {
                     try SurfacePaneFactory.makeCloudManualMirrorPane(
                         at: destination, focus: false,
-                        onInput: { input in router.enqueue(input) }, keyNameResolver: nil,
+                        // SUPERMUX:begin device-mirror-key-resolver
+                        onInput: { input in router.enqueue(input) },
+                        keyNameResolver: SupermuxDeviceTerminalInput.keyResolver(for: machine),
+                        // SUPERMUX:end device-mirror-key-resolver
                         onResize: { _ in }, onRuntimeReady: {}, onFocus: {}
                     )
                 }

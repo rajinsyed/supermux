@@ -12,6 +12,49 @@ struct SupermuxDirectPhonePush {
         self.service = service
     }
 
+    /// The direct lane's single entry from the notification store: decides
+    /// (``SupermuxPhoneForwardGate/directVerdict(for:focusedPaneAlreadyVisible:admission:)``:
+    /// never a record mirrored from another Mac, never the pane a present
+    /// user is watching, and upstream's own enabled + `onlyWhenAway`
+    /// admission), then forwards.
+    ///
+    /// - Parameters:
+    ///   - upstreamRelayAttempted: Whether upstream's relay lane forwarded it
+    ///     too (recorded for DEBUG introspection only).
+    ///   - badgeCount: The phone-facing unread count (mirrored records excluded).
+    func deliver(
+        notification: TerminalNotification,
+        focusedPaneAlreadyVisible: Bool,
+        upstreamRelayAttempted: Bool,
+        badgeCount: Int
+    ) {
+        let client = PhonePushClient.shared
+        let verdict = SupermuxPhoneForwardGate.directVerdict(
+            for: notification,
+            focusedPaneAlreadyVisible: focusedPaneAlreadyVisible,
+            admission: client.currentAdmission()
+        )
+        #if DEBUG
+        SupermuxPhonePushDecisionLog.shared.record(.init(
+            notificationID: notification.id,
+            workspaceID: notification.tabId,
+            surfaceID: notification.surfaceId,
+            title: notification.title,
+            originKind: notification.origin.kind,
+            upstreamRelayAttempted: upstreamRelayAttempted,
+            direct: verdict,
+            badgeCount: badgeCount,
+            recordedAt: Date()
+        ))
+        #endif
+        guard verdict == .forward else { return }
+        forward(
+            notification: notification,
+            badgeCount: badgeCount,
+            hideContent: client.configuration().hideContent
+        )
+    }
+
     func forward(notification: TerminalNotification, badgeCount: Int, hideContent: Bool) {
         let tabName = AppDelegate.shared?
             .tabTitlesByTabId(for: [notification.tabId])[notification.tabId]
@@ -29,6 +72,7 @@ struct SupermuxDirectPhonePush {
             surfaceID: (notification.surfaceId ?? notification.panelId)?.uuidString,
             retargetsToLiveSurfaceOwner: notification.retargetsToLiveSurfaceOwner,
             macDeviceID: MobileHostIdentity.deviceID(),
+            macInstanceTag: MobileHostIdentity.instanceTag(),
             notificationID: notification.id.uuidString,
             badgeCount: badgeCount,
             hideContent: hideContent,
@@ -38,9 +82,14 @@ struct SupermuxDirectPhonePush {
         Task { await service.forward(message) }
     }
 
+    /// Sends the banner-less dismiss push. It names this Mac so the phone's
+    /// notification service extension can file `badgeCount` (this Mac's own
+    /// unread count) under it and badge the total over every Mac.
     func forwardDismissed(ids: [String], badgeCount: Int) {
         let message = SupermuxPhonePushMessage(
             kind: .dismiss,
+            macDeviceID: MobileHostIdentity.deviceID(),
+            macInstanceTag: MobileHostIdentity.instanceTag(),
             dismissedIDs: ids,
             badgeCount: badgeCount
         )

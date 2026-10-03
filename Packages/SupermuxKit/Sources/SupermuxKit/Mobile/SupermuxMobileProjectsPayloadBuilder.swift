@@ -36,15 +36,21 @@ public struct SupermuxMobileProjectsPayloadBuilder: Sendable {
     ///     whole list — additive `presets` key, ignored by old phones).
     ///   - isSectionCollapsed: Whether the Mac sidebar's Projects section is
     ///     collapsed.
+    ///   - gitRemoteURLs: Each project's `origin` URL keyed by its
+    ///     `rootPath` (additive `git_remote_url`; a project without an entry
+    ///     omits the key, the legacy shape).
     /// - Returns: The RPC result object (`projects` + `presets` +
     ///   `section_collapsed`).
     /// - Throws: Any encoding failure from the shared wire bridge.
     public func projectsList(
         projects: [SupermuxProject],
         presets: [SupermuxTerminalPreset],
-        isSectionCollapsed: Bool
+        isSectionCollapsed: Bool,
+        gitRemoteURLs: [String: String] = [:]
     ) throws -> [String: Any] {
-        let encoded = try projects.map(encodedProject(_:))
+        let encoded = try projects.map { project in
+            try encodedProject(project, gitRemoteURL: gitRemoteURLs[project.rootPath])
+        }
         let wire = SupermuxWireJSON()
         let encodedPresets = try presets.map { preset in
             try wire.dictionary(from: SupermuxTerminalPresetDTO(preset: preset))
@@ -58,17 +64,19 @@ public struct SupermuxMobileProjectsPayloadBuilder: Sendable {
 
     /// Encodes the single-project result payload the `project.create` and
     /// `project.update` write handlers return (`{project: SupermuxProjectDTO}`).
-    /// - Parameter project: The created/updated record.
+    /// - Parameters:
+    ///   - project: The created/updated record.
+    ///   - gitRemoteURL: The project's `origin` URL, if resolved.
     /// - Returns: The RPC result object.
     /// - Throws: Any encoding failure from the shared wire bridge.
-    public func projectPayload(project: SupermuxProject) throws -> [String: Any] {
-        ["project": try encodedProject(project)]
+    public func projectPayload(project: SupermuxProject, gitRemoteURL: String? = nil) throws -> [String: Any] {
+        ["project": try encodedProject(project, gitRemoteURL: gitRemoteURL)]
     }
 
     /// One project's wire dictionary, with the fetchable-icon flag, the icon
     /// change token, and the config-managed read-only marker resolved (all are
     /// file probes — run this off the main actor).
-    private func encodedProject(_ project: SupermuxProject) throws -> [String: Any] {
+    private func encodedProject(_ project: SupermuxProject, gitRemoteURL: String?) throws -> [String: Any] {
         let iconURL = iconResolver.resolveAvatar(
             rootPath: project.rootPath,
             customIconPath: project.customIconPath
@@ -79,7 +87,8 @@ public struct SupermuxMobileProjectsPayloadBuilder: Sendable {
             iconETag: iconURL.flatMap(Self.iconChangeToken),
             configPath: SupermuxMobileProjectConfigMarker.managedRelativePath(
                 projectRoot: project.rootPath
-            )
+            ),
+            gitRemoteURL: gitRemoteURL
         ))
     }
 

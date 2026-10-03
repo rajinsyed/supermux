@@ -83,7 +83,11 @@ extension Workspace {
     static func reservationKeyNameResolver(
         for machine: SurfaceMachineID
     ) -> (@MainActor @Sendable (ghostty_input_key_s) -> String?)? {
-        if machine.isDevice { return nil }
+        // SUPERMUX:begin device-mirror-key-resolver
+        // Supermux: the device router forwards keys to a Mac that takes them;
+        // the resolver names none for any other Mac.
+        if machine.isDevice { return SupermuxDeviceTerminalInput.keyResolver(for: machine) }
+        // SUPERMUX:end device-mirror-key-resolver
         return { event in RemoteTmuxKeyName(inputEvent: event)?.value }
     }
 

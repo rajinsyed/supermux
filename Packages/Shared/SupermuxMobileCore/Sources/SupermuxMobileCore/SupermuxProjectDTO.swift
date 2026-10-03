@@ -46,6 +46,13 @@ public struct SupermuxProjectDTO: Codable, Sendable, Equatable {
     /// fields are config-owned and `project.update` rejects patches to them,
     /// exactly like the desktop editor disables them. `nil` when user-owned.
     public var configPath: String?
+    /// The repo's `origin` URL as git reports it on the host Mac, or `nil` when
+    /// the project is not a git repo or has no origin. Other Macs match their
+    /// own copy of the repo by ``gitRemoteIdentity``, never by path.
+    public var gitRemoteURL: String?
+
+    /// Device-independent repository key derived from ``gitRemoteURL``.
+    public var gitRemoteIdentity: String? { SupermuxGitRemoteIdentity.normalized(gitRemoteURL) }
 
     /// Creates a project DTO.
     /// - Parameters:
@@ -65,6 +72,7 @@ public struct SupermuxProjectDTO: Codable, Sendable, Equatable {
     ///   - lastOpenedAt: Optional last-opened time, Unix seconds.
     ///   - configPath: Optional relative path of the managing `config.json`
     ///     (the read-only marker for the config-owned fields).
+    ///   - gitRemoteURL: Optional `origin` URL of the project's repo.
     public init(
         id: String,
         name: String,
@@ -81,7 +89,8 @@ public struct SupermuxProjectDTO: Codable, Sendable, Equatable {
         actions: [SupermuxProjectActionDTO]? = nil,
         createdAt: Double? = nil,
         lastOpenedAt: Double? = nil,
-        configPath: String? = nil
+        configPath: String? = nil,
+        gitRemoteURL: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -99,6 +108,7 @@ public struct SupermuxProjectDTO: Codable, Sendable, Equatable {
         self.createdAt = createdAt
         self.lastOpenedAt = lastOpenedAt
         self.configPath = configPath
+        self.gitRemoteURL = gitRemoteURL
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -118,5 +128,6 @@ public struct SupermuxProjectDTO: Codable, Sendable, Equatable {
         case createdAt = "created_at"
         case lastOpenedAt = "last_opened_at"
         case configPath = "config_path"
+        case gitRemoteURL = "git_remote_url"
     }
 }

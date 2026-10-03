@@ -1,5 +1,8 @@
 import CmuxCloud
 import Foundation
+// SUPERMUX:begin device-notification-project
+import SupermuxMobileCore
+// SUPERMUX:end device-notification-project
 
 /// Another Mac's `notification.feed.list` reply as rows for the shared
 /// ``CloudNotificationSync``, so a My Devices Mac's notifications take the
@@ -27,6 +30,12 @@ struct DeviceNotificationFeed: Equatable, Sendable {
     /// The other Mac's workspace id for each row, by row id. It places a
     /// workspace-level notification (no terminal) on the matching local workspace.
     var remoteWorkspaceIDs: [String: String]
+    // SUPERMUX:begin device-notification-project
+    /// The other Mac's project for each row, by row id (its feed's
+    /// `supermux_project`), so the local copy keeps the remote project instead
+    /// of re-resolving this Mac's paths.
+    var supermuxProjects: [String: SupermuxNotificationProject] = [:]
+    // SUPERMUX:end device-notification-project
 
     init(rows: [CloudVMNotificationRow] = [], remoteWorkspaceIDs: [String: String] = [:]) {
         self.rows = rows
@@ -66,5 +75,8 @@ struct DeviceNotificationFeed: Equatable, Sendable {
             return lhs.id < rhs.id
         }
         self.init(rows: rows, remoteWorkspaceIDs: remoteWorkspaceIDs)
+        // SUPERMUX:begin device-notification-project
+        supermuxProjects = SupermuxDeviceNotificationProjects.projects(inFeedResponse: response)
+        // SUPERMUX:end device-notification-project
     }
 }

@@ -82,8 +82,8 @@ extension TerminalController {
     /// workspace name → AI naming when configured, mirroring the desktop
     /// sheet; the service falls back to a random name for blank input) and,
     /// with `open: true`, opens a workspace in it running the project's setup
-    /// script in a dedicated terminal. Result:
-    /// `{worktree: SupermuxWorktreeDTO, workspace_id?}`.
+    /// script in a dedicated terminal (`select: false` opens it without
+    /// selecting it). Result: `{worktree: SupermuxWorktreeDTO, workspace_id?}`.
     @MainActor
     func v2SupermuxWorktreeCreate(params: [String: Any]) async -> V2CallResult {
         let project: SupermuxProject
@@ -150,9 +150,9 @@ extension TerminalController {
     }
 
     /// `mobile.supermux.worktree.open`: opens (or focuses) a workspace in an
-    /// existing worktree. Re-opening never re-runs setup — only the
-    /// just-created path does, exactly like the desktop. Result:
-    /// `{workspace_id}`.
+    /// existing worktree (`select: false`: without selecting it). Re-opening
+    /// never re-runs setup — only the just-created path does, exactly like
+    /// the desktop. Result: `{workspace_id}`.
     @MainActor
     func v2SupermuxWorktreeOpen(params: [String: Any]) async -> V2CallResult {
         let project: SupermuxProject
@@ -300,14 +300,26 @@ extension TerminalController {
                 projectId: project.id,
                 setupScript: setupScript,
                 setupEnvironment: setupEnvironment,
-                preservesUserFocus: true
+                preservesUserFocus: true,
+                selectsWorkspace: supermuxSelectsWorkspace(params: params)
             )
         )
+    }
+
+    /// Whether an open requested over the mobile RPC selects its workspace
+    /// here. The phone sends nothing and keeps today's behavior (selected);
+    /// another Mac sends `select: false`, because its user watches the
+    /// workspace through a mirror there and this Mac's window must not switch
+    /// under whoever is using it.
+    func supermuxSelectsWorkspace(params: [String: Any]) -> Bool {
+        params["select"] as? Bool ?? true
     }
 
     /// Light snapshots of every open workspace across all main windows, for
     /// worktree open-state matching and the opened-worktree PR fold (cmux's
     /// own per-workspace probe — the same source the desktop rows use).
+    /// Device mirrors are left out: their directory is the other Mac's path,
+    /// and their ids never reach the phone or other Macs (host export filter).
     @MainActor
     private func supermuxOpenWorkspaceSnapshots() -> [SupermuxOpenWorkspace] {
         guard let app = AppDelegate.shared else { return [] }
@@ -318,6 +330,7 @@ extension TerminalController {
             guard seenWindowIDs.insert(summary.windowId).inserted,
                   let windowTabManager = app.tabManagerFor(windowId: summary.windowId) else { continue }
             for workspace in windowTabManager.tabs where seenWorkspaceIDs.insert(workspace.id).inserted {
+                if SupermuxDeviceWorkspaceIndex.isDeviceMirror(workspace) { continue }
                 snapshots.append(SupermuxOpenWorkspace(
                     id: workspace.id,
                     title: workspace.customTitle ?? workspace.title,

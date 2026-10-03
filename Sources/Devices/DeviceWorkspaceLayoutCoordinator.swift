@@ -448,7 +448,17 @@ final class DeviceWorkspaceLayoutCoordinator {
                     try await fetch(target.remoteID)
                 }
                 guard let snapshot = snapshots[target.remoteID] else { continue }
-                let sourceIDs = try snapshot.layout.validatedSurfaceIDs()
+                // SUPERMUX:begin device-layout-non-terminal-panels
+                // Browser/markdown/other panels are never materialized here;
+                // syncing only the terminals keeps them from stalling the
+                // whole workspace. (upstream: `let sourceIDs = try snapshot.layout.validatedSurfaceIDs()`)
+                let supermuxAllSourceIDs = try snapshot.layout.validatedSurfaceIDs()
+                let supermuxNonTerminalIDs = SupermuxDeviceLayoutSurfaceFilter.nonTerminalSurfaceIDs(
+                    in: supermuxAllSourceIDs, machine: machine, remoteWorkspaceID: target.remoteID, catalog: catalog
+                )
+                let sourceIDs = supermuxAllSourceIDs.filter { !supermuxNonTerminalIDs.contains($0) }
+                guard let supermuxTerminalLayout = snapshot.layout.removingSurfaceIDs(supermuxNonTerminalIDs) else { continue }
+                // SUPERMUX:end device-layout-non-terminal-panels
                 if let previous = deliveries[id],
                    !previous.sourceIDs.intersection(sourceIDs).isSubset(of: Set(target.mapping.values)) {
                     // Closing a local mirror tab detaches that view; it must
@@ -467,8 +477,10 @@ final class DeviceWorkspaceLayoutCoordinator {
                 let wanted = sourceIDs.map { SurfaceResourceID(machine: machine, kind: .terminal, key: $0) }
                 guard wanted.allSatisfy({ catalog.resources[$0] != nil }) else { continue }
                 let present = Set(target.projections.map(\.resource))
+                // SUPERMUX:begin device-layout-non-terminal-panels
                 let locations = DeviceWorkspaceProjection(machine: machine, isLive: true)
-                    .layoutLocations(snapshot.layout)
+                    .layoutLocations(supermuxTerminalLayout)
+                // SUPERMUX:end device-layout-non-terminal-panels
                 // Reserved panes keep their place beside the terminals already
                 // arranged here, not beside one this pass projects at a fallback.
                 let arranged = native.deviceWorkspaceLayoutSnapshot()
@@ -508,7 +520,9 @@ final class DeviceWorkspaceLayoutCoordinator {
                 }
                 guard let current = self.target(for: id) else { continue }
                 let reverse = Dictionary(current.mapping.map { ($0.value, $0.key) }, uniquingKeysWith: { first, _ in first })
-                var translated = try snapshot.layout.remappingSurfaceIDs(reverse)
+                // SUPERMUX:begin device-layout-non-terminal-panels
+                var translated = try supermuxTerminalLayout.remappingSurfaceIDs(reverse)
+                // SUPERMUX:end device-layout-non-terminal-panels
                 if !current.reserved.isEmpty, let arranged {
                     translated = translated.grafting(Set(current.reserved.map(\.uuidString)), from: arranged)
                 }

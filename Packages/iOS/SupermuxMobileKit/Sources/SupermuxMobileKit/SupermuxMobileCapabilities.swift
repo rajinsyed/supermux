@@ -56,4 +56,12 @@ public struct SupermuxMobileCapabilities: Sendable, Equatable {
     /// `supermux.agent_launch.v1`: prompt-first worktree creation that starts
     /// Claude (`agent.options` / `agent.start`) is served.
     public var supportsAgentLaunch: Bool { contains(.agentLaunchV1) }
+    /// The Mac shares push credentials and phone registrations with the
+    /// user's other Macs (Mac-to-Mac only; no phone UI depends on it).
+    public var supportsPhonePushShare: Bool { contains(.phonePushShareV1) }
+    /// The Mac serves cross-Mac project setup (`project.probe` / `project.clone`).
+    public var supportsProjectSetup: Bool { contains(.projectSetupV1) }
+    /// The Mac takes device-mirror input batches (Mac-to-Mac only; no phone
+    /// UI depends on it).
+    public var supportsTerminalInput: Bool { contains(.terminalInputV1) }
 }

@@ -15,7 +15,8 @@ extension TerminalController {
     /// `mobile.supermux.run.state`: `{runs: [SupermuxRunStateDTO]}` — one row
     /// per registered project (so the phone can paint run dots on every
     /// project row), folding in the live command/workspace/start time for
-    /// running projects.
+    /// running projects — plus the additive `workspace_runs`, one row per
+    /// live run (a viewer Mac's mirrors read their own workspace's run there).
     @MainActor
     func v2SupermuxRunState(params: [String: Any]) async -> V2CallResult {
         let model = SupermuxComposition.projectsModel
@@ -31,7 +32,8 @@ extension TerminalController {
         }
     }
 
-    /// `mobile.supermux.run.start` `{project_id, command_id?}`: starts the
+    /// `mobile.supermux.run.start` `{project_id, command_id?, workspace_id?}`
+    /// (`workspace_id`: see `SupermuxMobileHost+RunWorkspace.swift`): starts the
     /// project's run command with desktop ⌘G semantics — no `command_id`
     /// chains every configured run command with `&&`; a `command_id` (the
     /// 0-based index into the project's `run_commands` array as
@@ -61,6 +63,12 @@ extension TerminalController {
                 )
             }
             commandOverride = selected
+        }
+        if params["workspace_id"] != nil {
+            // A viewer Mac's mirror names the exact workspace (additive param).
+            return supermuxRunStartInNamedWorkspace(
+                project: project, commandOverride: commandOverride, params: params
+            )
         }
         let coordinator = SupermuxComposition.runCoordinator
         let builder = SupermuxMobileRunPayloadBuilder()
@@ -93,7 +101,7 @@ extension TerminalController {
         }
     }
 
-    /// `mobile.supermux.run.stop` `{project_id}`: interrupts the project's
+    /// `mobile.supermux.run.stop` `{project_id, workspace_id?}`: interrupts the project's
     /// running command (Ctrl+C into the run surface, exactly like the desktop
     /// toggle). Idempotent: a project with no live run returns
     /// `is_running: false`. Result: `{run: SupermuxRunStateDTO}`.
@@ -103,6 +111,9 @@ extension TerminalController {
         switch await supermuxResolveProject(params: params) {
         case let .failure(error): return error
         case let .success(resolved): project = resolved
+        }
+        if params["workspace_id"] != nil {
+            return supermuxRunStopInNamedWorkspace(project: project, params: params)
         }
         let coordinator = SupermuxComposition.runCoordinator
         guard let snapshot = SupermuxMobileRunPayloadBuilder().representativeSnapshot(
@@ -155,8 +166,11 @@ extension TerminalController {
     ) -> Workspace? {
         let matcher = SupermuxProjectMatcher()
         let projects = SupermuxComposition.projectsModel.projects
+        // A device mirror's terminals live on another Mac, and its local
+        // directory is not the project's: never a run target here.
         for workspace in supermuxOrderedOpenWorkspaces()
-        where matcher.project(for: workspace.currentDirectory, in: projects)?.id == project.id {
+        where !SupermuxDeviceWorkspaceIndex.isDeviceMirror(workspace)
+            && matcher.project(for: workspace.currentDirectory, in: projects)?.id == project.id {
             return workspace
         }
         guard let tabManager = v2ResolveTabManager(params: params) else { return nil }

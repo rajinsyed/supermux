@@ -163,6 +163,9 @@ final class MobileStateSyncHost {
                 )
             }
             for workspace in tabs where seenWorkspaceIDs.insert(workspace.id).inserted {
+                // SUPERMUX:begin device-mirror-export-filter (a mirror of another Mac's workspace is never re-exported)
+                if SupermuxDeviceWorkspaceIndex.isDeviceMirror(workspace) { continue }
+                // SUPERMUX:end device-mirror-export-filter
                 liveWorkspaceIDs.insert(workspace.id)
                 liveWorkspaceObjectIDs[workspace.id] = ObjectIdentifier(workspace)
                 workspaceRows.append(
@@ -284,8 +287,12 @@ final class MobileStateSyncHost {
             // SUPERMUX:begin supermux-mobile-workspace-fields
             supermuxProjectID: supermuxFields[SupermuxMobileWorkspaceFields.projectIDKey] as? String,
             supermuxActivity: supermuxFields[SupermuxMobileWorkspaceFields.activityKey] as? String,
-            supermuxBranch: supermuxFields[SupermuxMobileWorkspaceFields.branchKey] as? String,
-            supermuxPullRequest: supermuxPullRequest,
+            // Global (project-less) workspaces get branch/PR too, so another
+            // Mac's mirror row shows them (the phone reads these only on
+            // project rows, so its UI is unchanged).
+            supermuxBranch: supermuxFields[SupermuxMobileWorkspaceFields.branchKey] as? String
+                ?? SupermuxMobileWorkspaceStatusFields.branch(for: workspace),
+            supermuxPullRequest: supermuxPullRequest ?? SupermuxMobileWorkspaceStatusFields.pullRequest(for: workspace),
             // The unread COUNT behind `has_unread`, so the phone's badge can
             // show the same numeral the Mac sidebar does. Not part of
             // `supermuxFields` on purpose: those are gated on the workspace
@@ -294,7 +301,12 @@ final class MobileStateSyncHost {
             supermuxUnreadCount: notificationStore?.unreadCount(forTabId: workspace.id),
             supermuxUnreadPanelIDs: workspace.supermuxMobileUnreadPanelIDs(
                 notificationStore: notificationStore
-            )
+            ),
+            // Status parity for Mac-to-Mac mirrors: the row's pills, progress
+            // and latest log (SupermuxMobileWorkspaceStatusFields).
+            supermuxStatusEntries: SupermuxMobileWorkspaceStatusFields.statusEntries(for: workspace),
+            supermuxProgress: SupermuxMobileWorkspaceStatusFields.progress(for: workspace),
+            supermuxLog: SupermuxMobileWorkspaceStatusFields.log(for: workspace)
             // SUPERMUX:end supermux-mobile-workspace-fields
         )
     }

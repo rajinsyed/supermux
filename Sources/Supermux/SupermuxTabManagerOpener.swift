@@ -51,9 +51,12 @@ final class SupermuxTabManagerOpener: SupermuxWorkspaceOpening {
         if request.initialCommand == nil,
            request.setupScript == nil,
            let existing = tabManager.tabs.first(where: { workspace in
+               // A device mirror's local directory is not the remote path, so
+               // it never stands in for a workspace at this path on this Mac.
                targets.contains(SupermuxProjectMatcher.normalizedDirectory(workspace.currentDirectory))
+                   && !SupermuxDeviceWorkspaceIndex.isDeviceMirror(workspace)
            }) {
-            tabManager.selectWorkspace(existing)
+            if request.selectsWorkspace { tabManager.selectWorkspace(existing) }
             associate(workspaceId: existing.id, directory: directory, with: request)
             return existing.id
         }
@@ -63,13 +66,16 @@ final class SupermuxTabManagerOpener: SupermuxWorkspaceOpening {
         // command exits instead of collapsing it. Plain "open" requests carry
         // no command and just get a clean terminal.
         // `addWorkspaceIfActive` returns nil once the window is finalized for
-        // close (the legacy `addWorkspace` traps there and is deprecated).
+        // close (the legacy `addWorkspace` traps there and is deprecated). A
+        // workspace opened in the background loads its terminal right away,
+        // so its command and setup script run without anyone visiting it.
         guard let workspace = tabManager.addWorkspaceIfActive(
             title: request.title,
             workingDirectory: directory,
             initialTerminalInput: request.initialCommand.map(SupermuxCommandLaunch.shellInput),
             inheritWorkingDirectory: false,
-            select: true
+            select: request.selectsWorkspace,
+            eagerLoadTerminal: !request.selectsWorkspace
         ) else { return nil }
         // Route through cmux's shared rename mutation (trims whitespace; an
         // empty title clears back to the process title) instead of assigning
@@ -145,10 +151,18 @@ final class SupermuxTabManagerOpener: SupermuxWorkspaceOpening {
     /// command runs through the workspace's interactive shell (see
     /// ``SupermuxCommandLaunch``). With no focused workspace, falls back to
     /// opening a fresh workspace.
-    func runAction(_ request: SupermuxOpenWorkspaceRequest) {
+    /// - Parameters:
+    ///   - request: The action's command, title and project.
+    ///   - target: Where to run instead of the selected workspace (another
+    ///     Mac names the one its user is looking at through its mirror).
+    func runAction(_ request: SupermuxOpenWorkspaceRequest, in target: Workspace? = nil) {
+        // A device mirror's terminals run on another Mac: a local project's
+        // action must not open a local shell inside it, so it gets its own
+        // workspace (the no-focused-workspace fallback).
         guard let tabManager,
               let command = request.initialCommand,
-              let workspace = tabManager.selectedWorkspace,
+              let workspace = target ?? tabManager.selectedWorkspace,
+              !SupermuxDeviceWorkspaceIndex.isDeviceMirror(workspace),
               let paneId = workspace.bonsplitController.focusedPaneId
                 ?? workspace.bonsplitController.allPaneIds.first else {
             openWorkspace(request)
@@ -235,10 +249,7 @@ enum SupermuxWorkspaceRow {
         // Reuse cmux's own per-workspace PR probe for opened worktrees: the first
         // display-ordered PR is the representative one (cmux prioritizes
         // open > merged > closed and freshness). No supermux probe runs here.
-        let pullRequest = includePullRequest
-            ? workspace.sidebarPullRequestsInDisplayOrder().first
-                .flatMap(SupermuxPullRequest.init(sidebarState:))
-            : nil
+        let pullRequest = includePullRequest ? workspace.supermuxSidebarPullRequest : nil
         return SupermuxOpenWorkspace(
             id: workspace.id,
             title: workspace.customTitle ?? workspace.title,
@@ -258,12 +269,15 @@ enum SupermuxWorkspaceRow {
     /// `SupermuxProjectsSectionView` consumes only their `directory` (to
     /// exclude already-open worktrees from the unopened-worktree PR probe) —
     /// so this skips the branch/PR/activity resolution ``snapshot(for:isSelected:projectId:isRunning:)``
-    /// pays, each leg of which walks the bonsplit pane tree.
+    /// pays, each leg of which walks the bonsplit pane tree. A device mirror's
+    /// directory is the other Mac's path, so it reports none (as
+    /// ``SupermuxMirrorRowSnapshot`` does) and never excludes a same-path
+    /// local worktree.
     static func standaloneSnapshot(for workspace: Workspace, isSelected: Bool) -> SupermuxOpenWorkspace {
         SupermuxOpenWorkspace(
             id: workspace.id,
             title: workspace.customTitle ?? workspace.title,
-            directory: workspace.currentDirectory,
+            directory: SupermuxDeviceWorkspaceIndex.isDeviceMirror(workspace) ? "" : workspace.currentDirectory,
             isSelected: isSelected
         )
     }
@@ -292,6 +306,21 @@ extension Workspace {
     /// so this stays stable; it falls back to `gitBranch` only when no panel
     /// reports a branch.
     var supermuxSidebarBranch: String? {
-        sidebarGitBranchesInDisplayOrder().first?.branch
+        // A device mirror shows its remote workspace's branch (the remote
+        // record's `supermux_branch`); git never probes a mirror's panes.
+        if let mirror = SupermuxComposition.deviceStatusProjector.status(forLocal: id) {
+            return mirror.branch
+        }
+        return sidebarGitBranchesInDisplayOrder().first?.branch
+    }
+
+    /// The pull request shown on a supermux project-nested workspace row: the
+    /// first display-ordered PR from cmux's own per-workspace probe, or, for a
+    /// device mirror, the remote record's `supermux_pull_request`.
+    var supermuxSidebarPullRequest: SupermuxPullRequest? {
+        if let mirror = SupermuxComposition.deviceStatusProjector.status(forLocal: id) {
+            return mirror.pullRequest
+        }
+        return sidebarPullRequestsInDisplayOrder().first.flatMap(SupermuxPullRequest.init(sidebarState:))
     }
 }

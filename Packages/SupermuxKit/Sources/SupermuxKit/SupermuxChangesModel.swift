@@ -72,7 +72,9 @@ public final class SupermuxChangesModel {
     /// Whether an incoming-commit-log read is in flight.
     public internal(set) var isLoadingIncoming = false
 
-    let service: SupermuxGitChangesService
+    /// The git engine: local git (``SupermuxLocalChangesBackend``) or the Mac
+    /// that owns a mirrored workspace (``SupermuxRemoteChangesBackend``).
+    let service: any SupermuxChangesBackend
     /// Optional AI commit-message generator; `nil` disables AI commit.
     /// Module-internal for the AI-commit extension.
     @ObservationIgnored let commitGenerator: (any SupermuxAICommitMessaging)?
@@ -113,18 +115,34 @@ public final class SupermuxChangesModel {
     @ObservationIgnored var incomingLimit = SupermuxChangesModel.commitPageSize
     static let commitPageSize = 100
 
-    /// Creates the model.
+    /// Creates the model over this Mac's git.
     /// - Parameters:
     ///   - service: Git status and mutation operations.
     ///   - commitGenerator: Optional AI commit-message generator enabling the
     ///     "Generate & Commit" flow when the message box is empty.
-    public init(
+    public convenience init(
         service: SupermuxGitChangesService,
         commitGenerator: (any SupermuxAICommitMessaging)? = nil
     ) {
-        self.service = service
+        self.init(backend: SupermuxLocalChangesBackend(service: service), commitGenerator: commitGenerator)
+    }
+
+    /// Creates the model over any git engine (e.g. a remote Mac's).
+    /// - Parameters:
+    ///   - backend: Where status is read and mutations run.
+    ///   - commitGenerator: Optional AI commit-message generator enabling the
+    ///     "Generate & Commit" flow when the message box is empty.
+    public init(
+        backend: any SupermuxChangesBackend,
+        commitGenerator: (any SupermuxAICommitMessaging)? = nil
+    ) {
+        self.service = backend
         self.commitGenerator = commitGenerator
     }
+
+    /// Whether the repository lives on another Mac (a device mirror's panel):
+    /// its paths are not on this Mac, so local-path actions do not apply.
+    public var isRemote: Bool { service.isRemote }
 
     deinit {
         // The view layer pairs start/stopObserving, but a window close can
@@ -240,17 +258,17 @@ public final class SupermuxChangesModel {
     public func startObserving() {
         observeTask?.cancel()
         let directory = self.directory
+        let service = self.service
         observeTask = Task { [weak self] in
             guard let directory else {
                 await self?.refresh()
                 return
             }
-            // Start the FSEvents stream *before* the initial refresh
-            // (`changes()` builds its stream eagerly), so a change landing
-            // while that first status read runs is buffered and consumed —
-            // refresh-then-watch would silently drop it.
-            let watcher = SupermuxRepositoryWatcher(path: directory)
-            let changes = watcher.changes()
+            // Start the change stream (FSEvents locally) *before* the initial
+            // refresh (`changeSignals` builds its stream eagerly), so a change
+            // landing while that first status read runs is buffered and
+            // consumed — refresh-then-watch would silently drop it.
+            let changes = service.changeSignals(repoPath: directory)
             await self?.refresh()
             for await _ in changes {
                 if Task.isCancelled { return }
@@ -430,7 +448,7 @@ public final class SupermuxChangesModel {
     ///   clearing the commit box) without re-deriving the generation check.
     @discardableResult
     func performMutation(
-        _ work: @MainActor (String, SupermuxGitChangesService) async throws -> Void
+        _ work: @MainActor (String, any SupermuxChangesBackend) async throws -> Void
     ) async -> Bool {
         guard let directory, !isWorking else { return false }
         isWorking = true

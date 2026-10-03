@@ -18,6 +18,8 @@ import SupermuxMobileCore
 /// (`CMUXMobileRuntime.defaultRPCRequestTimeoutNanoseconds`); the iOS client
 /// MUST pass an extended per-request `timeoutNanoseconds` (≥ 130 s) through
 /// `MobileCoreRPCClient.sendRequest` for `changes.push` / `changes.pull`.
+/// Another Mac's deadlines for these methods come from
+/// `SupermuxDeviceReplyDeadline`, derived from the same service bounds.
 extension TerminalController {
     /// Default `changes.history` page size (half the desktop feed page, sized
     /// for a phone screen).
@@ -146,7 +148,10 @@ extension TerminalController {
     }
 
     /// `mobile.supermux.changes.history`: one page of the repository's commit
-    /// history with `{limit?, cursor?}`. Result: `{commits, incoming,
+    /// history with `{limit?, cursor?, fetch?}`. The first page runs a `git
+    /// fetch` first unless `fetch: false` (a viewer Mac's count and feed
+    /// reads, which like the local panel read what the last fetch left, so a
+    /// refresh never waits on the network here). Result: `{commits, incoming,
     /// next_cursor?}` — `commits` carries `is_pushed` flags, `incoming` (the
     /// pullable `HEAD..@{upstream}` commits, first page only) rides along so
     /// the phone renders the desktop's Incoming section without a second
@@ -206,8 +211,9 @@ extension TerminalController {
         // the last `git fetch`. Fetching after them would leave a commit that
         // was pushed from another clone flagged `is_pushed: false` and the
         // behind count stale until the next call. Best-effort: an offline/failed
-        // fetch still returns the local history unchanged.
-        if !hasCursor {
+        // fetch still returns the local history unchanged. Older callers never
+        // send `fetch`, so they keep fetching.
+        if !hasCursor, params["fetch"] as? Bool != false {
             _ = await service.fetch(repoPath: target.directory)
         }
         let snapshot = await service.status(repoPath: target.directory)

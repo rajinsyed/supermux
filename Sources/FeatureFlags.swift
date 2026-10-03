@@ -474,6 +474,9 @@ final class CmuxFeatureFlags {
             defaults.set(true, forKey: supermuxCloudOverrideKey)
         }
         // SUPERMUX:end supermux-release-cloud-override
+        // SUPERMUX:begin supermux-release-devices-defaults (Beta Cloud Machines + Devices discovery/incoming access, seeded once)
+        SupermuxDevicesDefaults.seedReleaseDefaultsIfNeeded(isSupermuxRelease: overrideCapability.isSupermuxRelease, defaults: defaults)
+        // SUPERMUX:end supermux-release-devices-defaults
         if let remoteFlagLoader {
             self.remoteFlagLoader = remoteFlagLoader
         } else {

@@ -93,11 +93,17 @@ extension AppDelegate {
                 return isDeletableGlobalAction(action, cmuxConfigStore: cmuxConfigStore)
             }
         )
-        return renderNewWorkspaceContextMenu(
-            model: model,
-            context: context,
-            cmuxConfigStore: cmuxConfigStore
+        // SUPERMUX:begin device-new-workspace-menu
+        return SupermuxNewWorkspaceDeviceMenu.appending(
+            to: renderNewWorkspaceContextMenu(
+                model: model,
+                context: context,
+                cmuxConfigStore: cmuxConfigStore
+            ),
+            windowId: context.windowId,
+            devices: SupermuxComposition.devices
         )
+        // SUPERMUX:end device-new-workspace-menu
     }
 
     /// Feature gates for built-in plus-menu rows, evaluated when the menu

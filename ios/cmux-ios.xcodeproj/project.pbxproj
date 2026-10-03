@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		SMX1000000000000000002 /* SupermuxNotificationDecorator.swift in Sources */ = {isa = PBXBuildFile; fileRef = SMX1000000000000000001 /* SupermuxNotificationDecorator.swift */; };
+		50BE000E0000000000000002 /* SupermuxPhoneBadgeLedger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000E0000000000000001 /* SupermuxPhoneBadgeLedger.swift */; };
 		8B8A10012DF5000000A66F90 /* cmuxApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B8A10172DF5000000A66F90 /* cmuxApp.swift */; };
 		8B8A10F02DF5000000A66F90 /* CmuxAppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B8A10F12DF5000000A66F90 /* CmuxAppDelegate.swift */; };
 		8B8A10AA2DF5000000A66F90 /* AppCompositionRoot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B8A10AB2DF5000000A66F90 /* AppCompositionRoot.swift */; };
@@ -58,6 +59,7 @@
 
 /* Begin PBXFileReference section */
 		SMX1000000000000000001 /* SupermuxNotificationDecorator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxNotificationDecorator.swift; sourceTree = "<group>"; };
+		50BE000E0000000000000001 /* SupermuxPhoneBadgeLedger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SupermuxPhoneBadgeLedger.swift; path = ../Packages/Shared/SupermuxMobileCore/Sources/SupermuxMobileCore/SupermuxPhoneBadgeLedger.swift; sourceTree = SOURCE_ROOT; };
 		8B41F6452DEDD0D5001A66F9 /* cmux.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = cmux.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8B41F65C2DEDD0D6001A66F9 /* cmux.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = cmux.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		8B8A10112DF5000000A66F90 /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
@@ -200,6 +202,7 @@
 			isa = PBXGroup;
 			children = (
 				SMX1000000000000000001 /* SupermuxNotificationDecorator.swift */,
+				50BE000E0000000000000001 /* SupermuxPhoneBadgeLedger.swift */,
 			);
 			path = SupermuxNotificationService;
 			sourceTree = "<group>";
@@ -406,7 +409,7 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
-		D4E2A0080000000000000001 /* NotificationService Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (D4E2A0010000000000000001 /* NotificationService.swift in Sources */, SMX1000000000000000002 /* SupermuxNotificationDecorator.swift in Sources */); runOnlyForDeploymentPostprocessing = 0; };
+		D4E2A0080000000000000001 /* NotificationService Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (D4E2A0010000000000000001 /* NotificationService.swift in Sources */, SMX1000000000000000002 /* SupermuxNotificationDecorator.swift in Sources */, 50BE000E0000000000000002 /* SupermuxPhoneBadgeLedger.swift in Sources */); runOnlyForDeploymentPostprocessing = 0; };
 
 /* Begin PBXTargetDependency section */
 		D4E2A00F0000000000000001 /* PBXTargetDependency */ = {

@@ -15,7 +15,7 @@ extension WorkspaceDetailView {
     }
 
     var supermuxPaneActions: SupermuxWorkspacePaneActions? {
-        SupermuxWorkspacePaneActions(connection: store.supermuxConnectionSeam)
+        SupermuxWorkspacePaneActions(connection: supermuxWorkspaceSeam)
     }
 
     var activePaneCloseTarget: WorkspacePaneCloseTarget? {
