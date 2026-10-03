@@ -58,6 +58,10 @@ driven by `supermux.devices.terminal_sizing.*` (DEBUG), which run the panel's ow
  10c. showing_keeps_other_macs_mode     the second Mac chose Fit everyone: hiding then showing the
                                          mirror, and a link drop, leave it Fit everyone (3 s holds;
                                          red before: the shown mirror pushed this Mac's Priority)
+ 10d. choice_during_reconnect_lands      Priority picked on the mirror while its link is down (the
+                                         second Mac chose Fit everyone) reaches the terminal once the
+                                         link is back (red before: the reconnect only claimed, which
+                                         leaves Fit everyone, and the choice was lost)
  11. showing_again_reclaims              hiding then showing the mirror claims the terminal again,
                                          then stays put (3 s hold)
  12. reconnect_reclaims                  after the link drops and the other Mac starts over with its
@@ -69,9 +73,9 @@ driven by `supermux.devices.terminal_sizing.*` (DEBUG), which run the panel's ow
                                          its own key, to the terminal it shows)
  13. priority_order_applies_everywhere   a priority order dragged on one mirror ([phone, this Mac])
                                          is stored as [phone, self] and reaches the local terminal as
-                                         [phone, its own view on this Mac]: its Mac pane (a hidden
-                                         mirror pushes nothing; before the fix, in the loopback, its
-                                         own auto-mirror's push landed after the local apply)
+                                         [phone, its Mac pane] (a mirror that pushed the order to the
+                                         terminal it shows, its own hidden auto-mirror in the loopback,
+                                         would land after the local apply under the mirror's key)
  14. choice_survives_relaunch            (--app-path) Largest Window, then quit and relaunch: new
                                          and restored terminals start in Largest Window
 
@@ -688,6 +692,56 @@ class SizingPolicyE2E:
             self.wait_state("the second Mac to hold the terminal again", self.source_surface, self.expect_first(b_key))
         return {"fit": fit, "after_show": shown, "after_reconnect": reconnected}
 
+    def mirror_policy_mode(self) -> Optional[str]:
+        """The mode this Mac's mirror last heard for its terminal, or None if it cannot be read."""
+        try:
+            return self.policy(self.state(self.mirror_surface))["mode"]
+        except Failure:
+            return None
+
+    def choice_during_reconnect_lands(self) -> Dict[str, Any]:
+        """A mode picked on a mirror tab while its link is down reaches the other Mac's terminal
+        once the link is back. The second Mac holds Fit everyone and this Mac's stored preference
+        is Priority, so the pick changes no preference and no local terminal: only the mirror can
+        bring it (red before: the push failed while detached and the reconnect only claimed, which
+        leaves Fit everyone alone)."""
+        b_key = self.facts.get("mac_b_key")
+        if not b_key:
+            raise Failure("the second Mac never joined the source terminal (second_mac_no_ping_pong failed)")
+        stored = self.preference() or {}
+        if stored.get("mode") != "priority":
+            raise Failure(f"expected a stored Priority preference: {stored}")
+        self.select(self.mirror_id)
+        self.other_mac_sets({"mode": "smallest", "priority": [b_key], "fixed": None})
+        fit = self.wait_state("the second Mac's Fit everyone", self.source_surface, self.expect_mode("smallest"))
+        # The mirror must have heard it too, or the pick would look like no change.
+        def mirror_heard() -> bool:
+            mode = self.mirror_policy_mode()
+            if mode is None:
+                time.sleep(1.5)  # the mirror's state cannot be read: give the size event time to arrive
+                return True
+            return mode == "smallest"
+
+        wait_for("the mirror to hear Fit everyone", mirror_heard, self.timeout)
+        self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "stop"})
+        try:
+            wait_for("the loopback link to drop", lambda: self.device().get("link_state") != "connected", self.timeout)
+            chosen = self.select_mode(self.mirror_surface, "priority")
+            while_down = self.summary(self.state(self.source_surface))
+            if self.policy(self.state(self.source_surface))["mode"] != "smallest":
+                raise Failure(f"the pick reached the terminal without the link: {while_down['policy']}")
+        finally:
+            self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "restore"})
+        wait_for("the loopback link to reconnect", lambda: self.device().get("link_state") == "connected", self.timeout)
+        try:
+            landed = self.wait_state("Priority picked while reconnecting to reach the terminal", self.source_surface,
+                                     self.expect_first(self.mirror_key))
+        finally:
+            # Leave the terminal as the next step expects: the second Mac holds it in Priority.
+            self.other_mac_sets({"mode": "priority", "priority": [b_key], "fixed": None})
+            self.wait_state("the second Mac to hold the terminal again", self.source_surface, self.expect_first(b_key))
+        return {"fit": fit, "accepted": chosen.get("accepted"), "while_down": while_down, "landed": landed}
+
     def showing_again_reclaims(self) -> Dict[str, Any]:
         self.select(self.local_id)
         self.wait_state("the mirror to stop counting while hidden", self.source_surface, self.mirror_counts(False))
@@ -767,17 +821,14 @@ class SizingPolicyE2E:
         source = self.wait_state("the dragged order on the source terminal", self.source_surface,
                                  order([phone_key, self.mirror_key]))
         # In the loopback the local terminal is also "the other Mac's terminal" for its own
-        # (hidden) auto-mirror. Builds before sticky_choice_stays_on_this_mac pushed the choice
-        # through every mirror after the local apply, so that mirror's push of the same order,
-        # relative to itself, landed last; now no mirror pushes it and the Mac pane's view stays.
-        own_view = self.local_key
-        for mirror in (self.sock.call(SIZING + "state", {}) or {}).get("mirrors") or []:
-            if up(mirror.get("remote_surface_id")) == up(self.local_surface) and mirror.get("pushed"):
-                own_view = str(mirror.get("self_key") or "")
-        local = self.wait_state("the same order, relative to its own view on this Mac, on the local terminal",
-                                self.local_surface, order([phone_key, own_view]))
-        return {"accepted": chosen.get("accepted"), "source": source, "local": local,
-                "local_own_view": "auto-mirror" if own_view != self.local_key else "mac pane",
+        # (hidden) auto-mirror. The order reaches it as a local terminal, relative to its Mac pane;
+        # a mirror that pushed the order to the terminal it shows would land after that, under the
+        # mirror's key, and the hold catches it.
+        local_order = order([phone_key, self.local_key])
+        local = self.wait_state("the same order, relative to its Mac pane, on the local terminal",
+                                self.local_surface, local_order)
+        held = self.hold(self.local_surface, local_order, 2.0, steady=False)
+        return {"accepted": chosen.get("accepted"), "source": source, "local": local, **held,
                 "preference": preference}
 
     def choice_survives_relaunch(self) -> Dict[str, Any]:
@@ -872,6 +923,8 @@ class SizingPolicyE2E:
             ok = self.step("stored_choice_applies_to_its_terminal", self.stored_choice_applies_to_its_terminal) and ok
             if self.local_id:
                 ok = self.step("showing_keeps_other_macs_mode", self.showing_keeps_other_macs_mode) and ok
+            ok = self.step("choice_during_reconnect_lands", self.choice_during_reconnect_lands) and ok
+            if self.local_id:
                 ok = self.step("showing_again_reclaims", self.showing_again_reclaims) and ok
             ok = self.step("reconnect_reclaims", self.reconnect_reclaims) and ok
             if self.local_surface:
