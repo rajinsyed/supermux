@@ -3623,6 +3623,7 @@
 		50BE00170300000000000002 /* SupermuxTabOrderSocketCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00170300000000000001 /* SupermuxTabOrderSocketCommands.swift */; };
 		50BE001A0100000000000008 /* SupermuxTerminalClipboardSocketCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE001A0100000000000007 /* SupermuxTerminalClipboardSocketCommands.swift */; };
 		50BE001A0100000000000006 /* SupermuxTerminalClipboardWrites.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE001A0100000000000005 /* SupermuxTerminalClipboardWrites.swift */; };
+		50BE00851000000000000002 /* SupermuxTerminalInputSocketCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00851000000000000001 /* SupermuxTerminalInputSocketCommands.swift */; };
 		50BE00170400000000000006 /* SupermuxTerminalSizingAuto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00170400000000000005 /* SupermuxTerminalSizingAuto.swift */; };
 		50BE00170400000000000002 /* SupermuxTerminalSizingDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00170400000000000001 /* SupermuxTerminalSizingDefaults.swift */; };
 		50BE00170400000000000004 /* SupermuxTerminalSizingSocketCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00170400000000000003 /* SupermuxTerminalSizingSocketCommands.swift */; };
@@ -8121,6 +8122,7 @@
 		50BE00170300000000000001 /* SupermuxTabOrderSocketCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mirrors/SupermuxTabOrderSocketCommands.swift; sourceTree = "<group>"; };
 		50BE001A0100000000000007 /* SupermuxTerminalClipboardSocketCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxTerminalClipboardSocketCommands.swift; sourceTree = "<group>"; };
 		50BE001A0100000000000005 /* SupermuxTerminalClipboardWrites.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxTerminalClipboardWrites.swift; sourceTree = "<group>"; };
+		50BE00851000000000000001 /* SupermuxTerminalInputSocketCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxTerminalInputSocketCommands.swift; sourceTree = "<group>"; };
 		50BE00170400000000000005 /* SupermuxTerminalSizingAuto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxTerminalSizingAuto.swift; sourceTree = "<group>"; };
 		50BE00170400000000000001 /* SupermuxTerminalSizingDefaults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxTerminalSizingDefaults.swift; sourceTree = "<group>"; };
 		50BE00170400000000000003 /* SupermuxTerminalSizingSocketCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxTerminalSizingSocketCommands.swift; sourceTree = "<group>"; };
@@ -9565,6 +9567,7 @@
 				50BE00191000000000000001 /* SupermuxTerminalStream.swift */,
 				50BE00191000000000000003 /* SupermuxTerminalStreamHost.swift */,
 				50BE00191000000000000005 /* SupermuxTerminalStreamSocketCommands.swift */,
+				50BE00851000000000000001 /* SupermuxTerminalInputSocketCommands.swift */,
 				50BE001A0100000000000001 /* SupermuxMobileHost+TerminalAttachments.swift */,
 				50BE001A0100000000000003 /* SupermuxDeviceTerminalUpload.swift */,
 				50BE001A0100000000000005 /* SupermuxTerminalClipboardWrites.swift */,
@@ -16641,6 +16644,7 @@
 				50BE00170300000000000002 /* SupermuxTabOrderSocketCommands.swift in Sources */,
 				50BE001A0100000000000008 /* SupermuxTerminalClipboardSocketCommands.swift in Sources */,
 				50BE001A0100000000000006 /* SupermuxTerminalClipboardWrites.swift in Sources */,
+				50BE00851000000000000002 /* SupermuxTerminalInputSocketCommands.swift in Sources */,
 				50BE00170400000000000006 /* SupermuxTerminalSizingAuto.swift in Sources */,
 				50BE00170400000000000002 /* SupermuxTerminalSizingDefaults.swift in Sources */,
 				50BE00170400000000000004 /* SupermuxTerminalSizingSocketCommands.swift in Sources */,

@@ -115,6 +115,12 @@ final class DeviceTerminalInputRouter: @unchecked Sendable {
         while let batch = takePending() {
             do {
                 try Task.checkCancellation()
+                // SUPERMUX:begin terminal-input-pipeline (DEBUG in-flight counters for the pipeline E2E)
+                #if DEBUG
+                SupermuxTerminalInputDebug.requestStarted()
+                defer { SupermuxTerminalInputDebug.requestFinished() }
+                #endif
+                // SUPERMUX:end terminal-input-pipeline
                 try await send(batch)
             } catch {
                 if !Task.isCancelled { onFailure(error) }
