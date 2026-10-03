@@ -78,7 +78,7 @@ anything.** It is the contract that keeps the fork mergeable with upstream cmux.
    instead of closing. The menu bar item offers Show Supermux / Hide Supermux and Turn Off Remote Host
    Mode (off shows the windows again); reopening the app also shows them. Keep Mac Awake (upstream's
    menu bar item) keeps the Mac reachable. Needs a logged-in macOS session; a locked screen is fine.
-   Code: `Sources/Supermux/RemoteHost/`, touchpoints #830–#834,
+   Code: `Sources/Supermux/RemoteHost/`, touchpoints #830–#835,
    `tests/supermux/loopback_remote_host_mode_e2e.py`.
 
 Where cmux already has a primitive (workspace groups, Dock, `actions`/`commands` in cmux.json,
@@ -112,7 +112,7 @@ building a parallel system.
 | A mirror's browser opens the owning Mac's localhost; a mirror's own tabs keep its layout sync | ✅ loopback-E2E | `SupermuxDeviceBrowserRoute` + `SupermuxDeviceBrowserProxy` (#707), `SupermuxDeviceLayoutSurfaceFilter.localPanelIDs` (#706), `tests/supermux/loopback_mirror_browser_e2e.py`, `loopback_mirror_local_panels_e2e.py` |
 | Notification/push parity (no duplicate pushes, shared read state, presence-aware host, push setup shared between Macs) | ✅ loopback-E2E | #545–#550, `SupermuxDeviceNotification*`, `phone_push.status/share` |
 | Remote Macs settings card (Settings › Automation) | ✅ | `SupermuxRemoteMacsSettingsCard` (#596–#598) |
-| Remote Host Mode (no window, no Dock icon; workspaces keep running for remote viewers) | ✅ loopback-E2E | `Sources/Supermux/RemoteHost/` (`SupermuxRemoteHostMode`, `SupermuxRemoteHostModeMenuItems`), Settings row `SupermuxRemoteHostModeSettingsRow`, #830–#834, `tests/supermux/loopback_remote_host_mode_e2e.py` |
+| Remote Host Mode (no window, no Dock icon; workspaces keep running for remote viewers) | ✅ loopback-E2E | `Sources/Supermux/RemoteHost/` (`SupermuxRemoteHostMode`, `SupermuxRemoteHostModeMenuItems`), Settings row `SupermuxRemoteHostModeSettingsRow`, #830–#835, `tests/supermux/loopback_remote_host_mode_e2e.py` |
 
 Both phases are verified against a live tagged build (worktree creation, the Changes panel on
 real git status, and the full ⌘G run→stop→restart cycle confirmed by an actually-listening dev

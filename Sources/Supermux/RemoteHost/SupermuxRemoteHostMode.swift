@@ -22,9 +22,10 @@ import Foundation
 /// - While the mode is on, a main window's close button and Close Window hide
 ///   that window instead of closing it.
 ///
-/// Hooks (SUPERMUX-TOUCHPOINTS.md #830–#833): `AppDelegate` (settings sync,
+/// Hooks (SUPERMUX-TOUCHPOINTS.md #830–#833, #835): `AppDelegate` (settings sync,
 /// new windows, close, reopen), `MainWindowVisibilityController` (focus),
-/// `MenuBarExtraController` (policy, menu bar item), `AppSection` (the row).
+/// `MenuBarExtraController` (policy, menu bar item), `AppSection` (the row),
+/// `GhosttySurfaceScrollView.ensureFocus` (terminal focus).
 @MainActor
 final class SupermuxRemoteHostMode {
     static let shared = SupermuxRemoteHostMode()
@@ -64,9 +65,11 @@ final class SupermuxRemoteHostMode {
         }
     }
 
-    /// `createMainWindow`: a new main window stays hidden while headless.
-    func keepsNewMainWindowHidden() -> Bool {
-        isHeadless
+    /// `createMainWindow`: a new main window stays hidden while headless. The
+    /// new window is already registered (and may already be ordered in) when
+    /// this is asked, so it does not count as a window on screen.
+    func keepsNewMainWindowHidden(_ window: NSWindow) -> Bool {
+        Self.isEnabled() && visibleMainWindows().allSatisfy { $0 === window }
     }
 
     /// `MainWindowVisibilityController.focus`: while headless only the user's

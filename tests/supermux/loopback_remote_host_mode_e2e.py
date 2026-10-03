@@ -309,8 +309,10 @@ class RemoteHostModeE2E:
         state = self.assert_headless("after relaunch")
         if state.get("app_active"):
             raise Failure("the app activated at launch")
-        restored = wait_for("the device workspace restored", lambda: next(
-            (wid for wid, title in self.all_workspaces().items() if title == self.device_title), None), self.timeout)
+        # The workspace keeps its id across a restore (its auto-mirror here has the same title, so match the id).
+        restored = wait_for("the device workspace restored",
+                            lambda: self.device_workspace if self.device_workspace in self.all_workspaces() else None,
+                            self.timeout)
         ran = self.device_terminal_runs(restored, "relaunch")
         self.assert_headless("after the relaunched device terminal ran")
         return {"restored_workspace": restored, "windows": len(state.get("main_windows") or []), **ran}

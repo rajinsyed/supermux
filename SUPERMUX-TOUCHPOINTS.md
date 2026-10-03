@@ -12,7 +12,7 @@ Rules for adding a touchpoint:
 - One row per line. Never let two rows share a line (the checker rejects it) and never put a
   `| N | … |`-shaped table anywhere else in this file — the checker parses every line starting
   `| <digit>` as a registry row. Use bullets or a non-numeric first column in prose tables.
-- Numbering: the highest number in use is **834**. The remote-workspaces work (#517–#599) left
+- Numbering: the highest number in use is **835**. The remote-workspaces work (#517–#599) left
   unassigned gaps it may still grow into: **523–524, 527–529, 539–544, 558–559, 562–569,
   578–579 and 588–589** (never assigned, not retired); #600–#601 came from the 2026-10-01 upstream merge; #620–#622 and
   #630–#639 are the remote-workspaces feedback round (602–619 and 623–629 unassigned). The second
@@ -38,8 +38,8 @@ Rules for adding a touchpoint:
   its two files; a terminal link opened into a cmux browser counts as the user's), and its slow-`simctl` hardening
   #760–#763 (remote simulators keep working while `simctl` launches stall; a new Simulator tab activates although
   another Mac's device menu refreshed meanwhile); 709, 713–714, 724, 736, 740–749 and 764–769 are unassigned. Remote
-  Host Mode uses #830–#834 (770–829 are reserved by other open PRs). The highest
-  number in use is 834. Number **351** is unused (the notifications
+  Host Mode uses #830–#835 (770–829 are reserved by other open PRs). The highest
+  number in use is 835. Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 82, 83, 89, 106, 121, 142, 213, 214,
   220, 229, 237, 250, 251, 252–258, 335, 470, 473–481, 483, 484, and 487** are unused; all are
@@ -695,11 +695,12 @@ Rules for adding a touchpoint:
 | 761 | `Sources/Panels/SimulatorPanel.swift` | `simulator-panel-control` | In `init`'s default `clientFactory`, the closing `).makeClient()` of upstream's `SimulatorWorkerClientFactory(...)` becomes `).makeClient(simulatorControl: SupermuxSimulatorControl.make())` (`Sources/Supermux/RemoteSimulator/SupermuxSimulatorControl.swift`): every Simulator panel's worker client runs its `simctl` calls through the fork's control, which builds upstream's `SimulatorControlService` with the same location and camera cleanup scopes the factory would use |
 | 762 | `Sources/TerminalController+MobileSimulator.swift` | `simulator-devices-list-bounded` | Two fences in `v2MobileSimulatorDevicesList`. The first replaces upstream's `let coordinator = resolved.panel.coordinator`, `await coordinator.reloadDevices()`, `let selectedID = coordinator.selectedDeviceID` and the head of `let devices = coordinator.devices.map { device -> [String: Any] in` with `let supermuxListing = await SupermuxSimulatorDeviceListing.listing(for: resolved.panel)`, `let selectedID = supermuxListing.selectedID` and `let devices = supermuxListing.devices.map { device -> [String: Any] in` (upstream's row fields stay as they are); the second makes the final return `return .ok(SupermuxSimulatorDeviceListing.reply(devices: devices, current: supermuxListing.current))`. `SupermuxSimulatorDeviceListing` (`Sources/Supermux/RemoteSimulator/`) waits at most 8 s: a panel that has a device gets upstream's refresh (one at a time per panel, current only when that refresh landed, not when another superseded it), a panel that is not started or still runs its startup discovery gets the list read beside it with its saved or requested device marked (a refresh then would supersede that discovery, and #763's retry would supersede it back), and a refresh or read that outlasted the 8 s answers the next ask. It adds `slow: true` when the list may be out of date; another Mac's viewer then says "Simulators on <Mac> are slow to respond…" and asks again, and its rebind never opens a second tab on a slow answer. Older viewers and the phone ignore the extra key |
 | 763 | `Packages/macOS/CmuxSimulator/Sources/CmuxSimulatorUI/Coordinator/SimulatorPaneCoordinator+Lifecycle.swift` | `simulator-startup-discovery-retry` | In `runStartup(activatingSelectedDevice:)`, upstream's `await reloadDevices()` becomes `while !(await reloadDevices()), !closed, !Task.isCancelled {}`. A refresh started while the startup discovery runs (another Mac's viewer asks `mobile.simulator.devices.list` as soon as it attaches; the phone does too) supersedes it: `reloadDevices` returns false without selecting a device, `runStartup` found `selectedDeviceID == nil` and never called `selectDevice`, and the panel stayed idle (the viewer: `preparing`, no frames). Measured with a temporary log on 2026-10-03: the failing order was startup gen 1, menu gen 2, gen 1 discarded, `selected=nil`; the passing order was menu gen 1, startup gen 2. Retrying lands a discovery and activates as before |
-| 830 | `Sources/AppDelegate.swift` | `remote-host-mode` | Remote Host Mode (`Sources/Supermux/RemoteHost/SupermuxRemoteHostMode.swift`). Five fenced sites: the top of `applicationShouldHandleReopen` (`showsWindowsOnReopen()`: reopening a headless host shows its windows), the end of `syncApplicationPresentationPreferences` after `syncMenuBarExtraVisibility` (`syncToSettings()`: the setting turning on hides every main window, off shows them), the show block near the end of `createMainWindow` (an `if keepsNewMainWindowHidden() { window.orderOut(nil) } else` prefix to upstream's `if !shouldActivate || …` so a new window stays hidden while headless), the top of `handleMainTerminalWindowCloseRequest` (the close button / `performClose` hides the window: `return false`), and `closeWindowWithConfirmation` after its `isMainTerminalWindow` guard (Close Window hides with no dialog) |
+| 830 | `Sources/AppDelegate.swift` | `remote-host-mode` | Remote Host Mode (`Sources/Supermux/RemoteHost/SupermuxRemoteHostMode.swift`). Five fenced sites: the top of `applicationShouldHandleReopen` (`showsWindowsOnReopen()`: reopening a headless host shows its windows), the end of `syncApplicationPresentationPreferences` after `syncMenuBarExtraVisibility` (`syncToSettings()`: the setting turning on hides every main window, off shows them), the show block near the end of `createMainWindow` (an `if keepsNewMainWindowHidden(window) { window.orderOut(nil) } else` prefix to upstream's `if !shouldActivate || …` so a new window stays hidden while headless), the top of `handleMainTerminalWindowCloseRequest` (the close button / `performClose` hides the window: `return false`), and `closeWindowWithConfirmation` after its `isMainTerminalWindow` guard (Close Window hides with no dialog) |
 | 831 | `Sources/App/MenuBarExtraController.swift` | `remote-host-mode` | Four fenced sites: a stored `supermuxRemoteHostItems` (`SupermuxRemoteHostModeMenuItems`), installed right after `showMainWindowItem` in `buildMenu()` and refreshed after its `isHidden` line in `refreshUI(snapshot:)` (Show/Hide Supermux and Turn Off Remote Host Mode; hides upstream's Show cmux while the mode is on), `MenuBarExtraSettings.shouldInstallMenuBarExtra` returns true while the mode is on, and `MenuBarOnlySettings.activationPolicy` returns `.accessory` while the mode is on (no Dock icon) |
 | 832 | `Sources/App/MainWindowVisibilityController.swift` | `remote-host-mode` | Two fenced early returns, after the `defer` in `focus(_:reason:…)` and in `focusForInWindowCommand(_:reason:)`: while headless (`blocksWindowFocus(reason:)`, every reason but `.menuBar`, `.globalHotkey`, `.applicationReopen`) a focus request only sets the active main window, so a socket or device command and launch neither show a window nor activate the app |
 | 833 | `Packages/macOS/CmuxSettingsUI/Sources/CmuxSettingsUI/Sections/AppSection.swift` | `remote-host-mode` | Renders `SupermuxRemoteHostModeSettingsRow(defaultsStore: defaultsStore)` plus a `SettingsCardDivider()` right after the Menu Bar Only row in `mainCard`. The row and its `SupermuxRemoteHostModeSetting` key live in the fork-owned `Sections/SupermuxRemoteHostModeSettingsRow.swift` of the same package |
 | 834 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/RemoteHost/SupermuxRemoteHostMode.swift`, `SupermuxRemoteHostModeMenuItems.swift` and `SupermuxRemoteHostSocketCommands.swift` (ids `50BE001A…01`–`…06`, file refs `path = RemoteHost/<file>` in the Supermux group) into the cmux target |
+| 835 | `Sources/GhosttyTerminalView.swift` | `remote-host-mode` | One fenced early return in `GhosttySurfaceScrollView.ensureFocus(...)`, right before its `window.makeKeyAndOrderFront(nil)` (after the `shouldAllowEnsureFocusWindowActivation` guard): while headless (`SupermuxRemoteHostMode.shared.isHeadless`) focusing a terminal never orders its hidden window in. Found by the relaunch step: the restored workspace's terminal focus made the hidden window key and visible |
 
 ## How to re-apply
 
@@ -6223,7 +6224,7 @@ app does not quit within 60 s or osascript reports an error (its report records 
 (it creates, boots, shuts down and deletes its own simulator; see LOOPBACK-HARNESS.md "Mirror
 simulator E2E"). Two real Macs are still needed for the irx lane and capture on a headless owner.
 
-### 830–834. Remote Host Mode: no window, no Dock icon, everything still runs — `remote-host-mode`
+### 830–835. Remote Host Mode: no window, no Dock icon, everything still runs — `remote-host-mode`
 
 A Mac used only as a remote host (for the iPhone app or another Mac's mirrors) runs with every main window
 hidden and no Dock icon (Settings › App › Remote Host Mode, `supermux.remoteHostMode`). Windows are only ever
@@ -6243,7 +6244,7 @@ workspaces. Fork code: `Sources/Supermux/RemoteHost/` (`SupermuxRemoteHostMode`,
   3. `createMainWindow(...)`, the block that shows the new window (`if !shouldActivate ||
      TerminalController.shouldSuppressSocketCommandActivation() { window.orderFront(nil) … } else {
      mainWindowVisibilityController.focus(…) }`): prefix it with
-     `if SupermuxRemoteHostMode.shared.keepsNewMainWindowHidden() { window.orderOut(nil) } else`. If upstream
+     `if SupermuxRemoteHostMode.shared.keepsNewMainWindowHidden(window) { window.orderOut(nil) } else`. If upstream
      moves the show elsewhere, guard that point instead; the window must never be ordered in while headless.
   4. First statement of `handleMainTerminalWindowCloseRequest(_:windowId:onCancel:)` (the `shouldClose` of every
      main window controller, and `closeMainWindowContainingTabId`'s veto check):
@@ -6267,6 +6268,11 @@ workspaces. Fork code: `Sources/Supermux/RemoteHost/` (`SupermuxRemoteHostMode`,
   `SupermuxRemoteHostModeSettingsRow(defaultsStore: defaultsStore)` + `SettingsCardDivider()`. If upstream moves
   Menu Bar Only, follow it.
 - **#834 `project.pbxproj`.** Re-add the four entries per file listed in the #834 row.
+- **#835 `GhosttyTerminalView.swift`.** In `GhosttySurfaceScrollView.ensureFocus(...)`, in the `if !window.isKeyWindow`
+  branch right before `window.makeKeyAndOrderFront(nil)`: `if SupermuxRemoteHostMode.shared.isHeadless { return }`.
+  If upstream moves terminal focus's window activation (e.g. into `MainWindowVisibilityController`, which #832 already
+  guards), drop this fence. Verify with `relaunch_stays_headless`: without it the restored terminal's focus shows the
+  hidden window at launch.
 
 Keep Mac Awake is the existing menu bar item (`CaffeineController`, upstream #7564), not new power management;
 the row's subtitle points at it. Limits: the app runs in a logged-in macOS session (a locked screen is fine,

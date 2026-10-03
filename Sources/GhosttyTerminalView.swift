@@ -12686,6 +12686,10 @@ final class GhosttySurfaceScrollView: NSView {
             ) else {
                 return
             }
+            // SUPERMUX:begin remote-host-mode
+            // A headless remote host never orders a hidden window in to focus a terminal.
+            if SupermuxRemoteHostMode.shared.isHeadless { return }
+            // SUPERMUX:end remote-host-mode
             window.makeKeyAndOrderFront(nil)
         }
         let result = makeSurfaceViewFirstResponder(

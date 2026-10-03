@@ -10803,7 +10803,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         installFileDropOverlay(on: window, tabManager: tabManager)
         // SUPERMUX:begin remote-host-mode
         // A headless remote host keeps a new window hidden (session restore, a device's new workspace).
-        if SupermuxRemoteHostMode.shared.keepsNewMainWindowHidden() {
+        if SupermuxRemoteHostMode.shared.keepsNewMainWindowHidden(window) {
             window.orderOut(nil)
         } else
         // SUPERMUX:end remote-host-mode
