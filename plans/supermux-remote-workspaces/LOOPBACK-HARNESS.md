@@ -1084,7 +1084,9 @@ CoreSimulator stays in the app process: listing in the worker would need a reque
 (about five fences in CmuxSimulator), and the worker's own launch is a process launch that stalls on such a Mac; when the
 app ends inside the CoreSimulator load twice in a row, that CoreSimulator build is off in-process until a new Xcode
 (`SupermuxCoreSimulatorCrashGuard`; a quit or logout during the load removes its marker, a successful load clears the
-count, and steps 25–26 check both; the first version took one quit during a slow load for a crash). The
+count, and steps 25–26 check both; the first version took one quit during a slow load for a crash). A Simulator tab's
+start no longer holds a quit while it waits on a slow CoreSimulator read (the read is cancelled; step 25 quits with a tab
+waiting on the held load and wants the app gone within 5 s, where it took up to 30 s). The
 hooks slow `simctl` and CoreSimulator, not the worker's launch: on a really stalled Mac a new tab may still wait for its
 worker before it streams.
 
