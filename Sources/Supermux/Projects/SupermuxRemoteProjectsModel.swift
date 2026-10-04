@@ -21,7 +21,8 @@ import SupermuxMobileCore
 /// (re)connect, and on a slow safety-net timer. The last
 /// project list of each Mac is cached on disk
 /// (``SupermuxRemoteProjectsCache``), so an offline Mac's projects still
-/// render (dimmed). Icons come from `project.icon` with etag caching.
+/// render (dimmed). Icons come from `project.icon` with etag caching, asked
+/// only when the project's listed icon token changed.
 ///
 /// ```swift
 /// let remote = SupermuxComposition.remoteProjects
@@ -46,7 +47,12 @@ final class SupermuxRemoteProjectsModel {
     @ObservationIgnored private var cachedEntries: [String: SupermuxRemoteProjectsCache.Entry] = [:]
     /// The latest offline-cache write; each save waits for it, so writes land in call order.
     @ObservationIgnored private var cacheWrite: Task<Void, Never>?
+    /// The `project.icon` etag (a hash of the image bytes) of each fetched icon.
     @ObservationIgnored private var iconETags: [String: String] = [:]
+    /// The `projects.list` icon token each fetched icon was last confirmed
+    /// against. It is a different value from the `project.icon` etag, so it
+    /// is kept apart: an unchanged token needs no `project.icon` call.
+    @ObservationIgnored private var iconListTokens: [String: String] = [:]
     /// `machine|projectID` keys whose worktree list is kept fresh: every
     /// project each Mac listed at its last refresh (and any a row or socket
     /// asked for since).
@@ -306,28 +312,34 @@ final class SupermuxRemoteProjectsModel {
             .union(listed.map { Self.projectKey(machine: machine, projectID: $0) })
     }
 
+    /// Fetches the icons whose `projects.list` token changed since they were
+    /// last fetched or confirmed (`not_modified`), and drops the icons of
+    /// projects no longer listed. An unchanged token makes no call.
     private func refreshIcons(on machine: SurfaceMachineID, projects: [SupermuxProjectDTO]) async {
         var live: Set<String> = []
         for project in projects {
             guard let id = UUID(uuidString: project.id), project.iconETag != nil || project.hasCustomIcon == true else { continue }
             let key = Self.projectKey(machine: machine, projectID: id)
             live.insert(key)
-            if let etag = project.iconETag, iconETags[key] == etag, icons[key] != nil { continue }
+            if let token = project.iconETag, iconListTokens[key] == token, icons[key] != nil { continue }
             var params: [String: Any] = ["project_id": project.id]
             if icons[key] != nil, let etag = iconETags[key] { params["etag"] = etag }
-            guard let result = try? await facade.request(SupermuxMobileMethod.projectIcon.rawValue, params: params, on: machine),
-                  result["not_modified"] as? Bool != true else { continue }
-            if let base64 = result["png_base64"] as? String,
-               let data = Data(base64Encoded: base64),
-               let image = NSImage(data: data) {
+            guard let result = try? await facade.request(SupermuxMobileMethod.projectIcon.rawValue, params: params, on: machine) else { continue }
+            if result["not_modified"] as? Bool == true {
+                iconListTokens[key] = project.iconETag
+            } else if let base64 = result["png_base64"] as? String,
+                      let data = Data(base64Encoded: base64),
+                      let image = NSImage(data: data) {
                 icons[key] = image
                 iconETags[key] = result["etag"] as? String
+                iconListTokens[key] = project.iconETag
             }
         }
         let prefix = "\(machine.rawValue)|"
         for key in icons.keys where key.hasPrefix(prefix) && !live.contains(key) {
             icons[key] = nil
             iconETags[key] = nil
+            iconListTokens[key] = nil
         }
     }
 

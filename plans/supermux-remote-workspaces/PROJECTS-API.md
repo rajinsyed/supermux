@@ -91,7 +91,7 @@ private(set) var devices: [SupermuxDeviceProjects]   // device order; offline on
 private(set) var icons: [String: NSImage]            // key: projectKey(machine:projectID:)
 func device(_ machine: SurfaceMachineID) -> SupermuxDeviceProjects?
 func icon(machine:projectID:) -> NSImage?
-func refresh(_ machine) async                         // projects.list (projects + presets) + run.state + icons; coalesced; starts the worktree sweep (not awaited)
+func refresh(_ machine) async                         // projects.list (projects + presets) + run.state + icons whose listed token changed; coalesced; starts the worktree sweep (not awaited)
 func refreshAll()
 func refreshRuns(_ machine) async                     // run.state only (after a mirror's Run / Stop, and on supermux.run.updated)
 func apply(run: SupermuxRunStateDTO, on machine)      // fold a run.start/stop result in before the poke lands
