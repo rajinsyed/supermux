@@ -7,9 +7,9 @@ public import SwiftUI
 /// that nobody can see.
 ///
 /// On screen means: ordered in, not minimized, not fully covered by other
-/// windows or on another Space (`occlusionState`), and the app not hidden. A
-/// Remote Host Mode window is ordered out, so a headless host reads as off
-/// screen too.
+/// windows or on another Space (`occlusionState`, or the key window), and the
+/// app not hidden. A Remote Host Mode window is ordered out, so a headless
+/// host reads as off screen too.
 ///
 /// Coming on screen is reported at once; going off screen only once the
 /// window has stayed off screen for ``hideDelay``, so a brief cover (a Space
@@ -65,11 +65,27 @@ public final class SupermuxWindowVisibility: ObservableObject {
         }
     }
 
+    /// Windows whose occlusion state has reported `.visible` at least once.
+    /// Weak, so a closed window drops out on its own.
+    private static let windowsThatReportedVisible = NSHashTable<NSWindow>.weakObjects()
+
+    /// The same rule as cmux's `TerminalRendererWindowVisibility`, plus the
+    /// app not hidden. `occlusionState` decides on a real display (covered or
+    /// on another Space drops `.visible`), but a virtual or headless display
+    /// never raises `.visible` for a window that is ordered in and drawing, so
+    /// until a window has reported it once its ordinary on-screen state is
+    /// trusted instead. A key window always counts as on screen.
     private static func windowIsOnScreen(_ window: NSWindow?) -> Bool {
-        guard let window, !NSApplication.shared.isHidden else { return false }
-        return window.isVisible
-            && !window.isMiniaturized
-            && window.occlusionState.contains(.visible)
+        guard let window, !NSApplication.shared.isHidden,
+              window.isVisible, !window.isMiniaturized else { return false }
+        if window.occlusionState.contains(.visible) {
+            windowsThatReportedVisible.add(window)
+            return true
+        }
+        if window.isKeyWindow { return true }
+        // Occlusion has been trustworthy for this window: honor its verdict.
+        if windowsThatReportedVisible.contains(window) { return false }
+        return window.isOnActiveSpace
     }
 }
 
@@ -97,13 +113,15 @@ private struct SupermuxWindowVisibilityProbe: NSViewRepresentable {
     }
 }
 
-/// Watches its window's occlusion, minimize and close notifications and the
-/// app's hide/unhide, and reports each to the ``SupermuxWindowVisibility``.
+/// Watches its window's occlusion, key, minimize and close notifications and
+/// the app's hide/unhide, and reports each to the ``SupermuxWindowVisibility``.
 private final class SupermuxWindowVisibilityProbeView: NSView {
     weak var visibility: SupermuxWindowVisibility?
 
     private static let windowNotifications: [Notification.Name] = [
         NSWindow.didChangeOcclusionStateNotification,
+        NSWindow.didBecomeKeyNotification,
+        NSWindow.didResignKeyNotification,
         NSWindow.didMiniaturizeNotification,
         NSWindow.didDeminiaturizeNotification,
         NSWindow.willCloseNotification,
