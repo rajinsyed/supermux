@@ -360,9 +360,17 @@ final class SupermuxPortForwards {
     }
 
     private func linkConnected(_ machine: SurfaceMachineID) {
+        var retried = false
         for (key, forward) in forwards where key.machine == machine {
-            if case .failed = forward.state { forwards[key]?.state = .waiting }
+            if case .failed = forward.state {
+                forwards[key]?.state = .waiting
+                retried = true
+            }
         }
+        // A listing that comes back unchanged reconciles nothing, so a failed
+        // forward that waits again is started here (it listens only while
+        // that Mac is available).
+        if retried { scheduleReconcile() }
         checkAvailability(machine)
     }
 
@@ -471,8 +479,11 @@ final class SupermuxPortForwards {
             // before a reconnect).
             guard availability[machine] == .available, sequence > (appliedSequence[machine] ?? 0) else { return }
             appliedSequence[machine] = sequence
-            hostPorts[machine] = listing
             fetchFailures[machine] = nil
+            // The same listing again (a follow-up or a poke that changed
+            // nothing here): the forwards already follow it.
+            guard hostPorts[machine] != listing else { return }
+            hostPorts[machine] = listing
         } catch {
             fetchFailures[machine, default: 0] += 1
             #if DEBUG
