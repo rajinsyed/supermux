@@ -35,13 +35,16 @@ extension TaskComposerSheet {
             macDeviceID: selectedMacDeviceID, instanceTag: selectedMacInstanceTag
         )
         let preferences = store.taskTemplateStore?.composerPickerPreferences(macPairingID: pairingID)
-        selectedTemplateID = (preferences?.templateID).flatMap { id in
-            templates.contains { $0.id == id } ? id : nil
-        } ?? fallbackTemplateID.flatMap { id in
-            templates.contains { $0.id == id } ? id : nil
-        } ?? store.taskTemplateStore?.lastTemplateID().flatMap { id in
-            templates.contains { $0.id == id } ? id : nil
-        } ?? templates.first?.id
+        // SUPERMUX:begin task-composer-typecheck (a typed helper per candidate; the closure chain timed out the Release type-checker)
+        let knownTemplateID: (MobileTaskTemplate.ID?) -> MobileTaskTemplate.ID? = { id in
+            guard let id, templates.contains(where: { $0.id == id }) else { return nil }
+            return id
+        }
+        let rememberedTemplateID = knownTemplateID(preferences?.templateID)
+        let currentTemplateID = knownTemplateID(fallbackTemplateID)
+        let lastTemplateID = knownTemplateID(store.taskTemplateStore?.lastTemplateID())
+        selectedTemplateID = rememberedTemplateID ?? currentTemplateID ?? lastTemplateID ?? templates.first?.id
+        // SUPERMUX:end task-composer-typecheck
         let matchingPreferences = preferences?.templateID == selectedTemplateID ? preferences : nil
         selectedModelID = matchingPreferences?.model?.id
         explicitlySelectedModel = matchingPreferences?.model

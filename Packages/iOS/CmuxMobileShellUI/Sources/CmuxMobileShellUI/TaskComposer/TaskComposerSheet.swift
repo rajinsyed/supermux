@@ -246,15 +246,16 @@ struct TaskComposerSheet: View {
         ) : nil
         let initialWorkspaceGroupID = draft == nil
             ? rememberedPickers?.workspaceGroupID : draft?.workspaceGroupID
-        let draftTemplateID = draft?.templateID
-            .flatMap { id in templates.contains(where: { $0.id == id }) ? id : nil }
-        let selectedTemplateID = draftTemplateID
-            ?? (rememberedPickers?.templateID).flatMap { id in
-                templates.contains { $0.id == id } ? id : nil
-            }
-            ?? store.taskTemplateStore?.lastTemplateID()
-            .flatMap { id in templates.contains(where: { $0.id == id }) ? id : nil }
-            ?? templates.first?.id
+        // SUPERMUX:begin task-composer-typecheck (a typed helper per candidate; the closure chain timed out the Release type-checker)
+        let knownTemplateID: (MobileTaskTemplate.ID?) -> MobileTaskTemplate.ID? = { id in
+            guard let id, templates.contains(where: { $0.id == id }) else { return nil }
+            return id
+        }
+        let draftTemplateID = knownTemplateID(draft?.templateID)
+        let rememberedTemplateID = knownTemplateID(rememberedPickers?.templateID)
+        let lastTemplateID = knownTemplateID(store.taskTemplateStore?.lastTemplateID())
+        let selectedTemplateID = draftTemplateID ?? rememberedTemplateID ?? lastTemplateID ?? templates.first?.id
+        // SUPERMUX:end task-composer-typecheck
         let selectedTemplate = selectedTemplateID.flatMap { id in templates.first { $0.id == id } }
         let initialProvider = selectedTemplate.flatMap {
             MobileTaskAgentProvider(command: $0.command)

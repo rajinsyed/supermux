@@ -16,7 +16,7 @@ Rules for adding a touchpoint:
 - Numbering: the highest number in use is **783** (remote terminal streaming, #777–#783; #764–#776 are
   reserved for open PRs #74/#75). The remote-workspaces work (#517–#599) left
 - Numbering: the highest number in use is **818**. The remote-workspaces work (#517–#599) left
-- Numbering: the highest number in use is **924** (#920–#924: only this Mac's own input hands an Auto grid to the Mac pane). #907–#913: answering a Claude question or plan brings the working indicator back. Before that **906** (#900–#906: a streaming mirror re-anchors when the other Mac's grid changes). Before that **883** (#880–#883: Remote Host Mode's hotkey and notification shows, Auto's `view_appeared` report; #850–#879 are held by another open branch). The remote-workspaces work (#517–#599) left
+- Numbering: the highest number in use is **953** (#952–#953: the task composer's template fallback chain is split so the Release iOS build type-checks). Before that **924** (#920–#924: only this Mac's own input hands an Auto grid to the Mac pane). #907–#913: answering a Claude question or plan brings the working indicator back. Before that **906** (#900–#906: a streaming mirror re-anchors when the other Mac's grid changes). Before that **883** (#880–#883: Remote Host Mode's hotkey and notification shows, Auto's `view_appeared` report; #850–#879 are held by another open branch). The remote-workspaces work (#517–#599) left
   unassigned gaps it may still grow into: **523–524, 527–529, 539–544, 558–559, 562–569,
   578–579 and 588–589** (never assigned, not retired); #600–#601 came from the 2026-10-01 upstream merge; #620–#622 and
   #630–#639 are the remote-workspaces feedback round (602–619 and 623–629 unassigned). The second
@@ -762,6 +762,8 @@ Rules for adding a touchpoint:
 | 949 | `Packages/iOS/CmuxMobileShell/Tests/CmuxMobileShellTests/DelayedTeamPairedMacStore.swift` | `mobile-startup-parallel-secondary` | Three fences: `blockBackupRefreshForEveryCaller()` makes a later `refreshFromBackup` join the blocked one (the production store merges into a refresh still running) and `releaseBackupRefresh()` wakes those joiners. Unused, the store behaves as upstream's |
 | 950 | `Sources/RightSidebarPanelView.swift` | `right-sidebar-mode-bar-overflow` | One fence in `modeBar`: `.modifier(SupermuxModeBarOverflow())` directly on upstream's `RightSidebarModeBarTabsLayout`, before its drag-anchor `.background` and `.coordinateSpace`, so a single anchor view serves both layouts (`ViewThatFits` keeps each child's platform views and can show one again without `updateNSView`, which would leave the drag anchor on a view outside the window). When the tabs' narrowest layout does not fit (every tab shown at the fork's 200 pt minimum, or the 220 pt opening width), the row scrolls sideways instead of overflowing the bar, which clipped both ends and pushed open-as-pane/close out of the window. `SupermuxModeBarOverflow` (`Sources/Supermux/SupermuxModeBarOverflow.swift`) is `ViewThatFits(in: .horizontal) { content; ScrollView(.horizontal) { content } }` |
 | 951 | `Sources/RightSidebarModeBarTabsLayout.swift` | `right-sidebar-mode-bar-overflow` | One fence in `tabWidths` (replacing upstream's `guard let available, available.isFinite`): an unspecified width (the ideal size, which `ViewThatFits` and the `ScrollView` ask for) lays the tabs out at their narrowest (`available ?? 0`: the selected tab's full label, the others at their floor) instead of at full labels. Finite and infinite proposals are upstream's, so a bar with room still shrinks and grows the tabs as upstream does, and #950 scrolls only below the narrowest layout |
+| 952 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/TaskComposer/TaskComposerSheet.swift` | `task-composer-typecheck` | One fence in `init`: upstream's `selectedTemplateID` chain (draft → remembered → last → first, each kept only if still in `templates`) rewritten as a typed `knownTemplateID` helper plus one `??` per candidate; same order and result. Upstream's closure chain fails the Release iOS build with "unable to type-check this expression in reasonable time" |
+| 953 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/TaskComposer/TaskComposerSheet+PickerPreferences.swift` | `task-composer-typecheck` | One fence in `restorePickerPreferences(templates:)`: the same rewrite of the remembered → current → last → first chain as #952, for the same type-check timeout |
 | 810 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the remote-terminal polish into the cmux target, four entries each (build file, file reference, Supermux group child, Sources phase) next to #764's `SupermuxDeviceTerminalUpload.swift`: `Devices/SupermuxDeviceTerminalLinks.swift` (`50BE001B0200000000000001`/`…02`, a Cmd-click on a path in another Mac's terminal), `Devices/SupermuxDeviceTerminalActions.swift` (`…03`/`…04`, forwarded Cmd+K/reset, focus and Ctrl+V of an image) and `SupermuxMobileHost+TerminalActions.swift` (`…05`/`…06`, the host's `terminal.action`) |
 | 811 | `Sources/Workspace+TerminalLinkOpening.swift` | `device-terminal-file-link` | First thing in `deferRemoteTerminalFileLinkOpen`: `SupermuxDeviceTerminalLinks.open(rawValue, panelID:in:)` claims a file path clicked in another Mac's terminal and opens that Mac's file in the mirror's read-only preview (upstream refused it: only SSH terminals resolved a remote path) |
 | 812 | `Sources/DockSplitStore+TerminalLinkOpening.swift` | `device-terminal-file-link` | Adds `deferRemoteTerminalFileLinkOpen` to the Dock's link container (upstream relies on the protocol's `false` default): the same `SupermuxDeviceTerminalLinks.open` for another Mac's terminal moved into the Dock |
@@ -6856,3 +6858,16 @@ Re-apply after an upstream merge:
 - **#942**: keep the defaulted parameter so every other caller still probes.
 
 Verify: `swift test --package-path Packages/iOS/CmuxMobileShell --filter foregroundAfterHostIdleTimeoutRedialsWithoutProbingTheDeadSession`.
+
+### 952–953. The task composer's template fallback type-checks in the Release iOS build — `task-composer-typecheck`
+
+Upstream #15797 picks the composer's template with one long `??` chain whose every link is a
+`flatMap` closure. The Release iOS build (`scripts/supermux-release.sh`, `scripts/supermux-ios-release.sh`)
+fails on both copies with "the compiler is unable to type-check this expression in reasonable time".
+Each copy now runs every candidate through one explicitly typed `knownTemplateID` closure and chains
+the resulting optionals. Order and result are unchanged.
+
+Re-apply after an upstream merge: if upstream still has the closure chain, rewrite it the same way; if
+upstream already split it, drop both fences and these rows.
+
+Verify: the iOS leg of `./scripts/supermux-release.sh` compiles `CmuxMobileShellUI`.
