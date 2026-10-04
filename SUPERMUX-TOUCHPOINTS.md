@@ -1888,7 +1888,11 @@ The Changes-panel file-diff opener adds file reference `50BE0001…0146` and bui
 `50BE0001…0147` for `SupermuxFileDiffOpener.swift`, wired the same way (Supermux group + `cmux`
 Sources phase; bare path, no `+` in the filename).
 
-Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `237`.
+The right sidebar's scrolling mode bar fallback (touchpoints #950/#951) adds file reference
+`50BE0001…0148` and build file `50BE0001…0149` for `SupermuxModeBarOverflow.swift`, wired the
+same way (Supermux group + `cmux` Sources phase).
+
+Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `241`.
 
 ### 4. `.github/swift-file-length-budget.tsv` — RETIRED (0.65 merge)
 
