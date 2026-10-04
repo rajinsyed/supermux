@@ -1,10 +1,11 @@
 public import SwiftUI
 
 /// What a workspace row nested under a project shows in place of the shell
-/// row's description and preview, as the Mac sidebar's nested row shows it:
-/// one line right under the title with the branch — the small cloud-Mac icon
-/// first when the workspace lives on another Mac than the list's home Mac —
-/// and, at its trailing end, the PR badge and the run indicator.
+/// row's time, description and preview, as the Mac sidebar's nested row
+/// shows it: one line right under the title with the branch — the small
+/// cloud-Mac icon first when the workspace lives on another Mac than the
+/// list's home Mac — and, centered on the row's trailing edge, the PR badge
+/// and the run indicator.
 public struct SupermuxNestedWorkspaceAccessory: Equatable, Sendable {
     /// The workspace's row id.
     public let workspaceID: String
@@ -18,8 +19,8 @@ public struct SupermuxNestedWorkspaceAccessory: Equatable, Sendable {
     public let isRunning: Bool
 
     /// The accessory of one nested row. Every nested row gets one, even when
-    /// it has nothing to show, because it is also what drops the row's
-    /// preview.
+    /// it has nothing to show, because it is also what drops the row's time
+    /// and preview.
     init(
         workspaceID: String,
         remoteMac: SupermuxRemoteMac?,
@@ -34,20 +35,18 @@ public struct SupermuxNestedWorkspaceAccessory: Equatable, Sendable {
         self.isRunning = isRunning
     }
 
-    /// Whether the row draws the line under its title.
-    public var hasBranchLine: Bool { showsBranch || hasStatus }
+    /// Whether the row draws the branch line under its title.
+    public var hasBranchLine: Bool { remoteMac != nil || branch != nil }
 
-    /// Whether the line shows the branch (or the cloud-Mac icon).
-    var showsBranch: Bool { remoteMac != nil || branch != nil }
-
-    /// Whether the line shows the PR badge or run indicator.
+    /// Whether the row shows the PR badge or run indicator.
     var hasStatus: Bool { pullRequest != nil || isRunning }
 }
 
 extension EnvironmentValues {
     /// The accessory of the nested workspace row being drawn, so the shell
-    /// row draws its branch line (``SupermuxNestedBranchSlot``) instead of its
-    /// preview. `nil` for every other row.
+    /// row draws its branch line (``SupermuxNestedBranchSlot``) and status
+    /// (``SupermuxNestedStatusSlot``) instead of its time and preview. `nil`
+    /// for every other row.
     @Entry public var supermuxNestedRowAccessory: SupermuxNestedWorkspaceAccessory? = nil
 }
 
@@ -69,15 +68,11 @@ private struct SupermuxNestedStatusSlotKey: PreferenceKey {
     }
 }
 
-/// How far from the row's trailing edge the line stays, clear of the
-/// activity dot drawn there.
-private let supermuxNestedAccessoryDotClearance: CGFloat = 20
-
 /// The room the shell row leaves right under its title for a nested row's
-/// line: the branch and the status, laid out but not drawn. The visible
-/// parts are drawn over it by ``View/supermuxNestedWorkspaceAccessory(_:)``,
-/// outside the row's combined accessibility element, so VoiceOver reads
-/// each as its own element ("On <Mac>, <branch>").
+/// branch, laid out but not drawn. The visible line is drawn over it by
+/// ``View/supermuxNestedWorkspaceAccessory(_:)``, outside the row's combined
+/// accessibility element, so VoiceOver reads it as its own element
+/// ("On <Mac>, <branch>").
 public struct SupermuxNestedBranchSlot: View {
     let accessory: SupermuxNestedWorkspaceAccessory
 
@@ -88,32 +83,48 @@ public struct SupermuxNestedBranchSlot: View {
     }
 
     public var body: some View {
-        HStack(spacing: 6) {
-            SupermuxNestedBranchLine(accessory: accessory)
+        SupermuxNestedBranchLine(accessory: accessory)
+            .hidden()
+            .anchorPreference(key: SupermuxNestedBranchSlotKey.self, value: .bounds) { $0 }
+    }
+}
+
+/// The room the shell row leaves on its trailing edge for a nested row's PR
+/// badge and run indicator, laid out but not drawn, for the same reason as
+/// ``SupermuxNestedBranchSlot``. Nothing when the row has neither.
+public struct SupermuxNestedStatusSlot: View {
+    /// How far from the row's trailing edge the status stays, clear of the
+    /// activity dot drawn there.
+    public static let dotClearance: CGFloat = 20
+
+    let accessory: SupermuxNestedWorkspaceAccessory
+
+    /// Creates the slot.
+    /// - Parameter accessory: The nested row's accessory.
+    public init(accessory: SupermuxNestedWorkspaceAccessory) {
+        self.accessory = accessory
+    }
+
+    public var body: some View {
+        if accessory.hasStatus {
+            SupermuxNestedWorkspaceStatusView(accessory: accessory)
                 .hidden()
-                .anchorPreference(key: SupermuxNestedBranchSlotKey.self, value: .bounds) { $0 }
-            Spacer(minLength: 0)
-            if accessory.hasStatus {
-                SupermuxNestedWorkspaceStatusView(accessory: accessory)
-                    .hidden()
-                    .anchorPreference(key: SupermuxNestedStatusSlotKey.self, value: .bounds) { $0 }
-            }
+                .anchorPreference(key: SupermuxNestedStatusSlotKey.self, value: .bounds) { $0 }
         }
-        .padding(.trailing, supermuxNestedAccessoryDotClearance)
     }
 }
 
 extension View {
     /// Hands a nested workspace row its accessory and draws it in the room
-    /// the row left under its title (``SupermuxNestedBranchSlot``): the
-    /// branch at the leading edge, the PR badge and run indicator at the
-    /// trailing end, clear of the activity dot. Overlays, each its own
-    /// accessibility element.
+    /// the row left for it: the branch under its title
+    /// (``SupermuxNestedBranchSlot``), and the PR badge and run indicator on
+    /// its trailing edge (``SupermuxNestedStatusSlot``). Overlays, each its
+    /// own accessibility element.
     /// - Parameter accessory: The row's accessory; `nil` draws nothing.
     public func supermuxNestedWorkspaceAccessory(_ accessory: SupermuxNestedWorkspaceAccessory?) -> some View {
         environment(\.supermuxNestedRowAccessory, accessory)
             .overlayPreferenceValue(SupermuxNestedBranchSlotKey.self) { slot in
-                if let accessory, accessory.showsBranch, let slot {
+                if let accessory, accessory.hasBranchLine, let slot {
                     GeometryReader { proxy in
                         let frame = proxy[slot]
                         // Padding, not an offset, so the accessibility frame

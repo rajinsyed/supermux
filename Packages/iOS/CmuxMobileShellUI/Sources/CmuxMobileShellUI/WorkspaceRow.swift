@@ -152,15 +152,23 @@ struct WorkspaceRow: View {
 
                     Spacer(minLength: 8)
 
+                    // SUPERMUX:begin supermux-mobile-nested-branch-line (a nested row shows no time, as on the Mac sidebar)
+                    if supermuxNestedRowAccessory == nil {
+                    // SUPERMUX:end supermux-mobile-nested-branch-line
                     Text(content.timestampText)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                    // SUPERMUX:begin supermux-mobile-nested-branch-line
+                    }
+                    // SUPERMUX:end supermux-mobile-nested-branch-line
                 }
 
                 // SUPERMUX:begin supermux-mobile-nested-branch-line (a nested row ends at its branch line, as on the Mac sidebar: no description or preview under it)
                 if let supermuxNestedRowAccessory {
-                    supermuxNestedBranchLine(supermuxNestedRowAccessory)
+                    if supermuxNestedRowAccessory.hasBranchLine {
+                        SupermuxNestedBranchSlot(accessory: supermuxNestedRowAccessory)
+                    }
                 } else {
                 // SUPERMUX:end supermux-mobile-nested-branch-line
 
@@ -186,6 +194,12 @@ struct WorkspaceRow: View {
                 }
                 // SUPERMUX:end supermux-mobile-nested-branch-line
             }
+
+            // SUPERMUX:begin supermux-mobile-nested-branch-line (a nested row's status and changes chip, centered on its trailing edge as on the Mac sidebar)
+            if let supermuxNestedRowAccessory {
+                supermuxNestedTrailing(supermuxNestedRowAccessory)
+            }
+            // SUPERMUX:end supermux-mobile-nested-branch-line
         }
         .overlay(alignment: .leading) {
             HStack(spacing: 0) {
@@ -212,18 +226,17 @@ struct WorkspaceRow: View {
     }
 
     // SUPERMUX:begin supermux-mobile-nested-branch-line
-    /// A nested row's one line under its title: the branch and status, then
-    /// the changes chip. Nothing when the row has neither.
-    @ViewBuilder
-    private func supermuxNestedBranchLine(_ accessory: SupermuxNestedWorkspaceAccessory) -> some View {
-        if accessory.hasBranchLine || content.changesChip != nil {
-            HStack(spacing: 8) {
-                SupermuxNestedBranchSlot(accessory: accessory)
-                if let changesChip = content.changesChip {
-                    changesChipView(changesChip)
-                }
+    /// A nested row's trailing edge, beside both its lines: the PR badge and
+    /// run indicator, then the changes chip, clear of the activity dot.
+    private func supermuxNestedTrailing(_ accessory: SupermuxNestedWorkspaceAccessory) -> some View {
+        HStack(spacing: 8) {
+            SupermuxNestedStatusSlot(accessory: accessory)
+            if let changesChip = content.changesChip {
+                changesChipView(changesChip)
             }
         }
+        .padding(.leading, 8)
+        .padding(.trailing, SupermuxNestedStatusSlot.dotClearance)
     }
     // SUPERMUX:end supermux-mobile-nested-branch-line
 
