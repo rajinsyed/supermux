@@ -15,6 +15,8 @@ struct SupermuxRemoteSimulatorPanelView: View {
     let onRequestPanelFocus: () -> Void
     @State private var typedText = ""
     @State private var visibilityHostID = UUID()
+    /// Whether this view's window is on screen (``SupermuxRemoteSimulatorWindowVisibility``).
+    @State private var isWindowVisible = true
 
     var body: some View {
         VStack(spacing: 0) {
@@ -32,15 +34,19 @@ struct SupermuxRemoteSimulatorPanelView: View {
             typeTextRow
         }
         .background(SupermuxRemoteSimulatorFocusArea(panel: panel))
+        .background(SupermuxRemoteSimulatorWindowVisibility { isWindowVisible = $0 })
         .background(Color(nsColor: appearance.contentBackgroundColor))
         .environment(\.colorScheme, cmuxReadableColorScheme(for: appearance.backgroundColor))
         .onAppear {
             panel.displayView.onFocusRequest = onRequestPanelFocus
-            panel.setVisible(isVisibleInUI, hostID: visibilityHostID)
+            updateVisibility()
             if isFocused { panel.focus() }
         }
-        .onChange(of: isVisibleInUI) { _, visible in
-            panel.setVisible(visible, hostID: visibilityHostID)
+        .onChange(of: isVisibleInUI) { _, _ in
+            updateVisibility()
+        }
+        .onChange(of: isWindowVisible) { _, _ in
+            updateVisibility()
         }
         .onChange(of: isFocused) { _, focused in
             if focused { panel.focus() }
@@ -48,6 +54,14 @@ struct SupermuxRemoteSimulatorPanelView: View {
         .onDisappear {
             panel.setVisible(false, hostID: visibilityHostID)
         }
+    }
+
+    /// The tab shows only while it is shown in its workspace and its window
+    /// is on screen: a minimized, hidden, fully covered or other-Space window
+    /// stops the stream too, so the owning Mac stops encoding and this Mac
+    /// stops decoding; it resumes with a keyframe when the window is back.
+    private func updateVisibility() {
+        panel.setVisible(isVisibleInUI && isWindowVisible, hostID: visibilityHostID)
     }
 
     // MARK: - Toolbar
@@ -275,6 +289,107 @@ private struct SupermuxRemoteSimulatorFocusArea: NSViewRepresentable {
 
     private final class ClickThroughView: NSView {
         override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+}
+
+/// An invisible view over the whole tab that says whether its window is on
+/// screen: visible, not minimized, and not fully covered (another window or
+/// app in full screen, another Space, a hidden app, a locked or sleeping
+/// display), as upstream's `SimulatorHostWindowVisibilityView` judges it.
+/// It reports a shown window at once and a hidden one only once it is still
+/// hidden a second later, so a quick Space swipe does not restart the stream.
+private struct SupermuxRemoteSimulatorWindowVisibility: NSViewRepresentable {
+    let onChange: @MainActor (Bool) -> Void
+
+    func makeNSView(context: Context) -> ObserverView {
+        let view = ObserverView()
+        view.onChange = onChange
+        return view
+    }
+
+    func updateNSView(_ view: ObserverView, context: Context) {
+        view.onChange = onChange
+    }
+
+    static func dismantleNSView(_ view: ObserverView, coordinator: ()) {
+        view.stop()
+    }
+
+    final class ObserverView: NSView {
+        var onChange: (@MainActor (Bool) -> Void)?
+        /// What the tab was last told; like the tab, it assumes a shown window
+        /// until the window says otherwise.
+        private var reportedVisible = true
+        private var hideTask: Task<Void, Never>?
+
+        private static let hideSettle: Duration = .seconds(1)
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func viewWillMove(toWindow newWindow: NSWindow?) {
+            super.viewWillMove(toWindow: newWindow)
+            guard newWindow !== window else { return }
+            let center = NotificationCenter.default
+            center.removeObserver(self)
+            guard let newWindow else { return }
+            let selector = #selector(windowVisibilityMayHaveChanged(_:))
+            for name in [
+                NSWindow.didChangeOcclusionStateNotification,
+                NSWindow.didMiniaturizeNotification,
+                NSWindow.didDeminiaturizeNotification,
+            ] {
+                center.addObserver(self, selector: selector, name: name, object: newWindow)
+            }
+            for name in [NSApplication.didHideNotification, NSApplication.didUnhideNotification] {
+                center.addObserver(self, selector: selector, name: name, object: nil)
+            }
+        }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            // SwiftUI adds this view to its window while it updates its
+            // views, when the tab's state must not change: look after that.
+            Task { @MainActor [weak self] in self?.reconcile() }
+        }
+
+        /// The tab is gone: no more reports.
+        func stop() {
+            NotificationCenter.default.removeObserver(self)
+            hideTask?.cancel()
+            hideTask = nil
+            onChange = nil
+        }
+
+        @objc private func windowVisibilityMayHaveChanged(_ notification: Notification) {
+            reconcile()
+        }
+
+        private var isWindowVisible: Bool {
+            guard let window else { return false }
+            return window.isVisible && !window.isMiniaturized && window.occlusionState.contains(.visible)
+        }
+
+        private func reconcile() {
+            hideTask?.cancel()
+            hideTask = nil
+            guard onChange != nil else { return }
+            if isWindowVisible {
+                report(true)
+                return
+            }
+            guard reportedVisible else { return }
+            hideTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: Self.hideSettle)
+                guard let self, !Task.isCancelled, !self.isWindowVisible else { return }
+                self.report(false)
+            }
+        }
+
+        private func report(_ visible: Bool) {
+            guard visible != reportedVisible else { return }
+            reportedVisible = visible
+            onChange?(visible)
+        }
     }
 }
 
