@@ -344,6 +344,10 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
     /// the disconnected/add-device view instead of spinning on
     /// ``RestoringSessionView`` forever.
     public internal(set) var didFinishStoredMacReconnectAttempt: Bool = false
+    // SUPERMUX:begin mobile-startup-parallel-secondary
+    /// The Mac the launch reconnect is dialing as foreground.
+    var supermuxStartupForegroundReservation: SupermuxStartupForegroundReservation?
+    // SUPERMUX:end mobile-startup-parallel-secondary
 
     /// Persisted hint that this device has previously paired a Mac.
     ///
@@ -3711,6 +3715,11 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
             let candidateUsesStrictTailscale = connectionMethod(for: mac) == .tailscale
             let candidateOwnsForegroundSelection = reconnectSelectionKey
                 == MacPairingKey(mac)
+            // SUPERMUX:begin mobile-startup-parallel-secondary
+            await supermuxReserveStartupForegroundCandidate(
+                mac, isLaunchRestore: hydratePairedMacs, generation: generation,
+                routes: storedReconnectRoutes(mac))
+            // SUPERMUX:end mobile-startup-parallel-secondary
             let dial = await dialSavedCandidateUnderDeadline(
                 mac,
                 storedRoutes: storedReconnectRoutes(mac),
@@ -6461,7 +6470,13 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
         // Full snapshots and explicit refreshes reconcile the account backup.
         // Targeted presence updates already persisted their pushed route and must
         // not turn one Mac's churn into an account-wide network fetch.
+        // SUPERMUX:begin mobile-startup-parallel-secondary
+        let supermuxIsLaunchPass = supermuxIsLaunchSecondaryPass
+        // SUPERMUX:end mobile-startup-parallel-secondary
         if onlyMacDeviceIDs == nil,
+           // SUPERMUX:begin mobile-startup-parallel-secondary
+           !supermuxIsLaunchPass,
+           // SUPERMUX:end mobile-startup-parallel-secondary
            let refresher = pairedMacStore as? any PairedMacBackupRefreshing {
             await refresher.refreshFromBackup(stackUserID: scope.userID)
         }
@@ -6735,6 +6750,13 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
                   secondaryAggregationRetryTask == nil,
                   secondaryAggregationRetryMacIDs.isEmpty {
             secondaryAggregationRetryState.reset()
+        // SUPERMUX:begin mobile-startup-parallel-secondary
+        } else if supermuxIsLaunchPass, !transientFailureMacIDs.isEmpty {
+            // The pass scheduled once the foreground connects dials these
+            // Macs again. A retry armed here would also stop that pass from
+            // discovering Macs this phone has not saved yet, because it may
+            // open new connections only while no retry is waiting.
+        // SUPERMUX:end mobile-startup-parallel-secondary
         } else if !transientFailureMacIDs.isEmpty {
             // Initial dial failures need the same shared cooldown as ended live
             // streams. Otherwise every presence heartbeat immediately retries all
@@ -6952,6 +6974,9 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
     private func secondaryMacConflictsWithForegroundOwnership(
         _ mac: MobilePairedMac
     ) -> Bool {
+        // SUPERMUX:begin mobile-startup-parallel-secondary
+        if supermuxIsStartupForegroundCandidate(mac) { return true }
+        // SUPERMUX:end mobile-startup-parallel-secondary
         guard foregroundConnectionAttemptReservation?.conflicts(
             with: mac
         ) != true else {
