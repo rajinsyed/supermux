@@ -35,7 +35,9 @@ import SupermuxKit
 ///
 /// Passes are debounced (``debounce`` after the last trigger, at most
 /// ``debounceMaxWait`` after the first), and a pass whose input matches the
-/// last one after a plan with nothing to do skips planning.
+/// last one after a plan with nothing to do skips planning. This Mac's own
+/// pane churn runs no pass unless it changes which workspaces are unbound
+/// mirrors.
 @MainActor
 final class SupermuxDeviceMirrorCoordinator {
     /// Trailing debounce for reconcile triggers (catalog churn arrives in bursts)…
@@ -68,6 +70,9 @@ final class SupermuxDeviceMirrorCoordinator {
     private var observers: [any NSObjectProtocol] = []
     private var eventsTask: Task<Void, Never>?
     private var revisionTask: Task<Void, Never>?
+    private var localPanesTask: Task<Void, Never>?
+    /// The unbound mirrors as of the last local pane change.
+    private var lastUnboundMirrorIDs: Set<UUID> = []
     private var openQueue: [SupermuxRemoteWorkspaceRef] = []
     private var openTask: Task<Void, Never>?
     private var inFlight: Set<SupermuxRemoteWorkspaceRef> = []
@@ -121,13 +126,17 @@ final class SupermuxDeviceMirrorCoordinator {
         revisionTask = Task { @MainActor [weak self, devices] in
             while !Task.isCancelled {
                 await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                    withObservationTracking {
-                        _ = devices.revision
-                        // An unbound mirror that got a local pane stops being one.
-                        _ = devices.localCatalogRevision
-                    } onChange: { continuation.resume() }
+                    withObservationTracking { _ = devices.revision } onChange: { continuation.resume() }
                 }
                 self?.scheduleReconcile()
+            }
+        }
+        localPanesTask = Task { @MainActor [weak self, devices] in
+            while !Task.isCancelled {
+                await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                    withObservationTracking { _ = devices.localCatalogRevision } onChange: { continuation.resume() }
+                }
+                self?.localPanesDidChange()
             }
         }
         let names: [Notification.Name] = [UserDefaults.didChangeNotification, .mainWindowContextsDidChange]
@@ -246,6 +255,18 @@ final class SupermuxDeviceMirrorCoordinator {
             lastAutoMirror = autoMirror
         }
         scheduleReconcile()
+    }
+
+    /// This Mac's own (or a Cloud or SSH) panes changed, at most once a
+    /// second. That matters only when it turned an unbound mirror (one its
+    /// panes alone make a mirror) into a local workspace or back: then the
+    /// devices revision bumps, so its followers and the next pass see the
+    /// new mirror set. Any other local churn runs no pass.
+    private func localPanesDidChange() {
+        let unbound = Set(index.mirrors().filter { !$0.isBound }.map(\.workspace.id))
+        guard unbound != lastUnboundMirrorIDs else { return }
+        lastUnboundMirrorIDs = unbound
+        devices.scheduleRefresh()
     }
 
     // MARK: - Reconcile

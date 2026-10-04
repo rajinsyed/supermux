@@ -20,8 +20,10 @@ import SupermuxKit
 /// `supermux.*` event except the Changes and Files pokes, so coordinators can
 /// re-reconcile. Changes of every other machine (this Mac's own panes, Cloud
 /// and SSH ones) only bump ``localCatalogRevision``, at most once a second, so
-/// local terminal churn never wakes the device followers. ``events()``
-/// streams per-device events.
+/// local terminal churn never wakes the device followers; the mirror
+/// coordinator follows it and bumps `revision` when such a change turned an
+/// unbound mirror into a local workspace or back. ``events()`` streams
+/// per-device events.
 ///
 /// ```swift
 /// let devices = SupermuxComposition.devices
@@ -35,10 +37,12 @@ final class SupermuxDevices {
     /// Every known remote Mac, loopback last, then by name.
     private(set) var devices: [SupermuxDevice] = []
     /// Bumps on a device machine's catalog change, link edge, binding change,
-    /// or `supermux.*` event (not the Changes and Files pokes).
+    /// unbound mirror gaining or losing mirror status, or `supermux.*` event
+    /// (not the Changes and Files pokes).
     private(set) var revision: UInt64 = 0
     /// Bumps at most once a second while any other machine's catalog entries
-    /// change (an unbound mirror that got a local pane stops being a mirror).
+    /// change. Only the mirror coordinator follows it (an unbound mirror that
+    /// got a local pane stops being a mirror).
     private(set) var localCatalogRevision: UInt64 = 0
 
     /// How long non-device catalog churn is coalesced into one
