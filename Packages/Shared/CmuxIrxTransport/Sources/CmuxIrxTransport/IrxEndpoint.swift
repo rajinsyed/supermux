@@ -180,6 +180,40 @@ public actor IrxEndpointSupervisor {
         }
     }
 
+    // SUPERMUX:begin irx-accept-loop-concurrent-handshakes
+    /// The next inbound connection attempt, before its handshake, or nil once
+    /// the endpoint is closed or unbound (callers rebind via `readyEndpoint`).
+    /// Pair with ``establishInbound(_:)`` through ``IrxInboundAcceptLoop`` so
+    /// one stalled handshake cannot hold up the next attempt.
+    public func acceptNextIncoming() async -> Incoming? {
+        guard let driver, !driver.isClosed() else { return nil }
+        return await driver.acceptNext()
+    }
+
+    /// Completes one inbound handshake and routes it by the ALPN the dialer
+    /// spoke. Nil when the handshake fails; the failure is journaled.
+    public nonisolated func establishInbound(_ incoming: Incoming) async -> AcceptedInbound? {
+        do {
+            let accepting = try await incoming.accept()
+            let alpn = try await accepting.alpn()
+            let connection = try await accepting.connect()
+            if alpn == IrxProtocol().alpnData {
+                return .irx(
+                    IrxConnection(connection: connection, role: .acceptor, journal: journal,
+                        diagnosticLog: diagnosticLog))
+            }
+            journal.record(
+                "endpoint", "foreign-alpn-accepted",
+                ["alpn": String(data: alpn, encoding: .utf8) ?? "?"]
+            )
+            return .foreign(alpn: alpn, connection: connection)
+        } catch {
+            journal.record("endpoint", "accept-failed", ["error": String(describing: error)])
+            return nil
+        }
+    }
+    // SUPERMUX:end irx-accept-loop-concurrent-handshakes
+
     /// Make-before-break rotation: insert the fresh credential for each URL;
     /// the forked iroh authenticates a replacement relay connection before
     /// swapping routes, so live sessions continue. Never removeRelay for a

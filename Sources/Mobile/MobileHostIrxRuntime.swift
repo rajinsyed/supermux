@@ -867,18 +867,17 @@ final class MobileHostIrxRuntime: MobileHostPairingRuntime {
             }
             return try v2Judgment(grant, endpoint)
         }
+        // SUPERMUX:begin irx-accept-loop-concurrent-handshakes
+        // The loop only drains the endpoint's queue; each handshake completes
+        // on its own task, and a failed one no longer rebinds the endpoint.
+        let inboundLoop = IrxInboundAcceptLoop<Incoming, IrxEndpointSupervisor.AcceptedInbound>(
+            next: { await supervisor.acceptNextIncoming() },
+            establish: { await supervisor.establishInbound($0) },
+            refuse: { try? await $0.refuse() }
+        )
         acceptLoop = Task { @MainActor [weak self] in
-            while !Task.isCancelled {
-                guard let self, self.isCurrent(token) else { return }
-                guard let inbound = await supervisor.acceptNextInbound() else {
-                    guard self.isCurrent(token), !Task.isCancelled else { return }
-                    self.acceptLoop = nil
-                    await self.refreshListenerState(token: token)
-                    guard self.isCurrent(token), !Task.isCancelled else { return }
-                    self.requestEndpointReady(token: token)
-                    return
-                }
-                guard self.isCurrent(token), !Task.isCancelled else {
+            await inboundLoop.run { @MainActor [weak self] inbound in
+                guard let self, self.isCurrent(token), !Task.isCancelled else {
                     if case .irx(let connection) = inbound { await connection.close(code: .hostShutdown, origin: .local) }
                     return
                 }
@@ -895,10 +894,10 @@ final class MobileHostIrxRuntime: MobileHostPairingRuntime {
                           let trust = legacyService.broker.cachedTrustForAdmission(),
                           let acceptor = self.legacyAcceptor(token: token) else {
                         try? connection.close(errorCode: 1, reason: Data("unsupported_alpn".utf8))
-                        continue
+                        return
                     }
                     let adopted = try? CmxIrohLibEndpointFactory.adoptAcceptedConnection(connection)
-                    guard let adopted else { continue }
+                    guard let adopted else { return }
                     Task {
                         await MobileHostIrxLegacyDialectServer.serve(adopted: adopted,
                             acceptor: acceptor, trust: trust,
@@ -911,7 +910,13 @@ final class MobileHostIrxRuntime: MobileHostPairingRuntime {
                     }
                 }
             }
+            guard let self, self.isCurrent(token), !Task.isCancelled else { return }
+            self.acceptLoop = nil
+            await self.refreshListenerState(token: token)
+            guard self.isCurrent(token), !Task.isCancelled else { return }
+            self.requestEndpointReady(token: token)
         }
+        // SUPERMUX:end irx-accept-loop-concurrent-handshakes
     }
 
     private func legacyAcceptor(token: UUID) -> CmxIrohGrantPeer? {

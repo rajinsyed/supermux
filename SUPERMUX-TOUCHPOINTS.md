@@ -736,6 +736,10 @@ Rules for adding a touchpoint:
 | 922 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/Devices/SupermuxLocalUserInput.swift` into the cmux target (ids `50BE00170400000000000007`/`…08`, four entries, `Devices/…` path in the Supermux group, next to #796's) |
 | 923 | `Sources/GhosttyTerminalView.swift` | `sizing-auto-local-input` | First statements of `GhosttyNSView.performDragOperation(_:)`: `let enclosingLocalInput = SupermuxLocalUserInput.beginUserAction()` and `defer { SupermuxLocalUserInput.end(restoring: enclosingLocalInput) }`. A drop on a terminal is this Mac's user's input, and a drag from another app (Finder) is delivered outside `sendEvent`, so without it a dropped path no longer gave the grid to the Mac pane |
 | 924 | `Sources/Cloud/CloudTuiManualMirrorSession.swift` | `sizing-auto-local-input` | In `noteExplicitInput()`, first in the `sizingRelay.isSupported` branch: `guard SupermuxTerminalSizingAuto.shared.isMacPaneActivity else { return }`. A phone's input to a Cloud terminal it views through this Mac runs this pane's explicit-input hook too; relayed as this Mac's focus activity it took the grid from the phone (the same flash). The legacy geometry claim below is unchanged |
+| 927 | `Packages/Shared/CmuxIrxTransport/Sources/CmuxIrxTransport/IrxInboundAcceptLoop.swift` | `irx-accept-loop-concurrent-handshakes` | Whole new file (fenced top to bottom). `IrxInboundAcceptLoop`: drains an endpoint's inbound queue (`next`), completes each handshake on its own task (`establish`), refuses attempts over `maximumPendingHandshakes` (10), and returns when the endpoint closes without waiting for pending handshakes. Regression coverage: #930 |
+| 928 | `Packages/Shared/CmuxIrxTransport/Sources/CmuxIrxTransport/IrxEndpoint.swift` | `irx-accept-loop-concurrent-handshakes` | Adds `acceptNextIncoming()` (the next `Incoming`, before its handshake; nil only when the endpoint is closed) and `nonisolated establishInbound(_:)` (accept, ALPN, connect, ALPN routing, bounded by a 10 s deadline; nil and an `accept-failed` journal event on failure). Upstream's `acceptNextInbound()` is left as is, unused |
+| 929 | `Sources/Mobile/MobileHostIrxRuntime.swift` | `irx-accept-loop-concurrent-handshakes` | The host's accept loop runs through #927 with #928's two calls: one stalled phone handshake no longer holds every later phone until QUIC's 30 s idle timeout, and a failed handshake no longer looks like a closed endpoint (which rebound the endpoint and republished the relay hint). The per-connection routing body is upstream's, moved into the loop's `deliver` closure |
+| 930 | `Packages/Shared/CmuxIrxTransport/Tests/CmuxIrxTransportTests/IrxInboundAcceptLoopTests.swift` | `irx-accept-loop-concurrent-handshakes` | Whole new file. A stalled handshake does not hold up the next connection; attempts over the limit are refused; the loop ends when the endpoint closes without waiting for pending handshakes |
 | 810 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the remote-terminal polish into the cmux target, four entries each (build file, file reference, Supermux group child, Sources phase) next to #764's `SupermuxDeviceTerminalUpload.swift`: `Devices/SupermuxDeviceTerminalLinks.swift` (`50BE001B0200000000000001`/`…02`, a Cmd-click on a path in another Mac's terminal), `Devices/SupermuxDeviceTerminalActions.swift` (`…03`/`…04`, forwarded Cmd+K/reset, focus and Ctrl+V of an image) and `SupermuxMobileHost+TerminalActions.swift` (`…05`/`…06`, the host's `terminal.action`) |
 | 811 | `Sources/Workspace+TerminalLinkOpening.swift` | `device-terminal-file-link` | First thing in `deferRemoteTerminalFileLinkOpen`: `SupermuxDeviceTerminalLinks.open(rawValue, panelID:in:)` claims a file path clicked in another Mac's terminal and opens that Mac's file in the mirror's read-only preview (upstream refused it: only SSH terminals resolved a remote path) |
 | 812 | `Sources/DockSplitStore+TerminalLinkOpening.swift` | `device-terminal-file-link` | Adds `deferRemoteTerminalFileLinkOpen` to the Dock's link container (upstream relies on the protocol's `false` default): the same `SupermuxDeviceTerminalLinks.open` for another Mac's terminal moved into the Dock |
@@ -6699,3 +6703,17 @@ Verify: `CMUX_E2E_SUITES="loopback_agent_answer_e2e loopback_agent_activity_e2e"
 tests/supermux/run_all_loopback_e2e.sh`, `CMUX_CLI_BIN=<tagged Debug cmux> python3
 tests/test_claude_wrapper_generated_settings_fast_path.py` and `swift test --filter AgentHookDeliveryPolicy` in
 `Packages/macOS/CMUXAgentLaunch`.
+
+### 927–930. One stalled inbound handshake does not hold up the next phone — `irx-accept-loop-concurrent-handshakes`
+
+Field log (2026-10-04): the Mac's accept loop awaited each handshake inline (`acceptNextInbound`: accept, ALPN,
+connect), so one phone whose handshake stalled (killed mid-dial, packets stopped) held every later phone until
+QUIC's 30 s idle timeout: a phone waited 22.7 s behind one at 22:16, and another about 90 s across five stalls
+at 14:26. Each failure also returned nil, which the loop read as a closed endpoint: it rebound the endpoint and
+republished the relay hint. Same bug as upstream's open manaflow-ai/cmux#10858, which covers only the old
+`CmxIroh*` stack.
+
+Re-apply after an upstream merge: keep the host loop on `IrxInboundAcceptLoop` with `acceptNextIncoming` and
+`establishInbound`. If upstream fixes its own loop, retire these touchpoints in favour of upstream's.
+
+Verify: `swift test --package-path Packages/Shared/CmuxIrxTransport --filter IrxInboundAcceptLoopTests`.
