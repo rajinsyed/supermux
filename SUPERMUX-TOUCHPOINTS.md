@@ -740,6 +740,9 @@ Rules for adding a touchpoint:
 | 928 | `Packages/Shared/CmuxIrxTransport/Sources/CmuxIrxTransport/IrxEndpoint.swift` | `irx-accept-loop-concurrent-handshakes` | Adds `acceptNextIncoming()` (the next `Incoming`, before its handshake; nil only when the endpoint is closed) and `nonisolated establishInbound(_:)` (accept, ALPN, connect, ALPN routing, bounded by a 10 s deadline; nil and an `accept-failed` journal event on failure). Upstream's `acceptNextInbound()` is left as is, unused |
 | 929 | `Sources/Mobile/MobileHostIrxRuntime.swift` | `irx-accept-loop-concurrent-handshakes` | The host's accept loop runs through #927 with #928's two calls: one stalled phone handshake no longer holds every later phone until QUIC's 30 s idle timeout, and a failed handshake no longer looks like a closed endpoint (which rebound the endpoint and republished the relay hint). The per-connection routing body is upstream's, moved into the loop's `deliver` closure |
 | 930 | `Packages/Shared/CmuxIrxTransport/Tests/CmuxIrxTransportTests/IrxInboundAcceptLoopTests.swift` | `irx-accept-loop-concurrent-handshakes` | Whole new file. A stalled handshake does not hold up the next connection; attempts over the limit are refused; the loop ends when the endpoint closes without waiting for pending handshakes |
+| 931 | `Packages/Shared/CmuxIrxTransport/Sources/CmuxIrxTransport/IrxDirectoryRecheckGate.swift` | `irx-admission-unknown-peer-recheck` | Whole new file (fenced top to bottom). `IrxDirectoryRecheckGate`: concurrent unknown phones share one directory refresh, and a new refresh starts at most once per 30 s cooldown. Regression coverage: #933 |
+| 932 | `Packages/Shared/CmuxIrxTransport/Sources/CmuxIrxTransport/IrxAdmission.swift` | `irx-admission-unknown-peer-recheck` | `performServer` gains an optional `recheckUnknownPeer` closure. On an `invalid-grant` judgment it waits up to 3 s for that recheck (the phone's admit deadline is 5 s), then judges once more with the same judgment; a second denial closes as before. Known peers keep the synchronous offline path |
+| 933 | `Packages/Shared/CmuxIrxTransport/Tests/CmuxIrxTransportTests/IrxUnknownPeerRecheckTests.swift` | `irx-admission-unknown-peer-recheck` | Whole new file. Live loopback admission: a phone the refresh lists is admitted on the same connection; one it doesn't list is still denied `invalid-grant`; the gate shares one refresh between concurrent phones and honours its cooldown |
 | 810 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the remote-terminal polish into the cmux target, four entries each (build file, file reference, Supermux group child, Sources phase) next to #764's `SupermuxDeviceTerminalUpload.swift`: `Devices/SupermuxDeviceTerminalLinks.swift` (`50BE001B0200000000000001`/`…02`, a Cmd-click on a path in another Mac's terminal), `Devices/SupermuxDeviceTerminalActions.swift` (`…03`/`…04`, forwarded Cmd+K/reset, focus and Ctrl+V of an image) and `SupermuxMobileHost+TerminalActions.swift` (`…05`/`…06`, the host's `terminal.action`) |
 | 811 | `Sources/Workspace+TerminalLinkOpening.swift` | `device-terminal-file-link` | First thing in `deferRemoteTerminalFileLinkOpen`: `SupermuxDeviceTerminalLinks.open(rawValue, panelID:in:)` claims a file path clicked in another Mac's terminal and opens that Mac's file in the mirror's read-only preview (upstream refused it: only SSH terminals resolved a remote path) |
 | 812 | `Sources/DockSplitStore+TerminalLinkOpening.swift` | `device-terminal-file-link` | Adds `deferRemoteTerminalFileLinkOpen` to the Dock's link container (upstream relies on the protocol's `false` default): the same `SupermuxDeviceTerminalLinks.open` for another Mac's terminal moved into the Dock |
@@ -6717,3 +6720,17 @@ Re-apply after an upstream merge: keep the host loop on `IrxInboundAcceptLoop` w
 `establishInbound`. If upstream fixes its own loop, retire these touchpoints in favour of upstream's.
 
 Verify: `swift test --package-path Packages/Shared/CmuxIrxTransport --filter IrxInboundAcceptLoopTests`.
+
+### 931–934. A phone missing from the Mac's directory gets one rate-limited refresh — `irx-admission-unknown-peer-recheck`
+
+Field log (2026-10-04): a newly installed phone build was denied `invalid-grant` for six minutes. The Mac
+judges admission offline against its cached directory, which was fetched before the phone registered, and it
+missed the server's `directory.changed` push; nothing refreshed it until a foreground pass. The phone parks a
+denied Mac until an explicit retry. Now an unknown endpoint makes the Mac refresh its directory (at most once per
+30 s, Mac-wide, shared between concurrent phones), wait up to 3 s for it to reach the admission authority, and
+judge once more. An endpoint is still admitted only when the server-issued directory lists it.
+
+Re-apply after an upstream merge: keep the `recheckUnknownPeer` parameter on `performServer` and the host's gate
+wiring (#934).
+
+Verify: `swift test --package-path Packages/Shared/CmuxIrxTransport --filter IrxUnknownPeerRecheckTests`.

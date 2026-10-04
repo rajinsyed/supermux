@@ -196,7 +196,10 @@ public struct IrxAdmission: Sendable {
     public func performServer(
         connection: IrxConnection,
         judgment: IrxGrantJudgment,
-        journal: IrxJournal
+        journal: IrxJournal,
+        // SUPERMUX:begin irx-admission-unknown-peer-recheck
+        recheckUnknownPeer: (@Sendable () async -> Void)? = nil
+        // SUPERMUX:end irx-admission-unknown-peer-recheck
     ) async -> (IrxAdmittedPeerInfo, IrxLaneStream, String)? {
         do {
             let controlResult = try await withIrxDeadlineResult(deadline) {
