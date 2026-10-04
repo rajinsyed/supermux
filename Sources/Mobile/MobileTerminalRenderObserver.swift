@@ -262,7 +262,8 @@ final class MobileTerminalRenderObserver {
         pendingThemeSurfaceIDs.removeAll()
 
         if shouldEmitUpdatedEvents, shouldEmitGlobal {
-            MobileHostService.emitEvent(topic: "terminal.updated", payload: [:])
+            // SUPERMUX:begin terminal-updated-no-global-ping (no client decodes a surface-less `terminal.updated`: another Mac's mirror needs `surface_id`, the phone does not subscribe; it went out on every Ghostty tick. upstream: `MobileHostService.emitEvent(topic: "terminal.updated", payload: [:])`)
+            // SUPERMUX:end terminal-updated-no-global-ping
         } else if shouldEmitUpdatedEvents {
             for surfaceID in surfaceIDs {
                 // The effective grid rides along so a raw-byte subscriber (another
