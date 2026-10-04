@@ -18,7 +18,10 @@ import SupermuxMobileCore
 /// source of each Mac's Supermux state: the sidebar and the device-mirror
 /// behaviors (⌘G / Run, presets bar) all read it, so each Mac is polled once. It refreshes on the matching `supermux.*`
 /// topics (`run.updated` refetches only the run state), on every link
-/// (re)connect, and on a slow safety-net timer. The last
+/// (re)connect, and on a slow safety-net timer. The timer's worktree sweep
+/// runs only while this Mac is in use (``isInUse()``), where it is how a
+/// worktree created outside Supermux shows up; otherwise it waits for the
+/// app to become active. The last
 /// project list of each Mac is cached on disk
 /// (``SupermuxRemoteProjectsCache``), so an offline Mac's projects still
 /// render (dimmed). Icons come from `project.icon` with etag caching, asked
@@ -39,6 +42,8 @@ final class SupermuxRemoteProjectsModel {
 
     /// How often every connected Mac is refreshed even without events.
     static let safetyNetInterval: Duration = .seconds(120)
+    /// How late the safety net may fire, so the system can batch its wakeup.
+    static let safetyNetTolerance: Duration = .seconds(20)
     /// How many `worktrees.list` calls one Mac's sweep keeps in flight.
     static let worktreeSweepWidth = 4
 
@@ -60,9 +65,17 @@ final class SupermuxRemoteProjectsModel {
     /// Macs refreshed since their link last connected, so the link event and
     /// the device list reporting the same connection refresh it once.
     @ObservationIgnored private var refreshedSinceConnect: Set<SurfaceMachineID> = []
+    /// Macs whose next refresh pass also sweeps their worktree lists. A set
+    /// rather than a pass argument, so a sweep asked for while a pass without
+    /// one runs still happens in the pass queued after it.
+    @ObservationIgnored private var worktreeSweepDue: Set<SurfaceMachineID> = []
+    /// The last safety-net tick skipped its worktree sweep because this Mac
+    /// was not in use; the app becoming active runs it.
+    @ObservationIgnored private var sweepMissedWhileIdle = false
     @ObservationIgnored private let refreshes = SupermuxPerMachinePasses()
     @ObservationIgnored private let worktreeSweeps = SupermuxPerMachinePasses()
     @ObservationIgnored private var tasks: [Task<Void, Never>] = []
+    @ObservationIgnored private var activationObserver: (any NSObjectProtocol)?
 
     init(facade: SupermuxDevices, cache: SupermuxRemoteProjectsCache) {
         self.facade = facade
@@ -88,10 +101,15 @@ final class SupermuxRemoteProjectsModel {
         })
         tasks.append(Task { @MainActor [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: Self.safetyNetInterval)
-                self?.refreshAll()
+                try? await Task.sleep(for: Self.safetyNetInterval, tolerance: Self.safetyNetTolerance)
+                self?.safetyNetTick()
             }
         })
+        activationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.catchUpMissedSweep() }
+        }
     }
 
     // MARK: - Lookup
@@ -113,18 +131,47 @@ final class SupermuxRemoteProjectsModel {
 
     // MARK: - Refresh
 
-    /// Refreshes every connected Mac.
-    func refreshAll() {
+    /// Refreshes every connected Mac (see ``refresh(_:sweepingWorktrees:)``).
+    func refreshAll(sweepingWorktrees: Bool = true) {
         for device in devices where device.isOnline {
-            Task { await refresh(device.machine) }
+            Task { await refresh(device.machine, sweepingWorktrees: sweepingWorktrees) }
         }
     }
 
-    /// Refetches one Mac's projects, run states and icons, and starts a sweep
-    /// of every listed project's worktree list (not awaited). Concurrent calls
-    /// coalesce into one extra pass.
-    func refresh(_ machine: SurfaceMachineID) async {
+    /// Refetches one Mac's projects, run states and changed icons, and
+    /// (unless `sweepingWorktrees` is false) starts a sweep of every listed
+    /// project's worktree list (not awaited). Concurrent calls coalesce into
+    /// one extra pass, which sweeps when a call since the last sweep asked to.
+    func refresh(_ machine: SurfaceMachineID, sweepingWorktrees: Bool = true) async {
+        if sweepingWorktrees { worktreeSweepDue.insert(machine) }
         await refreshes.run(machine) { await performRefresh(machine) }
+    }
+
+    /// The safety net: a full refresh of every connected Mac while this Mac
+    /// is in use. Otherwise the project lists, run states and changed icons
+    /// are still refetched (project sync and notification icons read them),
+    /// and the worktree sweep waits for the app to become active.
+    private func safetyNetTick() {
+        let inUse = Self.isInUse()
+        sweepMissedWhileIdle = !inUse
+        refreshAll(sweepingWorktrees: inUse)
+    }
+
+    /// The app became active after a tick skipped its worktree sweep: one
+    /// full refresh now, so an outside worktree shows up as the user returns.
+    private func catchUpMissedSweep() {
+        guard sweepMissedWhileIdle, Self.isInUse() else { return }
+        sweepMissedWhileIdle = false
+        refreshAll()
+    }
+
+    /// Whether someone may be looking at this Mac's sidebar: the app is
+    /// active, or one of its main windows is on screen and not fully covered.
+    /// Never while Remote Host Mode keeps it headless.
+    private static func isInUse() -> Bool {
+        let hostMode = SupermuxRemoteHostMode.shared
+        guard !hostMode.isHeadless else { return false }
+        return NSApp.isActive || hostMode.visibleMainWindows().contains { $0.occlusionState.contains(.visible) }
     }
 
     /// Loads a project's worktrees if no refresh has yet (every refresh
@@ -307,7 +354,9 @@ final class SupermuxRemoteProjectsModel {
                 entry.worktreesByProjectID = entry.worktreesByProjectID.filter { listed.contains($0.key) }
             }
             if !device.isLoopback { saveCache(machine: machine, name: device.displayName, projects: projects) }
-            Task { await refreshWantedWorktrees(on: machine) }
+            if worktreeSweepDue.remove(machine) != nil {
+                Task { await refreshWantedWorktrees(on: machine) }
+            }
             await refreshIcons(on: machine, projects: projects)
         } catch {
             update(machine) { $0.lastError = error.localizedDescription }
