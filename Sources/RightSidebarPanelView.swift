@@ -260,6 +260,9 @@ struct RightSidebarPanelView: View {
                         .layoutValue(key: RightSidebarModeBarTabSelectedKey.self, value: item.isSelected(mode: fileExplorerState.mode))
                     }
                 }
+                // SUPERMUX:begin right-sidebar-mode-bar-overflow
+                .modifier(SupermuxModeBarOverflow())
+                // SUPERMUX:end right-sidebar-mode-bar-overflow
                 .background(RightSidebarModeBarDragAnchorView(anchor: modeBarDrag.anchor))
                 .coordinateSpace(.named(RightSidebarModeBarDragController.coordinateSpace))
                 .layoutPriority(1)

@@ -35,7 +35,12 @@ struct RightSidebarModeBarTabsLayout: Layout {
 
     private func tabWidths(available: CGFloat?, subviews: Subviews) -> [CGFloat] {
         let natural = subviews.map { $0.sizeThatFits(.unspecified).width }
-        guard let available, available.isFinite else { return natural }
+        // SUPERMUX:begin right-sidebar-mode-bar-overflow
+        // The ideal width is the narrowest layout, so the fork's overflow
+        // fallback (`SupermuxModeBarOverflow`) scrolls only below it.
+        let available = available ?? 0
+        guard available.isFinite else { return natural }
+        // SUPERMUX:end right-sidebar-mode-bar-overflow
         return RightSidebarModeBarTabWidths(
             natural: natural,
             floors: subviews.map { $0.sizeThatFits(ProposedViewSize(width: 0, height: nil)).width },
