@@ -190,27 +190,47 @@ public actor IrxEndpointSupervisor {
         return await driver.acceptNext()
     }
 
+    /// How long one inbound handshake may take. A relay handshake takes well
+    /// under a second; QUIC alone would wait its 30 s idle timeout.
+    static let inboundHandshakeDeadline: Duration = .seconds(10)
+
     /// Completes one inbound handshake and routes it by the ALPN the dialer
-    /// spoke. Nil when the handshake fails; the failure is journaled.
+    /// spoke. Nil when the handshake fails or outlives
+    /// ``inboundHandshakeDeadline``; the failure is journaled, and a
+    /// connection that completes after the deadline is closed.
     public nonisolated func establishInbound(_ incoming: Incoming) async -> AcceptedInbound? {
+        let abandoned = IrxAbandonedHandshake()
+        let established: IrxDeadlineResult<IrxEstablishedInbound>
         do {
-            let accepting = try await incoming.accept()
-            let alpn = try await accepting.alpn()
-            let connection = try await accepting.connect()
-            if alpn == IrxProtocol().alpnData {
-                return .irx(
-                    IrxConnection(connection: connection, role: .acceptor, journal: journal,
-                        diagnosticLog: diagnosticLog))
+            established = try await withIrxDeadlineResult(Self.inboundHandshakeDeadline) {
+                let accepting = try await incoming.accept()
+                let alpn = try await accepting.alpn()
+                let connection = try await accepting.connect()
+                guard !abandoned.isSet else {
+                    try? connection.close(errorCode: 0, reason: Data("handshake-deadline".utf8))
+                    return nil
+                }
+                return IrxEstablishedInbound(alpn: alpn, connection: connection)
             }
-            journal.record(
-                "endpoint", "foreign-alpn-accepted",
-                ["alpn": String(data: alpn, encoding: .utf8) ?? "?"]
-            )
-            return .foreign(alpn: alpn, connection: connection)
         } catch {
             journal.record("endpoint", "accept-failed", ["error": String(describing: error)])
             return nil
         }
+        guard case .operation(let inbound?) = established else {
+            abandoned.set()
+            journal.record("endpoint", "accept-failed", ["error": "handshake-deadline"])
+            return nil
+        }
+        if inbound.alpn == IrxProtocol().alpnData {
+            return .irx(
+                IrxConnection(connection: inbound.connection, role: .acceptor, journal: journal,
+                    diagnosticLog: diagnosticLog))
+        }
+        journal.record(
+            "endpoint", "foreign-alpn-accepted",
+            ["alpn": String(data: inbound.alpn, encoding: .utf8) ?? "?"]
+        )
+        return .foreign(alpn: inbound.alpn, connection: inbound.connection)
     }
     // SUPERMUX:end irx-accept-loop-concurrent-handshakes
 

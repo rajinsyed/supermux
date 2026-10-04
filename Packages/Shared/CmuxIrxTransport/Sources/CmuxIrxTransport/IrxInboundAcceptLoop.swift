@@ -1,5 +1,6 @@
 // SUPERMUX:begin irx-accept-loop-concurrent-handshakes (one stalled inbound handshake must not hold up the next — see SUPERMUX-TOUCHPOINTS.md)
 import Foundation
+import IrohLib
 
 /// Drains an endpoint's inbound queue and hands each established connection
 /// to the caller.
@@ -32,13 +33,61 @@ public struct IrxInboundAcceptLoop<Incoming: Sendable, Inbound: Sendable>: Senda
         self.refuse = refuse
     }
 
-    /// Accepts until the endpoint closes or the task is cancelled.
+    /// Accepts until the endpoint closes or the task is cancelled. Each
+    /// handshake completes on its own task, so a peer that stalls mid-handshake
+    /// never holds up the next one; this returns without waiting for them.
     /// - Parameter deliver: Receives each established connection.
     public func run(deliver: @escaping @Sendable (Inbound) async -> Void) async {
+        let pending = IrxPendingHandshakes(limit: maximumPendingHandshakes)
         while !Task.isCancelled, let incoming = await next() {
-            guard let inbound = await establish(incoming) else { continue }
-            await deliver(inbound)
+            guard pending.begin() else {
+                await refuse(incoming)
+                continue
+            }
+            Task {
+                defer { pending.end() }
+                guard let inbound = await establish(incoming) else { return }
+                await deliver(inbound)
+            }
         }
     }
+}
+
+/// Counts handshakes in flight against a limit.
+private final class IrxPendingHandshakes: @unchecked Sendable {
+    private let lock = NSLock()
+    private let limit: Int
+    private var count = 0
+
+    init(limit: Int) { self.limit = limit }
+
+    /// Claims a slot; false when the limit is reached.
+    func begin() -> Bool {
+        lock.withLock {
+            guard count < limit else { return false }
+            count += 1
+            return true
+        }
+    }
+
+    func end() {
+        lock.withLock { count -= 1 }
+    }
+}
+/// One completed inbound handshake, before ALPN routing.
+struct IrxEstablishedInbound: Sendable {
+    let alpn: Data
+    let connection: Connection
+}
+
+/// Set once a handshake's deadline has passed, so a handshake that completes
+/// later closes its connection instead of leaking it.
+final class IrxAbandonedHandshake: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = false
+
+    var isSet: Bool { lock.withLock { value } }
+
+    func set() { lock.withLock { value = true } }
 }
 // SUPERMUX:end irx-accept-loop-concurrent-handshakes
