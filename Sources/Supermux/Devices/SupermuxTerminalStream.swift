@@ -205,6 +205,10 @@ final class SupermuxTerminalStream {
     private var pendingConfirmation = false
     private(set) var confirmations = 0
     static let outputRaceWindow: Duration = .milliseconds(150)
+    /// The race window while the host batches this terminal's bytes: they
+    /// arrive up to its ~500 ms batch window plus 100 ms leeway late
+    /// (`SupermuxTerminalByteCoalescer.backgroundWindow`).
+    static let backgroundOutputRaceWindow: Duration = .milliseconds(750)
     static let outputQuiet: Duration = .milliseconds(400)
     static let maximumConfirmationQuiet: Duration = .seconds(8)
     static let maximumConfirmationsInRow = 3
@@ -219,7 +223,8 @@ final class SupermuxTerminalStream {
     /// A replay request leaves now.
     func replayRequested() {
         bytesDuringAttach = false
-        requestRacedOutput = lastBytesAt.map { ContinuousClock.now - $0 < Self.outputRaceWindow } ?? false
+        let window = background ? Self.backgroundOutputRaceWindow : Self.outputRaceWindow
+        requestRacedOutput = lastBytesAt.map { ContinuousClock.now - $0 < window } ?? false
     }
 
     /// A full replay was applied: when output raced it, `confirm` runs once

@@ -224,7 +224,8 @@ extension MobileTerminalByteTee {
 /// - Background (every connection watching it has it off screen): chunks join
 ///   one event per terminal for ~500 ms, up to 256 KB, so a hidden mirror
 ///   costs about two events a second instead of one per redraw. A terminal
-///   back on screen sends its batch before anything newer.
+///   back on screen, or about to be captured by a full replay, sends its
+///   batch before anything newer.
 /// - Unwatched: no event at all; the byte tee's tail keeps the bytes for a
 ///   resume.
 /// Sequences are untouched, so every receiver's gap check holds. Each event
@@ -277,9 +278,15 @@ final class SupermuxTerminalByteCoalescer {
     func flushForegroundBatches() {
         let demand = SupermuxTerminalByteDemand.shared
         let promoted = backgroundPending.keys.filter { demand.delivery(surfaceID: $0) != .background }
-        for surfaceID in promoted {
-            if let batch = backgroundPending.removeValue(forKey: surfaceID) { emit(surfaceID: surfaceID, batch) }
-        }
+        for surfaceID in promoted { flushBatch(surfaceID: surfaceID) }
+    }
+
+    /// Sends now what the terminal's background batch holds. A full replay
+    /// calls it before its capture: the viewer then sees the output that
+    /// raced the capture during its attach, not ~500 ms after it, and
+    /// confirms the replay (`SupermuxTerminalStream.fullReplayApplied`).
+    func flushBatch(surfaceID: UUID) {
+        if let batch = backgroundPending.removeValue(forKey: surfaceID) { emit(surfaceID: surfaceID, batch) }
     }
 
     // MARK: Foreground

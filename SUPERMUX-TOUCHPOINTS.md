@@ -806,6 +806,7 @@ Rules for adding a touchpoint:
 | 975 | `Sources/Devices/DeviceTerminalMirrorSession.swift` | `terminal-stream-attach-limiter` | Three fences: the `supermuxQueuedAttach` property after #781's `supermuxStream`; `.linkReconnected` calls `supermuxAttachAfterReconnect()` in place of upstream's `scheduleAttach()`; the two methods before `scheduleAttach`. A mirror on screen re-attaches at once, a hidden one through `SupermuxTerminalAttachLimiter` (`Sources/Supermux/Devices/`, at most 3 in flight, utility priority, slot held until the attach returns); shown while it waits, it attaches at once |
 | 976 | `Sources/Devices/DeviceTerminalMirrorSession.swift` | `terminal-stream-replay-sizing`, `terminal-stream-viewer` | Four `terminal-stream-replay-sizing` fences: `Replay.supermuxSizing`; `decodeReplay(_:)` decodes the body through a new `decodeReplay(object:)` (upstream's body, unchanged, after the fence) and sets the sizing from the dictionary it parsed (`SupermuxTerminalStream.replaySizing(in:)`); the call site passes `replay.supermuxSizing`; `receiveReplaySizing` takes the decoded `MobileTerminalReplaySizing?` instead of the reply `Data`. In #781's resumed-reply branch (`terminal-stream-viewer`), the `Replay` gains `supermuxSizing: supermuxReply.sizing`. The main actor no longer runs a JSON decode over the whole (multi-MB) reply |
 | 977 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/Devices/SupermuxTerminalAttachLimiter.swift` (`50BE09700000000000000001` file ref, `…02` build file) into the cmux target: the build file, the file reference, the Supermux group child before `SupermuxTerminalStream.swift`, the Sources phase entry |
+| 978 | `Sources/TerminalController.swift` | `terminal-stream-resume` | Changes #780's first fence in `v2MobileTerminalReplay`: after the resume branch (so a full replay only), `SupermuxTerminalByteCoalescer.shared.flushBatch(surfaceID: surfaceId)` sends what an off-screen terminal's ~500 ms batch holds before the capture, so the output that raced the capture reaches the viewer during its attach and the replay is confirmed (`SupermuxTerminalStream.fullReplayApplied`) |
 
 ## How to re-apply
 
@@ -6865,7 +6866,7 @@ Re-apply after an upstream merge:
 
 Verify: `swift test --package-path Packages/iOS/CmuxMobileShell --filter foregroundAfterHostIdleTimeoutRedialsWithoutProbingTheDeadSession`.
 
-### 970–977. Hidden mirrors stream in batches, reconnects resume quiet terminals — `terminal-stream-resume`, `terminal-stream-byte-demand`, `terminal-stream-watch`, `terminal-updated-no-global-ping`, `terminal-stream-show-hook`, `terminal-stream-attach-limiter`, `terminal-stream-replay-sizing`
+### 970–978. Hidden mirrors stream in batches, reconnects resume quiet terminals — `terminal-stream-resume`, `terminal-stream-byte-demand`, `terminal-stream-watch`, `terminal-updated-no-global-ping`, `terminal-stream-show-hook`, `terminal-stream-attach-limiter`, `terminal-stream-replay-sizing`
 
 Measured on a 24-worktree loopback DEBUG build (`tests/supermux/stress_worktrees_energy.py`, baseline
 `stress_worktrees_energy-perfaudit-baseline.json`): with agents busy, a viewer mirroring them used 38.5% CPU
@@ -6891,7 +6892,9 @@ at 10 Hz and chained full replays on a terminal printing every second; the host 
 - **Confirmation backoff** (`SupermuxTerminalStream`, no touchpoint): a deadline wait instead of the poll;
   consecutive confirmations of one anchor wait 400 ms × 2^k (at most 8 s), stop after 3, and after the
   first only when output came right before the request; a hidden pane's waits for its show, then for
-  quiet output (#974; a brief hide leaves an armed one armed).
+  quiet output (#974; a brief hide leaves an armed one armed). A full replay sends the terminal's batch
+  before its capture (#978), and a background mirror looks 750 ms back for output that raced its
+  request, so batching does not hide a raced capture.
 - **No global `terminal.updated` ping (#973).**
 
 Re-apply after an upstream merge:
@@ -6901,6 +6904,7 @@ Re-apply after an upstream merge:
 - **#973**: drop the fence if upstream stops emitting the global ping or gives it a consumer.
 - **#974/#975/#976**: as in the rows; `decodeReplay(object:)` holds upstream's body unchanged.
 - **#977**: re-add the four entries listed in the #977 row.
+- **#978**: keep the flush after the resume branch and before the capture.
 
 Verify: `CMUX_E2E_SUITES="loopback_terminal_streaming_e2e loopback_terminal_resize_integrity_e2e
 loopback_terminal_input_pipeline_e2e loopback_terminal_sizing_policy_e2e" CMUX_TAG=<tag>
