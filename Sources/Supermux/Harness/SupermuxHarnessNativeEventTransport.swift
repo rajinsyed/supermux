@@ -80,8 +80,10 @@ enum SupermuxHarnessNativeEventEnvelopeEncoding {
     private static let separator = Data(",".utf8)
     private static let footer = Data("]}".utf8)
 
+    /// Sorted keys keep tool input and permission previews, which the page
+    /// shows with `JSON.stringify`, in a stable alphabetical order.
     static func encodedEvent(_ event: [String: Any]) -> Data? {
-        try? JSONSerialization.data(withJSONObject: event)
+        try? JSONSerialization.data(withJSONObject: event, options: [.sortedKeys])
     }
 
     static func encodedEpoch(_ documentEpoch: String) -> Data? {
