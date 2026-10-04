@@ -250,7 +250,6 @@
 			);
 			dependencies = (
 				D4E2A00F0000000000000001 /* PBXTargetDependency */,
-				C10DA0060000000000000002 /* PBXTargetDependency */,
 			);
 			name = cmux;
 			packageProductDependencies = (
@@ -447,7 +446,7 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
-		D4E2A0060000000000000001 /* Embed App Extensions */ = {isa = PBXCopyFilesBuildPhase; buildActionMask = 2147483647; dstPath = ""; dstSubfolderSpec = 13; files = (D4E2A0010000000000000002 /* NotificationService.appex in Embed App Extensions */, C10DA0010000000000000002 /* CloudVPN.appex in Embed App Extensions */); runOnlyForDeploymentPostprocessing = 0; };
+		D4E2A0060000000000000001 /* Embed App Extensions */ = {isa = PBXCopyFilesBuildPhase; buildActionMask = 2147483647; dstPath = ""; dstSubfolderSpec = 13; files = (D4E2A0010000000000000002 /* NotificationService.appex in Embed App Extensions */); runOnlyForDeploymentPostprocessing = 0; };
 
 /* Begin PBXSourcesBuildPhase section */
 		8B41F6412DEDD0D5001A66F9 /* Sources */ = {

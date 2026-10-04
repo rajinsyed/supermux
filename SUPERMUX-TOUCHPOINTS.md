@@ -735,6 +735,7 @@ Rules for adding a touchpoint:
 | 922 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/Devices/SupermuxLocalUserInput.swift` into the cmux target (ids `50BE00170400000000000007`/`…08`, four entries, `Devices/…` path in the Supermux group, next to #796's) |
 | 923 | `Sources/GhosttyTerminalView.swift` | `sizing-auto-local-input` | First statements of `GhosttyNSView.performDragOperation(_:)`: `let enclosingLocalInput = SupermuxLocalUserInput.beginUserAction()` and `defer { SupermuxLocalUserInput.end(restoring: enclosingLocalInput) }`. A drop on a terminal is this Mac's user's input, and a drag from another app (Finder) is delivered outside `sendEvent`, so without it a dropped path no longer gave the grid to the Mac pane |
 | 924 | `Sources/Cloud/CloudTuiManualMirrorSession.swift` | `sizing-auto-local-input` | In `noteExplicitInput()`, first in the `sizingRelay.isSupported` branch: `guard SupermuxTerminalSizingAuto.shared.isMacPaneActivity else { return }`. A phone's input to a Cloud terminal it views through this Mac runs this pane's explicit-input hook too; relayed as this Mac's focus activity it took the grid from the phone (the same flash). The legacy geometry claim below is unchanged |
+| 925 | `ios/cmux-ios.xcodeproj/project.pbxproj` | `unfenced` | Leaves upstream's Cloud VPN packet-tunnel extension out of the app: removes the `cmux` target's dependency on `CloudVPN` (`C10DA0060000000000000002 /* PBXTargetDependency */`) and `C10DA0010000000000000002 /* CloudVPN.appex in Embed App Extensions */` from the Embed App Extensions phase. The `CloudVPN` target stays defined (unbuilt) so upstream edits to it still merge. Supermux does not use cmux Cloud's System VPN, and neither the personal-team dogfood lane nor `scripts/supermux-ios-release.sh` can provision a Network Extensions profile for it. The Cloud tab's System VPN switch fails to start without the extension |
 | 810 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the remote-terminal polish into the cmux target, four entries each (build file, file reference, Supermux group child, Sources phase) next to #764's `SupermuxDeviceTerminalUpload.swift`: `Devices/SupermuxDeviceTerminalLinks.swift` (`50BE001B0200000000000001`/`…02`, a Cmd-click on a path in another Mac's terminal), `Devices/SupermuxDeviceTerminalActions.swift` (`…03`/`…04`, forwarded Cmd+K/reset, focus and Ctrl+V of an image) and `SupermuxMobileHost+TerminalActions.swift` (`…05`/`…06`, the host's `terminal.action`) |
 | 811 | `Sources/Workspace+TerminalLinkOpening.swift` | `device-terminal-file-link` | First thing in `deferRemoteTerminalFileLinkOpen`: `SupermuxDeviceTerminalLinks.open(rawValue, panelID:in:)` claims a file path clicked in another Mac's terminal and opens that Mac's file in the mirror's read-only preview (upstream refused it: only SSH terminals resolved a remote path) |
 | 812 | `Sources/DockSplitStore+TerminalLinkOpening.swift` | `device-terminal-file-link` | Adds `deferRemoteTerminalFileLinkOpen` to the Dock's link container (upstream relies on the protocol's `false` default): the same `SupermuxDeviceTerminalLinks.open` for another Mac's terminal moved into the Dock |
@@ -6638,3 +6639,18 @@ byte is drawn twice. Fork code: `Sources/Supermux/Devices/SupermuxTerminalStream
 
 Verify: `CMUX_E2E_SUITES="loopback_terminal_resize_integrity_e2e loopback_terminal_streaming_e2e" CMUX_TAG=<tag>
 tests/supermux/run_all_loopback_e2e.sh` (LOOPBACK-HARNESS.md "Terminal resize integrity E2E").
+
+### 925. The iPhone app leaves out upstream's Cloud VPN extension — `ios/cmux-ios.xcodeproj/project.pbxproj` (unfenced)
+
+The 2026-10-04 upstream merge brought upstream's `CloudVPN.appex` (cmux Cloud's System VPN: Safari and other
+apps reach a Cloud VM's private addresses over WireGuard). Supermux does not use cmux Cloud, and signing the
+extension needs a Network Extensions App ID and profile that neither the personal-team dogfood lane nor
+`scripts/supermux-ios-release.sh` provides. The app target no longer depends on or embeds it.
+
+Re-apply after an upstream merge: drop `C10DA0060000000000000002 /* PBXTargetDependency */` from the `cmux`
+target's `dependencies` and `C10DA0010000000000000002 /* CloudVPN.appex in Embed App Extensions */` from
+`D4E2A0060000000000000001 /* Embed App Extensions */`. If upstream renumbers them, remove whatever embeds
+`CloudVPN.appex` into the `cmux` target.
+
+Verify: the dogfood Release build (CLAUDE.md) succeeds and `Release-iphoneos/cmux.app/PlugIns/` holds only
+`NotificationService.appex`.
