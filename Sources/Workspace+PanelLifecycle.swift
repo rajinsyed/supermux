@@ -210,7 +210,14 @@ extension Workspace {
                 AgentHibernationController.shared.recordAgentProcessChange(workspaceId: id, panelId: changedPanelId)
             }
         }
-        if refreshPorts { refreshTrackedAgentPorts() }
+        // SUPERMUX:begin agent-pid-ports-on-change (upstream: `if refreshPorts { refreshTrackedAgentPorts() }`)
+        // Every agent hook re-reports its PID; the ports' roots change only
+        // when the PID, its process or its pane did (the periodic tracked-agent
+        // rescan still catches a server that starts later).
+        let agentRootsMayHaveChanged = previous.pid != pid || previous.panelId != panelId
+            || previous.identity != processIdentity || didClearOtherStructuredAgentRuntime
+        if refreshPorts, agentRootsMayHaveChanged { refreshTrackedAgentPorts() }
+        // SUPERMUX:end agent-pid-ports-on-change
         for changedPanelID in Set([previous.panelId, panelId].compactMap { $0 }) {
             syncTerminalTabAgentIconAsset(forPanelId: changedPanelID)
         }

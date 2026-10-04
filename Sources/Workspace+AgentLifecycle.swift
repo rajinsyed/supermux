@@ -498,9 +498,14 @@ extension Workspace {
     ) {
         let targetPanelId = panelId ?? focusedPanelId
         guard let targetPanelId, panels[targetPanelId] != nil else { return }
+        // SUPERMUX:begin workspace-agent-lifecycle-unchanged (a repeated report relays nothing)
+        let lifecycleChanged = agentLifecycleStatesByPanelId[targetPanelId]?[key] != lifecycle
+        // SUPERMUX:end workspace-agent-lifecycle-unchanged
         agentLifecycleStatesByPanelId[targetPanelId, default: [:]][key] = lifecycle
         if !AgentHibernationLifecycleStatusKeys.isManualKey(key) {
-            recordAgentLifecycleChange(panelId: targetPanelId)
+            // SUPERMUX:begin workspace-agent-lifecycle-unchanged (upstream: `recordAgentLifecycleChange(panelId: targetPanelId)`)
+            recordAgentLifecycleChange(panelId: targetPanelId, relaysToSupermux: lifecycleChanged)
+            // SUPERMUX:end workspace-agent-lifecycle-unchanged
             // Wake confirmation needs the report's own pane, never the
             // focused-pane fallback.
             if let panelId {
@@ -731,9 +736,11 @@ extension Workspace {
         )
     }
 
-    private func recordAgentLifecycleChange(panelId: UUID) {
+    // SUPERMUX:begin workspace-agent-lifecycle-unchanged (upstream: `private func recordAgentLifecycleChange(panelId: UUID) {`)
+    private func recordAgentLifecycleChange(panelId: UUID, relaysToSupermux: Bool = true) {
+    // SUPERMUX:end workspace-agent-lifecycle-unchanged
         // SUPERMUX:begin workspace-agent-lifecycle-observation
-        SupermuxWorkspaceLifecycleRelay.workspaceDidChangeAgentLifecycle(self)
+        if relaysToSupermux { SupermuxWorkspaceLifecycleRelay.workspaceDidChangeAgentLifecycle(self) }
         // SUPERMUX:end workspace-agent-lifecycle-observation
         AgentHibernationController.shared.recordAgentLifecycleChange(
             workspaceId: id,
