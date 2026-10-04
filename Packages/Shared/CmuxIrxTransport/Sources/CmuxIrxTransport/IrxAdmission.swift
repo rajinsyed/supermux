@@ -196,7 +196,10 @@ public struct IrxAdmission: Sendable {
     public func performServer(
         connection: IrxConnection,
         judgment: IrxGrantJudgment,
-        journal: IrxJournal
+        journal: IrxJournal,
+        // SUPERMUX:begin irx-admission-unknown-peer-recheck
+        recheckUnknownPeer: (@Sendable () async -> Void)? = nil
+        // SUPERMUX:end irx-admission-unknown-peer-recheck
     ) async -> (IrxAdmittedPeerInfo, IrxLaneStream, String)? {
         do {
             let controlResult = try await withIrxDeadlineResult(deadline) {
@@ -233,7 +236,11 @@ public struct IrxAdmission: Sendable {
             }
             let peer: IrxAdmittedPeerInfo
             do {
-                peer = try judgment(hello.grant, connection.remoteEndpointIDHex)
+                // SUPERMUX:begin irx-admission-unknown-peer-recheck
+                peer = try await judgeRecheckingUnknownPeer(
+                    grant: hello.grant, connection: connection, judgment: judgment,
+                    recheck: recheckUnknownPeer, journal: journal)
+                // SUPERMUX:end irx-admission-unknown-peer-recheck
             } catch let denial as IrxAdmissionDenied {
                 journal.record(
                     "admission", "denied",
@@ -297,4 +304,36 @@ public struct IrxAdmission: Sendable {
             return nil
         }
     }
+
+    // SUPERMUX:begin irx-admission-unknown-peer-recheck
+    /// How long admission waits for an unknown peer's directory recheck. The
+    /// phone waits ``deadline`` (5 s) for its admit after sending the hello.
+    static let unknownPeerRecheckBudget: Duration = .seconds(3)
+
+    /// Judges the peer. A peer missing from the directory (`invalid-grant`)
+    /// gets one bounded recheck, then the same judgment again: only a
+    /// refreshed, server-issued directory can admit it.
+    private func judgeRecheckingUnknownPeer(
+        grant: String?,
+        connection: IrxConnection,
+        judgment: IrxGrantJudgment,
+        recheck: (@Sendable () async -> Void)?,
+        journal: IrxJournal
+    ) async throws -> IrxAdmittedPeerInfo {
+        do {
+            return try judgment(grant, connection.remoteEndpointIDHex)
+        } catch let denial as IrxAdmissionDenied where denial.code == .invalidGrant {
+            guard let recheck else { throw denial }
+            journal.record(
+                "admission", "unknown-peer-recheck",
+                ["remote": String(connection.remoteEndpointIDHex.prefix(12))]
+            )
+            _ = try? await withIrxDeadlineResult(Self.unknownPeerRecheckBudget) {
+                await recheck()
+                return true
+            }
+            return try judgment(grant, connection.remoteEndpointIDHex)
+        }
+    }
+    // SUPERMUX:end irx-admission-unknown-peer-recheck
 }

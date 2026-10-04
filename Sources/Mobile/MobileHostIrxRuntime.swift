@@ -867,18 +867,22 @@ final class MobileHostIrxRuntime: MobileHostPairingRuntime {
             }
             return try v2Judgment(grant, endpoint)
         }
+        // SUPERMUX:begin irx-admission-unknown-peer-recheck
+        let recheckGate = IrxDirectoryRecheckGate { [weak self] in
+            await self?.refreshDirectoryForUnknownPeer(token: token)
+        }
+        // SUPERMUX:end irx-admission-unknown-peer-recheck
+        // SUPERMUX:begin irx-accept-loop-concurrent-handshakes
+        // The loop only drains the endpoint's queue; each handshake completes
+        // on its own task, and a failed one no longer rebinds the endpoint.
+        let inboundLoop = IrxInboundAcceptLoop<Incoming, IrxEndpointSupervisor.AcceptedInbound>(
+            next: { await supervisor.acceptNextIncoming() },
+            establish: { await supervisor.establishInbound($0) },
+            refuse: { try? await $0.refuse() }
+        )
         acceptLoop = Task { @MainActor [weak self] in
-            while !Task.isCancelled {
-                guard let self, self.isCurrent(token) else { return }
-                guard let inbound = await supervisor.acceptNextInbound() else {
-                    guard self.isCurrent(token), !Task.isCancelled else { return }
-                    self.acceptLoop = nil
-                    await self.refreshListenerState(token: token)
-                    guard self.isCurrent(token), !Task.isCancelled else { return }
-                    self.requestEndpointReady(token: token)
-                    return
-                }
-                guard self.isCurrent(token), !Task.isCancelled else {
+            await inboundLoop.run { @MainActor [weak self] inbound in
+                guard let self, self.isCurrent(token), !Task.isCancelled else {
                     if case .irx(let connection) = inbound { await connection.close(code: .hostShutdown, origin: .local) }
                     return
                 }
@@ -887,7 +891,11 @@ final class MobileHostIrxRuntime: MobileHostPairingRuntime {
                     Task { [weak self] in
                         await self?.superviseConnection(connection, judgment: judgment,
                             admission: admission, legacyCurrent: legacyCurrent,
-                            registry: registry, token: token)
+                            registry: registry, token: token,
+                            // SUPERMUX:begin irx-admission-unknown-peer-recheck
+                            recheckGate: recheckGate
+                            // SUPERMUX:end irx-admission-unknown-peer-recheck
+                        )
                     }
                 case .foreign(let alpn, let connection):
                     guard self.acceptsLegacyDialect(alpn: alpn),
@@ -895,10 +903,10 @@ final class MobileHostIrxRuntime: MobileHostPairingRuntime {
                           let trust = legacyService.broker.cachedTrustForAdmission(),
                           let acceptor = self.legacyAcceptor(token: token) else {
                         try? connection.close(errorCode: 1, reason: Data("unsupported_alpn".utf8))
-                        continue
+                        return
                     }
                     let adopted = try? CmxIrohLibEndpointFactory.adoptAcceptedConnection(connection)
-                    guard let adopted else { continue }
+                    guard let adopted else { return }
                     Task {
                         await MobileHostIrxLegacyDialectServer.serve(adopted: adopted,
                             acceptor: acceptor, trust: trust,
@@ -911,8 +919,29 @@ final class MobileHostIrxRuntime: MobileHostPairingRuntime {
                     }
                 }
             }
+            guard let self, self.isCurrent(token), !Task.isCancelled else { return }
+            self.acceptLoop = nil
+            await self.refreshListenerState(token: token)
+            guard self.isCurrent(token), !Task.isCancelled else { return }
+            self.requestEndpointReady(token: token)
+        }
+        // SUPERMUX:end irx-accept-loop-concurrent-handshakes
+    }
+
+    // SUPERMUX:begin irx-admission-unknown-peer-recheck
+    /// Fetches the directory for a phone this Mac does not list yet, and waits
+    /// (bounded) until the refreshed snapshot reaches the admission authority,
+    /// which `apply(_:token:)` updates together with `cachedState`.
+    private func refreshDirectoryForUnknownPeer(token: UUID) async {
+        guard isCurrent(token), let service = controlService,
+              let directory = try? await service.refreshDirectory() else { return }
+        for _ in 0..<50 {
+            guard isCurrent(token) else { return }
+            if (cachedState?.directory?.revision ?? 0) >= directory.revision { return }
+            try? await Task.sleep(for: .milliseconds(50))
         }
     }
+    // SUPERMUX:end irx-admission-unknown-peer-recheck
 
     private func legacyAcceptor(token: UUID) -> CmxIrohGrantPeer? {
         guard isCurrent(token) else { return nil }
@@ -925,14 +954,20 @@ final class MobileHostIrxRuntime: MobileHostPairingRuntime {
         admission: V2InboundAdmissionAuthority,
         legacyCurrent: IrxDeviceListCurrent?,
         registry: IrxServerSessionRegistry,
-        token: UUID
+        token: UUID,
+        // SUPERMUX:begin irx-admission-unknown-peer-recheck
+        recheckGate: IrxDirectoryRecheckGate
+        // SUPERMUX:end irx-admission-unknown-peer-recheck
     ) async {
         let journal = Self.journal
         guard
             let (peer, control, sessionID) = await IrxAdmission().performServer(
                 connection: irx,
                 judgment: judgment,
-                journal: journal
+                journal: journal,
+                // SUPERMUX:begin irx-admission-unknown-peer-recheck
+                recheckUnknownPeer: { await recheckGate.recheck() }
+                // SUPERMUX:end irx-admission-unknown-peer-recheck
             )
         else { return }
         let isMac = cachedState?.directory?.inboundPeers?.first {
