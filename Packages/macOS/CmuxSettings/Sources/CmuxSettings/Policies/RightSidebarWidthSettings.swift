@@ -20,12 +20,16 @@ public struct RightSidebarWidthSettings: Sendable {
     /// The stored sentinel value that means the built-in dynamic width cap is active.
     public static let noOverrideValue = -1.0
 
-    /// The smallest allowed right sidebar width, in points.
+    /// The smallest allowed right sidebar width, in points. Upstream also uses
+    /// it as the width a new window opens with (its 220 pt initial width is
+    /// clamped up to the floor).
     // SUPERMUX:begin right-sidebar-min-width
-    // Lowered from upstream's 276 so the right sidebar can be dragged narrower.
-    // The mode bar collapses its labels to icon-only at narrow widths
-    // (see RightSidebarPanelView `right-sidebar-compact-mode-bar`), so the
-    // header chrome stays usable down to this floor.
+    // Lowered from upstream's 295 (276 before the 2026-10-04 merge) so the
+    // right sidebar can be dragged narrower. Upstream's responsive mode tabs
+    // (RightSidebarModeBarTabsLayout) drop labels to icons as the bar narrows,
+    // so the header chrome stays usable down to this floor. Side effect: a new
+    // window opens at the 220 pt initial width instead of upstream's 295, so a
+    // Cloud machine's tabs show icons until the sidebar is widened.
     public static let minimumWidth = 200.0
     // SUPERMUX:end right-sidebar-min-width
 

@@ -1066,7 +1066,8 @@ struct WorkspaceDetailView: View {
                 // carries the picker checkmark like any picked surface.
                 selectedMacSurfaceID: workspace.selectedMacSurface(id: store.selectedMacSurfaceID)?.id,
                 canCreateWorkspace: canCreateWorkspace,
-                canCreateTerminal: store.sshSupportsTerminalTabs(workspaceID: workspace.id),
+                canCreateTerminal: store.externalHostID(ofWorkspace: workspace.id) != nil
+                    || store.sshSupportsTerminalTabs(workspaceID: workspace.id),
                 hasActiveBrowser: activeBrowser != nil,
                 browserStreamRows: browserStreamStore.panels(in: workspace.rpcWorkspaceID.rawValue).map(BrowserStreamPickerRow.init),
                 supportsBrowserStream: store.supportsBrowserStream(inWorkspace: workspace.id),
@@ -1078,6 +1079,7 @@ struct WorkspaceDetailView: View {
                 activeSimulatorStreamPanelID: activeSimulatorStream?.id,
                 sshTabLayout: store.sshTabLayout(workspaceID: workspace.id),
                 isSSHComputer: sshHostID != nil,
+                isExternalHost: store.externalHostID(ofWorkspace: workspace.id) != nil,
                 // SUPERMUX:begin ios-pane-actions
                 canCreateSimulator: canCreateSimulatorPane
                 // SUPERMUX:end ios-pane-actions
@@ -1376,7 +1378,9 @@ struct WorkspaceDetailView: View {
         // create panels (older builds, disconnected, or creation rejected).
         // SSH workspaces always use the native pane: it reaches the server's
         // `localhost` ports through SSH forwards.
-        guard sshHostID == nil, store.supportsBrowserStreamCreate else {
+        guard sshHostID == nil,
+              store.externalHostID(ofWorkspace: workspace.id) == nil,
+              store.supportsBrowserStreamCreate else {
             openLocalBrowserFallback()
             return
         }
