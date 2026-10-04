@@ -27,11 +27,14 @@ S's pills:
                                T_A's tab spins on S and on M and no pill says
                                "Needs input"; the next tool keeps it working;
                                Stop settles it
-  5. plan_approved_spins       the same for an ExitPlanMode plan approval
+  5. plan_approved_spins       the same for an ExitPlanMode plan approval in
+                               plan mode (no request of the tool's own: only
+                               Feed's is open)
   6. question_answered_without_feed_spins
-                               the question again from a Claude Code that runs
-                               neither PermissionRequest nor the notification
-                               for it (only the tool's own request is open)
+                               (default permissions) a question whose Feed
+                               request is never admitted (a muted workspace,
+                               permission notifications off): only the
+                               notification's request, with no identity, is open
   7. permission_answered_spins (default permissions) a Bash call's permission
                                prompt: needsInput; once the user approves in the
                                terminal, the next tool's PreToolUse: working
@@ -126,20 +129,39 @@ class AgentAnswerE2E(AgentActivityE2E):
             self.facts.setdefault("answer_hook_errors", []).append(str(error))
 
     def ask(self, base: Dict[str, Any], tool: str, tool_use_id: str, tool_input: Dict[str, Any],
-            mode: str, message: str, permission_hooks: bool = True) -> Optional[subprocess.Popen]:
-        """Claude Code stops on `tool` for the user: its PreToolUse, then (as
-        Claude Code 2.1 runs them, the user's own journal shows both in
-        bypass mode) its PermissionRequest (Feed) and the permission prompt
-        notification. `permission_hooks=False` is a Claude Code that fires
-        neither for this tool."""
+            mode: str, message: str, feed: bool = True) -> Optional[subprocess.Popen]:
+        """Claude Code stops on `tool` for the user: its PreToolUse, its
+        PermissionRequest (Feed) and, seconds later, the permission prompt
+        notification (Claude Code 2.1 runs both even in bypass mode, as the
+        user's own journal shows). `feed=False` is a Feed that never admits
+        the request (a muted workspace, or permission notifications off)."""
         self.hook("pre-tool-use", self.tool_payload(base, "PreToolUse", tool, tool_use_id, tool_input, mode))
-        if not permission_hooks:
-            return None
-        request = self.start_permission_request(
-            self.tool_payload(base, "PermissionRequest", tool, tool_use_id, tool_input, mode))
+        request: Optional[subprocess.Popen] = None
+        if feed:
+            known = {r.get("id") for r in self.notifications_for_source()}
+            request = self.start_permission_request(
+                self.tool_payload(base, "PermissionRequest", tool, tool_use_id, tool_input, mode))
+            self.await_feed_request(known)
         self.hook("notification", {**base, "hook_event_name": "Notification", "notification_type": "permission_prompt",
                                    "message": message})
         return request
+
+    def await_feed_request(self, known: set) -> None:
+        """Waits until Feed holds the PermissionRequest and admitted its
+        notification, as it has by the time Claude Code sends the permission
+        prompt notification (seconds later in the user's own journal) and the
+        user answers."""
+        def admitted() -> Optional[Dict[str, Any]]:
+            lifecycle = self.local_tab(self.source, self.tab_a).get("lifecycle") or {}
+            if not any(key.startswith("cmux.feed.attention:") for key in lifecycle):
+                raise Failure(f"no Feed overlay yet: {lifecycle}")
+            fresh = [r for r in self.notifications_for_source()
+                     if r.get("id") not in known and r.get("correlation_key")]
+            if not fresh:
+                raise Failure("Feed's notification not admitted yet")
+            return fresh[0]
+
+        wait_for("Feed to hold the PermissionRequest", admitted, self.timeout)
 
     def reap(self, request: Optional[subprocess.Popen]) -> None:
         """Records how the PermissionRequest hook ended (Claude Code abandons it
@@ -195,16 +217,16 @@ class AgentAnswerE2E(AgentActivityE2E):
         raise Failure(f"no PostToolUse post-tool-use group for {ANSWERED_TOOLS}: "
                       f"{[g.get('matcher') for g in groups]}")
 
-    def answered_turn(self, tool: str, tool_input: Dict[str, Any], permission_hooks: bool = True) -> Dict[str, Any]:
-        """A bypass-permissions turn blocks on `tool`, the user answers, it works on."""
-        mode = "bypassPermissions"
+    def answered_turn(self, tool: str, tool_input: Dict[str, Any], mode: str = "bypassPermissions",
+                      feed: bool = True) -> Dict[str, Any]:
+        """A turn blocks on `tool`, the user answers, it works on."""
         self.start_claude_stand_in()
         request: Optional[subprocess.Popen] = None
         try:
             base = self.start_turn(mode)
             tool_use_id = f"toolu_{uuid.uuid4().hex[:12]}"
             request = self.ask(base, tool, tool_use_id, tool_input, mode, "Claude needs your permission",
-                               permission_hooks=permission_hooks)
+                               feed=feed)
             # Guard (passes today): the prompt shows as needs input.
             result: Dict[str, Any] = {"asked": self.expect_activity("needsInput", f"{tool} to mark S needs input")}
             self.answer(base, tool, tool_use_id, tool_input, mode)
@@ -226,13 +248,13 @@ class AgentAnswerE2E(AgentActivityE2E):
             "options": [{"label": "Red", "description": "red"}, {"label": "Blue", "description": "blue"}]}]})
 
     def plan_approved_spins(self) -> Dict[str, Any]:
-        return self.answered_turn("ExitPlanMode", {"plan": "1. Edit the file\n2. Run the tests"})
+        return self.answered_turn("ExitPlanMode", {"plan": "1. Edit the file\n2. Run the tests"}, mode="plan")
 
     def question_answered_without_feed_spins(self) -> Dict[str, Any]:
         return self.answered_turn("AskUserQuestion", {"questions": [{
             "question": "Tabs or spaces?", "header": "Indent", "multiSelect": False,
             "options": [{"label": "Tabs", "description": "tabs"}, {"label": "Spaces", "description": "spaces"}]}]},
-            permission_hooks=False)
+            mode="default", feed=False)
 
     def tagged_cli(self) -> Path:
         """The tagged build's bundled CLI, as scripts/cmux-debug-cli.sh finds it."""
