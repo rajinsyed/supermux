@@ -36,8 +36,14 @@ Usage:
       [--worktrees 24] [--seconds 60] [--label baseline] [--report PATH]
   python3 tests/supermux/stress_worktrees_energy.py --compare BEFORE.json AFTER.json
 
+Each scenario also gets a thread census (a one-second `sample` after the
+window: running CVDisplayLink, renderer and io threads). The idle budgets
+(idle_mirrored and idle_hidden against idle_local: interrupt wakeups at most
+3x, CPU at most 3 points more, at most 4 running display links) decide the
+exit status.
+
 Writes tests/supermux/artifacts/stress_worktrees_energy-<tag>-<label>.json
-and exits non-zero when a step fails. Stdlib only.
+and exits 1 when a step fails, 2 when an idle budget fails. Stdlib only.
 """
 
 from __future__ import annotations
@@ -249,6 +255,25 @@ def measure(pid: int, seconds: float) -> Dict[str, Any]:
         "threads": thread_count(pid),
         "top": top.result(),
     }
+
+
+def thread_census(pid: int) -> Dict[str, int]:
+    """Named threads from a one-second `sample`: a running Ghostty display link
+    is one `CVDisplayLink` thread waking at the display's refresh rate."""
+    output = subprocess.run(["sample", str(pid), "1", "-mayDie"], capture_output=True, text=True).stdout
+    census = {"display_links": 0, "renderers": 0, "io": 0}
+    for line in output.splitlines():
+        stripped = line.strip()
+        if not stripped or not stripped[0].isdigit() or " Thread_" not in stripped:
+            continue
+        name = stripped.split(":", 1)[1].strip() if ":" in stripped else ""
+        if name == "CVDisplayLink":
+            census["display_links"] += 1
+        elif name == "renderer":
+            census["renderers"] += 1
+        elif name == "io":
+            census["io"] += 1
+    return census
 
 
 def thread_count(pid: int) -> Optional[int]:
@@ -487,6 +512,7 @@ class StressRun:
             self.start_agents(SETTLE_S + seconds + sample_s + 5)
         time.sleep(SETTLE_S)
         result = measure(self.pid, seconds)
+        result["census"] = thread_census(self.pid)
         if self.args.sample_dir:
             result["sample_file"] = self.sample(name, sample_s)
         result["busy"] = busy
@@ -495,7 +521,7 @@ class StressRun:
         self.scenarios[name] = result
         print(f"[stress] {name}: cpu {result['cpu_percent']}%  interrupt wakeups/s "
               f"{result['interrupt_wakeups_per_s']}  spawned/min {result['spawned_per_min']}  "
-              f"power {result['top'].get('power_avg')}", flush=True)
+              f"power {result['top'].get('power_avg')}  display links {result['census']['display_links']}", flush=True)
         if busy:
             self.stop_agents()
             time.sleep(6)  # the stand-ins end on their own
@@ -546,6 +572,37 @@ class StressRun:
             print(f"[stress] cleanup: {error}", file=sys.stderr)
 
 
+# -- budgets -------------------------------------------------------------------
+
+# Nothing runs in an idle scenario, so mirrors (and Remote Host Mode) may cost
+# little over the same worktrees without mirrors: a hidden mirror must not
+# wake the CPU at the display's refresh rate.
+IDLE_BUDGET_SCENARIOS = ("idle_mirrored", "idle_hidden")
+IDLE_WAKEUP_FACTOR = 3.0      # interrupt wakeups/s, x idle_local
+IDLE_CPU_SLACK = 3.0          # CPU %, over idle_local
+IDLE_DISPLAY_LINK_LIMIT = 4   # the selected workspace's own pane, and its mirror
+
+
+def check_budgets(scenarios: Dict[str, Any]) -> List[Dict[str, Any]]:
+    base = scenarios.get("idle_local")
+    if not base:
+        return []
+    checks = []
+    for name in IDLE_BUDGET_SCENARIOS:
+        result = scenarios.get(name)
+        if not result:
+            continue
+        limits = [
+            ("interrupt_wakeups_per_s", result["interrupt_wakeups_per_s"],
+             round(IDLE_WAKEUP_FACTOR * base["interrupt_wakeups_per_s"], 1)),
+            ("cpu_percent", result["cpu_percent"], round(base["cpu_percent"] + IDLE_CPU_SLACK, 2)),
+            ("display_links", result["census"]["display_links"], IDLE_DISPLAY_LINK_LIMIT),
+        ]
+        for metric, value, limit in limits:
+            checks.append({"scenario": name, "metric": metric, "value": value, "limit": limit, "ok": value <= limit})
+    return checks
+
+
 # -- compare -------------------------------------------------------------------
 
 COMPARE_METRICS = [
@@ -554,7 +611,15 @@ COMPARE_METRICS = [
     ("spawned_per_min", "spawns/min"),
     ("child_cpu_seconds", "child CPU s"),
     ("disk_written_kb", "disk KB"),
+    ("census.display_links", "display links"),
 ]
+
+
+def _metric(result: Dict[str, Any], key: str) -> Any:
+    value: Any = result
+    for part in key.split("."):
+        value = value.get(part) if isinstance(value, dict) else None
+    return value
 
 
 def compare(before_path: Path, after_path: Path) -> str:
@@ -569,7 +634,7 @@ def compare(before_path: Path, after_path: Path) -> str:
             continue
         cells = []
         for key, _ in COMPARE_METRICS:
-            cells.append(f"{b.get(key)} → {a.get(key)}{_pct(b.get(key), a.get(key))}")
+            cells.append(f"{_metric(b, key)} → {_metric(a, key)}{_pct(_metric(b, key), _metric(a, key))}")
         bp, ap = b.get("top", {}).get("power_avg"), a.get("top", {}).get("power_avg")
         lines.append(f"| {name} | " + " | ".join(cells) + f" | {bp} → {ap}{_pct(bp, ap)} |")
     return "\n".join(lines)
@@ -631,8 +696,13 @@ def main() -> int:
         run = StressRun(sock, pid, project_id, scratch, args)
         report["pid"] = pid
         run.run()
-        report["ok"] = True
-        exit_code = 0
+        report["checks"] = check_budgets(run.scenarios)
+        failed = [c for c in report["checks"] if not c["ok"]]
+        for check in report["checks"]:
+            print(f"[stress] budget {'ok  ' if check['ok'] else 'FAIL'} {check['scenario']} {check['metric']}: "
+                  f"{check['value']} (limit {check['limit']})", flush=True)
+        report["ok"] = not failed
+        exit_code = 0 if not failed else 2
     except Failure as error:
         report["error"] = str(error)
         print(f"[stress] FAILED: {error}", file=sys.stderr)
