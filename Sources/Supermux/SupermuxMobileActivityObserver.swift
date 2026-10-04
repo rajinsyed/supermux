@@ -220,6 +220,7 @@ final class SupermuxMobileActivityObserver {
         let workspaceIDs = pendingWorkspaceIDs
         pendingWorkspaceIDs = []
         var changed = false
+        var signedNewWorkspace = false
         for workspaceID in workspaceIDs {
             guard let workspace = Workspace.liveWorkspace(id: workspaceID),
                   !SupermuxDeviceWorkspaceIndex.isDeviceMirror(workspace) else {
@@ -227,11 +228,28 @@ final class SupermuxMobileActivityObserver {
                 continue
             }
             let signature = Self.activitySignature(of: workspace)
-            if lastSignatureByWorkspaceID.updateValue(signature, forKey: workspaceID) != signature {
+            let previous = lastSignatureByWorkspaceID.updateValue(signature, forKey: workspaceID)
+            if previous != signature {
                 changed = true
             }
+            if previous == nil {
+                signedNewWorkspace = true
+            }
+        }
+        if signedNewWorkspace {
+            pruneClosedWorkspaces()
         }
         return changed
+    }
+
+    /// Drops the signatures of workspaces that closed without a later relay.
+    /// The map only grows when a pass signs a new workspace, so pruning then
+    /// keeps it bounded by the open workspaces without a sweep on every hook.
+    /// Dropping a signature is always safe: a missing one counts as changed.
+    private func pruneClosedWorkspaces() {
+        lastSignatureByWorkspaceID = lastSignatureByWorkspaceID.filter { workspaceID, _ in
+            Workspace.liveWorkspace(id: workspaceID) != nil
+        }
     }
 
     /// Emits `workspace.updated` now when the last emit is at least
