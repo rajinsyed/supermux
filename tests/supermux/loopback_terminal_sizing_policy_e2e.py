@@ -1234,15 +1234,19 @@ class SizingPolicyE2E:
         self.wait_state("the first key press (which may activate the app) to land", self.fresh_surface,
                         self.mac_owns())
         time.sleep(1.0)
-        self.phone_reappears()
-        activations = self.mac_activations()
-        pressed = self.mac_types(self.fresh_id, self.fresh_surface)
-        if pressed.get("activated") or pressed.get("focused"):
-            raise Failure(f"the key press had to activate or focus the pane first: {pressed}")
-        back = self.wait_state("the key press to give the grid back to the Mac pane", self.fresh_surface,
-                               self.mac_owns())
-        return {"ready": ready, "pressed": pressed, "back": back,
-                "activations_during": self.mac_activations() - activations}
+        for attempt in (1, 2):
+            self.phone_reappears()
+            activations = self.mac_activations()
+            pressed = self.mac_types(self.fresh_id, self.fresh_surface)
+            if pressed.get("activated") or pressed.get("focused"):
+                raise Failure(f"the key press had to activate or focus the pane first: {pressed}")
+            back = self.wait_state("the key press to give the grid back to the Mac pane", self.fresh_surface,
+                                   self.mac_owns())
+            # The app becoming active (the window raiser) also hands the grid to the Mac pane:
+            # only a press with no activation around it shows the key did.
+            if self.mac_activations() == activations:
+                return {"ready": ready, "pressed": pressed, "back": back, "attempt": attempt}
+        raise Failure("the app became active around both key presses; the key press itself was not shown")
 
     def auto_socket_send_is_not_the_mac(self) -> Dict[str, Any]:
         """Text a socket client sends (`cmux send`, automation) is not the Mac's user typing:

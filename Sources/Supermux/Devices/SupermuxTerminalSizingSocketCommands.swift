@@ -191,6 +191,8 @@ enum SupermuxTerminalSizingSocketCommands {
             ) else {
                 throw SupermuxMirrorSocketCommands.InvalidParams(message: "could not create a key event")
             }
+            // No key-up, as `simulate_shortcut` sends none: a synthetic key-up
+            // can stop the main run loop from draining the main queue.
             NSApp.postEvent(event, atStart: false)
         }
         return ["surface_id": id.uuidString, "posted": keys.count, "activated": activated, "focused": focused]

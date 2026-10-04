@@ -344,7 +344,7 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   then SIGKILL), and one still running when the app quits ends with the app
   (`SupermuxGitChildProcesses`: on `willTerminate`, every git child with its process group); before,
   those were left under launchd and ran for hours.
-- **Terminal size: Auto, one setting** (upstream's shared sizing, #633, #665–#669, #790–#797, #920–#922):
+- **Terminal size: Auto, one setting** (upstream's shared sizing, #633, #665–#669, #790–#797, #920–#924):
   every terminal starts in Auto (upstream's `latest`, labelled Auto on the Mac and the phone): the
   device you are viewing it from sets its grid. A phone opening a terminal, or returning to it, gets
   a phone-sized grid even while the Mac window is on screen; typing, a paste, a focus click or
@@ -354,8 +354,8 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   true` (cleared when the terminal leaves Auto; "Counts toward size" off on the phone stays off). A
   viewport report that repeats the same grid is no activity (the phone sends one in answer to every
   grid change, which would bounce the grid). Only this Mac's user's own input is the Mac pane's
-  activity: a key, click or scroll the app dispatches from its event queue, or a menu item they chose
-  (`SupermuxLocalUserInput`, #920–#922). A phone's keystrokes (over its input lane or RPC, a paste's
+  activity: a key, click or scroll the app dispatches from its event queue, a menu item they chose or a
+  drop on the terminal (`SupermuxLocalUserInput`, #920–#924; a Cloud terminal's relay too). A phone's keystrokes (over its input lane or RPC, a paste's
   Return included), another Mac's input and a socket client's text (`cmux send`, an agent's
   automation) delivered to the same terminal never are, so the grid no longer flashes between the
   phone's and the Mac's size on every key. A pane merely coming on screen is no activity either: selecting a
