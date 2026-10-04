@@ -19488,6 +19488,10 @@ private extension NSApplication {
     }
 
     @objc func cmux_applicationSendEvent(_ event: NSEvent) {
+        // SUPERMUX:begin sizing-auto-local-input (while an input event the app dequeued is dispatched, terminal input is this Mac's user's own)
+        let enclosingLocalInput = SupermuxLocalUserInput.beginEvent(event, application: self)
+        defer { SupermuxLocalUserInput.end(restoring: enclosingLocalInput) }
+        // SUPERMUX:end sizing-auto-local-input
 #if DEBUG
         let typingTimingStart = event.type == .keyDown ? CmuxTypingTiming.start() : nil
         let phaseTotalStart = event.type == .keyDown ? ProcessInfo.processInfo.systemUptime : 0
@@ -19557,6 +19561,10 @@ private extension NSApplication {
     }
 
     @objc func cmux_sendAction(_ action: Selector, to target: Any?, from sender: Any?) -> Bool {
+        // SUPERMUX:begin sizing-auto-local-input (a menu item's action is the user's choice; a menu bar click is tracked outside sendEvent)
+        let enclosingLocalInput = SupermuxLocalUserInput.beginAction(from: sender)
+        defer { SupermuxLocalUserInput.end(restoring: enclosingLocalInput) }
+        // SUPERMUX:end sizing-auto-local-input
         if AppDelegate.shared?.handleDetachedInspectorWindowCloseAction(
             action: action,
             target: target,

@@ -34,18 +34,22 @@ import Foundation
 /// this class adds the app becoming active with a terminal focused. A pane
 /// merely coming on screen is not: selecting a workspace on the phone
 /// selects it on the Mac too, and would take the grid from the phone.
-/// Delivering a phone's or another Mac's input or scroll also runs the Mac
-/// pane's explicit-input hook; that is the viewer's activity, not the Mac's
-/// (``deliveringRemoteInput``).
+///
+/// Only this Mac's user is the Mac pane's activity (``isMacPaneActivity``).
+/// Every terminal input path runs the pane's explicit-input hook: a phone's
+/// keystrokes over its input lane or RPC, a paste's Return sent a turn
+/// later, another Mac's mirror, a socket client's text. Counted as the Mac
+/// pane typing, each one handed the grid from the viewer that typed to the
+/// Mac and back, so the terminal flashed between their sizes on every key.
 @MainActor
 final class SupermuxTerminalSizingAuto {
     static let shared = SupermuxTerminalSizingAuto()
 
     /// Phones this class made count, by terminal: the overrides it may clear.
     private var autoCounted: [UUID: Set<String>] = [:]
-    /// Set for the rest of the main-actor turn that handles a viewer's
-    /// terminal input or scroll.
-    private(set) var deliveringRemoteInput = false
+    /// Set while an action of this Mac's user that is no input event notes
+    /// the Mac pane's activity (``noteMacAction(surfaceID:)``).
+    private var notingMacAction = false
     /// The client whose `mobile.terminal.viewport` report is being handled
     /// and says its terminal view just came back on screen
     /// (`view_appeared: true`). Set by `v2MobileTerminalViewport` around the
@@ -101,17 +105,6 @@ final class SupermuxTerminalSizingAuto {
         autoCounted[surfaceID]?.remove(participantID)
     }
 
-    /// A viewer's terminal input or scroll is being handled: until this
-    /// main-actor turn ends, the Mac pane's explicit-input hook it runs is not
-    /// the Mac's activity.
-    func remoteTerminalRequestArrived() {
-        guard !deliveringRemoteInput else { return }
-        deliveringRemoteInput = true
-        DispatchQueue.main.async {
-            MainActor.assumeIsolated { SupermuxTerminalSizingAuto.shared.deliveringRemoteInput = false }
-        }
-    }
-
     /// A viewer already attached started viewing: its viewport changed, or a
     /// `counts_override` of false (a hidden mirror) was lifted. Attaching is
     /// activity in the engine already.
@@ -148,6 +141,25 @@ final class SupermuxTerminalSizingAuto {
 
     // MARK: - The Mac
 
+    /// Whether explicit input on a Mac pane right now is this Mac's user's:
+    /// an input event or menu action the app is dispatching
+    /// (``SupermuxLocalUserInput``), or one of their actions that is no input
+    /// event. A guard in `noteLocalTerminalSizingActivity`, which runs on
+    /// every keystroke: two flag reads and a run-loop mode compare.
+    var isMacPaneActivity: Bool {
+        notingMacAction || SupermuxLocalUserInput.isHandling
+    }
+
+    /// Notes the Mac pane's activity for an action of this Mac's user that is
+    /// no input event: Size to Me (from any entry point), the app becoming
+    /// active with the terminal focused.
+    func noteMacAction(surfaceID: UUID) {
+        let enclosing = notingMacAction
+        notingMacAction = true
+        defer { notingMacAction = enclosing }
+        TerminalController.shared.noteLocalTerminalSizingActivity(surfaceID: surfaceID)
+    }
+
     /// The user switched to this app: the terminal focused in its key window
     /// is where they are now.
     private func focusedTerminalActivated() {
@@ -156,6 +168,6 @@ final class SupermuxTerminalSizingAuto {
         #if DEBUG
         macActivations += 1
         #endif
-        TerminalController.shared.noteLocalTerminalSizingActivity(surfaceID: surfaceID)
+        noteMacAction(surfaceID: surfaceID)
     }
 }

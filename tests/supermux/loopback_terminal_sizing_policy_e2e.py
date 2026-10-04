@@ -1179,17 +1179,25 @@ class SizingPolicyE2E:
         return {"attached": attached, "mac": mac, "typed": typed}
 
     def phone_reappears(self, cols: int = 40, rows: int = 12) -> None:
-        """The phone's terminal view comes back on screen (`view_appeared`): it takes the grid."""
+        """The phone's terminal view comes back on screen (`view_appeared`): it takes the grid.
+        Set-up only, so the report goes again until it holds: an app activation the E2E caused
+        (a key press activating the app, the window raiser) may land after the first one."""
         key = (self.fresh_id, self.fresh_surface, self.phone_client)
-        generation = self.reports.get(key, 0) + 1
-        self.sock.call("mobile.terminal.viewport", {
-            "workspace_id": self.fresh_id, "surface_id": self.fresh_surface, "client_id": self.phone_client,
-            "viewport_columns": cols, "viewport_rows": rows, "viewport_generation": generation,
-            "device_kind": "iphone", "device_id": self.phone_client, "device_name": "E2E iphone",
-            "view_appeared": True,
-        })
-        self.reports[key] = generation
-        self.wait_state("the phone to take the grid", self.fresh_surface, self.phone_owns((cols, rows)))
+
+        def report_and_check() -> bool:
+            generation = self.reports.get(key, 0) + 1
+            self.sock.call("mobile.terminal.viewport", {
+                "workspace_id": self.fresh_id, "surface_id": self.fresh_surface, "client_id": self.phone_client,
+                "viewport_columns": cols, "viewport_rows": rows, "viewport_generation": generation,
+                "device_kind": "iphone", "device_id": self.phone_client, "device_name": "E2E iphone",
+                "view_appeared": True,
+            })
+            self.reports[key] = generation
+            time.sleep(0.3)
+            self.phone_owns((cols, rows))(self.state(self.fresh_surface))
+            return True
+
+        wait_for("the phone to take the grid", report_and_check, self.timeout, interval_s=0.7)
 
     def auto_phone_burst_keeps_the_grid(self) -> Dict[str, Any]:
         """The phone owns the grid and types 20 keys, pastes and scrolls: it keeps the grid
@@ -1223,6 +1231,9 @@ class SizingPolicyE2E:
         """A key press on the Mac pane, dispatched by the app's event loop with the window
         already key and the pane focused (no activation), gives the grid back to the pane."""
         ready = self.mac_types(self.fresh_id, self.fresh_surface)
+        self.wait_state("the first key press (which may activate the app) to land", self.fresh_surface,
+                        self.mac_owns())
+        time.sleep(1.0)
         self.phone_reappears()
         activations = self.mac_activations()
         pressed = self.mac_types(self.fresh_id, self.fresh_surface)
