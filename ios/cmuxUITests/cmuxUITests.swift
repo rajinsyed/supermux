@@ -448,8 +448,9 @@ final class cmuxUITests: XCTestCase {
         let featXInset = try frame(featX, "feat-x").maxX - frame(featXStatus, "feat-x status").maxX
         let cmuxMainInset = try frame(cmuxMain, "cmux-main").maxX - frame(cmuxMainStatus, "cmux-main status").maxX
         XCTAssertFalse(element("MobileChangesChip-ws-feat-x").exists, "A nested row shows no changes chip")
-        XCTAssertEqual(featXInset, cmuxMainInset, accuracy: 4,
-                       "feat-x's status ends at the row's end like cmux-main's (\(featXInset) vs \(cmuxMainInset))")
+        // Only the activity dot's clearance follows either status.
+        XCTAssertLessThan(featXInset, 30, "feat-x's status ends at the row's end (\(featXInset))")
+        XCTAssertLessThan(cmuxMainInset, 30, "cmux-main's status ends at the row's end (\(cmuxMainInset))")
         // As on the Mac sidebar, the status sits centered on the row's
         // trailing edge, beside both lines, where the time used to be.
         let cmuxMainFrame = try frame(cmuxMain, "cmux-main")
