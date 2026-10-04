@@ -867,6 +867,11 @@ final class MobileHostIrxRuntime: MobileHostPairingRuntime {
             }
             return try v2Judgment(grant, endpoint)
         }
+        // SUPERMUX:begin irx-admission-unknown-peer-recheck
+        let recheckGate = IrxDirectoryRecheckGate { [weak self] in
+            await self?.refreshDirectoryForUnknownPeer(token: token)
+        }
+        // SUPERMUX:end irx-admission-unknown-peer-recheck
         // SUPERMUX:begin irx-accept-loop-concurrent-handshakes
         // The loop only drains the endpoint's queue; each handshake completes
         // on its own task, and a failed one no longer rebinds the endpoint.
@@ -886,7 +891,11 @@ final class MobileHostIrxRuntime: MobileHostPairingRuntime {
                     Task { [weak self] in
                         await self?.superviseConnection(connection, judgment: judgment,
                             admission: admission, legacyCurrent: legacyCurrent,
-                            registry: registry, token: token)
+                            registry: registry, token: token,
+                            // SUPERMUX:begin irx-admission-unknown-peer-recheck
+                            recheckGate: recheckGate
+                            // SUPERMUX:end irx-admission-unknown-peer-recheck
+                        )
                     }
                 case .foreign(let alpn, let connection):
                     guard self.acceptsLegacyDialect(alpn: alpn),
@@ -919,6 +928,21 @@ final class MobileHostIrxRuntime: MobileHostPairingRuntime {
         // SUPERMUX:end irx-accept-loop-concurrent-handshakes
     }
 
+    // SUPERMUX:begin irx-admission-unknown-peer-recheck
+    /// Fetches the directory for a phone this Mac does not list yet, and waits
+    /// (bounded) until the refreshed snapshot reaches the admission authority,
+    /// which `apply(_:token:)` updates together with `cachedState`.
+    private func refreshDirectoryForUnknownPeer(token: UUID) async {
+        guard isCurrent(token), let service = controlService,
+              let directory = try? await service.refreshDirectory() else { return }
+        for _ in 0..<50 {
+            guard isCurrent(token) else { return }
+            if (cachedState?.directory?.revision ?? 0) >= directory.revision { return }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+    }
+    // SUPERMUX:end irx-admission-unknown-peer-recheck
+
     private func legacyAcceptor(token: UUID) -> CmxIrohGrantPeer? {
         guard isCurrent(token) else { return nil }
         return legacyAcceptorPeer
@@ -930,14 +954,20 @@ final class MobileHostIrxRuntime: MobileHostPairingRuntime {
         admission: V2InboundAdmissionAuthority,
         legacyCurrent: IrxDeviceListCurrent?,
         registry: IrxServerSessionRegistry,
-        token: UUID
+        token: UUID,
+        // SUPERMUX:begin irx-admission-unknown-peer-recheck
+        recheckGate: IrxDirectoryRecheckGate
+        // SUPERMUX:end irx-admission-unknown-peer-recheck
     ) async {
         let journal = Self.journal
         guard
             let (peer, control, sessionID) = await IrxAdmission().performServer(
                 connection: irx,
                 judgment: judgment,
-                journal: journal
+                journal: journal,
+                // SUPERMUX:begin irx-admission-unknown-peer-recheck
+                recheckUnknownPeer: { await recheckGate.recheck() }
+                // SUPERMUX:end irx-admission-unknown-peer-recheck
             )
         else { return }
         let isMac = cachedState?.directory?.inboundPeers?.first {

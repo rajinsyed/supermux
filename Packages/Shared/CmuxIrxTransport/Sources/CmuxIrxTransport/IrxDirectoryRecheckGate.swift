@@ -7,6 +7,8 @@ public actor IrxDirectoryRecheckGate {
     private let cooldown: Duration
     private let now: @Sendable () -> ContinuousClock.Instant
     private let refresh: @Sendable () async -> Void
+    private var inFlight: Task<Void, Never>?
+    private var lastStarted: ContinuousClock.Instant?
 
     /// Creates a gate.
     /// - Parameters:
@@ -23,9 +25,20 @@ public actor IrxDirectoryRecheckGate {
         self.refresh = refresh
     }
 
-    /// Refreshes the directory for an unknown phone.
+    /// Refreshes the directory for an unknown phone: joins a refresh already
+    /// running, and returns at once during the cooldown after the last one.
     public func recheck() async {
-        await refresh()
+        if let inFlight {
+            await inFlight.value
+            return
+        }
+        let started = now()
+        if let lastStarted, lastStarted.duration(to: started) < cooldown { return }
+        lastStarted = started
+        let task = Task { await refresh() }
+        inFlight = task
+        await task.value
+        inFlight = nil
     }
 }
 // SUPERMUX:end irx-admission-unknown-peer-recheck
