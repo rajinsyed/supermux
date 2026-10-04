@@ -363,14 +363,14 @@ struct ModeBarButton: View {
     let isSelected: Bool
     var badgeCount: Int = 0
     let shortcutHint: StoredShortcut
-    // SUPERMUX:begin right-sidebar-compact-mode-bar
-    /// When `false`, the pill renders icon-only so the bar fits a narrow sidebar.
-    var showsLabel: Bool = true
-    // SUPERMUX:end right-sidebar-compact-mode-bar
     let showsShortcutHint: Bool
     let action: () -> Void
 
     @State private var isHovered: Bool = false
+    /// False once the label is truncated to less than a letter and an
+    /// ellipsis; the tab then shows only its icon. The label keeps its slot,
+    /// so hiding it never changes the tab's width.
+    @State private var labelFits = true
 
     var body: some View {
         Button(action: action) {
@@ -386,17 +386,17 @@ struct ModeBarButton: View {
                         keyPrefix: "rightSidebarModeIcon_\(item.id)",
                         isVisible: true
                     )
-                // SUPERMUX:begin right-sidebar-compact-mode-bar
-                if showsLabel {
-                    Text(item.label)
-                        .cmuxFont(
-                            size: RightSidebarChromeControlStyle.labelSize,
-                            weight: RightSidebarChromeControlStyle.labelWeight
-                        )
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-                // SUPERMUX:end right-sidebar-compact-mode-bar
+                Text(item.label)
+                    .cmuxFont(
+                        size: RightSidebarChromeControlStyle.labelSize,
+                        weight: RightSidebarChromeControlStyle.labelWeight
+                    )
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .opacity(labelFits ? 1 : 0)
+                    .onGeometryChange(for: Bool.self) { proxy in
+                        proxy.size.width >= GlobalFontMagnification.scaledSize(Self.minimumVisibleLabelWidth)
+                    } action: { labelFits = $0 }
                 if badgeCount > 0 {
                     pendingChip
                 }
@@ -420,10 +420,14 @@ struct ModeBarButton: View {
         .titlebarInteractiveControl()
         .onHover { isHovered = $0 }
         .help(helpText)
+        .accessibilityLabel(item.label)
         .accessibilityIdentifier("RightSidebarModeButton.\(item.id)")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .shortcutHintVisibilityAnimation(value: showsShortcutHint)
     }
+
+    /// Roughly one letter and an ellipsis at the label's size.
+    static let minimumVisibleLabelWidth: CGFloat = 15
 
     private var helpText: String {
         if badgeCount > 0 {

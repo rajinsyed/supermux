@@ -3,9 +3,10 @@
 <plist version="1.0">
 <dict>
 	<!-- LOCAL DEV BUILD: capabilities (Apple sign-in, APNs push, time-sensitive
-	     notifications) stripped so automatic signing can provision a personal
-	     team that lacks them. None are needed to test mobile mirroring (Google
-	     sign-in uses a web auth session, not an entitlement). Restore with:
+	     notifications, App Groups, the Cloud VPN's Network Extension) stripped
+	     so automatic signing can provision a personal team that lacks them.
+	     None are needed to test mobile mirroring (Google sign-in uses a web
+	     auth session, not an entitlement). Restore with:
 	         git checkout ios/Config/cmux.entitlements -->
 
 	<!-- Exact bundle access only. The provisioning profile may authorize a
