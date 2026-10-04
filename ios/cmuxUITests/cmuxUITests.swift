@@ -433,7 +433,7 @@ final class cmuxUITests: XCTestCase {
         XCTAssertTrue(cmuxFixAccessory.waitForExistence(timeout: 5), "cmux-fix shows its branch")
         assertOnStudio(cmuxFixAccessory.label, branch: "fix/studio-sidebar-sync", "cmux-fix (the Studio clone's workspace)")
         XCTAssertFalse(accessory("ws-docs-notes").exists, "docs-notes has no branch, PR or run to show")
-        // feat-x has a changes chip at the end of its preview line; its
+        // feat-x has a changes chip at the end of its branch line; its
         // status (the PR badge) must end before it rather than cover it.
         // cmux-main has no chip, so its status (the run indicator) sits at the
         // row's end.

@@ -158,10 +158,10 @@ struct WorkspaceRow: View {
                         .lineLimit(1)
                 }
 
-                // SUPERMUX:begin supermux-mobile-nested-branch-line (a nested row's branch, right under its title as on the Mac sidebar)
-                if let supermuxNestedRowAccessory, supermuxNestedRowAccessory.hasBranchLine {
-                    SupermuxNestedBranchSlot(accessory: supermuxNestedRowAccessory)
-                }
+                // SUPERMUX:begin supermux-mobile-nested-branch-line (a nested row ends at its branch line, as on the Mac sidebar: no description or preview under it)
+                if let supermuxNestedRowAccessory {
+                    supermuxNestedBranchLine(supermuxNestedRowAccessory)
+                } else {
                 // SUPERMUX:end supermux-mobile-nested-branch-line
 
                 if let description = content.description {
@@ -175,21 +175,16 @@ struct WorkspaceRow: View {
                     Text(content.previewLine)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                        // SUPERMUX:begin supermux-mobile-nested-branch-line (the branch line takes one preview line; upstream: `.lineLimit(content.previewLineLimit, reservesSpace: true)`)
-                        .lineLimit(
-                            supermuxNestedRowAccessory?.previewLineLimit(content.previewLineLimit) ?? content.previewLineLimit,
-                            reservesSpace: true
-                        )
-                        // SUPERMUX:end supermux-mobile-nested-branch-line
-                        // SUPERMUX:begin supermux-mobile-nested-accessory (a nested row's accessory ends where this text slot ends, before the changes chip)
-                        .supermuxNestedAccessorySlot()
-                        // SUPERMUX:end supermux-mobile-nested-accessory
+                        .lineLimit(content.previewLineLimit, reservesSpace: true)
 
                     if let changesChip = content.changesChip {
                         Spacer(minLength: 8)
                         changesChipView(changesChip)
                     }
                 }
+                // SUPERMUX:begin supermux-mobile-nested-branch-line
+                }
+                // SUPERMUX:end supermux-mobile-nested-branch-line
             }
         }
         .overlay(alignment: .leading) {
@@ -215,6 +210,22 @@ struct WorkspaceRow: View {
         }
         .contentShape(Rectangle())
     }
+
+    // SUPERMUX:begin supermux-mobile-nested-branch-line
+    /// A nested row's one line under its title: the branch and status, then
+    /// the changes chip. Nothing when the row has neither.
+    @ViewBuilder
+    private func supermuxNestedBranchLine(_ accessory: SupermuxNestedWorkspaceAccessory) -> some View {
+        if accessory.hasBranchLine || content.changesChip != nil {
+            HStack(spacing: 8) {
+                SupermuxNestedBranchSlot(accessory: accessory)
+                if let changesChip = content.changesChip {
+                    changesChipView(changesChip)
+                }
+            }
+        }
+    }
+    // SUPERMUX:end supermux-mobile-nested-branch-line
 
     @ViewBuilder
     private func changesChipView(_ chip: MobileWorkspaceChangesChip) -> some View {
