@@ -712,13 +712,12 @@ final class cmuxUITests: XCTestCase {
         ])
     }
 
-    /// A nested workspace row shows its branch where the Mac sidebar does:
-    /// the line right under its title, from the title's leading edge, the
-    /// cloud-Mac icon first for a workspace on another Mac. cmux-fix (on the
-    /// Studio) is a shell at its prompt, so its preview line is its
-    /// terminal's path, the case real worktree workspaces hit: that path must
-    /// not take the branch's place, with the branch pushed to the far end of
-    /// the line below.
+    /// A nested workspace row is as compact as the Mac sidebar's: its title,
+    /// then its branch on the line right under it, from the title's leading
+    /// edge, the cloud-Mac icon first for a workspace on another Mac, and
+    /// nothing after. cmux-fix (on the Studio) is a shell at its prompt, so
+    /// its preview line is its terminal's path, the case real worktree
+    /// workspaces hit: that line must not show under the branch.
     @MainActor
     func testSupermuxNestedRowShowsItsBranchUnderItsTitle() throws {
         let app = launchSupermuxMergedListFixture()
@@ -738,8 +737,11 @@ final class cmuxUITests: XCTestCase {
         let branchFrame = try XCTUnwrap(waitForUsableFrame(of: branch, timeout: 5), "cmux-fix's branch has no frame")
         XCTAssertLessThan(branchFrame.minX, rowFrame.minX + 40,
                           "The branch starts at the title's leading edge (branch \(branchFrame), row \(rowFrame))")
-        XCTAssertLessThan(branchFrame.minY, rowFrame.midY,
-                          "The branch is the line right under the title, above the preview (branch \(branchFrame), row \(rowFrame))")
+        XCTAssertGreaterThan(branchFrame.minY, rowFrame.minY + 20,
+                             "The branch is the line under the title (branch \(branchFrame), row \(rowFrame))")
+        // Only the row's bottom padding follows the branch: no preview line.
+        XCTAssertLessThan(rowFrame.maxY - branchFrame.maxY, 20,
+                          "The branch is the row's last line, with no preview under it (branch \(branchFrame), row \(rowFrame))")
     }
 
     /// Opening a workspace on another Mac makes that Mac the shell's
