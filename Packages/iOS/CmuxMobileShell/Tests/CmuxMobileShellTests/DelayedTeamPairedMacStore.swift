@@ -268,6 +268,15 @@ actor DelayedTeamPairedMacStore: MobilePairedMacStoring, PairedMacBackupRefreshi
         let waiters = backupRefreshStartWaiters
         backupRefreshStartWaiters.removeAll()
         for waiter in waiters { waiter.resume() }
+        // SUPERMUX:begin mobile-startup-parallel-secondary
+        if joinsBlockedBackupRefresh, backupRefreshBlocked, backupRefreshBlockConsumed {
+            // Like the production store, a later caller joins the refresh
+            // still running instead of returning at once.
+            await withCheckedContinuation { continuation in
+                backupRefreshJoiners.append(continuation)
+            }
+        }
+        // SUPERMUX:end mobile-startup-parallel-secondary
         if backupRefreshBlocked, !backupRefreshBlockConsumed {
             backupRefreshBlockConsumed = true
             await withCheckedContinuation { continuation in
@@ -296,7 +305,23 @@ actor DelayedTeamPairedMacStore: MobilePairedMacStoring, PairedMacBackupRefreshi
         backupRefreshBlocked = false
         backupRefreshBlocker?.resume()
         backupRefreshBlocker = nil
+        // SUPERMUX:begin mobile-startup-parallel-secondary
+        let joiners = backupRefreshJoiners
+        backupRefreshJoiners.removeAll()
+        for joiner in joiners { joiner.resume() }
+        // SUPERMUX:end mobile-startup-parallel-secondary
     }
+
+    // SUPERMUX:begin mobile-startup-parallel-secondary
+    private var joinsBlockedBackupRefresh = false
+    private var backupRefreshJoiners: [CheckedContinuation<Void, Never>] = []
+
+    /// Blocks the next refresh, and makes every later caller wait for it.
+    func blockBackupRefreshForEveryCaller() {
+        joinsBlockedBackupRefresh = true
+        blockBackupRefresh()
+    }
+    // SUPERMUX:end mobile-startup-parallel-secondary
 
     func waitUntilBackupRefreshFinished() async {
         if backupRefreshFinished { return }

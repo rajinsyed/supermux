@@ -745,11 +745,21 @@ Rules for adding a touchpoint:
 | 932 | `Packages/Shared/CmuxIrxTransport/Sources/CmuxIrxTransport/IrxAdmission.swift` | `irx-admission-unknown-peer-recheck` | `performServer` gains an optional `recheckUnknownPeer` closure. On an `invalid-grant` judgment it waits up to 3 s for that recheck (the phone's admit deadline is 5 s), then judges once more with the same judgment; a second denial closes as before. Known peers keep the synchronous offline path |
 | 933 | `Packages/Shared/CmuxIrxTransport/Tests/CmuxIrxTransportTests/IrxUnknownPeerRecheckTests.swift` | `irx-admission-unknown-peer-recheck` | Whole new file. Live loopback admission: a phone the refresh lists is admitted on the same connection; one it doesn't list is still denied `invalid-grant`; the gate shares one refresh between concurrent phones and honours its cooldown |
 | 934 | `Sources/Mobile/MobileHostIrxRuntime.swift` | `irx-admission-unknown-peer-recheck` | One `IrxDirectoryRecheckGate` per listener, passed through `superviseConnection` to `performServer(recheckUnknownPeer:)`, and `refreshDirectoryForUnknownPeer(token:)`: `controlService.refreshDirectory()`, then waits up to 2.5 s for `cachedState` (applied together with the admission authority in `apply(_:token:)`) to reach the refreshed revision |
+| 935 | `Packages/Shared/CmuxIrxTransport/Sources/CmuxIrxTransport/V2/V2CachedDialAuthority.swift` | `mobile-irx-cached-dial-authority` | Whole new file (fenced top to bottom). `V2CachedDialAuthority`: the warmed account/team may dial before sign-in finishes when the runtime warmed for exactly the signed-in pair, the directory is not revoked and a relay credential is usable; `isCurrent` keeps a dial alive only while that pair stays signed in (before sign-in finishes) or the live scope that replaced it is the same pair. `V2AccountTeam`. Regression coverage: #936 |
+| 936 | `Packages/Shared/CmuxIrxTransport/Tests/CmuxIrxTransportTests/V2/V2CachedDialAuthorityTests.swift` | `mobile-irx-cached-dial-authority` | Whole new file. Permit and deny cases for the cached launch dial, and which sign-in outcomes let it continue |
+| 937 | `ios/cmuxPackage/Sources/cmuxFeature/MobileIrxRuntimeComposition+Dial.swift` | `mobile-irx-cached-dial-authority` | Three fences. `ensureSession` and the readiness wait run under a `DialAuthority` (`.live(scope, epoch)` or `.cached(V2CachedDialAuthority, supervisor:)`, tied to the warmed supervisor so a sign-out and sign-in for the same pair ends it); `dialAuthority(for:)`, `assertDialAuthority(_:)` and `cachedDialDirectory(_:)`; and the whole `dialOnce`, which waits for an authority like upstream's live discovery waits, reads the warmed directory and supervisor (`preparedCachedRuntime`) for a cached dial and asserts the authority where upstream asserted the scope. Live dials keep upstream's exact scope and epoch check |
+| 938 | `ios/cmuxPackage/Sources/cmuxFeature/MobileIrxRuntimeComposition+Lifecycle.swift` | `mobile-irx-cached-dial-authority` | Three fences. In `provision`, the warmed runtime's identity, supervisor and cache are installed in the same step that clears `preparedCachedRuntime` (no await between), so a launch dial never finds neither and the next detach always reaches the warmed supervisor. Two in `detachCurrentRuntime`: when sign-in finishes for the account and team the runtime warmed for (`preservePrepared`), the engines, dial intents, control-lane claims and event-lane hubs of the launch dials stay; any other transition clears and stops them as upstream does |
+| 939 | `Packages/iOS/CmuxMobileShell/Tests/CmuxMobileShellTests/SupermuxStartupParallelSecondaryTests.swift` | `mobile-startup-parallel-secondary` | Whole new file. Two saved Macs on their own scripted hosts: at launch the other Mac connects while the foreground Mac's connect is still held; when the foreground candidate is unreachable, the other Mac still takes over the foreground and keeps no secondary session; with an offline saved Mac (presence on, the retry clock held), launch still finds an unsaved Mac through account discovery |
 | 940 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite+SupermuxForegroundRedial.swift` | `mobile-foreground-host-idle-redial` | Whole new file (fenced top to bottom). `supermuxForegroundDwellOutlivedHostSession()`: on an Iroh route, a background dwell of at least the Mac's 30 s QUIC idle timeout plus 10 s suspension grace (wall clock, `runtime.now()`) means the Mac already closed the session. Regression coverage: #943 |
 | 941 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite+ReconnectRoutes.swift` | `mobile-foreground-host-idle-redial` | Two fences in `resumeForegroundRefresh()`: reads #940's verdict BEFORE `lastBackgroundedAt = nil`, then passes `probeCurrentConnection: !hostClosedSession` to `recoverForegroundConnectionIfNeeded` |
 | 942 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite+ConnectionRecovery.swift` | `mobile-foreground-host-idle-redial` | Two fences in `recoverForegroundConnectionIfNeeded`: a `probeCurrentConnection: Bool = true` parameter, forwarded to `beginConnectionRecovery` instead of upstream's literal `true`. Every other caller keeps the probe |
 | 943 | `Packages/iOS/CmuxMobileShell/Tests/CmuxMobileShellTests/IrohReconnectRouteSelectionTests.swift` | `mobile-foreground-host-idle-redial` | `foregroundAfterHostIdleTimeoutRedialsWithoutProbingTheDeadSession`, after upstream's `foregroundResumeRedialsDeadIrohSessionBeforeUserAction`: a silenced Iroh session and a 10 s probe timeout; a 120 s dwell must reconnect on a new transport within 1 s |
 | 944 | `Packages/iOS/CmuxMobileShell/Tests/CmuxMobileShellTests/MobileShellRenderGridLivenessTestSupport.swift` | `mobile-foreground-host-idle-redial` | Two fences in `LivenessTransport`: `silence()` and the `guard !isSilenced` at the top of `send` (after the closed guard), so #943 can model a session the Mac closed while this end still looks open |
+| 945 | `Packages/iOS/CmuxMobileShell/Tests/CmuxMobileShellTests/LivenessHostRouterAttachTicketResponse.swift` | `mobile-startup-parallel-secondary` | `attachTicketObject` takes the Mac id, name and route port (defaults are upstream's `test-mac`, `Test Mac`, 56584) so #939's second host can name its own Mac |
+| 946 | `Packages/iOS/CmuxMobileShell/Tests/CmuxMobileShellTests/MobileShellRenderGridLivenessTestSupport.swift` | `mobile-startup-parallel-secondary` | Two fences in `LivenessHostRouter`: `setAttachTicketMac(deviceID:displayName:port:)` and the `mobile.attach_ticket.create` branch that uses it; unset, the router answers upstream's fixed ticket |
+| 947 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite+SupermuxStartupSecondary.swift` | `mobile-startup-parallel-secondary` | Whole new file (fenced top to bottom). `SupermuxStartupForegroundReservation` (the reconnect generation plus upstream's `ForegroundConnectionAttemptReservation`). `supermuxReserveStartupForegroundCandidate(_:isLaunchRestore:generation:routes:)`: during the app's startup restore (`hydratePairedMacs`, `!didFinishStoredMacReconnectAttempt`, multi-Mac on), from the first Iroh candidate on the automatic method (a legacy or explicit-Tailscale candidate keeps upstream's order while it is the candidate), reserves the candidate being dialed, retires secondary sessions the pass already opened to it or to a route it shares, and on the first candidate of a generation schedules the secondary pass; the reservation counts only while that generation's reconnect runs (`supermuxIsLaunchSecondaryPass`); `supermuxIsStartupForegroundCandidate(_:)` uses upstream's alias-aware `conflicts(with:)`. Regression coverage: #939 |
+| 948 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite.swift` | `mobile-startup-parallel-secondary` | Six fences: the `supermuxStartupForegroundReservation` property; in `performReconnectActiveMacAttempt`'s saved-candidate loop, `supermuxReserveStartupForegroundCandidate(mac, isLaunchRestore: hydratePairedMacs, generation: generation, routes: storedReconnectRoutes(mac))` before each `dialSavedCandidateUnderDeadline`; first in `secondaryMacConflictsWithForegroundOwnership`, the reserved launch candidate conflicts; and three in `refreshSecondaryMacWorkspaces`: the pass captures `supermuxIsLaunchPass` once at its start, a launch pass skips joining the backup refresh, and a launch pass's dial failures do not arm the shared retry (an armed retry keeps upstream's post-connect pass from discovering unsaved Macs; that pass dials the failed Macs again). Upstream still schedules its post-connect pass, which finds the other Macs already connected |
+| 949 | `Packages/iOS/CmuxMobileShell/Tests/CmuxMobileShellTests/DelayedTeamPairedMacStore.swift` | `mobile-startup-parallel-secondary` | Three fences: `blockBackupRefreshForEveryCaller()` makes a later `refreshFromBackup` join the blocked one (the production store merges into a refresh still running) and `releaseBackupRefresh()` wakes those joiners. Unused, the store behaves as upstream's |
 | 950 | `Sources/RightSidebarPanelView.swift` | `right-sidebar-mode-bar-overflow` | One fence in `modeBar`: `.modifier(SupermuxModeBarOverflow())` directly on upstream's `RightSidebarModeBarTabsLayout`, before its drag-anchor `.background` and `.coordinateSpace`, so a single anchor view serves both layouts (`ViewThatFits` keeps each child's platform views and can show one again without `updateNSView`, which would leave the drag anchor on a view outside the window). When the tabs' narrowest layout does not fit (every tab shown at the fork's 200 pt minimum, or the 220 pt opening width), the row scrolls sideways instead of overflowing the bar, which clipped both ends and pushed open-as-pane/close out of the window. `SupermuxModeBarOverflow` (`Sources/Supermux/SupermuxModeBarOverflow.swift`) is `ViewThatFits(in: .horizontal) { content; ScrollView(.horizontal) { content } }` |
 | 951 | `Sources/RightSidebarModeBarTabsLayout.swift` | `right-sidebar-mode-bar-overflow` | One fence in `tabWidths` (replacing upstream's `guard let available, available.isFinite`): an unspecified width (the ideal size, which `ViewThatFits` and the `ScrollView` ask for) lays the tabs out at their narrowest (`available ?? 0`: the selected tab's full label, the others at their floor) instead of at full labels. Finite and infinite proposals are upstream's, so a bar with room still shrinks and grows the tabs as upstream does, and #950 scrolls only below the narrowest layout |
 | 810 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the remote-terminal polish into the cmux target, four entries each (build file, file reference, Supermux group child, Sources phase) next to #764's `SupermuxDeviceTerminalUpload.swift`: `Devices/SupermuxDeviceTerminalLinks.swift` (`50BE001B0200000000000001`/`…02`, a Cmd-click on a path in another Mac's terminal), `Devices/SupermuxDeviceTerminalActions.swift` (`…03`/`…04`, forwarded Cmd+K/reset, focus and Ctrl+V of an image) and `SupermuxMobileHost+TerminalActions.swift` (`…05`/`…06`, the host's `terminal.action`) |
@@ -1883,7 +1893,11 @@ The Changes-panel file-diff opener adds file reference `50BE0001…0146` and bui
 `50BE0001…0147` for `SupermuxFileDiffOpener.swift`, wired the same way (Supermux group + `cmux`
 Sources phase; bare path, no `+` in the filename).
 
-Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `237`.
+The right sidebar's scrolling mode bar fallback (touchpoints #950/#951) adds file reference
+`50BE0001…0148` and build file `50BE0001…0149` for `SupermuxModeBarOverflow.swift`, wired the
+same way (Supermux group + `cmux` Sources phase).
+
+Verification: `grep -c 50BE0001 cmux.xcodeproj/project.pbxproj` should print `241`.
 
 ### 4. `.github/swift-file-length-budget.tsv` — RETIRED (0.65 merge)
 
@@ -6784,6 +6798,45 @@ Re-apply after an upstream merge: keep the `recheckUnknownPeer` parameter on `pe
 wiring (#934).
 
 Verify: `swift test --package-path Packages/Shared/CmuxIrxTransport --filter IrxUnknownPeerRecheckTests`.
+
+### 935–938. The launch dial does not wait for sign-in's network round trips — `mobile-irx-cached-dial-authority`
+
+Measured on the user's iPhone (2026-10-04): the first dial started 1.06–1.15 s after launch, gated by
+`activeScope`, which sign-in sets only after `/users/me` and the team list return, although the v2 runtime had
+warmed from the cached account and team about 30 ms after launch. A dial is not a server request; the Mac admits
+the phone against its own server-issued directory. Now, while sign-in restores, a dial may run for the warmed
+identity when it matches the signed-in account and team, its directory is not revoked and still grants access,
+and a relay credential is usable. It keeps running only while that identity stays signed in, or sign-in finishes
+for the same account and team, whose live scope then takes over and keeps the admitted sessions. Sign-out, a
+different account or team, or a failed sign-in stops it as before. No control-plane request or mutation runs
+before sign-in.
+
+After: the first dial starts about 0.09–0.12 s after launch and the first Mac is admitted at 1.07–1.20 s (3 of 4
+launches; the fourth waited on a slow relay), down from 2.04–2.12 s.
+
+Re-apply after an upstream merge: keep `dialOnce` on `DialAuthority`, and keep the `preservePrepared` branches
+in `detachCurrentRuntime`.
+
+Verify: `swift test --package-path Packages/Shared/CmuxIrxTransport --filter V2CachedDialAuthorityTests`, and on
+the phone, the journal's first `engine/dial-started` comes before `v2-lifecycle/control-started`.
+
+### 939, 945–948. At launch the other Macs connect beside the foreground one — `mobile-startup-parallel-secondary`
+
+Measured on the user's iPhone (2026-10-04): the second Mac started dialing about 0.6 s after the first was
+admitted, because upstream starts the secondary pass only once the launch reconnect returns connected (after the
+foreground Mac's status and workspace list). Its workspaces went live about 1 s after the first Mac's. Now the
+launch reconnect reserves the Mac it is dialing as foreground and starts the secondary pass at once, so the other
+Macs dial in parallel. When the first candidate fails and the reconnect falls back to a Mac the pass already
+connected, that secondary session is retired first so the foreground can take its control lane (one redial, only
+in that case). The launch pass dials from the local paired-Mac store instead of joining the launch's backup refresh
+(a network fetch that held the other Mac's dial to about 1.5 s on the phone); upstream's post-connect pass still
+reconciles the backup. Recovery, connection-method changes, legacy-first and explicit-Tailscale launches keep
+upstream's order.
+
+Re-apply after an upstream merge: keep the reservation call at the top of each saved-candidate iteration and the
+conflict check first in `secondaryMacConflictsWithForegroundOwnership`.
+
+Verify: `swift test --package-path Packages/iOS/CmuxMobileShell --filter SupermuxStartupParallelSecondaryTests`.
 
 ### 940–944. A foreground return after the Mac's idle timeout redials without probing — `mobile-foreground-host-idle-redial`
 
