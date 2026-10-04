@@ -548,7 +548,8 @@ fake second Mac at 100x30 and clears, `mobile.terminal.viewport` with `view_appe
 drops and restores the link once. At quiescence the mirror's text (screen and scrollback) must equal the
 source's row for row at the source's grid width (`physical_rows`: `surface.read_text` joins soft-wrapped rows and
 a replay paints hard rows, so both are cut at the grid width first). A second step resizes a still screen three
-times and compares again.
+times and compares again; a third makes 20 grid steps 40 ms apart while output flows (a dragged window) and
+allows at most 4 full replays (`supermux.devices.terminal_stream.stats` `full_replays`) before comparing.
 
 Red on f71a249528d (tag `garble`): the storm step shows mirror rows cut at the wrong column (`efghij…`
 fragments where the source has whole lines), the quiet step a mirror reflow that differs from the source's.

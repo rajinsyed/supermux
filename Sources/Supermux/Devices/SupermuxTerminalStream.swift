@@ -53,6 +53,17 @@ final class SupermuxTerminalStream {
     private(set) var grid = SupermuxTerminalGridTracker()
     /// The newest grid the host reported (`terminal.updated`, `device.terminal.grid`).
     private var hostGrid: (columns: Int, rows: Int)?
+    /// Bumps with every grid signal; a re-anchor waits until it holds still.
+    private var gridSignals: UInt64 = 0
+    /// Re-anchors in a row that ended behind the host's grid, and how often
+    /// that ran out (each retry then waits twice as long).
+    private var consecutiveBehind = 0
+    private var giveUps = 0
+    static let maxConsecutiveGridReanchors = 4
+    /// How long the grid must hold still before a re-anchor's replay: a window
+    /// dragged on the other Mac replays once it stops, not for every step.
+    static let gridQuietNanoseconds: UInt64 = 120_000_000
+    static let gridQuietLimitNanoseconds: UInt64 = 2_000_000_000
 
     init(link: DeviceLink, surfaceID: UUID) {
         watch = SupermuxTerminalStreamWatch.of(link)
@@ -76,6 +87,7 @@ final class SupermuxTerminalStream {
     }
 
     func stop() {
+        cancelConfirmation()
         guard registered else { return }
         registered = false
         streamingConnection = nil
@@ -90,7 +102,9 @@ final class SupermuxTerminalStream {
     /// The stream announced a grid generation. True when the attached
     /// mirror must re-anchor on a full replay now.
     func streamedGridGeneration(_ generation: UInt64, attached: Bool) -> Bool {
-        guard isActive, grid.streamed(generation, attached: attached) else { return false }
+        guard isActive else { return false }
+        gridSignals &+= 1
+        guard grid.streamed(generation, attached: attached) else { return false }
         gridResyncs += 1
         return true
     }
@@ -102,10 +116,81 @@ final class SupermuxTerminalStream {
         gridResyncs += 1
     }
 
-    /// The link is gone; the next connection may be another host process.
+    /// The link is gone. What the mirror's screen holds stays, so the
+    /// reconnect can resume; the host refuses a stale position.
     func linkLost() {
-        grid.reset()
+        grid.linkLost()
         hostGrid = nil
+        consecutiveBehind = 0
+        cancelConfirmation()
+    }
+
+    // MARK: Replay boundary
+
+    /// A full replay captures the screen while PTY reads may still be on their
+    /// way to the parser, or with the parser inside an escape sequence; when
+    /// output was flowing around the capture, the live bytes that follow may
+    /// not continue it exactly. Such a replay is confirmed by another one once
+    /// output has been quiet for ``outputQuietNanoseconds``, which captures an
+    /// idle parser exactly.
+    private var lastBytesAt: ContinuousClock.Instant?
+    private var bytesDuringAttach = false
+    private var requestRacedOutput = false
+    private var confirmationTask: Task<Void, Never>?
+    private(set) var confirmations = 0
+    static let outputRaceWindow: Duration = .milliseconds(150)
+    static let outputQuietNanoseconds: UInt64 = 400_000_000
+
+    /// Live bytes arrived.
+    func noteBytes(attaching: Bool) {
+        lastBytesAt = .now
+        if attaching { bytesDuringAttach = true }
+    }
+
+    /// A replay request leaves now.
+    func replayRequested() {
+        bytesDuringAttach = false
+        requestRacedOutput = lastBytesAt.map { ContinuousClock.now - $0 < Self.outputRaceWindow } ?? false
+    }
+
+    /// A full replay was applied: when output raced it, `confirm` runs once
+    /// output has been quiet (cancelled by a newer replay, a link loss or stop).
+    func fullReplayApplied(confirm: @escaping @MainActor () -> Void) {
+        confirmationTask?.cancel()
+        confirmationTask = nil
+        guard isActive, requestRacedOutput || bytesDuringAttach else { return }
+        confirmationTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: Self.outputQuietNanoseconds / 4)
+                guard let self, !Task.isCancelled else { return }
+                let quiet = self.lastBytesAt.map {
+                    ContinuousClock.now - $0 >= .nanoseconds(Int64(Self.outputQuietNanoseconds))
+                } ?? true
+                guard quiet else { continue }
+                self.confirmationTask = nil
+                self.confirmations += 1
+                self.grid.needsFullReplay = true
+                confirm()
+                return
+            }
+        }
+    }
+
+    private func cancelConfirmation() {
+        confirmationTask?.cancel()
+        confirmationTask = nil
+    }
+
+    /// Returns once no grid signal arrived for ``gridQuietNanoseconds`` (at
+    /// most ``gridQuietLimitNanoseconds``).
+    func awaitGridQuiet() async {
+        var waited: UInt64 = 0
+        while waited < Self.gridQuietLimitNanoseconds, !Task.isCancelled {
+            let mark = gridSignals
+            try? await Task.sleep(nanoseconds: Self.gridQuietNanoseconds)
+            waited += Self.gridQuietNanoseconds
+            if gridSignals == mark { return }
+        }
     }
 
     /// The replay request's streaming params: deep scrollback, and the byte
@@ -131,44 +216,60 @@ final class SupermuxTerminalStream {
     func noteReply(_ reply: Reply) {
         epoch = reply.epoch
         if reply.resumed == nil { fullReplays += 1 } else { resumes += 1 }
-        if isActive { grid.replied(reply.gridGeneration) }
     }
 
     /// The host's latest grid, as its grid events report it.
     func noteHostGrid(columns: Int, rows: Int) {
+        guard isActive else { return }
+        if hostGrid.map({ $0 != (columns, rows) }) ?? true { gridSignals &+= 1 }
         hostGrid = (columns, rows)
     }
 
-    /// After an attach: whether the screen it applied is already behind the
-    /// host's grid (a newer generation streamed, or the host reports another
-    /// grid than the one the mirror holds). The caller re-anchors again.
-    func attachFellBehindGrid(assigned: (columns: Int, rows: Int)?) -> Bool {
-        guard isActive else { return false }
-        var behind = grid.movedPastScreen()
-        if let hostGrid, let assigned, hostGrid != assigned {
-            grid.needsFullReplay = true
-            behind = true
-        }
-        guard behind else {
-            consecutiveBehind = 0
-            return false
-        }
-        // A host whose reports never match its captures must not spin the
-        // attach loop; the next grid event or generation tries again.
-        consecutiveBehind += 1
-        guard consecutiveBehind <= Self.maxConsecutiveGridReanchors else {
-            #if DEBUG
-            cmuxDebugLog("supermux.terminal.mirror grid re-anchor gave up host=\(hostGrid.map { "\($0.columns)x\($0.rows)" } ?? "nil")")
-            #endif
-            consecutiveBehind = 0
-            return false
-        }
-        gridResyncs += 1
-        return true
+    /// What an attach found once its screen was applied.
+    enum GridVerdict: Equatable {
+        /// The screen holds the host's grid.
+        case current
+        /// The grid moved during the round trip: re-anchor again now.
+        case behind
+        /// Behind too many times in a row: look again after this long.
+        case retryLater(nanoseconds: UInt64)
     }
 
-    private var consecutiveBehind = 0
-    static let maxConsecutiveGridReanchors = 4
+    /// The screen an attach applied holds `generation` (from its reply) at
+    /// the grid the mirror is pinned to; is that still the host's?
+    func screenApplied(_ generation: UInt64?, assigned: (columns: Int, rows: Int)?) -> GridVerdict {
+        guard isActive else { return .current }
+        grid.replied(generation)
+        guard isBehind(assigned: assigned) else {
+            consecutiveBehind = 0
+            giveUps = 0
+            return .current
+        }
+        grid.needsFullReplay = true
+        consecutiveBehind += 1
+        guard consecutiveBehind > Self.maxConsecutiveGridReanchors else {
+            gridResyncs += 1
+            return .behind
+        }
+        // A host whose reports never match its captures must not spin the
+        // attach loop: look again later, backing off.
+        consecutiveBehind = 0
+        giveUps += 1
+        let seconds = UInt64(1) << UInt64(min(giveUps - 1, 5))
+        #if DEBUG
+        cmuxDebugLog("supermux.terminal.mirror grid re-anchor backs off \(seconds)s host=\(hostGrid.map { "\($0.columns)x\($0.rows)" } ?? "nil")")
+        #endif
+        return .retryLater(nanoseconds: seconds * 1_000_000_000)
+    }
+
+    /// Whether the mirror's screen is behind the host's grid: a newer
+    /// generation streamed, or the host reports another grid than the pin.
+    func isBehind(assigned: (columns: Int, rows: Int)?) -> Bool {
+        guard isActive else { return false }
+        if grid.streamedPastScreen { return true }
+        if let hostGrid, let assigned, hostGrid != assigned { return true }
+        return false
+    }
 
     /// A replay reply, as far as streaming reads it.
     struct Reply: Sendable {
@@ -353,6 +454,7 @@ extension SupermuxTerminalStreamWatch {
                 "resumes": stream?.resumes ?? 0,
                 "gaps": stream?.gaps ?? 0,
                 "grid_resyncs": stream?.gridResyncs ?? 0,
+                "replay_confirmations": stream?.confirmations ?? 0,
             ]
         }
         return [

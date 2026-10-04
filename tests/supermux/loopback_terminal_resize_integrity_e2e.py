@@ -12,15 +12,20 @@ redraws an ink-style status block in place with relative cursor moves (what
 Claude Code does), while the suite keeps changing the terminal's grid: a fake
 phone (40x12, 60x20), a fake second Mac (100x30) and clears, through
 `mobile.terminal.viewport` on this control socket, plus one link drop and
-restore. At quiescence the mirror's text (screen AND scrollback) must equal
-the source's, row for row at the source's grid width (wrap flags aside: a
-replay paints rows as hard lines, see `physical_rows`).
+restore. At quiescence the mirror must show what the source shows: the same
+physical rows (history AND screen), grid and cursor, read from both
+terminals' render grids (`mobile.terminal.replay` on this control socket; see
+`grid_rows` for why not `surface.read_text`).
 
   1. setup                          the loopback linked, a source workspace and its mirror
   2. resize_storm_mirror_matches    the generator under ~16 grid changes and a link drop;
                                     afterwards source and mirror text are identical
   3. quiet_resizes_mirror_matches   a still screen resized three times (no output between):
                                     the mirror still equals the source
+  4. dragged_window_replays_few_times
+                                    20 grid steps 40 ms apart (a window dragged on the other
+                                    Mac) while output flows: at most 4 full replays, and the
+                                    mirror equals the source
 
 Usage:
   CMUX_TAG=<tag> python3 tests/supermux/loopback_terminal_resize_integrity_e2e.py [--report PATH]
@@ -152,31 +157,32 @@ def norm(identifier: Any) -> str:
     return str(identifier or "").strip().lower()
 
 
-def text_lines(text: str) -> List[str]:
-    lines = [line.rstrip() for line in text.replace("\r\n", "\n").split("\n")]
-    while lines and not lines[-1]:
-        lines.pop()
-    return lines
+def grid_rows(frame: Dict[str, Any]) -> Dict[str, Any]:
+    """A render-grid frame as the physical rows a viewer sees: history, then
+    the screen, each row's cells left to right (padding dropped), plus the
+    grid and the cursor. `surface.read_text` would join soft-wrapped rows,
+    and a replay paints rows as hard lines (it carries no wrap flags), so text
+    reads differ where the rows are the same; the rows themselves do not."""
+    def paint(spans: List[Dict[str, Any]], count: int) -> List[str]:
+        rows = [""] * count
+        for span in sorted(spans, key=lambda item: (int(item.get("row", 0)), int(item.get("column", 0)))):
+            row = int(span.get("row", 0))
+            if 0 <= row < count:
+                rows[row] = rows[row].ljust(int(span.get("column", 0))) + str(span.get("text") or "")
+        return [row.rstrip() for row in rows]
 
-
-def physical_rows(lines: List[str], columns: int) -> List[str]:
-    """Lines as the rows a grid `columns` wide shows them.
-
-    `surface.read_text` joins soft-wrapped rows into one line, and a replay
-    paints rows as hard lines (it carries no wrap flags), so the same screen
-    reads differently. Cutting every line at the grid width (and dropping row
-    padding) compares what each grid holds, row by row, whatever the wrap flags.
-    """
-    rows: List[str] = []
-    for line in lines:
-        if not line:
-            rows.append("")
-            continue
-        for start in range(0, len(line), columns):
-            rows.append(line[start:start + columns].rstrip())
+    history = paint(frame.get("scrollback_spans") or [], int(frame.get("scrollback_rows") or 0))
+    screen = paint(frame.get("row_spans") or [], int(frame.get("rows") or 0))
+    rows = history + screen
     while rows and not rows[-1]:
         rows.pop()
-    return rows
+    cursor = frame.get("cursor") or {}
+    return {
+        "rows": rows,
+        "grid": [frame.get("columns"), frame.get("rows")],
+        "cursor": [cursor.get("row"), cursor.get("column")],
+        "screen": frame.get("active_screen"),
+    }
 
 
 def first_difference(source: List[str], mirror: List[str]) -> Optional[Dict[str, Any]]:
@@ -276,31 +282,46 @@ class ResizeIntegrityE2E:
         for client in list(self.reported_clients):
             self.report_viewport(client, "phone", clear=True)
 
+    def frame(self, workspace_id: str, surface_id: str) -> Dict[str, Any]:
+        """The terminal's physical rows (`mobile.terminal.replay`'s render grid,
+        10000 history rows: as deep as a mirror's replay)."""
+        reply = self.client.call("mobile.terminal.replay", {
+            "workspace_id": workspace_id, "surface_id": surface_id,
+            "anchor": "screen", "max_scrollback_rows": 10000,
+        }, timeout_s=120) or {}
+        frame = reply.get("render_grid")
+        if not isinstance(frame, dict):
+            raise Failure(f"no render grid for {surface_id}: {sorted(reply)}")
+        return grid_rows(frame)
+
     def compare(self, label: str) -> Dict[str, Any]:
-        """Source and mirror text at quiescence: equal once two reads agree."""
+        """Source and mirror at quiescence: the same rows, grid and cursor."""
         f = self.facts
         result: Dict[str, Any] = {}
+        held: Dict[str, Any] = {}
 
         def settled() -> bool:
-            grid = self.grid()
-            if grid is None:
-                raise Failure("the source terminal reports no grid")
-            source = physical_rows(text_lines(self.read_text(f["source_workspace_id"], f["source_surface_id"])), grid[0])
-            mirror = physical_rows(text_lines(self.read_text(f["mirror_workspace_id"], f["mirror_surface_id"])), grid[0])
-            result.update({"source_rows": len(source), "mirror_rows": len(mirror), "grid": grid})
-            difference = first_difference(source, mirror)
+            source = self.frame(f["source_workspace_id"], f["source_surface_id"])
+            mirror = self.frame(f["mirror_workspace_id"], f["mirror_surface_id"])
+            held.update({"source": source, "mirror": mirror})
+            result.update({
+                "source_rows": len(source["rows"]), "mirror_rows": len(mirror["rows"]),
+                "grid": source["grid"], "mirror_grid": mirror["grid"],
+                "cursor": source["cursor"], "mirror_cursor": mirror["cursor"],
+            })
+            difference = first_difference(source["rows"], mirror["rows"])
             result["difference"] = difference
-            if difference is None:
-                return True
-            return False
+            return difference is None and source["grid"] == mirror["grid"] and source["cursor"] == mirror["cursor"] \
+                and source["screen"] == mirror["screen"]
 
         try:
             wait_for(f"the mirror to equal the source ({label})", settled, 20, interval_s=2.0)
         except Failure:
             artifact = ARTIFACTS_DIR / f"resize-integrity-{label}-{self.nonce}"
             artifact.mkdir(parents=True, exist_ok=True)
-            (artifact / "source.txt").write_text(self.read_text(f["source_workspace_id"], f["source_surface_id"]), encoding="utf-8")
-            (artifact / "mirror.txt").write_text(self.read_text(f["mirror_workspace_id"], f["mirror_surface_id"]), encoding="utf-8")
+            for side in ("source", "mirror"):
+                rows = (held.get(side) or {}).get("rows") or []
+                (artifact / f"{side}-rows.txt").write_text("\n".join(rows) + "\n", encoding="utf-8")
             result["artifact"] = str(artifact)
             raise Failure(f"the mirror differs from the source: {json.dumps(result)[:3000]}")
         return result
@@ -416,6 +437,36 @@ class ResizeIntegrityE2E:
         result["grids"] = seen
         return result
 
+    def pane_stats(self) -> Dict[str, Any]:
+        stats = self.client.call("supermux.devices.terminal_stream.stats", {"machine": self.machine()}) or {}
+        for pane in stats.get("panes") or []:
+            if norm(pane.get("panel_id")) == norm(self.facts["mirror_surface_id"]):
+                return pane
+        raise Failure(f"no stream stats for the mirror pane: {stats}")
+
+    def drag(self) -> Dict[str, Any]:
+        """A window dragged on the other Mac: many grid steps in quick
+        succession while output flows cost a few replays, not one per step."""
+        f = self.facts
+        before = int(self.pane_stats().get("full_replays", 0))
+        done = f"GEN_DONE_{self.nonce}_42"
+        self.send_text(f["source_workspace_id"], f["source_surface_id"], f"clear; python3 {self.script_path} 600 {self.nonce}\n")
+        steps = 0
+        for cols in list(range(50, 80, 3)) + list(range(80, 50, -3)):
+            self.report_viewport("mac2", "mac", cols, 24)
+            steps += 1
+            time.sleep(0.04)
+        self.clear_viewports()
+        self.wait_text("the generator's end in the SOURCE", f["source_workspace_id"], f["source_surface_id"], done, 120)
+        self.wait_text("the generator's end in the MIRROR", f["mirror_workspace_id"], f["mirror_surface_id"], done, 120)
+        time.sleep(1.5)
+        result = self.compare("drag")
+        replays = int(self.pane_stats().get("full_replays", 0)) - before
+        result.update({"grid_steps": steps, "full_replays": replays})
+        if replays > 4:
+            raise Failure(f"{replays} full replays for one drag of {steps} steps: {result}")
+        return result
+
     def cleanup(self) -> None:
         f = self.facts
         try:
@@ -447,6 +498,7 @@ class ResizeIntegrityE2E:
             self.step("setup", self.setup, required=True)
             self.step("resize_storm_mirror_matches", self.storm)
             self.step("quiet_resizes_mirror_matches", self.quiet_resizes)
+            self.step("dragged_window_replays_few_times", self.drag)
         except Failure:
             pass
         except (OSError, ValueError) as error:

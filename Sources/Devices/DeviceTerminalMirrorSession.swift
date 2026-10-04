@@ -327,6 +327,9 @@ final class DeviceTerminalMirrorSession {
     private func handle(_ event: DeviceTerminalEvent) {
         switch event {
         case .bytes(let sequence, let data):
+            // SUPERMUX:begin terminal-stream-grid-viewer (whether output flows around a replay)
+            supermuxStream?.noteBytes(attaching: phase == .attaching)
+            // SUPERMUX:end terminal-stream-grid-viewer
             if phase == .attaching {
                 // SUPERMUX:begin terminal-stream-viewer (a streaming mirror holds far more while its resume is in flight; upstream: 512 chunks, 256 KB)
                 let supermuxStreams = supermuxStream?.isActive == true
@@ -367,9 +370,17 @@ final class DeviceTerminalMirrorSession {
             // SUPERMUX:begin terminal-stream-grid-viewer (a streaming mirror re-anchors on a replay pinned in stream order, never re-pins under bytes)
             if let supermuxStream, supermuxStream.isActive {
                 supermuxStream.noteHostGrid(columns: columns, rows: rows)
-                if phase == .attached, assignedGrid.map({ $0 != (columns, rows) }) ?? true {
+                guard assignedGrid.map({ $0 != (columns, rows) }) ?? true else { return }
+                switch phase {
+                case .attached:
                     supermuxStream.gridChanged()
                     supermuxResyncGrid()
+                case .detached:
+                    // Upstream's way back for a mirror left detached on a live link.
+                    supermuxStream.gridChanged()
+                    scheduleAttach()
+                case .attaching, .idle, .stopped:
+                    break // an attach in flight checks the host's grid once its screen is applied
                 }
                 return
             }
@@ -426,6 +437,9 @@ final class DeviceTerminalMirrorSession {
     /// other Mac's grid changed: live bytes wait for it (they were written for
     /// a grid this surface does not hold yet), typing keeps flowing.
     private func supermuxResyncGrid() {
+        #if DEBUG
+        cmuxDebugLog("supermux.terminal.mirror resync surface=\(remoteSurfaceID.uuidString.prefix(8)) phase=\(phase)")
+        #endif
         guard phase == .attached else {
             scheduleAttach()
             return
@@ -435,6 +449,18 @@ final class DeviceTerminalMirrorSession {
         attachingBytes.removeAll(keepingCapacity: true)
         attachingByteCount = 0
         scheduleAttach()
+    }
+
+    /// After re-anchors that kept ending behind: look again later, so a mirror
+    /// left on a stale grid recovers without waiting for the next resize.
+    private func supermuxRecheckGrid(after nanoseconds: UInt64) {
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: nanoseconds)
+            guard let self, self.phase == .attached, let stream = self.supermuxStream,
+                  stream.isBehind(assigned: self.assignedGrid) else { return }
+            stream.gridChanged()
+            self.supermuxResyncGrid()
+        }
     }
     // SUPERMUX:end terminal-stream-grid-viewer
 
@@ -476,6 +502,12 @@ final class DeviceTerminalMirrorSession {
             guard !Task.isCancelled, phase == .attaching else { return }
         }
         // SUPERMUX:end terminal-stream-viewer
+        // SUPERMUX:begin terminal-stream-grid-viewer (a grid re-anchor waits until the grid holds still: a window dragged on the other Mac replays once it stops, not at every step)
+        if supermuxGridResyncing, let supermuxStream, supermuxStream.isActive {
+            await supermuxStream.awaitGridQuiet()
+            guard !Task.isCancelled, phase == .attaching else { return }
+        }
+        // SUPERMUX:end terminal-stream-grid-viewer
         do {
             var params = surfaceParams
             // SUPERMUX:begin terminal-stream-viewer
@@ -503,6 +535,9 @@ final class DeviceTerminalMirrorSession {
                 }
                 // SUPERMUX:end device-mirror-hidden-counts
             }
+            // SUPERMUX:begin terminal-stream-grid-viewer
+            supermuxStream?.replayRequested()
+            // SUPERMUX:end terminal-stream-grid-viewer
             let response = try await requestData("mobile.terminal.replay", params)
             // SUPERMUX:begin terminal-stream-viewer (a resumed reply carries the bytes since the mirror's position; upstream: `let replay = try await Self.decodeReplay(response)`)
             let supermuxReply = await SupermuxTerminalStream.decodeReply(response)
@@ -545,6 +580,27 @@ final class DeviceTerminalMirrorSession {
             }
             // SUPERMUX:end terminal-stream-viewer
             expectedSequence = replay.sequence
+            // SUPERMUX:begin terminal-stream-grid-viewer (the screen is applied; if the grid moved during the round trip, the held bytes are for a grid it does not have: re-anchor once more instead of drawing them)
+            if let supermuxStream, supermuxStream.isActive {
+                let supermuxVerdict = supermuxStream.screenApplied(supermuxReply.gridGeneration, assigned: assignedGrid)
+                #if DEBUG
+                cmuxDebugLog("supermux.terminal.mirror applied surface=\(remoteSurfaceID.uuidString.prefix(8)) resumed=\(replay.supermuxResumed) seq=\(replay.sequence.map(String.init) ?? "nil") grid=\(assignedGrid.map { "\($0.columns)x\($0.rows)" } ?? "nil") gen=\(supermuxReply.gridGeneration.map(String.init) ?? "nil") verdict=\(supermuxVerdict) buffered=\(attachingBytes.count)")
+                #endif
+                switch supermuxVerdict {
+                case .current:
+                    break
+                case .behind:
+                    supermuxGridResyncing = true
+                    phase = .attaching
+                    attachingBytes.removeAll(keepingCapacity: true)
+                    attachingByteCount = 0
+                    replayNeeded = true
+                    return
+                case .retryLater(let nanoseconds):
+                    supermuxRecheckGrid(after: nanoseconds)
+                }
+            }
+            // SUPERMUX:end terminal-stream-grid-viewer
             phase = .attached
             // SUPERMUX:begin device-mirror-hidden-counts (a show or hide during the replay round trip)
             supermuxReconcileHiddenCounts()
@@ -558,10 +614,12 @@ final class DeviceTerminalMirrorSession {
             // Discard bytes already covered by the replay, then apply the
             // remaining contiguous tail through the normal sequence check.
             for chunk in buffered { handle(.bytes(sequence: chunk.sequence, data: chunk.data)) }
-            // SUPERMUX:begin terminal-stream-grid-viewer (the grid moved again during the round trip: re-anchor once more, input still flowing)
-            if let supermuxStream, phase == .attached, supermuxStream.attachFellBehindGrid(assigned: assignedGrid) {
-                supermuxGridResyncing = true
-                replayNeeded = true
+            // SUPERMUX:begin terminal-stream-grid-viewer (a full replay taken while output flowed is confirmed by one taken once it is quiet)
+            if !replay.supermuxResumed {
+                supermuxStream?.fullReplayApplied { [weak self] in
+                    guard let self, self.phase == .attached else { return }
+                    self.supermuxResyncGrid()
+                }
             }
             // SUPERMUX:end terminal-stream-grid-viewer
             // A replay queued meanwhile re-enters `.attaching` at once, which

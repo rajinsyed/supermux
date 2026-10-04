@@ -17,10 +17,27 @@ import SupermuxMobileCore
 
 /// The host's count of grid changes asked of one terminal's PTY
 /// (`TerminalSurface.supermuxGridRequestGeneration`).
+///
+/// Grid changes Ghostty makes on its own (a font size or content scale change)
+/// never pass `applySurfaceSize`, so a change of the requested grid seen here
+/// counts too. Both counts only grow, and so does their sum.
 @MainActor
 enum SupermuxTerminalGridGeneration {
+    private static var observed: [UUID: (columns: Int, rows: Int, changes: UInt64)] = [:]
+
     static func current(surfaceID: UUID) -> UInt64? {
-        GhosttyApp.terminalSurfaceRegistry.terminalSurface(id: surfaceID)?.supermuxGridRequestGeneration
+        guard let model = GhosttyApp.terminalSurfaceRegistry.terminalSurface(id: surfaceID) else {
+            observed[surfaceID] = nil
+            return nil
+        }
+        var changes = observed[surfaceID]?.changes ?? 0
+        if let grid = requestedGrid(surfaceID: surfaceID) {
+            if let seen = observed[surfaceID], seen.columns != grid.columns || seen.rows != grid.rows {
+                changes &+= 1
+            }
+            observed[surfaceID] = (grid.columns, grid.rows, changes)
+        }
+        return model.supermuxGridRequestGeneration &+ changes
     }
 
     /// The grid last asked of the PTY (which Ghostty's parser may not hold yet).
@@ -114,17 +131,19 @@ struct SupermuxTerminalGridTracker: Sendable {
         needsFullReplay = false
     }
 
-    /// After an attach: true when bytes sent after the reply's capture already
-    /// moved to a newer grid (re-anchor again).
-    mutating func movedPastScreen() -> Bool {
-        guard let screen, let newestSeen, newestSeen > screen else { return false }
-        needsFullReplay = true
-        return true
+
+    /// The link is gone. The screen's generation stays, so the reconnect can
+    /// resume: the host continues it only within the same byte-stream epoch
+    /// (a restarted host has another) and at the same generation (a resize
+    /// while the link was down moved it), so a stale one never resumes.
+    mutating func linkLost() {
+        newestSeen = nil
     }
 
-    /// The link is gone: the next host may count from anywhere.
-    mutating func reset() {
-        self = SupermuxTerminalGridTracker()
+    /// Whether bytes newer than the screen's grid have streamed.
+    var streamedPastScreen: Bool {
+        guard let screen, let newestSeen else { return false }
+        return newestSeen > screen
     }
 
     /// Reads `supermux_grid_gen` from a `terminal.bytes` payload without
@@ -161,6 +180,7 @@ extension TerminalSurface {
         let requested = ghostty_surface_size(live)
         guard Int(requested.columns) == columns, Int(requested.rows) == rows else { return }
         for _ in 0..<250 {
+            guard !Task.isCancelled else { return }
             if let settled = settledGridCells(), settled == (columns, rows) { return }
             try? await Task.sleep(nanoseconds: 2_000_000)
         }
