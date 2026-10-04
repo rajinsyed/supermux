@@ -798,6 +798,7 @@ Rules for adding a touchpoint:
 | 911 | `tests/test_claude_wrapper_hooks.py` | `claude-answer-hook` | `generated_claude_hook_settings()`'s expected `PostToolUse` list gains `queued("post-tool-use", matcher="AskUserQuestion\|ExitPlanMode")` after the `PushNotification` group |
 | 912 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `CLI/CMUXCLI+SupermuxClaudeAnswerHook.swift` (`50BE00910000000000000002` file ref, `…01` build file) into the `cmux-cli` target: the file reference, the CLI group child after `CMUXCLI+ClaudePushNotificationHook.swift`, the build file and the target's Sources phase entry |
 | 913 | `Packages/macOS/CMUXAgentLaunch/Tests/CMUXAgentLaunchTests/AgentHookDeliveryPolicyTests.swift` | `claude-answer-hook` | In `decisionAndAuxiliaryBoundaries`, upstream's `#expect(!…(agent: "claude", subcommand: "post-tool-use"))` becomes the positive expectation (#909), plus a negative one for `future-agent` so the boundary stays tested |
+| 1010 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/SupermuxStateSyncTicker.swift` (`50BE10100000000000000001` file ref, `…02` build file) into the cmux target: the file reference, the `Supermux` group child after `SupermuxMobileSidebarStatusObserver.swift`, the build file and the target's Sources phase entry |
 
 ## How to re-apply
 
@@ -6856,3 +6857,26 @@ Re-apply after an upstream merge:
 - **#942**: keep the defaulted parameter so every other caller still probes.
 
 Verify: `swift test --package-path Packages/iOS/CmuxMobileShell --filter foregroundAfterHostIdleTimeoutRedialsWithoutProbingTheDeadSession`.
+
+### 1010. The fork's mobile observers tick state sync only on a real change, through one shared ticker — `cmux.xcodeproj/project.pbxproj` (unfenced)
+
+Before, every agent hook (each `PreToolUse`) relayed a lifecycle event, and `SupermuxMobileActivityObserver`
+answered each one with an unconditional `workspace.updated` emit and a full `MobileStateSyncHost` rebuild, even
+when nothing the record carries had changed; a device mirror's overlay updates on a viewer did the same, although
+mirrors are never exported. `SupermuxMobileSidebarStatusObserver` ticked the same rebuild on its own 250 ms window.
+Now both fork observers request one shared trailing tick (`Sources/Supermux/SupermuxStateSyncTicker.swift`, 150 ms
+with 50 ms tolerance, nothing scheduled while no client subscribes to `mobile.sync.delta`). The activity observer
+signs each relayed workspace (`activity(for:)`, `activityByAgentKey(for:)`, `supermuxWorkingPanelIDs()`), skips
+mirrors and closed workspaces, and emits only when a signature or the association hash changed; `workspace.updated`
+goes out at most once per second (the first change at once, later ones trailing). It does nothing while neither
+`workspace.updated` nor `mobile.sync.delta` has a subscriber, and runs one forced pass when the first one
+subscribes. The sidebar status observer skips a mirror's metadata changes. The lifecycle relay and
+`SupermuxTabActivitySync` are unchanged.
+
+Re-apply after an upstream merge: re-add the four entries listed in the #1010 row.
+
+Verify: `CMUX_E2E_SUITES="loopback_agent_activity_e2e loopback_sidebar_rows_e2e loopback_notifications_e2e
+loopback_agent_answer_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`. While 24 workspaces repeat
+`cmux claude-hook pre-tool-use` with an unchanged phase (the stress harness's hook loop,
+`tests/supermux/stress_worktrees_energy.py`), the host DEBUG log's `mobile.emit topic=workspace.updated` lines
+per second fall to about zero.

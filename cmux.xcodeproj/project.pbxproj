@@ -3723,6 +3723,7 @@
 		50BE00190500000000000022 /* SupermuxSimctlDebugDelay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00190500000000000021 /* SupermuxSimctlDebugDelay.swift */; };
 		50BE00190500000000000020 /* SupermuxSimulatorControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE0019050000000000001F /* SupermuxSimulatorControl.swift */; };
 		50BE00190500000000000028 /* SupermuxSimulatorDeviceListing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00190500000000000027 /* SupermuxSimulatorDeviceListing.swift */; };
+		50BE10100000000000000002 /* SupermuxStateSyncTicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE10100000000000000001 /* SupermuxStateSyncTicker.swift */; };
 		50BE00180400000000000006 /* SupermuxTabActivitySync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00180400000000000005 /* SupermuxTabActivitySync.swift */; };
 		50BE00180400000000000002 /* SupermuxTabIndicatorSocket.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00180400000000000001 /* SupermuxTabIndicatorSocket.swift */; };
 		50BE000100000000000000A7 /* SupermuxTabManagerOpener.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000A6 /* SupermuxTabManagerOpener.swift */; };
@@ -8347,6 +8348,7 @@
 		50BE00190500000000000021 /* SupermuxSimctlDebugDelay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteSimulator/SupermuxSimctlDebugDelay.swift; sourceTree = "<group>"; };
 		50BE0019050000000000001F /* SupermuxSimulatorControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteSimulator/SupermuxSimulatorControl.swift; sourceTree = "<group>"; };
 		50BE00190500000000000027 /* SupermuxSimulatorDeviceListing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteSimulator/SupermuxSimulatorDeviceListing.swift; sourceTree = "<group>"; };
+		50BE10100000000000000001 /* SupermuxStateSyncTicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxStateSyncTicker.swift; sourceTree = "<group>"; };
 		50BE00180400000000000005 /* SupermuxTabActivitySync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxTabActivitySync.swift; sourceTree = "<group>"; };
 		50BE00180400000000000001 /* SupermuxTabIndicatorSocket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mirrors/SupermuxTabIndicatorSocket.swift; sourceTree = "<group>"; };
 		50BE000100000000000000A6 /* SupermuxTabManagerOpener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxTabManagerOpener.swift; sourceTree = "<group>"; };
@@ -9791,6 +9793,7 @@
 				50BE00050000000000000001 /* SupermuxDeviceMirrorStatus.swift */,
 				50BE00050000000000000003 /* SupermuxMobileWorkspaceStatusFields.swift */,
 				50BE00050000000000000005 /* SupermuxMobileSidebarStatusObserver.swift */,
+				50BE10100000000000000001 /* SupermuxStateSyncTicker.swift */,
 				50BE00050000000000000007 /* SupermuxDeviceStatusProjector.swift */,
 				50BE00050000000000000009 /* SupermuxDeviceMirrorStatusWriter.swift */,
 				50BE0005000000000000000B /* SupermuxDeviceMirrorCoordinator.swift */,
@@ -17079,6 +17082,7 @@
 				50BE00190500000000000022 /* SupermuxSimctlDebugDelay.swift in Sources */,
 				50BE00190500000000000020 /* SupermuxSimulatorControl.swift in Sources */,
 				50BE00190500000000000028 /* SupermuxSimulatorDeviceListing.swift in Sources */,
+				50BE10100000000000000002 /* SupermuxStateSyncTicker.swift in Sources */,
 				50BE00180400000000000006 /* SupermuxTabActivitySync.swift in Sources */,
 				50BE00180400000000000002 /* SupermuxTabIndicatorSocket.swift in Sources */,
 				50BE000100000000000000A7 /* SupermuxTabManagerOpener.swift in Sources */,
