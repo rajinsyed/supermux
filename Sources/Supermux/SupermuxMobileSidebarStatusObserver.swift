@@ -13,24 +13,25 @@ import Foundation
 ///
 /// Watches every main window's workspaces' `sidebarObservationPublisher` — the
 /// same publisher the sidebar rows refresh from — and only while someone
-/// subscribes to `mobile.sync.delta`, so an unpaired Mac pays nothing. Pokes
-/// are coalesced into one trailing tick per ``throttle`` window; the tick
-/// itself is a no-op diff when nothing the record carries changed. Lives for
-/// the app's lifetime (owned by ``SupermuxMobileHostGlue``).
+/// subscribes to `mobile.sync.delta`, so an unpaired Mac pays nothing. A
+/// device mirror's changes are skipped, checked as each one arrives: its pills
+/// are the other Mac's, written by ``SupermuxDeviceStatusProjector``, and the
+/// export filter never sends a mirror back. Every other change pokes the
+/// shared ``SupermuxStateSyncTicker``, which coalesces it with the activity
+/// observer's into one trailing tick; the tick itself is a no-op diff when
+/// nothing the record carries changed. Lives for the app's lifetime (owned by
+/// ``SupermuxMobileHostGlue``).
 @MainActor
 final class SupermuxMobileSidebarStatusObserver {
-    static let throttle: Duration = .milliseconds(250)
-
     private let poke: @MainActor () -> Void
     private let hasSubscribers: @MainActor () -> Bool
     private let tabManagers: @MainActor () -> [TabManager]
     private var observers: [any NSObjectProtocol] = []
     private var tabsCancellables: [ObjectIdentifier: AnyCancellable] = [:]
     private var workspaceCancellables: [UUID: AnyCancellable] = [:]
-    private var pendingPoke: Task<Void, Never>?
 
     init(
-        poke: @escaping @MainActor () -> Void = { MobileStateSyncHost.shared.broadcastIfSubscribed() },
+        poke: @escaping @MainActor () -> Void = { SupermuxStateSyncTicker.shared.request() },
         hasSubscribers: @escaping @MainActor () -> Bool = {
             MobileHostService.hasEventSubscribers(topic: MobileStateSyncHost.deltaTopic)
         },
@@ -75,17 +76,10 @@ final class SupermuxMobileSidebarStatusObserver {
             // The first value is the current state, not a change.
             workspaceCancellables[workspace.id] = workspace.sidebarObservationPublisher
                 .dropFirst()
-                .sink { [weak self] in self?.schedulePoke() }
-        }
-    }
-
-    private func schedulePoke() {
-        guard pendingPoke == nil else { return }
-        pendingPoke = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: Self.throttle)
-            guard let self, !Task.isCancelled else { return }
-            self.pendingPoke = nil
-            self.poke()
+                .sink { [weak self, weak workspace] in
+                    guard let workspace, !SupermuxDeviceWorkspaceIndex.isDeviceMirror(workspace) else { return }
+                    self?.poke()
+                }
         }
     }
 
