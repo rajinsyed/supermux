@@ -50,6 +50,10 @@ final class SupermuxTabActivitySync {
     /// move creates a new tab); it is a few bytes and tab ids are never
     /// reused.
     private var heldOffScreenTabIDs: Set<TabID> = []
+    /// Tabs this type set spinning, with their controller, so the spinner
+    /// frame-rate sweep keeps going while one of them can be remounted.
+    private var spinningTabs: [TabID: SpinningTab] = [:]
+    private struct SpinningTab { weak var controller: BonsplitController? }
 
     /// Starts following the relay and main-window visibility; later calls do
     /// nothing.
@@ -181,7 +185,12 @@ final class SupermuxTabActivitySync {
             heldOffScreenTabIDs.remove(tab)
         }
         let spins = isWorking && windowOnScreen
-        if spins { SupermuxTabSpinnerFrameRate.capSoon() }
+        if spins {
+            spinningTabs[tab] = SpinningTab(controller: controller)
+            SupermuxTabSpinnerFrameRate.capSoon()
+        } else {
+            spinningTabs[tab] = nil
+        }
         controller.updateTab(tab, isLoading: spins)
     }
 
@@ -194,6 +203,14 @@ final class SupermuxTabActivitySync {
             self.sync(workspace)
             if let dock = workspace._dockSplit { Self.syncDockTabs(dock) }
         }
+    }
+
+    /// Whether any tab this type set spinning still spins, mounted or not
+    /// (a workspace you left is unmounted and remounts when you come back).
+    /// Forgets tabs that were closed or stopped spinning.
+    func hasSpinningTab() -> Bool {
+        spinningTabs = spinningTabs.filter { id, entry in entry.controller?.tab(id)?.isLoading == true }
+        return !spinningTabs.isEmpty
     }
 
     /// Whether `tab`, shown in the window of `ownerID` (a workspace, or a
@@ -233,26 +250,37 @@ final class SupermuxTabActivitySync {
 /// found by its animation key.
 ///
 /// Bonsplit restarts the rotation, uncapped, whenever a spinner's view
-/// re-enters a window (a workspace or window switch remounts the tab bar),
-/// so while any spinner runs it is checked again every 2 s; the check stops
-/// once no spinner is left.
+/// re-enters a window (switching back to a workspace remounts its tab bar),
+/// so while any spinner runs or a working tab could be remounted it is
+/// checked again every 2 s; the check stops once no tab spins.
 @MainActor
 enum SupermuxTabSpinnerFrameRate {
     private static let animationKey = "tabLoadingSpinnerRotation"
     private static let frameRate = CAFrameRateRange(minimum: 8, maximum: 20, preferred: 15)
+    private static var isQuickPassScheduled = false
     private static var sweep: Task<Void, Never>?
 
     /// Caps every running tab spinner once SwiftUI has mounted the ones just
-    /// turned on (next turn, again shortly after for a late mount, then
-    /// every 2 s while any spinner runs).
+    /// turned on (next turn and again shortly after for a late mount), then
+    /// keeps the 2 s sweep going.
     static func capSoon() {
-        guard sweep == nil else { return }
-        sweep = Task { @MainActor in
+        guard !isQuickPassScheduled else { return }
+        isQuickPassScheduled = true
+        Task { @MainActor in
             capAll()
             try? await Task.sleep(for: .milliseconds(300))
-            while capAll() > 0 {
+            isQuickPassScheduled = false
+            capAll()
+            startSweep()
+        }
+    }
+
+    private static func startSweep() {
+        guard sweep == nil else { return }
+        sweep = Task { @MainActor in
+            repeat {
                 try? await Task.sleep(for: .seconds(2), tolerance: .milliseconds(500))
-            }
+            } while capAll() > 0 || SupermuxTabActivitySync.shared.hasSpinningTab()
             sweep = nil
         }
     }

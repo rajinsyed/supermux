@@ -178,8 +178,33 @@ extension Workspace {
         return didChange
     }
     // SUPERMUX:begin agent-pid-ports-on-change
-    /// When a hook report last refreshed each workspace's agent ports.
-    @MainActor private static var lastHookPortRefreshUptimeByWorkspace: [UUID: TimeInterval] = [:]
+    /// Each workspace's hook-driven agent port refreshes: when the last one
+    /// ran and whether a trailing one is scheduled.
+    @MainActor private static var hookPortRefreshes: [UUID: (lastAt: TimeInterval, trailingScheduled: Bool)] = [:]
+    private static let hookPortRefreshInterval: TimeInterval = 5
+
+    /// Refreshes the agent ports for a hook report at most every 5 s; a
+    /// report sooner than that gets one trailing refresh, so a server an
+    /// agent started between two hooks is still found while the periodic
+    /// rescan is paused (cmux inactive).
+    @MainActor private func refreshTrackedAgentPortsForUnchangedReport() {
+        let now = ProcessInfo.processInfo.systemUptime
+        let state = Self.hookPortRefreshes[id] ?? (lastAt: -.infinity, trailingScheduled: false)
+        let wait = state.lastAt + Self.hookPortRefreshInterval - now
+        if wait <= 0 {
+            Self.hookPortRefreshes[id] = (now, state.trailingScheduled)
+            refreshTrackedAgentPorts()
+            return
+        }
+        guard !state.trailingScheduled else { return }
+        Self.hookPortRefreshes[id] = (state.lastAt, true)
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(wait), tolerance: .milliseconds(500))
+            guard let self else { return }
+            Self.hookPortRefreshes[self.id] = (ProcessInfo.processInfo.systemUptime, false)
+            self.refreshTrackedAgentPorts()
+        }
+    }
     // SUPERMUX:end agent-pid-ports-on-change
     @discardableResult
     func recordAgentPID(key: String, pid: pid_t, panelId: UUID?, refreshPorts: Bool = true) -> Bool {
@@ -215,18 +240,15 @@ extension Workspace {
             }
         }
         // SUPERMUX:begin agent-pid-ports-on-change (upstream: `if refreshPorts { refreshTrackedAgentPorts() }`)
-        // Every agent hook re-reports its PID; the ports' roots change only
-        // when the PID, its process or its pane did. An unchanged report still
-        // refreshes every 5 s, because the periodic tracked-agent rescan
-        // pauses while cmux is inactive and hooks are then the only trigger
-        // for finding a server an agent started.
+        // Every agent hook re-reports its PID. Changed roots (PID, process or
+        // pane) refresh at once; an unchanged report refreshes at most every
+        // 5 s, with a trailing refresh for one that came sooner.
         let agentRootsMayHaveChanged = previous.pid != pid || previous.panelId != panelId
             || previous.identity != processIdentity || didClearOtherStructuredAgentRuntime
-        let now = ProcessInfo.processInfo.systemUptime
-        let unchangedRefreshIsDue = now - (Self.lastHookPortRefreshUptimeByWorkspace[id] ?? -.infinity) >= 5
-        if refreshPorts, agentRootsMayHaveChanged || unchangedRefreshIsDue {
-            Self.lastHookPortRefreshUptimeByWorkspace[id] = now
+        if refreshPorts, agentRootsMayHaveChanged {
             refreshTrackedAgentPorts()
+        } else if refreshPorts {
+            refreshTrackedAgentPortsForUnchangedReport()
         }
         // SUPERMUX:end agent-pid-ports-on-change
         for changedPanelID in Set([previous.panelId, panelId].compactMap { $0 }) {
