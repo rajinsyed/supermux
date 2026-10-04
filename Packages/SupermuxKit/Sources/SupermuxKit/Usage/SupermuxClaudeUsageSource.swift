@@ -29,6 +29,13 @@ public actor SupermuxClaudeUsageSource {
     private let directServeTTL: TimeInterval
     private var lastDirectResult: SupermuxUsageProviderState<SupermuxClaudeUsageSnapshot>?
     private var lastDirectFetchAt: Date?
+    /// How long a missing cswap is remembered before ``fetch()`` looks for it
+    /// again. Without it every pass spawned `env cswap` only to learn, again,
+    /// that it is not installed.
+    private static let cswapAbsenceTTL: TimeInterval = 30 * 60
+    /// When `cswap list` last exited 126/127 (not found / not executable);
+    /// `nil` once cswap runs.
+    private var cswapMissingAt: Date?
 
     public init(
         // Extend the runner's fallback search with the uv/pipx install dir
@@ -130,6 +137,9 @@ public actor SupermuxClaudeUsageSource {
     /// `nil` when cswap is not installed (falls through to the direct path);
     /// any other outcome is terminal for this attempt.
     private func fetchViaCswap() async -> SupermuxUsageProviderState<SupermuxClaudeUsageSnapshot>? {
+        if let missingAt = cswapMissingAt, Date().timeIntervalSince(missingAt) < Self.cswapAbsenceTTL {
+            return nil
+        }
         let result = await runner.run(
             directory: homeDirectory.path,
             executable: "cswap",
@@ -140,8 +150,14 @@ public actor SupermuxClaudeUsageSource {
         // launch failure (absolute path missing), or — because CommandRunner
         // runs unresolved names through `/usr/bin/env` — a clean launch that
         // exits 127 ("command not found"; 126 = found but not executable).
+        // Only the clean "not found" is remembered: a launch failure can be
+        // transient.
         if result.executionError != nil { return nil }
-        if result.exitStatus == 127 || result.exitStatus == 126 { return nil }
+        if result.exitStatus == 127 || result.exitStatus == 126 {
+            cswapMissingAt = Date()
+            return nil
+        }
+        cswapMissingAt = nil
         guard !result.timedOut, result.exitStatus == 0,
               let stdout = result.stdout, !stdout.isEmpty,
               let data = stdout.data(using: .utf8) else {

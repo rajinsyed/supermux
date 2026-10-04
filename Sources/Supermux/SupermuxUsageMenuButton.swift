@@ -16,12 +16,16 @@ extension SupermuxComposition {
 /// help button keeps rendering untouched next to it.
 struct SupermuxUsageMenuButton: View {
     @State private var isPopoverPresented = false
+    /// Whether this window is on screen: the shared poll loop polls only
+    /// while some window showing the button is.
+    @StateObject private var windowVisibility = SupermuxWindowVisibility()
 
     private let buttonSize = SidebarFooterButtonMetrics.buttonSize
     private let title = String(localized: "supermux.usage.button", defaultValue: "Usage Limits")
 
     var body: some View {
         let model = SupermuxComposition.usageModel
+        let visibility = windowVisibility
         Button {
             isPopoverPresented.toggle()
         } label: {
@@ -54,11 +58,16 @@ struct SupermuxUsageMenuButton: View {
                 }
             )
         })
-        // Drives the shared poll loop while any sidebar shows the button;
-        // the model dedupes owners across windows.
+        // Keeps the shared poll loop alive while the button is mounted (one
+        // loop across windows); it polls only while one of their windows is
+        // on screen, and refreshes as soon as one comes back.
         .task {
-            await SupermuxComposition.usageModel.runPollLoop()
+            await SupermuxComposition.usageModel.runPollLoop(isObserved: { visibility.isOnScreen })
         }
+        .onChange(of: windowVisibility.isOnScreen) { _, _ in
+            SupermuxComposition.usageModel.observationDidChange()
+        }
+        .supermuxTracksWindowVisibility(windowVisibility)
         // Opening the popover asks for a refresh; the model's shared floor
         // (minimumRefreshInterval) makes this a no-op when data is recent.
         .onChange(of: isPopoverPresented) { _, isPresented in
