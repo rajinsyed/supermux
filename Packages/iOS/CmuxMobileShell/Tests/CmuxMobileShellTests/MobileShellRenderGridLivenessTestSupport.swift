@@ -323,6 +323,15 @@ actor LivenessHostRouter {
         macDisplayName = displayName
     }
 
+    // SUPERMUX:begin mobile-startup-parallel-secondary
+    /// The Mac an attach ticket names; upstream's scripted ticket always names `test-mac`.
+    private var attachTicketMac: (deviceID: String, displayName: String, port: Int)?
+
+    func setAttachTicketMac(deviceID: String, displayName: String, port: Int) {
+        attachTicketMac = (deviceID, displayName, port)
+    }
+    // SUPERMUX:end mobile-startup-parallel-secondary
+
     func omitNextHostStatusIdentities(count: Int = 1) {
         omittedHostIdentityResponsesRemaining += count
     }
@@ -548,6 +557,15 @@ actor LivenessHostRouter {
                     message: "scripted attach ticket failure"
                 )
             }
+            // SUPERMUX:begin mobile-startup-parallel-secondary
+            if let attachTicketMac {
+                return try? Self.resultFrame(id: id, result: ["ticket": Self.attachTicketObject(
+                    macDeviceID: attachTicketMac.deviceID,
+                    macDisplayName: attachTicketMac.displayName,
+                    port: attachTicketMac.port
+                )])
+            }
+            // SUPERMUX:end mobile-startup-parallel-secondary
             return try? Self.resultFrame(id: id, result: ["ticket": Self.attachTicketObject()])
         case "workspace.list", "mobile.workspace.list":
             workspaceListRequestCount += 1
