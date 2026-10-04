@@ -14,6 +14,116 @@ Add a section here as the last step of every upstream merge.
 
 ---
 
+## cmux main @ `4e9d779888` → main @ `161e1cce9f` (2026-10-04)
+
+Merged 291 first-parent upstream commits (upstream main 2026-09-30 → 2026-10-04). 18 files
+conflicted; no fork feature was dropped. One fork fence retired because upstream now does the
+same thing (the compact right-sidebar mode bar, #48), and no touchpoint was added.
+
+Upstream rewrote its `main` history after 2026-08-23, so this merge was made against the true
+base (old `3d265b43d5`, whose tree equals new `4e9d779888`) instead of git's default 2026-08-23
+merge base. Nothing changes for users; the next merge can use plain `git merge upstream/main`,
+because the fork's history now contains upstream's rewritten `main`.
+
+### The iPhone shows its workspace list sooner (upstream #15345)
+
+The headline for this fork. Upstream measured the phone's cold launch and removed most of the
+wait before the workspace list appears:
+
+- **The last workspace list is shown immediately** from an on-device snapshot, scoped to the
+  account, team and paired Mac, while the live connection comes up. It is replaced as soon as the
+  Mac answers, and forgetting a Mac deletes its snapshot.
+- **The IROH connection to the paired Mac starts right away**, in parallel with the paired-Mac
+  backup refresh, instead of waiting for it.
+- **The v2 runtime starts from the cached account and team** before sign-in finishes refreshing,
+  so the first request does not wait for auth.
+- **The Mac now puts its host status into the `workspace.list` reply**, so the phone needs one
+  round trip instead of two before it can draw the list.
+
+All four apply to Supermux's phone and Mac unchanged. Expect the list (from the snapshot) almost
+at once on a relaunch, then a quick refresh to live state.
+
+### Other upstream changes you will notice (Mac)
+
+- **Security fixes** (seven advisories): stricter remote-relay command policy, sign-in callback
+  trust, sudo helper signature checks, browser URL resolution, Markdown viewer remote images and
+  links, and agent hook process binding.
+- **Right sidebar tabs are responsive and reorderable by drag.** The selected tab keeps its label
+  and the others shrink, then drop to their icon. This replaces the fork's own icon-only collapse.
+  Supermux keeps its narrower 200 pt minimum width (see the open decision below).
+- **Settings → Keyboard Shortcuts is searchable**, by name or by pressing the shortcut. The fork's
+  defaults (⌃⌘Z Toggle Pane Zoom, ⌘↩/⇧⌘↩ commit, ⌘G run) show there as usual.
+- Terminal: a Jump to Bottom button, Paste as One Line in the context menu, a Middle-Click Paste
+  toggle and an optional confirmation for copy-on-select. Shortcuts no longer misfire on non-US
+  keyboard layouts.
+- Pane flash: new settings for double blink, flashing when typing dismisses a notification, and
+  using the theme color. The defaults keep the current behavior.
+- Agents: an off switch for agent messages (global, per agent, per workspace), opt-in model,
+  context % and estimated cost next to agent status in the sidebar, and a keyboard-summoned agent
+  inbox behind a feature flag.
+- `cmux local-zellij` (opt-in zellij persistence), naming a window at `--new-window`,
+  `cmux notify --desktop`, and `cmux pr handoff`.
+- Remote tmux: when a second `--new-window` gathers a host's mirrors into a new window, a window
+  that held nothing else now closes. Windows that still have other workspaces are unaffected, and
+  the fork's empty-home behavior for closing the last workspace is unchanged.
+- Help → What's New in cmux shows a recap after an update (default: a dot on the sidebar help
+  button; set `app.whatsNew` to off to silence it). Its content is upstream cmux's changelog, not
+  Supermux's.
+- The updater UI went back to upstream's 0.64.25 design, and automatic quiet-moment installs were
+  reverted upstream.
+- Cloud machines (Supermux keeps them behind their flag): a redesigned Cloud sidebar, Cloud
+  workspaces in ⌘P, and outbound network policy.
+
+### Other upstream changes you will notice (iOS)
+
+- A Plans screen that sells Go, Pro and Max through StoreKit. These products are configured for
+  upstream's App Store app, not Supermux's bundle ids, so on Supermux expect the paywall to show no
+  purchasable plans.
+- Cloud workspaces reach parity with Mac workspaces on the phone, with an optional system VPN
+  (a new Cloud VPN app extension).
+- The Agent Feed scrolls faster, and the task composer remembers and prefetches its pickers.
+
+### What stays the same (fork features)
+
+Projects (Mac and iPhone), the Changes panel and PR viewer, Claude harness panes, Remote Macs
+(Devices, mirrors, remote terminal streaming, Remote Host Mode), project-aware notifications and
+phone push, focused-pane suppression, empty-home windows, every fork shortcut, iOS
+Projects/Changes/Files, Mac↔phone selection sync and the scroll-speed setting.
+
+### Watch-outs
+
+- **Agent usage text and the fork's activity rows.** With upstream's new "show agent usage"
+  sidebar option on (off by default), the SwiftUI list drops an agent's "⚡ Running"-style row
+  when the activity indicator already shows it, and the usage text attached to that row goes with
+  it. Agent error rows and other statuses still show their usage.
+- **Narrow right sidebar.** At 200 pt with many tabs enabled, check that the close button stays
+  visible; upstream's layout, not the fork's, now decides what collapses.
+- **Phone dogfood build and the Cloud VPN extension.** Upstream's iOS app now embeds a
+  `CloudVPN.appex` (a Network Extension packet tunnel, built with Go's `wireguard-go`). The dogfood
+  entitlements file stays capability-free (#53), so a dogfood build cannot start the Cloud VPN. The
+  extension itself still asks for the Network Extension capability when it is signed; if the
+  personal team cannot provision `com.supermux.ios.dogfood.CloudVPN`, the dogfood command needs
+  `CMUX_CLOUD_VPN_CODE_SIGN_ENTITLEMENTS=Config/cmux.entitlements` as well (not yet verified:
+  signing was blocked by an unaccepted Apple Developer Program License Agreement update).
+- **The fixed-identity phone release will likely fail to build.** `scripts/supermux-ios-release.sh`
+  signs manually and supplies profiles only for the app and the notification extension, then
+  re-signs those two. The new `CloudVPN` target gets neither. See the open decision below.
+
+### Open decisions surfaced by this merge
+
+1. **Right sidebar opening width.** Upstream raised the minimum (and with it the width a new
+   window opens at) from 276 to 295 pt so a Cloud machine's Ports, Terminals, Displays and
+   Resources tabs fit with their counts. Supermux keeps its 200 pt minimum, so new windows open at
+   220 pt. Options: keep 200/220; keep the 200 pt drag floor but open at 295 (a small new fence);
+   or take upstream's 295 floor and retire #26/#27.
+2. **Upstream's Cloud VPN extension in Supermux's iOS builds.** Options: keep it, which means
+   registering `com.supermux.ios.CloudVPN` with the Network Extensions capability, making its
+   Development and Ad Hoc profiles, and teaching `scripts/supermux-ios-release.sh` to sign and
+   re-sign it; or leave it out of the fork's phone builds (a fork-side build-setting fence), which
+   drops Cloud VPN on Supermux's phone app.
+
+---
+
 ## cmux main @ `64a1765fcc` → main @ `4e9d779888` (2026-10-01)
 
 Merged 259 first-parent upstream commits (upstream main 2026-09-29 → 2026-09-30). 25 files
