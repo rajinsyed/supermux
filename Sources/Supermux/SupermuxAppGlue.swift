@@ -162,6 +162,11 @@ struct SupermuxProjectsMount: View {
     /// ``SupermuxWorkspaceObservation``.
     @StateObject private var observation = SupermuxWorkspaceObservation()
 
+    /// Whether this window is on screen: off screen (minimized, covered,
+    /// hidden, a headless Remote Host Mode window) the worktree PR probe
+    /// slows to its off-screen cadence instead of polling every minute.
+    @StateObject private var windowVisibility = SupermuxWindowVisibility()
+
     // cmux's PR-probe gates (Settings → sidebar), read via @AppStorage so a
     // toggle re-renders the mount and restarts/stops the section's probe loop.
     // Missing keys default to the catalog defaults, matching
@@ -257,8 +262,13 @@ struct SupermuxProjectsMount: View {
                 _ = NSWorkspace.shared.open(url)
             },
             // Honor cmux's own PR-probe gates: with polling off, the section
-            // clears worktree badges and never touches GitHub.
-            pullRequestPolling: SupermuxPullRequestPollingPolicy(isEnabled: pullRequestsEnabled),
+            // clears worktree badges and never touches GitHub. Off screen it
+            // keeps the badges (a headless host's phones read them) and only
+            // polls less often.
+            pullRequestPolling: SupermuxPullRequestPollingPolicy(
+                isEnabled: pullRequestsEnabled,
+                isOnScreen: windowVisibility.isOnScreen
+            ),
             // One app-wide PR model: every window's sidebar shares one poll
             // pass and one repo cache instead of probing per window.
             pullRequestModel: SupermuxComposition.worktreePullRequestModel,
@@ -278,6 +288,7 @@ struct SupermuxProjectsMount: View {
         .onChange(of: tabManager.tabs.map(\.id)) {
             observation.observe(tabs: tabManager.tabs)
         }
+        .supermuxTracksWindowVisibility(windowVisibility)
         .environment(\.supermuxSidebarFontScale, fontScaleStore.fontScale)
         // Nested rows honor the flat rows' user-settable badge color; empty
         // hex (the default) resolves to cmux's accent, like the flat rows.
