@@ -736,6 +736,7 @@ Rules for adding a touchpoint:
 | 923 | `Sources/GhosttyTerminalView.swift` | `sizing-auto-local-input` | First statements of `GhosttyNSView.performDragOperation(_:)`: `let enclosingLocalInput = SupermuxLocalUserInput.beginUserAction()` and `defer { SupermuxLocalUserInput.end(restoring: enclosingLocalInput) }`. A drop on a terminal is this Mac's user's input, and a drag from another app (Finder) is delivered outside `sendEvent`, so without it a dropped path no longer gave the grid to the Mac pane |
 | 924 | `Sources/Cloud/CloudTuiManualMirrorSession.swift` | `sizing-auto-local-input` | In `noteExplicitInput()`, first in the `sizingRelay.isSupported` branch: `guard SupermuxTerminalSizingAuto.shared.isMacPaneActivity else { return }`. A phone's input to a Cloud terminal it views through this Mac runs this pane's explicit-input hook too; relayed as this Mac's focus activity it took the grid from the phone (the same flash). The legacy geometry claim below is unchanged |
 | 925 | `ios/cmux-ios.xcodeproj/project.pbxproj` | `unfenced` | Leaves upstream's Cloud VPN packet-tunnel extension out of the app: removes the `cmux` target's dependency on `CloudVPN` (`C10DA0060000000000000002 /* PBXTargetDependency */`) and `C10DA0010000000000000002 /* CloudVPN.appex in Embed App Extensions */` from the Embed App Extensions phase. The `CloudVPN` target stays defined (unbuilt) so upstream edits to it still merge. Supermux does not use cmux Cloud's System VPN, and neither the personal-team dogfood lane nor `scripts/supermux-ios-release.sh` can provision a Network Extensions profile for it. The Cloud tab's System VPN switch fails to start without the extension |
+| 926 | `Packages/Shared/CmuxIrxTransport/Sources/CmuxIrxTransport/IrxEndpoint.swift` | `irx-dial-before-home-relay` | `IrxEndpointSupervisor.dial` takes the endpoint as soon as it is bound (`dialableEndpoint`) instead of `readyEndpoint`, which also waits for this endpoint's own home relay to come online (about 1.9 s on every phone cold launch: iroh picks the home relay from a full net report). Six fences: `boundWaiters`, the bind task's `defer { publishBound() }`, `publishBound()` after the `bound` journal event and in `close()`, the `dial` call site, and the two helpers (the waiter's own `ready` task also wakes it, so a bind that ends before `bound` or a deactivation in between can't strand a dial). `readyEndpoint`, `isHealthy` and the online-timeout discard are unchanged |
 | 927 | `Packages/Shared/CmuxIrxTransport/Sources/CmuxIrxTransport/IrxInboundAcceptLoop.swift` | `irx-accept-loop-concurrent-handshakes` | Whole new file (fenced top to bottom). `IrxInboundAcceptLoop`: drains an endpoint's inbound queue (`next`), completes each handshake on its own task (`establish`), refuses attempts over `maximumPendingHandshakes` (10), and returns when the endpoint closes without waiting for pending handshakes. Regression coverage: #930 |
 | 928 | `Packages/Shared/CmuxIrxTransport/Sources/CmuxIrxTransport/IrxEndpoint.swift` | `irx-accept-loop-concurrent-handshakes` | Adds `acceptNextIncoming()` (the next `Incoming`, before its handshake; nil only when the endpoint is closed) and `nonisolated establishInbound(_:)` (accept, ALPN, connect, ALPN routing, bounded by a 10 s deadline; nil and an `accept-failed` journal event on failure). Upstream's `acceptNextInbound()` is left as is, unused |
 | 929 | `Sources/Mobile/MobileHostIrxRuntime.swift` | `irx-accept-loop-concurrent-handshakes` | The host's accept loop runs through #927 with #928's two calls: one stalled phone handshake no longer holds every later phone until QUIC's 30 s idle timeout, and a failed handshake no longer looks like a closed endpoint (which rebound the endpoint and republished the relay hint). The per-connection routing body is upstream's, moved into the loop's `deliver` closure |
@@ -6725,6 +6726,31 @@ Verify: `CMUX_E2E_SUITES="loopback_agent_answer_e2e loopback_agent_activity_e2e"
 tests/supermux/run_all_loopback_e2e.sh`, `CMUX_CLI_BIN=<tagged Debug cmux> python3
 tests/test_claude_wrapper_generated_settings_fast_path.py` and `swift test --filter AgentHookDeliveryPolicy` in
 `Packages/macOS/CMUXAgentLaunch`.
+
+### 926. A dial does not wait for this endpoint's own home relay — `irx-dial-before-home-relay`
+
+Measured on the user's iPhone (61 cold launches, 2026-09-30 to 10-04): `endpoint/online` came 1.90–2.26 s
+after `endpoint/bound` (median 1.95 s, never less), and every first dial waited for it. iroh chooses the
+home relay from a full net report before connecting to it. A dial does not need that relay: the address
+carries the peer's relay URL, iroh opens that relay connection on demand with the credentials installed at
+bind, and the peer answers through it. Upstream's rule ("readiness BEFORE anyone may dial") came from the
+old stack, whose launch dials raced an endpoint without relay credentials; v2 installs every credential
+before `bound`.
+
+Failure modes considered: a dial before online that cannot reach the peer (it fails like any dial and the
+engine retries after its backoff, by which time the endpoint is online); an online timeout after a dial
+already succeeded (the bind still discards the endpoint after 20 s, so that session drops and redials, as
+any endpoint failure would, and where iroh never picks a home relay but the peer's relay works this repeats every
+20 s instead of never connecting); a bind that fails or is cancelled before `bound`, a deactivation between
+the dial's check and its bind, or a join of a bind that already ended (the bind task's `defer`, `close()` and
+the waiter's own `ready` task all wake the waiters, which then rethrow the bind's error); sign-out mid-dial (`deactivated` and the
+lifecycle epoch checks are unchanged).
+
+Re-apply after an upstream merge: keep `dial` on `dialableEndpoint`, and keep both `publishBound()` calls
+(after the `bound` event and in the bind task's `defer`).
+
+Verify on the phone: the iroh journal's first `endpoint/dialed` after `v2-lifecycle/launch` comes before
+`endpoint/online`.
 
 ### 927–930. One stalled inbound handshake does not hold up the next phone — `irx-accept-loop-concurrent-handshakes`
 
