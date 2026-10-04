@@ -463,6 +463,23 @@ final class DeviceTerminalMirrorSession {
         }
     }
     // SUPERMUX:end terminal-stream-grid-viewer
+    // SUPERMUX:begin terminal-stream-show-hook
+
+    /// Tells the stream the pane went off screen or came back. Shown, a
+    /// replay confirmation that came due while it was hidden, or a grid it
+    /// fell behind on, re-anchors it now.
+    private func supermuxStreamVisibilityChanged() {
+        guard let supermuxStream else { return }
+        supermuxStream.visibilityChanged(hidden: supermuxHidden)
+        guard !supermuxHidden, phase != .stopped else { return }
+        if supermuxStream.takeDueConfirmation() {
+            supermuxResyncGrid()
+        } else if phase == .attached, supermuxStream.isBehind(assigned: assignedGrid) {
+            supermuxStream.gridChanged()
+            supermuxResyncGrid()
+        }
+    }
+    // SUPERMUX:end terminal-stream-show-hook
 
     /// Single-flight replay of the source screen, followed by sequenced live bytes.
     private func scheduleAttach() {
@@ -878,6 +895,9 @@ final class DeviceTerminalMirrorSession {
         if phase == .attached || supermuxGridResyncing { supermuxReconcileHiddenCounts() }
         // Shown, this Mac claims the terminal's grid again; hidden, it gives the claim up.
         SupermuxTerminalSizingDefaults.shared.mirrorVisibilityChanged(self)
+        // SUPERMUX:begin terminal-stream-show-hook
+        supermuxStreamVisibilityChanged()
+        // SUPERMUX:end terminal-stream-show-hook
     }
 
     private func supermuxReconcileHiddenCounts() {

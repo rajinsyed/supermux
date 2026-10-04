@@ -106,6 +106,7 @@ final class SupermuxTerminalStream {
         gridSignals &+= 1
         guard grid.streamed(generation, attached: attached) else { return false }
         gridResyncs += 1
+        confirming = false
         return true
     }
 
@@ -114,6 +115,7 @@ final class SupermuxTerminalStream {
     func gridChanged() {
         grid.needsFullReplay = true
         gridResyncs += 1
+        confirming = false
     }
 
     /// The link is gone. What the mirror's screen holds stays, so the
@@ -123,6 +125,25 @@ final class SupermuxTerminalStream {
         hostGrid = nil
         consecutiveBehind = 0
         cancelConfirmation()
+        confirming = false
+        confirmationsInRow = 0
+    }
+
+    // MARK: Visibility
+
+    /// Whether the mirror's pane is off screen here
+    /// (`DeviceTerminalMirrorSession.supermuxHidden`).
+    private var hidden = false
+
+    /// The pane went off screen or came back. Hidden, an armed confirmation
+    /// waits for the show (``takeDueConfirmation()``).
+    func visibilityChanged(hidden: Bool) {
+        guard hidden != self.hidden else { return }
+        self.hidden = hidden
+        if hidden, confirmationTask != nil {
+            cancelConfirmation()
+            pendingConfirmation = true
+        }
     }
 
     // MARK: Replay boundary
@@ -131,15 +152,29 @@ final class SupermuxTerminalStream {
     /// way to the parser, or with the parser inside an escape sequence; when
     /// output was flowing around the capture, the live bytes that follow may
     /// not continue it exactly. Such a replay is confirmed by another one once
-    /// output has been quiet for ``outputQuietNanoseconds``, which captures an
-    /// idle parser exactly.
+    /// output has been quiet for ``outputQuiet``, which captures an idle
+    /// parser exactly. A confirmation that raced output again is confirmed
+    /// again after twice the quiet, at most ``maximumConfirmationsInRow``
+    /// times in a row, and after the first only when output came right before
+    /// its request; a hidden pane's confirmation waits for its show. (Until
+    /// 2026-10-05 the wait polled at 10 Hz, and a terminal printing every
+    /// second chained full replays.)
     private var lastBytesAt: ContinuousClock.Instant?
     private var bytesDuringAttach = false
     private var requestRacedOutput = false
     private var confirmationTask: Task<Void, Never>?
+    /// Confirmations since the last full replay that was not one.
+    private var confirmationsInRow = 0
+    /// The next full replay is a confirmation.
+    private var confirming = false
+    /// A confirmation came due while the pane was hidden.
+    private var pendingConfirmation = false
     private(set) var confirmations = 0
     static let outputRaceWindow: Duration = .milliseconds(150)
-    static let outputQuietNanoseconds: UInt64 = 400_000_000
+    static let outputQuiet: Duration = .milliseconds(400)
+    static let maximumConfirmationQuiet: Duration = .seconds(8)
+    static let maximumConfirmationsInRow = 3
+    static let confirmationTolerance: Duration = .milliseconds(100)
 
     /// Live bytes arrived.
     func noteBytes(attaching: Bool) {
@@ -156,24 +191,54 @@ final class SupermuxTerminalStream {
     /// A full replay was applied: when output raced it, `confirm` runs once
     /// output has been quiet (cancelled by a newer replay, a link loss or stop).
     func fullReplayApplied(confirm: @escaping @MainActor () -> Void) {
-        confirmationTask?.cancel()
-        confirmationTask = nil
-        guard isActive, requestRacedOutput || bytesDuringAttach else { return }
-        confirmationTask = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: Self.outputQuietNanoseconds / 4)
-                guard let self, !Task.isCancelled else { return }
-                let quiet = self.lastBytesAt.map {
-                    ContinuousClock.now - $0 >= .nanoseconds(Int64(Self.outputQuietNanoseconds))
-                } ?? true
-                guard quiet else { continue }
-                self.confirmationTask = nil
-                self.confirmations += 1
-                self.grid.needsFullReplay = true
-                confirm()
-                return
-            }
+        cancelConfirmation()
+        pendingConfirmation = false
+        if !confirming { confirmationsInRow = 0 }
+        confirming = false
+        let raced = confirmationsInRow == 0 ? requestRacedOutput || bytesDuringAttach : requestRacedOutput
+        guard isActive, raced, confirmationsInRow < Self.maximumConfirmationsInRow else { return }
+        guard !hidden else {
+            pendingConfirmation = true
+            return
         }
+        let quiet = min(Self.outputQuiet * (1 << confirmationsInRow), Self.maximumConfirmationQuiet)
+        confirmationTask = Task { [weak self] in
+            // Each byte moves the deadline; the task wakes only at deadlines.
+            while let deadline = self?.quietDeadline(after: quiet) {
+                do {
+                    try await Task.sleep(until: deadline, tolerance: Self.confirmationTolerance, clock: .continuous)
+                } catch {
+                    return
+                }
+            }
+            guard let self, !Task.isCancelled else { return }
+            self.confirmationTask = nil
+            self.startConfirmation()
+            confirm()
+        }
+    }
+
+    /// The pane came on screen: true when a confirmation came due while it
+    /// was hidden, and the caller re-anchors now.
+    func takeDueConfirmation() -> Bool {
+        guard pendingConfirmation, !hidden else { return false }
+        pendingConfirmation = false
+        startConfirmation()
+        return true
+    }
+
+    private func startConfirmation() {
+        confirmationsInRow += 1
+        confirming = true
+        confirmations += 1
+        grid.needsFullReplay = true
+    }
+
+    /// When output will have been quiet for `quiet`; nil once it has.
+    private func quietDeadline(after quiet: Duration) -> ContinuousClock.Instant? {
+        guard let lastBytesAt else { return nil }
+        let deadline = lastBytesAt + quiet
+        return deadline > .now ? deadline : nil
     }
 
     private func cancelConfirmation() {
@@ -246,6 +311,7 @@ final class SupermuxTerminalStream {
             return .current
         }
         grid.needsFullReplay = true
+        confirming = false
         consecutiveBehind += 1
         guard consecutiveBehind > Self.maxConsecutiveGridReanchors else {
             gridResyncs += 1
