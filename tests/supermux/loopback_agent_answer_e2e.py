@@ -28,11 +28,15 @@ S's pills:
                                "Needs input"; the next tool keeps it working;
                                Stop settles it
   5. plan_approved_spins       the same for an ExitPlanMode plan approval
-  6. permission_answered_spins (default permissions) a Bash call's permission
+  6. question_answered_without_feed_spins
+                               the question again from a Claude Code that runs
+                               neither PermissionRequest nor the notification
+                               for it (only the tool's own request is open)
+  7. permission_answered_spins (default permissions) a Bash call's permission
                                prompt: needsInput; once the user approves in the
                                terminal, the next tool's PreToolUse: working
                                again and no pill says "Needs input"
-  7. cleanup                   S closed (M closes with it), auto-mirror restored
+  8. cleanup                   S closed (M closes with it), auto-mirror restored
 
 Writes a JSON report (default
 tests/supermux/artifacts/loopback_agent_answer_e2e-<tag>.json) and exits
@@ -47,6 +51,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import uuid
@@ -121,10 +126,15 @@ class AgentAnswerE2E(AgentActivityE2E):
             self.facts.setdefault("answer_hook_errors", []).append(str(error))
 
     def ask(self, base: Dict[str, Any], tool: str, tool_use_id: str, tool_input: Dict[str, Any],
-            mode: str, message: str) -> subprocess.Popen:
-        """Claude Code stops on `tool` for the user: its PreToolUse, its
-        PermissionRequest (Feed) and the permission prompt notification."""
+            mode: str, message: str, permission_hooks: bool = True) -> Optional[subprocess.Popen]:
+        """Claude Code stops on `tool` for the user: its PreToolUse, then (as
+        Claude Code 2.1 runs them, the user's own journal shows both in
+        bypass mode) its PermissionRequest (Feed) and the permission prompt
+        notification. `permission_hooks=False` is a Claude Code that fires
+        neither for this tool."""
         self.hook("pre-tool-use", self.tool_payload(base, "PreToolUse", tool, tool_use_id, tool_input, mode))
+        if not permission_hooks:
+            return None
         request = self.start_permission_request(
             self.tool_payload(base, "PermissionRequest", tool, tool_use_id, tool_input, mode))
         self.hook("notification", {**base, "hook_event_name": "Notification", "notification_type": "permission_prompt",
@@ -168,7 +178,8 @@ class AgentAnswerE2E(AgentActivityE2E):
     def answer_hook_installed(self) -> Dict[str, Any]:
         """The settings cmux injects into Claude Code route the answered tools'
         PostToolUse to `claude-hook post-tool-use`."""
-        env = {key: os.environ[key] for key in ("PATH", "HOME", "USER", "TMPDIR") if key in os.environ}
+        env = {key: os.environ[key] for key in ("PATH", "HOME", "USER", "TMPDIR", "CMUX_DERIVED_DATA")
+               if key in os.environ}
         env["CMUX_TAG"] = self.args.tag
         completed = subprocess.run([str(REPO_ROOT / "scripts" / "cmux-debug-cli.sh"), "hooks", "claude",
                                     "inject-settings"], env=env, capture_output=True, text=True,
@@ -184,7 +195,7 @@ class AgentAnswerE2E(AgentActivityE2E):
         raise Failure(f"no PostToolUse post-tool-use group for {ANSWERED_TOOLS}: "
                       f"{[g.get('matcher') for g in groups]}")
 
-    def answered_turn(self, tool: str, tool_input: Dict[str, Any]) -> Dict[str, Any]:
+    def answered_turn(self, tool: str, tool_input: Dict[str, Any], permission_hooks: bool = True) -> Dict[str, Any]:
         """A bypass-permissions turn blocks on `tool`, the user answers, it works on."""
         mode = "bypassPermissions"
         self.start_claude_stand_in()
@@ -192,7 +203,8 @@ class AgentAnswerE2E(AgentActivityE2E):
         try:
             base = self.start_turn(mode)
             tool_use_id = f"toolu_{uuid.uuid4().hex[:12]}"
-            request = self.ask(base, tool, tool_use_id, tool_input, mode, "Claude needs your permission")
+            request = self.ask(base, tool, tool_use_id, tool_input, mode, "Claude needs your permission",
+                               permission_hooks=permission_hooks)
             # Guard (passes today): the prompt shows as needs input.
             result: Dict[str, Any] = {"asked": self.expect_activity("needsInput", f"{tool} to mark S needs input")}
             self.answer(base, tool, tool_use_id, tool_input, mode)
@@ -216,11 +228,18 @@ class AgentAnswerE2E(AgentActivityE2E):
     def plan_approved_spins(self) -> Dict[str, Any]:
         return self.answered_turn("ExitPlanMode", {"plan": "1. Edit the file\n2. Run the tests"})
 
+    def question_answered_without_feed_spins(self) -> Dict[str, Any]:
+        return self.answered_turn("AskUserQuestion", {"questions": [{
+            "question": "Tabs or spaces?", "header": "Indent", "multiSelect": False,
+            "options": [{"label": "Tabs", "description": "tabs"}, {"label": "Spaces", "description": "spaces"}]}]},
+            permission_hooks=False)
+
     def tagged_cli(self) -> Path:
         """The tagged build's bundled CLI, as scripts/cmux-debug-cli.sh finds it."""
+        slug = re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", self.args.tag.strip().lower())).strip("-")
         derived = os.environ.get("CMUX_DERIVED_DATA") or str(
-            Path.home() / "Library" / "Developer" / "Xcode" / "DerivedData" / f"cmux-{self.args.tag}")
-        return Path(derived) / "Build" / "Products" / "Debug" / f"cmux DEV {self.args.tag}.app" / "Contents" / "Resources" / "bin" / "cmux"
+            Path.home() / "Library" / "Developer" / "Xcode" / "DerivedData" / f"cmux-{slug}")
+        return Path(derived) / "Build" / "Products" / "Debug" / f"cmux DEV {slug}.app" / "Contents" / "Resources" / "bin" / "cmux"
 
     def start_permission_request(self, payload: Dict[str, Any]) -> subprocess.Popen:
         """Claude Code's PermissionRequest hook (`cmux hooks feed --source
@@ -277,6 +296,7 @@ class AgentAnswerE2E(AgentActivityE2E):
                 ("answer_hook_installed", self.answer_hook_installed),
                 ("question_answered_spins", self.question_answered_spins),
                 ("plan_approved_spins", self.plan_approved_spins),
+                ("question_answered_without_feed_spins", self.question_answered_without_feed_spins),
                 ("permission_answered_spins", self.permission_answered_spins),
             ]:
                 ok = self.step(name, check) and ok
