@@ -152,16 +152,24 @@ struct WorkspaceRow: View {
 
                     Spacer(minLength: 8)
 
+                    // SUPERMUX:begin supermux-mobile-nested-branch-line (a nested row shows no time, as on the Mac sidebar)
+                    if supermuxNestedRowAccessory == nil {
+                    // SUPERMUX:end supermux-mobile-nested-branch-line
                     Text(content.timestampText)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                    // SUPERMUX:begin supermux-mobile-nested-branch-line
+                    }
+                    // SUPERMUX:end supermux-mobile-nested-branch-line
                 }
 
-                // SUPERMUX:begin supermux-mobile-nested-branch-line (a nested row's branch, right under its title as on the Mac sidebar)
-                if let supermuxNestedRowAccessory, supermuxNestedRowAccessory.hasBranchLine {
-                    SupermuxNestedBranchSlot(accessory: supermuxNestedRowAccessory)
-                }
+                // SUPERMUX:begin supermux-mobile-nested-branch-line (a nested row ends at its branch line, as on the Mac sidebar: no description or preview under it)
+                if let supermuxNestedRowAccessory {
+                    if supermuxNestedRowAccessory.hasBranchLine {
+                        SupermuxNestedBranchSlot(accessory: supermuxNestedRowAccessory)
+                    }
+                } else {
                 // SUPERMUX:end supermux-mobile-nested-branch-line
 
                 if let description = content.description {
@@ -175,22 +183,23 @@ struct WorkspaceRow: View {
                     Text(content.previewLine)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                        // SUPERMUX:begin supermux-mobile-nested-branch-line (the branch line takes one preview line; upstream: `.lineLimit(content.previewLineLimit, reservesSpace: true)`)
-                        .lineLimit(
-                            supermuxNestedRowAccessory?.previewLineLimit(content.previewLineLimit) ?? content.previewLineLimit,
-                            reservesSpace: true
-                        )
-                        // SUPERMUX:end supermux-mobile-nested-branch-line
-                        // SUPERMUX:begin supermux-mobile-nested-accessory (a nested row's accessory ends where this text slot ends, before the changes chip)
-                        .supermuxNestedAccessorySlot()
-                        // SUPERMUX:end supermux-mobile-nested-accessory
+                        .lineLimit(content.previewLineLimit, reservesSpace: true)
 
                     if let changesChip = content.changesChip {
                         Spacer(minLength: 8)
                         changesChipView(changesChip)
                     }
                 }
+                // SUPERMUX:begin supermux-mobile-nested-branch-line
+                }
+                // SUPERMUX:end supermux-mobile-nested-branch-line
             }
+
+            // SUPERMUX:begin supermux-mobile-nested-branch-line (a nested row's status, centered on its trailing edge as on the Mac sidebar)
+            if let supermuxNestedRowAccessory {
+                supermuxNestedTrailing(supermuxNestedRowAccessory)
+            }
+            // SUPERMUX:end supermux-mobile-nested-branch-line
         }
         .overlay(alignment: .leading) {
             HStack(spacing: 0) {
@@ -215,6 +224,17 @@ struct WorkspaceRow: View {
         }
         .contentShape(Rectangle())
     }
+
+    // SUPERMUX:begin supermux-mobile-nested-branch-line
+    /// A nested row's trailing edge, beside both its lines: the PR badge and
+    /// run indicator, clear of the activity dot. No changes chip, as on the
+    /// Mac sidebar.
+    private func supermuxNestedTrailing(_ accessory: SupermuxNestedWorkspaceAccessory) -> some View {
+        SupermuxNestedStatusSlot(accessory: accessory)
+            .padding(.leading, 8)
+            .padding(.trailing, SupermuxNestedStatusSlot.dotClearance)
+    }
+    // SUPERMUX:end supermux-mobile-nested-branch-line
 
     @ViewBuilder
     private func changesChipView(_ chip: MobileWorkspaceChangesChip) -> some View {
