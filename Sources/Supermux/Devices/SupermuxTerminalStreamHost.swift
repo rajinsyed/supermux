@@ -148,43 +148,39 @@ extension TerminalController {
 
 // MARK: - Byte tee: continuity
 
-/// Whether the byte tee skipped PTY output since it last looked. The tee
-/// records nothing while no client subscribes, so after such a stretch no
-/// byte position from before it may be resumed: every surface's stream
-/// epoch moves on. The PTY thread only sets a flag; the main actor turns it
-/// into a new generation.
+/// The terminals whose PTY output the byte tee skipped since it last looked.
+/// The tee records nothing while no client subscribes, so after such a
+/// stretch no byte position from before it may be resumed: the stream epoch
+/// of each terminal that printed meanwhile moves on. A terminal that stayed
+/// quiet keeps its epoch, so a reconnect resumes it with no bytes (until
+/// 2026-10-05 one flag moved every terminal's epoch, and every mirror came
+/// back as a full replay). The PTY thread only records the terminal; the
+/// main actor turns it into a new epoch.
 enum SupermuxTerminalStreamContinuity {
-    nonisolated private static let skipped = AtomicBooleanGate(false)
-    nonisolated private static let generation = OSAllocatedUnfairLock(initialState: UInt64(0))
+    nonisolated private static let skipped = OSAllocatedUnfairLock(initialState: Set<UUID>())
 
     /// Called on the PTY read thread for output the tee did not record.
-    nonisolated static func noteSkipped() {
-        if !skipped.loadRelaxed() { skipped.storeRelease(true) }
+    nonisolated static func noteSkipped(surfaceID: UUID) {
+        skipped.withLock { surfaces in
+            if !surfaces.contains(surfaceID) { surfaces.insert(surfaceID) }
+        }
     }
 
-    /// The current continuity generation (a skip since the last call starts a new one).
-    nonisolated static func currentGeneration() -> UInt64 {
-        generation.withLock { value in
-            if skipped.loadAcquire() {
-                skipped.storeRelease(false)
-                value &+= 1
-            }
-            return value
-        }
+    /// Whether the tee skipped output of `surfaceID` since the last call.
+    nonisolated static func takeSkipped(surfaceID: UUID) -> Bool {
+        skipped.withLock { $0.remove(surfaceID) != nil }
     }
 }
 
 extension MobileTerminalByteTee {
     /// The surface's stream epoch: stable while its byte sequence stayed
-    /// continuous, new after the tee skipped output.
+    /// continuous, new after the tee skipped some of its output.
     func supermuxStreamEpoch(surfaceID: UUID) -> String {
-        supermuxContinuousEpoch(state(for: surfaceID))
+        supermuxContinuousEpoch(state(for: surfaceID), surfaceID: surfaceID)
     }
 
-    func supermuxContinuousEpoch(_ state: SurfaceState) -> String {
-        let generation = SupermuxTerminalStreamContinuity.currentGeneration()
-        if state.supermuxSkipGeneration != generation {
-            state.supermuxSkipGeneration = generation
+    func supermuxContinuousEpoch(_ state: SurfaceState, surfaceID: UUID) -> String {
+        if SupermuxTerminalStreamContinuity.takeSkipped(surfaceID: surfaceID) {
             state.supermuxStreamEpoch = UUID().uuidString
         }
         return state.supermuxStreamEpoch
@@ -195,7 +191,7 @@ extension MobileTerminalByteTee {
     func supermuxBytes(surfaceID: UUID, from: UInt64, epoch: String) -> (sequence: UInt64, data: Data)? {
         guard replayState(surfaceID: surfaceID) != nil else { return nil }
         let state = state(for: surfaceID)
-        guard supermuxContinuousEpoch(state) == epoch, from <= state.seq else { return nil }
+        guard supermuxContinuousEpoch(state, surfaceID: surfaceID) == epoch, from <= state.seq else { return nil }
         let missing = state.seq - from
         guard missing <= UInt64(state.replayBuffer.count) else { return nil }
         return (state.seq, Data(state.replayBuffer.suffix(Int(missing))))

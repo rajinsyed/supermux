@@ -67,7 +67,6 @@ final class MobileTerminalByteTee {
         /// Names this byte stream while it stays continuous; a stretch the tee
         /// did not record starts a new one (SupermuxTerminalStreamHost.swift).
         var supermuxStreamEpoch = UUID().uuidString
-        var supermuxSkipGeneration = SupermuxTerminalStreamContinuity.currentGeneration()
         // SUPERMUX:end terminal-stream-resume
     }
 
@@ -129,7 +128,7 @@ final class MobileTerminalByteTee {
                 || laneDemand.loadAcquire()
         else {
             // SUPERMUX:begin terminal-stream-resume
-            SupermuxTerminalStreamContinuity.noteSkipped()
+            SupermuxTerminalStreamContinuity.noteSkipped(surfaceID: surfaceID)
             // SUPERMUX:end terminal-stream-resume
             return
         }
@@ -266,7 +265,7 @@ final class MobileTerminalByteTee {
     func publishFromMain(surfaceID: UUID, data: Data) {
         let state = state(for: surfaceID)
         // SUPERMUX:begin terminal-stream-resume
-        _ = supermuxContinuousEpoch(state)
+        _ = supermuxContinuousEpoch(state, surfaceID: surfaceID)
         // SUPERMUX:end terminal-stream-resume
         let chunkSeq = state.seq
         state.seq &+= UInt64(data.count)
