@@ -116,9 +116,19 @@ extension GitMetadataService {
             degradation = nil
         }
 
-        let eventCoalescingInterval = acceptsAllWorkTreeEvents
-            ? safetyConfiguration.unfilteredWorkTreeEventThrottle
-            : safetyConfiguration.filteredWorkTreeEventThrottle
+        // SUPERMUX:begin git-dirty-large-repo-throttle (upstream: the filtered throttle for every repository not accepting all events)
+        // Past the direct-check limit each dirty check launches `git status`
+        // over the whole tree, so a repository agents edit continuously spawned
+        // one up to 4 times a second per worktree; there the dirty dot
+        // follows within about 3 s instead.
+        let eventCoalescingInterval: Duration = if acceptsAllWorkTreeEvents {
+            safetyConfiguration.unfilteredWorkTreeEventThrottle
+        } else if declaredEntryCount > safetyConfiguration.directFileStatusEntryCount {
+            .seconds(3)
+        } else {
+            safetyConfiguration.filteredWorkTreeEventThrottle
+        }
+        // SUPERMUX:end git-dirty-large-repo-throttle
         let filterIdentity: String? = if normalizedMetadataSentinelPaths.isEmpty {
             indexSnapshot?.contentSignature
         } else {

@@ -2,6 +2,9 @@ import Foundation
 import CmuxGit
 import CmuxSidebarGit
 import CmuxSidebar
+// SUPERMUX:begin pr-poll-off-screen-slowdown
+import SupermuxKit
+// SUPERMUX:end pr-poll-off-screen-slowdown
 
 // MARK: - SidebarGitHosting conformance
 //
@@ -195,6 +198,17 @@ extension TabManager: SidebarGitHosting {
     var pullRequestActivity: SidebarGitMetadataActivity {
         SidebarWorkspaceDetailDefaults.pullRequestActivity(defaults: .standard)
     }
+
+    // SUPERMUX:begin pr-poll-off-screen-slowdown
+    /// A window nobody can see (hidden, minimized, covered, Remote Host Mode)
+    /// polls its pull requests 5 times less often: 50 s for the selected
+    /// panel, 5 min for the others. Coming on screen keeps the deadlines
+    /// already set, so a badge can lag one slow poll.
+    func pullRequestPollIntervalScale() -> Double {
+        guard let windowId, let window = AppDelegate.shared?.windowForMainWindowId(windowId) else { return 1 }
+        return SupermuxWindowVisibility.windowIsOnScreen(window) ? 1 : 5
+    }
+    // SUPERMUX:end pr-poll-off-screen-slowdown
 
     func mobileHostHasRecentActivity(within interval: TimeInterval) -> Bool {
         MobileHostRequestActivity.hasRecentActivity(within: interval)

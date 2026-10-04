@@ -105,7 +105,18 @@ public protocol SidebarGitHosting: AnyObject {
     func terminalTypingIsActive(within interval: TimeInterval) -> Bool
     /// The remaining quiet delay before local metadata work may resume.
     func terminalTypingQuietDelay(for interval: TimeInterval) -> TimeInterval
+    // SUPERMUX:begin pr-poll-off-screen-slowdown
+    /// How much longer than usual pull-request polls wait (1 while the host's
+    /// window is on screen).
+    func pullRequestPollIntervalScale() -> Double
+    // SUPERMUX:end pr-poll-off-screen-slowdown
 }
+
+// SUPERMUX:begin pr-poll-off-screen-slowdown
+extension SidebarGitHosting {
+    public func pullRequestPollIntervalScale() -> Double { 1 }
+}
+// SUPERMUX:end pr-poll-off-screen-slowdown
 
 extension SidebarGitHosting {
     func shouldSkipLocalGitMetadata(workspaceId: UUID, panelId: UUID) -> Bool {
