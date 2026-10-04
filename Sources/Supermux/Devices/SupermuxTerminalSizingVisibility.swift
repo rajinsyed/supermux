@@ -213,6 +213,7 @@ final class SupermuxTerminalSizingVisibility {
         let onScreen = Self.isOnScreen(surface)
         guard !onScreen, !session.supermuxHidden, !settled else {
             session.supermuxSetHidden(!onScreen)
+            SupermuxDeviceTerminalActions.visibilityChanged(surface)
             return
         }
         Task { @MainActor [weak self] in

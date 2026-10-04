@@ -2,6 +2,7 @@ import AppKit
 import CmuxSurfaceCatalogModel
 import CmuxTerminal
 import Foundation
+import GhosttyKit
 import os
 import SupermuxMobileCore
 
@@ -65,22 +66,64 @@ enum SupermuxDeviceTerminalActions {
     /// The focus last sent for each pane, and the pending settle per pane.
     @MainActor private static var sentFocus: [UUID: Bool] = [:]
     @MainActor private static var focusSettles: [UUID: Task<Void, Never>] = [:]
+    /// Mirror panes whose Ghostty focus this type took away while off screen.
+    @MainActor private static var unfocusedOffScreen: Set<UUID> = []
 
     /// The mirror pane's focus changed (the `device-terminal-focus` hook on
     /// the pane's surface): once it settles, the owning Mac focuses or
     /// unfocuses its terminal. A focus equal to the one last sent is not sent.
     @MainActor
-    static func focusChanged(_ surface: TerminalSurface, focused: Bool) {
+    static func focusChanged(_ surface: TerminalSurface, focused _: Bool) {
+        scheduleFocusSync(surface)
+    }
+
+    /// The mirror pane went on or off screen (``SupermuxTerminalSizingVisibility``).
+    @MainActor
+    static func visibilityChanged(_ surface: TerminalSurface) {
+        scheduleFocusSync(surface)
+    }
+
+    /// A mirror pane counts as focused only while it is on screen, as a local
+    /// pane is unfocused once its workspace is left. A mirror's workspace
+    /// focuses its pane when it is built, in the background, and Ghostty runs
+    /// a focused pane's display link at the screen's refresh rate even when
+    /// nothing draws: every hidden mirror woke this Mac about 120 times a
+    /// second, and its `focus_in` did the same to the other Mac's terminal
+    /// (and told the program it was being looked at). Off screen, the pane's
+    /// Ghostty focus is taken away (cmux's own focus record is kept, so the
+    /// workspace's focused pane is unchanged) and `focus_out` is sent; back on
+    /// screen, a pane that is cmux's focused pane gets its focus back and
+    /// `focus_in` is sent.
+    @MainActor
+    private static func scheduleFocusSync(_ surface: TerminalSurface) {
         let panelID = surface.id
         focusSettles[panelID]?.cancel()
         focusSettles[panelID] = Task { @MainActor [weak surface] in
             try? await Task.sleep(for: focusSettleDelay)
             guard !Task.isCancelled else { return }
             focusSettles[panelID] = nil
-            guard let surface, sentFocus[panelID] != focused,
-                  let target = forwardingTarget(for: surface) else { return }
+            guard let surface, deviceTerminal(for: surface) != nil else { return }
+            let onScreen = SupermuxTerminalSizingVisibility.isOnScreen(surface)
+            let focused = surface.debugDesiredFocusState() && onScreen
+            applyGhosttyFocus(surface, onScreen: onScreen)
+            guard sentFocus[panelID] != focused, let target = forwardingTarget(for: surface) else { return }
             sentFocus[panelID] = focused
             send(focused ? "focus_in" : "focus_out", to: target)
+        }
+    }
+
+    @MainActor
+    private static func applyGhosttyFocus(_ surface: TerminalSurface, onScreen: Bool) {
+        let panelID = surface.id
+        if !onScreen {
+            guard surface.debugDesiredFocusState(),
+                  let live = surface.liveSurfaceForGhosttyAccess(reason: "supermux.mirrorFocus.offScreen") else { return }
+            ghostty_surface_set_focus(live, false)
+            unfocusedOffScreen.insert(panelID)
+        } else if unfocusedOffScreen.remove(panelID) != nil, surface.debugDesiredFocusState() {
+            // `force`: cmux's record already says focused, so only the
+            // runtime surface (and its display id) is brought back.
+            surface.setFocus(true, force: true)
         }
     }
 
