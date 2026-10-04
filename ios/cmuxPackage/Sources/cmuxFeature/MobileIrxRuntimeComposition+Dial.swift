@@ -26,21 +26,22 @@ extension MobileIrxRuntimeComposition {
     }
 
     func ensureSession(forPeer peerHex: String, trigger: String) async throws -> IrxClientSession {
-        let ready = try await waitForRuntimeReadiness(for: peerHex)
-        let scope = ready.scope
-        let currentEpoch = ready.epoch
-        try await assertScope(scope, epoch: currentEpoch)
+        // SUPERMUX:begin mobile-irx-cached-dial-authority
+        let authority = try await waitForRuntimeReadiness(for: peerHex)
+        try await assertDialAuthority(authority)
         let desired = dialIntentByPeer[peerHex] ?? .automatic
         let replace = activeDialIntentByPeer[peerHex].map { $0 != desired } ?? false
         let session = try await engine(forPeer: peerHex).ensureSession(explicit: replace, trigger: trigger)
-        try await assertScope(scope, epoch: currentEpoch)
+        try await assertDialAuthority(authority)
+        // SUPERMUX:end mobile-irx-cached-dial-authority
         return session
     }
 
+    // SUPERMUX:begin mobile-irx-cached-dial-authority
     private func waitForRuntimeReadiness(
         for peerHex: String
-    ) async throws -> (scope: AuthenticatedTeamScope, epoch: UInt64) {
-        if let ready = runtimeReadinessState(for: peerHex) {
+    ) async throws -> DialAuthority {
+        if let ready = await dialAuthority(for: peerHex) {
             return ready
         }
 
@@ -49,7 +50,7 @@ extension MobileIrxRuntimeComposition {
                 guard let self else { return false }
                 for await _ in await self.changes() {
                     guard !Task.isCancelled else { return false }
-                    if await self.runtimeReadinessState(for: peerHex) != nil {
+                    if await self.dialAuthority(for: peerHex) != nil {
                         return true
                     }
                 }
@@ -63,11 +64,65 @@ extension MobileIrxRuntimeComposition {
             group.cancelAll()
             return result
         }
-        guard becameReady, let ready = runtimeReadinessState(for: peerHex) else {
+        guard becameReady, let ready = await dialAuthority(for: peerHex) else {
             throw CompositionError.notSignedIn
         }
         return ready
     }
+
+    /// Who a dial runs for: the live scope, or, while sign-in restores the
+    /// session at launch, the account and team the runtime warmed for.
+    enum DialAuthority: Sendable {
+        case live(AuthenticatedTeamScope, epoch: UInt64)
+        case cached(V2CachedDialAuthority)
+    }
+
+    /// The authority a dial to this peer may run under now, if any.
+    func dialAuthority(for peerHex: String) async -> DialAuthority? {
+        if let ready = runtimeReadinessState(for: peerHex) {
+            return .live(ready.scope, epoch: ready.epoch)
+        }
+        guard activeScope == nil, case .automatic = dialIntentByPeer[peerHex] ?? .automatic,
+              let prepared = preparedCachedRuntime?.tuple else { return nil }
+        let signedIn = await auth?.cachedTeamIdentity
+        guard activeScope == nil, preparedCachedRuntime?.tuple == prepared,
+              let cached = V2CachedDialAuthority(
+                  prepared: prepared,
+                  signedIn: signedIn.map { V2AccountTeam(accountID: $0.accountID, teamID: $0.teamID) },
+                  cache: cache,
+                  now: Date()
+              ),
+              cachedDialDirectory(cached) != nil else { return nil }
+        return .cached(cached)
+    }
+
+    /// Throws once the account or team a dial runs for is no longer signed in.
+    func assertDialAuthority(_ authority: DialAuthority) async throws {
+        switch authority {
+        case let .live(scope, epoch):
+            try await assertScope(scope, epoch: epoch)
+        case let .cached(cached):
+            let scope = activeScope
+            var liveScopeIsCurrent = false
+            if let scope, let auth { liveScopeIsCurrent = await auth.isAuthenticatedTeamScopeCurrent(scope) }
+            let signedIn = await auth?.cachedTeamIdentity
+            guard activeScope == scope, cached.isCurrent(
+                liveScope: scope.map { V2AccountTeam(accountID: $0.session.accountID, teamID: $0.teamID) },
+                liveScopeIsCurrent: liveScopeIsCurrent,
+                prepared: preparedCachedRuntime?.tuple,
+                signedIn: signedIn.map { V2AccountTeam(accountID: $0.accountID, teamID: $0.teamID) }
+            ) else { throw CompositionError.scopeChanged }
+        }
+    }
+
+    /// The warmed directory a cached dial reads, while it still grants access.
+    private func cachedDialDirectory(_ cached: V2CachedDialAuthority) -> V2Directory? {
+        guard let directory = cache?.directory, cache?.authorityRevoked == false,
+              directory.teamID == cached.tuple.teamID,
+              directory.permissionExpiresAt > Int(Date().timeIntervalSince1970) else { return nil }
+        return directory
+    }
+    // SUPERMUX:end mobile-irx-cached-dial-authority
 
     private func runtimeReadinessState(
         for peerHex: String
@@ -85,11 +140,16 @@ extension MobileIrxRuntimeComposition {
         return (scope, epoch)
     }
 
+    // SUPERMUX:begin mobile-irx-cached-dial-authority (dialOnce runs under a DialAuthority: live scope or the warmed cached identity)
     func dialOnce(peerHex: String) async throws -> IrxClientSession {
-        guard let scope = activeScope else { throw CompositionError.notSignedIn }
-        let currentEpoch = epoch
-        guard let directory = await freshLiveDiscovery() else { throw CompositionError.peerNotDiscovered }
-        try await assertScope(scope, epoch: currentEpoch)
+        guard let authority = await dialAuthority(for: peerHex) else { throw CompositionError.notSignedIn }
+        let discovered: V2Directory?
+        switch authority {
+        case .live: discovered = await freshLiveDiscovery()
+        case let .cached(cached): discovered = cachedDialDirectory(cached)
+        }
+        guard let directory = discovered else { throw CompositionError.peerNotDiscovered }
+        try await assertDialAuthority(authority)
         guard let record = directory.devices.first(where: { $0.descriptor.endpointID == peerHex }),
               !record.revoked, record.descriptor.metadata.pairingEnabled,
               record.descriptor.metadata.platform == .mac else { throw IrxAdmissionDenied(code: .revoked) }
@@ -100,7 +160,7 @@ extension MobileIrxRuntimeComposition {
         let intent = dialIntentByPeer[peerHex] ?? .automatic
         let selectedSupervisor: IrxEndpointSupervisor?
         switch intent {
-        case .automatic: selectedSupervisor = endpointSupervisor
+        case .automatic: selectedSupervisor = endpointSupervisor ?? preparedCachedRuntime?.supervisor
         case .direct:
             guard !forceRelayOnly, let identity else { throw CompositionError.directDialUnavailable }
             if directEndpointSupervisor == nil {
@@ -123,7 +183,7 @@ extension MobileIrxRuntimeComposition {
                     refreshAfter: Date(timeIntervalSince1970: Double($0.refreshAfter)))
             }
         }
-        try await assertScope(scope, epoch: currentEpoch)
+        try await assertDialAuthority(authority)
         let relay: String?
         var direct: [String]
         switch intent {
@@ -151,11 +211,11 @@ extension MobileIrxRuntimeComposition {
             }
             guard !direct.isEmpty else { throw CompositionError.directDialUnavailable }
         }
-        try await assertScope(scope, epoch: currentEpoch)
+        try await assertDialAuthority(authority)
         let address = try supervisor.dialAddress(peerEndpointIDHex: peerHex, relayURL: relay, directAddresses: direct)
         let connection = try await supervisor.dial(address: address, credentials: credentials)
         do {
-            try await assertScope(scope, epoch: currentEpoch)
+            try await assertDialAuthority(authority)
             var authorizesDirectPaths = false
             if !forceRelayOnly, case .automatic = intent { authorizesDirectPaths = true }
             let (admit, control) = try await IrxAdmission().performClient(
@@ -165,14 +225,14 @@ extension MobileIrxRuntimeComposition {
                 // superseded during admission never discloses candidates.
                 preAuthorization: { [weak self] in
                     guard let self else { throw CompositionError.directDialUnavailable }
-                    try await self.assertScope(scope, epoch: currentEpoch)
+                    try await self.assertDialAuthority(authority)
                 })
-            try await assertScope(scope, epoch: currentEpoch)
+            try await assertDialAuthority(authority)
             // One shared events lane plus up to 16 per-terminal output lanes
             // (IrxSurfaceEventLanes), with headroom for streams the Mac is
             // replacing. An older Mac opens only the shared lane.
             await connection.raiseRemoteStreamCredit(bi: 0, uni: 40)
-            try await assertScope(scope, epoch: currentEpoch)
+            try await assertDialAuthority(authority)
             activeDialIntentByPeer[peerHex] = intent
             admittedSessionCount += 1
             journal.record("v2-peer", "admitted", ["session": admit.session, "count": String(admittedSessionCount),
@@ -183,4 +243,5 @@ extension MobileIrxRuntimeComposition {
             throw error
         }
     }
+    // SUPERMUX:end mobile-irx-cached-dial-authority
 }

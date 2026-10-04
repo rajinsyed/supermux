@@ -739,6 +739,8 @@ Rules for adding a touchpoint:
 | 926 | `Packages/Shared/CmuxIrxTransport/Sources/CmuxIrxTransport/IrxEndpoint.swift` | `irx-dial-before-home-relay` | `IrxEndpointSupervisor.dial` takes the endpoint as soon as it is bound (`dialableEndpoint`) instead of `readyEndpoint`, which also waits for this endpoint's own home relay to come online (about 1.9 s on every phone cold launch: iroh picks the home relay from a full net report). Six fences: `boundWaiters`, the bind task's `defer { publishBound() }`, `publishBound()` after the `bound` journal event and in `close()`, the `dial` call site, and the two helpers (the waiter's own `ready` task also wakes it, so a bind that ends before `bound` or a deactivation in between can't strand a dial). `readyEndpoint`, `isHealthy` and the online-timeout discard are unchanged |
 | 935 | `Packages/Shared/CmuxIrxTransport/Sources/CmuxIrxTransport/V2/V2CachedDialAuthority.swift` | `mobile-irx-cached-dial-authority` | Whole new file (fenced top to bottom). `V2CachedDialAuthority`: the warmed account/team may dial before sign-in finishes when the runtime warmed for exactly the signed-in pair, the directory is not revoked and a relay credential is usable; `isCurrent` keeps a dial alive only while that pair stays signed in (before sign-in finishes) or the live scope that replaced it is the same pair. `V2AccountTeam`. Regression coverage: #936 |
 | 936 | `Packages/Shared/CmuxIrxTransport/Tests/CmuxIrxTransportTests/V2/V2CachedDialAuthorityTests.swift` | `mobile-irx-cached-dial-authority` | Whole new file. Permit and deny cases for the cached launch dial, and which sign-in outcomes let it continue |
+| 937 | `ios/cmuxPackage/Sources/cmuxFeature/MobileIrxRuntimeComposition+Dial.swift` | `mobile-irx-cached-dial-authority` | Three fences. `ensureSession` and the readiness wait run under a `DialAuthority` (`.live(scope, epoch)` or `.cached(V2CachedDialAuthority)`); `dialAuthority(for:)`, `assertDialAuthority(_:)` and `cachedDialDirectory(_:)`; and the whole `dialOnce`, which reads the warmed directory and supervisor (`preparedCachedRuntime`) for a cached dial and asserts the authority where upstream asserted the scope. Live dials keep upstream's exact scope and epoch check |
+| 938 | `ios/cmuxPackage/Sources/cmuxFeature/MobileIrxRuntimeComposition+Lifecycle.swift` | `mobile-irx-cached-dial-authority` | Two fences in `detachCurrentRuntime`: when sign-in finishes for the account and team the runtime warmed for (`preservePrepared`), the engines, dial intents, control-lane claims and event-lane hubs of the launch dials stay; any other transition clears and stops them as upstream does |
 | 810 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the remote-terminal polish into the cmux target, four entries each (build file, file reference, Supermux group child, Sources phase) next to #764's `SupermuxDeviceTerminalUpload.swift`: `Devices/SupermuxDeviceTerminalLinks.swift` (`50BE001B0200000000000001`/`…02`, a Cmd-click on a path in another Mac's terminal), `Devices/SupermuxDeviceTerminalActions.swift` (`…03`/`…04`, forwarded Cmd+K/reset, focus and Ctrl+V of an image) and `SupermuxMobileHost+TerminalActions.swift` (`…05`/`…06`, the host's `terminal.action`) |
 | 811 | `Sources/Workspace+TerminalLinkOpening.swift` | `device-terminal-file-link` | First thing in `deferRemoteTerminalFileLinkOpen`: `SupermuxDeviceTerminalLinks.open(rawValue, panelID:in:)` claims a file path clicked in another Mac's terminal and opens that Mac's file in the mirror's read-only preview (upstream refused it: only SSH terminals resolved a remote path) |
 | 812 | `Sources/DockSplitStore+TerminalLinkOpening.swift` | `device-terminal-file-link` | Adds `deferRemoteTerminalFileLinkOpen` to the Dock's link container (upstream relies on the protocol's `false` default): the same `SupermuxDeviceTerminalLinks.open` for another Mac's terminal moved into the Dock |
@@ -6723,3 +6725,24 @@ Re-apply after an upstream merge: keep `dial` on `dialableEndpoint`, and keep bo
 
 Verify on the phone: the iroh journal's first `endpoint/dialed` after `v2-lifecycle/launch` comes before
 `endpoint/online`.
+
+### 935–938. The launch dial does not wait for sign-in's network round trips — `mobile-irx-cached-dial-authority`
+
+Measured on the user's iPhone (2026-10-04): the first dial started 1.06–1.15 s after launch, gated by
+`activeScope`, which sign-in sets only after `/users/me` and the team list return, although the v2 runtime had
+warmed from the cached account and team about 30 ms after launch. A dial is not a server request; the Mac admits
+the phone against its own server-issued directory. Now, while sign-in restores, a dial may run for the warmed
+identity when it matches the signed-in account and team, its directory is not revoked and still grants access,
+and a relay credential is usable. It keeps running only while that identity stays signed in, or sign-in finishes
+for the same account and team, whose live scope then takes over and keeps the admitted sessions. Sign-out, a
+different account or team, or a failed sign-in stops it as before. No control-plane request or mutation runs
+before sign-in.
+
+After: the first dial starts about 0.09–0.12 s after launch and the first Mac is admitted at 1.07–1.20 s (3 of 4
+launches; the fourth waited on a slow relay), down from 2.04–2.12 s.
+
+Re-apply after an upstream merge: keep `dialOnce` on `DialAuthority`, and keep the `preservePrepared` branches
+in `detachCurrentRuntime`.
+
+Verify: `swift test --package-path Packages/Shared/CmuxIrxTransport --filter V2CachedDialAuthorityTests`, and on
+the phone, the journal's first `engine/dial-started` comes before `v2-lifecycle/control-started`.

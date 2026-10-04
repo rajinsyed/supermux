@@ -31,7 +31,17 @@ public struct V2CachedDialAuthority: Equatable, Sendable {
         cache: V2CachedState?,
         now: Date
     ) {
-        nil
+        guard let prepared, let signedIn, let cache,
+              signedIn == V2AccountTeam(accountID: prepared.userID, teamID: prepared.teamID),
+              cache.identity == prepared, !cache.authorityRevoked,
+              cache.relayCredentials.contains(where: { credential in
+                  IrxRelayCredential(
+                      relayURL: credential.relayURL, token: credential.token,
+                      expiresAt: Date(timeIntervalSince1970: Double(credential.expiresAt)),
+                      refreshAfter: Date(timeIntervalSince1970: Double(credential.refreshAfter))
+                  ).isUsable(at: now)
+              }) else { return nil }
+        tuple = prepared
     }
 
     /// Whether a dial started under this authority may continue.
@@ -46,7 +56,11 @@ public struct V2CachedDialAuthority: Equatable, Sendable {
         prepared: V2Identity?,
         signedIn: V2AccountTeam?
     ) -> Bool {
-        false
+        let account = V2AccountTeam(accountID: tuple.userID, teamID: tuple.teamID)
+        if let liveScope {
+            return liveScopeIsCurrent && liveScope == account
+        }
+        return prepared == tuple && signedIn == account
     }
 }
 // SUPERMUX:end mobile-irx-cached-dial-authority

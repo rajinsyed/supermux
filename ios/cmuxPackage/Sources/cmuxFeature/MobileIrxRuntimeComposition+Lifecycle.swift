@@ -509,17 +509,25 @@ extension MobileIrxRuntimeComposition {
         let oldControl = control
         let oldSupervisor = endpointSupervisor ?? (preservePrepared ? nil : preparedCachedRuntime?.supervisor)
         let oldDirectSupervisor = directEndpointSupervisor
-        let oldEngines = Array(enginesByPeer.values)
+        // SUPERMUX:begin mobile-irx-cached-dial-authority
+        // Sign-in finishing for the account and team the runtime warmed for
+        // keeps the sessions its launch dials already admitted.
+        let oldEngines = preservePrepared ? [] : Array(enginesByPeer.values)
+        // SUPERMUX:end mobile-irx-cached-dial-authority
         control = nil; endpointSupervisor = nil; directEndpointSupervisor = nil
         if !preservePrepared {
             identity = nil; cache = nil; preparedCachedRuntime = nil
         }
         lastLoggedControlState = nil
         lastFailure = nil
-        enginesByPeer.removeAll(); dialIntentByPeer.removeAll(); activeDialIntentByPeer.removeAll()
-        expectedDeviceIDByPeer.removeAll(); controlLaneClaims.removeAll(); claimedEventSessions.removeAll()
-        let oldEventLaneHubs = eventLaneHubs.values.map(\.hub)
-        eventLaneHubs.removeAll()
+        // SUPERMUX:begin mobile-irx-cached-dial-authority
+        if !preservePrepared {
+            enginesByPeer.removeAll(); dialIntentByPeer.removeAll(); activeDialIntentByPeer.removeAll()
+            expectedDeviceIDByPeer.removeAll(); controlLaneClaims.removeAll(); claimedEventSessions.removeAll()
+        }
+        let oldEventLaneHubs = preservePrepared ? [] : eventLaneHubs.values.map(\.hub)
+        if !preservePrepared { eventLaneHubs.removeAll() }
+        // SUPERMUX:end mobile-irx-cached-dial-authority
         for hub in oldEventLaneHubs { Task { await hub.stop() } }
         publish()
         if !preservePrepared {
