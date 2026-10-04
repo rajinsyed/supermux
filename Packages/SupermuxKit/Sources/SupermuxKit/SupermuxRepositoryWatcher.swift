@@ -35,8 +35,8 @@ public final class SupermuxRepositoryWatcher: Sendable {
     ///   - path: Absolute path of the directory to watch recursively.
     ///   - excludedPaths: Directories under `path` whose changes never matter
     ///     here (a project root's container of nested worktrees). Added to
-    ///     ``gitBookkeepingSubpaths``; a path that is missing, not a directory
-    ///     or not strictly inside `path` is ignored.
+    ///     ``gitBookkeepingSubpaths``; a path that is a file, has no parent
+    ///     directory, or is not strictly inside `path` is ignored.
     ///   - latency: FSEvents coalescing window in seconds; bursts within it
     ///     collapse to one event. Defaults to `0.3`.
     public init(path: String, excludedPaths: [String] = [], latency: TimeInterval = 0.3) {
@@ -102,24 +102,37 @@ public final class SupermuxRepositoryWatcher: Sendable {
     /// The directories FSEvents should filter out of a watch on `path`: the
     /// caller's `extra` paths first, then ``gitBookkeepingSubpaths``, each in
     /// its symlink-resolved form (FSEvents matches against canonical paths)
-    /// and kept only when it is an existing directory strictly inside `path`,
-    /// so a stray entry can never filter the watched tree itself. Capped at
-    /// ``maxExcludedPaths``, past which FSEvents would apply none.
+    /// and kept only when it lies strictly inside `path`, so a stray entry can
+    /// never filter the watched tree itself. Capped at ``maxExcludedPaths``,
+    /// past which FSEvents would apply none.
     static func exclusionPaths(watching path: String, extra: [String]) -> [String] {
         guard let root = resolvedPath(path) else { return [] }
         let candidates = extra + gitBookkeepingSubpaths.map { (path as NSString).appendingPathComponent($0) }
         var exclusions: [String] = []
         for candidate in candidates {
-            var isDirectory: ObjCBool = false
-            guard let resolved = resolvedPath(candidate),
+            guard let resolved = resolvedDirectory(candidate),
                   resolved.hasPrefix(root + "/"),
-                  FileManager.default.fileExists(atPath: resolved, isDirectory: &isDirectory),
-                  isDirectory.boolValue,
                   !exclusions.contains(resolved)
             else { continue }
             exclusions.append(resolved)
         }
         return Array(exclusions.prefix(maxExcludedPaths))
+    }
+
+    /// The canonical form of a directory that exists, or of one that may
+    /// appear later (a project's first worktree creates its container, git's
+    /// first linked worktree `.git/worktrees`): FSEvents filters a missing
+    /// exclusion once it is created, so only its parent has to exist. `nil`
+    /// for a file, or when the parent is missing or not a directory (`.git`
+    /// is a file in a linked worktree).
+    private static func resolvedDirectory(_ path: String) -> String? {
+        if let resolved = resolvedPath(path) {
+            return isDirectory(resolved) ? resolved : nil
+        }
+        guard let parent = resolvedPath((path as NSString).deletingLastPathComponent),
+              isDirectory(parent)
+        else { return nil }
+        return (parent as NSString).appendingPathComponent((path as NSString).lastPathComponent)
     }
 
     /// `realpath(3)`: the canonical path FSEvents reports events under (it
@@ -128,6 +141,11 @@ public final class SupermuxRepositoryWatcher: Sendable {
         guard let resolved = realpath(path, nil) else { return nil }
         defer { free(resolved) }
         return String(cString: resolved)
+    }
+
+    private static func isDirectory(_ path: String) -> Bool {
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) && isDirectory.boolValue
     }
 }
 

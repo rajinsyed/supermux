@@ -10,7 +10,8 @@ extension SupermuxProjectsModel {
     /// wake for every file an agent writes in any of them. Empty for every
     /// other directory (a worktree itself, a subfolder, an unregistered
     /// repository). ``SupermuxRepositoryWatcher`` drops a container that is
-    /// missing or not strictly inside `path`.
+    /// not strictly inside `path` (a `..` name), and filters one that does not
+    /// exist yet from the moment the first worktree creates it.
     /// - Parameter path: The directory the watcher is about to watch.
     /// - Returns: Absolute container paths, usually none or one.
     public func worktreeContainers(forRoot path: String) -> [String] {
