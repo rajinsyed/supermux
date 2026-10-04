@@ -480,8 +480,13 @@ final class SupermuxWorkspaceObservation: ObservableObject {
 /// at install. The box publishes nothing, so it never invalidates the mount.
 @MainActor
 private final class SupermuxChangesModelBox: ObservableObject {
+    /// On a project root, the watcher skips the project's worktrees container:
+    /// agents editing nested worktrees never change the root's status.
     let model = SupermuxChangesModel(
-        service: SupermuxGitChangesService(runner: CommandRunner()),
+        backend: SupermuxLocalChangesBackend(
+            service: SupermuxGitChangesService(runner: CommandRunner()),
+            watchExclusions: { SupermuxComposition.projectsModel.worktreeContainers(forRoot: $0) }
+        ),
         commitGenerator: SupermuxComposition.aiCommitMessenger
     )
     /// The on-demand PR viewer. Idle until a header PR button is clicked; it

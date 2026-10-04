@@ -60,7 +60,8 @@ final class SupermuxMobileChangesWatchRegistry {
     /// - Parameters:
     ///   - now: Clock; defaults to the wall clock. Injected for TTL tests.
     ///   - makeChangeStream: Watch-stream factory; defaults to a real
-    ///     ``SupermuxRepositoryWatcher`` on the given directory.
+    ///     ``SupermuxRepositoryWatcher`` on the given directory, skipping the
+    ///     worktrees container when it is a project's root.
     ///   - emit: The event sink; defaults to `MobileHostService.emitEvent`.
     ///   - topic: The topic each change emits: `supermux.changes.updated
     ///     {workspace_id}` (the default), or `supermux.files.updated`, whose
@@ -73,7 +74,10 @@ final class SupermuxMobileChangesWatchRegistry {
     init(
         now: @escaping @MainActor () -> Date = { Date() },
         makeChangeStream: @escaping @MainActor (String) -> AsyncStream<Void> = { path in
-            SupermuxRepositoryWatcher(path: path).changes()
+            SupermuxRepositoryWatcher(
+                path: path,
+                excludedPaths: SupermuxComposition.projectsModel.worktreeContainers(forRoot: path)
+            ).changes()
         },
         emit: @escaping @MainActor (_ topic: String, _ payload: [String: Any]) -> Void = { topic, payload in
             MobileHostService.shared.emitEvent(topic: topic, payload: payload)
