@@ -91,6 +91,7 @@ final class SupermuxTerminalStream {
 
     func stop() {
         cancelConfirmation()
+        pendingConfirmation = false
         backgroundTask?.cancel()
         backgroundTask = nil
         guard registered else { return }
@@ -146,10 +147,11 @@ final class SupermuxTerminalStream {
     private var background = false
     private var backgroundTask: Task<Void, Never>?
 
-    /// The pane went off screen or came back. Hidden, an armed confirmation
-    /// waits for the show (``takeDueConfirmation()``) and, after
-    /// ``backgroundAfter``, the terminal becomes background; shown, it leaves
-    /// the background at once.
+    /// The pane went off screen or came back. Hidden for ``backgroundAfter``,
+    /// the terminal becomes background and an armed confirmation stops
+    /// waiting until the show (a brief hide leaves it armed). Shown, the
+    /// terminal leaves the background at once, and a confirmation that
+    /// waited for the show waits for quiet output again.
     func visibilityChanged(hidden: Bool) {
         guard hidden != self.hidden else { return }
         self.hidden = hidden
@@ -157,17 +159,15 @@ final class SupermuxTerminalStream {
         backgroundTask = nil
         guard hidden else {
             setBackground(false)
+            resumePendingConfirmation()
             return
-        }
-        if confirmationTask != nil {
-            cancelConfirmation()
-            pendingConfirmation = true
         }
         backgroundTask = Task { [weak self] in
             guard (try? await Task.sleep(for: Self.backgroundAfter)) != nil,
                   let self, self.hidden, !Task.isCancelled else { return }
             self.backgroundTask = nil
             self.setBackground(true)
+            self.parkConfirmation()
         }
     }
 
@@ -187,18 +187,21 @@ final class SupermuxTerminalStream {
     /// parser exactly. A confirmation that raced output again is confirmed
     /// again after twice the quiet, at most ``maximumConfirmationsInRow``
     /// times in a row, and after the first only when output came right before
-    /// its request; a hidden pane's confirmation waits for its show. (Until
-    /// 2026-10-05 the wait polled at 10 Hz, and a terminal printing every
-    /// second chained full replays.)
+    /// its request. A hidden pane's confirmation waits for its show, then for
+    /// quiet output. (Until 2026-10-05 the wait polled at 10 Hz, and a
+    /// terminal printing every second chained full replays.)
     private var lastBytesAt: ContinuousClock.Instant?
     private var bytesDuringAttach = false
     private var requestRacedOutput = false
     private var confirmationTask: Task<Void, Never>?
+    /// Re-anchors the mirror for a confirmation (the session's, from
+    /// ``fullReplayApplied(confirm:)``).
+    private var confirm: (@MainActor () -> Void)?
     /// Confirmations since the last full replay that was not one.
     private var confirmationsInRow = 0
     /// The next full replay is a confirmation.
     private var confirming = false
-    /// A confirmation came due while the pane was hidden.
+    /// A confirmation waits for the pane's show.
     private var pendingConfirmation = false
     private(set) var confirmations = 0
     static let outputRaceWindow: Duration = .milliseconds(150)
@@ -228,10 +231,18 @@ final class SupermuxTerminalStream {
         confirming = false
         let raced = confirmationsInRow == 0 ? requestRacedOutput || bytesDuringAttach : requestRacedOutput
         guard isActive, raced, confirmationsInRow < Self.maximumConfirmationsInRow else { return }
+        self.confirm = confirm
         guard !hidden else {
             pendingConfirmation = true
             return
         }
+        armConfirmation()
+    }
+
+    /// Runs the confirmation once output has been quiet for its quiet; one
+    /// that comes due while the pane is off screen waits for the show.
+    private func armConfirmation() {
+        cancelConfirmation()
         let quiet = min(Self.outputQuiet * (1 << confirmationsInRow), Self.maximumConfirmationQuiet)
         confirmationTask = Task { [weak self] in
             // Each byte moves the deadline; the task wakes only at deadlines.
@@ -244,18 +255,29 @@ final class SupermuxTerminalStream {
             }
             guard let self, !Task.isCancelled else { return }
             self.confirmationTask = nil
+            guard !self.hidden else {
+                self.pendingConfirmation = true
+                return
+            }
             self.startConfirmation()
-            confirm()
+            self.confirm?()
         }
     }
 
-    /// The pane came on screen: true when a confirmation came due while it
-    /// was hidden, and the caller re-anchors now.
-    func takeDueConfirmation() -> Bool {
-        guard pendingConfirmation, !hidden else { return false }
+    /// The pane came back on screen: a confirmation that waited for the show
+    /// waits for quiet output again, so it still captures an idle parser.
+    private func resumePendingConfirmation() {
+        guard pendingConfirmation else { return }
         pendingConfirmation = false
-        startConfirmation()
-        return true
+        armConfirmation()
+    }
+
+    /// The pane has been off screen for ``backgroundAfter``: an armed
+    /// confirmation stops waking and waits for the show.
+    private func parkConfirmation() {
+        guard confirmationTask != nil else { return }
+        cancelConfirmation()
+        pendingConfirmation = true
     }
 
     private func startConfirmation() {

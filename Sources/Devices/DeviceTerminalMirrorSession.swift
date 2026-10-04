@@ -472,19 +472,15 @@ final class DeviceTerminalMirrorSession {
     // SUPERMUX:end terminal-stream-grid-viewer
     // SUPERMUX:begin terminal-stream-show-hook
 
-    /// Tells the stream the pane went off screen or came back. Shown, a
-    /// replay confirmation that came due while it was hidden, or a grid it
-    /// fell behind on, re-anchors it now.
+    /// Tells the stream the pane went off screen or came back (a replay
+    /// confirmation that waited for the show then waits for quiet output).
+    /// Shown, a mirror behind the host's grid re-anchors now.
     private func supermuxStreamVisibilityChanged() {
         guard let supermuxStream else { return }
         supermuxStream.visibilityChanged(hidden: supermuxHidden)
-        guard !supermuxHidden, phase != .stopped else { return }
-        if supermuxStream.takeDueConfirmation() {
-            supermuxResyncGrid()
-        } else if phase == .attached, supermuxStream.isBehind(assigned: assignedGrid) {
-            supermuxStream.gridChanged()
-            supermuxResyncGrid()
-        }
+        guard !supermuxHidden, phase == .attached, supermuxStream.isBehind(assigned: assignedGrid) else { return }
+        supermuxStream.gridChanged()
+        supermuxResyncGrid()
     }
     // SUPERMUX:end terminal-stream-show-hook
     // SUPERMUX:begin terminal-stream-attach-limiter
