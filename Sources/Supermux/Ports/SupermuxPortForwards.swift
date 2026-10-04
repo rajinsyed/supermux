@@ -73,12 +73,13 @@ final class SupermuxPortForwards {
     /// The longest wait before a Mac that did not answer is asked again.
     nonisolated static let longestRetryDelay = 30
     /// When a Mac is asked for its ports again, counted from the moment a
-    /// forward's port left its listing (its server went away): 2, 4, 8, 15, 30
-    /// and 60 s later. A restart may never be announced: a quick one keeps the
+    /// forward's port left its listing (its server went away): 3, 10 and 30 s
+    /// later. A restart may never be announced: a quick one keeps the
     /// owner's sidebar ports as they were (it keeps a port through two missed
     /// scans), so it sends no `supermux.ports.updated`, and a server outside its
-    /// workspaces' terminals never does.
-    nonisolated static let followUpDelays: [Duration] = [.seconds(2), .seconds(4), .seconds(8), .seconds(15), .seconds(30), .seconds(60)]
+    /// workspaces' terminals never does. Not gated on this app being active:
+    /// forwards serve other apps too.
+    nonisolated static let followUpDelays: [Duration] = [.seconds(3), .seconds(10), .seconds(30)]
 
     private(set) var forwards: [Key: Forward] = [:]
     /// Each available Mac's last port listing.
