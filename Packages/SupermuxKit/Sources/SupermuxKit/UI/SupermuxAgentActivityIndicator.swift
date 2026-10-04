@@ -244,7 +244,10 @@ final class SupermuxBrailleSpinnerNSView: SupermuxActivityAnimationNSView {
     private static let frames: [String] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
     private static let frameInterval: TimeInterval = 0.08
     /// The glyph changes 12.5 times a second, so the render server is asked
-    /// for about that many frames instead of the display's 60-120.
+    /// for about that many frames instead of the display's 60-120. The window
+    /// still draws at the highest rate any of its animations asks for, so
+    /// this saves little while an uncapped one shares it (Bonsplit's tab
+    /// spinner on the selected workspace's working tab).
     private static let frameRateRange = CAFrameRateRange(minimum: 8, maximum: 20, preferred: Float(1 / frameInterval))
 
     /// The ten glyph bitmaps for one point size and backing scale, and the
