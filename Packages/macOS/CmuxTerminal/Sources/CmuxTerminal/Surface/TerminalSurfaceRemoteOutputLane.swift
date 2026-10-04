@@ -86,6 +86,19 @@ final class TerminalSurfaceRemoteOutputLane: @unchecked Sendable {
         }
     }
 
+    // SUPERMUX:begin terminal-stream-output-fence
+    /// Calls `done` on the main actor once every operation admitted before
+    /// this call has run (at once when the lane is closed).
+    func supermuxFence(_ done: @escaping @MainActor @Sendable () -> Void) {
+        let admitted = isOpen.withLock { isOpen -> Bool in
+            guard isOpen else { return false }
+            queue.async { Task { @MainActor in done() } }
+            return true
+        }
+        if !admitted { Task { @MainActor in done() } }
+    }
+    // SUPERMUX:end terminal-stream-output-fence
+
     /// Stops admission of new work for this runtime generation.
     ///
     /// Operations accepted before this call remain in FIFO order and are
@@ -137,4 +150,43 @@ extension TerminalSurface {
         )
         return retired
     }
+
+    // SUPERMUX:begin terminal-stream-output-fence
+    /// Returns once the remote output handed to this surface so far has been
+    /// parsed, so a grid change that follows lands after it, not under it.
+    /// Gives up after `timeoutNanoseconds`: a lane wedged in Ghostty must not
+    /// hold its caller forever.
+    @MainActor
+    public func supermuxRemoteOutputParsed(timeoutNanoseconds: UInt64 = 1_000_000_000) async {
+        guard let surface = liveSurfaceForGhosttyAccess(reason: "supermuxRemoteOutputFence") else { return }
+        flushPendingRemoteOutput(to: surface)
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            let gate = SupermuxRemoteOutputFenceGate(continuation)
+            remoteOutputLane.supermuxFence { gate.open() }
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: timeoutNanoseconds)
+                gate.open()
+            }
+        }
+    }
+    // SUPERMUX:end terminal-stream-output-fence
 }
+
+// SUPERMUX:begin terminal-stream-output-fence
+/// Resumes a fence's waiter once, whichever of the fence and its timeout comes first.
+private final class SupermuxRemoteOutputFenceGate: @unchecked Sendable {
+    private let continuation: OSAllocatedUnfairLock<CheckedContinuation<Void, Never>?>
+
+    init(_ continuation: CheckedContinuation<Void, Never>) {
+        self.continuation = OSAllocatedUnfairLock(initialState: continuation)
+    }
+
+    func open() {
+        let waiter = continuation.withLock { value -> CheckedContinuation<Void, Never>? in
+            defer { value = nil }
+            return value
+        }
+        waiter?.resume()
+    }
+}
+// SUPERMUX:end terminal-stream-output-fence

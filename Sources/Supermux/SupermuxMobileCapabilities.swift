@@ -14,7 +14,7 @@ enum SupermuxMobileCapabilities {
     nonisolated static var advertised: [String] {
         served + (servesPortForward ? [SupermuxMobileCapability.portForwardV1.rawValue] : [])
             + (servesTerminalAttachments ? [SupermuxMobileCapability.terminalAttachmentsV1.rawValue] : [])
-            + (servesTerminalStream ? [SupermuxMobileCapability.terminalStreamV1.rawValue] : [])
+            + (servesTerminalStream ? [SupermuxMobileCapability.terminalStreamV2.rawValue] : [])
             + (servesTerminalInputPipeline ? [SupermuxMobileCapability.terminalInputPipelineV1.rawValue] : [])
     }
 
@@ -40,9 +40,11 @@ enum SupermuxMobileCapabilities {
         return true
     }
 
-    /// terminal.watch is served and mobile.terminal.replay resumes from a byte
-    /// position: another Mac's device mirror streams a terminal losslessly
-    /// instead of re-anchoring on full replays. A DEBUG E2E can withhold it to
+    /// terminal.watch is served, mobile.terminal.replay resumes from a byte
+    /// position and the stream stamps its grid generation: another Mac's
+    /// device mirror streams a terminal losslessly and re-anchors when the
+    /// grid changes. Only v2 is advertised: a v1 mirror would garble across
+    /// resizes, so it keeps upstream's path. A DEBUG E2E can withhold it to
     /// play an older host.
     nonisolated private static var servesTerminalStream: Bool {
         #if DEBUG

@@ -519,8 +519,9 @@ in the watched terminal while the unwatched one floods `seq 1 3000000` arrives w
 watched terminal and the mirror's last 2000 lines equal the source's; the unwatched terminal's bytes never
 cross the link (`supermux.devices.terminal_stream.stats {machine}`, DEBUG: the link's per-terminal byte
 counts, its watched set, each mirror pane's full replays / resumes / gaps); a forced re-anchor
-(`terminal_close.replay`) resumes from the byte position; two remote resizes (a fake phone's viewport) do not
-replay; 3000 history lines survive a link drop and the output printed while it was down arrives; and with
+(`terminal_close.replay`) resumes from the byte position; two remote resizes (a fake phone's viewport) each
+re-anchor the mirror on a full replay at the new grid (`grid_resyncs`; until 2026-10-04 they only re-pinned, see
+"Terminal resize integrity E2E"); 3000 history lines survive a link drop and the output printed while it was down arrives; and with
 `supermux.devices.terminal_stream.pretend_old_host {enabled}` the mirror falls back to upstream's path
 (topic-wide bytes) and streams again once the host is current. Full replays are counted from the host's
 DEBUG log line `mobile.terminal.replay surface=<id8> renderGrid=`, which every build writes.
@@ -535,6 +536,30 @@ may still hold the previous grid, and a resume at a grid the mirror does not hav
 
 ```bash
 CMUX_E2E_SUITES="loopback_terminal_streaming_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
+```
+
+## Terminal resize integrity E2E
+
+`tests/supermux/loopback_terminal_resize_integrity_e2e.py` (touchpoints #900–#906, `supermux.terminal_stream.v2`)
+reproduces "remote terminals randomly get messed up" (2026-10-04): a source terminal runs a generator that prints
+numbered lines wider than any grid and redraws an ink-style three-line block in place with relative cursor moves
+(what Claude Code does), while the suite changes the terminal's grid ~16 times (a fake phone at 40x12 and 60x20, a
+fake second Mac at 100x30 and clears, `mobile.terminal.viewport` with `view_appeared` on this control socket) and
+drops and restores the link once. At quiescence the mirror's text (screen and scrollback) must equal the
+source's row for row at the source's grid width (`physical_rows`: `surface.read_text` joins soft-wrapped rows and
+a replay paints hard rows, so both are cut at the grid width first). A second step resizes a still screen three
+times and compares again; a third makes 20 grid steps 40 ms apart while output flows (a dragged window) and
+allows at most 4 full replays (`supermux.devices.terminal_stream.stats` `full_replays`) before comparing.
+
+Red on f71a249528d (tag `garble`): the storm step shows mirror rows cut at the wrong column (`efghij…`
+fragments where the source has whole lines), the quiet step a mirror reflow that differs from the source's.
+Root cause: a resize only re-pinned the mirror, while bytes written for the old grid were still on their way
+(the host's coalescer and grid event travel in no fixed order) or still queued on the mirror's own output lane
+when its pin resized the surface. Green on the fix: the stream carries grid generations, the mirror re-anchors
+on a replay pinned in stream order.
+
+```bash
+CMUX_E2E_SUITES="loopback_terminal_resize_integrity_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
 ```
 
 ## Terminal input pipeline E2E

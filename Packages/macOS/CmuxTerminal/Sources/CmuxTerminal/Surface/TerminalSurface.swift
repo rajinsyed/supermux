@@ -295,6 +295,12 @@ public final class TerminalSurface: Identifiable, ObservableObject {
     /// FIFO native-output lane for the current runtime surface generation.
     var remoteOutputLane: TerminalSurfaceRemoteOutputLane
     var remoteOutputLaneGeneration: UInt64 = 0
+    // SUPERMUX:begin terminal-stream-grid-generation
+    /// Counts the grid changes asked of this surface's PTY (``applySurfaceSize``),
+    /// so another Mac's streaming mirror can tell when bytes it receives were
+    /// written for a grid its last replay did not have.
+    public internal(set) var supermuxGridRequestGeneration: UInt64 = 0
+    // SUPERMUX:end terminal-stream-grid-generation
 
     /// The explicit startup environment overrides replayed on respawn.
     public var respawnInitialEnvironmentOverrides: [String: String] {
