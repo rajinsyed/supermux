@@ -14,6 +14,10 @@ import SupermuxMobileCore
 /// workspace to the unified project that owns its remote record's
 /// `supermux_project_id` on that record's Mac — never by local path.
 ///
+/// A pass runs when an input changes: any Mac's projects, the device
+/// revision, or the panes of an unbound workspace showing a device terminal
+/// (they decide whether it is a mirror, and a local pane changes no device).
+///
 /// Each pass has two parts. The merge reruns only when its inputs changed
 /// (local projects, their origins, each Mac's projects), not on every
 /// ``SupermuxDevices/revision`` bump. The mirror part looks every mirror's
@@ -177,12 +181,19 @@ final class SupermuxUnifiedProjectsModel {
     }
 
     private func waitForInputChange() async {
+        // Found outside the tracking, which would otherwise follow every
+        // catalog write. Which workspaces show a device terminal changes only
+        // with a device projection or a binding, and both bump the revision.
+        let unboundDeviceWorkspaces = index.unboundDeviceProjectingWorkspaces()
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             withObservationTracking {
                 _ = projectsModel.projects
                 _ = gitRemotes.urlsByProjectID
                 _ = remoteProjects.devices
                 _ = devices.revision
+                // Their panes decide whether they are mirrors, and a local
+                // pane joining or leaving changes no device.
+                for workspace in unboundDeviceWorkspaces { _ = workspace.panels }
             } onChange: {
                 continuation.resume()
             }
