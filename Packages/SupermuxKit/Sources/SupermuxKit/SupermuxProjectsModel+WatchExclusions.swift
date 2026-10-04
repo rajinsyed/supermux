@@ -9,15 +9,18 @@ extension SupermuxProjectsModel {
     /// change the root's status, yet a recursive watcher on the root would
     /// wake for every file an agent writes in any of them. Empty for every
     /// other directory (a worktree itself, a subfolder, an unregistered
-    /// repository). ``SupermuxRepositoryWatcher`` drops a container that is
-    /// not strictly inside `path` (a `..` name), and filters one that does not
-    /// exist yet from the moment the first worktree creates it.
+    /// repository). Roots match in their symlink-resolved form, so a
+    /// workspace that reached the root through a symlinked ancestor (`/tmp`,
+    /// a `~/code` link to another volume) still skips it.
+    /// ``SupermuxRepositoryWatcher`` drops a container that is not strictly
+    /// inside `path` (a `..` name), and filters one that does not exist yet
+    /// from the moment the first worktree creates it.
     /// - Parameter path: The directory the watcher is about to watch.
     /// - Returns: Absolute container paths, usually none or one.
     public func worktreeContainers(forRoot path: String) -> [String] {
-        let root = SupermuxWorktreePath.normalized(path)
+        let root = SupermuxWorktreePath.canonical(path)
         return projects
-            .filter { SupermuxWorktreePath.normalized($0.rootPath) == root }
+            .filter { SupermuxWorktreePath.canonical($0.rootPath) == root }
             .map { SupermuxWorktreePath.lexicalWorktreesDir(canonicalRoot: root, project: $0) }
     }
 }
