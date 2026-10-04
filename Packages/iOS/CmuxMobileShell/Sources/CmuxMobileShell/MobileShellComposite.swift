@@ -344,6 +344,10 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
     /// the disconnected/add-device view instead of spinning on
     /// ``RestoringSessionView`` forever.
     public internal(set) var didFinishStoredMacReconnectAttempt: Bool = false
+    // SUPERMUX:begin mobile-startup-parallel-secondary
+    /// The Mac the launch reconnect is dialing as foreground.
+    var supermuxStartupForegroundCandidate: MacPairingKey?
+    // SUPERMUX:end mobile-startup-parallel-secondary
 
     /// Persisted hint that this device has previously paired a Mac.
     ///
@@ -3711,6 +3715,9 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
             let candidateUsesStrictTailscale = connectionMethod(for: mac) == .tailscale
             let candidateOwnsForegroundSelection = reconnectSelectionKey
                 == MacPairingKey(mac)
+            // SUPERMUX:begin mobile-startup-parallel-secondary
+            await supermuxReserveStartupForegroundCandidate(mac)
+            // SUPERMUX:end mobile-startup-parallel-secondary
             let dial = await dialSavedCandidateUnderDeadline(
                 mac,
                 storedRoutes: storedReconnectRoutes(mac),
@@ -6952,6 +6959,9 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
     private func secondaryMacConflictsWithForegroundOwnership(
         _ mac: MobilePairedMac
     ) -> Bool {
+        // SUPERMUX:begin mobile-startup-parallel-secondary
+        if supermuxIsStartupForegroundCandidate(mac) { return true }
+        // SUPERMUX:end mobile-startup-parallel-secondary
         guard foregroundConnectionAttemptReservation?.conflicts(
             with: mac
         ) != true else {
