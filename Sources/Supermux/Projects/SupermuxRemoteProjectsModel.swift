@@ -63,7 +63,9 @@ final class SupermuxRemoteProjectsModel {
     /// asked for since).
     @ObservationIgnored private var wantedWorktrees: Set<String> = []
     /// Macs refreshed since their link last connected, so the link event and
-    /// the device list reporting the same connection refresh it once.
+    /// the device list reporting the same connection refresh it once. A
+    /// refresh that cannot reach the host (`host.status` failed) clears the
+    /// mark, so the next device-list change tries that connection again.
     @ObservationIgnored private var refreshedSinceConnect: Set<SurfaceMachineID> = []
     /// Macs whose next refresh pass also sweeps their worktree lists. A set
     /// rather than a pass argument, so a sweep asked for while a pass without
@@ -328,7 +330,9 @@ final class SupermuxRemoteProjectsModel {
         let sweep = worktreeSweepDue.remove(machine) != nil
         guard let device = facade.device(for: machine), device.isConnected,
               let capabilities = await facade.hostCapabilities(on: machine) else {
-            // Not refreshed: the next pass still sweeps.
+            // Not refreshed: the next device-list change may retry this
+            // connection's refresh, and the next pass still sweeps.
+            refreshedSinceConnect.remove(machine)
             if sweep { worktreeSweepDue.insert(machine) }
             return
         }
