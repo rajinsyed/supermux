@@ -6470,9 +6470,12 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
         // Full snapshots and explicit refreshes reconcile the account backup.
         // Targeted presence updates already persisted their pushed route and must
         // not turn one Mac's churn into an account-wide network fetch.
+        // SUPERMUX:begin mobile-startup-parallel-secondary
+        let supermuxIsLaunchPass = supermuxIsLaunchSecondaryPass
+        // SUPERMUX:end mobile-startup-parallel-secondary
         if onlyMacDeviceIDs == nil,
            // SUPERMUX:begin mobile-startup-parallel-secondary
-           !supermuxIsLaunchSecondaryPass,
+           !supermuxIsLaunchPass,
            // SUPERMUX:end mobile-startup-parallel-secondary
            let refresher = pairedMacStore as? any PairedMacBackupRefreshing {
             await refresher.refreshFromBackup(stackUserID: scope.userID)
@@ -6747,6 +6750,13 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
                   secondaryAggregationRetryTask == nil,
                   secondaryAggregationRetryMacIDs.isEmpty {
             secondaryAggregationRetryState.reset()
+        // SUPERMUX:begin mobile-startup-parallel-secondary
+        } else if supermuxIsLaunchPass, !transientFailureMacIDs.isEmpty {
+            // The pass scheduled once the foreground connects dials these
+            // Macs again. A retry armed here would also stop that pass from
+            // discovering Macs this phone has not saved yet, because it may
+            // open new connections only while no retry is waiting.
+        // SUPERMUX:end mobile-startup-parallel-secondary
         } else if !transientFailureMacIDs.isEmpty {
             // Initial dial failures need the same shared cooldown as ended live
             // streams. Otherwise every presence heartbeat immediately retries all

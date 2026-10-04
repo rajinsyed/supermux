@@ -34,9 +34,11 @@ extension MobileShellComposite {
     ) async {
         guard isLaunchRestore, !didFinishStoredMacReconnectAttempt, multiMacAggregationEnabled else { return }
         let isFirstCandidate = supermuxStartupForegroundReservation?.generation != generation
-        // A launch led by a legacy (non-Iroh) Mac, or by an explicit Tailscale
-        // choice, keeps upstream's order: that reconnect may end in update
-        // guidance or a strict failure without dialing any other Mac.
+        // The parallel pass starts at the first Iroh candidate on the
+        // automatic method. A legacy (non-Iroh) Mac or an explicit Tailscale
+        // choice keeps upstream's order while it is the candidate: that
+        // reconnect may end in update guidance or a strict failure without
+        // dialing any other Mac.
         guard !isFirstCandidate
             || (mac.routes.contains(where: { $0.kind == .iroh }) && connectionMethod(for: mac) != .tailscale)
         else { return }
@@ -45,7 +47,7 @@ extension MobileShellComposite {
             reservation: ForegroundConnectionAttemptReservation(
                 id: UUID(),
                 requestedMacDeviceID: mac.macDeviceID,
-                instanceTagExpectation: mac.instanceTag.map { .preserve($0) } ?? .adopt,
+                instanceTagExpectation: macInstanceTagAuthority.expectation(storedInstanceTag: mac.instanceTag),
                 routes: routes
             )
         )
