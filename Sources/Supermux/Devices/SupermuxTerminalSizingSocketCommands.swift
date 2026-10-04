@@ -1,4 +1,6 @@
 #if DEBUG
+import AppKit
+import CmuxBrowser
 import CmuxTerminalSharing
 import CmuxTerminalSizing
 import Foundation
@@ -25,6 +27,13 @@ import Foundation
 ///   portal reveal the pane `hidden_ms` later through its own synchronize pass;
 ///   with `silent_reveal`, un-hides it directly instead (a reveal path nothing
 ///   hears about).
+/// - `local_key {surface_id, text?}` — this Mac's user typing into a shown
+///   terminal: makes its window key and the terminal first responder
+///   (activating the app when it is not active), then posts a key-down for
+///   each character of `text` (default one space) to the app's event queue.
+///   The run loop dequeues it and dispatches it through
+///   `NSApplication.sendEvent`, as a key press: a socket handler calling
+///   `sendEvent` itself is programmatic input, never the Mac's activity.
 @MainActor
 enum SupermuxTerminalSizingSocketCommands {
     static let methodPrefix = "terminal_sizing."
@@ -46,6 +55,8 @@ enum SupermuxTerminalSizingSocketCommands {
             return try setPriority(params)
         case "portal_flicker":
             return try portalFlicker(params)
+        case "local_key":
+            return try localKey(params)
         default:
             throw SupermuxMirrorSocketCommands.InvalidParams(message: "unknown terminal_sizing method \(name)")
         }
@@ -75,6 +86,7 @@ enum SupermuxTerminalSizingSocketCommands {
             "stored": defaults.isStored,
             "mirrors": mirrors,
             "adopted_remote_choices": defaults.adoptedRemoteChoices,
+            "mac_activations": SupermuxTerminalSizingAuto.shared.macActivations,
         ]
     }
 
@@ -150,6 +162,38 @@ enum SupermuxTerminalSizingSocketCommands {
             }
         }
         return ["surface_id": id.uuidString, "hidden_ms": hiddenMilliseconds, "silent_reveal": silentReveal]
+    }
+
+    // MARK: - This Mac's user
+
+    private static func localKey(_ params: [String: Any]) throws -> [String: Any] {
+        guard let raw = params["surface_id"] as? String, let id = UUID(uuidString: raw),
+              let surface = TerminalController.shared.terminalSocketTarget(surfaceID: id)?.surface else {
+            throw SupermuxMirrorSocketCommands.InvalidParams(message: "surface_id must be a terminal id")
+        }
+        let view = surface.hostedView.surfaceView
+        guard let window = view.window, !surface.hostedView.isHidden else {
+            throw SupermuxMirrorSocketCommands.InvalidParams(message: "the terminal's pane is not shown")
+        }
+        let text = (params["text"] as? String) ?? " "
+        let keys = text.compactMap(SyntheticKeyEventFactory.specification(forASCIICharacter:))
+        guard !text.isEmpty, keys.count == text.count else {
+            throw SupermuxMirrorSocketCommands.InvalidParams(message: "text must be plain ASCII characters")
+        }
+        let activated = !NSApp.isActive
+        if activated { NSApp.activate(ignoringOtherApps: true) }
+        if !window.isKeyWindow { window.makeKeyAndOrderFront(nil) }
+        let focused = !surface.hostedView.isSurfaceViewFirstResponder()
+        if focused { window.makeFirstResponder(view) }
+        for key in keys {
+            guard let event = SyntheticKeyEventFactory.keyEvent(
+                specification: key, keyDown: true, timestamp: ProcessInfo.processInfo.systemUptime
+            ) else {
+                throw SupermuxMirrorSocketCommands.InvalidParams(message: "could not create a key event")
+            }
+            NSApp.postEvent(event, atStart: false)
+        }
+        return ["surface_id": id.uuidString, "posted": keys.count, "activated": activated, "focused": focused]
     }
 
     // MARK: - Helpers

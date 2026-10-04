@@ -52,6 +52,12 @@ final class SupermuxTerminalSizingAuto {
     /// report only (SUPERMUX-TOUCHPOINTS.md #881).
     var viewAppearedClientID: String?
     private var observer: NSObjectProtocol?
+    #if DEBUG
+    /// How many times the app becoming active noted a focused terminal's
+    /// Mac pane activity (`terminal_sizing.state`): lets the E2E tell an
+    /// activation apart from input.
+    private(set) var macActivations = 0
+    #endif
 
     /// Starts following app activation. Later calls are no-ops.
     func start() {
@@ -147,6 +153,9 @@ final class SupermuxTerminalSizingAuto {
     private func focusedTerminalActivated() {
         guard let view = NSApp.keyWindow?.firstResponder as? GhosttyNSView,
               let surfaceID = view.terminalSurface?.id else { return }
+        #if DEBUG
+        macActivations += 1
+        #endif
         TerminalController.shared.noteLocalTerminalSizingActivity(surfaceID: surfaceID)
     }
 }
