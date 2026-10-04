@@ -40,6 +40,19 @@ public struct SupermuxNestedWorkspaceAccessory: Equatable, Sendable {
 
     /// Whether the row shows the PR badge or run indicator.
     var hasStatus: Bool { pullRequest != nil || isRunning }
+
+    /// What of the accessory changes the row's height: the branch line adds
+    /// a line, and the status takes width beside a title that may wrap.
+    public struct LayoutKey: Hashable, Sendable {
+        let hasBranchLine: Bool
+        let hasPullRequest: Bool
+        let isRunning: Bool
+    }
+
+    /// The row-height identity of this accessory.
+    public var layoutKey: LayoutKey {
+        LayoutKey(hasBranchLine: hasBranchLine, hasPullRequest: pullRequest != nil, isRunning: isRunning)
+    }
 }
 
 extension EnvironmentValues {
@@ -91,7 +104,8 @@ public struct SupermuxNestedBranchSlot: View {
 
 /// The room the shell row leaves on its trailing edge for a nested row's PR
 /// badge and run indicator, laid out but not drawn, for the same reason as
-/// ``SupermuxNestedBranchSlot``. Nothing when the row has neither.
+/// ``SupermuxNestedBranchSlot``. An empty slot when the row has neither, so
+/// the row's padding around it still keeps text clear of the activity dot.
 public struct SupermuxNestedStatusSlot: View {
     /// How far from the row's trailing edge the status stays, clear of the
     /// activity dot drawn there.
@@ -110,6 +124,8 @@ public struct SupermuxNestedStatusSlot: View {
             SupermuxNestedWorkspaceStatusView(accessory: accessory)
                 .hidden()
                 .anchorPreference(key: SupermuxNestedStatusSlotKey.self, value: .bounds) { $0 }
+        } else {
+            Color.clear.frame(width: 0, height: 0)
         }
     }
 }
