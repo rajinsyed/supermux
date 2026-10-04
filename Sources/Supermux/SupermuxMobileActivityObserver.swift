@@ -36,11 +36,11 @@ import SupermuxKit
 /// Since cmux 0.64.21 the phone prefers **mobile state sync v2**: once it has
 /// negotiated `mobile.sync.fetch`, `MobileShellComposite` ignores the
 /// `workspace.updated` poke entirely and only applies `mobile.sync.delta`
-/// frames, as other Macs' `DeviceLink`s do. So every change also requests the
-/// shared ``SupermuxStateSyncTicker`` — otherwise a v2 phone would never see
-/// an activity flip or an association change, because upstream's
-/// `summaryHash` is blind to the fork fields and nothing else would trip a
-/// delta.
+/// frames, as other Macs' `DeviceLink`s do. So every change also ticks the
+/// shared ``SupermuxStateSyncTicker`` at once (the pass already waited its
+/// window) — otherwise a v2 phone would never see an activity flip or an
+/// association change, because upstream's `summaryHash` is blind to the fork
+/// fields and nothing else would trip a delta.
 ///
 /// Nothing runs while neither topic has a subscriber. The association
 /// tracking lapses meanwhile, so the first subscriber gets one forced pass,
@@ -92,9 +92,10 @@ final class SupermuxMobileActivityObserver {
     ///   - lifecycleEvents: Agent-lifecycle mutation stream; defaults to
     ///     ``SupermuxWorkspaceLifecycleRelay``.
     ///   - emit: The event sink; defaults to `MobileHostService.emitEvent`.
-    ///   - pokeStateSync: The mobile state sync v2 tick; defaults to the
-    ///     shared ``SupermuxStateSyncTicker``, which schedules nothing unless
-    ///     a client subscribed to the delta topic.
+    ///   - pokeStateSync: The mobile state sync v2 tick; defaults to
+    ///     ``SupermuxStateSyncTicker/requestNow()``, which also absorbs a
+    ///     pending sidebar-status request and no-ops unless a client
+    ///     subscribed to the delta topic.
     ///   - hasSubscribers: Whether `workspace.updated` or the delta topic has
     ///     a subscriber.
     init(
@@ -105,7 +106,7 @@ final class SupermuxMobileActivityObserver {
             MobileHostService.shared.emitEvent(topic: topic, payload: payload)
         },
         pokeStateSync: @escaping @MainActor () -> Void = {
-            SupermuxStateSyncTicker.shared.request()
+            SupermuxStateSyncTicker.shared.requestNow()
         },
         hasSubscribers: @escaping @MainActor () -> Bool = {
             MobileHostService.hasEventSubscribers(topic: "workspace.updated")

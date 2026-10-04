@@ -1012,8 +1012,9 @@ silently decide them. None of them is a bug to fix in-place; each needs a produc
    ticks the v2 host alongside its `workspace.updated` emit, via an injectable `pokeStateSync`
    parameter, so activity and association changes propagate. It acts only when a workspace's
    lifecycle-derived fields or the association actually changed (not on every agent hook), and
-   ticks through `SupermuxStateSyncTicker`, the one trailing 150 ms tick it shares with
-   `SupermuxMobileSidebarStatusObserver`. Unopened **worktree** PR badges are covered too, by
+   ticks through `SupermuxStateSyncTicker`, which it shares with
+   `SupermuxMobileSidebarStatusObserver`: sidebar status changes wait in one trailing 150 ms tick,
+   and an activity change ticks at once, absorbing it. Unopened **worktree** PR badges are covered too, by
    `SupermuxMobileWorktreesObserver` (`Sources/Supermux/SupermuxMobileObservers.swift`), which
    hashes `pullRequestsByWorktreePath`. **Remaining gap — narrower than it first looks:** there is
    no fork observer for branch-only or PR-only mutations on an **open `Workspace`**, so those
@@ -1037,7 +1038,7 @@ lands first. All three are verified by a successful
   now `@MainActor`, because upstream made `FileExplorerStore` main-actor-isolated. Both call sites
   in `Sources/FileExplorerView.swift` are already on the main actor.
 - `Sources/Supermux/SupermuxMobileActivityObserver.swift` — gained an injectable `pokeStateSync`
-  (default `SupermuxStateSyncTicker.shared.request()`, which ends in
+  (default `SupermuxStateSyncTicker.shared.requestNow()`, which ends in
   `MobileStateSyncHost.shared.broadcastIfSubscribed()`) called alongside its
   `workspace.updated` emit; this is what keeps the fork's §6 fields fresh under state sync v2
   (see open decision 6 above). Its doc comment explains the rationale in place.

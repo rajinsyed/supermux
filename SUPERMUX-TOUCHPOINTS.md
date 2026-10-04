@@ -6864,13 +6864,14 @@ Before, every agent hook (each `PreToolUse`) relayed a lifecycle event, and `Sup
 answered each one with an unconditional `workspace.updated` emit and a full `MobileStateSyncHost` rebuild, even
 when nothing the record carries had changed; a device mirror's overlay updates on a viewer did the same, although
 mirrors are never exported. `SupermuxMobileSidebarStatusObserver` ticked the same rebuild on its own 250 ms window.
-Now both fork observers request one shared trailing tick (`Sources/Supermux/SupermuxStateSyncTicker.swift`, 150 ms
-with 50 ms tolerance, nothing scheduled while no client subscribes to `mobile.sync.delta`). The activity observer
-signs each relayed workspace (`activity(for:)`, `activityByAgentKey(for:)`, `supermuxWorkingPanelIDs()`), skips
-mirrors and closed workspaces, and emits only when a signature or the association hash changed; `workspace.updated`
-goes out at most once per second (the first change at once, later ones trailing). It does nothing while neither
-`workspace.updated` nor `mobile.sync.delta` has a subscriber, and runs one forced pass when the first one
-subscribes. The sidebar status observer skips a mirror's metadata changes. The lifecycle relay and
+Now both fork observers share one ticker (`Sources/Supermux/SupermuxStateSyncTicker.swift`): the sidebar status
+observer requests a trailing tick (150 ms with 50 ms tolerance, nothing scheduled while no client subscribes to
+`mobile.sync.delta`), and the activity observer, already coalesced by its 80 ms pass, ticks at once and absorbs a
+pending request. The activity observer signs each relayed workspace (`activity(for:)`, `activityByAgentKey(for:)`,
+`supermuxWorkingPanelIDs()`), skips mirrors and closed workspaces, and emits only when a signature or the association
+hash changed; `workspace.updated` goes out at most once per second (the first change at once, later ones trailing).
+It does nothing while neither `workspace.updated` nor `mobile.sync.delta` has a subscriber, and runs one forced pass
+when the first one subscribes. The sidebar status observer skips a mirror's metadata changes. The lifecycle relay and
 `SupermuxTabActivitySync` are unchanged.
 
 Re-apply after an upstream merge: re-add the four entries listed in the #1010 row.

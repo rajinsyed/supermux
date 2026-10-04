@@ -17,10 +17,10 @@ import Foundation
 /// device mirror's changes are skipped, checked as each one arrives: its pills
 /// are the other Mac's, written by ``SupermuxDeviceStatusProjector``, and the
 /// export filter never sends a mirror back. Every other change pokes the
-/// shared ``SupermuxStateSyncTicker``, which coalesces it with the activity
-/// observer's into one trailing tick; the tick itself is a no-op diff when
-/// nothing the record carries changed. Lives for the app's lifetime (owned by
-/// ``SupermuxMobileHostGlue``).
+/// shared ``SupermuxStateSyncTicker``, which coalesces it into one trailing
+/// tick (or folds it into the activity observer's immediate one); the tick
+/// itself is a no-op diff when nothing the record carries changed. Lives for
+/// the app's lifetime (owned by ``SupermuxMobileHostGlue``).
 @MainActor
 final class SupermuxMobileSidebarStatusObserver {
     private let poke: @MainActor () -> Void

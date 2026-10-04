@@ -6,9 +6,11 @@ import Foundation
 /// both tick `MobileStateSyncHost` for changes upstream's
 /// `MobileWorkspaceListObserver` cannot see. Each tick rebuilds every row of
 /// every window (`buildRows`), so instead of each observer ticking on its own
-/// window, both ``request()`` here: every request inside one ``delay``
+/// window, they share this one: every ``request()`` inside one ``delay``
 /// collapses into a single `broadcastIfSubscribed()`, whose diff emits only the
-/// rows that changed.
+/// rows that changed. The activity observer already waited its own 80 ms
+/// pass, so it calls ``requestNow()``: an activity flip reaches viewers
+/// without a second wait, and the tick absorbs any pending request.
 @MainActor
 final class SupermuxStateSyncTicker {
     static let shared = SupermuxStateSyncTicker()
@@ -44,5 +46,14 @@ final class SupermuxStateSyncTicker {
             self.pendingTick = nil
             self.tick()
         }
+    }
+
+    /// Ticks at once, absorbing a pending request: the rebuild reads current
+    /// state, so it covers whatever that request was waiting for. The tick
+    /// itself no-ops while no client subscribes to the delta topic.
+    func requestNow() {
+        pendingTick?.cancel()
+        pendingTick = nil
+        tick()
     }
 }
