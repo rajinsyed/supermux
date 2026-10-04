@@ -9,9 +9,9 @@ import SupermuxMobileCore
 /// instead of on the next link connect. They refetch `ports.list` on receipt.
 ///
 /// Watches every main window's workspaces' `listeningPorts` (the sidebar's
-/// port detection), only while a device link subscribes to the topic, so a
-/// Mac nobody forwards from pays nothing. Pokes are coalesced into one per
-/// ``throttle`` window. It also watches its own terminals' commands: the sidebar
+/// port detection) and which workspaces there are (not their order), only
+/// while a device link subscribes to the topic, so a Mac nobody forwards from
+/// pays nothing. Pokes are coalesced into one per ``throttle`` window. It also watches its own terminals' commands: the sidebar
 /// scans a terminal only for about 10 s after a command starts, so a server that
 /// binds later (a dev script that does other work first) would never be a
 /// workspace's port; for a while after a command starts,
@@ -27,6 +27,8 @@ final class SupermuxHostPortsObserver {
     private var observers: [any NSObjectProtocol] = []
     private var tabsCancellables: [ObjectIdentifier: AnyCancellable] = [:]
     private var workspaceCancellables: [UUID: AnyCancellable] = [:]
+    /// The workspaces seen last; nil while detached, so attaching counts as a change.
+    private var lastWorkspaceIDs: Set<UUID>?
     private var pendingPoke: Task<Void, Never>?
     private var commandWatch: Task<Void, Never>?
     private let lateListeners = SupermuxLateListenerCheck()
@@ -46,6 +48,7 @@ final class SupermuxHostPortsObserver {
         guard MobileHostService.hasEventSubscribers(topic: Self.topic) else {
             tabsCancellables.removeAll()
             workspaceCancellables.removeAll()
+            lastWorkspaceIDs = nil
             commandWatch?.cancel()
             commandWatch = nil
             lateListeners.stop()
@@ -74,7 +77,11 @@ final class SupermuxHostPortsObserver {
                 .removeDuplicates()
                 .sink { [weak self] _ in self?.schedulePoke() }
         }
-        // A workspace that appears or goes may take ports with it.
+        // A reorder (every agent notification moves its workspace up) changes
+        // no ports and no terminals: only a workspace that appears or goes
+        // may take ports with it, or bring terminals to watch.
+        guard ids != lastWorkspaceIDs else { return }
+        lastWorkspaceIDs = ids
         schedulePoke()
         watchCommands()
     }
