@@ -71,6 +71,10 @@ public actor IrxEndpointSupervisor {
     private var relayInstaller: IrxRelayCredentialInstaller?
     private var bindInFlight: Task<Endpoint, any Error>?
     private var bindID: UUID?
+    // SUPERMUX:begin irx-dial-before-home-relay
+    /// Dials waiting for the in-flight bind to publish its endpoint.
+    private var boundWaiters: [CheckedContinuation<Void, Never>] = []
+    // SUPERMUX:end irx-dial-before-home-relay
     /// Sign-out invalidates this supervisor permanently. A cancelled bind can
     /// still resume after URLSession/iroh returns, so the epoch is checked
     /// before that stale endpoint is published or advertised.
@@ -104,7 +108,10 @@ public actor IrxEndpointSupervisor {
         let epoch = lifecycleEpoch
         let id = UUID()
         let task = Task<Endpoint, any Error> {
-            try await bindGeneration(credentials: credentials, epoch: epoch)
+            // SUPERMUX:begin irx-dial-before-home-relay
+            defer { publishBound() }
+            // SUPERMUX:end irx-dial-before-home-relay
+            return try await bindGeneration(credentials: credentials, epoch: epoch)
         }
         bindInFlight = task
         bindID = id
@@ -376,6 +383,9 @@ public actor IrxEndpointSupervisor {
                 "path_mode": configuration.pathMode.rawValue,
             ]
         )
+        // SUPERMUX:begin irx-dial-before-home-relay
+        publishBound()
+        // SUPERMUX:end irx-dial-before-home-relay
         if directOnly {
             onlineReached = true
             watchClosure(of: bound, generation: generation)
@@ -486,7 +496,9 @@ extension IrxEndpointSupervisor {
             guard !address.directAddresses().isEmpty else { throw IrxEndpointError.noDirectAddress }
             target = EndpointAddr(id: address.id(), relayUrl: nil, addresses: address.directAddresses())
         } else { target = address }
-        let endpoint = try await readyEndpoint(credentials: credentials)
+        // SUPERMUX:begin irx-dial-before-home-relay
+        let endpoint = try await dialableEndpoint(credentials: credentials)
+        // SUPERMUX:end irx-dial-before-home-relay
         let startedAt = DispatchTime.now()
         let connection = try await endpoint.connect(
             addr: target, alpn: IrxProtocol().alpnData)
@@ -504,4 +516,31 @@ extension IrxEndpointSupervisor {
         )
         return irx
     }
+
+    // SUPERMUX:begin irx-dial-before-home-relay
+    /// The endpoint as soon as it is bound with its relay credentials,
+    /// without waiting for its own home relay to come online.
+    ///
+    /// A dial goes to the peer's relay, and iroh connects to that relay on
+    /// demand; the peer answers through the same relay. Waiting for this
+    /// endpoint's home relay first cost every cold launch about 1.9 s (iroh
+    /// picks the home relay from a full net report). The online wait still
+    /// runs in the bind task, so `readyEndpoint`, `isHealthy` and the bind's
+    /// failure handling are unchanged.
+    func dialableEndpoint(credentials: [IrxRelayCredential]) async throws -> Endpoint {
+        guard !deactivated else { throw IrxEndpointError.endpointClosed }
+        if let driver, !driver.isClosed() { return driver }
+        let ready = Task { try await self.readyEndpoint(credentials: credentials) }
+        await withCheckedContinuation { boundWaiters.append($0) }
+        if let driver, !driver.isClosed() { return driver }
+        return try await ready.value
+    }
+
+    /// Wakes every dial waiting for the bind, once it has bound or ended.
+    func publishBound() {
+        let waiters = boundWaiters
+        boundWaiters = []
+        for waiter in waiters { waiter.resume() }
+    }
+    // SUPERMUX:end irx-dial-before-home-relay
 }

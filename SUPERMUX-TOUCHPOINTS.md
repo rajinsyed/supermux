@@ -736,6 +736,7 @@ Rules for adding a touchpoint:
 | 923 | `Sources/GhosttyTerminalView.swift` | `sizing-auto-local-input` | First statements of `GhosttyNSView.performDragOperation(_:)`: `let enclosingLocalInput = SupermuxLocalUserInput.beginUserAction()` and `defer { SupermuxLocalUserInput.end(restoring: enclosingLocalInput) }`. A drop on a terminal is this Mac's user's input, and a drag from another app (Finder) is delivered outside `sendEvent`, so without it a dropped path no longer gave the grid to the Mac pane |
 | 924 | `Sources/Cloud/CloudTuiManualMirrorSession.swift` | `sizing-auto-local-input` | In `noteExplicitInput()`, first in the `sizingRelay.isSupported` branch: `guard SupermuxTerminalSizingAuto.shared.isMacPaneActivity else { return }`. A phone's input to a Cloud terminal it views through this Mac runs this pane's explicit-input hook too; relayed as this Mac's focus activity it took the grid from the phone (the same flash). The legacy geometry claim below is unchanged |
 | 925 | `ios/cmux-ios.xcodeproj/project.pbxproj` | `unfenced` | Leaves upstream's Cloud VPN packet-tunnel extension out of the app: removes the `cmux` target's dependency on `CloudVPN` (`C10DA0060000000000000002 /* PBXTargetDependency */`) and `C10DA0010000000000000002 /* CloudVPN.appex in Embed App Extensions */` from the Embed App Extensions phase. The `CloudVPN` target stays defined (unbuilt) so upstream edits to it still merge. Supermux does not use cmux Cloud's System VPN, and neither the personal-team dogfood lane nor `scripts/supermux-ios-release.sh` can provision a Network Extensions profile for it. The Cloud tab's System VPN switch fails to start without the extension |
+| 926 | `Packages/Shared/CmuxIrxTransport/Sources/CmuxIrxTransport/IrxEndpoint.swift` | `irx-dial-before-home-relay` | `IrxEndpointSupervisor.dial` takes the endpoint as soon as it is bound (`dialableEndpoint`) instead of `readyEndpoint`, which also waits for this endpoint's own home relay to come online (about 1.9 s on every phone cold launch: iroh picks the home relay from a full net report). Five fences: `boundWaiters`, the bind task's `defer { publishBound() }`, `publishBound()` after the `bound` journal event, the `dial` call site, and the two helpers. `readyEndpoint`, `isHealthy` and the online-timeout discard are unchanged |
 | 810 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the remote-terminal polish into the cmux target, four entries each (build file, file reference, Supermux group child, Sources phase) next to #764's `SupermuxDeviceTerminalUpload.swift`: `Devices/SupermuxDeviceTerminalLinks.swift` (`50BE001B0200000000000001`/`…02`, a Cmd-click on a path in another Mac's terminal), `Devices/SupermuxDeviceTerminalActions.swift` (`…03`/`…04`, forwarded Cmd+K/reset, focus and Ctrl+V of an image) and `SupermuxMobileHost+TerminalActions.swift` (`…05`/`…06`, the host's `terminal.action`) |
 | 811 | `Sources/Workspace+TerminalLinkOpening.swift` | `device-terminal-file-link` | First thing in `deferRemoteTerminalFileLinkOpen`: `SupermuxDeviceTerminalLinks.open(rawValue, panelID:in:)` claims a file path clicked in another Mac's terminal and opens that Mac's file in the mirror's read-only preview (upstream refused it: only SSH terminals resolved a remote path) |
 | 812 | `Sources/DockSplitStore+TerminalLinkOpening.swift` | `device-terminal-file-link` | Adds `deferRemoteTerminalFileLinkOpen` to the Dock's link container (upstream relies on the protocol's `false` default): the same `SupermuxDeviceTerminalLinks.open` for another Mac's terminal moved into the Dock |
@@ -6695,3 +6696,26 @@ Verify: `CMUX_E2E_SUITES="loopback_agent_answer_e2e loopback_agent_activity_e2e"
 tests/supermux/run_all_loopback_e2e.sh`, `CMUX_CLI_BIN=<tagged Debug cmux> python3
 tests/test_claude_wrapper_generated_settings_fast_path.py` and `swift test --filter AgentHookDeliveryPolicy` in
 `Packages/macOS/CMUXAgentLaunch`.
+
+### 926. A dial does not wait for this endpoint's own home relay — `irx-dial-before-home-relay`
+
+Measured on the user's iPhone (61 cold launches, 2026-09-30 to 10-04): `endpoint/online` came 1.90–2.26 s
+after `endpoint/bound` (median 1.95 s, never less), and every first dial waited for it. iroh chooses the
+home relay from a full net report before connecting to it. A dial does not need that relay: the address
+carries the peer's relay URL, iroh opens that relay connection on demand with the credentials installed at
+bind, and the peer answers through it. Upstream's rule ("readiness BEFORE anyone may dial") came from the
+old stack, whose launch dials raced an endpoint without relay credentials; v2 installs every credential
+before `bound`.
+
+Failure modes considered: a dial before online that cannot reach the peer (it fails like any dial and the
+engine retries after its backoff, by which time the endpoint is online); an online timeout after a dial
+already succeeded (the bind still discards the endpoint after 20 s, so that session drops and redials, as
+any endpoint failure would); a bind that fails or is cancelled before `bound` (the bind task's `defer`
+wakes the waiters, which then rethrow the bind's error); sign-out mid-dial (`deactivated` and the
+lifecycle epoch checks are unchanged).
+
+Re-apply after an upstream merge: keep `dial` on `dialableEndpoint`, and keep both `publishBound()` calls
+(after the `bound` event and in the bind task's `defer`).
+
+Verify on the phone: the iroh journal's first `endpoint/dialed` after `v2-lifecycle/launch` comes before
+`endpoint/online`.
