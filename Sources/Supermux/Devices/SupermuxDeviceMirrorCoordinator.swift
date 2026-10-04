@@ -80,7 +80,10 @@ final class SupermuxDeviceMirrorCoordinator {
     /// The input of the last pass that planned.
     private var lastFingerprint: InputFingerprint?
     private(set) var lastPlan = SupermuxMirrorReconciler.Plan()
+    /// Every pass since launch, and those that planned (the rest found the
+    /// input of an empty plan unchanged).
     private(set) var reconcileCount = 0
+    private(set) var planCount = 0
     private(set) var lastOpenError: String?
 
     init(
@@ -264,6 +267,7 @@ final class SupermuxDeviceMirrorCoordinator {
         }
         // Closes the user made while a Mac was offline go out once it is back.
         closer.sendPendingCloses()
+        reconcileCount += 1
         let input = makeInput()
         lastAutoMirror = input.autoMirror
         let fingerprint = InputFingerprint(input)
@@ -283,7 +287,7 @@ final class SupermuxDeviceMirrorCoordinator {
     }
 
     private func execute(_ plan: SupermuxMirrorReconciler.Plan) {
-        reconcileCount += 1
+        planCount += 1
         lastPlan = plan
         // Before the closes: the survivor must hold the binding when the
         // bound copy goes (its close unbinds only its own stable id).
