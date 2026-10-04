@@ -162,6 +162,11 @@ struct SupermuxProjectsMount: View {
     /// ``SupermuxWorkspaceObservation``.
     @StateObject private var observation = SupermuxWorkspaceObservation()
 
+    /// Whether this window is on screen: off screen (minimized, covered,
+    /// hidden, a headless Remote Host Mode window) the worktree PR probe
+    /// slows to its off-screen cadence instead of polling every minute.
+    @StateObject private var windowVisibility = SupermuxWindowVisibility()
+
     // cmux's PR-probe gates (Settings → sidebar), read via @AppStorage so a
     // toggle re-renders the mount and restarts/stops the section's probe loop.
     // Missing keys default to the catalog defaults, matching
@@ -257,8 +262,13 @@ struct SupermuxProjectsMount: View {
                 _ = NSWorkspace.shared.open(url)
             },
             // Honor cmux's own PR-probe gates: with polling off, the section
-            // clears worktree badges and never touches GitHub.
-            pullRequestPolling: SupermuxPullRequestPollingPolicy(isEnabled: pullRequestsEnabled),
+            // clears worktree badges and never touches GitHub. Off screen it
+            // keeps the badges (a headless host's phones read them) and only
+            // polls less often.
+            pullRequestPolling: SupermuxPullRequestPollingPolicy(
+                isEnabled: pullRequestsEnabled,
+                isOnScreen: windowVisibility.isOnScreen
+            ),
             // One app-wide PR model: every window's sidebar shares one poll
             // pass and one repo cache instead of probing per window.
             pullRequestModel: SupermuxComposition.worktreePullRequestModel,
@@ -278,6 +288,7 @@ struct SupermuxProjectsMount: View {
         .onChange(of: tabManager.tabs.map(\.id)) {
             observation.observe(tabs: tabManager.tabs)
         }
+        .supermuxTracksWindowVisibility(windowVisibility)
         .environment(\.supermuxSidebarFontScale, fontScaleStore.fontScale)
         // Nested rows honor the flat rows' user-settable badge color; empty
         // hex (the default) resolves to cmux's accent, like the flat rows.
@@ -504,10 +515,10 @@ private final class SupermuxChangesModelBox: ObservableObject {
 /// so separate windows track their own active workspace independently.
 struct SupermuxChangesMount: View {
     let workspaceDirectory: String?
-    /// Whether the right sidebar is on-screen. Forwarded to the panel so its
-    /// FS-watcher-driven git observation, background auto-fetch, and commit key
-    /// equivalents all pause while hidden (the sidebar keeps this content
-    /// mounted after its first show).
+    /// Whether the right sidebar is on-screen. Forwarded to the panel (with
+    /// the window's own visibility) so its FS-watcher-driven git observation,
+    /// background auto-fetch, and commit key equivalents all pause while
+    /// hidden (the sidebar keeps this content mounted after its first show).
     var isVisible: Bool = true
 
     @EnvironmentObject private var tabManager: TabManager
@@ -520,6 +531,10 @@ struct SupermuxChangesMount: View {
     /// Mirrors the selected workspace's cmux-probed PR into the panel header
     /// (no fetch of our own; see the observer).
     @StateObject private var pullRequestObserver = SupermuxChangesPullRequestObserver()
+    /// Whether this window is on screen. A minimized, covered or hidden
+    /// window (or a headless Remote Host Mode one) pauses the panel exactly
+    /// like a hidden sidebar: no watcher, no git, no fetch, no mirror lease.
+    @StateObject private var windowVisibility = SupermuxWindowVisibility()
 
     var body: some View {
         let _ = shortcutObserver.revision
@@ -528,7 +543,7 @@ struct SupermuxChangesMount: View {
                 SupermuxMirrorChangesPanel(
                     model: remote,
                     target: target,
-                    isVisible: isVisible,
+                    isVisible: isPanelVisible,
                     commitShortcut: Self.keyboardShortcut(for: .supermuxCommit),
                     commitAcceleratorShortcut: Self.keyboardShortcut(for: .supermuxCommitAccelerator),
                     commitShortcutHint: KeyboardShortcutSettings.shortcut(for: .supermuxCommit).displayString
@@ -550,6 +565,7 @@ struct SupermuxChangesMount: View {
         .onChange(of: box.mirror.target?.ref) { _, _ in
             box.model.setDirectory(localDirectory)
         }
+        .supermuxTracksWindowVisibility(windowVisibility)
     }
 
     /// The local model's directory: the selected workspace's, or none while a
@@ -558,10 +574,17 @@ struct SupermuxChangesMount: View {
         box.mirror.target == nil ? workspaceDirectory : nil
     }
 
+    /// Whether the panel can be seen: the right sidebar shown and its window
+    /// on screen (hidden only after it stays off screen for a while; see
+    /// ``SupermuxWindowVisibility``).
+    private var isPanelVisible: Bool {
+        isVisible && windowVisibility.isOnScreen
+    }
+
     private var localPanel: some View {
         SupermuxChangesPanelView(
             model: box.model,
-            isVisible: isVisible,
+            isVisible: isPanelVisible,
             commitShortcut: Self.keyboardShortcut(for: .supermuxCommit),
             commitAcceleratorShortcut: Self.keyboardShortcut(for: .supermuxCommitAccelerator),
             commitShortcutHint: KeyboardShortcutSettings.shortcut(for: .supermuxCommit).displayString,

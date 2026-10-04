@@ -71,6 +71,16 @@ public final class SupermuxWorktreePullRequestModel {
     /// mirroring upstream's `PullRequestPollService` back-off on the same value.
     @ObservationIgnored private var rateLimitedUntil: Date?
 
+    /// Each client's last completed pass: the targets it resolved and when.
+    /// Dropped when the client clears its targets or ends tracking, since its
+    /// badges are gone then (see ``delayBeforeNextPass(targets:interval:client:)``).
+    @ObservationIgnored private var lastPassByClient: [UUID: CompletedPass] = [:]
+
+    private struct CompletedPass {
+        let targets: Set<SupermuxPullRequestTarget>
+        let finishedAt: ContinuousClock.Instant
+    }
+
     /// Creates the model.
     /// - Parameter probe: PR resolver; defaults to the production probe.
     public init(probe: any SupermuxPullRequestResolving = SupermuxPullRequestProbe()) {
@@ -106,6 +116,7 @@ public final class SupermuxWorktreePullRequestModel {
         trackedPathsByClient[clientId] = targets.isEmpty ? nil : Set(targets.map(\.path))
 
         guard !targets.isEmpty else {
+            lastPassByClient[clientId] = nil
             pruneToTrackedPaths()
             return
         }
@@ -148,6 +159,26 @@ public final class SupermuxWorktreePullRequestModel {
         )
         failureCounts = applied.failureCounts
         publishIfChanged(applied.badges)
+        lastPassByClient[clientId] = CompletedPass(targets: Set(targets), finishedAt: .now)
+    }
+
+    /// How long `client` should wait before its next pass over `targets` so
+    /// its passes stay `interval` apart. Zero unless the client's last
+    /// completed pass resolved exactly these targets, so new targets (or a
+    /// client whose badges were cleared) probe at once.
+    /// - Parameters:
+    ///   - targets: The targets of the next pass.
+    ///   - interval: The polling interval in effect.
+    ///   - client: The client id passed to `refresh`; omit for an unshared instance.
+    /// - Returns: The rest of `interval` since that pass, or zero.
+    func delayBeforeNextPass(
+        targets: [SupermuxPullRequestTarget],
+        interval: Duration,
+        client: UUID? = nil
+    ) -> Duration {
+        guard let last = lastPassByClient[client ?? Self.soleClient],
+              last.targets == Set(targets) else { return .zero }
+        return max(.zero, interval - (ContinuousClock.now - last.finishedAt))
     }
 
     /// Stops tracking a client's targets (e.g. its window closed) and prunes
@@ -158,6 +189,7 @@ public final class SupermuxWorktreePullRequestModel {
         // in-flight pass (its guard sees nil) and keeps the map from growing
         // across window open/close cycles.
         refreshGenerationByClient.removeValue(forKey: client)
+        lastPassByClient.removeValue(forKey: client)
         guard trackedPathsByClient.removeValue(forKey: client) != nil else { return }
         pruneToTrackedPaths()
     }

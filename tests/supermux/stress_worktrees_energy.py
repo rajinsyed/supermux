@@ -17,6 +17,9 @@ process through a fixed sequence of scenarios:
   busy_mirrored    agents running, mirrored
   busy_hidden      Remote Host Mode on (no window on screen), agents running
   idle_hidden      Remote Host Mode on, nothing running
+  busy_occluded    Remote Host Mode off but the app hidden (Cmd-H), so no
+                   window is on screen the ordinary way; agents running
+  idle_occluded    the app hidden, nothing running
 
 Per scenario it records, from the kernel's own per-process accounting
 (proc_pid_rusage, no sudo): CPU seconds (user+system) and average CPU %,
@@ -78,7 +81,9 @@ from loopback_auto_mirror_e2e import (  # noqa: E402
 
 AGENT_KEY = "claude_code"
 LOOPBACK_MACHINE_PREFIX = f"device:{LOOPBACK_DEVICE_ID}@"
-SETTLE_S = 10.0
+# Longer than a window takes to report off screen (SupermuxWindowVisibility's
+# 10 s hide delay), so a hidden scenario measures the paused state.
+SETTLE_S = 15.0
 SAMPLE_S = 8
 
 # The agent stand-in each worktree terminal runs: a Claude Code-like TUI
@@ -561,6 +566,33 @@ class StressRun:
             self.facts["terminal_stream_stats"] = self.sock.call("supermux.devices.terminal_stream.stats", {"machine": self.machine})
         except Failure as error:
             self.facts["terminal_stream_stats"] = str(error)
+        # No window on screen without Remote Host Mode: the app hidden, which
+        # the window-visibility gate reads as off screen, as it does a
+        # minimized or fully covered window.
+        self.sock.call("supermux.devices.remote_host.set", {"enabled": False})
+        time.sleep(2)  # the windows come back first
+        self.set_app_hidden(True)
+        try:
+            self.scenario("busy_occluded", busy=True)
+            self.scenario("idle_occluded", busy=False)
+        finally:
+            self.set_app_hidden(False)
+
+    def set_app_hidden(self, hidden: bool) -> None:
+        """Hides or shows the app as Cmd-H does, through its
+        NSRunningApplication in JXA: unlike minimizing a window through System
+        Events, this needs no Accessibility or Automation grant."""
+        def running_app(member: str) -> str:
+            script = ("ObjC.import('AppKit');"
+                      f"const app = $.NSRunningApplication.runningApplicationWithProcessIdentifier({self.pid});"
+                      f"app.isNil() ? 'missing' : String(app.{member})")
+            return subprocess.run(["osascript", "-l", "JavaScript", "-e", script],
+                                  capture_output=True, text=True).stdout.strip()
+
+        running_app("hide" if hidden else "unhide")
+        state = "true" if hidden else "false"
+        wait_for(f"the app to be {'hidden' if hidden else 'shown'}",
+                 lambda: running_app("isHidden") == state, 15)
 
     def cleanup(self) -> None:
         try:
