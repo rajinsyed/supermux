@@ -72,21 +72,43 @@ struct SupermuxStartupParallelSecondaryTests {
         #expect(fixture.shell.foregroundMacDeviceIDForTesting() == "mac-other")
         #expect(fixture.shell.secondaryMacSubscriptions[fixture.otherKey] == nil)
     }
+
+    /// A saved Mac that is offline at launch fails the launch pass's dial.
+    /// That failure must not keep the pass that runs once the foreground
+    /// connects from finding a Mac this phone has not saved yet.
+    @Test func launchWithAnOfflineSavedMacStillFindsANewMac() async throws {
+        let fixture = try await TwoMacFixture(otherReachable: false, discoversNewMac: true)
+        defer { fixture.cleanUp() }
+
+        #expect(await fixture.shell.reconnectActiveMacIfAvailable(stackUserID: "user-1", hydratePairedMacs: true))
+        #expect(try await pollUntil {
+            fixture.shell.secondaryMacSubscriptions[fixture.newKey] != nil
+        })
+        fixture.shell.secondaryMacSubscriptions[fixture.newKey]?.cancel()
+    }
 }
 
-/// Two saved Macs, each served by its own scripted host.
+/// Two saved Macs, each served by its own scripted host, and optionally a
+/// third, unsaved Mac that account discovery reports.
 @MainActor
 private struct TwoMacFixture {
     let directory: URL
     let foregroundRouter = LivenessHostRouter()
     let otherRouter = LivenessHostRouter()
+    let newRouter = LivenessHostRouter()
     let shell: MobileShellComposite
     let foregroundKey = MacPairingKey(macDeviceID: "mac-foreground", instanceTag: "default")
     let otherKey = MacPairingKey(macDeviceID: "mac-other", instanceTag: "default")
+    let newKey = MacPairingKey(macDeviceID: "mac-new", instanceTag: "default")
 
     let backupStore: DelayedTeamPairedMacStore?
 
-    init(foregroundReachable: Bool = true, backupBacked: Bool = false) async throws {
+    init(
+        foregroundReachable: Bool = true,
+        otherReachable: Bool = true,
+        backupBacked: Bool = false,
+        discoversNewMac: Bool = false
+    ) async throws {
         directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -121,23 +143,35 @@ private struct TwoMacFixture {
         await otherRouter.setHostIdentity(deviceID: "mac-other", instanceTag: "default", displayName: "Other Mac")
         await foregroundRouter.setAttachTicketMac(deviceID: "mac-foreground", displayName: "Foreground Mac", port: 56_701)
         await otherRouter.setAttachTicketMac(deviceID: "mac-other", displayName: "Other Mac", port: 56_702)
+        await newRouter.setHostIdentity(deviceID: "mac-new", instanceTag: "default", displayName: "New Mac")
+        await newRouter.setAttachTicketMac(deviceID: "mac-new", displayName: "New Mac", port: 56_703)
+        var routers = [Self.newEndpoint: newRouter]
+        if foregroundReachable { routers[Self.foregroundEndpoint] = foregroundRouter }
+        if otherReachable { routers[Self.otherEndpoint] = otherRouter }
+        let discovered = discoversNewMac ? [MobileDiscoveredIrohMac(
+            deviceID: "mac-new", displayName: "New Mac", instanceTag: "default",
+            routes: [try Self.irohRoute(endpointID: Self.newEndpoint)], lastSeenAt: now)] : []
         shell = MobileShellComposite(
             runtime: LivenessTestRuntime(
-                transportFactory: PerRouteTransportFactory(routers: foregroundReachable
-                    ? [Self.foregroundEndpoint: foregroundRouter, Self.otherEndpoint: otherRouter]
-                    : [Self.otherEndpoint: otherRouter]),
+                transportFactory: PerRouteTransportFactory(routers: routers),
                 now: { Date() },
                 supportedRouteKinds: [.iroh]
             ),
             isSignedIn: true,
             pairedMacStore: store,
+            personalIrohDiscovery: ScriptedIrohDiscovery(snapshots: [discovered]),
+            // With presence, a failed dial arms the shared retry. Its clock
+            // never advances, so the retry stays armed for the whole test.
+            presence: discoversNewMac ? IdlePresence() : nil,
             identityProvider: StaticIdentityProvider(userID: "user-1"),
-            reachability: AlwaysOnlineReachability()
+            reachability: AlwaysOnlineReachability(),
+            controlPlaneSchedulingClock: ControlPoolManualClock()
         )
     }
 
     static let foregroundEndpoint = String(repeating: "a", count: 64)
     static let otherEndpoint = String(repeating: "b", count: 64)
+    static let newEndpoint = String(repeating: "c", count: 64)
 
     static func irohRoute(endpointID: String) throws -> CmxAttachRoute {
         try CmxAttachRoute(
@@ -152,6 +186,7 @@ private struct TwoMacFixture {
         Task {
             await foregroundRouter.releaseAllHeld()
             await otherRouter.releaseAllHeld()
+            await newRouter.releaseAllHeld()
         }
         try? FileManager.default.removeItem(at: directory)
     }
