@@ -38,6 +38,29 @@ struct SupermuxStartupParallelSecondaryTests {
         fixture.shell.secondaryMacSubscriptions[fixture.otherKey]?.cancel()
     }
 
+    /// The phone's paired-Mac store refreshes from the account backup over
+    /// the network; the launch pass must not wait for it (field: the other
+    /// Mac still dialed 1.5 s after launch).
+    @Test func launchDialsTheOtherMacWhileTheBackupRefreshIsInFlight() async throws {
+        let fixture = try await TwoMacFixture(backupBacked: true)
+        defer { fixture.cleanUp() }
+        let backup = try #require(fixture.backupStore)
+        await backup.blockBackupRefreshForEveryCaller()
+        await fixture.foregroundRouter.delayHostStatusRequest(number: 1)
+
+        let restore = Task { @MainActor in
+            await fixture.shell.reconnectActiveMacIfAvailable(stackUserID: "user-1", hydratePairedMacs: true)
+        }
+        #expect(await fixture.foregroundRouter.waitForCount(of: "mobile.host.status", atLeast: 1))
+        #expect(await fixture.otherRouter.waitForCount(
+            of: "mobile.host.status", atLeast: 1, timeoutNanoseconds: 2_000_000_000))
+
+        await fixture.foregroundRouter.releaseAllHeld()
+        await backup.releaseBackupRefresh()
+        #expect(await restore.value)
+        fixture.shell.secondaryMacSubscriptions[fixture.otherKey]?.cancel()
+    }
+
     @Test func otherMacTakesOverTheForegroundWhenTheFirstIsOffline() async throws {
         // The foreground candidate is unreachable, so the reconnect falls
         // back to the Mac the launch already dialed beside it.
@@ -61,20 +84,38 @@ private struct TwoMacFixture {
     let foregroundKey = MacPairingKey(macDeviceID: "mac-foreground", instanceTag: "default")
     let otherKey = MacPairingKey(macDeviceID: "mac-other", instanceTag: "default")
 
-    init(foregroundReachable: Bool = true) async throws {
+    let backupStore: DelayedTeamPairedMacStore?
+
+    init(foregroundReachable: Bool = true, backupBacked: Bool = false) async throws {
         directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let store = try MobilePairedMacStore(databaseURL: directory.appendingPathComponent("paired.sqlite3"))
         let foregroundRoute = try Self.irohRoute(endpointID: Self.foregroundEndpoint)
         let otherRoute = try Self.irohRoute(endpointID: Self.otherEndpoint)
         let now = Date()
-        try await store.upsert(
-            macDeviceID: "mac-other", displayName: "Other Mac", routes: [otherRoute], instanceTag: "default",
-            markActive: false, stackUserID: "user-1", teamID: nil, now: now.addingTimeInterval(-60))
-        try await store.upsert(
-            macDeviceID: "mac-foreground", displayName: "Foreground Mac", routes: [foregroundRoute],
-            instanceTag: "default", markActive: true, stackUserID: "user-1", teamID: nil, now: now)
+        let store: any MobilePairedMacStoring
+        if backupBacked {
+            let backup = DelayedTeamPairedMacStore(recordsByTeam: ["": [
+                MobilePairedMac(macDeviceID: "mac-foreground", displayName: "Foreground Mac",
+                    routes: [foregroundRoute], createdAt: now, lastSeenAt: now, isActive: true,
+                    stackUserID: "user-1", instanceTag: "default"),
+                MobilePairedMac(macDeviceID: "mac-other", displayName: "Other Mac",
+                    routes: [otherRoute], createdAt: now, lastSeenAt: now.addingTimeInterval(-60), isActive: false,
+                    stackUserID: "user-1", instanceTag: "default"),
+            ]], blockedTeams: [])
+            backupStore = backup
+            store = backup
+        } else {
+            let local = try MobilePairedMacStore(databaseURL: directory.appendingPathComponent("paired.sqlite3"))
+            try await local.upsert(
+                macDeviceID: "mac-other", displayName: "Other Mac", routes: [otherRoute], instanceTag: "default",
+                markActive: false, stackUserID: "user-1", teamID: nil, now: now.addingTimeInterval(-60))
+            try await local.upsert(
+                macDeviceID: "mac-foreground", displayName: "Foreground Mac", routes: [foregroundRoute],
+                instanceTag: "default", markActive: true, stackUserID: "user-1", teamID: nil, now: now)
+            backupStore = nil
+            store = local
+        }
         await foregroundRouter.setHostIdentity(
             deviceID: "mac-foreground", instanceTag: "default", displayName: "Foreground Mac")
         await otherRouter.setHostIdentity(deviceID: "mac-other", instanceTag: "default", displayName: "Other Mac")
