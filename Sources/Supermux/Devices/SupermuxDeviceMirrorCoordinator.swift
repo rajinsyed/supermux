@@ -26,10 +26,16 @@ import SupermuxKit
 /// placeholder mirrors (bound by `stableId`, or still holding pending restored
 /// projections) always count as showing their workspace; stale bindings are
 /// pruned once, right after that point.
+///
+/// Passes are debounced (``debounce`` after the last trigger, at most
+/// ``debounceMaxWait`` after the first), and a pass whose input matches the
+/// last one after a plan with nothing to do skips planning.
 @MainActor
 final class SupermuxDeviceMirrorCoordinator {
-    /// Debounce for reconcile triggers (catalog churn arrives in bursts).
-    nonisolated static let debounce: Duration = .milliseconds(200)
+    /// Trailing debounce for reconcile triggers (catalog churn arrives in bursts)…
+    nonisolated static let debounce: Duration = .milliseconds(300)
+    /// …capped, so a steady stream of triggers still gets a pass this often.
+    nonisolated static let debounceMaxWait: Duration = .seconds(1)
     /// Back-off before retrying a ref whose open failed.
     nonisolated static let openRetryDelay: TimeInterval = 10
 
@@ -44,8 +50,15 @@ final class SupermuxDeviceMirrorCoordinator {
 
     private var reconciler = SupermuxMirrorReconciler()
     private var started = false
+    /// The armed wake-up and when it fires.
     private var scheduled: Task<Void, Never>?
     private var scheduledDeadline: ContinuousClock.Instant?
+    /// The debounced pass and the first trigger of its burst.
+    private var debouncedDeadline: ContinuousClock.Instant?
+    private var burstStart: ContinuousClock.Instant?
+    /// The earliest pass asked for at a set time (a follow-up, an open
+    /// retry, the session-restore wait); triggers never postpone it.
+    private var dueDeadline: ContinuousClock.Instant?
     private var observers: [any NSObjectProtocol] = []
     private var eventsTask: Task<Void, Never>?
     private var revisionTask: Task<Void, Never>?
@@ -58,6 +71,8 @@ final class SupermuxDeviceMirrorCoordinator {
     private var autoOpened: Set<UUID> = []
     private var didPruneBindings = false
     private var lastAutoMirror: Bool?
+    /// The input of the last pass that planned.
+    private var lastFingerprint: InputFingerprint?
     private(set) var lastPlan = SupermuxMirrorReconciler.Plan()
     private(set) var reconcileCount = 0
     private(set) var lastOpenError: String?
@@ -87,12 +102,21 @@ final class SupermuxDeviceMirrorCoordinator {
         guard !started else { return }
         started = true
         eventsTask = Task { @MainActor [weak self, devices] in
-            for await _ in devices.events() { self?.scheduleReconcile() }
+            for await event in devices.events() {
+                // Pokes are for their own consumers (those that can change
+                // records bump the revision); link edges change authority.
+                if case .topic = event { continue }
+                self?.scheduleReconcile()
+            }
         }
         revisionTask = Task { @MainActor [weak self, devices] in
             while !Task.isCancelled {
                 await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                    withObservationTracking { _ = devices.revision } onChange: { continuation.resume() }
+                    withObservationTracking {
+                        _ = devices.revision
+                        // An unbound mirror that got a local pane stops being one.
+                        _ = devices.localCatalogRevision
+                    } onChange: { continuation.resume() }
                 }
                 self?.scheduleReconcile()
             }
@@ -106,29 +130,70 @@ final class SupermuxDeviceMirrorCoordinator {
         scheduleReconcile()
     }
 
-    /// Runs a reconcile pass after `delay`, coalesced with a pending pass:
-    /// the earlier deadline wins, so a long wait (an open's retry backoff, a
-    /// close confirmation) never delays a sooner trigger.
-    func scheduleReconcile(after delay: Duration = SupermuxDeviceMirrorCoordinator.debounce) {
+    /// Runs a reconcile pass once triggers settle: ``debounce`` after the
+    /// last one, but no later than ``debounceMaxWait`` after the first.
+    func scheduleReconcile() {
+        let now = ContinuousClock.now
+        let start = burstStart ?? now
+        burstStart = start
+        debouncedDeadline = min(now + Self.debounce, start + Self.debounceMaxWait)
+        armWakeUp()
+    }
+
+    /// Runs a reconcile pass no later than `delay` from now (a follow-up, an
+    /// open retry, the session-restore wait): the earliest such deadline wins,
+    /// and a sooner trigger still runs sooner.
+    func scheduleReconcile(after delay: Duration) {
         let deadline = ContinuousClock.now + delay
-        if let pending = scheduledDeadline, pending <= deadline { return }
+        if let due = dueDeadline, due <= deadline { return }
+        dueDeadline = deadline
+        armWakeUp()
+    }
+
+    /// Runs a full pass now, planning and projecting even when nothing
+    /// changed (tests and the `supermux.devices.reconcile` socket method).
+    func reconcileNow() {
+        clearSchedule()
+        reconcile(force: true)
+    }
+
+    private var nextDeadline: ContinuousClock.Instant? {
+        [debouncedDeadline, dueDeadline].compactMap { $0 }.min()
+    }
+
+    /// Arms one wake-up for the next deadline. A debounce that moves later
+    /// keeps the armed wake-up, which re-arms when it fires early.
+    private func armWakeUp() {
+        guard let deadline = nextDeadline else { return }
+        if let armed = scheduledDeadline, armed <= deadline { return }
         scheduled?.cancel()
         scheduledDeadline = deadline
         scheduled = Task { @MainActor [weak self] in
             try? await Task.sleep(until: deadline, clock: .continuous)
             guard let self, !Task.isCancelled else { return }
-            self.scheduled = nil
-            self.scheduledDeadline = nil
-            self.reconcile()
+            self.wakeUp()
         }
     }
 
-    /// Runs a pass now (tests and the `supermux.devices.reconcile` socket method).
-    func reconcileNow() {
+    private func wakeUp() {
+        scheduled = nil
+        scheduledDeadline = nil
+        guard let deadline = nextDeadline else { return }
+        if deadline > ContinuousClock.now {
+            armWakeUp()
+            return
+        }
+        clearSchedule()
+        reconcile()
+    }
+
+    private func clearSchedule() {
         scheduled?.cancel()
         scheduled = nil
         scheduledDeadline = nil
-        reconcile()
+        debouncedDeadline = nil
+        burstStart = nil
+        dueDeadline = nil
     }
 
     /// Whether an open is queued or running.
@@ -169,7 +234,7 @@ final class SupermuxDeviceMirrorCoordinator {
 
     // MARK: - Reconcile
 
-    private func reconcile() {
+    private func reconcile(force: Bool = false) {
         guard isReady() else {
             #if DEBUG
             if reconcileCount == 0 { cmuxDebugLog("supermux.autoMirror waiting for session restore") }
@@ -186,9 +251,26 @@ final class SupermuxDeviceMirrorCoordinator {
         }
         // Closes the user made while a Mac was offline go out once it is back.
         closer.sendPendingCloses()
+        let input = makeInput()
+        lastAutoMirror = input.autoMirror
+        let fingerprint = InputFingerprint(input)
+        // The same input after a plan with nothing to open, close, unhide or
+        // confirm plans nothing again.
+        if force || fingerprint != lastFingerprint || lastPlan != SupermuxMirrorReconciler.Plan() {
+            lastFingerprint = fingerprint
+            execute(reconciler.plan(input))
+        }
+        projector.refresh(force: force)
+        if let followUp = lastPlan.followUpAfter {
+            scheduleReconcile(after: .milliseconds(Int(followUp * 1000)))
+        }
+        if let retry = nextRetryDelay() {
+            scheduleReconcile(after: retry)
+        }
+    }
+
+    private func execute(_ plan: SupermuxMirrorReconciler.Plan) {
         reconcileCount += 1
-        lastAutoMirror = settings.autoMirror
-        let plan = reconciler.plan(makeInput())
         lastPlan = plan
         // Before the closes: the survivor must hold the binding when the
         // bound copy goes (its close unbinds only its own stable id).
@@ -205,13 +287,6 @@ final class SupermuxDeviceMirrorCoordinator {
         }
         if !plan.unhide.isEmpty { hidden.remove(plan.unhide) }
         enqueueOpens(plan.opens)
-        projector.refresh()
-        if let followUp = plan.followUpAfter {
-            scheduleReconcile(after: .milliseconds(Int(followUp * 1000)))
-        }
-        if let retry = nextRetryDelay() {
-            scheduleReconcile(after: retry)
-        }
     }
 
     /// How long until the earliest backing-off ref may be opened again (nil
@@ -328,6 +403,27 @@ final class SupermuxDeviceMirrorCoordinator {
             manager.reorderWorkspace(tabId: workspace.id, before: next.id)
         } else if let previous = siblings.filter({ $0.sortIndex < sortIndex }).max(by: byRemoteOrder) {
             manager.reorderWorkspace(tabId: workspace.id, after: previous.id)
+        }
+    }
+
+    // MARK: - Input fingerprint
+
+    /// A pass's input without its clock, which matters only while the last
+    /// plan still waits on a suspicion (it then has a follow-up and the next
+    /// pass plans anyway).
+    private struct InputFingerprint: Equatable {
+        let autoMirror: Bool
+        let devices: [SupermuxMirrorReconciler.Device]
+        let mirrors: [SupermuxMirrorReconciler.Mirror]
+        let hidden: Set<SupermuxRemoteWorkspaceRef>
+        let busy: Set<SupermuxRemoteWorkspaceRef>
+
+        init(_ input: SupermuxMirrorReconciler.Input) {
+            autoMirror = input.autoMirror
+            devices = input.devices
+            mirrors = input.mirrors
+            hidden = input.hidden
+            busy = input.busy
         }
     }
 
