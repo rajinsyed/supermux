@@ -16,7 +16,7 @@ Rules for adding a touchpoint:
 - Numbering: the highest number in use is **783** (remote terminal streaming, #777–#783; #764–#776 are
   reserved for open PRs #74/#75). The remote-workspaces work (#517–#599) left
 - Numbering: the highest number in use is **818**. The remote-workspaces work (#517–#599) left
-- Numbering: the highest number in use is **1010** (#970–#978: hidden mirrors stream in batches and reconnects resume quiet terminals; #1010: the mobile observers' shared state-sync ticker; 979–1009 are unassigned). Before that **924** (#920–#924: only this Mac's own input hands an Auto grid to the Mac pane). #907–#913: answering a Claude question or plan brings the working indicator back. Before that **906** (#900–#906: a streaming mirror re-anchors when the other Mac's grid changes). Before that **883** (#880–#883: Remote Host Mode's hotkey and notification shows, Auto's `view_appeared` report; #850–#879 are held by another open branch). The remote-workspaces work (#517–#599) left
+- Numbering: the highest number in use is **1010** (#970–#978: hidden mirrors stream in batches and reconnects resume quiet terminals; #979: a moved workspace's spinners follow its window; #980–#981: fewer process censuses; #1010: the mobile observers' shared state-sync ticker; 982–1009 are unassigned). Before that **924** (#920–#924: only this Mac's own input hands an Auto grid to the Mac pane). #907–#913: answering a Claude question or plan brings the working indicator back. Before that **906** (#900–#906: a streaming mirror re-anchors when the other Mac's grid changes). Before that **883** (#880–#883: Remote Host Mode's hotkey and notification shows, Auto's `view_appeared` report; #850–#879 are held by another open branch). The remote-workspaces work (#517–#599) left
   unassigned gaps it may still grow into: **523–524, 527–529, 539–544, 558–559, 562–569,
   578–579 and 588–589** (never assigned, not retired); #600–#601 came from the 2026-10-01 upstream merge; #620–#622 and
   #630–#639 are the remote-workspaces feedback round (602–619 and 623–629 unassigned). The second
@@ -807,6 +807,9 @@ Rules for adding a touchpoint:
 | 976 | `Sources/Devices/DeviceTerminalMirrorSession.swift` | `terminal-stream-replay-sizing`, `terminal-stream-viewer` | Four `terminal-stream-replay-sizing` fences: `Replay.supermuxSizing`; `decodeReplay(_:)` decodes the body through a new `decodeReplay(object:)` (upstream's body, unchanged, after the fence) and sets the sizing from the dictionary it parsed (`SupermuxTerminalStream.replaySizing(in:)`); the call site passes `replay.supermuxSizing`; `receiveReplaySizing` takes the decoded `MobileTerminalReplaySizing?` instead of the reply `Data`. In #781's resumed-reply branch (`terminal-stream-viewer`), the `Replay` gains `supermuxSizing: supermuxReply.sizing`. The main actor no longer runs a JSON decode over the whole (multi-MB) reply |
 | 977 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/Devices/SupermuxTerminalAttachLimiter.swift` (`50BE09700000000000000001` file ref, `…02` build file) into the cmux target: the build file, the file reference, the Supermux group child before `SupermuxTerminalStream.swift`, the Sources phase entry |
 | 978 | `Sources/TerminalController.swift` | `terminal-stream-resume` | Changes #780's first fence in `v2MobileTerminalReplay`: after the resume branch (so a full replay only), `SupermuxTerminalByteCoalescer.shared.flushBatch(surfaceID: surfaceId)` sends what an off-screen terminal's ~500 ms batch holds before the capture, so the output that raced the capture reaches the viewer during its attach and the replay is confirmed (`SupermuxTerminalStream.fullReplayApplied`) |
+| 979 | `Sources/TabManager.swift` | `tab-activity-workspace-moved` | At the end of `attachWorkspace`, calls `SupermuxTabActivitySync.shared.workspaceMoved(workspace)`, so a workspace moved in from another window (socket, CLI, drag) re-syncs its working-tab spinners against its new window's visibility instead of keeping the old window's held-off or spinning state until its agent's next lifecycle event. |
+| 980 | `Sources/SessionAutosaveCoordinator.swift` | `autosave-resume-indexes-reuse` | Four fences: `resumeIndexesReuseInterval` (30 s), the `reusableResumeIndexes` property, the `finish` call site (upstream: `let resumeIndexes = await ProcessDetectedResumeIndexes.load(ttyDeviceBindings: ttyDeviceBindings)`) and `currentResumeIndexes(for:)`. An autosave tick reuses the last complete process-detected resume indexes while they are under 30 s old and the TTY binding set is unchanged, instead of a full process census with arguments and environment plus a hook and transcript scan every 8 s. |
+| 981 | `Sources/SharedLiveAgentIndex.swift` | `agent-index-hook-reload-floor` | Three fences: `minHookStoreReloadInterval` (30 s) and its two uses in `handleHookStoreChange` (upstream: `Self.minEventReloadInterval`, 5 s, also used by fork validation, which keeps it). A hook-store change starts a reload at most every 30 s; explicit refreshes are unchanged. |
 | 1010 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/SupermuxStateSyncTicker.swift` (`50BE10100000000000000001` file ref, `…02` build file) into the cmux target: the file reference, the `Supermux` group child after `SupermuxMobileSidebarStatusObserver.swift`, the build file and the target's Sources phase entry |
 
 ## How to re-apply
@@ -6913,6 +6916,22 @@ tests/supermux/run_all_loopback_e2e.sh`, then the stress harness's `busy_mirrore
 `mobile.emit topic=terminal.bytes` about 2/s per hidden pane, `terminal_stream.stats`
 `bytes_received_by_surface` still growing for every pane, `terminal.updated` emits about 0/s) and a link
 stop/restore with half the agents printing (`full_replays` grows by at most the printing terminals).
+
+### 979. A moved workspace's working-tab spinners follow its new window — `tab-activity-workspace-moved`
+
+`TabManager.attachWorkspace` ends with one fenced call, `SupermuxTabActivitySync.shared.workspaceMoved(workspace)`,
+which schedules that workspace's spinner sync (the same coalesced pass a lifecycle change runs). Re-apply: put the
+call back as the last statement of `attachWorkspace`.
+
+### 980–981. Idle and busy Macs take far fewer process censuses — `autosave-resume-indexes-reuse`, `agent-index-hook-reload-floor`
+
+Measured with `tests/supermux/stress_worktrees_energy.py` and `sample`: on an idle tagged build the 8 s session autosave
+(`ProcessDetectedResumeIndexes.load`, maximum census age 5 s) and the agent index's hook-store reloads (5 s floor) were
+the largest remaining CPU users, each a census of every process with KERN_PROCARGS2 plus hook and transcript file scans.
+- **#980**: re-apply the four fences in `SessionAutosaveCoordinator` (constant, property, the `finish` call site,
+  `currentResumeIndexes(for:)`); only complete results are reused, and a changed TTY binding set always reloads.
+- **#981**: re-apply `minHookStoreReloadInterval` and use it (not `minEventReloadInterval`) in `handleHookStoreChange`'s
+  immediate check and deferred timer.
 
 ### 1010. The fork's mobile observers tick state sync only on a real change, through one shared ticker — `cmux.xcodeproj/project.pbxproj` (unfenced)
 
