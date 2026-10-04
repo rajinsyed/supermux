@@ -48,6 +48,10 @@ final class SupermuxTabActivitySync {
     /// move creates a new tab); it is a few bytes and tab ids are never
     /// reused.
     private var heldOffScreenTabIDs: Set<TabID> = []
+    /// Tabs this type set spinning, so a spinner that starts (or comes back
+    /// on screen) gets its frame rate capped once. Same lifetime caveat as
+    /// ``heldOffScreenTabIDs``.
+    private var spinningTabIDs: Set<TabID> = []
 
     /// Starts following the relay and main-window visibility; later calls do
     /// nothing.
@@ -178,7 +182,19 @@ final class SupermuxTabActivitySync {
         } else {
             heldOffScreenTabIDs.remove(tab)
         }
-        controller.updateTab(tab, isLoading: isWorking && windowOnScreen)
+        let spins = isWorking && windowOnScreen
+        if spins, spinningTabIDs.insert(tab).inserted {
+            SupermuxTabSpinnerFrameRate.capSoon()
+        } else if !spins {
+            spinningTabIDs.remove(tab)
+        }
+        controller.updateTab(tab, isLoading: spins)
+    }
+
+    /// A workspace moved into this window from another (`tab-activity-workspace-moved`):
+    /// its tabs follow their new window's visibility.
+    func workspaceMoved(_ workspace: Workspace) {
+        schedule(workspaceID: workspace.id)
     }
 
     /// Whether `tab`, shown in the window of `ownerID` (a workspace, or a
@@ -206,5 +222,68 @@ final class SupermuxTabActivitySync {
             return true
         }
         return SupermuxWindowVisibility.windowIsOnScreen(window)
+    }
+}
+
+/// Bonsplit's tab spinner is an uncapped Core Animation rotation: while one
+/// is on screen the display composites at its full refresh rate (120 Hz on
+/// ProMotion) instead of idling down. A spinner this small looks the same at
+/// 15 frames a second, so each started spinner's rotation is re-added with
+/// that frame rate (Bonsplit only adds its rotation when none is running, so
+/// the capped copy stays). Bonsplit itself is not changed: the spinner is
+/// found by its animation key.
+@MainActor
+enum SupermuxTabSpinnerFrameRate {
+    private static let animationKey = "tabLoadingSpinnerRotation"
+    private static let frameRate = CAFrameRateRange(minimum: 8, maximum: 20, preferred: 15)
+    private static var isScheduled = false
+
+    /// Caps every running tab spinner once SwiftUI has mounted the ones just
+    /// turned on (next turn, and again shortly after for a late mount).
+    static func capSoon() {
+        guard !isScheduled else { return }
+        isScheduled = true
+        Task { @MainActor in
+            capAll()
+            try? await Task.sleep(for: .milliseconds(300))
+            isScheduled = false
+            capAll()
+        }
+    }
+
+    private static func capAll() {
+        for window in NSApp.windows where window.isVisible {
+            if let layer = window.contentView?.superview?.layer ?? window.contentView?.layer {
+                cap(layer)
+            }
+        }
+    }
+
+    #if DEBUG
+    /// Running tab spinners in visible windows, and how many run capped
+    /// (`supermux.devices.mirror.tab_indicators` reports it).
+    static func debugCounts() -> (running: Int, capped: Int) {
+        var running = 0, capped = 0
+        func visit(_ layer: CALayer) {
+            if let animation = layer.animation(forKey: animationKey) {
+                running += 1
+                if animation.preferredFrameRateRange.maximum == frameRate.maximum { capped += 1 }
+            }
+            layer.sublayers?.forEach(visit)
+        }
+        for window in NSApp.windows where window.isVisible {
+            if let layer = window.contentView?.superview?.layer ?? window.contentView?.layer { visit(layer) }
+        }
+        return (running, capped)
+    }
+    #endif
+
+    private static func cap(_ layer: CALayer) {
+        if let running = layer.animation(forKey: animationKey), running.preferredFrameRateRange.maximum != frameRate.maximum,
+           let capped = running.copy() as? CAAnimation {
+            capped.preferredFrameRateRange = frameRate
+            layer.add(capped, forKey: animationKey)
+        }
+        layer.sublayers?.forEach(cap)
     }
 }

@@ -51,10 +51,12 @@ enum SupermuxTabIndicatorSocket {
                 tabs.append(describe(tab, pane: pane, isSelected: tab.id == selected, in: workspace))
             }
         }
+        let spinners = SupermuxTabSpinnerFrameRate.debugCounts()
         return [
             "workspace_id": workspace.id.uuidString,
             "is_mirror": SupermuxDeviceWorkspaceIndex.isDeviceMirror(workspace),
             "tabs": tabs,
+            "spinner_animations": ["running": spinners.running, "capped": spinners.capped],
             "status_entries": workspace.sidebarStatusEntriesInDisplayOrder().map { entry -> [String: Any] in
                 [
                     "key": entry.key,
