@@ -79,8 +79,8 @@ at once on a relaunch, then a quick refresh to live state.
 - A Plans screen that sells Go, Pro and Max through StoreKit. These products are configured for
   upstream's App Store app, not Supermux's bundle ids, so on Supermux expect the paywall to show no
   purchasable plans.
-- Cloud workspaces reach parity with Mac workspaces on the phone, with an optional system VPN
-  (a new Cloud VPN app extension).
+- Cloud workspaces reach parity with Mac workspaces on the phone. Upstream's optional Cloud system
+  VPN (a new app extension) is left out of Supermux's phone app, so its switch doesn't show.
 - The Agent Feed scrolls faster, and the task composer remembers and prefetches its pickers.
 
 ### What stays the same (fork features)
@@ -98,29 +98,14 @@ Projects/Changes/Files, Mac↔phone selection sync and the scroll-speed setting.
   it. Agent error rows and other statuses still show their usage.
 - **Narrow right sidebar.** At 200 pt with many tabs enabled, check that the close button stays
   visible; upstream's layout, not the fork's, now decides what collapses.
-- **Phone dogfood build and the Cloud VPN extension.** Upstream's iOS app now embeds a
-  `CloudVPN.appex` (a Network Extension packet tunnel, built with Go's `wireguard-go`). The dogfood
-  entitlements file stays capability-free (#53), so a dogfood build cannot start the Cloud VPN. The
-  extension itself still asks for the Network Extension capability when it is signed; if the
-  personal team cannot provision `com.supermux.ios.dogfood.CloudVPN`, the dogfood command needs
-  `CMUX_CLOUD_VPN_CODE_SIGN_ENTITLEMENTS=Config/cmux.entitlements` as well (not yet verified:
-  signing was blocked by an unaccepted Apple Developer Program License Agreement update).
-- **The fixed-identity phone release will likely fail to build.** `scripts/supermux-ios-release.sh`
-  signs manually and supplies profiles only for the app and the notification extension, then
-  re-signs those two. The new `CloudVPN` target gets neither. See the open decision below.
 
-### Open decisions surfaced by this merge
+### Decisions made for this merge
 
-1. **Right sidebar opening width.** Upstream raised the minimum (and with it the width a new
-   window opens at) from 276 to 295 pt so a Cloud machine's Ports, Terminals, Displays and
-   Resources tabs fit with their counts. Supermux keeps its 200 pt minimum, so new windows open at
-   220 pt. Options: keep 200/220; keep the 200 pt drag floor but open at 295 (a small new fence);
-   or take upstream's 295 floor and retire #26/#27.
-2. **Upstream's Cloud VPN extension in Supermux's iOS builds.** Options: keep it, which means
-   registering `com.supermux.ios.CloudVPN` with the Network Extensions capability, making its
-   Development and Ad Hoc profiles, and teaching `scripts/supermux-ios-release.sh` to sign and
-   re-sign it; or leave it out of the fork's phone builds (a fork-side build-setting fence), which
-   drops Cloud VPN on Supermux's phone app.
+1. **Right sidebar width.** Supermux keeps its 200 pt minimum, and new windows still open it at
+   220 pt (upstream now opens at 295 pt).
+2. **Cloud VPN on the phone.** Left out of Supermux's iOS app (#925): Supermux doesn't use cmux
+   Cloud, and the extension would need its own Network Extensions App ID and profiles in every
+   phone build. The dogfood command and `scripts/supermux-ios-release.sh` need no change.
 
 ---
 
