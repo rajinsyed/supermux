@@ -44,7 +44,7 @@ public final class SupermuxWindowVisibility: ObservableObject {
     /// probe left its window).
     func update(window: NSWindow?) {
         self.window = window
-        if Self.isOnScreen(window) {
+        if Self.windowIsOnScreen(window) {
             pendingHide?.cancel()
             pendingHide = nil
             if !isOnScreen { isOnScreen = true }
@@ -61,11 +61,11 @@ public final class SupermuxWindowVisibility: ObservableObject {
             self.pendingHide = nil
             // Look again rather than trusting the notification that started
             // the wait: the window may be back without one we observe.
-            if !Self.isOnScreen(self.window) { self.isOnScreen = false }
+            if !Self.windowIsOnScreen(self.window) { self.isOnScreen = false }
         }
     }
 
-    private static func isOnScreen(_ window: NSWindow?) -> Bool {
+    private static func windowIsOnScreen(_ window: NSWindow?) -> Bool {
         guard let window, !NSApplication.shared.isHidden else { return false }
         return window.isVisible
             && !window.isMiniaturized

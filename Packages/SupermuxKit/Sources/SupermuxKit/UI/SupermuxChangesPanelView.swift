@@ -22,8 +22,9 @@ public struct SupermuxChangesPanelView: View {
     /// Host-app presenter for one file's patch (a click on a file row). `nil`
     /// leaves rows inert.
     private let onOpenFileDiff: ((SupermuxFileDiffPatch) -> Void)?
-    /// Whether the right sidebar is actually on-screen. The sidebar keeps the
-    /// changes panel mounted after its first show (so re-showing is instant), so
+    /// Whether the right sidebar is actually on-screen (the host also folds in
+    /// whether its window is). The sidebar keeps the changes panel mounted
+    /// after its first show (so re-showing is instant), so
     /// the panel gates visibility-dependent work itself: the file-system-watcher
     /// observation and the background auto-fetch pause while hidden (no git
     /// spawns for an off-screen panel), and the window-wide commit key
@@ -168,9 +169,9 @@ public struct SupermuxChangesPanelView: View {
         // or its window is hidden (the panel stays mounted after first show, so
         // an unkeyed task would keep fetching off-screen). Coming back on
         // screen waits out the rest of the interval since this directory's last
-        // fetch, so a visibility flip never spawns a fetch; the status itself
-        // is re-read at once by startObserving(). SwiftUI cancels the task on
-        // disappear / id change.
+        // fetch, so flipping visibility never fetches more often than the
+        // interval; the status itself is re-read at once by startObserving().
+        // SwiftUI cancels the task on disappear / id change.
         .task(id: AutoFetchKey(directory: model.directory, isVisible: isVisible)) {
             guard isVisible else { return }
             var delay = model.autoFetchDelay(interval: Self.autoFetchInterval) ?? Self.newDirectoryFetchDelay
