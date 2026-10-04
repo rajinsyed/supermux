@@ -22,9 +22,10 @@ extension MobileShellComposite {
     /// Whether the background dwell that is ending outlived the Mac's
     /// session, so the foreground connection is known dead. Wall-clock time,
     /// which keeps counting while the device sleeps. Iroh routes only: the
-    /// Mac's TCP routes keep a silent phone's connection open.
+    /// Mac's TCP routes keep a silent phone's connection open. A Mac switch in
+    /// flight keeps the probe, so the redial never replaces the switch's target.
     func supermuxForegroundDwellOutlivedHostSession() -> Bool {
-        guard activeRoute?.kind == .iroh, let lastBackgroundedAt else { return false }
+        guard activeRoute?.kind == .iroh, !isMacSwitchInFlight, let lastBackgroundedAt else { return false }
         let dwell = (runtime?.now() ?? Date()).timeIntervalSince(lastBackgroundedAt)
         return dwell >= Self.supermuxHostSessionIdleSeconds + Self.supermuxSuspensionGraceSeconds
     }
