@@ -77,8 +77,16 @@ struct SupermuxHarnessNativeEventEnvelope {
 /// byte counts to the fixed frame and built by joining the kept bytes, so a
 /// streaming event is never re-encoded on its way to the page.
 enum SupermuxHarnessNativeEventEnvelopeEncoding {
+    private static let opening = Data(
+        #"{"version":\#(SupermuxHarnessNativeEventEnvelope.currentVersion),"documentEpoch":"#.utf8
+    )
+    private static let firstSequenceKey = Data(#","firstSequence":"#.utf8)
+    private static let highestSequenceKey = Data(#","highestSequence":"#.utf8)
+    private static let eventsKey = Data(#","events":["#.utf8)
     private static let separator = Data(",".utf8)
     private static let footer = Data("]}".utf8)
+    private static let fixedFrameByteCount =
+        opening.count + firstSequenceKey.count + highestSequenceKey.count + eventsKey.count + footer.count
 
     /// Sorted keys keep tool input and permission previews, which the page
     /// shows with `JSON.stringify`, in a stable alphabetical order.
@@ -90,7 +98,8 @@ enum SupermuxHarnessNativeEventEnvelopeEncoding {
         try? JSONSerialization.data(withJSONObject: documentEpoch, options: [.fragmentsAllowed])
     }
 
-    /// The exact size of the joined envelope for these fields, without building it.
+    /// The exact size of the joined envelope for these fields, computed
+    /// without building any bytes, so sizing a batch stays allocation-free.
     static func envelopeByteCount(
         encodedEpoch: Data,
         firstSequence: UInt64,
@@ -98,11 +107,10 @@ enum SupermuxHarnessNativeEventEnvelopeEncoding {
         eventByteCount: Int,
         eventCount: Int
     ) -> Int {
-        let frameByteCount = header(
-            encodedEpoch: encodedEpoch,
-            firstSequence: firstSequence,
-            highestSequence: highestSequence
-        ).count + footer.count
+        let frameByteCount = fixedFrameByteCount
+            + encodedEpoch.count
+            + decimal(firstSequence).utf8.count
+            + decimal(highestSequence).utf8.count
         return frameByteCount + eventByteCount + max(0, eventCount - 1) * separator.count
     }
 
@@ -154,11 +162,20 @@ enum SupermuxHarnessNativeEventEnvelopeEncoding {
         firstSequence: UInt64,
         highestSequence: UInt64
     ) -> Data {
-        let version = SupermuxHarnessNativeEventEnvelope.currentVersion
-        var header = Data(#"{"version":\#(version),"documentEpoch":"#.utf8)
+        var header = opening
         header.append(encodedEpoch)
-        header.append(contentsOf: #","firstSequence":\#(firstSequence),"highestSequence":\#(highestSequence),"events":["#.utf8)
+        header.append(firstSequenceKey)
+        header.append(contentsOf: decimal(firstSequence).utf8)
+        header.append(highestSequenceKey)
+        header.append(contentsOf: decimal(highestSequence).utf8)
+        header.append(eventsKey)
         return header
+    }
+
+    /// The one formatting of a sequence number, shared by the header and its
+    /// byte count so the two can never disagree.
+    private static func decimal(_ value: UInt64) -> String {
+        String(value)
     }
 }
 
