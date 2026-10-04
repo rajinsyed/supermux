@@ -27,6 +27,11 @@ public actor SupermuxGitChangesService {
     /// never takes the optional `.git/index` lock (or rewrites the index),
     /// which would re-trigger the FSEvents watcher that requested the refresh.
     static let noOptionalLocks = "--no-optional-locks"
+    /// Status flag: a submodule still shows when its commit or tracked files
+    /// changed, but git no longer runs a child `git status` per submodule on
+    /// every refresh just to look for untracked files in it. (The worktree
+    /// removal dirty guard keeps counting those.)
+    static let ignoreUntrackedInSubmodules = "--ignore-submodules=untracked"
 
     /// Creates a service.
     /// - Parameter runner: Executes git; defaults to a production ``CommandRunner``.
@@ -36,8 +41,9 @@ public actor SupermuxGitChangesService {
 
     /// Reads the repository status at `repoPath`.
     ///
-    /// Runs `git status --porcelain=v2 -z --branch --show-stash` and parses the
-    /// output with ``SupermuxGitStatusParser``. `-z` makes git print paths
+    /// Runs `git status --porcelain=v2 -z --branch --show-stash
+    /// --ignore-submodules=untracked` and parses the output with
+    /// ``SupermuxGitStatusParser``. `-z` makes git print paths
     /// verbatim (no C-quoting of non-ASCII/special filenames) with
     /// NUL-terminated records. `--show-stash` folds the stash depth
     /// (`# stash <n>`) into the same invocation that drives every refresh,
@@ -52,6 +58,7 @@ public actor SupermuxGitChangesService {
             executable: "git",
             arguments: [
                 Self.noOptionalLocks, "status", "--porcelain=v2", "-z", "--branch", "--show-stash",
+                Self.ignoreUntrackedInSubmodules,
             ],
             timeout: Self.gitTimeout
         )
@@ -87,7 +94,7 @@ public actor SupermuxGitChangesService {
     /// runner call site) — it is not purely an encoding fallback.
     private func statusViaLossyCapture(repoPath: String) async -> SupermuxGitStatusSnapshot {
         let script = "set -o pipefail; git \(Self.noOptionalLocks) status"
-            + " --porcelain=v2 -z --branch --show-stash | /usr/bin/base64"
+            + " --porcelain=v2 -z --branch --show-stash \(Self.ignoreUntrackedInSubmodules) | /usr/bin/base64"
         let result = await runShellPipeline(script, in: repoPath, shell: "/bin/bash")
         guard result.exitStatus == 0,
               let armored = result.stdout,
