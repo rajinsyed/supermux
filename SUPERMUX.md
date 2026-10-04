@@ -286,7 +286,10 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   Bonsplit's own tab spinner (in the tab's text colour; the unread dot is unchanged), in workspaces,
   the Dock and mirrors (the other Mac sends `supermux_working_panel_ids`; an older Mac's mirror tabs
   show none). A working tab keeps spinning when it moves to another workspace, into the Dock, or
-  appears in a mirror after the agent started.
+  appears in a mirror after the agent started. A Claude Code question (AskUserQuestion) or plan
+  approval (ExitPlanMode) shows needs input until the user answers it in the terminal, then the
+  spinner comes back at once (#907–#913: the answered tool's PostToolUse resolves the wait); a tool
+  permission prompt hands back to the spinner at the agent's next tool.
 - **Sidebar rows:** inside a project, this Mac's workspaces come first, then each Mac's mirrors;
   every mirror row (nested or flat) marks its Mac with a small Mac + cloud icon right before its
   branch name (the Mac's name in its tooltip); nested rows show no `cmux set-status` pills or
