@@ -320,13 +320,11 @@ public final class SupermuxMobileChangesStore {
             // Subscribe FIRST: pokes emitted while the fetch is in flight
             // buffer in the stream and replay after it, instead of dropping.
             let stream = await client.events(topics: [.changesUpdated])
+            let pokes = Self.pokes(for: workspaceID, from: stream)
             isConnected = true
             let streamStartedAt = now()
             await refetchStatus()
-            for await event in stream where event.topic == .changesUpdated {
-                // The poke carries the changed workspace; a missing payload
-                // is treated as "might be us" (the poke itself is the signal).
-                guard event.workspaceID == nil || event.workspaceID == workspaceID else { continue }
+            for await _ in pokes {
                 await refetchStatus()
             }
             isConnected = false
@@ -340,6 +338,31 @@ public final class SupermuxMobileChangesStore {
                 backoff = min(max(backoff * 2, .milliseconds(500)), .seconds(16))
                 await idleSleep(backoff)
             }
+        }
+    }
+
+    /// This workspace's `supermux.changes.updated` pokes, coalesced: any
+    /// number arriving while a status fetch is in flight collapse into ONE
+    /// pending refetch (`bufferingNewest(1)`), so a burst can never queue a
+    /// backlog of `changes.status` round-trips. The poke carries the changed
+    /// workspace; a missing one is treated as "might be us" (the poke itself
+    /// is the signal). Filtered before coalescing, so another workspace's
+    /// poke can never displace ours. Finishes when `events` does (the
+    /// connection dropped); cancelling the consumer cancels the pump, which
+    /// withdraws the server-side subscription.
+    private nonisolated static func pokes(
+        for workspaceID: String,
+        from events: AsyncStream<SupermuxMobileEvent>
+    ) -> AsyncStream<Void> {
+        AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+            let pump = Task {
+                for await event in events where event.topic == .changesUpdated {
+                    guard event.workspaceID == nil || event.workspaceID == workspaceID else { continue }
+                    continuation.yield()
+                }
+                continuation.finish()
+            }
+            continuation.onTermination = { _ in pump.cancel() }
         }
     }
 
