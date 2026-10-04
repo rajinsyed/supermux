@@ -39,8 +39,8 @@ struct RightSidebarModeBarTabsLayout: Layout {
         // The ideal width is the narrowest layout, so the fork's overflow
         // fallback (`SupermuxModeBarOverflow`) scrolls only below it.
         let available = available ?? 0
-        // SUPERMUX:end right-sidebar-mode-bar-overflow
         guard available.isFinite else { return natural }
+        // SUPERMUX:end right-sidebar-mode-bar-overflow
         return RightSidebarModeBarTabWidths(
             natural: natural,
             floors: subviews.map { $0.sizeThatFits(ProposedViewSize(width: 0, height: nil)).width },

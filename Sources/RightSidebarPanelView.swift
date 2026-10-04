@@ -260,11 +260,11 @@ struct RightSidebarPanelView: View {
                         .layoutValue(key: RightSidebarModeBarTabSelectedKey.self, value: item.isSelected(mode: fileExplorerState.mode))
                     }
                 }
-                .background(RightSidebarModeBarDragAnchorView(anchor: modeBarDrag.anchor))
-                .coordinateSpace(.named(RightSidebarModeBarDragController.coordinateSpace))
                 // SUPERMUX:begin right-sidebar-mode-bar-overflow
                 .modifier(SupermuxModeBarOverflow())
                 // SUPERMUX:end right-sidebar-mode-bar-overflow
+                .background(RightSidebarModeBarDragAnchorView(anchor: modeBarDrag.anchor))
+                .coordinateSpace(.named(RightSidebarModeBarDragController.coordinateSpace))
                 .layoutPriority(1)
                 Spacer(minLength: 0)
                 if fileExplorerState.mode.canOpenAsPane, fileExplorerState.mode.isAvailable() {
