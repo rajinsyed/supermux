@@ -624,7 +624,12 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   owning Mac's device menu ("Simulators on <Mac>", choosing one boots it there), Home, App Switcher,
   Lock, rotate and the software keyboard, quality (Auto follows the tab's pixels; High, Balanced, Data
   Saver), Recover, and a type-text field. A dropped link resumes by itself; when the phone or another
-  Mac takes the stream the tab says so and waits for Show Here (no taking it back and forth).
+  Mac takes the stream while the tab streams, the tab says so and waits for Show Here (no taking it
+  back and forth). The tab streams only while it is on screen: a background tab or workspace stops the
+  stream at once, and a minimized, hidden or fully covered window (another Space, a locked display)
+  once it stays so for 1 s, so the owning Mac stops encoding. Showing it again resumes with a keyframe
+  and takes the stream back, even from the phone or another Mac that took it meanwhile (a stopped tab
+  never hears of that), so uncovering the window or waking its display moves the stream here.
   Closing the tab closes the owning Mac's Simulator tab (the device keeps running); the owning Mac
   closing it closes the tab; closing the mirror or its window closes only the viewer, and the next
   New Simulator reuses that Simulator tab there. A relaunch restores the viewer, which finds its

@@ -218,7 +218,10 @@ final class SupermuxRemoteSimulatorPanel: Panel {
     // MARK: - Visibility and input
 
     /// A view showing the tab became visible or hidden: a hidden viewer
-    /// stops its stream, so the owning Mac stops encoding.
+    /// stops its stream, so the owning Mac stops encoding. Shown again, it
+    /// starts the stream, which takes it back from a viewer that took it
+    /// meanwhile: a stopped stream hears of no takeover, so only one that
+    /// came while this tab streamed latches ``isSuperseded``.
     func setVisible(_ visible: Bool, hostID: UUID) {
         let wasVisible = isVisible
         if visible {
