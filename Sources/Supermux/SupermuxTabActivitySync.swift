@@ -192,11 +192,15 @@ final class SupermuxTabActivitySync {
     /// workspace or a window (`ownerID`), is on screen. A window that cannot
     /// be resolved (mid-replacement, not registered yet) counts as on screen,
     /// so the spinner shows as it always did.
+    ///
+    /// Only state ``start()`` hears change is read. Alpha is not: a window
+    /// soft-hidden by the titlebar dismiss (alpha 0, still ordered in) comes
+    /// back with no notification, so it keeps its spinner as before.
     private static func windowOnScreen(ownerID: UUID) -> Bool {
         guard let app = AppDelegate.shared,
               let window = app.mainWindowContainingWorkspace(ownerID) ?? app.windowForMainWindowId(ownerID) else {
             return true
         }
-        return SupermuxRemoteHostMode.isOnScreen(window) && window.occlusionState.contains(.visible)
+        return window.isVisible && !window.isMiniaturized && window.occlusionState.contains(.visible)
     }
 }
