@@ -57,6 +57,9 @@ final class SupermuxRemoteProjectsModel {
     /// project each Mac listed at its last refresh (and any a row or socket
     /// asked for since).
     @ObservationIgnored private var wantedWorktrees: Set<String> = []
+    /// Macs refreshed since their link last connected, so the link event and
+    /// the device list reporting the same connection refresh it once.
+    @ObservationIgnored private var refreshedSinceConnect: Set<SurfaceMachineID> = []
     @ObservationIgnored private let refreshes = SupermuxPerMachinePasses()
     @ObservationIgnored private let worktreeSweeps = SupermuxPerMachinePasses()
     @ObservationIgnored private var tasks: [Task<Void, Never>] = []
@@ -180,8 +183,9 @@ final class SupermuxRemoteProjectsModel {
         switch event {
         case .linkConnected(let machine):
             update(machine) { $0.isOnline = true }
-            Task { await refresh(machine) }
+            refreshOncePerConnection(machine)
         case .linkLost(let machine):
+            refreshedSinceConnect.remove(machine)
             update(machine) { $0.isOnline = false }
         case .topic(let machine, .projectsUpdated, _):
             Task { await refresh(machine) }
@@ -233,25 +237,31 @@ final class SupermuxRemoteProjectsModel {
     }
 
     /// Mirrors the facade's device list: names and link state, cached
-    /// projects for Macs not refreshed yet, and a refresh for Macs that just
-    /// came online.
+    /// projects for Macs not refreshed yet, and one refresh per connection
+    /// for a Mac whose link connected and ran its post-connect fetch (usually
+    /// `.linkConnected` got there first; this covers a link that connected
+    /// before the model started following events). A refresh started before
+    /// that fetch would lose its capability request to the reset it does.
     private func reconcileDevices() {
         var next: [SupermuxDeviceProjects] = []
-        var cameOnline: [SurfaceMachineID] = []
         for device in facade.devices {
             var entry = self.device(device.machine) ?? cachedEntry(for: device) ?? .empty(for: device)
-            if device.isConnected && (!entry.isOnline || entry.supportsProjects == nil) {
-                cameOnline.append(device.machine)
-            }
             entry.name = device.displayName
             entry.isOnline = device.isConnected
             entry.isLoopback = device.isLoopback
             next.append(entry)
         }
         if next != devices { devices = next }
-        for machine in cameOnline {
-            Task { await refresh(machine) }
+        refreshedSinceConnect.formIntersection(facade.devices.filter(\.isConnected).map(\.machine))
+        for device in facade.devices where device.hasFetchedRecords {
+            refreshOncePerConnection(device.machine)
         }
+    }
+
+    /// Refreshes a Mac unless it was already refreshed since its link connected.
+    private func refreshOncePerConnection(_ machine: SurfaceMachineID) {
+        guard refreshedSinceConnect.insert(machine).inserted else { return }
+        Task { await refresh(machine) }
     }
 
     private func cachedEntry(for device: SupermuxDevice) -> SupermuxDeviceProjects? {

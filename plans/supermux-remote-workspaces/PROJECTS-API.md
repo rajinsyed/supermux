@@ -106,9 +106,10 @@ struct SupermuxDeviceProjects {                       // ids are that Mac's ids
 }
 ```
 
-Refresh triggers: `.linkConnected`, the `supermux.projects.updated` topic (full refresh),
-`supermux.run.updated` (`refreshRuns` only), `supermux.worktrees.updated` (the worktree sweep only),
-a device appearing online, and a 120 s safety net. Only devices whose host advertises `supermux.projects.v1` are fetched. The offline
+Refresh triggers: a link connect (once per connection, after its post-connect fetch: `.linkConnected`,
+or the device list showing the link connected and fetched, whichever comes first), the
+`supermux.projects.updated` topic (full refresh), `supermux.run.updated` (`refreshRuns` only),
+`supermux.worktrees.updated` (the worktree sweep only), and a 120 s safety net. Only devices whose host advertises `supermux.projects.v1` are fetched. The offline
 cache is `SupermuxPaths.remoteProjectsCacheFileURL` (`~/Library/Application Support/cmux/supermux-remote-projects.json`,
 or next to `SUPERMUX_PROJECTS_FILE` in DEBUG runs), keyed by machine wire id; the loopback device is
 never cached; nothing is ever written to `supermux-projects.json`.
