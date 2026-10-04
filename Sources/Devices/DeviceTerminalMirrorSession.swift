@@ -124,6 +124,11 @@ final class DeviceTerminalMirrorSession {
     /// Lossless streaming when the other Mac's host streams (SupermuxTerminalStream).
     private(set) var supermuxStream: SupermuxTerminalStream?
     // SUPERMUX:end terminal-stream-viewer
+    // SUPERMUX:begin terminal-stream-attach-limiter
+    /// A hidden mirror's re-attach after a reconnect, waiting its turn in
+    /// SupermuxTerminalAttachLimiter.
+    private var supermuxQueuedAttach: Task<Void, Never>?
+    // SUPERMUX:end terminal-stream-attach-limiter
     // SUPERMUX:begin sizing-one-setting
     /// Whether the other Mac adopts a mode picked on this mirror as its own
     /// setting (`supermux.terminal_sizing_preference.v1`).
@@ -402,7 +407,9 @@ final class DeviceTerminalMirrorSession {
                 linkDropped()
             }
         case .linkReconnected:
-            scheduleAttach()
+            // SUPERMUX:begin terminal-stream-attach-limiter (a hidden mirror waits its turn; upstream: `scheduleAttach()`)
+            supermuxAttachAfterReconnect()
+            // SUPERMUX:end terminal-stream-attach-limiter
         case .linkLost:
             linkDropped()
         case let .sizeState(state, selfParticipantID):
@@ -480,6 +487,37 @@ final class DeviceTerminalMirrorSession {
         }
     }
     // SUPERMUX:end terminal-stream-show-hook
+    // SUPERMUX:begin terminal-stream-attach-limiter
+
+    /// After a reconnect every mirror on the link re-attaches: one on screen
+    /// at once, a hidden one through SupermuxTerminalAttachLimiter (a few at
+    /// a time, at utility priority), holding its slot until its replay is
+    /// applied or failed.
+    private func supermuxAttachAfterReconnect() {
+        supermuxQueuedAttach?.cancel()
+        supermuxQueuedAttach = nil
+        guard supermuxHidden else {
+            scheduleAttach()
+            return
+        }
+        supermuxQueuedAttach = Task(priority: .utility) { [weak self] in
+            await SupermuxTerminalAttachLimiter.shared.run {
+                guard let self, self.phase != .stopped else { return }
+                self.supermuxQueuedAttach = nil
+                self.scheduleAttach()
+                await self.attachTask?.value
+            }
+        }
+    }
+
+    /// A hidden mirror still waiting to re-attach came on screen: it goes now.
+    private func supermuxAttachQueuedNow() {
+        guard let queued = supermuxQueuedAttach else { return }
+        queued.cancel()
+        supermuxQueuedAttach = nil
+        scheduleAttach()
+    }
+    // SUPERMUX:end terminal-stream-attach-limiter
 
     /// Single-flight replay of the source screen, followed by sequenced live bytes.
     private func scheduleAttach() {
@@ -896,6 +934,7 @@ final class DeviceTerminalMirrorSession {
         // Shown, this Mac claims the terminal's grid again; hidden, it gives the claim up.
         SupermuxTerminalSizingDefaults.shared.mirrorVisibilityChanged(self)
         // SUPERMUX:begin terminal-stream-show-hook
+        if !hidden { supermuxAttachQueuedNow() }
         supermuxStreamVisibilityChanged()
         // SUPERMUX:end terminal-stream-show-hook
     }
