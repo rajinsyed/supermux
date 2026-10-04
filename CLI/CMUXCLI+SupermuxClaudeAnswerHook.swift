@@ -11,20 +11,26 @@ extension CMUXCLI {
     /// `claude-hook post-tool-use`: the user answered the prompt the tool
     /// raised, so the agent works again.
     ///
-    /// The tool's PreToolUse put the pane in needs input and opened a request
-    /// keyed by its `tool_use_id`; Claude Code's PermissionRequest hook opened
-    /// a Feed request beside it. An answer typed in the terminal fires no hook
-    /// of its own, and while a request is open a later tool's running state is
-    /// held at needs input, so the pane kept "needs input" until the turn
-    /// ended. This hook resolves the tool's request the way a Feed reply does,
-    /// sends a stamped PostToolUse to Feed (which retires its abandoned
-    /// request) and puts the agent's pill back to Running.
+    /// The tool's PreToolUse put the pane in needs input. The wait it left
+    /// open in the agent journal depends on the mode: in bypass mode a
+    /// request keyed by the tool's `tool_use_id`, beside it the Feed request
+    /// Claude Code's PermissionRequest hook raised, and otherwise that Feed
+    /// request or, when Feed's notification was not admitted, the permission
+    /// prompt notification's request with no identity. An answer typed in the
+    /// terminal fires no hook of its own, and while a request is open a later
+    /// tool's running state is held at needs input, so the pane kept "needs
+    /// input" until the turn ended. This hook answers the tool's own request
+    /// and then the one request left open, as a Feed reply does (Feed's
+    /// stamped PostToolUse retires its own request too), and puts the agent's
+    /// pill back to Running.
     func runSupermuxClaudeAnswerHook(
         client: SocketClient,
         telemetry: CLISocketSentryTelemetry,
         parsedInput: ClaudeHookParsedInput,
         sessionStore: ClaudeHookSessionStore,
         routing: ClaudeHookRoutingContext,
+        localClaudePID: (ClaudeHookSessionRecord?) -> Int?,
+        liveClaudePID: (ClaudeHookSessionRecord?) -> Int?,
         markFeedTelemetryHandled: () -> Void,
         sendFeedTelemetry: (String?, String?) -> Void
     ) throws {
@@ -43,37 +49,52 @@ extension CMUXCLI {
         let workspaceId = resolvedTarget.workspaceId
         let surfaceId = resolvedTarget.surfaceId
         let env = ProcessInfo.processInfo.environment
-        let claudePid = mappedSession?.pid ?? claudeAgentPID(from: env)
+        // As pre-tool-use: a queued replay walks no process tree, since the
+        // hook's PID may already be recycled.
+        let isNestedAgentSession = nestedAgentSessionDetected(
+            currentAgentPID: liveClaudePID(mappedSession),
+            env: env
+        )
         guard shouldApplyClaudeHookVisibleMutation(
             sessionStore: sessionStore,
             parsedInput: parsedInput,
             workspaceId: workspaceId,
             surfaceId: surfaceId,
             telemetry: telemetry
-        ), !shouldSuppressNestedAgentVisibleMutations(currentAgentPID: claudePid, env: env) else {
+        ), !shouldSuppressNestedAgentVisibleMutations(
+            currentAgentPID: liveClaudePID(mappedSession),
+            precomputedNestedDetection: isNestedAgentSession,
+            env: env
+        ) else {
             telemetry.breadcrumb("claude-hook.post-tool-use.skipped")
             sendFeedTelemetry(workspaceId, surfaceId)
             printClaudeHookAck()
             return
         }
-        emitAgentJournalEvent(
-            client: client,
-            kind: .attentionResolved,
-            source: "claude",
-            agentKey: Self.claudeCodeStatusKey,
-            sessionId: parsedInput.sessionId,
-            workspaceId: workspaceId,
-            surfaceId: surfaceId,
-            nativeEvent: reportedHookEventName(from: parsedInput) ?? "PostToolUse",
-            declaredPhase: .running,
-            attention: Self.semanticAttentionContext(parsedInput.rawObject),
-            occurredAtMs: Self.semanticOccurredAtMs(parsedInput.rawObject),
-            store: sessionStore,
-            telemetry: telemetry
-        )
-        // Only after the journal acknowledged the resolution above: Feed's own
-        // resolution of its request then commits and reduces after it. Sent
-        // first, Feed's could commit later yet reduce earlier, and the
+        let answeredRequest = Self.semanticAttentionContext(parsedInput.rawObject)
+        // The tool's own request, then the one request left open.
+        for attention in [answeredRequest, AgentAttentionContext(turnIdentity: answeredRequest.turnIdentity)] {
+            emitAgentJournalEvent(
+                client: client,
+                kind: .attentionResolved,
+                source: "claude",
+                agentKey: Self.claudeCodeStatusKey,
+                sessionId: parsedInput.sessionId,
+                workspaceId: workspaceId,
+                surfaceId: surfaceId,
+                isSubagent: isNestedAgentSession,
+                pendingWork: true,
+                nativeEvent: reportedHookEventName(from: parsedInput) ?? "PostToolUse",
+                declaredPhase: .running,
+                attention: attention,
+                occurredAtMs: Self.semanticOccurredAtMs(parsedInput.rawObject),
+                store: sessionStore,
+                telemetry: telemetry
+            )
+        }
+        // Only after the journal acknowledged the resolutions above: Feed's
+        // own resolution of its request then commits and reduces after them.
+        // Sent first, Feed's could commit later yet reduce earlier, and the
         // lifecycle fold drops the older-sequence projection that ends the wait.
         sendFeedTelemetry(workspaceId, surfaceId)
         if let sessionId = parsedInput.sessionId {
@@ -97,7 +118,7 @@ extension CMUXCLI {
             value: String(localized: "agent.generic.status.running", defaultValue: "Running"),
             icon: "bolt.fill",
             color: "#4C8DFF",
-            pid: claudePid,
+            pid: localClaudePID(mappedSession),
             workState: .running
         )
         printClaudeHookAck()

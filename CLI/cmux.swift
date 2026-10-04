@@ -29319,7 +29319,7 @@ struct CMUXCLI {
             printClaudeHookAck()
         case "push-notification": try runClaudePushNotificationHook(client: client, telemetry: telemetry, parsedInput: parsedInput, sessionStore: sessionStore, routing: hookRouting, markFeedTelemetryHandled: { didSendFeedTelemetry = true }, sendFeedTelemetry: sendClaudeFeedTelemetry)
         // SUPERMUX:begin claude-answer-hook
-        case "post-tool-use": try runSupermuxClaudeAnswerHook(client: client, telemetry: telemetry, parsedInput: parsedInput, sessionStore: sessionStore, routing: hookRouting, markFeedTelemetryHandled: { didSendFeedTelemetry = true }, sendFeedTelemetry: sendClaudeFeedTelemetry)
+        case "post-tool-use": try runSupermuxClaudeAnswerHook(client: client, telemetry: telemetry, parsedInput: parsedInput, sessionStore: sessionStore, routing: hookRouting, localClaudePID: { localClaudePID(mapped: $0) }, liveClaudePID: { liveClaudePID(mapped: $0) }, markFeedTelemetryHandled: { didSendFeedTelemetry = true }, sendFeedTelemetry: sendClaudeFeedTelemetry)
         // SUPERMUX:end claude-answer-hook
         case "session-end":
             telemetry.breadcrumb("claude-hook.session-end")

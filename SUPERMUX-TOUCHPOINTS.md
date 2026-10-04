@@ -768,7 +768,7 @@ Rules for adding a touchpoint:
 | 907 | `CLI/CMUXCLI+ClaudeHookSettings.swift` | `claude-answer-hook` | In `emitClaudeWrapperInjectSettings`, a second `PostToolUse` group after upstream's `PushNotification` one: `claudeQueuedHookGroup(matcher: Self.supermuxClaudeAnsweredToolMatcher, subcommand: "post-tool-use")` (`AskUserQuestion\|ExitPlanMode`, defined in `CLI/CMUXCLI+SupermuxClaudeAnswerHook.swift`). Claude Code runs these tools' PostToolUse as soon as the user answers the question or approves the plan in the terminal, the only hook that answer fires. E2E: `tests/supermux/loopback_agent_answer_e2e.py` (`answer_hook_installed`) |
 | 908 | `Resources/bin/cmux-claude-wrapper` | `claude-answer-hook` | Two fences in `cmux_claude_build_standard_hook_settings`: the `post_tool_use` local and the `PostToolUse` line, which appends the queued `post-tool-use` group (matcher `AskUserQuestion\|ExitPlanMode`) after the `PushNotification` one, so the wrapper's byte-exact standard document still equals `cmux hooks claude inject-settings` (#907) and launches keep skipping Node validation |
 | 909 | `Packages/macOS/CMUXAgentLaunch/Sources/CMUXAgentLaunch/AgentHookDeliveryPolicy.swift` | `claude-answer-hook` | `"post-tool-use"` added to Claude's `auxiliaryQueuedSubcommands`, so the queued hook (#907) is admitted and delivered as `cmux hooks claude post-tool-use` |
-| 910 | `CLI/cmux.swift` | `claude-answer-hook` | In `runClaudeHook`'s subcommand switch, right after upstream's `push-notification` case: `case "post-tool-use": try runSupermuxClaudeAnswerHook(…)` with the same arguments the `push-notification` case passes. The handler (`CLI/CMUXCLI+SupermuxClaudeAnswerHook.swift`) resolves the answered tool's journal request (`attentionResolved`, its `tool_use_id`, declared `running`), sends a stamped PostToolUse to Feed (which retires the abandoned PermissionRequest card) and sets the pill back to Running |
+| 910 | `CLI/cmux.swift` | `claude-answer-hook` | In `runClaudeHook`'s subcommand switch, right after upstream's `push-notification` case: `case "post-tool-use": try runSupermuxClaudeAnswerHook(…)` with the `push-notification` case's arguments plus the hook's `localClaudePID`/`liveClaudePID` (so a queued replay walks no process tree, as pre-tool-use). The handler (`CLI/CMUXCLI+SupermuxClaudeAnswerHook.swift`) journals two `attentionResolved` events (declared `running`, `pendingWork` like a Feed reply): one keyed by the answered tool's `tool_use_id`, then one with no identity that answers the one request left open (Feed's, or the permission prompt notification's when Feed never admitted its own). Then it sends Feed a stamped PostToolUse (which retires the abandoned PermissionRequest card) and sets the pill back to Running |
 | 911 | `tests/test_claude_wrapper_hooks.py` | `claude-answer-hook` | `generated_claude_hook_settings()`'s expected `PostToolUse` list gains `queued("post-tool-use", matcher="AskUserQuestion\|ExitPlanMode")` after the `PushNotification` group |
 | 912 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `CLI/CMUXCLI+SupermuxClaudeAnswerHook.swift` (`50BE00910000000000000002` file ref, `…01` build file) into the `cmux-cli` target: the file reference, the CLI group child after `CMUXCLI+ClaudePushNotificationHook.swift`, the build file and the target's Sources phase entry |
 | 913 | `Packages/macOS/CMUXAgentLaunch/Tests/CMUXAgentLaunchTests/AgentHookDeliveryPolicyTests.swift` | `claude-answer-hook` | In `decisionAndAuxiliaryBoundaries`, upstream's `#expect(!…(agent: "claude", subcommand: "post-tool-use"))` becomes the positive expectation (#909), plus a negative one for `future-agent` so the boundary stays tested |
@@ -6676,8 +6676,10 @@ its timeout, and while a request is open the journal holds every later tool's ru
 Every row, the mirror, the phone and the tab kept "needs input" until the turn ended (and longer when the
 turn ended with background work). Now the injected settings run `claude-hook post-tool-use` after these two
 tools (#907–#909, #911, #913), and the fork's handler (`CLI/CMUXCLI+SupermuxClaudeAnswerHook.swift`, dispatched from
-#910) resolves the tool's request the way a Feed reply does, sends Feed a stamped PostToolUse (Feed retires its
-abandoned request, overlay and banner) and sets the pill back to Running. A tool permission prompt needs
+#910) answers the tool's own request (bypass mode) and then the one request left open (Feed's, or the permission
+prompt notification's when Feed never admitted its own) the way a Feed reply does, sends Feed a stamped PostToolUse
+(Feed retires its abandoned request, overlay and banner) and sets the pill back to Running. Remote (`cmux ssh`)
+Claude panes are not covered: the relay allowlist has no `post-tool-use`, and adding it needs the relay analysis. A tool permission prompt needs
 nothing new: Feed already retires its request on the next tool's stamped PreToolUse (the E2E keeps that as a
 guard). Re-apply:
 
@@ -6687,7 +6689,8 @@ guard). Re-apply:
   and the second group on the `PostToolUse` line. `tests/test_claude_wrapper_hooks.py`
   (`test_standard_generated_settings_skip_node_validation`) fails when they drift.
 - **#909 `AgentHookDeliveryPolicy.swift`.** `"post-tool-use"` in Claude's queued subcommands.
-- **#910 `cmux.swift`.** The `case "post-tool-use":` line after `push-notification`.
+- **#910 `cmux.swift`.** The `case "post-tool-use":` line after `push-notification`, passing `runClaudeHook`'s local
+  `localClaudePID`/`liveClaudePID` functions.
 - **#911 `test_claude_wrapper_hooks.py`.** The expected `PostToolUse` list.
 - **#912 `project.pbxproj`.** Re-add the four entries listed in the #912 row.
 - **#913 `AgentHookDeliveryPolicyTests.swift`.** The two expectations in place of upstream's negative one.
