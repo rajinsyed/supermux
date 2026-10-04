@@ -19,7 +19,9 @@ import Foundation
 ///   projected after its overlay arrived.
 ///
 /// `tab_indicators` reports per tab `tab_id`, `pane_id`, `panel_id`, `panel_type`, `title`,
-/// `is_selected`, `is_loading` (Bonsplit's working spinner),
+/// `is_selected`, `is_loading` (Bonsplit's working spinner, also true while
+/// it is held off because the window is off screen), `spinner_held_off_screen`
+/// (that hold, ``SupermuxTabActivitySync``),
 /// `shows_notification_badge` (the unread dot), `remote_surface_id` (for a
 /// mirror tab: the other Mac's terminal id it shows, upper-cased) and
 /// `lifecycle` (the panel's own agent lifecycle values by agent key). The
@@ -69,6 +71,7 @@ enum SupermuxTabIndicatorSocket {
         let projection = panelID.flatMap { SurfaceCatalog.shared.projection(forPanel: $0) }
         let remoteSurfaceID = projection.flatMap { $0.resource.machine.isDevice ? $0.resource.key.uppercased() : nil }
         let lifecycle = panelID.flatMap { workspace.agentLifecycleStatesByPanelId[$0] }?.mapValues(\.rawValue) ?? [:]
+        let heldOffScreen = SupermuxTabActivitySync.shared.isHeldOffScreen(tab.id)
         return [
             "tab_id": tab.id.uuid.uuidString,
             "pane_id": pane.id.uuidString,
@@ -76,7 +79,8 @@ enum SupermuxTabIndicatorSocket {
             "panel_type": panel?.panelType.rawValue ?? NSNull(),
             "title": tab.title,
             "is_selected": isSelected,
-            "is_loading": tab.isLoading,
+            "is_loading": tab.isLoading || heldOffScreen,
+            "spinner_held_off_screen": heldOffScreen,
             "shows_notification_badge": tab.showsNotificationBadge,
             "remote_surface_id": remoteSurfaceID ?? NSNull(),
             "lifecycle": lifecycle,
@@ -91,12 +95,14 @@ enum SupermuxTabIndicatorSocket {
             return ["in_dock": false]
         }
         let lifecycle = dock.agentRuntimeByPanelId[panelID]?.agentLifecycleStates.mapValues(\.rawValue) ?? [:]
+        let heldOffScreen = SupermuxTabActivitySync.shared.isHeldOffScreen(tabID)
         return [
             "in_dock": true,
             "dock_owner_id": dock.workspaceId.uuidString,
             "tab_id": tabID.uuid.uuidString,
             "panel_type": dock.panels[panelID]?.panelType.rawValue ?? NSNull(),
-            "is_loading": tab.isLoading,
+            "is_loading": tab.isLoading || heldOffScreen,
+            "spinner_held_off_screen": heldOffScreen,
             "lifecycle": lifecycle,
         ]
     }
@@ -124,7 +130,7 @@ enum SupermuxTabIndicatorSocket {
         guard let tab = workspace.surfaceIdFromPanelId(panelID) else {
             throw SupermuxMirrorSocketCommands.InvalidParams(message: "panel_id does not name a tab of the workspace")
         }
-        SupermuxTabActivitySync.setWorking(false, tab: tab, in: workspace.bonsplitController)
+        SupermuxTabActivitySync.shared.setWorking(false, tab: tab, in: workspace.bonsplitController, windowOnScreen: true)
         return ["tab_id": tab.uuid.uuidString]
     }
 
