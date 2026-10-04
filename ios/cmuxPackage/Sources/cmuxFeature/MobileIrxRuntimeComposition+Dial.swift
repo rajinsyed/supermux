@@ -74,7 +74,9 @@ extension MobileIrxRuntimeComposition {
     /// session at launch, the account and team the runtime warmed for.
     enum DialAuthority: Sendable {
         case live(AuthenticatedTeamScope, epoch: UInt64)
-        case cached(V2CachedDialAuthority)
+        /// The warmed supervisor ties the dial to the runtime it was granted
+        /// under: a sign-out and sign-in for the same pair replaces it.
+        case cached(V2CachedDialAuthority, supervisor: IrxEndpointSupervisor)
     }
 
     /// The authority a dial to this peer may run under now, if any.
@@ -92,8 +94,9 @@ extension MobileIrxRuntimeComposition {
                   cache: cache,
                   now: Date()
               ),
+              let supervisor = preparedCachedRuntime?.supervisor,
               cachedDialDirectory(cached) != nil else { return nil }
-        return .cached(cached)
+        return .cached(cached, supervisor: supervisor)
     }
 
     /// Throws once the account or team a dial runs for is no longer signed in.
@@ -101,12 +104,14 @@ extension MobileIrxRuntimeComposition {
         switch authority {
         case let .live(scope, epoch):
             try await assertScope(scope, epoch: epoch)
-        case let .cached(cached):
+        case let .cached(cached, supervisor):
             let scope = activeScope
             var liveScopeIsCurrent = false
             if let scope, let auth { liveScopeIsCurrent = await auth.isAuthenticatedTeamScopeCurrent(scope) }
             let signedIn = await auth?.cachedTeamIdentity
-            guard activeScope == scope, cached.isCurrent(
+            guard activeScope == scope,
+                  endpointSupervisor === supervisor || preparedCachedRuntime?.supervisor === supervisor,
+                  cached.isCurrent(
                 liveScope: scope.map { V2AccountTeam(accountID: $0.session.accountID, teamID: $0.teamID) },
                 liveScopeIsCurrent: liveScopeIsCurrent,
                 prepared: preparedCachedRuntime?.tuple,
@@ -142,11 +147,13 @@ extension MobileIrxRuntimeComposition {
 
     // SUPERMUX:begin mobile-irx-cached-dial-authority (dialOnce runs under a DialAuthority: live scope or the warmed cached identity)
     func dialOnce(peerHex: String) async throws -> IrxClientSession {
-        guard let authority = await dialAuthority(for: peerHex) else { throw CompositionError.notSignedIn }
+        // Waits, like upstream's live discovery, while sign-in hands the warmed
+        // runtime over to the live scope.
+        let authority = try await waitForRuntimeReadiness(for: peerHex)
         let discovered: V2Directory?
         switch authority {
         case .live: discovered = await freshLiveDiscovery()
-        case let .cached(cached): discovered = cachedDialDirectory(cached)
+        case let .cached(cached, _): discovered = cachedDialDirectory(cached)
         }
         guard let directory = discovered else { throw CompositionError.peerNotDiscovered }
         try await assertDialAuthority(authority)

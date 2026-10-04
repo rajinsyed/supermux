@@ -164,6 +164,17 @@ extension MobileIrxRuntimeComposition {
             projectID: configuration.projectID, teamID: scope.teamID, userID: scope.session.accountID)
         let prepared = preparedCachedRuntime?.tuple == tuple ? preparedCachedRuntime : nil
         preparedCachedRuntime = nil
+        // SUPERMUX:begin mobile-irx-cached-dial-authority
+        // Hand the warmed runtime to the live scope in the same step, so a
+        // launch dial never sees neither (and the warmed supervisor is always
+        // reachable for the next detach).
+        if let prepared {
+            identity = prepared.identity
+            endpointSupervisor = prepared.supervisor
+            if let restored = prepared.restored { cache = restored }
+            publish()
+        }
+        // SUPERMUX:end mobile-irx-cached-dial-authority
         let deviceID = tuple.deviceID
         let key: V2IdentityKey
         let stateStore: V2FileStateStore
