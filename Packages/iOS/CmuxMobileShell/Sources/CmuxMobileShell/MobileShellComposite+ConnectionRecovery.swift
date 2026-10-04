@@ -53,7 +53,14 @@ extension MobileShellComposite {
     /// Foreground, network, presence, liveness, and stream-failure recovery all
     /// enter the same owner. Foreground starts with a positive-liveness probe;
     /// a failed probe promotes that exact attempt to one stored-Mac redial.
-    func recoverForegroundConnectionIfNeeded(resyncAfterHealthy: Bool) {
+    // SUPERMUX:begin mobile-foreground-host-idle-redial
+    /// `probeCurrentConnection: false` redials at once: the caller knows the
+    /// Mac already closed the session.
+    func recoverForegroundConnectionIfNeeded(
+        resyncAfterHealthy: Bool,
+        probeCurrentConnection: Bool = true
+    ) {
+    // SUPERMUX:end mobile-foreground-host-idle-redial
         guard connectionState == .connected,
               let client = remoteClient,
               pairedMacStore != nil else { return }
@@ -64,7 +71,9 @@ extension MobileShellComposite {
         beginConnectionRecovery(
             trigger: .foreground,
             expectedClient: client,
-            probeCurrentConnection: true,
+            // SUPERMUX:begin mobile-foreground-host-idle-redial
+            probeCurrentConnection: probeCurrentConnection,
+            // SUPERMUX:end mobile-foreground-host-idle-redial
             resyncAfterHealthy: resyncAfterHealthy
         )
     }

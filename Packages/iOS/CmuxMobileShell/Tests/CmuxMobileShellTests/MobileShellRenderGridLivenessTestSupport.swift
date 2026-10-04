@@ -901,6 +901,9 @@ actor LivenessTransport: CmxByteTransport, CmxByteTransportLivenessObserving {
 
     func send(_ data: Data) async throws {
         guard !isClosed else { throw MobileShellConnectionError.connectionClosed }
+        // SUPERMUX:begin mobile-foreground-host-idle-redial
+        guard !isSilenced else { return }
+        // SUPERMUX:end mobile-foreground-host-idle-redial
         var buffer = data
         let payloads = try MobileSyncFrameCodec.decodeFrames(from: &buffer)
         for payload in payloads {
@@ -966,6 +969,16 @@ actor LivenessTransport: CmxByteTransport, CmxByteTransportLivenessObserving {
     func isClosedForTesting() -> Bool {
         isClosed
     }
+
+    // SUPERMUX:begin mobile-foreground-host-idle-redial
+    private var isSilenced = false
+
+    /// Models a session the Mac already closed while this end still looks
+    /// open: every later request goes out and is never answered.
+    func silence() {
+        isSilenced = true
+    }
+    // SUPERMUX:end mobile-foreground-host-idle-redial
 
     func isTransportClosed() async -> Bool {
         isClosed

@@ -48,7 +48,7 @@ Rules for adding a touchpoint:
   740–749 are unassigned (774–809 are held by other open branches). The highest number in use is 818. Number **351** is unused (the notifications
   another Mac's device menu refreshed meanwhile); 709, 713–714, 724, 736, 740–749 and 764–769 are unassigned. Remote
   Host Mode uses #830–#835 (770–829 are reserved by other open PRs). The highest
-  number in use is 924 (#900–#919 are held by another open branch). Number **351** is unused (the notifications
+  number in use is 944 (#940–#944: a foreground return after the Mac's idle timeout redials without probing; 925–939 are left for the 2026-10-04 upstream merge; #900–#919 are held by another open branch). Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 48, 52, 82, 83, 89, 106, 121, 142, 213, 214,
   220, 229, 237, 250, 251, 252–258, 335, 470, 473–481, 483, 484, 487, and 791** are unused; all are
@@ -750,6 +750,11 @@ Rules for adding a touchpoint:
 | 937 | `ios/cmuxPackage/Sources/cmuxFeature/MobileIrxRuntimeComposition+Dial.swift` | `mobile-irx-cached-dial-authority` | Three fences. `ensureSession` and the readiness wait run under a `DialAuthority` (`.live(scope, epoch)` or `.cached(V2CachedDialAuthority, supervisor:)`, tied to the warmed supervisor so a sign-out and sign-in for the same pair ends it); `dialAuthority(for:)`, `assertDialAuthority(_:)` and `cachedDialDirectory(_:)`; and the whole `dialOnce`, which waits for an authority like upstream's live discovery waits, reads the warmed directory and supervisor (`preparedCachedRuntime`) for a cached dial and asserts the authority where upstream asserted the scope. Live dials keep upstream's exact scope and epoch check |
 | 938 | `ios/cmuxPackage/Sources/cmuxFeature/MobileIrxRuntimeComposition+Lifecycle.swift` | `mobile-irx-cached-dial-authority` | Three fences. In `provision`, the warmed runtime's identity, supervisor and cache are installed in the same step that clears `preparedCachedRuntime` (no await between), so a launch dial never finds neither and the next detach always reaches the warmed supervisor. Two in `detachCurrentRuntime`: when sign-in finishes for the account and team the runtime warmed for (`preservePrepared`), the engines, dial intents, control-lane claims and event-lane hubs of the launch dials stay; any other transition clears and stops them as upstream does |
 | 939 | `Packages/iOS/CmuxMobileShell/Tests/CmuxMobileShellTests/SupermuxStartupParallelSecondaryTests.swift` | `mobile-startup-parallel-secondary` | Whole new file. Two saved Macs on their own scripted hosts: at launch the other Mac connects while the foreground Mac's connect is still held; when the foreground candidate is unreachable, the other Mac still takes over the foreground and keeps no secondary session; with an offline saved Mac (presence on, the retry clock held), launch still finds an unsaved Mac through account discovery |
+| 940 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite+SupermuxForegroundRedial.swift` | `mobile-foreground-host-idle-redial` | Whole new file (fenced top to bottom). `supermuxForegroundDwellOutlivedHostSession()`: on an Iroh route, a background dwell of at least the Mac's 30 s QUIC idle timeout plus 10 s suspension grace (wall clock, `runtime.now()`) means the Mac already closed the session. Regression coverage: #943 |
+| 941 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite+ReconnectRoutes.swift` | `mobile-foreground-host-idle-redial` | Two fences in `resumeForegroundRefresh()`: reads #940's verdict BEFORE `lastBackgroundedAt = nil`, then passes `probeCurrentConnection: !hostClosedSession` to `recoverForegroundConnectionIfNeeded` |
+| 942 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite+ConnectionRecovery.swift` | `mobile-foreground-host-idle-redial` | Two fences in `recoverForegroundConnectionIfNeeded`: a `probeCurrentConnection: Bool = true` parameter, forwarded to `beginConnectionRecovery` instead of upstream's literal `true`. Every other caller keeps the probe |
+| 943 | `Packages/iOS/CmuxMobileShell/Tests/CmuxMobileShellTests/IrohReconnectRouteSelectionTests.swift` | `mobile-foreground-host-idle-redial` | `foregroundAfterHostIdleTimeoutRedialsWithoutProbingTheDeadSession`, after upstream's `foregroundResumeRedialsDeadIrohSessionBeforeUserAction`: a silenced Iroh session and a 10 s probe timeout; a 120 s dwell must reconnect on a new transport within 1 s |
+| 944 | `Packages/iOS/CmuxMobileShell/Tests/CmuxMobileShellTests/MobileShellRenderGridLivenessTestSupport.swift` | `mobile-foreground-host-idle-redial` | Two fences in `LivenessTransport`: `silence()` and the `guard !isSilenced` at the top of `send` (after the closed guard), so #943 can model a session the Mac closed while this end still looks open |
 | 945 | `Packages/iOS/CmuxMobileShell/Tests/CmuxMobileShellTests/LivenessHostRouterAttachTicketResponse.swift` | `mobile-startup-parallel-secondary` | `attachTicketObject` takes the Mac id, name and route port (defaults are upstream's `test-mac`, `Test Mac`, 56584) so #939's second host can name its own Mac |
 | 946 | `Packages/iOS/CmuxMobileShell/Tests/CmuxMobileShellTests/MobileShellRenderGridLivenessTestSupport.swift` | `mobile-startup-parallel-secondary` | Two fences in `LivenessHostRouter`: `setAttachTicketMac(deviceID:displayName:port:)` and the `mobile.attach_ticket.create` branch that uses it; unset, the router answers upstream's fixed ticket |
 | 947 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite+SupermuxStartupSecondary.swift` | `mobile-startup-parallel-secondary` | Whole new file (fenced top to bottom). `SupermuxStartupForegroundReservation` (the reconnect generation plus upstream's `ForegroundConnectionAttemptReservation`). `supermuxReserveStartupForegroundCandidate(_:isLaunchRestore:generation:routes:)`: during the app's startup restore (`hydratePairedMacs`, `!didFinishStoredMacReconnectAttempt`, multi-Mac on), from the first Iroh candidate on the automatic method (a legacy or explicit-Tailscale candidate keeps upstream's order while it is the candidate), reserves the candidate being dialed, retires secondary sessions the pass already opened to it or to a route it shares, and on the first candidate of a generation schedules the secondary pass; the reservation counts only while that generation's reconnect runs (`supermuxIsLaunchSecondaryPass`); `supermuxIsStartupForegroundCandidate(_:)` uses upstream's alias-aware `conflicts(with:)`. Regression coverage: #939 |
@@ -6832,3 +6837,22 @@ Re-apply after an upstream merge: keep the reservation call at the top of each s
 conflict check first in `secondaryMacConflictsWithForegroundOwnership`.
 
 Verify: `swift test --package-path Packages/iOS/CmuxMobileShell --filter SupermuxStartupParallelSecondaryTests`.
+
+### 940–944. A foreground return after the Mac's idle timeout redials without probing — `mobile-foreground-host-idle-redial`
+
+User report (2026-10-04): the iPhone takes about 5 s to load the workspaces. The Mac's Iroh host closes
+a session 30 s after the phone's last packet (`transportIdleTimedOut` in the Mac's irx journal, 30.3 s
+after the last pong). The phone's own QUIC idle timer runs on a clock that stops while the device
+sleeps, so after the phone was locked its transport still looks open. Upstream's foreground recovery
+then probes that session with `mobile.workspace.list` and waits the whole 3 s probe timeout; a timed-out
+probe on an open-looking transport is even kept as healthy. Now a dwell of at least 30 s + 10 s
+suspension grace on an Iroh route skips the probe and redials at once (the same no-probe path a
+connection-method change takes). TCP routes keep upstream's probe: the Mac keeps a silent phone's TCP
+connection open.
+
+Re-apply after an upstream merge:
+- **#941**: read the verdict before `resumeForegroundRefresh()` clears `lastBackgroundedAt`, and pass it to
+  the foreground recovery call.
+- **#942**: keep the defaulted parameter so every other caller still probes.
+
+Verify: `swift test --package-path Packages/iOS/CmuxMobileShell --filter foregroundAfterHostIdleTimeoutRedialsWithoutProbingTheDeadSession`.
