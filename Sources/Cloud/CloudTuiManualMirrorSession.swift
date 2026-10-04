@@ -483,6 +483,9 @@ final class CloudTuiManualMirrorSession {
     func noteExplicitInput() {
         guard !sharingOwnViewDetached else { return }
         if sizingRelay.isSupported {
+            // SUPERMUX:begin sizing-auto-local-input (a phone's input delivered through this Mac is the phone's activity, not this Mac's)
+            guard SupermuxTerminalSizingAuto.shared.isMacPaneActivity else { return }
+            // SUPERMUX:end sizing-auto-local-input
             // Activity only matters when it moves ownership to this Mac.
             if let me = sizingRelay.selfParticipantID, sizingRelay.state?.owners == [me] { return }
             sendSharingFocusActivity()
