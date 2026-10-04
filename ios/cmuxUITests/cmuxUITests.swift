@@ -457,7 +457,12 @@ final class cmuxUITests: XCTestCase {
         for _ in 0..<4 where !(infraAPI.exists && infraAPI.isHittable) { app.swipeUp(velocity: .slow) }
         XCTAssertTrue(accessory("ws-infra-api").waitForExistence(timeout: 5), "infra-api shows its branch")
         assertOnStudio(accessory("ws-infra-api").label, branch: "main", "infra-api (a Studio-only project)")
-        for _ in 0..<4 where !(featX.exists && featX.isHittable) { app.swipeDown(velocity: .slow) }
+        // Clear of the top toolbar too: compact nested rows can leave feat-x
+        // hittable but tucked under it, where a swipe hits the toolbar.
+        func featXIsClear() -> Bool {
+            featX.exists && featX.isHittable && featX.frame.minY > app.frame.height * 0.2
+        }
+        for _ in 0..<4 where !featXIsClear() { app.swipeDown(velocity: .slow) }
         XCTAssertTrue(waitForHittable(featX, timeout: 4))
 
         // Nested rows behave exactly like every other workspace row.
@@ -478,7 +483,8 @@ final class cmuxUITests: XCTestCase {
         tap(featX, in: app)
         XCTAssertTrue(element("FixtureWorkspaceDetail").waitForExistence(timeout: 4), "Tapping a nested row opens it")
         tap(app.buttons["MobileWorkspaceBackButton"], in: app)
-        XCTAssertTrue(waitForHittable(featX, timeout: 4))
+        // The back transition can outlast one slow hittability check.
+        XCTAssertTrue(waitForHittable(featX, timeout: 8))
 
         // The worktree pill reveals both Macs' worktrees. The Studio's carries
         // the cloud-Mac icon before its branch (its VoiceOver label joins the
