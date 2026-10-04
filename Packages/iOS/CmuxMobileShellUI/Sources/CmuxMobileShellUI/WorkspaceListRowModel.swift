@@ -126,8 +126,8 @@ struct WorkspaceListWorkspaceLayoutKey: Hashable {
     // drawn text, not the raw count — 100 and 4000 both render "99+".
     let supermuxUnreadBadgeText: String?
     // SUPERMUX:end supermux-mobile-unread-badge
-    // SUPERMUX:begin supermux-mobile-nested-branch-line (a nested row's branch line adds a line under its title and takes one preview line)
-    var supermuxHasBranchLine = false
+    // SUPERMUX:begin supermux-mobile-nested-branch-line (a nested row draws its branch line and trailing status instead of its time, description and preview: nil for other rows)
+    var supermuxNestedLayout: SupermuxNestedWorkspaceAccessory.LayoutKey? = nil
     // SUPERMUX:end supermux-mobile-nested-branch-line
 
     init(_ model: WorkspaceListWorkspaceRowModel) {
@@ -161,7 +161,7 @@ struct WorkspaceListWorkspaceLayoutKey: Hashable {
             : nil
         // SUPERMUX:end supermux-mobile-unread-badge
         // SUPERMUX:begin supermux-mobile-nested-branch-line
-        supermuxHasBranchLine = model.supermuxAccessory?.hasBranchLine ?? false
+        supermuxNestedLayout = model.supermuxAccessory?.layoutKey
         // SUPERMUX:end supermux-mobile-nested-branch-line
     }
 }
@@ -181,14 +181,19 @@ extension WorkspaceListTable {
                 ? workspaceChangeChipsByWorkspaceID[workspace.rpcWorkspaceID.rawValue]
                 : nil
             let capabilities = workspace.actionCapabilities
+            // SUPERMUX:begin supermux-mobile-nested-accessory (a nested row's accessory; it draws no changes chip, so the row neither carries nor opens one)
+            let supermuxAccessory = indented ? supermuxProjects?.layout.accessories[id] : nil
+            // SUPERMUX:end supermux-mobile-nested-accessory
             return .workspace(
                 WorkspaceListWorkspaceRowModel(
                     content: WorkspaceRowContent(
                         workspace: workspace,
                         connectionStatus: connectionStatus,
                         isSelected: navigationStyle == .sidebar && selectedWorkspaceID == id,
-                        changesChip: changesChip,
-                        opensChanges: openWorkspaceChanges != nil,
+                        // SUPERMUX:begin supermux-mobile-nested-accessory (upstream: `changesChip: changesChip, opensChanges: openWorkspaceChanges != nil,`)
+                        changesChip: supermuxAccessory == nil ? changesChip : nil,
+                        opensChanges: supermuxAccessory == nil && openWorkspaceChanges != nil,
+                        // SUPERMUX:end supermux-mobile-nested-accessory
                         wrapWorkspaceTitles: wrapWorkspaceTitles,
                         previewLineLimit: previewLineLimit,
                         unreadIndicatorLeftShift: unreadIndicatorLeftShift,
@@ -207,7 +212,7 @@ extension WorkspaceListTable {
                     supermuxActivity: workspace.supermuxActivity,
                     // SUPERMUX:end supermux-mobile-row-activity
                     // SUPERMUX:begin supermux-mobile-nested-accessory
-                    supermuxAccessory: indented ? supermuxProjects?.layout.accessories[id] : nil
+                    supermuxAccessory: supermuxAccessory
                     // SUPERMUX:end supermux-mobile-nested-accessory
                 )
             )

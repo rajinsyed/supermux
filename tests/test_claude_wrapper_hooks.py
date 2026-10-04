@@ -135,7 +135,12 @@ def generated_claude_hook_settings() -> str:
             direct(f"{direct_cli} hooks claude cron-create-guard", 5, matcher="CronCreate"),
             queued("pre-tool-use"),
         ],
-        "PostToolUse": [queued("push-notification", matcher="PushNotification")],
+        # SUPERMUX:begin claude-answer-hook
+        "PostToolUse": [
+            queued("push-notification", matcher="PushNotification"),
+            queued("post-tool-use", matcher="AskUserQuestion|ExitPlanMode"),
+        ],
+        # SUPERMUX:end claude-answer-hook
         "PermissionRequest": [direct(f"{direct_cli} hooks feed --source claude", 125)],
     }
     return json.dumps(

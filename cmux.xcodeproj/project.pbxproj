@@ -1301,6 +1301,7 @@
 			CBF07000000000000000002 /* CMUXCLI+SSHStartupScripts.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBF07000000000000000001 /* CMUXCLI+SSHStartupScripts.swift */; };
 		A0C7444924A573561A39C95A /* CMUXCLI+SSHTui.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5AECAFEDF2A8217119AC67F /* CMUXCLI+SSHTui.swift */; };
 		D96970000000000000000006 /* CMUXCLI+Sudo.swift in Sources */ = {isa = PBXBuildFile; fileRef = D96971000000000000000001 /* CMUXCLI+Sudo.swift */; };
+		50BE00910000000000000001 /* CMUXCLI+SupermuxClaudeAnswerHook.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00910000000000000002 /* CMUXCLI+SupermuxClaudeAnswerHook.swift */; };
 		A10020000000000000000007 /* CMUXCLI+SurfaceSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10020000000000000000008 /* CMUXCLI+SurfaceSelection.swift */; };
 		A1329C0B0000000000000101 /* CMUXCLI+SurfaceSizing.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1329C0B0000000000000001 /* CMUXCLI+SurfaceSizing.swift */; };
 		B6E774493F579BDC8C8BD8C1 /* CMUXCLI+TaskHelp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 330D98B52CC6A159D363DA42 /* CMUXCLI+TaskHelp.swift */; };
@@ -6063,6 +6064,7 @@
 			CBF07000000000000000001 /* CMUXCLI+SSHStartupScripts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+SSHStartupScripts.swift"; sourceTree = "<group>"; };
 		E5AECAFEDF2A8217119AC67F /* CMUXCLI+SSHTui.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+SSHTui.swift"; sourceTree = "<group>"; };
 		D96971000000000000000001 /* CMUXCLI+Sudo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+Sudo.swift"; sourceTree = "<group>"; };
+		50BE00910000000000000002 /* CMUXCLI+SupermuxClaudeAnswerHook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+SupermuxClaudeAnswerHook.swift"; sourceTree = "<group>"; };
 		A10020000000000000000008 /* CMUXCLI+SurfaceSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+SurfaceSelection.swift"; sourceTree = "<group>"; };
 		A1329C0B0000000000000001 /* CMUXCLI+SurfaceSizing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+SurfaceSizing.swift"; sourceTree = "<group>"; };
 		330D98B52CC6A159D363DA42 /* CMUXCLI+TaskHelp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CMUXCLI+TaskHelp.swift"; sourceTree = "<group>"; };
@@ -12791,6 +12793,7 @@
 				C79630010000000000000001 /* CMUXCLI+ClaudeHookAck.swift */,
 				AE55A6E50000000000000004 /* CMUXCLI+AgentMessages.swift */,
 				4CF59318F1D5B2195AC77C28 /* CMUXCLI+ClaudePushNotificationHook.swift */,
+				50BE00910000000000000002 /* CMUXCLI+SupermuxClaudeAnswerHook.swift */,
 				C6711B050000000000000001 /* CMUXCLI+AgentHookRestoreEvidence.swift */,
 				D96290040000000000000001 /* CMUXCLI+CodexResumeBindingVerification.swift */,
 				D12805000000000000000003 /* CMUXCLI+CodexWriterFinalGuard.swift */,
@@ -18001,6 +18004,7 @@
 					CBF07000000000000000002 /* CMUXCLI+SSHStartupScripts.swift in Sources */,
 				A0C7444924A573561A39C95A /* CMUXCLI+SSHTui.swift in Sources */,
 				D96970000000000000000006 /* CMUXCLI+Sudo.swift in Sources */,
+				50BE00910000000000000001 /* CMUXCLI+SupermuxClaudeAnswerHook.swift in Sources */,
 				A10020000000000000000007 /* CMUXCLI+SurfaceSelection.swift in Sources */,
 				A1329C0B0000000000000101 /* CMUXCLI+SurfaceSizing.swift in Sources */,
 				B6E774493F579BDC8C8BD8C1 /* CMUXCLI+TaskHelp.swift in Sources */,
