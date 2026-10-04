@@ -39,9 +39,9 @@ public final class SupermuxRemoteChangesBackend: SupermuxChangesBackend {
     /// The repository root the host reported last (the `expected_root` guard).
     private var lastRoot: String?
     private var lastSnapshot: SupermuxGitStatusSnapshot?
-    /// The last status's `unpushed_count` (a branch without an upstream), or
-    /// `nil` when it carried none: a branch with an upstream, or a Mac too
-    /// old to report it (then the history page counts).
+    /// The last panel refresh's `unpushed_count` (a branch without an
+    /// upstream), or `nil` when it carried none: a branch with an upstream,
+    /// or a Mac too old to report it (then the history page counts).
     private var lastUnpushedCount: Int?
     private var history: (readAt: ContinuousClock.Instant, page: HistoryPage)?
     /// Whether the owning Mac can write commit messages: what its last status
@@ -63,24 +63,28 @@ public final class SupermuxRemoteChangesBackend: SupermuxChangesBackend {
 
     // MARK: - Status
 
-    /// The panel's refresh: follows the workspace wherever its shell went.
+    /// The panel's refresh: follows the workspace wherever its shell went,
+    /// and asks for the unpushed count the panel reads right after it.
     public func status(repoPath: String) async -> SupermuxGitStatusSnapshot {
-        await readStatus(pinnedTo: nil)
+        await readStatus(pinnedTo: nil, countingUnpushed: true)
     }
 
     /// One status read. `pinnedTo` (a read inside a mutation) sends
     /// `expected_root`, so after a remote `cd` the host refuses it and the
     /// last snapshot stands; the mutation that follows is refused the same
-    /// way instead of acting on the other repository.
-    private func readStatus(pinnedTo repoPath: String?) async -> SupermuxGitStatusSnapshot {
+    /// way instead of acting on the other repository. `countingUnpushed`
+    /// asks the host for `unpushed_count` (one `rev-list` over there on a
+    /// branch without an upstream), so only the panel's refresh pays for it.
+    private func readStatus(pinnedTo repoPath: String?, countingUnpushed: Bool = false) async -> SupermuxGitStatusSnapshot {
         do {
-            let result = try await call(.changesStatus, ["include_unpushed_count": true], repoPath: repoPath)
+            let params: [String: Any] = countingUnpushed ? ["include_unpushed_count": true] : [:]
+            let result = try await call(.changesStatus, params, repoPath: repoPath)
             let dto = try SupermuxWireJSON().decode(SupermuxChangesStatusDTO.self, from: result)
             if let root = dto.root, !root.isEmpty { lastRoot = root }
             if let configured = dto.aiCommitConfigured { isAICommitConfigured = configured }
             let snapshot = SupermuxGitStatusSnapshot(wire: dto)
             lastSnapshot = snapshot
-            lastUnpushedCount = dto.unpushedCount
+            if countingUnpushed { lastUnpushedCount = dto.unpushedCount }
             return snapshot
         } catch {
             // A dropped reply keeps the panel as it was instead of blanking it.
