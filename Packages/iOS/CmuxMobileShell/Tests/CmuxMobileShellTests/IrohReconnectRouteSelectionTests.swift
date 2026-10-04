@@ -1104,6 +1104,42 @@ extension ReconnectRouteSelectionTests {
         #expect(store.activeRoute?.kind == .iroh)
     }
 
+    // SUPERMUX:begin mobile-foreground-host-idle-redial
+    /// The Mac closed this session while the phone slept; the phone's
+    /// transport still looks open, so a liveness probe on it can only stall
+    /// for its whole timeout. A dwell longer than the Mac's idle timeout
+    /// redials at once instead.
+    @Test func foregroundAfterHostIdleTimeoutRedialsWithoutProbingTheDeadSession() async throws {
+        let clock = TestClock()
+        let router = LivenessHostRouter()
+        let box = TransportBox()
+        let store = try await makeReconnectStore(
+            routes: [try iroh()],
+            runtime: LivenessTestRuntime(
+                transportFactory: LivenessTransportFactory(router: router, box: box),
+                now: { clock.now },
+                supportedRouteKinds: [.iroh],
+                livenessProbeTimeoutNanoseconds: 10_000_000_000
+            )
+        )
+        #expect(await store.reconnectActiveMacIfAvailable(stackUserID: "user-1"))
+        let firstTransport = try #require(box.get())
+        await firstTransport.silence()
+
+        store.suspendForegroundRefresh()
+        clock.advance(by: 120)
+        store.resumeForegroundRefresh()
+
+        let recovered = try await pollUntil(attempts: 100) {
+            guard let current = box.get() else { return false }
+            return current !== firstTransport
+                && store.connectionState == .connected
+        }
+        #expect(recovered)
+        #expect(store.activeRoute?.kind == .iroh)
+    }
+    // SUPERMUX:end mobile-foreground-host-idle-redial
+
     @Test func subscribeStartFailureRedialsPinnedIrohWithoutRawFallback() async throws {
         let clock = TestClock()
         let router = LivenessHostRouter()
