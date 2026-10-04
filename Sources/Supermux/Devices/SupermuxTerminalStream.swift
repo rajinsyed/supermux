@@ -1,3 +1,4 @@
+import CmuxMobileRPC
 import CmuxSurfaceCatalogModel
 import Foundation
 import SupermuxMobileCore
@@ -381,6 +382,8 @@ final class SupermuxTerminalStream {
         var resumed: Resumed?
         /// The grid generation the reply's screen holds (v2), if settled.
         var gridGeneration: UInt64?
+        /// A resumed reply's sizing fields (a full replay's come with its decode).
+        var sizing: MobileTerminalReplaySizing?
     }
 
     private nonisolated static let resumedMarker = Data("\"\(SupermuxTerminalStreamHost.resumedKey)\":true".utf8)
@@ -410,8 +413,20 @@ final class SupermuxTerminalStream {
                 columns: (object["columns"] as? NSNumber)?.intValue,
                 rows: (object["rows"] as? NSNumber)?.intValue
             ),
-            gridGeneration: (object[SupermuxTerminalStreamHost.gridGenerationKey] as? NSNumber)?.uint64Value
+            gridGeneration: (object[SupermuxTerminalStreamHost.gridGenerationKey] as? NSNumber)?.uint64Value,
+            sizing: replaySizing(in: object)
         )
+    }
+
+    /// A replay reply's `size_state` and `self_participant_id`, from the
+    /// dictionary its decode already parsed off the main actor: the same
+    /// decoder as `MobileTerminalReplaySizing.decodeIfPresent`, over just
+    /// those two fields instead of the whole (often multi-MB) reply.
+    nonisolated static func replaySizing(in object: [String: Any]) -> MobileTerminalReplaySizing? {
+        var fields: [String: Any] = [:]
+        for key in ["size_state", "self_participant_id"] { fields[key] = object[key] }
+        guard !fields.isEmpty, let data = try? JSONSerialization.data(withJSONObject: fields) else { return nil }
+        return MobileTerminalReplaySizing.decodeIfPresent(data)
     }
 
     /// The epoch's value (a UUID string, so never escaped) after its key.

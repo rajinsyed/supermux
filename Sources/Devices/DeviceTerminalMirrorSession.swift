@@ -598,7 +598,7 @@ final class DeviceTerminalMirrorSession {
             let supermuxReply = await SupermuxTerminalStream.decodeReply(response)
             let replay: Replay
             if let resumed = supermuxReply.resumed {
-                replay = Replay(bytes: resumed.bytes, columns: resumed.columns, rows: resumed.rows, sequence: resumed.sequence, supermuxResumed: true)
+                replay = Replay(bytes: resumed.bytes, columns: resumed.columns, rows: resumed.rows, sequence: resumed.sequence, supermuxResumed: true, supermuxSizing: supermuxReply.sizing)
             } else {
                 replay = try await Self.decodeReplay(response)
             }
@@ -611,7 +611,9 @@ final class DeviceTerminalMirrorSession {
             // SUPERMUX:begin device-mirror-replay-timed-out
             supermuxTimedOutRetries = 0
             // SUPERMUX:end device-mirror-replay-timed-out
-            receiveReplaySizing(response)
+            // SUPERMUX:begin terminal-stream-replay-sizing (decoded off the main actor with the replay; upstream: `receiveReplaySizing(response)`)
+            receiveReplaySizing(replay.supermuxSizing)
+            // SUPERMUX:end terminal-stream-replay-sizing
             // SUPERMUX:begin terminal-stream-grid-viewer (pinned in stream order: output already handed to the surface is parsed at the grid it was written for, and the replay only once the surface holds the replay's grid; upstream: `if let columns = replay.columns, let rows = replay.rows { pin(columns: columns, rows: rows) }`)
             if let columns = replay.columns, let rows = replay.rows {
                 if let surface {
@@ -732,6 +734,11 @@ final class DeviceTerminalMirrorSession {
         /// the screen as it is.
         var supermuxResumed = false
         // SUPERMUX:end terminal-stream-viewer
+        // SUPERMUX:begin terminal-stream-replay-sizing
+        /// The reply's `size_state` and `self_participant_id`, decoded off the
+        /// main actor (SupermuxTerminalStream.replaySizing).
+        var supermuxSizing: MobileTerminalReplaySizing?
+        // SUPERMUX:end terminal-stream-replay-sizing
     }
 
     #if compiler(>=6.2)
@@ -743,6 +750,14 @@ final class DeviceTerminalMirrorSession {
         guard let response = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw DeviceLinkError.malformedResponse("mobile.terminal.replay")
         }
+        // SUPERMUX:begin terminal-stream-replay-sizing (the sizing fields are read here, off the main actor, from the dictionary already parsed; upstream decoded the whole reply a second time on the main actor in `receiveReplaySizing`)
+        var replay = try decodeReplay(object: response)
+        replay.supermuxSizing = SupermuxTerminalStream.replaySizing(in: response)
+        return replay
+    }
+
+    nonisolated private static func decodeReplay(object response: [String: Any]) throws -> Replay {
+        // SUPERMUX:end terminal-stream-replay-sizing
         let sequence = (response["seq"] as? NSNumber)?.uint64Value
         if let raw = response["render_grid"] {
             let frame = try MobileTerminalRenderGridFrame.decodeJSONObject(raw)
@@ -850,9 +865,11 @@ final class DeviceTerminalMirrorSession {
         sendSizing("mobile.terminal.viewport", report)
     }
 
-    private func receiveReplaySizing(_ response: Data) {
+    // SUPERMUX:begin terminal-stream-replay-sizing (upstream: `private func receiveReplaySizing(_ response: Data) {` and `if let sizing = MobileTerminalReplaySizing.decodeIfPresent(response), let state = sizing.sizeState {`)
+    private func receiveReplaySizing(_ sizing: MobileTerminalReplaySizing?) {
         guard viewer != nil else { return }
-        if let sizing = MobileTerminalReplaySizing.decodeIfPresent(response), let state = sizing.sizeState {
+        if let sizing, let state = sizing.sizeState {
+    // SUPERMUX:end terminal-stream-replay-sizing
             viewer?.receive(state, selfParticipantID: sizing.selfParticipantID)
         }
         publishSharing()
