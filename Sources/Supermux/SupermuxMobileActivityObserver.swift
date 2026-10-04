@@ -44,7 +44,9 @@ import SupermuxKit
 ///
 /// Nothing runs while neither topic has a subscriber. The association
 /// tracking lapses meanwhile, so the first subscriber gets one forced pass,
-/// which emits and re-arms it.
+/// which emits and re-arms it. Every path that finds no subscriber suspends
+/// the observer, so a brief resubscribe dip the subscription notifications
+/// never see still gets that pass.
 @MainActor
 final class SupermuxMobileActivityObserver {
     /// Throttle window, mirroring `MobileWorkspaceListObserver`.
@@ -61,8 +63,10 @@ final class SupermuxMobileActivityObserver {
     private let hasSubscribers: @MainActor () -> Bool
     private var lifecycleCancellable: AnyCancellable?
     private var subscriptionsObserver: NSObjectProtocol?
-    /// Whether either topic had a subscriber at the last subscription change.
-    private var hadSubscribers = false
+    /// Set by ``suspend()`` when a path finds no subscriber: work and
+    /// signatures were dropped and association tracking may have lapsed, so
+    /// the next subscriber gets one forced pass.
+    private var isSuspended = true
     /// The scheduled trailing pass; `nil` when idle. Its presence is the
     /// throttle: at most one change check per window.
     private var pendingPass: Task<Void, Never>?
@@ -114,7 +118,7 @@ final class SupermuxMobileActivityObserver {
         self.pokeStateSync = pokeStateSync
         self.hasSubscribers = hasSubscribers
         lastAssociationHash = armAndReadAssociationHash()
-        hadSubscribers = hasSubscribers()
+        isSuspended = !hasSubscribers()
         // Resolved here rather than as a default argument: default-argument
         // expressions evaluate in the caller's context, where touching the
         // @MainActor relay warns under strict concurrency.
@@ -141,33 +145,48 @@ final class SupermuxMobileActivityObserver {
     }
 
     private func lifecycleDidChange(_ workspaceID: UUID) {
-        guard hasSubscribers() else { return }
+        guard hasSubscribers() else {
+            suspend()
+            return
+        }
         pendingWorkspaceIDs.insert(workspaceID)
         schedulePass(force: false)
     }
 
-    /// The first subscriber gets one forced pass; when the last one leaves,
-    /// pending work and signatures are dropped.
+    /// The first subscriber after a suspension gets one forced pass; with no
+    /// subscriber left, the observer suspends.
     private func subscriptionsDidChange() {
-        let hasSubscribersNow = hasSubscribers()
-        if hasSubscribersNow, !hadSubscribers {
-            schedulePass(force: true)
-        } else if !hasSubscribersNow, hadSubscribers {
-            pendingPass?.cancel()
-            pendingPass = nil
-            pendingForce = false
-            pendingEmit?.cancel()
-            pendingEmit = nil
-            pendingWorkspaceIDs = []
-            lastSignatureByWorkspaceID = [:]
+        guard hasSubscribers() else {
+            suspend()
+            return
         }
-        hadSubscribers = hasSubscribersNow
+        guard isSuspended else { return }
+        isSuspended = false
+        schedulePass(force: true)
+    }
+
+    /// Drops pending work and signatures while nobody subscribes. A dropped
+    /// relay or association change leaves them stale, so every path that
+    /// finds no subscriber calls this, and the next subscriber's forced pass
+    /// re-arms association tracking.
+    private func suspend() {
+        pendingPass?.cancel()
+        pendingPass = nil
+        pendingForce = false
+        pendingEmit?.cancel()
+        pendingEmit = nil
+        pendingWorkspaceIDs = []
+        lastSignatureByWorkspaceID = [:]
+        isSuspended = true
     }
 
     /// Schedules the trailing pass unless one is already pending; a forced
     /// request upgrades a pending diffing pass to an unconditional emit.
     private func schedulePass(force: Bool) {
-        guard hasSubscribers() else { return }
+        guard hasSubscribers() else {
+            suspend()
+            return
+        }
         pendingForce = pendingForce || force
         guard pendingPass == nil else { return }
         pendingPass = Task { @MainActor [weak self] in
