@@ -132,6 +132,7 @@ final class SupermuxPortForwards {
     @ObservationIgnored private var revisionTask: Task<Void, Never>?
     @ObservationIgnored private var defaultsObserver: (any NSObjectProtocol)?
     @ObservationIgnored private var lastAutoForward: Bool?
+    @ObservationIgnored private var lastDevicesFingerprint: DevicesFingerprint?
     /// Called after every change of forwards or listings (the mirror chips and pills).
     @ObservationIgnored var onChange: (@MainActor () -> Void)?
     #if DEBUG
@@ -161,7 +162,7 @@ final class SupermuxPortForwards {
                 await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
                     withObservationTracking { _ = devices.revision } onChange: { continuation.resume() }
                 }
-                self?.scheduleReconcile()
+                self?.devicesMayHaveChanged()
             }
         }
         defaultsObserver = NotificationCenter.default.addObserver(
@@ -420,6 +421,17 @@ final class SupermuxPortForwards {
         }
     }
 
+    /// After a `devices.revision` bump: reconciles only when the mirrors or
+    /// the Macs changed as the forwards and their chips see them. The revision
+    /// bumps on every catalog change and `supermux.*` event of any Mac, and
+    /// most change neither (a reorder, a status update, another topic).
+    private func devicesMayHaveChanged() {
+        let fingerprint = DevicesFingerprint(mirrors: index.mirrors(), devices: devices.devices)
+        guard fingerprint != lastDevicesFingerprint else { return }
+        lastDevicesFingerprint = fingerprint
+        scheduleReconcile()
+    }
+
     private func settingMayHaveChanged() {
         let autoForward = settings.forwardPorts
         guard autoForward != lastAutoForward else { return }
@@ -674,6 +686,30 @@ final class SupermuxPortForwards {
 
     static func noFreePortMessage(near port: Int) -> String {
         String(localized: "supermux.ports.failed.noFreePort", defaultValue: "No free local port near \(String(port))")
+    }
+}
+
+/// What the forwards and the mirror chips read from the mirrors and the Macs:
+/// each mirror's remote workspace and local workspace, each Mac's link and name.
+private struct DevicesFingerprint: Equatable {
+    struct Mirror: Hashable {
+        let ref: SupermuxRemoteWorkspaceRef
+        let workspaceID: UUID
+    }
+
+    struct Mac: Hashable {
+        let machine: SurfaceMachineID
+        let isConnected: Bool
+        let displayName: String
+    }
+
+    /// Sets, so a reorder of the mirrors (their windows' tabs) is no change.
+    let mirrors: Set<Mirror>
+    let macs: Set<Mac>
+
+    init(mirrors: [SupermuxDeviceMirror], devices: [SupermuxDevice]) {
+        self.mirrors = Set(mirrors.map { Mirror(ref: $0.ref, workspaceID: $0.workspace.id) })
+        self.macs = Set(devices.map { Mac(machine: $0.machine, isConnected: $0.isConnected, displayName: $0.displayName) })
     }
 }
 
