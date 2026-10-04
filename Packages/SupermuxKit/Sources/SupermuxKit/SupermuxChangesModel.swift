@@ -167,8 +167,12 @@ public final class SupermuxChangesModel {
     /// are cleared, the observation watcher is repointed (if observing), and a
     /// refresh is kicked off; the previous snapshot stays visible until the new
     /// status arrives to avoid flicker.
-    /// - Parameter directory: New directory, or `nil` to clear.
-    public func setDirectory(_ directory: String?) {
+    /// - Parameters:
+    ///   - directory: New directory, or `nil` to clear.
+    ///   - refresh: Whether to read the status now when nothing observes the
+    ///     model. `false` leaves the first read to ``startObserving()``, for a
+    ///     model a panel is about to mount (reading here too would read twice).
+    public func setDirectory(_ directory: String?, refresh: Bool = true) {
         let normalized = directory.map {
             (($0 as NSString).expandingTildeInPath as NSString).standardizingPath
         }
@@ -189,7 +193,7 @@ public final class SupermuxChangesModel {
         incomingCount = 0
         if observeTask != nil {
             startObserving()
-        } else {
+        } else if refresh {
             Task { [weak self] in
                 await self?.refresh()
             }
