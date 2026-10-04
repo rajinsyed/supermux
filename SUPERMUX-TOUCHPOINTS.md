@@ -48,7 +48,7 @@ Rules for adding a touchpoint:
   740–749 are unassigned (774–809 are held by other open branches). The highest number in use is 818. Number **351** is unused (the notifications
   another Mac's device menu refreshed meanwhile); 709, 713–714, 724, 736, 740–749 and 764–769 are unassigned. Remote
   Host Mode uses #830–#835 (770–829 are reserved by other open PRs). The highest
-  number in use is 924 (#900–#919 are held by another open branch). Number **351** is unused (the notifications
+  number in use is 944 (#940–#944: a foreground return after the Mac's idle timeout redials without probing; 925–939 are left for the 2026-10-04 upstream merge; #900–#919 are held by another open branch). Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 82, 83, 89, 106, 121, 142, 213, 214,
   220, 229, 237, 250, 251, 252–258, 335, 470, 473–481, 483, 484, 487, and 791** are unused; all are
@@ -744,6 +744,11 @@ Rules for adding a touchpoint:
 | 932 | `Packages/Shared/CmuxIrxTransport/Sources/CmuxIrxTransport/IrxAdmission.swift` | `irx-admission-unknown-peer-recheck` | `performServer` gains an optional `recheckUnknownPeer` closure. On an `invalid-grant` judgment it waits up to 3 s for that recheck (the phone's admit deadline is 5 s), then judges once more with the same judgment; a second denial closes as before. Known peers keep the synchronous offline path |
 | 933 | `Packages/Shared/CmuxIrxTransport/Tests/CmuxIrxTransportTests/IrxUnknownPeerRecheckTests.swift` | `irx-admission-unknown-peer-recheck` | Whole new file. Live loopback admission: a phone the refresh lists is admitted on the same connection; one it doesn't list is still denied `invalid-grant`; the gate shares one refresh between concurrent phones and honours its cooldown |
 | 934 | `Sources/Mobile/MobileHostIrxRuntime.swift` | `irx-admission-unknown-peer-recheck` | One `IrxDirectoryRecheckGate` per listener, passed through `superviseConnection` to `performServer(recheckUnknownPeer:)`, and `refreshDirectoryForUnknownPeer(token:)`: `controlService.refreshDirectory()`, then waits up to 2.5 s for `cachedState` (applied together with the admission authority in `apply(_:token:)`) to reach the refreshed revision |
+| 940 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite+SupermuxForegroundRedial.swift` | `mobile-foreground-host-idle-redial` | Whole new file (fenced top to bottom). `supermuxForegroundDwellOutlivedHostSession()`: on an Iroh route, a background dwell of at least the Mac's 30 s QUIC idle timeout plus 10 s suspension grace (wall clock, `runtime.now()`) means the Mac already closed the session. Regression coverage: #943 |
+| 941 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite+ReconnectRoutes.swift` | `mobile-foreground-host-idle-redial` | Two fences in `resumeForegroundRefresh()`: reads #940's verdict BEFORE `lastBackgroundedAt = nil`, then passes `probeCurrentConnection: !hostClosedSession` to `recoverForegroundConnectionIfNeeded` |
+| 942 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite+ConnectionRecovery.swift` | `mobile-foreground-host-idle-redial` | Two fences in `recoverForegroundConnectionIfNeeded`: a `probeCurrentConnection: Bool = true` parameter, forwarded to `beginConnectionRecovery` instead of upstream's literal `true`. Every other caller keeps the probe |
+| 943 | `Packages/iOS/CmuxMobileShell/Tests/CmuxMobileShellTests/IrohReconnectRouteSelectionTests.swift` | `mobile-foreground-host-idle-redial` | `foregroundAfterHostIdleTimeoutRedialsWithoutProbingTheDeadSession`, after upstream's `foregroundResumeRedialsDeadIrohSessionBeforeUserAction`: a silenced Iroh session and a 10 s probe timeout; a 120 s dwell must reconnect on a new transport within 1 s |
+| 944 | `Packages/iOS/CmuxMobileShell/Tests/CmuxMobileShellTests/MobileShellRenderGridLivenessTestSupport.swift` | `mobile-foreground-host-idle-redial` | Two fences in `LivenessTransport`: `silence()` and the `guard !isSilenced` at the top of `send` (after the closed guard), so #943 can model a session the Mac closed while this end still looks open |
 | 810 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the remote-terminal polish into the cmux target, four entries each (build file, file reference, Supermux group child, Sources phase) next to #764's `SupermuxDeviceTerminalUpload.swift`: `Devices/SupermuxDeviceTerminalLinks.swift` (`50BE001B0200000000000001`/`…02`, a Cmd-click on a path in another Mac's terminal), `Devices/SupermuxDeviceTerminalActions.swift` (`…03`/`…04`, forwarded Cmd+K/reset, focus and Ctrl+V of an image) and `SupermuxMobileHost+TerminalActions.swift` (`…05`/`…06`, the host's `terminal.action`) |
 | 811 | `Sources/Workspace+TerminalLinkOpening.swift` | `device-terminal-file-link` | First thing in `deferRemoteTerminalFileLinkOpen`: `SupermuxDeviceTerminalLinks.open(rawValue, panelID:in:)` claims a file path clicked in another Mac's terminal and opens that Mac's file in the mirror's read-only preview (upstream refused it: only SSH terminals resolved a remote path) |
 | 812 | `Sources/DockSplitStore+TerminalLinkOpening.swift` | `device-terminal-file-link` | Adds `deferRemoteTerminalFileLinkOpen` to the Dock's link container (upstream relies on the protocol's `false` default): the same `SupermuxDeviceTerminalLinks.open` for another Mac's terminal moved into the Dock |
@@ -6735,3 +6740,22 @@ Re-apply after an upstream merge: keep the `recheckUnknownPeer` parameter on `pe
 wiring (#934).
 
 Verify: `swift test --package-path Packages/Shared/CmuxIrxTransport --filter IrxUnknownPeerRecheckTests`.
+
+### 940–944. A foreground return after the Mac's idle timeout redials without probing — `mobile-foreground-host-idle-redial`
+
+User report (2026-10-04): the iPhone takes about 5 s to load the workspaces. The Mac's Iroh host closes
+a session 30 s after the phone's last packet (`transportIdleTimedOut` in the Mac's irx journal, 30.3 s
+after the last pong). The phone's own QUIC idle timer runs on a clock that stops while the device
+sleeps, so after the phone was locked its transport still looks open. Upstream's foreground recovery
+then probes that session with `mobile.workspace.list` and waits the whole 3 s probe timeout; a timed-out
+probe on an open-looking transport is even kept as healthy. Now a dwell of at least 30 s + 10 s
+suspension grace on an Iroh route skips the probe and redials at once (the same no-probe path a
+connection-method change takes). TCP routes keep upstream's probe: the Mac keeps a silent phone's TCP
+connection open.
+
+Re-apply after an upstream merge:
+- **#941**: read the verdict before `resumeForegroundRefresh()` clears `lastBackgroundedAt`, and pass it to
+  the foreground recovery call.
+- **#942**: keep the defaulted parameter so every other caller still probes.
+
+Verify: `swift test --package-path Packages/iOS/CmuxMobileShell --filter foregroundAfterHostIdleTimeoutRedialsWithoutProbingTheDeadSession`.

@@ -447,6 +447,9 @@ extension MobileShellComposite {
         // restarts a subscription torn down while backgrounded.
         evaluatePresenceSubscription()
         let shouldResync = shouldResyncTerminalOutputOnForeground()
+        // SUPERMUX:begin mobile-foreground-host-idle-redial
+        let hostClosedSession = supermuxForegroundDwellOutlivedHostSession()
+        // SUPERMUX:end mobile-foreground-host-idle-redial
         lastBackgroundedAt = nil
         // Persisted connections let the recovery owner probe first. Restarting
         // their listener here can make a dead MobileCoreRPCClient reopen its old
@@ -463,7 +466,12 @@ extension MobileShellComposite {
         }
         restartActiveMobileBrowserStreams()
         restartActiveMobileSimulatorStreams()
-        recoverForegroundConnectionIfNeeded(resyncAfterHealthy: shouldResync)
+        // SUPERMUX:begin mobile-foreground-host-idle-redial
+        recoverForegroundConnectionIfNeeded(
+            resyncAfterHealthy: shouldResync,
+            probeCurrentConnection: !hostClosedSession
+        )
+        // SUPERMUX:end mobile-foreground-host-idle-redial
         recoverDisconnectedOnForegroundIfNeeded()
         recoverPendingInactiveRecoveryIfNeeded()
         resumeSecondaryControlMaintenanceAfterForeground()
