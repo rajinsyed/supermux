@@ -203,10 +203,13 @@ extension TabManager: SidebarGitHosting {
     /// A window nobody can see (hidden, minimized, covered, Remote Host Mode)
     /// polls its pull requests 5 times less often: 50 s for the selected
     /// panel, 5 min for the others. Coming on screen keeps the deadlines
-    /// already set, so a badge can lag one slow poll.
+    /// already set, so a badge can lag one slow poll. Another Mac or a phone
+    /// active in the last minute keeps the full rate: its mirrors show this
+    /// Mac's pull request status.
     func pullRequestPollIntervalScale() -> Double {
         guard let windowId, let window = AppDelegate.shared?.windowForMainWindowId(windowId) else { return 1 }
-        return SupermuxWindowVisibility.windowIsOnScreen(window) ? 1 : 5
+        if SupermuxWindowVisibility.windowIsOnScreen(window) || mobileHostHasRecentActivity(within: 60) { return 1 }
+        return 5
     }
     // SUPERMUX:end pr-poll-off-screen-slowdown
 

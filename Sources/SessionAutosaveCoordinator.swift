@@ -29,15 +29,15 @@ final class SessionAutosaveCoordinator {
     private let onTimerTick: @MainActor () -> Void
 
     private static let typingQuietPeriod: TimeInterval = 0.65
-    // SUPERMUX:begin autosave-resume-indexes-reuse (a tick reuses recent process-detected indexes)
-    /// How long an autosave tick reuses the last complete process-detected
-    /// resume indexes for the same terminals. Loading them takes a census of
-    /// every process on the Mac with its arguments and environment plus a
-    /// scan of the agent hook stores and transcripts, which on a Mac running
-    /// many agents cost more than everything else an idle cmux does; one
-    /// every 8 s tick is not needed for crash-restore state. A terminal added
-    /// or removed (a different TTY binding set) reloads at once.
-    private static let resumeIndexesReuseInterval: TimeInterval = 30
+    // SUPERMUX:begin autosave-resume-indexes-reuse (a tick reuses a recent process census)
+    /// How old a process census an autosave tick may reuse while its
+    /// terminals are the same as the last tick's. The census reads every
+    /// process on the Mac with its arguments and environment, which on a Mac
+    /// running many agents cost more than everything else an idle cmux does.
+    /// Hook stores are still read fresh every tick, so a new agent session is
+    /// indexed at once; only process-only evidence can lag this long. A
+    /// terminal added or removed keeps upstream's 5 s bound.
+    private static let unchangedTerminalsCensusMaximumAge: TimeInterval = 30
     // SUPERMUX:end autosave-resume-indexes-reuse
 
     private var timer: DispatchSourceTimer?
@@ -50,11 +50,7 @@ final class SessionAutosaveCoordinator {
     private var activeAttempt: ActiveAttempt?
     private var processDetectedSaveGeneration: UInt64 = 0
     // SUPERMUX:begin autosave-resume-indexes-reuse
-    private var reusableResumeIndexes: (
-        indexes: ProcessDetectedResumeIndexes,
-        ttyDeviceBindings: [SurfaceResumeBindingIndex.PanelKey: Int64],
-        loadedAt: TimeInterval
-    )?
+    private var lastTickTTYDeviceBindings: [SurfaceResumeBindingIndex.PanelKey: Int64]?
     // SUPERMUX:end autosave-resume-indexes-reuse
     private var lastFingerprint: Int?
     private var lastPersistedAt = Date.distantPast
@@ -332,24 +328,20 @@ final class SessionAutosaveCoordinator {
     }
 
     // SUPERMUX:begin autosave-resume-indexes-reuse
-    /// The process-detected resume indexes for this tick: the last complete
-    /// ones while they are recent and the terminals are the same, else fresh.
+    /// The process-detected resume indexes for this tick, read from a census
+    /// up to 30 s old while the terminals are unchanged, else up to 5 s old.
     private func currentResumeIndexes(
         for ttyDeviceBindings: [SurfaceResumeBindingIndex.PanelKey: Int64]
     ) async -> ProcessDetectedResumeIndexes {
-        let now = ProcessInfo.processInfo.systemUptime
-        if let reusable = reusableResumeIndexes,
-           reusable.ttyDeviceBindings == ttyDeviceBindings,
-           now - reusable.loadedAt < Self.resumeIndexesReuseInterval {
-            return reusable.indexes
+        let terminalsUnchanged = lastTickTTYDeviceBindings == ttyDeviceBindings
+        lastTickTTYDeviceBindings = ttyDeviceBindings
+        guard terminalsUnchanged else {
+            return await ProcessDetectedResumeIndexes.load(ttyDeviceBindings: ttyDeviceBindings)
         }
-        let indexes = await ProcessDetectedResumeIndexes.load(ttyDeviceBindings: ttyDeviceBindings)
-        if indexes.restorableAgentIndex.isComplete, indexes.surfaceResumeBindingIndex.isAvailable {
-            reusableResumeIndexes = (indexes, ttyDeviceBindings, now)
-        } else {
-            reusableResumeIndexes = nil
-        }
-        return indexes
+        return await ProcessDetectedResumeIndexes.loadOnWorker(
+            maximumSnapshotAge: Self.unchangedTerminalsCensusMaximumAge,
+            ttyDeviceBindings: ttyDeviceBindings
+        )
     }
     // SUPERMUX:end autosave-resume-indexes-reuse
 

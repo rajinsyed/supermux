@@ -30,6 +30,10 @@ public struct DeviceTerminalGridPublisher: Sendable {
     /// terminal's grid under its renderer lock.
     public static let globalSampleInterval: Duration = .seconds(1)
     private var lastGlobalSampleAt: ContinuousClock.Instant?
+    /// True when the last refresh skipped a global sample; the caller then
+    /// refreshes again once the interval has passed, so a grid that changed
+    /// on that tick is still published.
+    public private(set) var hasDeferredGlobalSample = false
     // SUPERMUX:end device-grid-global-sample-floor
 
     public mutating func refresh(
@@ -51,6 +55,7 @@ public struct DeviceTerminalGridPublisher: Sendable {
         let now = ContinuousClock.now
         let samplesAll = global && (topologyChanged || lastGlobalSampleAt.map { now - $0 >= Self.globalSampleInterval } ?? true)
         if samplesAll { lastGlobalSampleAt = now }
+        hasDeferredGlobalSample = global && !samplesAll
         for id in samplesAll ? liveSurfaceIDs : updatedSurfaceIDs {
         // SUPERMUX:end device-grid-global-sample-floor
             guard liveSurfaceIDs.contains(id), let grid = sample(id),
@@ -66,6 +71,7 @@ public struct DeviceTerminalGridPublisher: Sendable {
         topologyGeneration = nil
         // SUPERMUX:begin device-grid-global-sample-floor
         lastGlobalSampleAt = nil
+        hasDeferredGlobalSample = false
         // SUPERMUX:end device-grid-global-sample-floor
         liveSurfaceIDs.removeAll()
         grids.removeAll()

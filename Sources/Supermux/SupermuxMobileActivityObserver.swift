@@ -13,9 +13,9 @@ import SupermuxKit
 /// phone. This observer covers exactly that gap:
 ///
 /// - **Activity** — ``SupermuxWorkspaceLifecycleRelay`` fires on every agent
-///   lifecycle set/clear (the single choke point in
-///   `Workspace.recordAgentLifecycleChange`), including every agent hook that
-///   re-reports an unchanged phase. The pass re-signs each relayed workspace
+///   lifecycle set/clear that changed a value (the single choke point in
+///   `Workspace.recordAgentLifecycleChange`; a hook re-reporting an unchanged
+///   phase does not fire it). The pass re-signs each relayed workspace
 ///   (``activitySignature(of:)``: everything the exported record derives from
 ///   the lifecycle) and counts only a changed signature. Device mirrors are
 ///   skipped: the export filter never sends them, so a mirror's overlay

@@ -21,15 +21,17 @@ import SupermuxKit
 /// the mutation that fired the relay has finished), walking each one's panels
 /// once; Bonsplit's `updateTab` writes only a value that changed. A tab that
 /// upstream rebuilds (respawn, session restore) gets its spinner back on the
-/// next lifecycle event. Dock tabs are synced per panel
+/// next lifecycle event. A workspace moved to another window is synced with
+/// its Dock (``workspaceMoved(_:)``). Dock tabs are synced per panel
 /// (``syncDock(_:panelId:)``) when their lifecycle changes
 /// (`dock-tab-agent-working`) and when a tab moves into the Dock
 /// (`dock-tab-agent-working-attach`).
 ///
 /// A working tab whose window is off screen (fully covered, minimized, the
 /// app hidden, Remote Host Mode) holds its spinner off: Bonsplit's spinner is
-/// a display-rate Core Animation rotation that keeps running in a window
-/// nobody sees. Every main window's visibility change re-syncs that window's
+/// a Core Animation rotation (held to 15 frames a second by
+/// ``SupermuxTabSpinnerFrameRate``) that keeps running in a window nobody
+/// sees. Every main window's visibility change re-syncs that window's
 /// workspaces and Docks on the next main-actor turn, so the spinner is back
 /// as soon as the window shows again.
 @MainActor
@@ -48,10 +50,6 @@ final class SupermuxTabActivitySync {
     /// move creates a new tab); it is a few bytes and tab ids are never
     /// reused.
     private var heldOffScreenTabIDs: Set<TabID> = []
-    /// Tabs this type set spinning, so a spinner that starts (or comes back
-    /// on screen) gets its frame rate capped once. Same lifetime caveat as
-    /// ``heldOffScreenTabIDs``.
-    private var spinningTabIDs: Set<TabID> = []
 
     /// Starts following the relay and main-window visibility; later calls do
     /// nothing.
@@ -183,18 +181,19 @@ final class SupermuxTabActivitySync {
             heldOffScreenTabIDs.remove(tab)
         }
         let spins = isWorking && windowOnScreen
-        if spins, spinningTabIDs.insert(tab).inserted {
-            SupermuxTabSpinnerFrameRate.capSoon()
-        } else if !spins {
-            spinningTabIDs.remove(tab)
-        }
+        if spins { SupermuxTabSpinnerFrameRate.capSoon() }
         controller.updateTab(tab, isLoading: spins)
     }
 
     /// A workspace moved into this window from another (`tab-activity-workspace-moved`):
-    /// its tabs follow their new window's visibility.
+    /// its tabs and its Dock's follow their new window's visibility, synced
+    /// on the next main-actor turn once the move has finished.
     func workspaceMoved(_ workspace: Workspace) {
-        schedule(workspaceID: workspace.id)
+        Task { @MainActor [weak self, weak workspace] in
+            guard let self, let workspace else { return }
+            self.sync(workspace)
+            if let dock = workspace._dockSplit { Self.syncDockTabs(dock) }
+        }
     }
 
     /// Whether `tab`, shown in the window of `ownerID` (a workspace, or a
@@ -228,35 +227,46 @@ final class SupermuxTabActivitySync {
 /// Bonsplit's tab spinner is an uncapped Core Animation rotation: while one
 /// is on screen the display composites at its full refresh rate (120 Hz on
 /// ProMotion) instead of idling down. A spinner this small looks the same at
-/// 15 frames a second, so each started spinner's rotation is re-added with
+/// 15 frames a second, so each running spinner's rotation is re-added with
 /// that frame rate (Bonsplit only adds its rotation when none is running, so
 /// the capped copy stays). Bonsplit itself is not changed: the spinner is
 /// found by its animation key.
+///
+/// Bonsplit restarts the rotation, uncapped, whenever a spinner's view
+/// re-enters a window (a workspace or window switch remounts the tab bar),
+/// so while any spinner runs it is checked again every 2 s; the check stops
+/// once no spinner is left.
 @MainActor
 enum SupermuxTabSpinnerFrameRate {
     private static let animationKey = "tabLoadingSpinnerRotation"
     private static let frameRate = CAFrameRateRange(minimum: 8, maximum: 20, preferred: 15)
-    private static var isScheduled = false
+    private static var sweep: Task<Void, Never>?
 
     /// Caps every running tab spinner once SwiftUI has mounted the ones just
-    /// turned on (next turn, and again shortly after for a late mount).
+    /// turned on (next turn, again shortly after for a late mount, then
+    /// every 2 s while any spinner runs).
     static func capSoon() {
-        guard !isScheduled else { return }
-        isScheduled = true
-        Task { @MainActor in
+        guard sweep == nil else { return }
+        sweep = Task { @MainActor in
             capAll()
             try? await Task.sleep(for: .milliseconds(300))
-            isScheduled = false
-            capAll()
+            while capAll() > 0 {
+                try? await Task.sleep(for: .seconds(2), tolerance: .milliseconds(500))
+            }
+            sweep = nil
         }
     }
 
-    private static func capAll() {
+    /// Caps every running tab spinner in a visible window; returns how many run.
+    @discardableResult
+    private static func capAll() -> Int {
+        var running = 0
         for window in NSApp.windows where window.isVisible {
             if let layer = window.contentView?.superview?.layer ?? window.contentView?.layer {
-                cap(layer)
+                running += cap(layer)
             }
         }
+        return running
     }
 
     #if DEBUG
@@ -278,12 +288,17 @@ enum SupermuxTabSpinnerFrameRate {
     }
     #endif
 
-    private static func cap(_ layer: CALayer) {
-        if let running = layer.animation(forKey: animationKey), running.preferredFrameRateRange.maximum != frameRate.maximum,
-           let capped = running.copy() as? CAAnimation {
-            capped.preferredFrameRateRange = frameRate
-            layer.add(capped, forKey: animationKey)
+    private static func cap(_ layer: CALayer) -> Int {
+        var running = 0
+        if let animation = layer.animation(forKey: animationKey) {
+            running = 1
+            if animation.preferredFrameRateRange.maximum != frameRate.maximum,
+               let capped = animation.copy() as? CAAnimation {
+                capped.preferredFrameRateRange = frameRate
+                layer.add(capped, forKey: animationKey)
+            }
         }
-        layer.sublayers?.forEach(cap)
+        for sublayer in layer.sublayers ?? [] { running += cap(sublayer) }
+        return running
     }
 }
