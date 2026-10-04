@@ -253,6 +253,9 @@ public actor IrxEndpointSupervisor {
         bindInFlight?.cancel()
         bindInFlight = nil
         bindID = nil
+        // SUPERMUX:begin irx-dial-before-home-relay
+        publishBound()
+        // SUPERMUX:end irx-dial-before-home-relay
         closeWatcher?.cancel()
         closeWatcher = nil
         let diagnosticWatch = relayDiagnosticWatch
@@ -530,7 +533,12 @@ extension IrxEndpointSupervisor {
     func dialableEndpoint(credentials: [IrxRelayCredential]) async throws -> Endpoint {
         guard !deactivated else { throw IrxEndpointError.endpointClosed }
         if let driver, !driver.isClosed() { return driver }
-        let ready = Task { try await self.readyEndpoint(credentials: credentials) }
+        // Wakes this waiter even when `readyEndpoint` throws before any bind
+        // starts (deactivated meanwhile) or joins a bind that already ended.
+        let ready = Task {
+            defer { self.publishBound() }
+            return try await self.readyEndpoint(credentials: credentials)
+        }
         await withCheckedContinuation { boundWaiters.append($0) }
         if let driver, !driver.isClosed() { return driver }
         return try await ready.value
