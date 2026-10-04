@@ -79,7 +79,8 @@ enum SupermuxActivityPalette {
 /// alive at full refresh rate and forced a window-wide SwiftUI layout pass on
 /// every glyph tick, which alone burned ~15% CPU while any agent was working
 /// (found via `sample`/Instruments on the Release app). Animations stop while
-/// the window is occluded or Reduce Motion is on.
+/// the window is occluded or Reduce Motion is on, and ask the render server
+/// for about as many frames as the glyph changes (not the display's 60-120).
 struct SupermuxBrailleSpinner: View {
     let size: CGFloat
 
@@ -115,7 +116,7 @@ private struct SupermuxBrailleSpinnerRepresentable: NSViewRepresentable {
 /// implementation used SwiftUI `withAnimation(.repeatForever)`, which drives
 /// the whole hosting view's update cycle from the main thread at display
 /// refresh rate. Animations stop while the window is occluded or Reduce
-/// Motion is on; the solid dot always shows.
+/// Motion is on, and run at about 15 fps; the solid dot always shows.
 struct SupermuxPulsingDot: View {
     let color: Color
     let size: CGFloat
@@ -242,6 +243,28 @@ final class SupermuxBrailleSpinnerNSView: SupermuxActivityAnimationNSView {
     private static let animationKey = "supermux.brailleSpinner.contents"
     private static let frames: [String] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
     private static let frameInterval: TimeInterval = 0.08
+    /// The glyph changes 12.5 times a second, so the render server is asked
+    /// for about that many frames instead of the display's 60-120.
+    private static let frameRateRange = CAFrameRateRange(minimum: 8, maximum: 20, preferred: Float(1 / frameInterval))
+
+    /// The ten glyph bitmaps for one point size and backing scale, and the
+    /// cell they share.
+    private struct RenderedFrames {
+        let images: [CGImage]
+        let cellSize: CGSize
+    }
+
+    private struct RenderedFramesKey: Hashable {
+        let pointSize: CGFloat
+        let scale: CGFloat
+    }
+
+    /// Frames shared by every spinner of the same size and scale (the glyphs
+    /// and colour never change), so a new or re-mounted row reuses them
+    /// instead of rasterizing ten bitmaps again. Only a few sizes are ever
+    /// used; the cap only guards a font scale changed over and over.
+    private static var renderedFramesCache: [RenderedFramesKey: RenderedFrames] = [:]
+    private static let renderedFramesCacheLimit = 16
 
     private let glyphLayer = CALayer()
     private var frameImages: [CGImage] = []
@@ -249,7 +272,9 @@ final class SupermuxBrailleSpinnerNSView: SupermuxActivityAnimationNSView {
     private var renderedForScale: CGFloat = 0
     private var glyphCellSize: CGSize = .zero
 
-    var glyphPointSize: CGFloat = 12 {
+    /// Nothing renders until the first size is set (the representable sets
+    /// it right after creating the view).
+    var glyphPointSize: CGFloat = 0 {
         didSet {
             guard abs(glyphPointSize - oldValue) > 0.01 else { return }
             renderFramesIfNeeded()
@@ -262,7 +287,6 @@ final class SupermuxBrailleSpinnerNSView: SupermuxActivityAnimationNSView {
         glyphLayer.contentsGravity = .center
         glyphLayer.masksToBounds = false
         layer?.addSublayer(glyphLayer)
-        renderFramesIfNeeded()
     }
 
     required init?(coder: NSCoder) {
@@ -295,6 +319,7 @@ final class SupermuxBrailleSpinnerNSView: SupermuxActivityAnimationNSView {
         animation.duration = duration
         animation.repeatCount = .infinity
         animation.isRemovedOnCompletion = false
+        animation.preferredFrameRateRange = Self.frameRateRange
         animation.beginTime = syncedBeginTime(for: glyphLayer, duration: duration)
         glyphLayer.add(animation, forKey: Self.animationKey)
     }
@@ -315,25 +340,16 @@ final class SupermuxBrailleSpinnerNSView: SupermuxActivityAnimationNSView {
     }
 
     private func renderFramesIfNeeded() {
+        guard glyphPointSize > 0 else { return }
         let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
         guard renderedForPointSize != glyphPointSize || renderedForScale != scale else { return }
         renderedForPointSize = glyphPointSize
         renderedForScale = scale
 
-        let font = NSFont.monospacedSystemFont(ofSize: glyphPointSize, weight: .semibold)
-        let color = NSColor(SupermuxActivityPalette.working)
-        let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
-        // Monospaced font: every glyph shares the same cell, so the layer's
-        // size stays constant across frames and nothing ever re-layouts.
-        let cell = Self.frames.reduce(CGSize.zero) { acc, glyph in
-            let size = NSAttributedString(string: glyph, attributes: attributes).size()
-            return CGSize(width: max(acc.width, ceil(size.width)), height: max(acc.height, ceil(size.height)))
-        }
-        glyphCellSize = cell
+        let rendered = Self.renderedFrames(pointSize: glyphPointSize, scale: scale)
+        glyphCellSize = rendered.cellSize
         glyphLayer.contentsScale = scale
-        frameImages = Self.frames.compactMap { glyph in
-            Self.renderGlyph(glyph, attributes: attributes, cell: cell, scale: scale)
-        }
+        frameImages = rendered.images
         glyphLayer.contents = frameImages.first
         needsLayout = true
         // An installed animation owns the image array it was created with, so
@@ -343,6 +359,30 @@ final class SupermuxBrailleSpinnerNSView: SupermuxActivityAnimationNSView {
             glyphLayer.removeAnimation(forKey: Self.animationKey)
             updateAnimationState()
         }
+    }
+
+    private static func renderedFrames(pointSize: CGFloat, scale: CGFloat) -> RenderedFrames {
+        let key = RenderedFramesKey(pointSize: pointSize, scale: scale)
+        if let cached = renderedFramesCache[key] { return cached }
+
+        let font = NSFont.monospacedSystemFont(ofSize: pointSize, weight: .semibold)
+        let color = NSColor(SupermuxActivityPalette.working)
+        let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
+        // Monospaced font: every glyph shares the same cell, so the layer's
+        // size stays constant across frames and nothing ever re-layouts.
+        let cell = frames.reduce(CGSize.zero) { acc, glyph in
+            let size = NSAttributedString(string: glyph, attributes: attributes).size()
+            return CGSize(width: max(acc.width, ceil(size.width)), height: max(acc.height, ceil(size.height)))
+        }
+        let images = frames.compactMap { glyph in
+            renderGlyph(glyph, attributes: attributes, cell: cell, scale: scale)
+        }
+        let rendered = RenderedFrames(images: images, cellSize: cell)
+        if renderedFramesCache.count >= renderedFramesCacheLimit {
+            renderedFramesCache.removeAll()
+        }
+        renderedFramesCache[key] = rendered
+        return rendered
     }
 
     private static func renderGlyph(
@@ -389,6 +429,9 @@ final class SupermuxPulsingDotNSView: SupermuxActivityAnimationNSView {
     private static let pingDuration: CFTimeInterval = 1.1
     private static let pingScale: CGFloat = 2.3
     private static let pingStartOpacity: Float = 0.7
+    /// A small halo reads smoothly at about 15 fps, so the render server is
+    /// not asked for the display's 60-120.
+    private static let frameRateRange = CAFrameRateRange(minimum: 8, maximum: 20, preferred: 15)
 
     private let dotLayer = CALayer()
     private let haloLayer = CALayer()
@@ -435,6 +478,11 @@ final class SupermuxPulsingDotNSView: SupermuxActivityAnimationNSView {
         group.repeatCount = .infinity
         group.timingFunction = CAMediaTimingFunction(name: .easeOut)
         group.isRemovedOnCompletion = false
+        // Set on the children too, so the cap holds whichever one the render
+        // server consults for a group.
+        group.preferredFrameRateRange = Self.frameRateRange
+        scale.preferredFrameRateRange = Self.frameRateRange
+        fade.preferredFrameRateRange = Self.frameRateRange
         group.beginTime = syncedBeginTime(for: haloLayer, duration: Self.pingDuration)
         haloLayer.add(group, forKey: Self.animationKey)
     }
