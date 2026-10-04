@@ -48,14 +48,14 @@ Rules for adding a touchpoint:
   740–749 are unassigned (774–809 are held by other open branches). The highest number in use is 818. Number **351** is unused (the notifications
   another Mac's device menu refreshed meanwhile); 709, 713–714, 724, 736, 740–749 and 764–769 are unassigned. Remote
   Host Mode uses #830–#835 (770–829 are reserved by other open PRs). The highest
-  number in use is 835. Number **351** is unused (the notifications
+  number in use is 924 (#900–#919 are held by another open branch). Number **351** is unused (the notifications
   redesign started at 352; the pane-unread family uses 386–396 to avoid the mobile-usage
   touchpoints at #340/#340b/#341). Numbers **4, 19, 52, 82, 83, 89, 106, 121, 142, 213, 214,
-  220, 229, 237, 250, 251, 252–258, 335, 470, 473–481, 483, 484, and 487** are unused; all are
+  220, 229, 237, 250, 251, 252–258, 335, 470, 473–481, 483, 484, 487, and 791** are unused; all are
   documented as RETIRED below except **#19**, which was never assigned (the table jumps #18 →
   #20). The 2026-08-24 upstream merge retired #213/#214, #229/#237, #250, and #252–258; the
   2026-09-30 upstream merge retired #82/#83, #220, #251, #335, #470, #473–481, #483/#484, and
-  #487. Do not reuse any of them. Numbers **134** and **135** are each used
+  #487; #791 was retired on 2026-10-04 (replaced by #920–#922). Do not reuse any of them. Numbers **134** and **135** are each used
   **twice** (`RemoteTmuxMirrorCloseDetachTests` / `ClaudeHookLiveDeliveryTargetTestSupport` and
   two `lint-allow-upstream-debt` rows) — a pre-existing collision, deliberately left as-is so
   existing cross-references keep resolving. Do not reuse them, and do not renumber. Letter
@@ -725,13 +725,17 @@ Rules for adding a touchpoint:
 | 782 | `Sources/Devices/DeviceLinkTerminalEvents.swift` | `terminal-stream-viewer` | Each session's event stream holds `SupermuxTerminalStream.sessionEventBufferLimit` (4096; upstream 512) events; DEBUG builds count every decoded `terminal.bytes` payload per surface through `supermuxOnBytes` (`supermux.devices.terminal_stream.stats`) |
 | 783 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `SupermuxTerminalStream.swift` (`50BE00191000000000000001`/`…02`), `SupermuxTerminalStreamHost.swift` (`…03`/`…04`) and `SupermuxTerminalStreamSocketCommands.swift` (`…05`/`…06`, DEBUG drivers) into the cmux target, four entries each in the Supermux group next to `SupermuxDeviceTunnelSocketCommands.swift` (`path = Devices/<file>`) |
 | 790 | `Sources/TerminalController+SharedSizing.swift` | `sizing-auto` | Three fences calling `SupermuxTerminalSizingAuto` (`Sources/Supermux/Devices/`). In `resolveSharedSizing`, after `syncPhones` and the explicit `counts_override`: `viewersReported(&host, surfaceID:, previous:, explicitParticipantID:)` (in Auto a viewer whose viewport changed or whose `counts_override` false was lifted gets `noteActivity`, and a phone without an override of its own gets `counts_override: true`). In `localSizingSetPolicy`, after `setPolicy`: `policyChanged(&host, surfaceID:)` (Auto's overrides follow the mode, cleared when it leaves Auto). In `localSizingSetCountsOverride`, before `setCountsOverride`: `userSetCounts(participantID:surfaceID:)` (an override set by hand is the user's) |
-| 791 | `Sources/TerminalController+SharedSizing.swift` | `sizing-auto-remote-input` | Two fences. In `mobileDetachedGateError`, after the method switch (input, paste, mouse, scroll, replay): `SupermuxTerminalSizingAuto.shared.remoteTerminalRequestArrived()`. At the top of `noteLocalTerminalSizingActivity`, after the host lookup: `guard !SupermuxTerminalSizingAuto.shared.deliveringRemoteInput else { return }` (O(1) on the keystroke path). Delivering a phone's or another Mac's input runs the Mac pane's `onExplicitInput`, which upstream counted as the Mac pane typing, after the viewer's own activity: in Auto the Mac then took the grid from the phone that typed |
 | 792 | `Sources/TerminalSharingDisplay.swift` | `sizing-auto-label` | In `modeTitle(_:)`, `.latest` returns `SupermuxTerminalSizingScopeNote.autoTitle` ("Auto", `supermux.terminalSizing.mode.auto`) instead of upstream's "Follow Latest" (`terminalSharing.sizeMode.latest`, left in the catalog) |
 | 793 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/TerminalSizingText.swift` | `sizing-auto-label` | In `modeName(_:)`, `.latest` reads `supermux.terminalSizing.mode.auto` ("Auto") instead of upstream's `mobile.terminal.sizing.mode.latest` ("Follow latest", left in the catalog) |
 | 794 | `Sources/TerminalController+SharedSizing.swift` | `sizing-one-setting` | In `v2MobileTerminalSizePolicySet`, after the fixed-size limit check: `if SupermuxTerminalSizingDefaults.shared.remoteChose(policy, params: params, surfaceID:) { return .ok(sizeStatePayload(…)) }`. A pick sent with `supermux_preference` (another Mac's mirror) or by a handheld client (the phone's size sheet) becomes this Mac's stored preference for every local terminal and the terminal named takes `policy` as sent; anything else (a mirror's claim, an older Mac, a Cloud terminal) falls through to upstream's per-terminal path |
 | 795 | `Sources/Devices/DeviceTerminalMirrorSession.swift` | `sizing-one-setting` | Three fences: the stored `supermuxHostTakesSizingPreference` closure (default `{ false }`); in the convenience init after `self.init(…)`, it is set to `SupermuxTerminalSizingDefaults.hostTakesPreference(on: .device(link.instance))` (the cached `supermux.terminal_sizing_preference.v1`); after `sharingSetPolicy`, `supermuxSendSizingChoice(_:preference:)` sends `mobile.terminal.size_policy.set` with `supermux_preference` when given. Only `SupermuxTerminalSizingDefaults.pushChoice` (a pick, never a claim) calls it |
 | 796 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/Devices/SupermuxTerminalSizingAuto.swift` into the cmux target (ids `50BE00170400000000000005`/`…06`, four entries, `Devices/…` path in the Supermux group, next to #670's) |
 | 797 | `ios/cmux/Resources/Localizable.xcstrings` | `unfenced` | Adds `supermux.terminalSizing.mode.auto` (en "Auto", ja "自動") for #793; additive only |
+| 920 | `Sources/AppDelegate.swift` | `sizing-auto-local-input` | Two fences in the `NSApplication` swizzles. First statements of `cmux_applicationSendEvent(_:)`: `let enclosingLocalInput = SupermuxLocalUserInput.beginEvent(event, application: self)` and `defer { SupermuxLocalUserInput.end(restoring: enclosingLocalInput) }`; first statements of `cmux_sendAction(_:to:from:)`: the same with `beginAction(from: sender)`. They mark the dispatch of an input event the app dequeued (key, mouse or scroll, and `NSApp.currentEvent === event`) and of a menu item's action (a menu bar click is tracked outside `sendEvent`), so `SupermuxLocalUserInput.isHandling` tells this Mac's user's input from a phone's, another Mac's or a socket client's input delivered to the same terminal. Per event: a type switch, and for input events one identity compare and a run-loop mode read |
+| 921 | `Sources/TerminalController+SharedSizing.swift` | `sizing-auto-local-input` | Two fences. At the top of `noteLocalTerminalSizingActivity`, after the host lookup: `guard SupermuxTerminalSizingAuto.shared.isMacPaneActivity else { return }` (O(1) on the keystroke path: a flag, then the open dispatch's run-loop mode compared with the current one). The body of `localSizingNoteSelfActivity` (upstream: `noteLocalTerminalSizingActivity(surfaceID: surfaceID)`) is `SupermuxTerminalSizingAuto.shared.noteMacAction(surfaceID: surfaceID)`, so Size to Me counts from any entry point. Replaces #791 (retired) |
+| 922 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/Devices/SupermuxLocalUserInput.swift` into the cmux target (ids `50BE00170400000000000007`/`…08`, four entries, `Devices/…` path in the Supermux group, next to #796's) |
+| 923 | `Sources/GhosttyTerminalView.swift` | `sizing-auto-local-input` | First statements of `GhosttyNSView.performDragOperation(_:)`: `let enclosingLocalInput = SupermuxLocalUserInput.beginUserAction()` and `defer { SupermuxLocalUserInput.end(restoring: enclosingLocalInput) }`. A drop on a terminal is this Mac's user's input, and a drag from another app (Finder) is delivered outside `sendEvent`, so without it a dropped path no longer gave the grid to the Mac pane |
+| 924 | `Sources/Cloud/CloudTuiManualMirrorSession.swift` | `sizing-auto-local-input` | In `noteExplicitInput()`, first in the `sizingRelay.isSupported` branch: `guard SupermuxTerminalSizingAuto.shared.isMacPaneActivity else { return }`. A phone's input to a Cloud terminal it views through this Mac runs this pane's explicit-input hook too; relayed as this Mac's focus activity it took the grid from the phone (the same flash). The legacy geometry claim below is unchanged |
 | 810 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the remote-terminal polish into the cmux target, four entries each (build file, file reference, Supermux group child, Sources phase) next to #764's `SupermuxDeviceTerminalUpload.swift`: `Devices/SupermuxDeviceTerminalLinks.swift` (`50BE001B0200000000000001`/`…02`, a Cmd-click on a path in another Mac's terminal), `Devices/SupermuxDeviceTerminalActions.swift` (`…03`/`…04`, forwarded Cmd+K/reset, focus and Ctrl+V of an image) and `SupermuxMobileHost+TerminalActions.swift` (`…05`/`…06`, the host's `terminal.action`) |
 | 811 | `Sources/Workspace+TerminalLinkOpening.swift` | `device-terminal-file-link` | First thing in `deferRemoteTerminalFileLinkOpen`: `SupermuxDeviceTerminalLinks.open(rawValue, panelID:in:)` claims a file path clicked in another Mac's terminal and opens that Mac's file in the mirror's read-only preview (upstream refused it: only SSH terminals resolved a remote path) |
 | 812 | `Sources/DockSplitStore+TerminalLinkOpening.swift` | `device-terminal-file-link` | Adds `deferRemoteTerminalFileLinkOpen` to the Dock's link container (upstream relies on the protocol's `false` default): the same `SupermuxDeviceTerminalLinks.open` for another Mac's terminal moved into the Dock |
@@ -5391,7 +5395,7 @@ Re-apply after an upstream merge:
 Verify: `CMUX_E2E_SUITES="loopback_terminal_sizing_policy_e2e loopback_terminal_input_e2e" CMUX_TAG=<tag>
 tests/supermux/run_all_loopback_e2e.sh`.
 
-### 790–797. Auto: the device you are viewing from sets the size; one setting wherever it is picked — `sizing-auto`, `sizing-auto-remote-input`, `sizing-auto-label`, `sizing-one-setting`
+### 790–797. Auto: the device you are viewing from sets the size; one setting wherever it is picked — `sizing-auto`, `sizing-auto-label`, `sizing-one-setting` (#791 `sizing-auto-remote-input` RETIRED)
 
 User feedback (2026-10-04): "I want an auto priority system instead of Fit everyone … auto priority
 should include the iOS app too so that it doesn't show the desktop size when viewing from it", and
@@ -5409,9 +5413,10 @@ Re-apply after an upstream merge:
   override set by hand. Never note activity for a report that repeats the viewer's viewport: the phone
   re-reports the same grid in answer to every grid change (`MobileTerminalSizingSurface.reassertViewport`),
   which would ping-pong. Retire the counts half if upstream drops the handheld deferral under `latest`.
-- **#791**: mark every mobile terminal input/scroll request before its handler runs, and keep the
-  guard first in `noteLocalTerminalSizingActivity`. Retire it if upstream stops running
-  `onExplicitInput` for remote input.
+- **#791**: RETIRED (2026-10-04), replaced by #920–#922. It marked each mobile input request for the
+  rest of its main-actor turn (a `DispatchQueue.main.async` cleared the flag), which missed every
+  delivery that runs later: the phone's input lane (no request gate at all), a paste's Return sent
+  150 ms later, clipboard-read replays, queued input for a cold terminal. Do not restore it.
 - **#792/#793**: keep `latest` labelled Auto on both platforms.
 - **#794**: keep the call before upstream's `terminalSharing.setPolicy` in the mobile handler only.
   `terminal.size_policy.set` (socket, CLI) stays per terminal: the E2E uses it to stand in for a
@@ -5422,6 +5427,44 @@ Re-apply after an upstream merge:
 - **#796/#797**: re-wire the file and keep the key if upstream rewrites the project or the catalog.
 
 Verify: as above. Steps 16–23 cover Auto, 24–26 the one setting.
+
+### 920–924. Only this Mac's user's input hands an Auto grid to the Mac pane — `sizing-auto-local-input`
+
+User report (2026-10-04): "when used on phone its a mirror for the desktop app so it keeps flashing the
+size between the phone and the desktop because each keystroke thinks the desktop is the active viewer."
+Every terminal input path runs the terminal's `onExplicitInput`, which upstream counts as the Mac pane
+typing (`noteLocalTerminalSizingActivity`): the phone's keystrokes over its input lane
+(`MobileHostIrxTerminalLaneServer`, no request gate) or RPC, a paste's Return, another Mac's mirror
+(`SupermuxDeviceTerminalInput.deliver`), a socket client's text. In Auto each one gave the grid to the
+Mac and the viewer's next input took it back. Now the Mac pane's activity is classified at its source:
+`SupermuxLocalUserInput` (fork, `Sources/Supermux/Devices/`) marks the dispatch of an input event the
+app dequeued, of a menu item's action and of a drop on a terminal (#923), and the guard counts only
+input handled inside one (and the Mac actions that are no input event,
+`SupermuxTerminalSizingAuto.noteMacAction`: Size to Me, the app becoming active with the terminal
+focused). A Cloud terminal's sizing relay takes the same guard (#924). Remote and programmatic input is
+delivered from a socket handler, a task or a later turn, never inside such a dispatch. Work in a nested
+run loop during a dispatch (a modal alert, a context menu, a window drag) runs in another run-loop mode
+and is left out; so is an event code synthesizes and passes to `sendEvent` itself.
+
+Re-apply after an upstream merge:
+- **#920**: keep both fences first in the `NSApplication` `sendEvent` and `sendAction` hooks, before
+  any early return, with the `defer` restoring the enclosing dispatch (nested dispatches: a key
+  equivalent's menu action, a modal session's events). If upstream drops its swizzles, add an
+  `NSApplication` hook of our own at the same two points. Keep it cheap: it runs for every event.
+- **#921**: keep the guard right after the host lookup, before `noteActivity`, so an unshared terminal
+  still pays only the lookup. Every other explicit-input caller stays gated; only an action of this
+  Mac's user that is no input event goes through `noteMacAction`.
+- **#922**: re-wire the file if upstream rewrites the project.
+- **#923**: keep the scope first in the terminal view's `performDragOperation`. If upstream moves drop
+  handling, open the scope wherever a drop writes to the terminal.
+- **#924**: keep the guard first in the sizing-relay branch of `noteExplicitInput`, so only this Mac's
+  user's input relays this Mac's focus activity for a Cloud terminal.
+
+Verify: `CMUX_E2E_SUITES="loopback_terminal_sizing_policy_e2e loopback_terminal_input_e2e
+loopback_terminal_input_pipeline_e2e loopback_device_smoke" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`.
+Steps 22b–22e: a phone's and another Mac's bursts (20 keys, a paste, a scroll) keep their grid, a key
+press posted to the app's event queue (`terminal_sizing.local_key`, DEBUG) takes it back, socket text
+does not.
 
 ### 620–622. New Workspace stays on this Mac; other Macs on request — `sidebar-empty-area-local`, `device-root-workspace-create`, `sidebar-empty-area-device-menu`
 

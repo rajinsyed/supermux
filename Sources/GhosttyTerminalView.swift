@@ -10224,6 +10224,10 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
     }
 
     override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        // SUPERMUX:begin sizing-auto-local-input (a drop on the terminal is this Mac's user's input; a drag from another app arrives outside sendEvent)
+        let enclosingLocalInput = SupermuxLocalUserInput.beginUserAction()
+        defer { SupermuxLocalUserInput.end(restoring: enclosingLocalInput) }
+        // SUPERMUX:end sizing-auto-local-input
         if Self.hasLiveInternalDrag(in: sender.draggingPasteboard) {
             return false
         }

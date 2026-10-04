@@ -230,9 +230,9 @@ extension TerminalController {
         SupermuxTerminalSizingVisibility.shared.macPaneInput(surfaceID)
         // SUPERMUX:end sizing-mac-pane-input-recheck
         guard var host = localSizingHostsBySurfaceID[surfaceID] else { return }
-        // SUPERMUX:begin sizing-auto-remote-input (a phone's or another Mac's input delivered here is theirs, not this pane's)
-        guard !SupermuxTerminalSizingAuto.shared.deliveringRemoteInput else { return }
-        // SUPERMUX:end sizing-auto-remote-input
+        // SUPERMUX:begin sizing-auto-local-input (only this Mac's user's input is the pane's activity: a phone's, another Mac's or a socket client's input delivered here is not)
+        guard SupermuxTerminalSizingAuto.shared.isMacPaneActivity else { return }
+        // SUPERMUX:end sizing-auto-local-input
         let previous = host.state
         guard host.noteActivity(host.macParticipantID) else { return }
         localSizingHostsBySurfaceID[surfaceID] = host
@@ -447,9 +447,6 @@ extension TerminalController {
         default:
             return nil
         }
-        // SUPERMUX:begin sizing-auto-remote-input (delivering this input or scroll is not typing on the Mac pane)
-        SupermuxTerminalSizingAuto.shared.remoteTerminalRequestArrived()
-        // SUPERMUX:end sizing-auto-remote-input
         guard let clientID = v2String(params, "client_id") else { return nil }
         let needsGate = hasDetachedMobileClients
         guard needsGate || (isInput && (!localSizingHostsBySurfaceID.isEmpty || !cloudSizingRelaysBySurfaceID.isEmpty)) else {
@@ -527,7 +524,9 @@ extension TerminalController {
     }
 
     func localSizingNoteSelfActivity(surfaceID: UUID) {
-        noteLocalTerminalSizingActivity(surfaceID: surfaceID)
+        // SUPERMUX:begin sizing-auto-local-input (Size to Me is this Mac's user's choice, from any entry point; upstream: `noteLocalTerminalSizingActivity(surfaceID: surfaceID)`)
+        SupermuxTerminalSizingAuto.shared.noteMacAction(surfaceID: surfaceID)
+        // SUPERMUX:end sizing-auto-local-input
     }
 
     /// Reattaches this Mac pane's view after someone disconnected it.

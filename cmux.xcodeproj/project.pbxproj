@@ -3501,6 +3501,7 @@
 		50BE0019010000000000000A /* SupermuxHostPortsObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00190100000000000009 /* SupermuxHostPortsObserver.swift */; };
 		50BE000100000000000000A3 /* SupermuxKit in Frameworks */ = {isa = PBXBuildFile; productRef = 50BE000100000000000000A2 /* SupermuxKit */; };
 		50BE00190200000000000004 /* SupermuxLocalPortProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00190200000000000003 /* SupermuxLocalPortProbe.swift */; };
+		50BE00170400000000000008 /* SupermuxLocalUserInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00170400000000000007 /* SupermuxLocalUserInput.swift */; };
 		50BE00190200000000000006 /* SupermuxLoopbackPortListener.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00190200000000000005 /* SupermuxLoopbackPortListener.swift */; };
 		50BE00090000000000000002 /* SupermuxMacPresence.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00090000000000000001 /* SupermuxMacPresence.swift */; };
 		50BE000100000000000000A5 /* SupermuxMainListFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000A4 /* SupermuxMainListFilter.swift */; };
@@ -8004,6 +8005,7 @@
 		50BE00190100000000000007 /* SupermuxHostPorts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ports/SupermuxHostPorts.swift; sourceTree = "<group>"; };
 		50BE00190100000000000009 /* SupermuxHostPortsObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ports/SupermuxHostPortsObserver.swift; sourceTree = "<group>"; };
 		50BE00190200000000000003 /* SupermuxLocalPortProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ports/SupermuxLocalPortProbe.swift; sourceTree = "<group>"; };
+		50BE00170400000000000007 /* SupermuxLocalUserInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxLocalUserInput.swift; sourceTree = "<group>"; };
 		50BE00190200000000000005 /* SupermuxLoopbackPortListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ports/SupermuxLoopbackPortListener.swift; sourceTree = "<group>"; };
 		50BE00090000000000000001 /* SupermuxMacPresence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxMacPresence.swift; sourceTree = "<group>"; };
 		50BE000100000000000000A4 /* SupermuxMainListFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxMainListFilter.swift; sourceTree = "<group>"; };
@@ -9560,6 +9562,7 @@
 				50BE00170400000000000001 /* SupermuxTerminalSizingDefaults.swift */,
 				50BE00170400000000000003 /* SupermuxTerminalSizingSocketCommands.swift */,
 				50BE00170400000000000005 /* SupermuxTerminalSizingAuto.swift */,
+				50BE00170400000000000007 /* SupermuxLocalUserInput.swift */,
 				50BE00180200000000000001 /* SupermuxDeviceMirrorCloseSocketCommands.swift */,
 				50BE0019010000000000000B /* SupermuxMobileHost+Ports.swift */,
 				50BE00190100000000000009 /* SupermuxHostPortsObserver.swift */,
@@ -16537,6 +16540,7 @@
 				50BE00190100000000000008 /* SupermuxHostPorts.swift in Sources */,
 				50BE0019010000000000000A /* SupermuxHostPortsObserver.swift in Sources */,
 				50BE00190200000000000004 /* SupermuxLocalPortProbe.swift in Sources */,
+				50BE00170400000000000008 /* SupermuxLocalUserInput.swift in Sources */,
 				50BE00190200000000000006 /* SupermuxLoopbackPortListener.swift in Sources */,
 				50BE00090000000000000002 /* SupermuxMacPresence.swift in Sources */,
 				50BE000100000000000000A5 /* SupermuxMainListFilter.swift in Sources */,

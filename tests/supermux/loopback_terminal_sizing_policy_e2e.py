@@ -92,7 +92,11 @@ driven by `supermux.devices.terminal_sizing.*` (DEBUG), which run the panel's ow
                                          and counts (red before: the phone deferred to the Mac pane)
  17. auto_mac_typing_takes_it_back       typing on the Mac gives the grid back to its pane, and the
                                          phone re-reporting the same viewport (its answer to the size
-                                         change) does not take it again (2 s hold: no ping-pong)
+                                         change) does not take it again (2 s hold: no ping-pong).
+                                         Typing on the Mac, here and below, is a key press posted to the
+                                         app's event queue and dispatched by its run loop
+                                         (`terminal_sizing.local_key`): only this Mac's own input events
+                                         are the Mac pane's activity, never a socket client's text
  18. auto_phone_returning_takes_it       the phone leaves (viewport cleared) and opens it again: 40x12
  19. auto_phone_typing_takes_it          the Mac takes it back, then the phone types over its link:
                                          40x12 (red before: delivering the phone's input also counted
@@ -108,6 +112,22 @@ driven by `supermux.devices.terminal_sizing.*` (DEBUG), which run the panel's ow
                                          false, 30x10) never takes the grid and keeps its choice
  22. auto_viewing_mac_takes_it           a second Mac attaching (100x30) takes it; the Mac pane takes
                                          it back by typing; the second Mac typing takes it again
+ 22b. auto_phone_burst_keeps_the_grid    the phone (40x12) owns the grid and sends 20 separate
+                                         keystrokes, a composer paste (its Return goes in a later turn)
+                                         and a scroll: no state with another owner after any of them
+                                         and for 2 s after (red before: delivering the phone's input
+                                         also counted as the Mac pane typing, so the grid flashed to the
+                                         Mac's size; the paste's Return slipped past the turn-long guard)
+ 22c. auto_second_mac_burst_keeps_the_grid
+                                         the same burst from the second Mac (100x30), its keystrokes as
+                                         its device mirror sends them (`supermux_input` batches)
+ 22d. auto_local_key_takes_it_back       with the window already key and the pane focused (nothing
+                                         activates), one key press on the Mac pane takes the grid back
+ 22e. auto_socket_send_is_not_the_mac    the phone owns the grid; five `surface.send_text` (as `cmux
+                                         send` or an agent's automation) leave it the phone's, 2 s hold
+                                         (red before: a socket client's text was the Mac pane typing).
+                                         The bursts retry once when the app became active during them
+                                         (`mac_activations`): activation is the Mac's own activity
  23. auto_shown_mirror_takes_it          on the source terminal the second Mac types (it owns the
                                          grid), the mirror is hidden, then shown again: the shown mirror
                                          owns it (red before: showing a mirror was no activity)
@@ -956,14 +976,66 @@ class SizingPolicyE2E:
                 raise Failure(f"grid {self.grid(state)}, expected {want}")
         return check
 
-    def mac_types(self, workspace_id: str, surface_id: str) -> None:
-        """Typing on this Mac's pane (a socket client's input is explicit input, as a key press)."""
+    def mac_types(self, workspace_id: str, surface_id: str) -> Dict[str, Any]:
+        """Typing on this Mac's pane: a key press the app's own event loop dispatches
+        (`terminal_sizing.local_key`). A socket client's input is not the Mac's user typing."""
+        self.select(workspace_id)
+        return wait_for("a key press on the Mac pane",
+                        lambda: self.sock.call(SIZING + "local_key", {"surface_id": surface_id}), 10)
+
+    def socket_types(self, workspace_id: str, surface_id: str) -> None:
+        """A socket client (`cmux send`, an agent's automation) writes to the terminal."""
         self.sock.call("surface.send_text", {"workspace_id": workspace_id, "surface_id": surface_id, "text": " "})
 
     def viewer_types(self, workspace_id: str, surface_id: str, client_id: str) -> None:
         """A phone or another Mac types over its own link (`mobile.terminal.input` with its client id)."""
         self.request("mobile.terminal.input", {"workspace_id": workspace_id, "surface_id": surface_id,
                                                "client_id": client_id, "text": " "})
+
+    def viewer_inputs(self, workspace_id: str, surface_id: str, client_id: str,
+                      batch: bool = False) -> List[Callable[[], Any]]:
+        """A viewer's burst: 20 separate keystrokes (as another Mac's device mirror sends them,
+        a `supermux_input` batch, when `batch`), then a composer paste with its Return (the
+        host sends the Return in its own turn, 150 ms later) and a scroll."""
+        target = {"workspace_id": workspace_id, "surface_id": surface_id, "client_id": client_id}
+        key = dict(target, text=" ")
+        if batch:
+            key["supermux_input"] = [{"bytes_b64": "IA=="}]
+        keystrokes = [lambda: self.request("mobile.terminal.input", key) for _ in range(20)]
+        return keystrokes + [
+            lambda: self.request("mobile.terminal.paste", dict(target, text="true")),
+            lambda: self.request("mobile.terminal.scroll", dict(target, delta_lines=-3, col=0, row=0)),
+        ]
+
+    def mac_activations(self) -> int:
+        return int((self.sock.call(SIZING + "state", {}) or {}).get("mac_activations") or 0)
+
+    def owner_through(self, surface_id: str, owns: Callable[[Dict[str, Any]], None],
+                      inputs: List[Callable[[], Any]], take: Callable[[], None]) -> Dict[str, Any]:
+        """The owner `owns` checks keeps the grid after every input and for 2 s after the
+        last (no state with another owner in between). The app becoming active is the Mac's
+        own activity (the E2E keeps the window raised): a burst it interrupted is retried
+        once, after `take` gives the grid back to the viewer."""
+        for attempt in (1, 2):
+            activations = self.mac_activations()
+            try:
+                generations = []
+                for index, send in enumerate(inputs):
+                    send()
+                    state = self.state(surface_id)
+                    try:
+                        owns(state)
+                    except Failure as error:
+                        raise Failure(f"after input {index + 1} of {len(inputs)}: {error}") from None
+                    generations.append(int(state.get("generation") or 0))
+                held = self.hold(surface_id, owns, 2.0)
+                return {"inputs": len(inputs), "attempt": attempt,
+                        "generations": [generations[0], generations[-1]], **held}
+            except Failure:
+                if attempt == 2 or self.mac_activations() == activations:
+                    raise
+                take()
+        raise Failure("unreachable")
 
     def clear_report(self, workspace_id: str, surface_id: str, client_id: str) -> None:
         """A viewer stops viewing (the phone left the terminal or went to the background)."""
@@ -1105,6 +1177,83 @@ class SizingPolicyE2E:
         typed = self.wait_state("typing on the second Mac to give it the grid", self.fresh_surface,
                                 self.owned_by(mac_b, (100, 30)))
         return {"attached": attached, "mac": mac, "typed": typed}
+
+    def phone_reappears(self, cols: int = 40, rows: int = 12) -> None:
+        """The phone's terminal view comes back on screen (`view_appeared`): it takes the grid.
+        Set-up only, so the report goes again until it holds: an app activation the E2E caused
+        (a key press activating the app, the window raiser) may land after the first one."""
+        key = (self.fresh_id, self.fresh_surface, self.phone_client)
+
+        def report_and_check() -> bool:
+            generation = self.reports.get(key, 0) + 1
+            self.sock.call("mobile.terminal.viewport", {
+                "workspace_id": self.fresh_id, "surface_id": self.fresh_surface, "client_id": self.phone_client,
+                "viewport_columns": cols, "viewport_rows": rows, "viewport_generation": generation,
+                "device_kind": "iphone", "device_id": self.phone_client, "device_name": "E2E iphone",
+                "view_appeared": True,
+            })
+            self.reports[key] = generation
+            time.sleep(0.3)
+            self.phone_owns((cols, rows))(self.state(self.fresh_surface))
+            return True
+
+        wait_for("the phone to take the grid", report_and_check, self.timeout, interval_s=0.7)
+
+    def auto_phone_burst_keeps_the_grid(self) -> Dict[str, Any]:
+        """The phone owns the grid and types 20 keys, pastes and scrolls: it keeps the grid
+        throughout (red before: delivering its input also counted as the Mac pane typing,
+        after its own activity, so the grid flashed to the Mac's size)."""
+        self.report_viewport(self.fresh_id, self.fresh_surface, self.phone_client, "iphone", 40, 12)
+        took = self.wait_state("the phone (40x12) to take the grid", self.fresh_surface, self.phone_owns())
+        burst = self.owner_through(self.fresh_surface, self.phone_owns(),
+                                   self.viewer_inputs(self.fresh_id, self.fresh_surface, self.phone_client),
+                                   take=self.phone_reappears)
+        return {"took": took, **burst}
+
+    def auto_second_mac_burst_keeps_the_grid(self) -> Dict[str, Any]:
+        """Another Mac (100x30) types through its device mirror's input path (batches), pastes and
+        scrolls: it keeps the grid throughout (red before: the Mac pane took it)."""
+        mac_b = "mobile:" + self.mac_b_client
+        owns = self.owned_by(mac_b, (100, 30))
+
+        def take() -> None:
+            self.viewer_types(self.fresh_id, self.fresh_surface, self.mac_b_client)
+            self.wait_state("the second Mac to take the grid", self.fresh_surface, owns)
+
+        take()
+        burst = self.owner_through(self.fresh_surface, owns,
+                                   self.viewer_inputs(self.fresh_id, self.fresh_surface, self.mac_b_client,
+                                                      batch=True),
+                                   take=take)
+        return burst
+
+    def auto_local_key_takes_it_back(self) -> Dict[str, Any]:
+        """A key press on the Mac pane, dispatched by the app's event loop with the window
+        already key and the pane focused (no activation), gives the grid back to the pane."""
+        ready = self.mac_types(self.fresh_id, self.fresh_surface)
+        self.wait_state("the first key press (which may activate the app) to land", self.fresh_surface,
+                        self.mac_owns())
+        time.sleep(1.0)
+        for attempt in (1, 2):
+            self.phone_reappears()
+            activations = self.mac_activations()
+            pressed = self.mac_types(self.fresh_id, self.fresh_surface)
+            if pressed.get("activated") or pressed.get("focused"):
+                raise Failure(f"the key press had to activate or focus the pane first: {pressed}")
+            back = self.wait_state("the key press to give the grid back to the Mac pane", self.fresh_surface,
+                                   self.mac_owns())
+            # The app becoming active (the window raiser) also hands the grid to the Mac pane:
+            # only a press with no activation around it shows the key did.
+            if self.mac_activations() == activations:
+                return {"ready": ready, "pressed": pressed, "back": back, "attempt": attempt}
+        raise Failure("the app became active around both key presses; the key press itself was not shown")
+
+    def auto_socket_send_is_not_the_mac(self) -> Dict[str, Any]:
+        """Text a socket client sends (`cmux send`, automation) is not the Mac's user typing:
+        the phone keeps the grid (red before: every socket send handed it to the Mac pane)."""
+        self.phone_reappears()
+        sends = [lambda: self.socket_types(self.fresh_id, self.fresh_surface) for _ in range(5)]
+        return self.owner_through(self.fresh_surface, self.phone_owns(), sends, take=self.phone_reappears)
 
     def auto_shown_mirror_takes_it(self) -> Dict[str, Any]:
         mac_b = "mobile:" + self.mac_b_client
@@ -1369,6 +1518,8 @@ class SizingPolicyE2E:
                              "auto_phone_typing_takes_it", "auto_rotated_phone_takes_it",
                              "auto_reappearing_phone_takes_it",
                              "auto_opted_out_phone_never_sizes", "auto_viewing_mac_takes_it",
+                             "auto_phone_burst_keeps_the_grid", "auto_second_mac_burst_keeps_the_grid",
+                             "auto_local_key_takes_it_back", "auto_socket_send_is_not_the_mac",
                              "auto_shown_mirror_takes_it"):
                     ok = self.step(name, getattr(self, name)) and ok
                 ok = self.step("phone_choice_applies_to_every_terminal",
