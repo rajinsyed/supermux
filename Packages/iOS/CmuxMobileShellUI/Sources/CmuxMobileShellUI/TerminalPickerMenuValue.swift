@@ -31,6 +31,9 @@ struct TerminalPickerMenuValue: Equatable {
     /// Whether the workspace belongs to an SSH computer rather than a cmux
     /// Mac, which names its browser section.
     let isSSHComputer: Bool
+    /// Cloud workspaces use the native browser through System VPN and do not
+    /// publish the paired-Mac browser capability snapshot.
+    let isExternalHost: Bool
     // SUPERMUX:begin ios-pane-actions
     let canCreateSimulator: Bool
     // SUPERMUX:end ios-pane-actions
@@ -53,6 +56,7 @@ struct TerminalPickerMenuValue: Equatable {
         activeSimulatorStreamPanelID: String? = nil,
         sshTabLayout: MobileSSHTabLayout? = nil,
         isSSHComputer: Bool = false,
+        isExternalHost: Bool = false,
         // SUPERMUX:begin ios-pane-actions
         canCreateSimulator: Bool = false
         // SUPERMUX:end ios-pane-actions
@@ -79,6 +83,7 @@ struct TerminalPickerMenuValue: Equatable {
         self.activeSimulatorStreamPanelID = activeSimulatorStreamPanelID
         self.sshTabLayout = sshTabLayout
         self.isSSHComputer = isSSHComputer
+        self.isExternalHost = isExternalHost
         // SUPERMUX:begin ios-pane-actions
         self.canCreateSimulator = canCreateSimulator
         // SUPERMUX:end ios-pane-actions
@@ -88,7 +93,7 @@ struct TerminalPickerMenuValue: Equatable {
     /// tabs run on: "Mac Browsers" for a cmux Mac, "Browsers" for an SSH
     /// computer (its tabs are not on a Mac).
     var browserSectionTitle: String {
-        isSSHComputer
+        isSSHComputer || isExternalHost
             ? L10n.string("mobile.ssh.browserStream.menuTitle", defaultValue: "Browsers")
             : L10n.string("mobile.browserStream.menuTitle", defaultValue: "Mac Browsers")
     }
@@ -126,7 +131,7 @@ struct TerminalPickerMenuValue: Equatable {
     /// The update hint is valid only after a connected Mac has reported its
     /// capabilities. Reconnect teardown clears those capabilities temporarily.
     var showsBrowserStreamUpdateHint: Bool {
-        browserStreamSupportKnown && !supportsBrowserStream
+        !isExternalHost && browserStreamSupportKnown && !supportsBrowserStream
     }
 
     var terminalRows: [TerminalPickerMenuRow] {

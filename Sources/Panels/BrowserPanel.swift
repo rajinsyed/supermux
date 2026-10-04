@@ -2119,11 +2119,13 @@ final class BrowserPanel: Panel, ObservableObject {
     /// Incremented whenever we replace the underlying WKWebView after a process crash.
     @Published var webViewInstanceID: UUID = UUID()
     /// Owns the WebKit page's attachment phase after a WebContent crash.
-    /// A terminated view stays detached until an explicit recovery action creates
-    /// a new view, even when WebKit did not provide a URL to restore.
+    /// A terminated view stays detached until a recovery creates a new view,
+    /// even when WebKit did not provide a URL to restore. A crash while the
+    /// pane was shown waits for an explicit reload; one while it was hidden
+    /// restores its page when the pane is shown again.
     enum WebContentState: Equatable {
         case active
-        case terminated(recoveryURL: URL?)
+        case terminated(recoveryURL: URL?, restoresWhenShown: Bool = false)
 
         var isTerminated: Bool {
             if case .terminated = self { return true }
@@ -2131,7 +2133,7 @@ final class BrowserPanel: Panel, ObservableObject {
         }
 
         var recoveryURL: URL? {
-            if case .terminated(let recoveryURL) = self { return recoveryURL }
+            if case .terminated(let recoveryURL, _) = self { return recoveryURL }
             return nil
         }
     }
@@ -2216,6 +2218,7 @@ final class BrowserPanel: Panel, ObservableObject {
     @Published private(set) var webViewLifecycleState: BrowserWebViewLifecycleState = .newTab
     private(set) var webViewLastVisibleAt: Date?
     private(set) var webViewLastHiddenAt: Date?
+    var webViewLastAutomationCommandAt: Date?
     private(set) var webViewLastVisibilityChangeAt: Date?
     private(set) var webViewLastVisibilityChangeReason: String?
     var hasBackgroundPreloadHost: Bool {
@@ -2235,7 +2238,7 @@ final class BrowserPanel: Panel, ObservableObject {
     }
     private var pendingInteractiveBrowserPrompts: [PendingInteractiveBrowserPrompt] = []
     private var isPresentingPendingInteractiveBrowserPrompt = false
-    private var isWebViewVisibleInUI: Bool = false
+    private(set) var isWebViewVisibleInUI: Bool = false
     var isClosingWebViewLifecycle: Bool = false
 
     /// True while a canvas pane hosts this browser's webview inline (in the
@@ -2321,7 +2324,7 @@ final class BrowserPanel: Panel, ObservableObject {
         sanitizer: SessionHistoryURLSanitizer { browserIsTemporaryHistoryURL($0) }
     )
 
-    private var usesRestoredSessionHistory: Bool {
+    var usesRestoredSessionHistory: Bool {
         restoredSessionHistory.usesRestoredSessionHistory
     }
     var restoredHistoryCurrentURL: URL? {
@@ -2520,27 +2523,25 @@ final class BrowserPanel: Panel, ObservableObject {
     var reactGrabMessageHandler: ReactGrabMessageHandler?
     var sslTrustBypassMessageHandler: BrowserSSLTrustBypassMessageHandler?
     var sameDocumentNavigationMessageHandler: BrowserSameDocumentNavigationMessageHandler?; var documentReadyMessageHandler: BrowserDocumentReadyMessageHandler?
-    /// Whether the live page currently has any actively-playing `<video>` or
-    /// `<audio>` element, in the main frame or any iframe, reported by the
-    /// injected media-playback hook. Keeps an actively-playing pane alive in the
-    /// background instead of being discarded after the hidden delay
-    /// (https://github.com/manaflow-ai/cmux/issues/5409).
-    private(set) var isPlayingMedia: Bool = false {
+    /// Playing `<video>`/`<audio>` and Picture in Picture across the live page's
+    /// frames, reported by the injected media-playback hook. Either keeps a
+    /// hidden pane alive (https://github.com/manaflow-ai/cmux/issues/5409).
+    private(set) var mediaPlaybackFrames = BrowserMediaPlaybackFrames() {
         didSet {
-            guard oldValue != isPlayingMedia else { return }
+            guard oldValue.isPlaying != mediaPlaybackFrames.isPlaying
+                || oldValue.isPictureInPictureActive != mediaPlaybackFrames.isPictureInPictureActive else { return }
             reevaluateHiddenWebViewDiscardScheduling(reason: "media_playback_changed")
         }
     }
+    var isPlayingMedia: Bool { mediaPlaybackFrames.isPlaying }
     /// Live media activity. ``Workspace`` publishes it to tab/sidebar surfaces.
     private(set) var mediaActivity = BrowserMediaActivity()
     var isPlayingAudio: Bool { mediaActivity.isPlayingAudio }
     var isUsingMicrophone: Bool { mediaActivity.isUsingMicrophone }
     var isUsingCamera: Bool { mediaActivity.isUsingCamera }
     var onMediaActivityChanged: ((BrowserMediaActivity) -> Void)?
-    /// Frame ids reporting playing media; keeps hidden panes alive while non-empty.
-    private var playingMediaFrameIDs: Set<String> = []
-    private var audibleMediaFrameIDs: Set<String> = []
     var mediaPlaybackMessageHandler: BrowserMediaPlaybackMessageHandler?
+    let pageRestoration = BrowserPageRestorationState()
 
     private func setMediaActivity(
         isPlayingAudio: Bool? = nil,
@@ -2559,21 +2560,18 @@ final class BrowserPanel: Panel, ObservableObject {
     }
 
     /// Folds a per-frame playback report into retention and audio-glyph state.
-    func applyMediaPlaybackReport(frameID: String, isPlaying: Bool, isAudible: Bool) {
-        if isPlaying { playingMediaFrameIDs.insert(frameID) } else { playingMediaFrameIDs.remove(frameID) }
-        if isPlaying && isAudible { audibleMediaFrameIDs.insert(frameID) } else { audibleMediaFrameIDs.remove(frameID) }
-        isPlayingMedia = !playingMediaFrameIDs.isEmpty
+    func applyMediaPlaybackReport(_ report: BrowserMediaPlaybackReport) {
+        mediaPlaybackFrames.apply(report)
         refreshAudioMediaActivity(reason: "media_audibility_changed")
     }
 
     /// Clears tracked frames after a webview bind or main-frame navigation.
     func resetMediaPlaybackTracking() {
-        (playingMediaFrameIDs, audibleMediaFrameIDs) = ([], [])
-        isPlayingMedia = false
+        mediaPlaybackFrames = BrowserMediaPlaybackFrames()
         refreshAudioMediaActivity(reason: "media_playback_reset")
     }
 
-    private func refreshAudioMediaActivity(reason: String) { setMediaActivity(isPlayingAudio: !audibleMediaFrameIDs.isEmpty && !isMuted, reason: reason) }
+    private func refreshAudioMediaActivity(reason: String) { setMediaActivity(isPlayingAudio: mediaPlaybackFrames.isAudible && !isMuted, reason: reason) }
 
     /// Clears page-owned media state before a terminated WebView is detached.
     /// WebKit can publish stale capture/playback callbacks while it is tearing
@@ -2583,12 +2581,8 @@ final class BrowserPanel: Panel, ObservableObject {
         suppressHiddenWebViewDiscardReevaluation = true
         defer { suppressHiddenWebViewDiscardReevaluation = false }
 
-        let changed = !playingMediaFrameIDs.isEmpty ||
-            !audibleMediaFrameIDs.isEmpty ||
-            isPlayingMedia ||
-            mediaActivity != BrowserMediaActivity()
-        (playingMediaFrameIDs, audibleMediaFrameIDs) = ([], [])
-        isPlayingMedia = false
+        let changed = mediaPlaybackFrames != BrowserMediaPlaybackFrames() || mediaActivity != BrowserMediaActivity()
+        mediaPlaybackFrames = BrowserMediaPlaybackFrames()
         setMediaActivity(
             isPlayingAudio: false,
             isUsingMicrophone: false,
@@ -2597,18 +2591,20 @@ final class BrowserPanel: Panel, ObservableObject {
         )
         return changed
     }
-    var pendingReactGrabReturnTargetPanelId: UUID?
-    var pendingReactGrabRoundTripToken: String?
-    let reactGrabBridgeSessionUpdaterName = "__cmuxReactGrabBridgeSync_\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))"
+    /// Arming state and round-trip token for React Grab terminal paste-back.
+    /// The token is handed only to the relay in the React Grab isolated
+    /// content world (`BrowserPanel.reactGrabContentWorld`), never to page
+    /// scripts.
+    var reactGrabPasteback = ReactGrabPastebackGate()
     var preferredDeveloperToolsPresentation: DeveloperToolsPresentation = .detached
     var forceDeveloperToolsRefreshOnNextAttach: Bool = false
     private let developerToolsRestoreRetryScheduler = MainActorDeferredActionScheduler()
     private var developerToolsRestoreRetryAttempt: Int = 0
     private let developerToolsRestoreRetryDelay: TimeInterval = 0.05
     private let developerToolsRestoreRetryMaxAttempts: Int = 40
-    private var remoteProxyEndpoint: BrowserProxyEndpoint?
+    private(set) var remoteProxyEndpoint: BrowserProxyEndpoint?
     @Published private(set) var remoteWorkspaceStatus: BrowserRemoteWorkspaceStatus?
-    private var usesRemoteWorkspaceProxy: Bool
+    private(set) var usesRemoteWorkspaceProxy: Bool
     private struct PendingRemoteNavigation {
         let request: URLRequest
         let recordTypedNavigation: Bool
@@ -2713,11 +2709,17 @@ final class BrowserPanel: Panel, ObservableObject {
             cancelHiddenWebViewDiscard()
             restoreDiscardedWebViewIfNeeded(
                 reason: "visible.\(reason)",
+                trigger: .paneShown,
                 allowBlankShellHeal: changed || isFirstVisibilityRecord
             )
+            // After the restore, which may still fold the hidden snapshot into its capture.
+            noteHiddenSnapshotVisibility(visible, changed: changed)
             drainPendingInteractiveBrowserPromptsIfPossible(reason: "visible.\(reason)")
-        } else if changed || isFirstVisibilityRecord || !hiddenWebViewDiscardManager.hasScheduledDiscard {
-            scheduleHiddenWebViewDiscardIfNeeded(reason: reason, now: now)
+        } else {
+            noteHiddenSnapshotVisibility(visible, changed: changed)
+            if changed || isFirstVisibilityRecord || !hiddenWebViewDiscardManager.hasScheduledDiscard {
+                scheduleHiddenWebViewDiscardIfNeeded(reason: reason, now: now)
+            }
         }
     }
 
@@ -2780,17 +2782,10 @@ final class BrowserPanel: Panel, ObservableObject {
         isClosingWebViewLifecycle = false
     }
 
-    private func hiddenWebViewDiscardBlockers() -> [String] {
-        hiddenWebViewDiscardManager.blockers(for: hiddenWebViewDiscardSnapshot)
-    }
-
     private func hiddenWebViewDiscardBlockers(
-        allowingRecoverableWebContentTermination: Bool
+        urgency: BrowserHiddenWebViewDiscardUrgency = .routine
     ) -> [String] {
-        hiddenWebViewDiscardManager.blockers(
-            for: hiddenWebViewDiscardSnapshot,
-            allowingRecoverableWebContentTermination: allowingRecoverableWebContentTermination
-        )
+        hiddenWebViewDiscardManager.blockers(for: hiddenWebViewDiscardSnapshot, urgency: urgency)
     }
 
     private func scheduleHiddenWebViewDiscardIfNeeded(reason: String, now: Date = Date()) {
@@ -2817,26 +2812,23 @@ final class BrowserPanel: Panel, ObservableObject {
 
     @discardableResult
     func discardHiddenWebViewForMemory(reason: String, now: Date = Date()) -> Bool {
-        let allowsRecoverableWebContentTermination =
-            reason == BrowserHiddenWebViewDiscardManager.systemMemoryPressureReason
-        let blockers = hiddenWebViewDiscardBlockers(
-            allowingRecoverableWebContentTermination: allowsRecoverableWebContentTermination
-        )
-        guard blockers.isEmpty else { return false }
+        let urgency = BrowserHiddenWebViewDiscardUrgency(reason: reason)
+        guard hiddenWebViewDiscardBlockers(urgency: urgency).isEmpty else { return false }
 
+        dropWebViewForDiscard(reason: reason, now: now)
+        return true
+    }
+
+    /// Swaps in an unloaded web view that restores the page when the pane is
+    /// shown. Callers own the decision that the pane may be discarded.
+    func dropWebViewForDiscard(reason: String, now: Date) {
         cancelHiddenWebViewDiscard()
 
         let oldWebView = webView
-        let pendingRecoveryURL = pendingWebContentRecoveryURL
-        let restoreURL = pendingRecoveryURL
-            ?? restorableDisplayURLForCurrentErrorPage(liveURL: oldWebView.url)
         let history = sessionNavigationHistorySnapshot()
-        let historyCurrentURL = pendingRecoveryURL?.absoluteString
-            ?? preferredURLStringForOmnibar()
-            ?? restoreURL?.absoluteString
+        let target = discardRestoreTarget(for: oldWebView)
+        let restoreURL = target.restoreURL
         let desiredZoom = max(minPageZoom, min(maxPageZoom, oldWebView.pageZoom))
-
-        clearBrowserFocusMode(reason: "webViewDiscard")
         invalidateSearchFocusRequests(reason: "webViewDiscard")
         searchState = nil
         loadingEndScheduler.cancel()
@@ -2845,15 +2837,9 @@ final class BrowserPanel: Panel, ObservableObject {
         faviconRefreshGeneration &+= 1
         loadingGeneration &+= 1
         cancelPendingInteractiveBrowserPrompts(reason: "discardHiddenWebView")
-
-        detachWebViewObservers()
         closeBackgroundPreloadHost(reason: "discardHiddenWebView")
-        BrowserWindowPortalRegistry.detach(webView: oldWebView)
-        webAuthnCoordinator.tearDown(from: oldWebView); oldWebView.stopLoading()
         isMainFrameProvisionalNavigationActive = false
-        oldWebView.navigationDelegate = nil
-        oldWebView.uiDelegate = nil
-        if let oldCmuxWebView = oldWebView as? CmuxWebView { oldCmuxWebView.clearBrowserDownloadCallbacks() }
+        tearDownWebViewBeforeReplacement(oldWebView, reason: "webViewDiscard")
 
         let replacement = makeReplacementWebView(
             profileID: profileID,
@@ -2881,11 +2867,11 @@ final class BrowserPanel: Panel, ObservableObject {
         restoreSessionNavigationHistory(
             backHistoryURLStrings: history.backHistoryURLStrings,
             forwardHistoryURLStrings: history.forwardHistoryURLStrings,
-            currentURLString: historyCurrentURL
+            currentURLString: target.historyCurrentURLString
         )
+        recordDiscardedPageState(target.pageState)
         refreshNavigationAvailability()
         refreshWebViewLifecycleState()
-        return true
     }
 
     @discardableResult
@@ -2903,7 +2889,7 @@ final class BrowserPanel: Panel, ObservableObject {
         let reactivated = hiddenWebViewDiscardManager.reactivateWithoutNavigation(reason: reason) {
             shouldRenderWebView = true
         }
-        if reactivated { pendingDiscardRestoreNavigation = nil; currentDiscardRestoreAttemptID = nil }
+        if reactivated { pendingDiscardRestoreNavigation = nil; currentDiscardRestoreAttemptID = nil; notePageReactivatedWithoutRestore() }
         return reactivated
     }
 
@@ -3088,6 +3074,7 @@ final class BrowserPanel: Panel, ObservableObject {
             config,
             websiteDataStore: websiteDataStore ?? BrowserProfileStore.shared.websiteDataStore(for: profileID)
         )
+        installFormStateUserScript(into: config)
 
         let webView = CmuxWebView(frame: .zero, configuration: config, host: CmuxWebViewAppHost())
         webView.allowsBackForwardNavigationGestures = true
@@ -3199,22 +3186,7 @@ final class BrowserPanel: Panel, ObservableObject {
                 forMainFrameOnly: true
             )
         )
-        // Report <video>/<audio> playback so a hidden pane with actively-playing
-        // media is exempted from memory discard
-        // (https://github.com/manaflow-ai/cmux/issues/5409). Injected into every
-        // frame so embedded players in cross-origin iframes keep the pane alive
-        // too. Runs in an isolated content world (shared DOM, separate JS scope)
-        // so the handler is hidden from page JavaScript that could otherwise post
-        // a fake playing report; this also keeps it clear of CAPTCHA fingerprint
-        // checks in those iframes.
-        configuration.userContentController.addUserScript(
-            WKUserScript(
-                source: Self.mediaPlaybackTrackingBootstrapScriptSource,
-                injectionTime: .atDocumentStart,
-                forMainFrameOnly: false,
-                in: Self.mediaPlaybackContentWorld
-            )
-        )
+        Self.installMediaPlaybackUserScript(into: configuration)
     }
 
     func bindWebView(_ webView: CmuxWebView) {
@@ -3288,7 +3260,7 @@ final class BrowserPanel: Panel, ObservableObject {
         setupReactGrabMessageHandler(for: webView)
         designModeController.install(on: webView)
         setupSSLTrustBypassMessageHandler(for: webView)
-        setupMediaPlaybackMessageHandler(for: webView)
+        setupMediaPlaybackMessageHandler(for: webView); setupFormStateMessageHandler(for: webView)
         webAuthnCoordinator.install(on: webView)
         applyMuteState(to: webView, reason: "bindWebView")
         mobileBrowserWebViewDidBind()
@@ -3374,9 +3346,7 @@ final class BrowserPanel: Panel, ObservableObject {
                 self.resetMediaPlaybackTracking()
                 self.publishCommittedURL(from: webView)
                 self.applyMuteState(to: webView, reason: "navigationCommit")
-                if self.shouldTreatCommitAsDiscardedRestoreCommit(from: webView) {
-                    self.noteDiscardedWebViewRestoreNavigationCommitted()
-                }
+                self.noteDocumentCommittedForPageRestoration(from: webView)
             }
         }
         navigationDelegate.didFinish = { [weak self] webView in
@@ -3396,6 +3366,7 @@ final class BrowserPanel: Panel, ObservableObject {
                 self.applyCurrentAppWebTheme(to: webView)
                 // Keep find-in-page open through load completion and refresh matches for the new DOM.
                 self.restoreFindStateAfterNavigation(replaySearch: true)
+                self.notePageRestorationLoadFinished(webView)
             }
         }
         navigationDelegate.didFailNavigation = { [weak self] failedWebView, failedURL, failureMessage, failedNavigation in
@@ -4504,21 +4475,15 @@ final class BrowserPanel: Panel, ObservableObject {
         _ = hideDeveloperTools()
         cancelDeveloperToolsRestoreRetry()
 
-        detachWebViewObservers()
         clearWebContentTerminationRecovery()
-        clearBrowserFocusMode(reason: "profileSwitch")
         faviconTask?.cancel()
         faviconTask = nil
         faviconRefreshGeneration &+= 1
         cancelPendingInteractiveBrowserPrompts(reason: "profileSwitch")
         closeBackgroundPreloadHost(reason: "profileSwitch")
         navigationDelegate?.clearSSLTrustState()
-        BrowserWindowPortalRegistry.detach(webView: previousWebView)
-        webAuthnCoordinator.tearDown(from: previousWebView); previousWebView.stopLoading()
         isMainFrameProvisionalNavigationActive = false
-        previousWebView.navigationDelegate = nil
-        previousWebView.uiDelegate = nil
-        if let previousCmuxWebView = previousWebView as? CmuxWebView { previousCmuxWebView.clearBrowserDownloadCallbacks() }
+        tearDownWebViewBeforeReplacement(previousWebView, reason: "profileSwitch")
 
         profileID = resolvedProfileID
         historyStore = BrowserProfileStore.shared.historyStore(for: resolvedProfileID)
@@ -4645,6 +4610,7 @@ final class BrowserPanel: Panel, ObservableObject {
     }
 
     func restoreSessionSnapshot(_ snapshot: SessionBrowserPanelSnapshot) {
+        keepsPageActiveWhileHidden = snapshot.keepsPageActive ?? false
         // Diff viewer surfaces navigate via the app-owned custom scheme, so they
         // restore even though the original local HTTP server is gone. Manifest
         // preparation is detached from the main actor; the scheme request also
@@ -4703,13 +4669,14 @@ final class BrowserPanel: Panel, ObservableObject {
             return
         }
 
+        seedPageRestoration(from: snapshot, restoredURL: restoredURL)
         deferRestoredWebViewLoadUntilVisible(url: restoredURL, reason: "session_restore")
     }
 
     private func deferRestoredWebViewLoadUntilVisible(url: URL, reason: String) {
         currentURL = url
         shouldRenderWebView = false
-        hiddenWebViewDiscardManager.markDiscarded(reason: reason, now: Date())
+        hiddenWebViewDiscardManager.markDiscarded(reason: reason, now: Date(), isDeferredFirstLoad: true)
         refreshNavigationAvailability()
         refreshWebViewLifecycleState()
     }
@@ -4811,8 +4778,8 @@ final class BrowserPanel: Panel, ObservableObject {
 
         // Title changes
         let titleObserver = webView.observe(\.title, options: [.new]) { [weak self] webView, _ in
-            Task { @MainActor in
-                guard let self, isCurrentObservedWebView(self, webView) else { return }
+            Task { @MainActor [weak self, weak webView] in
+                guard let self, let webView, isCurrentObservedWebView(self, webView) else { return }
                 // Keep showing the last non-empty title while the new navigation is loading.
                 // WebKit often clears title to nil/"" during reload/navigation, which causes
                 // a distracting tab-title flash (e.g. to host/URL). Only accept non-empty titles.
@@ -4832,8 +4799,8 @@ final class BrowserPanel: Panel, ObservableObject {
         // That skips favicon/loading-state cleanup and leaves stale icons visible.
         let loadingObserver = webView.observe(\.isLoading, options: [.new]) { [weak self] webView, change in
             let newValue = change.newValue ?? webView.isLoading
-            Task { @MainActor in
-                guard let self, isCurrentObservedWebView(self, webView) else { return }
+            Task { @MainActor [weak self, weak webView] in
+                guard let self, let webView, isCurrentObservedWebView(self, webView) else { return }
                 self.handleWebViewLoadingChanged(newValue)
             }
         }
@@ -4841,8 +4808,8 @@ final class BrowserPanel: Panel, ObservableObject {
 
         // Can go back
         let backObserver = webView.observe(\.canGoBack, options: [.new]) { [weak self] webView, _ in
-            Task { @MainActor in
-                guard let self, isCurrentObservedWebView(self, webView) else { return }
+            Task { @MainActor [weak self, weak webView] in
+                guard let self, let webView, isCurrentObservedWebView(self, webView) else { return }
                 self.nativeCanGoBack = webView.canGoBack
                 self.refreshNavigationAvailability()
             }
@@ -4851,8 +4818,8 @@ final class BrowserPanel: Panel, ObservableObject {
 
         // Can go forward
         let forwardObserver = webView.observe(\.canGoForward, options: [.new]) { [weak self] webView, _ in
-            Task { @MainActor in
-                guard let self, isCurrentObservedWebView(self, webView) else { return }
+            Task { @MainActor [weak self, weak webView] in
+                guard let self, let webView, isCurrentObservedWebView(self, webView) else { return }
                 self.nativeCanGoForward = webView.canGoForward
                 self.refreshNavigationAvailability()
             }
@@ -4861,8 +4828,8 @@ final class BrowserPanel: Panel, ObservableObject {
 
         // Progress
         let progressObserver = webView.observe(\.estimatedProgress, options: [.new]) { [weak self] webView, _ in
-            Task { @MainActor in
-                guard let self, isCurrentObservedWebView(self, webView) else { return }
+            Task { @MainActor [weak self, weak webView] in
+                guard let self, let webView, isCurrentObservedWebView(self, webView) else { return }
                 self.estimatedProgress = webView.estimatedProgress
             }
         }
@@ -4871,8 +4838,8 @@ final class BrowserPanel: Panel, ObservableObject {
         let fullscreenObserver = webView.observe(\.fullscreenState, options: [.initial, .new]) { [weak self] webView, _ in
             let isElementFullscreenActive = webView.cmuxIsElementFullscreenActiveOrTransitioning
             let fullscreenState = webView.fullscreenState
-            Task { @MainActor in
-                guard let self, isCurrentObservedWebView(self, webView) else { return }
+            Task { @MainActor [weak self, weak webView] in
+                guard let self, let webView, isCurrentObservedWebView(self, webView) else { return }
                 let didChangeFullscreenBlocker = self.isElementFullscreenActive != isElementFullscreenActive
                 self.isElementFullscreenActive = isElementFullscreenActive
                 let didChangeViewportOwnership = self.reconcileAutomationViewportForElementFullscreen(
@@ -4901,8 +4868,8 @@ final class BrowserPanel: Panel, ObservableObject {
 
         let cameraCaptureObserver = webView.observe(\.cameraCaptureState, options: [.new]) { [weak self] webView, _ in
             let isUsingCamera = webView.cameraCaptureState != .none
-            Task { @MainActor in
-                guard let self, isCurrentObservedWebView(self, webView) else { return }
+            Task { @MainActor [weak self, weak webView] in
+                guard let self, let webView, isCurrentObservedWebView(self, webView) else { return }
                 self.setMediaActivity(isUsingCamera: isUsingCamera, reason: "media_capture_changed")
             }
         }
@@ -4910,8 +4877,8 @@ final class BrowserPanel: Panel, ObservableObject {
 
         let microphoneCaptureObserver = webView.observe(\.microphoneCaptureState, options: [.new]) { [weak self] webView, _ in
             let isUsingMicrophone = webView.microphoneCaptureState != .none
-            Task { @MainActor in
-                guard let self, isCurrentObservedWebView(self, webView) else { return }
+            Task { @MainActor [weak self, weak webView] in
+                guard let self, let webView, isCurrentObservedWebView(self, webView) else { return }
                 self.setMediaActivity(isUsingMicrophone: isUsingMicrophone, reason: "media_capture_changed")
             }
         }
@@ -4970,7 +4937,7 @@ final class BrowserPanel: Panel, ObservableObject {
         applyWebViewBackground(color: GhosttyBackgroundTheme.currentColor())
     }
 
-    private func refreshBackgroundAppearance() {
+    func refreshBackgroundAppearance() {
         applyConfiguredWebViewBackground()
         backgroundAppearanceRevision &+= 1
     }
@@ -5100,8 +5067,12 @@ final class BrowserPanel: Panel, ObservableObject {
         suppressOmnibarAutofocus(for: 1.5)
         noteWebViewFocused()
 
-        DispatchQueue.main.async { [weak self, weak window, weak webView] in
-            guard let self, let window, let webView else { return }
+        let windowIdentifier = ObjectIdentifier(window)
+        DispatchQueue.main.async { [weak self, weak webView] in
+            guard let self,
+                  let webView,
+                  let window = webView.window,
+                  ObjectIdentifier(window) == windowIdentifier else { return }
             guard self.webViewFocusRequestGeneration == requestGeneration else { return }
             guard webView.window === window else { return }
             let didBecomeFirstResponder: Bool
@@ -5158,22 +5129,16 @@ final class BrowserPanel: Panel, ObservableObject {
         BrowserWindowPortalRegistry.updateSearchOverlay(for: webView, configuration: nil)
         BrowserWindowPortalRegistry.updateDesignComposer(for: webView, configuration: nil)
         BrowserWindowPortalRegistry.updateOmnibarSuggestions(for: webView, configuration: nil)
-        BrowserWindowPortalRegistry.detach(webView: webView)
         cancelPendingInteractiveBrowserPrompts(reason: "close", cancelAuthenticationPrompts: false)
         closeBackgroundPreloadHost(reason: "close")
         closeAllPopupControllers()
-        webAuthnCoordinator.tearDown(from: webView); webView.stopLoading()
-        designModeController.webViewWillBeRemoved(webView)
+        tearDownWebViewBeforeReplacement(webView, reason: "close")
         designModeController.releaseDeliveredHandoffForTeardown()
         isMainFrameProvisionalNavigationActive = false
-        webView.navigationDelegate = nil
-        webView.uiDelegate = nil
-        if let cmuxWebView = webView as? CmuxWebView { cmuxWebView.clearBrowserDownloadCallbacks() }
         navigationDelegate = nil
         uiDelegate = nil
         webViewDidRequestClose = nil
         openAppLinkInBrowserSplit = nil
-        detachWebViewObservers()
         faviconTask?.cancel(); faviconTask = nil
         designModeToolbarToggleTask?.cancel()
     }
@@ -6110,13 +6075,15 @@ extension BrowserPanel: BrowserHiddenWebViewDiscardManagerDelegate {
             isVisualAutomationCaptureActive: activeVisualAutomationCaptureCount > 0,
             isMobileBrowserStreamActive: !mobileBrowserStreamSignalHandlers.isEmpty,
             hasPopups: !popupControllers.isEmpty,
-            isCapturingMedia: webView.cameraCaptureState != .none || webView.microphoneCaptureState != .none,
-            isPlayingMedia: isPlayingMedia
+            isCapturingMedia: webView.cmuxIsCapturingMedia,
+            isPlayingMedia: isPlayingMedia,
+            isPictureInPictureActive: mediaPlaybackFrames.isPictureInPictureActive,
+            hasUnrestorableFormInput: pageRestoration.hasUnrestorableLiveInput
         )
     }
 
     var hiddenWebViewDiscardHiddenAt: Date? {
-        webViewLastHiddenAt
+        hiddenWebViewIdleSince
     }
 
     var hiddenWebViewDiscardWebViewInstanceID: UUID {
@@ -6135,6 +6102,7 @@ extension BrowserPanel: BrowserHiddenWebViewDiscardManagerDelegate {
         reason: String
     ) {
         reevaluateHiddenWebViewDiscardScheduling(reason: reason)
+        noteUnloadedPageRestorePolicyChanged()
     }
 }
 
@@ -6233,15 +6201,10 @@ extension BrowserPanel {
         lockedPortalHost = nil
 
         let oldWebView = webView
-        detachWebViewObservers()
         cancelPendingInteractiveBrowserPrompts(reason: "contextReset")
         closeBackgroundPreloadHost(reason: "contextReset")
-        BrowserWindowPortalRegistry.detach(webView: oldWebView)
-        webAuthnCoordinator.tearDown(from: oldWebView); oldWebView.stopLoading()
         isMainFrameProvisionalNavigationActive = false
-        oldWebView.navigationDelegate = nil
-        oldWebView.uiDelegate = nil
-        if let oldCmuxWebView = oldWebView as? CmuxWebView { oldCmuxWebView.clearBrowserDownloadCallbacks() }
+        tearDownWebViewBeforeReplacement(oldWebView, reason: "contextReset")
 
         clearBrowserAutomationUserScripts()
         let replacement = Self.makeWebView(
@@ -6336,7 +6299,7 @@ extension BrowserPanel {
         isMainFrameProvisionalNavigationActive = false
     }
 
-    private func markTrustedInternalNavigationIfNeeded(for url: URL?) {
+    func markTrustedInternalNavigationIfNeeded(for url: URL?) {
         (webView as? CmuxWebView)?.clearTrustedInternalNavigationGrants()
         guard let url,
               let scheme = url.scheme?.lowercased(),
@@ -8113,7 +8076,7 @@ extension BrowserPanel {
         }
     }
 
-    private func abandonRestoredSessionHistoryIfNeeded() {
+    func abandonRestoredSessionHistoryIfNeeded() {
         guard restoredSessionHistory.abandon() else { return }
         refreshNavigationAvailability()
     }

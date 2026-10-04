@@ -15,6 +15,32 @@ struct SidebarWorkspaceSnapshotFactory {
     let workspace: Workspace
     let settings: SidebarTabItemSettingsSnapshot
     let showsAgentActivity: Bool
+    let catalog: SurfaceCatalog
+
+    /// Builds snapshots from the app's shared surface catalog.
+    @MainActor
+    init(workspace: Workspace, settings: SidebarTabItemSettingsSnapshot, showsAgentActivity: Bool) {
+        self.init(
+            workspace: workspace,
+            settings: settings,
+            showsAgentActivity: showsAgentActivity,
+            catalog: SurfaceCatalog.shared
+        )
+    }
+
+    /// Builds snapshots from an explicit catalog, including isolated test catalogs.
+    @MainActor
+    init(
+        workspace: Workspace,
+        settings: SidebarTabItemSettingsSnapshot,
+        showsAgentActivity: Bool,
+        catalog: SurfaceCatalog
+    ) {
+        self.workspace = workspace
+        self.settings = settings
+        self.showsAgentActivity = showsAgentActivity
+        self.catalog = catalog
+    }
 
     /// Creates the current immutable presentation snapshot for the workspace row.
     func makeSnapshot() -> SidebarWorkspaceSnapshotBuilder.Snapshot {
@@ -26,7 +52,14 @@ struct SidebarWorkspaceSnapshotFactory {
         let showsBranchDirectoryRows = detailVisibility.showsBranchDirectory && !settings.compactsAgentStatus
         let showsPullRequestRows = detailVisibility.showsPullRequests && !settings.compactsAgentStatus
         let orderedPanelIds = workspace.sidebarOrderedPanelIds()
-        let cloud = CloudWorkspaceSidebarPresentation(workspace: workspace, orderedPanelIDs: orderedPanelIds, usesLastSegmentPath: settings.usesLastSegmentPath)
+        let cloud = CloudWorkspaceSidebarPresentation(
+            workspace: workspace,
+            orderedPanelIDs: orderedPanelIds,
+            usesLastSegmentPath: settings.usesLastSegmentPath,
+            catalog: catalog
+        )
+        let hasCloudProjection = workspace.cloudVMID != nil
+            || workspace.cloudBindingState.projectedResources.values.contains { $0.machine.cloudMachineID != nil }
         let taskStatusInput = SidebarWorkspaceTaskStatusSnapshot.capture(workspace: workspace, orderedPanelIds: orderedPanelIds)
         let compactGitBranchSummaryText: String? = {
             guard showsBranchDirectoryRows,
@@ -45,11 +78,11 @@ struct SidebarWorkspaceSnapshotFactory {
                 return []
             }
             // SUPERMUX:begin device-mirror-flatrow-status
-            // (upstream: `return cloud?.directoryCandidates ?? …` — a device
+            // (upstream: `return cloud?.directoryCandidates ?? (hasCloudProjection ? [] : …)` — a device
             // mirror's line drops the Mac name, which its Mac icon's tooltip names)
             return SupermuxDeviceMirrorSidebar.directoryCandidates(
                 for: workspace, orderedPanelIds: orderedPanelIds, usesLastSegmentPath: settings.usesLastSegmentPath
-            ) ?? cloud?.directoryCandidates ?? compactDirectoryCandidatesList(orderedPanelIds: orderedPanelIds)
+            ) ?? cloud?.directoryCandidates ?? (hasCloudProjection ? [] : compactDirectoryCandidatesList(orderedPanelIds: orderedPanelIds))
             // SUPERMUX:end device-mirror-flatrow-status
         }()
         let compactBranchDirectoryCandidates = compactBranchDirectoryCandidatesList(
@@ -72,6 +105,7 @@ struct SidebarWorkspaceSnapshotFactory {
                 return [.init(branch: branch, directoryCandidates: directories)]
             }
             // SUPERMUX:end device-mirror-flatrow-status
+            if hasCloudProjection { return [] }
             return verticalBranchDirectoryLines(orderedPanelIds: orderedPanelIds)
         }()
         let pullRequestRows: [SidebarWorkspaceSnapshotBuilder.PullRequestDisplay] = {
@@ -107,6 +141,25 @@ struct SidebarWorkspaceSnapshotFactory {
         // another agent's row).
         let supermuxActivity = SupermuxWorkspaceActivityResolver.activity(for: workspace)
         let supermuxActivityByAgentKey = SupermuxWorkspaceActivityResolver.activityByAgentKey(for: workspace)
+        // Agent-published lifecycle rows ("⚡ Running" etc.) that the
+        // activity indicator duplicates are dropped so flat rows match the
+        // nested project-workspace rows; agent error rows and mismatched
+        // statuses keep rendering. Only the SwiftUI list mounts the
+        // compensating indicator (`TabItemView`'s fenced overlay); the
+        // AppKit NSTableView cells render metadata rows verbatim, so when
+        // that list is active (Debug opt-in) the rows keep upstream's
+        // unfiltered entries — dropping them there would erase agent
+        // status from the sidebar entirely. Applied to `metadataEntries`
+        // BEFORE upstream's agent-usage decoration, because the filter
+        // matches the undecorated lifecycle text.
+        let supermuxMetadataRows: ([SidebarStatusEntry]) -> [SidebarStatusEntry] = { rows in
+            CmuxFeatureFlags.shared.isAppKitSidebarListEnabled
+                ? rows
+                : SupermuxSidebarAgentStatusRows.droppingAgentStatusRows(
+                    from: rows,
+                    duplicatedBy: supermuxActivityByAgentKey
+                )
+        }
         // SUPERMUX:end sidebar-flatrow-activity
 
         let statusEntries = SidebarCompactStatusGlyph.partition(
@@ -126,7 +179,7 @@ struct SidebarWorkspaceSnapshotFactory {
                 // The directory toggle itself, like the branch and PR ones, so
                 // the tooltip keeps it under Hide All Details.
                 directory: settings.details.showBranchDirectory
-                    ? (cloud?.directoryCandidates ?? compactDirectoryCandidatesList(orderedPanelIds: orderedPanelIds)).first
+                    ? (cloud?.directoryCandidates ?? (hasCloudProjection ? [] : compactDirectoryCandidatesList(orderedPanelIds: orderedPanelIds))).first
                     : nil,
                 orderedPanelIds: orderedPanelIds
             ))
@@ -147,23 +200,21 @@ struct SidebarWorkspaceSnapshotFactory {
                     || workspace.remoteConnectionState == .disconnected),
             copyableSidebarSSHError: copyableSidebarSSHError,
             latestConversationMessage: workspace.latestConversationMessage,
+            // `SidebarAgentUsageFormatter()` reads `Locale.current`, so it is
+            // built only when usage is actually shown; this runs for every row
+            // on every sidebar rebuild. Decorates `statusEntries.rows` rather
+            // than the unpartitioned list so compact status still folds the
+            // agent rows away: with compaction on, the folded agent entries
+            // carry no usage text because they are no longer rows.
             // SUPERMUX:begin sidebar-flatrow-activity
-            // Agent-published lifecycle rows ("⚡ Running" etc.) that the
-            // activity indicator duplicates are dropped so flat rows match the
-            // nested project-workspace rows; agent error rows and mismatched
-            // statuses keep rendering. Only the SwiftUI list mounts the
-            // compensating indicator (`TabItemView`'s fenced overlay); the
-            // AppKit NSTableView cells render metadata rows verbatim, so when
-            // that list is active (Debug opt-in) the rows keep upstream's
-            // unfiltered entries — dropping them there would erase agent
-            // status from the sidebar entirely.
-            // (upstream: detailVisibility.showsMetadata ? statusEntries.rows : [])
+            // (upstream passes `statusEntries.rows` in both branches)
             metadataEntries: detailVisibility.showsMetadata
-                ? (CmuxFeatureFlags.shared.isAppKitSidebarListEnabled
-                    ? statusEntries.rows
-                    : SupermuxSidebarAgentStatusRows.droppingAgentStatusRows(
-                        from: statusEntries.rows,
-                        duplicatedBy: supermuxActivityByAgentKey))
+                ? (detailVisibility.showsAgentUsage
+                    ? SidebarAgentUsageFormatter().decorate(
+                        supermuxMetadataRows(statusEntries.rows),
+                        usageByStatusKey: workspace.sidebarMetadata.agentUsageByStatusKey
+                    )
+                    : supermuxMetadataRows(statusEntries.rows))
                 : [],
             // SUPERMUX:end sidebar-flatrow-activity
             metadataBlocks: detailVisibility.showsMetadata

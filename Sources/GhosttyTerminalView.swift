@@ -914,7 +914,7 @@ class GhosttyApp {
                }) {
                 representations.append(.init(mimeType: "text/plain", string: fallback))
             }
-            GhosttyApp.terminalPasteboard.writeRepresentations(representations, to: location)
+            GhosttySurfaceScrollView.writeClipboard(representations, to: location, from: callbackContext)
         }
         runtimeConfig.close_surface_cb = { userdata, needsConfirmClose in
             guard let callbackContext = GhosttyApp.callbackContext(from: userdata) else { return }
@@ -1303,7 +1303,12 @@ class GhosttyApp {
         #else
         loadRealUserGhosttyConfig(config, preferredColorScheme: preferredColorScheme, themeColorScheme: themeColorScheme)
         #endif
-        loadCJKFontFallbackIfNeeded(config)
+        // Both fallback loaders scan the same config files (including
+        // recursive `config-file` includes); resolve the scan paths once so
+        // that work isn't repeated for each loader.
+        let fontFallbackConfigPaths = Self.configDiscovery.loadedCJKScanPaths()
+        loadCJKFontFallbackIfNeeded(config, configPaths: fontFallbackConfigPaths)
+        loadSymbolFontFallbackIfNeeded(config, configPaths: fontFallbackConfigPaths)
         let renderingModeChanged = setUsesHostLayerBackground(
             true,
             source: "loadDefaultConfigFilesWithLegacyFallback"
@@ -1388,9 +1393,47 @@ class GhosttyApp {
     /// the affected CJK ranges.
     ///
     /// See: https://github.com/manaflow-ai/cmux/pull/1017
-    private func loadCJKFontFallbackIfNeeded(_ config: ghostty_config_t) {
-        guard let mappings = Self.autoInjectedCJKFontMappings() else { return }
+    private func loadCJKFontFallbackIfNeeded(_ config: ghostty_config_t, configPaths: [String]) {
+        guard let mappings = Self.autoInjectedCJKFontMappings(configPaths: configPaths) else { return }
+        loadInjectedFontCodepointMap(
+            mappings,
+            into: config,
+            prefix: "cmux-cjk-font-fallback",
+            logLabel: "CJK font fallback"
+        )
+    }
 
+    /// When the user has not configured `font-codepoint-map` for pictographic
+    /// symbol ranges and has not already provided an explicit multi-entry
+    /// `font-family` fallback chain, Ghostty's `CTFontCollection` scoring may
+    /// pick an unpredictable "monospace" fallback font for glyphs like the
+    /// hexagon ⬡ (U+2B21) or the ▰/▱ gauge characters used by status-line
+    /// tools such as coralline, rather than the narrower substitute
+    /// CoreText's own cascade would choose. This injects Apple Symbols
+    /// (macOS's own symbol font) as a stable default, without overriding
+    /// user-managed fallback chains or configured fonts that already cover
+    /// the affected ranges.
+    ///
+    /// See: https://github.com/Nanako0129/coralline/issues/47
+    private func loadSymbolFontFallbackIfNeeded(_ config: ghostty_config_t, configPaths: [String]) {
+        guard let mappings = Self.autoInjectedSymbolFontMappings(configPaths: configPaths) else { return }
+        loadInjectedFontCodepointMap(
+            mappings,
+            into: config,
+            prefix: "cmux-symbol-font-fallback",
+            logLabel: "symbol font fallback"
+        )
+    }
+
+    /// Emits cmux's managed `font-codepoint-map` directives for one fallback
+    /// family. The CJK and symbol loaders share this so the injection format
+    /// and font-name resolution stay identical between them.
+    private func loadInjectedFontCodepointMap(
+        _ mappings: [(String, String)],
+        into config: ghostty_config_t,
+        prefix: String,
+        logLabel: String
+    ) {
         var resolvedFonts: [String: String] = [:]
         let lines = mappings.map { range, font in
             let resolvedFont = resolvedFonts[font] ?? {
@@ -1403,8 +1446,32 @@ class GhosttyApp {
         loadInlineGhosttyConfig(
             lines,
             into: config,
-            prefix: "cmux-cjk-font-fallback",
-            logLabel: "CJK font fallback"
+            prefix: prefix,
+            logLabel: logLabel
+        )
+    }
+
+    /// Returns only the symbol mappings cmux should auto-inject. Forwards to
+    /// ``GhosttyConfigDiscovery``.
+    static func autoInjectedSymbolFontMappings(
+        configPaths: [String]? = nil,
+        codepointCoverageProbe: ((String, UInt32) -> Bool)? = nil
+    ) -> [(String, String)]? {
+        configDiscovery.autoInjectedSymbolFontMappings(
+            configPaths: configPaths,
+            codepointCoverageProbe: codepointCoverageProbe
+        )
+    }
+
+    /// Whether cmux should inject its managed symbol-glyph fallback.
+    /// Forwards to ``GhosttyConfigDiscovery``.
+    static func shouldInjectSymbolFontFallback(
+        configPaths: [String]? = nil,
+        codepointCoverageProbe: ((String, UInt32) -> Bool)? = nil
+    ) -> Bool {
+        configDiscovery.shouldInjectSymbolFontFallback(
+            configPaths: configPaths,
+            codepointCoverageProbe: codepointCoverageProbe
         )
     }
 
@@ -5305,8 +5372,13 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             queue: .main
         ) { [weak self] notification in
             guard let occludedWindow = notification.object as? NSWindow else { return }
-            // Delivered on the main queue (`queue: .main`), which is the main actor.
-            MainActor.assumeIsolated {
+            // NotificationCenter's `queue: .main` selects the main operation
+            // queue, but it does not establish Swift concurrency's main-actor
+            // executor. AppKit can also post this notification during window
+            // teardown from a non-actor callback. Hop explicitly instead of
+            // assuming the executor, which otherwise traps with EXC_BAD_ACCESS
+            // while a terminal view is being detached.
+            Task { @MainActor [weak self] in
                 self?.applyRendererWindowVisibility(for: occludedWindow)
             }
         }
@@ -5320,7 +5392,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
                 queue: .main
             ) { [weak self] notification in
                 guard let keyWindow = notification.object as? NSWindow else { return }
-                MainActor.assumeIsolated {
+                Task { @MainActor [weak self] in
                     self?.applyRendererWindowVisibility(for: keyWindow)
                 }
             })
@@ -5340,6 +5412,12 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         // Consume the committed bounds and let the portal's queued convergence
         // pass handle any later geometry change.
         _ = reapplyPaneGeometry()
+        // A surface can become visible before its hosted view is reattached to
+        // the real window. In that order the visibility transition correctly
+        // waits for presentation readiness, but no geometry delta may follow
+        // the attachment. Replay the readiness edge here so a renderer born
+        // hidden cannot remain released after its first real window attach.
+        terminalSurface?.rendererPresentationReadinessDidChange()
         applySurfaceBackground()
         applySurfaceColorScheme(force: true)
         GhosttyApp.shared.synchronizeThemeWithAppearance(
@@ -6646,6 +6724,8 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             return GhosttyApp.terminalPasteboard.hasString(for: GHOSTTY_CLIPBOARD_STANDARD)
         case #selector(pasteAsPlainText(_:)):
             return GhosttyApp.terminalPasteboard.hasString(for: GHOSTTY_CLIPBOARD_STANDARD)
+        case #selector(pasteAsOneLine(_:)):
+            return multiLineClipboardPlainText != nil
         case #selector(splitHorizontally(_:)), #selector(splitVertically(_:)):
             return canSplitCurrentSurface()
         case #selector(beginPaneSwapSelection(_:)):
@@ -7672,7 +7752,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         button: ghostty_input_mouse_button_e,
         mods: ghostty_input_mods_e
     ) -> Bool {
-        withPotentialClipboardPasteIntent {
+        withPointerDispatchIntents {
             ghostty_surface_mouse_button(surface, state, button, mods)
         }
     }
@@ -9452,6 +9532,14 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             keyEquivalent: ""
         )
         pasteItem.target = self
+        if multiLineClipboardPlainText != nil {
+            let pasteAsOneLineItem = menu.addItem(
+                withTitle: String(localized: "terminalContextMenu.pasteAsOneLine", defaultValue: "Paste as One Line"),
+                action: #selector(pasteAsOneLine(_:)),
+                keyEquivalent: ""
+            )
+            pasteAsOneLineItem.target = self
+        }
         addRevealInFinderMenuItem(
             to: menu,
             surface: surface,
@@ -9877,6 +9965,7 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
     /// occlusion `.visible` bit is remembered per window so the rule can tell a
     /// trustworthy occlusion verdict from a virtual display that never sets it.
     private func applyRendererWindowVisibility(for window: NSWindow) {
+        guard let currentWindow = self.window, currentWindow === window else { return }
         let occlusionVisible = window.occlusionState.contains(.visible)
         if occlusionVisible {
             Self.windowsThatReportedVisible.add(window)
@@ -10398,12 +10487,14 @@ final class GhosttySurfaceScrollView: NSView {
     private var lastFlashStyle: FlashStyle = .navigation
     private var workspaceAttentionColor = WorkspaceAttentionColor(configuredHex: nil)
     private var workspaceAttentionNSColor = WorkspaceAttentionColor(configuredHex: nil).nsColor
+    private var workspaceAttentionFlashNSColor = WorkspaceAttentionColor(configuredHex: nil).flashNSColor
     private let keyboardCopyModeBadgeContainerView: GhosttyFlashOverlayView
     private let keyboardCopyModeBadgeView: GhosttyPassthroughVisualEffectView
     private let keyboardCopyModeBadgeIconView: NSImageView
     private let keyboardCopyModeBadgeLabel: NSTextField
     let linkHoverIndicatorView: TerminalLinkHoverIndicatorView
     let passwordInputIndicatorView: TerminalPasswordInputIndicatorView
+    let jumpToBottomIndicatorView = TerminalJumpToBottomIndicatorView(frame: .zero)
     private let imageTransferIndicatorContainerView: NSView
     private let imageTransferIndicatorView: NSVisualEffectView
     private let imageTransferIndicatorSpinner: NSProgressIndicator
@@ -10427,6 +10518,11 @@ final class GhosttySurfaceScrollView: NSView {
     /// this state; only user scroll gestures, explicit restores, and
     /// authoritative Ghostty scrollbar packets do.
     private(set) var scrollbackViewportIntent: TerminalScrollbackViewportIntent = .followingOutput
+
+    /// Applies a viewport intent transition owned by the terminal view.
+    func applyScrollbackViewportIntent(_ intent: TerminalScrollbackViewportIntent) {
+        scrollbackViewportIntent = intent
+    }
     /// Threshold in points from bottom to consider "at bottom" (allows for minor float drift)
     private static let scrollToBottomThreshold: CGFloat = 5.0
     private var isActive = true
@@ -10725,7 +10821,7 @@ final class GhosttySurfaceScrollView: NSView {
         flashOverlayView.layer?.masksToBounds = false
         flashOverlayView.autoresizingMask = [.width, .height]
         let flashStyle = WorkspaceAttentionCoordinator.flashStyle(for: .navigation)
-        let flashColor = WorkspaceAttentionColor(configuredHex: nil).nsColor
+        let flashColor = WorkspaceAttentionColor(configuredHex: nil).flashNSColor
         flashLayer.fillColor = NSColor.clear.cgColor
         flashLayer.strokeColor = flashColor.cgColor
         flashLayer.lineWidth = NotificationRingMetrics.lineWidth
@@ -10871,6 +10967,7 @@ final class GhosttySurfaceScrollView: NSView {
         passwordInputIndicatorView.frame = bounds
         passwordInputIndicatorView.autoresizingMask = [.width, .height]
         addSubview(passwordInputIndicatorView)
+        installJumpToBottomIndicator()
 
         NotificationCenter.default.addObserver(
             self,
@@ -11198,6 +11295,7 @@ final class GhosttySurfaceScrollView: NSView {
         _ = setFrameIfNeeded(flashOverlayView, to: bounds)
         _ = setFrameIfNeeded(linkHoverIndicatorView, to: contentFrame)
         _ = setFrameIfNeeded(passwordInputIndicatorView, to: contentFrame)
+        _ = setFrameIfNeeded(jumpToBottomIndicatorView, to: contentFrame)
         if let cloudTerminalReconnectOverlayView { _ = setFrameIfNeeded(cloudTerminalReconnectOverlayView, to: contentFrame) }
         synchronizeCloudTerminalReconnectOverlay()
         if let overlay = searchOverlayHostingView {
@@ -11478,6 +11576,7 @@ final class GhosttySurfaceScrollView: NSView {
         if surfaceView.terminalSurface !== terminalSurface {
             setLinkHoverURL(nil)
             setPasswordInputActive(false)
+            jumpToBottomIndicatorView.reset()
         }
         surfaceView.attachSurface(terminalSurface)
         // Preserve the bootstrap 800x600 surface until portal reattach churn
@@ -11622,6 +11721,7 @@ final class GhosttySurfaceScrollView: NSView {
 
     private func applyWorkspaceAttentionNSColor() {
         workspaceAttentionNSColor = workspaceAttentionColor.nsColor
+        workspaceAttentionFlashNSColor = workspaceAttentionColor.flashNSColor
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -12143,11 +12243,12 @@ final class GhosttySurfaceScrollView: NSView {
         updateFlashAppearance(style: style)
         flashLayer.removeAllAnimations()
         flashLayer.opacity = 0
+        let pattern = FocusFlashPattern.current
         let animation = CAKeyframeAnimation(keyPath: "opacity")
-        animation.values = FocusFlashPattern.values.map { NSNumber(value: $0) }
-        animation.keyTimes = FocusFlashPattern.keyTimes.map { NSNumber(value: $0) }
-        animation.duration = FocusFlashPattern.duration
-        animation.timingFunctions = FocusFlashPattern.curves.map { curve in
+        animation.values = pattern.values.map { NSNumber(value: $0) }
+        animation.keyTimes = pattern.keyTimes.map { NSNumber(value: $0) }
+        animation.duration = pattern.duration
+        animation.timingFunctions = pattern.curves.map { curve in
             switch curve {
             case .easeIn:
                 return CAMediaTimingFunction(name: .easeIn)
@@ -13763,8 +13864,8 @@ final class GhosttySurfaceScrollView: NSView {
 
     private func updateFlashAppearance(style: FlashStyle) {
         let presentation = Self.flashPresentation(for: style)
-        flashLayer.strokeColor = workspaceAttentionNSColor.cgColor
-        flashLayer.shadowColor = workspaceAttentionNSColor.cgColor
+        flashLayer.strokeColor = workspaceAttentionFlashNSColor.cgColor
+        flashLayer.shadowColor = workspaceAttentionFlashNSColor.cgColor
         flashLayer.shadowOpacity = Float(presentation.glowOpacity)
         flashLayer.shadowRadius = presentation.glowRadius
     }
@@ -13784,7 +13885,7 @@ final class GhosttySurfaceScrollView: NSView {
         layer.path = CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
     }
 
-    private func synchronizeScrollView(
+    func synchronizeScrollView(
         forceViewportSync: Bool? = nil,
         preservedReviewOriginY: CGFloat? = nil
     ) {
@@ -13923,6 +14024,7 @@ final class GhosttySurfaceScrollView: NSView {
         scrollbackViewportIntent = syncDecision.intent
         let wasVisible = scrollView.hasVerticalScroller
         surfaceView.scrollbar = scrollbar
+        synchronizeJumpToBottomIndicator()
         let isVisible = shouldShowTerminalScrollBar()
         if wasVisible != isVisible {
             _ = synchronizeGeometryAndContent(

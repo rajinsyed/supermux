@@ -397,17 +397,6 @@ final class TerminalNotificationStore: ObservableObject {
                 topic: Self.feedChangedEventTopic,
                 payload: ["revision": revision]
             )
-            Task { @MainActor in
-                MobileHostService.emitEvent(
-                    topic: "feed.changed",
-                    payload: [
-                        "revision": FeedCoordinator.combinedMobileFeedRevision(
-                            workstream: FeedCoordinator.shared.store?.revision ?? 0,
-                            notifications: revision
-                        )
-                    ]
-                )
-            }
         }
         indexes = Self.buildIndexes(for: notifications)
         userDefaultsObserver = NotificationCenter.default.addUserDefaultsObserver(object: nil) { [weak self] in
@@ -1145,6 +1134,7 @@ final class TerminalNotificationStore: ObservableObject {
         inFlightPolicyRequests.discard(policyRequestId)
     }
 
+    /// Records a notification for the target, running the resolved notification hooks first when there are any; returns the id once the entry is recorded synchronously.
     @discardableResult
     func addNotification(
         tabId: UUID,
@@ -1163,7 +1153,8 @@ final class TerminalNotificationStore: ObservableObject {
         notificationID: UUID? = nil,
         agent: TerminalNotificationPolicyAgentContext? = nil,
         soundContext: NotificationSoundOverrideContext? = nil,
-        origin: TerminalNotificationOrigin = .local
+        origin: TerminalNotificationOrigin = .local,
+        effects: TerminalNotificationPolicyEffectsPatch? = nil
     ) -> UUID? {
 #if DEBUG
         cmuxDebugLog(
@@ -1175,6 +1166,8 @@ final class TerminalNotificationStore: ObservableObject {
         // that types into a pane, a click action that opens a local path, agent context
         // that hooks treat as trusted identity, or a sound override. Clamped here so no
         // caller can regress it, and hooks are never resolved from a local cwd for it.
+        // The effects override is allowed from a remote because every default is true,
+        // so an override can only turn delivery off.
         let replyShape = origin.isRemote ? .none : replyShape
         let clickAction = origin.isRemote ? nil : clickAction
         let agent = origin.isRemote ? nil : agent
@@ -1232,15 +1225,17 @@ final class TerminalNotificationStore: ObservableObject {
             resolvedHooks: resolvedHooks,
             agent: agent,
             soundContext: soundContext,
-            origin: origin
+            origin: origin,
+            effects: effects
         )
+        let baseEffects = policyContext.request.baseEffects
         if policyContext.hooks.isEmpty, preRegisteredPolicyRequestId == nil {
             inFlightPolicyRequests.discardPending(
                 forDeliveryIdentityOf: policyContext.request
             )
             let didRecord = applyNotification(
                 request: policyContext.request,
-                effects: TerminalNotificationPolicyEffects(),
+                effects: baseEffects,
                 now: now,
                 cooldownReservation: cooldownReservation,
                 scrollPosition: policyContext.scrollPosition,
@@ -1261,7 +1256,7 @@ final class TerminalNotificationStore: ObservableObject {
             completePolicyRequest(
                 policyRequestId,
                 request: policyContext.request,
-                effects: TerminalNotificationPolicyEffects(),
+                effects: baseEffects,
                 cooldownReservation: cooldownReservation,
                 scrollPosition: policyContext.scrollPosition,
                 clickAction: clickAction,
@@ -1285,7 +1280,7 @@ final class TerminalNotificationStore: ObservableObject {
                 self.completePolicyRequest(
                     policyRequestId,
                     request: policyContext.request,
-                    effects: TerminalNotificationPolicyEffects(),
+                    effects: baseEffects,
                     cooldownReservation: cooldownReservation,
                     scrollPosition: policyContext.scrollPosition,
                     clickAction: clickAction,
@@ -1313,7 +1308,7 @@ final class TerminalNotificationStore: ObservableObject {
                 self.completePolicyRequest(
                     policyRequestId,
                     request: policyContext.request,
-                    effects: TerminalNotificationPolicyEffects(),
+                    effects: baseEffects,
                     cooldownReservation: cooldownReservation,
                     scrollPosition: policyContext.scrollPosition,
                     clickAction: clickAction,
@@ -1405,6 +1400,7 @@ final class TerminalNotificationStore: ObservableObject {
         }
     }
 
+    /// Resolves focus, cwd, hooks and the policy request for one notification.
     private func makeNotificationPolicyContext(
         tabId: UUID,
         surfaceId: UUID?,
@@ -1417,7 +1413,8 @@ final class TerminalNotificationStore: ObservableObject {
         resolvedHooks: [CmuxResolvedNotificationHook]?,
         agent: TerminalNotificationPolicyAgentContext? = nil,
         soundContext: NotificationSoundOverrideContext? = nil,
-        origin: TerminalNotificationOrigin = .local
+        origin: TerminalNotificationOrigin = .local,
+        effects: TerminalNotificationPolicyEffectsPatch? = nil
     ) -> NotificationPolicyContext {
         let appDelegate = AppDelegate.shared
         let focusState = notificationFocusState(tabId: tabId, surfaceId: surfaceId)
@@ -1464,7 +1461,8 @@ final class TerminalNotificationStore: ObservableObject {
                 isFocusedPanel: isFocusedPanel,
                 agent: agent,
                 soundContext: soundContext,
-                origin: origin
+                origin: origin,
+                effects: effects
             ),
             scrollPosition: scrollPosition,
             hooks: resolvedHooks ?? (origin.isRemote ? [] : cmuxConfigStore?.notificationHooks(
@@ -1511,7 +1509,8 @@ final class TerminalNotificationStore: ObservableObject {
                 isFocusedPanel: request.isFocusedPanel,
                 agent: request.agent,
                 soundContext: envelope.context.soundContext,
-                origin: request.origin
+                origin: request.origin,
+                effects: request.effects
             ),
             effects: envelope.effects,
             now: now,
@@ -3141,17 +3140,6 @@ final class TerminalNotificationStore: ObservableObject {
                 topic: Self.feedChangedEventTopic,
                 payload: ["revision": revision]
             )
-            Task { @MainActor in
-                MobileHostService.emitEvent(
-                    topic: "feed.changed",
-                    payload: [
-                        "revision": FeedCoordinator.combinedMobileFeedRevision(
-                            workstream: FeedCoordinator.shared.store?.revision ?? 0,
-                            notifications: revision
-                        )
-                    ]
-                )
-            }
         }
         clearWorkspaceManualUnread()
         clearSurfaceManualUnread()
