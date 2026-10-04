@@ -5,9 +5,10 @@ import Observation
 import SupermuxKit
 
 /// Keeps exactly one local mirror workspace for every workspace on every
-/// connected device (setting ``SupermuxDevicesSettings/autoMirror``), closes
-/// mirrors whose remote workspace is gone, replaces orphaned mirrors, and
-/// drives the mirror status projection.
+/// connected device (setting ``SupermuxDevicesSettings/autoMirror``, off
+/// while this Mac is in Remote Host Mode), closes mirrors whose remote
+/// workspace is gone, replaces orphaned mirrors, and drives the mirror
+/// status projection.
 ///
 /// Decisions come from the pure ``SupermuxMirrorReconciler``; this type
 /// gathers its input (devices, records, mirrors, hidden set, in-flight opens)
@@ -26,6 +27,11 @@ import SupermuxKit
 /// placeholder mirrors (bound by `stableId`, or still holding pending restored
 /// projections) always count as showing their workspace; stale bindings are
 /// pruned once, right after that point.
+///
+/// A headless host does not mirror the Macs that view it: in Remote Host
+/// Mode auto-mirror counts as off, so no new mirror opens there while the
+/// mirrors already open stay (and still close when their remote workspace
+/// closes). Turning the mode off brings auto-mirror back.
 ///
 /// Passes are debounced (``debounce`` after the last trigger, at most
 /// ``debounceMaxWait`` after the first), and a pass whose input matches the
@@ -222,10 +228,17 @@ final class SupermuxDeviceMirrorCoordinator {
             .union(closer.lastTerminalClosesInFlight)
     }
 
+    /// Auto-mirror as passes apply it: the setting, except on a Mac in Remote
+    /// Host Mode (a headless host has no one to show the other Macs to).
+    var effectiveAutoMirror: Bool {
+        settings.autoMirror && !SupermuxRemoteHostMode.isEnabled()
+    }
+
     private func handle(_ note: Notification) {
         if note.name == UserDefaults.didChangeNotification {
-            // Any defaults write lands here; only react to the setting.
-            let autoMirror = settings.autoMirror
+            // Any defaults write lands here; only react to auto-mirror as
+            // applied (the setting, or Remote Host Mode turning on or off).
+            let autoMirror = effectiveAutoMirror
             guard autoMirror != lastAutoMirror else { return }
             lastAutoMirror = autoMirror
         }
@@ -327,7 +340,7 @@ final class SupermuxDeviceMirrorCoordinator {
             )
         }
         return SupermuxMirrorReconciler.Input(
-            autoMirror: settings.autoMirror,
+            autoMirror: effectiveAutoMirror,
             devices: deviceInputs,
             mirrors: mirrors,
             hidden: hidden.refs,
@@ -352,7 +365,7 @@ final class SupermuxDeviceMirrorCoordinator {
     private func drainOpenQueue() async {
         while !openQueue.isEmpty {
             let ref = openQueue.removeFirst()
-            guard settings.autoMirror, !hidden.contains(ref), index.localWorkspace(showing: ref) == nil,
+            guard effectiveAutoMirror, !hidden.contains(ref), index.localWorkspace(showing: ref) == nil,
                   !opener.openingRefs.contains(ref),
                   let record = devices.record(for: ref), !record.terminals.isEmpty else { continue }
             guard let tabManager = SupermuxDeviceMirrorWindowPicker(index: index).tabManager(forDevice: ref.machine) else {
