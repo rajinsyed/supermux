@@ -22,7 +22,11 @@ final class MainThreadHangWatchdog: @unchecked Sendable {
 
     init(
         stallThreshold: TimeInterval = 8,
-        heartbeatInterval: TimeInterval = 1,
+        // SUPERMUX:begin hang-watchdog-slower-heartbeat (upstream: `heartbeatInterval: TimeInterval = 1`)
+        // A beat every 2 s still catches the 8 s stall, with half the
+        // wakeups of the app and its main thread all day.
+        heartbeatInterval: TimeInterval = 2,
+        // SUPERMUX:end hang-watchdog-slower-heartbeat
         uptime: @escaping @Sendable () -> TimeInterval,
         date: @escaping @Sendable () -> Date,
         capture: @escaping @Sendable (Date, TimeInterval) -> Void
@@ -46,7 +50,9 @@ final class MainThreadHangWatchdog: @unchecked Sendable {
             timer.schedule(
                 deadline: .now() + heartbeatInterval,
                 repeating: heartbeatInterval,
-                leeway: .milliseconds(100)
+                // SUPERMUX:begin hang-watchdog-slower-heartbeat (upstream: `.milliseconds(100)`)
+                leeway: .milliseconds(500)
+                // SUPERMUX:end hang-watchdog-slower-heartbeat
             )
             timer.setEventHandler { [weak self] in
                 self?.tick()

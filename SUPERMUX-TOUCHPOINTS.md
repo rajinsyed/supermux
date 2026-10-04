@@ -16,7 +16,7 @@ Rules for adding a touchpoint:
 - Numbering: the highest number in use is **783** (remote terminal streaming, #777–#783; #764–#776 are
   reserved for open PRs #74/#75). The remote-workspaces work (#517–#599) left
 - Numbering: the highest number in use is **818**. The remote-workspaces work (#517–#599) left
-- Numbering: the highest number in use is **1010** (#970–#978: hidden mirrors stream in batches and reconnects resume quiet terminals; #979: a moved workspace's spinners follow its window; #980–#981: fewer process censuses; #1010: the mobile observers' shared state-sync ticker; 982–1009 are unassigned). Before that **924** (#920–#924: only this Mac's own input hands an Auto grid to the Mac pane). #907–#913: answering a Claude question or plan brings the working indicator back. Before that **906** (#900–#906: a streaming mirror re-anchors when the other Mac's grid changes). Before that **883** (#880–#883: Remote Host Mode's hotkey and notification shows, Auto's `view_appeared` report; #850–#879 are held by another open branch). The remote-workspaces work (#517–#599) left
+- Numbering: the highest number in use is **1010** (#970–#978: hidden mirrors stream in batches and reconnects resume quiet terminals; #979: a moved workspace's spinners follow its window; #980–#981: fewer process censuses; #982–#992 and #996–#998: cmux-wide battery fixes (993–995 unassigned); #1010: the mobile observers' shared state-sync ticker; 999–1009 are unassigned). Before that **924** (#920–#924: only this Mac's own input hands an Auto grid to the Mac pane). #907–#913: answering a Claude question or plan brings the working indicator back. Before that **906** (#900–#906: a streaming mirror re-anchors when the other Mac's grid changes). Before that **883** (#880–#883: Remote Host Mode's hotkey and notification shows, Auto's `view_appeared` report; #850–#879 are held by another open branch). The remote-workspaces work (#517–#599) left
   unassigned gaps it may still grow into: **523–524, 527–529, 539–544, 558–559, 562–569,
   578–579 and 588–589** (never assigned, not retired); #600–#601 came from the 2026-10-01 upstream merge; #620–#622 and
   #630–#639 are the remote-workspaces feedback round (602–619 and 623–629 unassigned). The second
@@ -810,6 +810,20 @@ Rules for adding a touchpoint:
 | 979 | `Sources/TabManager.swift` | `tab-activity-workspace-moved` | At the end of `attachWorkspace`, calls `SupermuxTabActivitySync.shared.workspaceMoved(workspace)`, so a workspace moved in from another window (socket, CLI, drag) re-syncs its working-tab spinners against its new window's visibility instead of keeping the old window's held-off or spinning state until its agent's next lifecycle event. |
 | 980 | `Sources/SessionAutosaveCoordinator.swift` | `autosave-resume-indexes-reuse` | Four fences: `resumeIndexesReuseInterval` (30 s), the `reusableResumeIndexes` property, the `finish` call site (upstream: `let resumeIndexes = await ProcessDetectedResumeIndexes.load(ttyDeviceBindings: ttyDeviceBindings)`) and `currentResumeIndexes(for:)`. An autosave tick reuses the last complete process-detected resume indexes while they are under 30 s old and the TTY binding set is unchanged, instead of a full process census with arguments and environment plus a hook and transcript scan every 8 s. |
 | 981 | `Sources/SharedLiveAgentIndex.swift` | `agent-index-hook-reload-floor` | Three fences: `minHookStoreReloadInterval` (30 s) and its two uses in `handleHookStoreChange` (upstream: `Self.minEventReloadInterval`, 5 s, also used by fork validation, which keeps it). A hook-store change starts a reload at most every 30 s; explicit refreshes are unchanged. |
+| 982 | `CLI/cmux.swift` | `hook-store-unchanged-skip` | In `saveUnlocked`, after the encode: returns when the file already holds exactly these bytes, so a hook that only read the Claude hook store (or rewrote a value it already had) no longer rewrites it and wakes every watcher of its folder. |
+| 983 | `CLI/CMUXCLI+AgentMessages.swift` | `agent-inbox-poll-backoff` | `runClaudeInboxWait` records `startedAt` and sleeps `agentInboxPollInterval(idleFor:failing:)` (upstream: `Self.agentInboxPollInterval`, 2 s): 2 s for the first minute and while the app does not answer, 6 s after, so idle Claude sessions stop making a socket connection every 2 s each. |
+| 984 | `Sources/Workspace+PanelLifecycle.swift` | `agent-pid-ports-on-change` | In `recordAgentPID`, `refreshTrackedAgentPorts()` runs only when the PID, its process identity or its pane changed, or another structured runtime was cleared (upstream: on every report, i.e. every agent hook). |
+| 985 | `Sources/Workspace+AgentLifecycle.swift` | `workspace-agent-lifecycle-unchanged` | `setAgentLifecycle` notes whether the value changed and passes it as `relaysToSupermux` to `recordAgentLifecycleChange(panelId:relaysToSupermux:)` (default true); #56's relay fires only then. The hibernation activity stamp is recorded as before. |
+| 986 | `Resources/shell-integration/cmux-zsh-integration.zsh` | `zsh-git-head-watch-cheap` | The git HEAD watcher loop ticks every 3 s (`_cmux_sleep_cs 300`, upstream 100) and reads HEAD with `read` in the watcher shell instead of `$(_cmux_git_head_signature …)`, so a running command's watcher no longer forks a subshell every second. |
+| 987 | `Packages/macOS/CmuxGit/Sources/CmuxGit/Parsing/GitMetadataService+WatchPaths.swift` | `git-dirty-large-repo-throttle` | `eventCoalescingInterval` is 3 s for a repository past the direct-check entry limit (whose dirty check launches `git status`), the upstream throttles otherwise. |
+| 988 | `Packages/macOS/CmuxSidebarGit/Sources/CmuxSidebarGit/Hosting/SidebarGitHosting.swift` | `pr-poll-off-screen-slowdown` | Adds `pullRequestPollIntervalScale()` to `SidebarGitHosting`, with a default of 1. |
+| 989 | `Packages/macOS/CmuxSidebarGit/Sources/CmuxSidebarGit/Service/PullRequestPollService+Apply.swift` | `pr-poll-off-screen-slowdown` | The next pull-request poll multiplies its base interval by the host's scale (at least 1). |
+| 990 | `Sources/TabManager+SidebarGitHosting.swift` | `pr-poll-off-screen-slowdown` | `import SupermuxKit` and `pullRequestPollIntervalScale()`: 5 while the TabManager's window is off screen (`SupermuxWindowVisibility.windowIsOnScreen`), else 1. |
+| 991 | `Packages/macOS/CmuxTerminal/Sources/CmuxTerminal/Surface/TerminalRendererWindowVisibility.swift` | `renderer-key-window-honors-occlusion` | `isVisible` checks the occlusion verdict before the key window: a window that has reported `.visible` follows occlusion even while key (a locked or sleeping display), and the key window counts only while occlusion is untrusted. |
+| 992 | `Packages/macOS/CmuxTerminal/Tests/CmuxTerminalTests/TerminalRendererWindowVisibilityTests.swift` | `renderer-key-window-honors-occlusion` | `keyWindowAlwaysPresents` becomes `keyWindowPresentsUntilOcclusionIsTrusted` (a key window with trusted hidden occlusion does not present). |
+| 996 | `Sources/PortScanner.swift` | `agent-port-rescan-slower` | `agentRescanInterval` is 5 s with 1 s leeway (upstream 2 s, no leeway). |
+| 997 | `Sources/MainThreadHangWatchdog.swift` | `hang-watchdog-slower-heartbeat` | Default `heartbeatInterval` 2 s and timer leeway 500 ms (upstream 1 s and 100 ms); the 8 s stall threshold is unchanged. |
+| 998 | `Packages/macOS/CmuxMobileHost/Sources/CmuxMobileHost/DeviceTerminalGridPublisher.swift` | `device-grid-global-sample-floor` | A global tick samples every terminal's grid at most once a second (and always on a topology change); terminals the tick names are always sampled. `reset()` clears the floor. |
 | 1010 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/SupermuxStateSyncTicker.swift` (`50BE10100000000000000001` file ref, `…02` build file) into the cmux target: the file reference, the `Supermux` group child after `SupermuxMobileSidebarStatusObserver.swift`, the build file and the target's Sources phase entry |
 
 ## How to re-apply
@@ -3064,9 +3078,12 @@ out of `Workspace.swift` into this extension file; the fence moved with it), ins
 
 ```swift
 // SUPERMUX:begin workspace-agent-lifecycle-observation
-SupermuxWorkspaceLifecycleRelay.workspaceDidChangeAgentLifecycle(self)
+if relaysToSupermux { SupermuxWorkspaceLifecycleRelay.workspaceDidChangeAgentLifecycle(self) }
 // SUPERMUX:end workspace-agent-lifecycle-observation
 ```
+
+(Since #985 the function takes `relaysToSupermux: Bool = true`; `setAgentLifecycle` passes false for a
+report that repeats the panel's current value.)
 
 (+3 lines; must precede the `AgentHibernationController.shared.recordAgentLifecycleChange` call,
 whose tracking gate drops events when hibernation is disabled.) The relay lives in supermux-owned
@@ -6932,6 +6949,20 @@ the largest remaining CPU users, each a census of every process with KERN_PROCAR
   `currentResumeIndexes(for:)`); only complete results are reused, and a changed TTY binding set always reloads.
 - **#981**: re-apply `minHookStoreReloadInterval` and use it (not `minEventReloadInterval`) in `handleHookStoreChange`'s
   immediate check and deferred timer.
+
+### 982–992, 996–998. cmux-wide battery fixes found by sampling and by three upstream audits
+
+Measured with `tests/supermux/stress_worktrees_energy.py` plus `sample`, and traced by audits of the agent-hook path,
+the upstream pollers and the Ghostty integration (2026-10-05). Re-apply each fence as its registry row says:
+- **#982** CLI hook store: skip an unchanged rewrite. **#983** CLI inbox poller: 2 s for a minute, then 6 s.
+- **#984** agent PID reports refresh tracked ports only on a change. **#985** a repeated lifecycle report relays nothing.
+- **#986** zsh HEAD watcher: 3 s tick, HEAD read without a subshell (`tests/test_issue_15066_zsh_watcher_sleep.py`,
+  `tests/test_shell_git_branch_stale_cwd.py` still pass).
+- **#987** large-repository dirty checks coalesce at 3 s. **#988–#990** pull requests poll 5× less often while their
+  window is off screen.
+- **#991–#992** the renderer follows a trusted occlusion verdict even for the key window (locked or sleeping display).
+- **#996** agent port rescans every 5 s. **#997** hang watchdog beats every 2 s. **#998** global ticks sample every
+  terminal's grid at most once a second.
 
 ### 1010. The fork's mobile observers tick state sync only on a real change, through one shared ticker — `cmux.xcodeproj/project.pbxproj` (unfenced)
 
