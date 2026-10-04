@@ -265,6 +265,8 @@ final class SupermuxTerminalSizingVisibility {
     static func isOnScreen(_ surface: TerminalSurface) -> Bool {
         let view = surface.hostedView
         guard view.isVisibleInUI, !view.isHiddenOrHasHiddenAncestor, let window = view.window else { return false }
-        return SupermuxWindowVisibility.windowIsOnScreen(window)
+        // Not trusting the active Space: a background pane's view can sit in
+        // an ordered-in holder window off screen.
+        return SupermuxWindowVisibility.windowIsOnScreen(window, trustingActiveSpace: false)
     }
 }

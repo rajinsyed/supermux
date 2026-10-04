@@ -70,23 +70,24 @@ public final class SupermuxWindowVisibility: ObservableObject {
     private static let windowsThatReportedVisible = NSHashTable<NSWindow>.weakObjects()
 
     /// The same rule as cmux's `TerminalRendererWindowVisibility`, plus the
-    /// app not hidden. `occlusionState` decides on a real display (covered or
-    /// on another Space drops `.visible`), but a virtual or headless display
-    /// never raises `.visible` for a window that is ordered in and drawing, so
-    /// until a window has reported it once its ordinary on-screen state is
-    /// trusted instead. A key window always counts as on screen. Every
+    /// app not hidden. `occlusionState` decides on a real display (covered,
+    /// on another Space, a locked or sleeping display all drop `.visible`),
+    /// but a virtual or headless display never raises `.visible` for a window
+    /// that is ordered in and drawing, so until a window has reported it once
+    /// the key window counts as on screen, and so does any window on the
+    /// active Space when `trustingActiveSpace` (pass false for a pane whose
+    /// view may sit in an ordered-in holder window off screen). Every
     /// Supermux "is this window on screen" gate uses this one rule.
-    public static func windowIsOnScreen(_ window: NSWindow?) -> Bool {
+    public static func windowIsOnScreen(_ window: NSWindow?, trustingActiveSpace: Bool = true) -> Bool {
         guard let window, !NSApplication.shared.isHidden,
               window.isVisible, !window.isMiniaturized else { return false }
         if window.occlusionState.contains(.visible) {
             windowsThatReportedVisible.add(window)
             return true
         }
-        if window.isKeyWindow { return true }
         // Occlusion has been trustworthy for this window: honor its verdict.
         if windowsThatReportedVisible.contains(window) { return false }
-        return window.isOnActiveSpace
+        return window.isKeyWindow || (trustingActiveSpace && window.isOnActiveSpace)
     }
 }
 
