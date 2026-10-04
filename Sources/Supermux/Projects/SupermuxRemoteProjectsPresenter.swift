@@ -10,7 +10,10 @@ import SupermuxMobileCore
 @MainActor
 enum SupermuxRemoteProjectsPresenter {
     static func presentation(for tabManager: TabManager) -> SupermuxRemoteProjectsPresentation {
-        let list = SupermuxComposition.unifiedProjects.list
+        let unified = SupermuxComposition.unifiedProjects
+        let list = unified.list
+        // The unified model's last pass, so this body reads no surface catalog.
+        let mirroredRefs = unified.mirroredRefs
         let remote = SupermuxComposition.remoteProjects
         let setUpDevices = remote.devices
             .filter { $0.isOnline && !$0.isLoopback && $0.supportsProjects == true }
@@ -18,7 +21,7 @@ enum SupermuxRemoteProjectsPresenter {
         var rows: [SupermuxRemoteProjectRow] = []
         var extras: [UUID: SupermuxProjectRemoteExtras] = [:]
         for project in list.projects {
-            let worktrees = remoteWorktrees(of: project, remote: remote)
+            let worktrees = remoteWorktrees(of: project, remote: remote, mirroredRefs: mirroredRefs)
             var targets = project.devicesLacking(among: setUpDevices).map(SupermuxProjectSetupDestination.device)
             let remoteURL = repositoryURL(of: project, remote: remote)
             if let localID = project.localProjectID {
@@ -79,18 +82,20 @@ enum SupermuxRemoteProjectsPresenter {
 
     /// The device copies' worktrees that have no workspace there, or whose
     /// workspace is not mirrored here yet (opening it then mirrors it).
+    /// - Parameter mirroredRefs: Every remote workspace with a local mirror
+    ///   (``SupermuxUnifiedProjectsModel/mirroredRefs``).
     static func remoteWorktrees(
         of project: SupermuxUnifiedProject,
-        remote: SupermuxRemoteProjectsModel
+        remote: SupermuxRemoteProjectsModel,
+        mirroredRefs: Set<SupermuxRemoteWorkspaceRef>
     ) -> [SupermuxRemoteWorktree] {
-        let index = SupermuxComposition.deviceWorkspaceIndex
         var result: [SupermuxRemoteWorktree] = []
         for location in project.remoteLocations {
             guard let machineID = location.machineID else { continue }
             let machine = SurfaceMachineID(rawValue: machineID)
             for worktree in remote.device(machine)?.worktreesByProjectID[location.projectID] ?? [] {
                 if worktree.isOpen == true, let workspaceID = worktree.workspaceId,
-                   index.localWorkspace(showing: SupermuxRemoteWorkspaceRef(machine: machine, workspaceID: workspaceID)) != nil {
+                   mirroredRefs.contains(SupermuxRemoteWorkspaceRef(machine: machine, workspaceID: workspaceID)) {
                     continue
                 }
                 result.append(SupermuxRemoteWorktree(
