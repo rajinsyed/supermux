@@ -528,8 +528,9 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   once that Mac lists it as a workspace's (or you forwarded it). That Mac also notices a server binding
   after its terminal's port scans are over (a dev script doing other work first): for 2 minutes after one
   of its terminals starts a command, while another Mac follows its ports, it compares its loopback
-  listeners (5, 15, 45 and 120 s after the latest command start, also once the command exited; never
-  otherwise) and scans its terminals again when one appears; the attribution that follows
+  listeners (5, 15, 25, 45 and 120 s after the latest command start, also once the command exited; never
+  otherwise) and scans its terminals again when one appears, so such a server is its workspace's within
+  about 10 s when it binds in the first 25 s, up to 75 s later after that; the attribution that follows
   pokes. A page loaded as written (and its same-origin `localhost` iframes)
   calls that Mac's other ports with `fetch`, XHR, `WebSocket` and `EventSource` (#755): a port
   forwarded here on the same port goes to its

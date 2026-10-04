@@ -144,8 +144,10 @@ final class SupermuxHostPortsObserver {
 /// attribution changes the workspace's ports, which pokes.
 @MainActor
 final class SupermuxLateListenerCheck {
-    /// When the checks run, counted from the latest command start.
-    static let checkOffsets: [Duration] = [.seconds(5), .seconds(15), .seconds(45), .seconds(120)]
+    /// When the checks run, counted from the latest command start: 10 s apart
+    /// for the first 25 s, where a dev script's server usually binds (after an
+    /// install or a build), so it is attributed within about 10 s; sparser after.
+    static let checkOffsets: [Duration] = [.seconds(5), .seconds(15), .seconds(25), .seconds(45), .seconds(120)]
     /// The least time between two checks.
     static let minimumGap: Duration = .seconds(5)
 
