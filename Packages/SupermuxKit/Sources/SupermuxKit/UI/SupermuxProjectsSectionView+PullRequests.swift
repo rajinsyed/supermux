@@ -48,9 +48,10 @@ extension SupermuxProjectsSectionView {
     }
 
     /// One `.task(id: worktreePullRequestProbeToken)` pass: resolves the
-    /// current targets, then re-polls on the policy's effective interval (slower
-    /// while the window is off screen) until the token changes and the task is
-    /// replaced.
+    /// current targets (at once, unless this section resolved the same targets
+    /// less than an interval ago), then re-polls on the policy's effective
+    /// interval (slower while the window is off screen) until the token
+    /// changes and the task is replaced.
     func runWorktreePullRequestProbe() async {
         // Wire the deinit token to the model before the FIRST refresh ever
         // registers this client, so a whole-window close (no onDisappear; see
@@ -72,6 +73,17 @@ extension SupermuxProjectsSectionView {
         guard !targets.isEmpty else {
             await pullRequestModel.refresh(targets: [], allowCache: true, client: pullRequestClientToken.id)
             return
+        }
+        // A restart that kept the targets (the window went on or off screen,
+        // or the section was re-expanded) waits out the rest of the interval
+        // since this section's last pass instead of probing again at once.
+        let delay = pullRequestModel.delayBeforeNextPass(
+            targets: targets,
+            interval: pullRequestPolling.effectiveInterval,
+            client: pullRequestClientToken.id
+        )
+        if delay > .zero {
+            try? await Task.sleep(for: delay)
         }
         while !Task.isCancelled {
             // Cached results are allowed on every pass: the probe's repo-cache
