@@ -874,7 +874,8 @@ final class DeviceTerminalMirrorSession {
         // Counts before the claim, as on attach: a claim that lands while this
         // Mac does not count yet falls back to someone else's grid for a round
         // trip. Not attached yet: the replay, or the reconcile after it, carries it.
-        if phase == .attached { supermuxReconcileHiddenCounts() }
+        // A grid re-anchor keeps the link live, so it goes out now (terminal-stream-grid-viewer).
+        if phase == .attached || supermuxGridResyncing { supermuxReconcileHiddenCounts() }
         // Shown, this Mac claims the terminal's grid again; hidden, it gives the claim up.
         SupermuxTerminalSizingDefaults.shared.mirrorVisibilityChanged(self)
     }
