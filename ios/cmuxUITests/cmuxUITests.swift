@@ -450,6 +450,12 @@ final class cmuxUITests: XCTestCase {
         let cmuxMainInset = try frame(cmuxMain, "cmux-main").maxX - frame(cmuxMainStatus, "cmux-main status").maxX
         XCTAssertGreaterThan(featXInset, cmuxMainInset + 30,
                              "feat-x's status moves clear of its changes chip (\(featXInset) vs \(cmuxMainInset))")
+        // As on the Mac sidebar, the status sits centered on the row's
+        // trailing edge, beside both lines, where the time used to be.
+        let cmuxMainFrame = try frame(cmuxMain, "cmux-main")
+        let cmuxMainStatusFrame = try frame(cmuxMainStatus, "cmux-main status")
+        XCTAssertEqual(cmuxMainStatusFrame.midY, cmuxMainFrame.midY, accuracy: 4,
+                       "cmux-main's status is centered on its row (status \(cmuxMainStatusFrame), row \(cmuxMainFrame))")
         capture("01c-accessory-beside-changes-chip")
         // A project that lives only on the Studio is still on another Mac:
         // like a remote-only project on the Mac, its rows carry the icon.
