@@ -24,12 +24,25 @@ import SupermuxMobileCore
 /// leases, but on ``rootEntryChanges(_:)`` (the folder's own entries, as the
 /// desktop panel watches) and emitting `supermux.files.updated
 /// {workspace_id, root}`.
+///
+/// Emits are spaced (``emitSpacing(for:)``): the first change goes out at
+/// once, and changes during the pause collapse into one trailing emit (both
+/// watch streams buffer only the newest signal), so a build or an agent
+/// writing files cannot make every viewer re-read status several times a
+/// second.
 @MainActor
 final class SupermuxMobileChangesWatchRegistry {
     /// Lease duration: a holder not heartbeated for this long is swept.
     static let ttl: TimeInterval = 120
     /// How often the automatic sweep re-checks the leases.
     static let sweepInterval: Duration = .seconds(30)
+
+    /// The pause after each emit: 1.5 s for Changes (each poke costs a viewer
+    /// a `git status` here, and its panel waits 2 s between refreshes
+    /// anyway), 1 s for a Files panel's cheaper folder listing.
+    static func emitSpacing(for topic: SupermuxMobileTopic) -> Duration {
+        topic == .filesUpdated ? .seconds(1) : .milliseconds(1500)
+    }
 
     /// The holder token for a client that does not identify itself (an older
     /// phone build that omits `client_id`). All such clients collapse onto one
@@ -144,12 +157,15 @@ final class SupermuxMobileChangesWatchRegistry {
         // that has since followed a `cd` ignores the old folder's changes.
         // The Changes payload stays `{workspace_id}`.
         let root = self.topic == .filesUpdated ? normalized : nil
+        let spacing = Self.emitSpacing(for: self.topic)
         let watchTask = Task { @MainActor in
             for await _ in stream {
                 if Task.isCancelled { return }
                 var payload: [String: Any] = ["workspace_id": workspaceId]
                 if let root { payload["root"] = root }
                 emit(topic, payload)
+                // Cancellation (unwatch, sweep, a `cd`) ends the pause at once.
+                try? await Task.sleep(for: spacing)
             }
         }
         entries[workspaceId] = Entry(
