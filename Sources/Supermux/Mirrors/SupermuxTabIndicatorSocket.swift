@@ -21,7 +21,8 @@ import Foundation
 /// `tab_indicators` reports per tab `tab_id`, `pane_id`, `panel_id`, `panel_type`, `title`,
 /// `is_selected`, `is_loading` (Bonsplit's working spinner, also true while
 /// it is held off because the window is off screen), `spinner_held_off_screen`
-/// (that hold, ``SupermuxTabActivitySync``),
+/// (that hold, ``SupermuxTabActivitySync``; false once the window is back on
+/// screen, so a spinner that never came back reads as not loading),
 /// `shows_notification_badge` (the unread dot), `remote_surface_id` (for a
 /// mirror tab: the other Mac's terminal id it shows, upper-cased) and
 /// `lifecycle` (the panel's own agent lifecycle values by agent key). The
@@ -71,7 +72,7 @@ enum SupermuxTabIndicatorSocket {
         let projection = panelID.flatMap { SurfaceCatalog.shared.projection(forPanel: $0) }
         let remoteSurfaceID = projection.flatMap { $0.resource.machine.isDevice ? $0.resource.key.uppercased() : nil }
         let lifecycle = panelID.flatMap { workspace.agentLifecycleStatesByPanelId[$0] }?.mapValues(\.rawValue) ?? [:]
-        let heldOffScreen = SupermuxTabActivitySync.shared.isHeldOffScreen(tab.id)
+        let heldOffScreen = SupermuxTabActivitySync.shared.isHeldOffScreen(tab.id, ownerID: workspace.id)
         let isLoading = tab.isLoading || heldOffScreen
         return [
             "tab_id": tab.id.uuid.uuidString,
@@ -96,7 +97,7 @@ enum SupermuxTabIndicatorSocket {
             return ["in_dock": false]
         }
         let lifecycle = dock.agentRuntimeByPanelId[panelID]?.agentLifecycleStates.mapValues(\.rawValue) ?? [:]
-        let heldOffScreen = SupermuxTabActivitySync.shared.isHeldOffScreen(tabID)
+        let heldOffScreen = SupermuxTabActivitySync.shared.isHeldOffScreen(tabID, ownerID: dock.workspaceId)
         let isLoading = tab.isLoading || heldOffScreen
         return [
             "in_dock": true,

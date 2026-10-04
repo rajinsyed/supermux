@@ -44,8 +44,9 @@ final class SupermuxTabActivitySync {
     /// Working tabs whose spinner is held off because their window is off
     /// screen. The debug socket reports them as spinning, so E2E drivers see
     /// the working state whether or not the test app's window is in view. An
-    /// entry for a tab closed while held off stays behind; it is a few bytes
-    /// and tab ids are never reused.
+    /// entry for a tab closed or moved away while held off stays behind (a
+    /// move creates a new tab); it is a few bytes and tab ids are never
+    /// reused.
     private var heldOffScreenTabIDs: Set<TabID> = []
 
     /// Starts following the relay and main-window visibility; later calls do
@@ -180,10 +181,13 @@ final class SupermuxTabActivitySync {
         controller.updateTab(tab, isLoading: isWorking && windowOnScreen)
     }
 
-    /// Whether `tab` is working with its spinner held off because its window
-    /// is off screen (read by the debug socket).
-    func isHeldOffScreen(_ tab: TabID) -> Bool {
-        heldOffScreenTabIDs.contains(tab)
+    /// Whether `tab`, shown in the window of `ownerID` (a workspace, or a
+    /// Dock's owner), is working with its spinner held off because that
+    /// window is off screen (read by the debug socket). A hold left on a tab
+    /// whose window is back on screen reads false, so a spinner that never
+    /// came back shows as not spinning.
+    func isHeldOffScreen(_ tab: TabID, ownerID: UUID) -> Bool {
+        heldOffScreenTabIDs.contains(tab) && !Self.windowOnScreen(ownerID: ownerID)
     }
 
     // MARK: - Window visibility
