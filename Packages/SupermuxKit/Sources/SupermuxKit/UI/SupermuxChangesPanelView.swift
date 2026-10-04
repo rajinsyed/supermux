@@ -57,9 +57,14 @@ public struct SupermuxChangesPanelView: View {
     @State var isIncomingExpanded = false
 
     /// How often the visible panel re-fetches in the background. Long enough to
-    /// stay quiet (and out of git's way); workspace switches fetch immediately
+    /// stay quiet (and out of git's way); workspace switches fetch promptly
     /// via the directory-keyed task regardless.
     private static let autoFetchInterval: Duration = .seconds(180)
+
+    /// How long a directory the panel has not fetched yet (a workspace switch,
+    /// the first show) waits before its fetch, so switching quickly through
+    /// workspaces cancels instead of starting a fetch for each.
+    private static let newDirectoryFetchDelay: Duration = .seconds(2)
 
     /// Identity for the auto-fetch `.task`: it restarts on a workspace switch and
     /// pauses (the task body returns immediately) while the sidebar is hidden.
@@ -157,16 +162,26 @@ public struct SupermuxChangesPanelView: View {
         }
         // Best-effort background fetch so behind/incoming reflect the remote
         // without a manual pull. Keyed on the directory *and* visibility so it
-        // restarts (and fetches immediately) on a workspace switch — the exact
-        // moment a just-merged worktree's commits become pullable on the main
-        // branch — and pauses entirely while the sidebar is hidden (the panel
-        // stays mounted after first show, so an unkeyed task would keep fetching
-        // off-screen). SwiftUI cancels the task on disappear / id change.
+        // restarts (and fetches within `newDirectoryFetchDelay`) on a workspace
+        // switch — the exact moment a just-merged worktree's commits become
+        // pullable on the main branch — and pauses entirely while the sidebar
+        // or its window is hidden (the panel stays mounted after first show, so
+        // an unkeyed task would keep fetching off-screen). Coming back on
+        // screen waits out the rest of the interval since this directory's last
+        // fetch, so a visibility flip never spawns a fetch; the status itself
+        // is re-read at once by startObserving(). SwiftUI cancels the task on
+        // disappear / id change.
         .task(id: AutoFetchKey(directory: model.directory, isVisible: isVisible)) {
             guard isVisible else { return }
-            while !Task.isCancelled {
+            var delay = model.autoFetchDelay(interval: Self.autoFetchInterval) ?? Self.newDirectoryFetchDelay
+            while true {
+                do {
+                    try await Task.sleep(for: delay)
+                } catch {
+                    return
+                }
                 await model.fetchAndRefresh()
-                try? await Task.sleep(for: Self.autoFetchInterval)
+                delay = Self.autoFetchInterval
             }
         }
         .onDisappear { model.stopObserving() }

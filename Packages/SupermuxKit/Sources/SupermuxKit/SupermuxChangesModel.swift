@@ -104,6 +104,13 @@ public final class SupermuxChangesModel {
     /// promptly rather than waiting out the timer. Module-internal for the sync
     /// extension.
     @ObservationIgnored var activeFetchTask: Task<Bool, Never>?
+    /// Which directory the last background `git fetch` ran for and when it
+    /// started (any trigger: the auto-fetch timer, the refresh button, a
+    /// socket). The panel's auto-fetch reads it through
+    /// ``autoFetchDelay(interval:)`` so coming back on screen waits out the
+    /// rest of the interval instead of fetching again at once.
+    /// Module-internal for the sync extension.
+    @ObservationIgnored var lastFetch: (directory: String, startedAt: ContinuousClock.Instant)?
     /// Whether the Unpushed section is expanded; gates whether ``refresh()``
     /// reads the outgoing commit log, so a collapsed panel does no extra git work.
     @ObservationIgnored var commitsRequested = false
