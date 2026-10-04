@@ -20,7 +20,7 @@ struct SupermuxStartupParallelSecondaryTests {
         await fixture.foregroundRouter.delayHostStatusRequest(number: 1)
 
         let restore = Task { @MainActor in
-            await fixture.shell.reconnectActiveMacIfAvailable(stackUserID: "user-1")
+            await fixture.shell.reconnectActiveMacIfAvailable(stackUserID: "user-1", hydratePairedMacs: true)
         }
         #expect(await fixture.foregroundRouter.waitForCount(of: "mobile.host.status", atLeast: 1))
         // The other Mac connects while the foreground Mac is still connecting.
@@ -67,7 +67,7 @@ struct SupermuxStartupParallelSecondaryTests {
         let fixture = try await TwoMacFixture(foregroundReachable: false)
         defer { fixture.cleanUp() }
 
-        #expect(await fixture.shell.reconnectActiveMacIfAvailable(stackUserID: "user-1"))
+        #expect(await fixture.shell.reconnectActiveMacIfAvailable(stackUserID: "user-1", hydratePairedMacs: true))
         #expect(fixture.shell.connectionState == .connected)
         #expect(fixture.shell.foregroundMacDeviceIDForTesting() == "mac-other")
         #expect(fixture.shell.secondaryMacSubscriptions[fixture.otherKey] == nil)

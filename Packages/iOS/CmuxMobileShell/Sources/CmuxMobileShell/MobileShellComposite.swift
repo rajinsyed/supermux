@@ -3716,7 +3716,7 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
             let candidateOwnsForegroundSelection = reconnectSelectionKey
                 == MacPairingKey(mac)
             // SUPERMUX:begin mobile-startup-parallel-secondary
-            await supermuxReserveStartupForegroundCandidate(mac)
+            await supermuxReserveStartupForegroundCandidate(mac, isLaunchRestore: hydratePairedMacs)
             // SUPERMUX:end mobile-startup-parallel-secondary
             let dial = await dialSavedCandidateUnderDeadline(
                 mac,
@@ -6469,6 +6469,9 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
         // Targeted presence updates already persisted their pushed route and must
         // not turn one Mac's churn into an account-wide network fetch.
         if onlyMacDeviceIDs == nil,
+           // SUPERMUX:begin mobile-startup-parallel-secondary
+           !supermuxIsLaunchSecondaryPass,
+           // SUPERMUX:end mobile-startup-parallel-secondary
            let refresher = pairedMacStore as? any PairedMacBackupRefreshing {
             await refresher.refreshFromBackup(stackUserID: scope.userID)
         }
