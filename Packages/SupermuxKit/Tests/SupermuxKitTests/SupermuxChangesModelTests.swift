@@ -341,6 +341,7 @@ import SupermuxKit
             let isStatus = executable == "git"
                 && arguments == [
                     "--no-optional-locks", "status", "--porcelain=v2", "-z", "--branch", "--show-stash",
+                    "--ignore-submodules=untracked",
                 ]
             guard isStatus else {
                 return CommandResult(

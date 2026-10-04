@@ -5,6 +5,7 @@ import CmuxGit
 import CmuxSettings
 import CmuxSidebar
 import Foundation
+import Observation
 import SupermuxKit
 import SwiftUI
 
@@ -491,8 +492,13 @@ final class SupermuxWorkspaceObservation: ObservableObject {
 /// at install. The box publishes nothing, so it never invalidates the mount.
 @MainActor
 private final class SupermuxChangesModelBox: ObservableObject {
+    /// On a project root, the watcher skips the project's worktrees container:
+    /// agents editing nested worktrees never change the root's status.
     let model = SupermuxChangesModel(
-        service: SupermuxGitChangesService(runner: CommandRunner()),
+        backend: SupermuxLocalChangesBackend(
+            service: SupermuxGitChangesService(runner: CommandRunner()),
+            watchExclusions: { SupermuxComposition.projectsModel.worktreeContainers(forRoot: $0) }
+        ),
         commitGenerator: SupermuxComposition.aiCommitMessenger
     )
     /// The on-demand PR viewer. Idle until a header PR button is clicked; it
@@ -508,6 +514,41 @@ private final class SupermuxChangesModelBox: ObservableObject {
         SupermuxComposition.mirrorChangesPanels.insert(source)
         return source
     }()
+    /// Rebuilds the local model's running watcher when the projects'
+    /// containers change. The list loads after launch, so a root panel open
+    /// from the start (or a folder registered while its panel is open) would
+    /// otherwise keep waking on every nested-worktree write all session.
+    private var containersTask: Task<Void, Never>?
+
+    init() {
+        let projects = SupermuxComposition.projectsModel
+        // Read now, before the panel's first watcher can start: a load
+        // landing before the task runs still counts as a change.
+        let initial = projects.worktreeContainerPaths
+        containersTask = Task { @MainActor [weak self] in
+            var applied = initial
+            while !Task.isCancelled {
+                let current = projects.worktreeContainerPaths
+                if current != applied {
+                    applied = current
+                    self?.model.restartObserving()
+                }
+                await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                    withObservationTracking {
+                        _ = projects.worktreeContainerPaths
+                    } onChange: {
+                        continuation.resume()
+                    }
+                }
+                // onChange fires at willSet: let the change land first.
+                await Task.yield()
+            }
+        }
+    }
+
+    deinit {
+        containersTask?.cancel()
+    }
 }
 
 /// The git Changes panel mounted as the right sidebar's `changes` mode (see

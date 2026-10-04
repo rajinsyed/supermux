@@ -17,16 +17,31 @@ import CoreServices
 /// }
 /// ```
 public final class SupermuxRepositoryWatcher: Sendable {
+    /// FSEvents filters at most this many directories; past it, none apply.
+    static let maxExcludedPaths = 8
+    /// Git bookkeeping directories under a repository root whose writes never
+    /// change the root's status: other worktrees' admin dirs (their index and
+    /// `HEAD`), object writes and reflogs. Excluded in the kernel, so they do
+    /// not even wake this process; ``isGitNoise(path:)`` still drops them if
+    /// the exclusion could not be applied.
+    static let gitBookkeepingSubpaths = [".git/worktrees", ".git/objects", ".git/logs"]
+
     private let path: String
+    private let excludedPaths: [String]
     private let latency: TimeInterval
 
     /// Creates a watcher for a directory subtree.
     /// - Parameters:
     ///   - path: Absolute path of the directory to watch recursively.
+    ///   - excludedPaths: Directories under `path` whose changes never matter
+    ///     here (a project root's container of nested worktrees). Added to
+    ///     ``gitBookkeepingSubpaths``; a path that is a file, has no parent
+    ///     directory, or is not strictly inside `path` is ignored.
     ///   - latency: FSEvents coalescing window in seconds; bursts within it
     ///     collapse to one event. Defaults to `0.3`.
-    public init(path: String, latency: TimeInterval = 0.3) {
+    public init(path: String, excludedPaths: [String] = [], latency: TimeInterval = 0.3) {
         self.path = path
+        self.excludedPaths = excludedPaths
         self.latency = latency
     }
 
@@ -43,8 +58,9 @@ public final class SupermuxRepositoryWatcher: Sendable {
     public func changes() -> AsyncStream<Void> {
         let path = self.path
         let latency = self.latency
+        let exclusions = Self.exclusionPaths(watching: path, extra: excludedPaths)
         return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
-            let session = WatchSession(path: path, latency: latency) {
+            let session = WatchSession(path: path, exclusions: exclusions, latency: latency) {
                 continuation.yield(())
             }
             guard session.start() else {
@@ -72,14 +88,64 @@ public final class SupermuxRepositoryWatcher: Sendable {
     }
 
     /// Git bookkeeping noise: lock files, loose/packed object writes, reflogs,
-    /// and `FETCH_HEAD` under `.git`. None of them change what the status
-    /// snapshot or the ahead/behind counts show.
+    /// other worktrees' admin dirs, and `FETCH_HEAD` under `.git`. None of
+    /// them change what the status snapshot or the ahead/behind counts show.
     static func isGitNoise(path: String) -> Bool {
         guard path.contains("/.git/") else { return false }
         return path.hasSuffix(".lock")
             || path.contains("/objects/")
             || path.hasSuffix("FETCH_HEAD")
             || path.contains("/logs/")
+            || path.contains("/.git/worktrees/")
+    }
+
+    /// The directories FSEvents should filter out of a watch on `path`: the
+    /// caller's `extra` paths first, then ``gitBookkeepingSubpaths``, each in
+    /// its symlink-resolved form (FSEvents matches against canonical paths)
+    /// and kept only when it lies strictly inside `path`, so a stray entry can
+    /// never filter the watched tree itself. Capped at ``maxExcludedPaths``,
+    /// past which FSEvents would apply none.
+    static func exclusionPaths(watching path: String, extra: [String]) -> [String] {
+        guard let root = resolvedPath(path) else { return [] }
+        let candidates = extra + gitBookkeepingSubpaths.map { (path as NSString).appendingPathComponent($0) }
+        var exclusions: [String] = []
+        for candidate in candidates {
+            guard let resolved = resolvedDirectory(candidate),
+                  resolved.hasPrefix(root + "/"),
+                  !exclusions.contains(resolved)
+            else { continue }
+            exclusions.append(resolved)
+        }
+        return Array(exclusions.prefix(maxExcludedPaths))
+    }
+
+    /// The canonical form of a directory that exists, or of one that may
+    /// appear later (a project's first worktree creates its container, git's
+    /// first linked worktree `.git/worktrees`): FSEvents filters a missing
+    /// exclusion once it is created, so only its parent has to exist. `nil`
+    /// for a file, or when the parent is missing or not a directory (`.git`
+    /// is a file in a linked worktree).
+    private static func resolvedDirectory(_ path: String) -> String? {
+        if let resolved = resolvedPath(path) {
+            return isDirectory(resolved) ? resolved : nil
+        }
+        guard let parent = resolvedPath((path as NSString).deletingLastPathComponent),
+              isDirectory(parent)
+        else { return nil }
+        return (parent as NSString).appendingPathComponent((path as NSString).lastPathComponent)
+    }
+
+    /// `realpath(3)`: the canonical path FSEvents reports events under (it
+    /// resolves the watched path the same way), or `nil` when it is missing.
+    private static func resolvedPath(_ path: String) -> String? {
+        guard let resolved = realpath(path, nil) else { return nil }
+        defer { free(resolved) }
+        return String(cString: resolved)
+    }
+
+    private static func isDirectory(_ path: String) -> Bool {
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) && isDirectory.boolValue
     }
 }
 
@@ -93,13 +159,15 @@ public final class SupermuxRepositoryWatcher: Sendable {
 /// are serialized on the same dispatch queue.
 private final class WatchSession: @unchecked Sendable {
     private let path: String
+    private let exclusions: [String]
     private let latency: TimeInterval
     private let onChange: @Sendable () -> Void
     private let queue = DispatchQueue(label: "com.supermux.repository-watcher")
     private var stream: FSEventStreamRef?
 
-    init(path: String, latency: TimeInterval, onChange: @escaping @Sendable () -> Void) {
+    init(path: String, exclusions: [String], latency: TimeInterval, onChange: @escaping @Sendable () -> Void) {
         self.path = path
+        self.exclusions = exclusions
         self.latency = latency
         self.onChange = onChange
     }
@@ -137,6 +205,11 @@ private final class WatchSession: @unchecked Sendable {
             return false
         }
         self.stream = stream
+        // Must precede the start. A refusal is harmless: the callback's
+        // .git-noise filter still drops the bookkeeping batches.
+        if !exclusions.isEmpty {
+            _ = FSEventStreamSetExclusionPaths(stream, exclusions as CFArray)
+        }
         FSEventStreamSetDispatchQueue(stream, queue)
         guard FSEventStreamStart(stream) else {
             FSEventStreamInvalidate(stream)

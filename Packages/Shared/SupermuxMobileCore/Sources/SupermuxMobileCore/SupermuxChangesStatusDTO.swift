@@ -32,6 +32,11 @@ public struct SupermuxChangesStatusDTO: Codable, Sendable, Equatable {
     /// there), so a remote Changes panel offers Generate & Commit exactly
     /// when the Mac's own panel would. Optional: old Macs omit it.
     public var aiCommitConfigured: Bool?
+    /// Commits on `HEAD` that are on no remote, for a branch without an
+    /// upstream (where `ahead` cannot count them). Sent only when the request
+    /// asks (`include_unpushed_count: true`, a Mac's mirror panel) and the
+    /// branch has no upstream. Optional: old Macs omit it.
+    public var unpushedCount: Int?
 
     /// Creates a changes-status DTO.
     /// - Parameters:
@@ -47,6 +52,7 @@ public struct SupermuxChangesStatusDTO: Codable, Sendable, Equatable {
     ///   - stashCount: Optional stash entry count.
     ///   - root: Optional live repository root for stale-view pinning.
     ///   - aiCommitConfigured: Optional "this Mac can write commit messages".
+    ///   - unpushedCount: Optional unpushed-commit count for a branch without an upstream.
     public init(
         workspaceId: String? = nil,
         isRepository: Bool? = nil,
@@ -59,7 +65,8 @@ public struct SupermuxChangesStatusDTO: Codable, Sendable, Equatable {
         untracked: [SupermuxChangedFileDTO]? = nil,
         stashCount: Int? = nil,
         root: String? = nil,
-        aiCommitConfigured: Bool? = nil
+        aiCommitConfigured: Bool? = nil,
+        unpushedCount: Int? = nil
     ) {
         self.workspaceId = workspaceId
         self.isRepository = isRepository
@@ -73,6 +80,7 @@ public struct SupermuxChangesStatusDTO: Codable, Sendable, Equatable {
         self.stashCount = stashCount
         self.root = root
         self.aiCommitConfigured = aiCommitConfigured
+        self.unpushedCount = unpushedCount
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -88,5 +96,6 @@ public struct SupermuxChangesStatusDTO: Codable, Sendable, Equatable {
         case stashCount = "stash_count"
         case root
         case aiCommitConfigured = "ai_commit_configured"
+        case unpushedCount = "unpushed_count"
     }
 }
