@@ -15772,6 +15772,9 @@ class TerminalController {
             addSharedSizingReplayFields(to: &resumed, surfaceID: surfaceId, clientID: v2String(params, "client_id"))
             return .ok(resumed)
         }
+        // A full replay: output held in an off-screen terminal's batch goes
+        // out before the capture, so the viewer sees what raced it.
+        SupermuxTerminalByteCoalescer.shared.flushBatch(surfaceID: surfaceId)
         // SUPERMUX:end terminal-stream-resume
         let state = MobileTerminalByteTee.shared.replayState(surfaceID: surfaceId)
         let seq = state?.seq ?? 0

@@ -116,7 +116,7 @@ building a parallel system.
 | A mirror's terminals act like local ones (Cmd-click on a path opens the owning Mac's file in the read-only preview; Cmd+K and reset clear that Mac's terminal too; focus reports (mode 1004) reach its program, and a mirror pane counts as focused only while it is on screen, so a hidden mirror runs no display link on either Mac; Ctrl+V of an image uploads it and pastes its path) | ✅ loopback-E2E | `SupermuxDeviceTerminalLinks` (over `supermux.files_read.v1`), `SupermuxDeviceTerminalActions` over `terminal.action` (`supermux.terminal_actions.v1`), #810–#818, `tests/supermux/loopback_terminal_polish_e2e.py` |
 | A mirror's Simulator runs on the owning Mac (viewer tab streams it; nothing simulator-related runs here) | ✅ loopback-E2E (two real Macs not yet run) | `Sources/Supermux/RemoteSimulator/` (`SupermuxRemoteSimulators`, `SupermuxRemoteSimulatorPanel` over upstream's simulator stream v2 store), host `simulator.control` (`supermux.remote_simulator.v1`), #730–#734, #737–#739, `tests/supermux/loopback_mirror_simulator_e2e.py` |
 | Background tab sync (tabs added/closed/reordered on the owning Mac reach mirrors) | ✅ loopback-E2E | `SupermuxDeviceLayoutChangeObserver`, #595 |
-| A mirror streams its terminal like a local one (only mirrored terminals' bytes cross, never shed; a gap, re-anchor or reconnect resumes by byte position; full replays keep 10000 history rows; a remote grid change re-anchors on a replay pinned in stream order, so no byte is drawn into a grid it was not written for) | ✅ loopback-E2E (two real Macs not yet run) | `supermux.terminal_stream.v2`: `SupermuxTerminalStream` (viewer), `SupermuxTerminalStreamHost` (host), `SupermuxTerminalStreamGrid` (grid generations), #777–#783, #900–#906, `tests/supermux/loopback_terminal_streaming_e2e.py`, `loopback_terminal_resize_integrity_e2e.py` |
+| A mirror streams its terminal like a local one (only mirrored terminals' bytes cross, never shed; a gap, re-anchor or reconnect resumes by byte position, and a reconnect replays only terminals that printed while the link was down; full replays keep 10000 history rows; a remote grid change re-anchors on a replay pinned in stream order, so no byte is drawn into a grid it was not written for; a terminal whose mirrors have all been off screen for 2 s streams in ~500 ms batches until one is shown) | ✅ loopback-E2E (two real Macs not yet run) | `supermux.terminal_stream.v2`: `SupermuxTerminalStream` (viewer), `SupermuxTerminalStreamHost` (host), `SupermuxTerminalStreamGrid` (grid generations), #777–#783, #900–#906, #970–#978, `tests/supermux/loopback_terminal_streaming_e2e.py`, `loopback_terminal_resize_integrity_e2e.py` |
 | A mirror's browser opens the owning Mac's localhost; a mirror's own tabs keep its layout sync | ✅ loopback-E2E | `SupermuxDeviceBrowserRoute` + `SupermuxDeviceBrowserProxy` (#707), `SupermuxDeviceLayoutSurfaceFilter.localPanelIDs` (#706), `tests/supermux/loopback_mirror_browser_e2e.py`, `loopback_mirror_local_panels_e2e.py` |
 | Notification/push parity (no duplicate pushes, shared read state, presence-aware host, push setup shared between Macs) | ✅ loopback-E2E | #545–#550, `SupermuxDeviceNotification*`, `phone_push.status/share` |
 | Remote Macs settings card (Settings › Automation) | ✅ | `SupermuxRemoteMacsSettingsCard` (#596–#598) |
@@ -326,11 +326,12 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   binding bytes, which reach the PTY exactly; the mirror's own answers to terminal queries are
   dropped. A pending Ghostty key sequence stays local. An older Mac on either side keeps upstream's
   text path.
-- **A busy Mac is asked again** (#721): after a reconnect every mirrored terminal re-attaches at
-  once, and a Mac with many of them answers further requests `server_busy` (its per-connection
-  request quota is full; the request never ran). Every request to another Mac is sent again after
-  0.25, 0.5, 1, 2 and 4 s on the same connection, so the capability request (which keeps typing on
-  the key-forwarding path) and the tab closes held while offline still land.
+- **A busy Mac is asked again** (#721): after a reconnect every mirrored terminal re-attaches (those
+  on screen at once, hidden ones three at a time, #975), and a Mac with many of them answers further
+  requests `server_busy` (its per-connection request quota is full; the request never ran). Every
+  request to another Mac is sent again after 0.25, 0.5, 1, 2 and 4 s on the same connection, so the
+  capability request (which keeps typing on the key-forwarding path) and the tab closes held while
+  offline still land.
 - **A slow Mac is not a lost Mac** (#723): a request whose reply misses its deadline (20 s, unless
   the method's own is longer) no longer drops the link. This Mac first asks the other Mac's
   connection whether it still answers (`mobile.events.probe`, 10 s); only no answer redials. Otherwise

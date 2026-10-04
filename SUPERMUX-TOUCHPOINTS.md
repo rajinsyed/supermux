@@ -16,7 +16,7 @@ Rules for adding a touchpoint:
 - Numbering: the highest number in use is **783** (remote terminal streaming, #777–#783; #764–#776 are
   reserved for open PRs #74/#75). The remote-workspaces work (#517–#599) left
 - Numbering: the highest number in use is **818**. The remote-workspaces work (#517–#599) left
-- Numbering: the highest number in use is **924** (#920–#924: only this Mac's own input hands an Auto grid to the Mac pane). #907–#913: answering a Claude question or plan brings the working indicator back. Before that **906** (#900–#906: a streaming mirror re-anchors when the other Mac's grid changes). Before that **883** (#880–#883: Remote Host Mode's hotkey and notification shows, Auto's `view_appeared` report; #850–#879 are held by another open branch). The remote-workspaces work (#517–#599) left
+- Numbering: the highest number in use is **1010** (#970–#978: hidden mirrors stream in batches and reconnects resume quiet terminals; #1010: the mobile observers' shared state-sync ticker; 979–1009 are unassigned). Before that **924** (#920–#924: only this Mac's own input hands an Auto grid to the Mac pane). #907–#913: answering a Claude question or plan brings the working indicator back. Before that **906** (#900–#906: a streaming mirror re-anchors when the other Mac's grid changes). Before that **883** (#880–#883: Remote Host Mode's hotkey and notification shows, Auto's `view_appeared` report; #850–#879 are held by another open branch). The remote-workspaces work (#517–#599) left
   unassigned gaps it may still grow into: **523–524, 527–529, 539–544, 558–559, 562–569,
   578–579 and 588–589** (never assigned, not retired); #600–#601 came from the 2026-10-01 upstream merge; #620–#622 and
   #630–#639 are the remote-workspaces feedback round (602–619 and 623–629 unassigned). The second
@@ -798,6 +798,15 @@ Rules for adding a touchpoint:
 | 911 | `tests/test_claude_wrapper_hooks.py` | `claude-answer-hook` | `generated_claude_hook_settings()`'s expected `PostToolUse` list gains `queued("post-tool-use", matcher="AskUserQuestion\|ExitPlanMode")` after the `PushNotification` group |
 | 912 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `CLI/CMUXCLI+SupermuxClaudeAnswerHook.swift` (`50BE00910000000000000002` file ref, `…01` build file) into the `cmux-cli` target: the file reference, the CLI group child after `CMUXCLI+ClaudePushNotificationHook.swift`, the build file and the target's Sources phase entry |
 | 913 | `Packages/macOS/CMUXAgentLaunch/Tests/CMUXAgentLaunchTests/AgentHookDeliveryPolicyTests.swift` | `claude-answer-hook` | In `decisionAndAuxiliaryBoundaries`, upstream's `#expect(!…(agent: "claude", subcommand: "post-tool-use"))` becomes the positive expectation (#909), plus a negative one for `future-agent` so the boundary stays tested |
+| 970 | `Sources/Mobile/MobileTerminalByteTee.swift` | `terminal-stream-resume` | Changes #779's continuity fences to per terminal: `SurfaceState` keeps only `supermuxStreamEpoch` (`supermuxSkipGeneration` is gone), the no-subscriber early return in `append` calls `SupermuxTerminalStreamContinuity.noteSkipped(surfaceID: surfaceID)` (records the terminal in a lock-protected set), and `publishFromMain` calls `supermuxContinuousEpoch(state, surfaceID: surfaceID)`, which gives a new epoch only to a terminal the tee skipped. A reconnect resumes every terminal that stayed quiet; only those that printed meanwhile replay |
+| 971 | `Packages/macOS/CmuxMobileHost/Sources/CmuxMobileHost/SupermuxTerminalByteDemand.swift` | `terminal-stream-byte-demand` | Whole new file (fenced top to bottom). `SupermuxTerminalByteDemand.shared`: every event queue subscribed to `terminal.bytes` reports its ask (watched set or every terminal, background set); `delivery(surfaceID:)` answers `.foreground` (someone watches it on screen, or a connection takes every terminal), `.background` (every watcher has it off screen) or `.unwatched`, under one lock with no allocation, for `SupermuxTerminalByteCoalescer` (`Sources/Supermux/Devices/SupermuxTerminalStreamHost.swift`) |
+| 972 | `Packages/macOS/CmuxMobileHost/Sources/CmuxMobileHost/MobileHostConnectionEventQueue.swift` | `terminal-stream-byte-demand`, `terminal-stream-watch` | Four `terminal-stream-byte-demand` fences: the `supermuxBackgroundByteSurfaceIDs` property after #777's state block, `supermuxReportByteDemandLocked()` after `updateSubscribedTopics` sets the topics, the reset and report in `close()` after #777's reset, and the helper after #777's helpers (reports to #971 while open and subscribed to `terminal.bytes`, else removes the connection). In #777's `terminal-stream-watch` helpers, `supermuxWatchTerminalBytes(surfaceIDs:background:)` gains the defaulted `background` set (kept to a subset of the watched one) and reports the ask |
+| 973 | `Sources/Mobile/MobileTerminalRenderObserver.swift` | `terminal-updated-no-global-ping` | In `flushTerminalUpdates`, the global branch no longer emits the surface-less `terminal.updated {}` (upstream sent it on every Ghostty tick; another Mac's device link needs `surface_id` and drops it, the phone does not subscribe). The branch stays, so the per-surface events are suppressed in a global tick exactly as upstream's |
+| 974 | `Sources/Devices/DeviceTerminalMirrorSession.swift` | `terminal-stream-show-hook` | Two fences. At the end of `supermuxSetHidden` (inside #631's `device-mirror-hidden-counts` fence): a shown pane's queued re-attach goes now (#975) and `supermuxStreamVisibilityChanged()`. That method (after `supermuxRecheckGrid`) tells `SupermuxTerminalStream` the pane's visibility (a hidden pane's replay confirmation waits for its show; hidden 2 s, its terminal is named background in the watch) and, shown, re-anchors when the mirror is behind the host's grid (a confirmation that waited for the show re-arms its quiet wait inside the stream) |
+| 975 | `Sources/Devices/DeviceTerminalMirrorSession.swift` | `terminal-stream-attach-limiter` | Three fences: the `supermuxQueuedAttach` property after #781's `supermuxStream`; `.linkReconnected` calls `supermuxAttachAfterReconnect()` in place of upstream's `scheduleAttach()`; the two methods before `scheduleAttach`. A mirror on screen re-attaches at once, a hidden one through `SupermuxTerminalAttachLimiter` (`Sources/Supermux/Devices/`, at most 3 in flight, utility priority, slot held until the attach returns); shown while it waits, it attaches at once |
+| 976 | `Sources/Devices/DeviceTerminalMirrorSession.swift` | `terminal-stream-replay-sizing`, `terminal-stream-viewer` | Four `terminal-stream-replay-sizing` fences: `Replay.supermuxSizing`; `decodeReplay(_:)` decodes the body through a new `decodeReplay(object:)` (upstream's body, unchanged, after the fence) and sets the sizing from the dictionary it parsed (`SupermuxTerminalStream.replaySizing(in:)`); the call site passes `replay.supermuxSizing`; `receiveReplaySizing` takes the decoded `MobileTerminalReplaySizing?` instead of the reply `Data`. In #781's resumed-reply branch (`terminal-stream-viewer`), the `Replay` gains `supermuxSizing: supermuxReply.sizing`. The main actor no longer runs a JSON decode over the whole (multi-MB) reply |
+| 977 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/Devices/SupermuxTerminalAttachLimiter.swift` (`50BE09700000000000000001` file ref, `…02` build file) into the cmux target: the build file, the file reference, the Supermux group child before `SupermuxTerminalStream.swift`, the Sources phase entry |
+| 978 | `Sources/TerminalController.swift` | `terminal-stream-resume` | Changes #780's first fence in `v2MobileTerminalReplay`: after the resume branch (so a full replay only), `SupermuxTerminalByteCoalescer.shared.flushBatch(surfaceID: surfaceId)` sends what an off-screen terminal's ~500 ms batch holds before the capture, so the output that raced the capture reaches the viewer during its attach and the replay is confirmed (`SupermuxTerminalStream.fullReplayApplied`) |
 | 1010 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/SupermuxStateSyncTicker.swift` (`50BE10100000000000000001` file ref, `…02` build file) into the cmux target: the file reference, the `Supermux` group child after `SupermuxMobileSidebarStatusObserver.swift`, the build file and the target's Sources phase entry |
 
 ## How to re-apply
@@ -6857,6 +6866,53 @@ Re-apply after an upstream merge:
 - **#942**: keep the defaulted parameter so every other caller still probes.
 
 Verify: `swift test --package-path Packages/iOS/CmuxMobileShell --filter foregroundAfterHostIdleTimeoutRedialsWithoutProbingTheDeadSession`.
+
+### 970–978. Hidden mirrors stream in batches, reconnects resume quiet terminals — `terminal-stream-resume`, `terminal-stream-byte-demand`, `terminal-stream-watch`, `terminal-updated-no-global-ping`, `terminal-stream-show-hook`, `terminal-stream-attach-limiter`, `terminal-stream-replay-sizing`
+
+Measured on a 24-worktree loopback DEBUG build (`tests/supermux/stress_worktrees_energy.py`, baseline
+`stress_worktrees_energy-perfaudit-baseline.json`): with agents busy, a viewer mirroring them used 38.5% CPU
+against 14.7% for the same agents viewed locally, because every hidden mirror streamed and parsed each redraw
+at foreground cadence and the host encoded every terminal's PTY reads before the watch filter refused them.
+Every reconnect re-sent all 24 mirrors as full 10,000-row replays (the tee's continuity flag was global), all
+at once, and each reply's sizing was decoded a second time on the main actor. A replay confirmation polled
+at 10 Hz and chained full replays on a terminal printing every second; the host sent an empty
+`terminal.updated` on every Ghostty tick. Now:
+
+- **Background tier.** A mirror whose pane has been off screen for 2 s names its terminal in the watch's
+  `background_surface_ids` (`SupermuxTerminalStreamWatch`; it leaves at once on show). The host
+  (#971/#972) sends a terminal every watcher has off screen, while no connection takes every terminal's
+  bytes (a phone on raw bytes, an older Mac), in ~500 ms batches up to 256 KB (`SupermuxTerminalByteCoalescer`,
+  one `DispatchSourceTimer` with 100 ms leeway); never across a grid generation, and a terminal back on
+  screen sends its batch before anything newer. Every byte still crosses, in order. A terminal no
+  connection watches is not encoded at all (its tail is still recorded, its grid generation still probed).
+- **Per-terminal continuity (#970).** Only a terminal that printed while the tee recorded nothing gets a new
+  epoch, so a reconnect resumes the quiet ones with no bytes.
+- **Reconnect limiter (#975).** Hidden mirrors re-attach at most 3 at a time, at utility priority; on-screen
+  ones at once.
+- **Replay sizing off the main actor (#976).**
+- **Confirmation backoff** (`SupermuxTerminalStream`, no touchpoint): a deadline wait instead of the poll;
+  consecutive confirmations of one anchor wait 400 ms × 2^k (at most 8 s), stop after 3, and after the
+  first only when output came right before the request; a hidden pane's waits for its show, then for
+  quiet output (#974; a brief hide leaves an armed one armed). A full replay sends the terminal's batch
+  before its capture (#978), and a background mirror looks 750 ms back for output that raced its
+  request, so batching does not hide a raced capture.
+- **No global `terminal.updated` ping (#973).**
+
+Re-apply after an upstream merge:
+- **#970**: the three `terminal-stream-resume` lines in `MobileTerminalByteTee.swift` take the surface id.
+- **#971/#972**: keep the report in `updateSubscribedTopics` and `close()`; if upstream filters
+  `terminal.bytes` per surface itself, report its filter instead.
+- **#973**: drop the fence if upstream stops emitting the global ping or gives it a consumer.
+- **#974/#975/#976**: as in the rows; `decodeReplay(object:)` holds upstream's body unchanged.
+- **#977**: re-add the four entries listed in the #977 row.
+- **#978**: keep the flush after the resume branch and before the capture.
+
+Verify: `CMUX_E2E_SUITES="loopback_terminal_streaming_e2e loopback_terminal_resize_integrity_e2e
+loopback_terminal_input_pipeline_e2e loopback_terminal_sizing_policy_e2e" CMUX_TAG=<tag>
+tests/supermux/run_all_loopback_e2e.sh`, then the stress harness's `busy_mirrored` (DEBUG log
+`mobile.emit topic=terminal.bytes` about 2/s per hidden pane, `terminal_stream.stats`
+`bytes_received_by_surface` still growing for every pane, `terminal.updated` emits about 0/s) and a link
+stop/restore with half the agents printing (`full_replays` grows by at most the printing terminals).
 
 ### 1010. The fork's mobile observers tick state sync only on a real change, through one shared ticker — `cmux.xcodeproj/project.pbxproj` (unfenced)
 

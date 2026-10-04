@@ -11,7 +11,11 @@ import SupermuxMobileCore
 ///
 /// - `mobile.supermux.terminal.watch {surface_ids}` names the terminals one
 ///   connection mirrors. Its event queue then sends `terminal.bytes` only for
-///   those and never sheds them (`terminal-stream-watch`).
+///   those and never sheds them (`terminal-stream-watch`). The optional
+///   `background_surface_ids` (a subset; an older host ignores it) names the
+///   ones its Mac has off screen: a terminal every watcher has off screen,
+///   while no connection takes every terminal, streams in ~500 ms batches
+///   (``SupermuxTerminalByteDemand``, ``SupermuxTerminalByteCoalescer``).
 /// - `mobile.terminal.replay` with `supermux_resume_from_seq` answers with
 ///   the bytes since that position, from the byte tee's tail, when the tail
 ///   still holds them, the stream stayed continuous (same
@@ -26,6 +30,9 @@ import SupermuxMobileCore
 ///   one it names. A mirror re-anchors whenever the generation moves.
 enum SupermuxTerminalStreamHost {
     nonisolated static let watchMethod = SupermuxMobileMethod.terminalWatch.rawValue
+    /// Watch params: the terminals mirrored, and those of them off screen.
+    nonisolated static let watchSurfacesParam = "surface_ids"
+    nonisolated static let watchBackgroundParam = "background_surface_ids"
     /// Replay params a streaming viewer sends.
     nonisolated static let streamParam = "supermux_stream"
     nonisolated static let resumeFromParam = "supermux_resume_from_seq"
@@ -47,12 +54,21 @@ enum SupermuxTerminalStreamHost {
             return .failure(MobileHostRPCError(code: "method_not_found", message: "Unknown mobile method"))
         }
         #endif
-        guard let raw = params["surface_ids"] as? [String] else {
+        guard let raw = params[watchSurfacesParam] as? [String] else {
             return .failure(MobileHostRPCError(code: "invalid_params", message: "surface_ids is required"))
         }
-        let surfaceIDs = Set(raw.compactMap { UUID(uuidString: $0)?.uuidString })
-        queue.supermuxWatchTerminalBytes(surfaceIDs: surfaceIDs)
-        return .ok(["watching": surfaceIDs.sorted()])
+        let surfaceIDs = canonicalSurfaceIDs(raw)
+        let background = canonicalSurfaceIDs(params[watchBackgroundParam] as? [String] ?? []).intersection(surfaceIDs)
+        queue.supermuxWatchTerminalBytes(surfaceIDs: surfaceIDs, background: background)
+        // A terminal back on screen sends what its batch holds now, not at the batch's end.
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated { SupermuxTerminalByteCoalescer.shared.flushForegroundBatches() }
+        }
+        return .ok(["watching": surfaceIDs.sorted(), "background": background.sorted()])
+    }
+
+    nonisolated private static func canonicalSurfaceIDs(_ raw: [String]) -> Set<String> {
+        Set(raw.compactMap { UUID(uuidString: $0)?.uuidString })
     }
 }
 
@@ -148,43 +164,39 @@ extension TerminalController {
 
 // MARK: - Byte tee: continuity
 
-/// Whether the byte tee skipped PTY output since it last looked. The tee
-/// records nothing while no client subscribes, so after such a stretch no
-/// byte position from before it may be resumed: every surface's stream
-/// epoch moves on. The PTY thread only sets a flag; the main actor turns it
-/// into a new generation.
+/// The terminals whose PTY output the byte tee skipped since it last looked.
+/// The tee records nothing while no client subscribes, so after such a
+/// stretch no byte position from before it may be resumed: the stream epoch
+/// of each terminal that printed meanwhile moves on. A terminal that stayed
+/// quiet keeps its epoch, so a reconnect resumes it with no bytes (until
+/// 2026-10-05 one flag moved every terminal's epoch, and every mirror came
+/// back as a full replay). The PTY thread only records the terminal; the
+/// main actor turns it into a new epoch.
 enum SupermuxTerminalStreamContinuity {
-    nonisolated private static let skipped = AtomicBooleanGate(false)
-    nonisolated private static let generation = OSAllocatedUnfairLock(initialState: UInt64(0))
+    nonisolated private static let skipped = OSAllocatedUnfairLock(initialState: Set<UUID>())
 
     /// Called on the PTY read thread for output the tee did not record.
-    nonisolated static func noteSkipped() {
-        if !skipped.loadRelaxed() { skipped.storeRelease(true) }
+    nonisolated static func noteSkipped(surfaceID: UUID) {
+        skipped.withLock { surfaces in
+            if !surfaces.contains(surfaceID) { surfaces.insert(surfaceID) }
+        }
     }
 
-    /// The current continuity generation (a skip since the last call starts a new one).
-    nonisolated static func currentGeneration() -> UInt64 {
-        generation.withLock { value in
-            if skipped.loadAcquire() {
-                skipped.storeRelease(false)
-                value &+= 1
-            }
-            return value
-        }
+    /// Whether the tee skipped output of `surfaceID` since the last call.
+    nonisolated static func takeSkipped(surfaceID: UUID) -> Bool {
+        skipped.withLock { $0.remove(surfaceID) != nil }
     }
 }
 
 extension MobileTerminalByteTee {
     /// The surface's stream epoch: stable while its byte sequence stayed
-    /// continuous, new after the tee skipped output.
+    /// continuous, new after the tee skipped some of its output.
     func supermuxStreamEpoch(surfaceID: UUID) -> String {
-        supermuxContinuousEpoch(state(for: surfaceID))
+        supermuxContinuousEpoch(state(for: surfaceID), surfaceID: surfaceID)
     }
 
-    func supermuxContinuousEpoch(_ state: SurfaceState) -> String {
-        let generation = SupermuxTerminalStreamContinuity.currentGeneration()
-        if state.supermuxSkipGeneration != generation {
-            state.supermuxSkipGeneration = generation
+    func supermuxContinuousEpoch(_ state: SurfaceState, surfaceID: UUID) -> String {
+        if SupermuxTerminalStreamContinuity.takeSkipped(surfaceID: surfaceID) {
             state.supermuxStreamEpoch = UUID().uuidString
         }
         return state.supermuxStreamEpoch
@@ -195,7 +207,7 @@ extension MobileTerminalByteTee {
     func supermuxBytes(surfaceID: UUID, from: UInt64, epoch: String) -> (sequence: UInt64, data: Data)? {
         guard replayState(surfaceID: surfaceID) != nil else { return nil }
         let state = state(for: surfaceID)
-        guard supermuxContinuousEpoch(state) == epoch, from <= state.seq else { return nil }
+        guard supermuxContinuousEpoch(state, surfaceID: surfaceID) == epoch, from <= state.seq else { return nil }
         let missing = state.seq - from
         guard missing <= UInt64(state.replayBuffer.count) else { return nil }
         return (state.seq, Data(state.replayBuffer.suffix(Int(missing))))
@@ -204,49 +216,97 @@ extension MobileTerminalByteTee {
 
 // MARK: - Byte tee: coalesced events
 
-/// Turns many small PTY reads into fewer `terminal.bytes` events: the first
-/// chunk after a quiet spell goes out at once (keystroke echo never waits),
-/// and chunks arriving within the next ~2 ms join one event per terminal,
-/// up to 32 KB. Sequences are untouched, so every receiver's gap check holds.
-/// Each event carries the grid generation its bytes were sent under, and two
+/// Turns many small PTY reads into fewer `terminal.bytes` events, paced by
+/// what the connections ask of each terminal (``SupermuxTerminalByteDemand``):
+/// - Foreground: the first chunk after a quiet spell goes out at once
+///   (keystroke echo never waits), and chunks arriving within the next ~2 ms
+///   join one event per terminal, up to 32 KB.
+/// - Background (every connection watching it has it off screen): chunks join
+///   one event per terminal for ~500 ms, up to 256 KB, so a hidden mirror
+///   costs about two events a second instead of one per redraw. A terminal
+///   back on screen, or about to be captured by a full replay, sends its
+///   batch before anything newer.
+/// - Unwatched: no event at all; the byte tee's tail keeps the bytes for a
+///   resume.
+/// Sequences are untouched, so every receiver's gap check holds. Each event
+/// carries the grid generation its bytes were sent under, and two
 /// generations never share an event.
 @MainActor
 final class SupermuxTerminalByteCoalescer {
     static let shared = SupermuxTerminalByteCoalescer()
     static let window: DispatchTimeInterval = .microseconds(2_000)
     static let maximumEventByteCount = 32 * 1024
+    static let backgroundWindow: DispatchTimeInterval = .milliseconds(500)
+    static let backgroundLeeway: DispatchTimeInterval = .milliseconds(100)
+    static let maximumBackgroundEventByteCount = 256 * 1024
 
     private struct Pending {
         var sequence: UInt64
         var data: Data
         var gridGeneration: UInt64?
         var end: UInt64 { sequence &+ UInt64(data.count) }
+
+        /// Appends `next` when it continues this chunk under the same grid.
+        mutating func join(_ next: Pending) -> Bool {
+            guard end == next.sequence, gridGeneration == next.gridGeneration else { return false }
+            data.append(next.data)
+            return true
+        }
     }
 
     private var pending: [UUID: Pending] = [:]
     private var windowOpen = false
+    private var backgroundPending: [UUID: Pending] = [:]
+    private var backgroundTimer: DispatchSourceTimer?
+    private var backgroundFlushScheduled = false
 
     func append(surfaceID: UUID, sequence: UInt64, data: Data) {
+        let delivery = SupermuxTerminalByteDemand.shared.delivery(surfaceID: surfaceID)
+        // Probed for every chunk, watched or not, so a grid that changes and
+        // changes back while nobody watches still moves the generation.
         let generation = SupermuxTerminalGridGeneration.current(surfaceID: surfaceID)
         let chunk = Pending(sequence: sequence, data: data, gridGeneration: generation)
-        if var queued = pending[surfaceID] {
-            if queued.end == sequence, queued.gridGeneration == generation {
-                queued.data.append(data)
-            } else {
-                emit(surfaceID: surfaceID, queued)
-                queued = chunk
-            }
-            pending[surfaceID] = queued
-        } else if windowOpen {
-            pending[surfaceID] = chunk
-        } else {
+        switch delivery {
+        case .foreground: appendForeground(surfaceID: surfaceID, chunk)
+        case .background: appendBackground(surfaceID: surfaceID, chunk)
+        case .unwatched: return
+        }
+    }
+
+    /// Sends now the batch of every terminal no longer in the background (a
+    /// watcher brought it on screen, or a connection takes every terminal).
+    func flushForegroundBatches() {
+        let demand = SupermuxTerminalByteDemand.shared
+        let promoted = backgroundPending.keys.filter { demand.delivery(surfaceID: $0) != .background }
+        for surfaceID in promoted { flushBatch(surfaceID: surfaceID) }
+    }
+
+    /// Sends now what the terminal's background batch holds. A full replay
+    /// calls it before its capture: the viewer then sees the output that
+    /// raced the capture during its attach, not ~500 ms after it, and
+    /// confirms the replay (`SupermuxTerminalStream.fullReplayApplied`).
+    func flushBatch(surfaceID: UUID) {
+        if let batch = backgroundPending.removeValue(forKey: surfaceID) { emit(surfaceID: surfaceID, batch) }
+    }
+
+    // MARK: Foreground
+
+    private func appendForeground(surfaceID: UUID, _ chunk: Pending) {
+        // A batch held while the terminal was in the background goes first.
+        if let batch = backgroundPending.removeValue(forKey: surfaceID) { emit(surfaceID: surfaceID, batch) }
+        guard windowOpen else {
             emit(surfaceID: surfaceID, chunk)
             openWindow()
             return
         }
-        if let queued = pending[surfaceID], queued.data.count >= Self.maximumEventByteCount {
-            pending[surfaceID] = nil
-            emit(surfaceID: surfaceID, queued)
+        var held = chunk
+        if var queued = pending.removeValue(forKey: surfaceID) {
+            if queued.join(chunk) { held = queued } else { emit(surfaceID: surfaceID, queued) }
+        }
+        if held.data.count >= Self.maximumEventByteCount {
+            emit(surfaceID: surfaceID, held)
+        } else {
+            pending[surfaceID] = held
         }
     }
 
@@ -266,6 +326,48 @@ final class SupermuxTerminalByteCoalescer {
         pending.removeAll(keepingCapacity: true)
         for (surfaceID, queued) in flushing { emit(surfaceID: surfaceID, queued) }
         openWindow()
+    }
+
+    // MARK: Background
+
+    private func appendBackground(surfaceID: UUID, _ chunk: Pending) {
+        // A chunk held while the terminal was on screen goes first.
+        if let queued = pending.removeValue(forKey: surfaceID) { emit(surfaceID: surfaceID, queued) }
+        var held = chunk
+        if var batch = backgroundPending.removeValue(forKey: surfaceID) {
+            if batch.join(chunk) { held = batch } else { emit(surfaceID: surfaceID, batch) }
+        }
+        if held.data.count >= Self.maximumBackgroundEventByteCount {
+            emit(surfaceID: surfaceID, held)
+        } else {
+            backgroundPending[surfaceID] = held
+            scheduleBackgroundFlush()
+        }
+    }
+
+    /// One timer for every background terminal, armed only while a batch
+    /// waits; its leeway lets the system fold the wakeup into others.
+    private func scheduleBackgroundFlush() {
+        guard !backgroundFlushScheduled else { return }
+        backgroundFlushScheduled = true
+        if let backgroundTimer {
+            backgroundTimer.schedule(deadline: .now() + Self.backgroundWindow, leeway: Self.backgroundLeeway)
+            return
+        }
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.setEventHandler {
+            MainActor.assumeIsolated { SupermuxTerminalByteCoalescer.shared.backgroundWindowElapsed() }
+        }
+        timer.schedule(deadline: .now() + Self.backgroundWindow, leeway: Self.backgroundLeeway)
+        timer.resume()
+        backgroundTimer = timer
+    }
+
+    private func backgroundWindowElapsed() {
+        backgroundFlushScheduled = false
+        let flushing = backgroundPending
+        backgroundPending.removeAll(keepingCapacity: true)
+        for (surfaceID, batch) in flushing { emit(surfaceID: surfaceID, batch) }
     }
 
     private func emit(surfaceID: UUID, _ chunk: Pending) {
