@@ -17,7 +17,8 @@ import SupermuxMobileCore
 /// holds up the next project list or run state. It is the single
 /// source of each Mac's Supermux state: the sidebar and the device-mirror
 /// behaviors (⌘G / Run, presets bar) all read it, so each Mac is polled once. It refreshes on the matching `supermux.*`
-/// topics, on every link (re)connect, and on a slow safety-net timer. The last
+/// topics (`run.updated` refetches only the run state), on every link
+/// (re)connect, and on a slow safety-net timer. The last
 /// project list of each Mac is cached on disk
 /// (``SupermuxRemoteProjectsCache``), so an offline Mac's projects still
 /// render (dimmed). Icons come from `project.icon` with etag caching.
@@ -146,7 +147,8 @@ final class SupermuxRemoteProjectsModel {
         update(machine) { $0.worktreesByProjectID[projectID] = worktrees }
     }
 
-    /// Refetches only one Mac's `run.state` (after a mirror's Run / Stop).
+    /// Refetches only one Mac's `run.state` (after a mirror's Run / Stop, and
+    /// on that Mac's `supermux.run.updated`).
     func refreshRuns(_ machine: SurfaceMachineID) async {
         guard device(machine)?.isOnline == true, let state = try? await fetchRuns(on: machine) else { return }
         update(machine) { $0.setRuns(state) }
@@ -175,8 +177,12 @@ final class SupermuxRemoteProjectsModel {
             Task { await refresh(machine) }
         case .linkLost(let machine):
             update(machine) { $0.isOnline = false }
-        case .topic(let machine, .projectsUpdated, _), .topic(let machine, .runUpdated, _):
+        case .topic(let machine, .projectsUpdated, _):
             Task { await refresh(machine) }
+        case .topic(let machine, .runUpdated, _):
+            // A Run / Stop changes only the run state: no project list,
+            // worktree sweep or icon pass on that Mac.
+            Task { await refreshRuns(machine) }
         case .topic(let machine, .worktreesUpdated, _):
             Task { await refreshWantedWorktrees(on: machine) }
         case .topic:
