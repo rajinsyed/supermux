@@ -1,6 +1,6 @@
 import Foundation
 
-/// The one trailing mobile state sync v2 tick the fork's observers share.
+/// The one mobile state sync v2 ticker the fork's observers share.
 ///
 /// ``SupermuxMobileActivityObserver`` and ``SupermuxMobileSidebarStatusObserver``
 /// both tick `MobileStateSyncHost` for changes upstream's
