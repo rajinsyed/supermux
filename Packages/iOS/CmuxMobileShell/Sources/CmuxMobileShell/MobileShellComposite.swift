@@ -346,7 +346,7 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
     public internal(set) var didFinishStoredMacReconnectAttempt: Bool = false
     // SUPERMUX:begin mobile-startup-parallel-secondary
     /// The Mac the launch reconnect is dialing as foreground.
-    var supermuxStartupForegroundCandidate: MacPairingKey?
+    var supermuxStartupForegroundReservation: SupermuxStartupForegroundReservation?
     // SUPERMUX:end mobile-startup-parallel-secondary
 
     /// Persisted hint that this device has previously paired a Mac.
@@ -3716,7 +3716,9 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
             let candidateOwnsForegroundSelection = reconnectSelectionKey
                 == MacPairingKey(mac)
             // SUPERMUX:begin mobile-startup-parallel-secondary
-            await supermuxReserveStartupForegroundCandidate(mac, isLaunchRestore: hydratePairedMacs)
+            await supermuxReserveStartupForegroundCandidate(
+                mac, isLaunchRestore: hydratePairedMacs, generation: generation,
+                routes: storedReconnectRoutes(mac))
             // SUPERMUX:end mobile-startup-parallel-secondary
             let dial = await dialSavedCandidateUnderDeadline(
                 mac,
