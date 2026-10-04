@@ -17,9 +17,9 @@ import SupermuxMobileCore
 /// holds up the next project list or run state. It is the single
 /// source of each Mac's Supermux state: the sidebar and the device-mirror
 /// behaviors (⌘G / Run, presets bar) all read it, so each Mac is polled once. It refreshes on the matching `supermux.*`
-/// topics (`run.updated` refetches only the run state), on every link
+/// topics (`run.updated` refetches only the run state), once per link
 /// (re)connect, and on a slow safety-net timer. The timer's worktree sweep
-/// runs only while this Mac is in use (``isInUse()``), where it is how a
+/// runs only while this Mac is in use (`isInUse()`), where it is how a
 /// worktree created outside Supermux shows up; otherwise it waits for the
 /// app to become active. The last
 /// project list of each Mac is cached on disk
