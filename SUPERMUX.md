@@ -78,7 +78,11 @@ anything.** It is the contract that keeps the fork mergeable with upstream cmux.
    instead of closing. The menu bar item offers Show Supermux / Hide Supermux and Turn Off Remote Host
    Mode (off shows the windows again); reopening the app, the global show/hide hotkey and a click on a
    notification also show them (the mode stays on). Keep Mac Awake (upstream's
-   menu bar item) keeps the Mac reachable. Needs a logged-in macOS session; a locked screen is fine.
+   menu bar item) keeps the Mac reachable. While the mode is on, auto-mirror opens no new mirrors of
+   the other Macs' workspaces (no one looks at them there, and each would stream from the Mac that
+   views this one); mirrors already open stay with their bindings, still close when their remote
+   workspace closes, and nothing is closed on the other Mac. Turning the mode off brings auto-mirror
+   back. Needs a logged-in macOS session; a locked screen is fine.
    Code: `Sources/Supermux/RemoteHost/`, touchpoints #830–#835 and #880,
    `tests/supermux/loopback_remote_host_mode_e2e.py`.
 
@@ -263,6 +267,8 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   window already holding that Mac's mirrors, survive restarts (bindings keyed by
   `Workspace.stableId`), close by themselves when the remote workspace closes, and are never
   re-exported by this Mac's mobile host (the loop guard; the phone talks to every Mac directly).
+  On a Mac in Remote Host Mode auto-mirror counts as off: it opens no new mirrors and leaves the
+  open ones in place.
 - **Closing a mirror** works like closing a local workspace: only this Mac's own confirmations
   (pinned, running process, the close settings, the batch "Close workspaces?"), no prompt of the
   fork's; then the mirror closes here at once and the real workspace closes on its Mac (with
