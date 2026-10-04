@@ -195,7 +195,7 @@ struct WorkspaceRow: View {
                 // SUPERMUX:end supermux-mobile-nested-branch-line
             }
 
-            // SUPERMUX:begin supermux-mobile-nested-branch-line (a nested row's status and changes chip, centered on its trailing edge as on the Mac sidebar)
+            // SUPERMUX:begin supermux-mobile-nested-branch-line (a nested row's status, centered on its trailing edge as on the Mac sidebar)
             if let supermuxNestedRowAccessory {
                 supermuxNestedTrailing(supermuxNestedRowAccessory)
             }
@@ -227,16 +227,12 @@ struct WorkspaceRow: View {
 
     // SUPERMUX:begin supermux-mobile-nested-branch-line
     /// A nested row's trailing edge, beside both its lines: the PR badge and
-    /// run indicator, then the changes chip, clear of the activity dot.
+    /// run indicator, clear of the activity dot. No changes chip, as on the
+    /// Mac sidebar.
     private func supermuxNestedTrailing(_ accessory: SupermuxNestedWorkspaceAccessory) -> some View {
-        HStack(spacing: 8) {
-            SupermuxNestedStatusSlot(accessory: accessory)
-            if let changesChip = content.changesChip {
-                changesChipView(changesChip)
-            }
-        }
-        .padding(.leading, 8)
-        .padding(.trailing, SupermuxNestedStatusSlot.dotClearance)
+        SupermuxNestedStatusSlot(accessory: accessory)
+            .padding(.leading, 8)
+            .padding(.trailing, SupermuxNestedStatusSlot.dotClearance)
     }
     // SUPERMUX:end supermux-mobile-nested-branch-line
 
