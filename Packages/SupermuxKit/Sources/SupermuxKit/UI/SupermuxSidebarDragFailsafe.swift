@@ -9,6 +9,10 @@ import AppKit
 /// the window) leaves the dragged id set, so the source row would stay dimmed
 /// forever. This watches for the mouse-up / Escape that ends such a drag and
 /// clears the marker. Mirrors cmux's `SidebarDragFailsafeMonitor`.
+///
+/// The host arms it as each drag starts, and it removes its event monitors
+/// once that drag has ended: the global monitor would otherwise wake this
+/// process on every click in every other app for the window's whole life.
 @MainActor
 public final class SupermuxSidebarDragFailsafe {
     /// Virtual key code for the Escape key (cancels a drag).
@@ -22,8 +26,9 @@ public final class SupermuxSidebarDragFailsafe {
     /// Creates an idle failsafe.
     public init() {}
 
-    /// Begins watching for drag-end events that should clear `dragState`.
-    /// Idempotent — re-binding `dragState` without reinstalling the monitors.
+    /// Begins watching for the events that end the drag starting now. Call
+    /// from the drag's start. Idempotent — re-binding `dragState` without
+    /// reinstalling the monitors.
     /// - Parameter dragState: The drag state to clear when a drag aborts.
     public func start(clearing dragState: SupermuxSidebarDragState) {
         self.dragState = dragState
@@ -46,7 +51,8 @@ public final class SupermuxSidebarDragFailsafe {
         }
     }
 
-    /// Removes the event monitors. Call from the host view's `onDisappear`.
+    /// Removes the event monitors. Runs after each drag ends; also call from
+    /// the host view's `onDisappear`.
     public func stop() {
         for monitor in [localMouseMonitor, globalMouseMonitor, keyDownMonitor] {
             if let monitor { NSEvent.removeMonitor(monitor) }
@@ -59,24 +65,24 @@ public final class SupermuxSidebarDragFailsafe {
 
     /// Ends the drag on the next runloop tick so a real drop — whose
     /// `performDrop` runs as part of the same mouse-up and still needs the
-    /// dragged id — completes the reorder before the marker is cleared. A
-    /// release (`cancelled: false`) commits any previewed order; Escape
-    /// (`cancelled: true`) discards it.
+    /// dragged id — completes the reorder before the marker is cleared, then
+    /// removes the monitors until the next drag arms them. A release
+    /// (`cancelled: false`) commits any previewed order; Escape
+    /// (`cancelled: true`) discards it. A drag a drop already ended leaves
+    /// nothing to clear (`clear()` / `cancel()` write only what is set), so
+    /// the monitors just go.
     private func scheduleEnd(cancelled: Bool) {
-        // Idle steady state (no drag in flight): bail before dispatching. These
-        // monitors see every left mouse-up app-wide (and, via the global
-        // monitor, in other apps) plus every Escape press; without this guard
-        // each such event would mutate the @Observable drag state and
-        // re-render every project/workspace row. The reads here run outside
-        // any SwiftUI observation scope, so they register no dependency.
-        guard let dragState, dragState.hasActiveDrag else { return }
-        DispatchQueue.main.async {
+        DispatchQueue.main.async { [weak self] in
             MainActor.assumeIsolated {
-                if cancelled {
-                    dragState.cancel()
-                } else {
-                    dragState.clear()
+                guard let self else { return }
+                if let dragState = self.dragState {
+                    if cancelled {
+                        dragState.cancel()
+                    } else {
+                        dragState.clear()
+                    }
                 }
+                self.stop()
             }
         }
     }

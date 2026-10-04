@@ -157,7 +157,16 @@ private struct SupermuxProjectReorderDrop: ViewModifier {
 
 /// One project in the sidebar Projects section, with an optional indented
 /// list of its worktrees when expanded.
-public struct SupermuxProjectRowView: View {
+///
+/// `Equatable` over every value it renders (the section applies
+/// `.equatable()`), so a change to one workspace re-renders only its own
+/// project's row. The callbacks are not compared: they reach only the
+/// section's model, opener, `@State` storage and the host's weak-window
+/// callbacks, plus value snapshots of this same project (its record, remote
+/// extras and nested workspaces), which the comparison covers. Font scale,
+/// hover and the drag dim are dynamic properties, which re-render the row on
+/// their own.
+public struct SupermuxProjectRowView: View, Equatable {
     let project: SupermuxProject
     private let detectedIcon: NSImage?
     private let worktrees: [SupermuxProjectWorktree]
@@ -184,6 +193,9 @@ public struct SupermuxProjectRowView: View {
     /// straight to the child rows (which read it) — never read in this row's
     /// body, so a workspace-drag-start does not re-run the nested `ForEach`.
     @Binding private var draggingWorkspaceId: UUID?
+    /// Called as a nested workspace drag starts (the section arms its
+    /// drag-end failsafe).
+    private let onWorkspaceDragStart: () -> Void
     /// Other Macs' copies of this project (worktrees, "Open on ▸",
     /// "Set Up on <Mac>…"); `nil` when only this Mac has it. Rendered by
     /// `SupermuxProjectRowView+Remote.swift`.
@@ -218,6 +230,7 @@ public struct SupermuxProjectRowView: View {
     ///     here for the row dim; defaults to a constant `nil` for previews).
     ///   - draggingWorkspaceId: Shared marker for the nested workspace being
     ///     dragged for reorder (defaults to a constant `nil` for previews).
+    ///   - onWorkspaceDragStart: Called as a nested workspace drag starts.
     public init(
         project: SupermuxProject,
         detectedIcon: NSImage? = nil,
@@ -232,6 +245,7 @@ public struct SupermuxProjectRowView: View {
         dropDelegate: SupermuxProjectDropDelegate? = nil,
         draggingProjectId: Binding<UUID?> = .constant(nil),
         draggingWorkspaceId: Binding<UUID?> = .constant(nil),
+        onWorkspaceDragStart: @escaping () -> Void = {},
         remoteExtras: SupermuxProjectRemoteExtras? = nil,
         remoteActions: SupermuxRemoteProjectActions = .inert,
         setUp: @escaping (SupermuxProjectSetupDestination) -> Void = { _ in },
@@ -261,6 +275,19 @@ public struct SupermuxProjectRowView: View {
         self.dropDelegate = dropDelegate
         self._draggingProjectId = draggingProjectId
         self._draggingWorkspaceId = draggingWorkspaceId
+        self.onWorkspaceDragStart = onWorkspaceDragStart
+    }
+
+    public nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.project == rhs.project
+            && lhs.detectedIcon === rhs.detectedIcon
+            && lhs.worktrees == rhs.worktrees
+            && lhs.worktreePullRequests == rhs.worktreePullRequests
+            && lhs.openWorkspaces == rhs.openWorkspaces
+            && lhs.isExpanded == rhs.isExpanded
+            && lhs.canMoveUp == rhs.canMoveUp
+            && lhs.canMoveDown == rhs.canMoveDown
+            && lhs.remoteExtras == rhs.remoteExtras
     }
 
     public var body: some View {
@@ -273,7 +300,6 @@ public struct SupermuxProjectRowView: View {
             let siblingIdsByMac = Dictionary(grouping: openWorkspaces, by: { $0.device?.machineID ?? "" })
                 .mapValues { Set($0.map(\.id)) }
             ForEach(openWorkspaces) { workspace in
-                let siblingIds = siblingIdsByMac[workspace.device?.machineID ?? ""] ?? []
                 SupermuxOpenWorkspaceRowView(
                     workspace: workspace,
                     select: { actions.selectWorkspace(workspace.id) },
@@ -281,19 +307,17 @@ public struct SupermuxProjectRowView: View {
                     hide: { remoteActions.hideMirror(workspace.id) },
                     rename: { actions.renameWorkspace(workspace.id) },
                     beginDrag: {
+                        onWorkspaceDragStart()
                         draggingWorkspaceId = workspace.id
                         return NSItemProvider(object: workspace.id.uuidString as NSString)
                     },
-                    dropDelegate: SupermuxWorkspaceDropDelegate(
-                        targetWorkspaceId: workspace.id,
-                        siblingWorkspaceIds: siblingIds,
-                        draggingWorkspaceId: $draggingWorkspaceId,
-                        reorder: actions.reorderWorkspace
-                    ),
+                    siblingWorkspaceIds: siblingIdsByMac[workspace.device?.machineID ?? ""] ?? [],
+                    reorder: actions.reorderWorkspace,
                     draggingWorkspaceId: $draggingWorkspaceId,
                     openPullRequest: { url in actions.openPullRequest(url, workspace.id) },
                     mirrorMenu: { remoteActions.mirrorMenu(workspace.id) }
                 )
+                .equatable()
             }
             // The disclosure reveals worktrees that exist on disk but have no
             // open workspace yet, as one-tap "open" affordances.
