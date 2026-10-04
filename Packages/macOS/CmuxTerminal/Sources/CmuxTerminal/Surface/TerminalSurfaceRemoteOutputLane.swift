@@ -86,6 +86,19 @@ final class TerminalSurfaceRemoteOutputLane: @unchecked Sendable {
         }
     }
 
+    // SUPERMUX:begin terminal-stream-output-fence
+    /// Calls `done` on the main actor once every operation admitted before
+    /// this call has run (at once when the lane is closed).
+    func supermuxFence(_ done: @escaping @MainActor @Sendable () -> Void) {
+        let admitted = isOpen.withLock { isOpen -> Bool in
+            guard isOpen else { return false }
+            queue.async { Task { @MainActor in done() } }
+            return true
+        }
+        if !admitted { Task { @MainActor in done() } }
+    }
+    // SUPERMUX:end terminal-stream-output-fence
+
     /// Stops admission of new work for this runtime generation.
     ///
     /// Operations accepted before this call remain in FIFO order and are
@@ -137,4 +150,17 @@ extension TerminalSurface {
         )
         return retired
     }
+
+    // SUPERMUX:begin terminal-stream-output-fence
+    /// Returns once the remote output handed to this surface so far has been
+    /// parsed, so a grid change that follows lands after it, not under it.
+    @MainActor
+    public func supermuxRemoteOutputParsed() async {
+        guard let surface = liveSurfaceForGhosttyAccess(reason: "supermuxRemoteOutputFence") else { return }
+        flushPendingRemoteOutput(to: surface)
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            remoteOutputLane.supermuxFence { continuation.resume() }
+        }
+    }
+    // SUPERMUX:end terminal-stream-output-fence
 }

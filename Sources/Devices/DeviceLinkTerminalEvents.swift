@@ -21,6 +21,11 @@ enum DeviceTerminalEvent: Equatable, Sendable {
     case sizeState(TerminalSizingState, selfParticipantID: String?)
     /// Someone disconnected this Mac's view (`mobile.terminal.detached`).
     case sharingDetached(TerminalDetachReason, at: Date?)
+    // SUPERMUX:begin terminal-stream-grid-viewer
+    /// The bytes that follow were sent under this grid generation
+    /// (`supermux.terminal_stream.v2`); sent only when it changes.
+    case supermuxGridGeneration(UInt64)
+    // SUPERMUX:end terminal-stream-grid-viewer
 
     /// The host's shared-sizing pushes this Mac subscribes to as a viewer.
     static let sizeStateTopic = "mobile.terminal.size_state"
@@ -85,6 +90,10 @@ final class DeviceLinkTerminalEvents {
     var supermuxOnBytes: ((UUID, Int) -> Void)?
     #endif
     // SUPERMUX:end terminal-stream-viewer
+    // SUPERMUX:begin terminal-stream-grid-viewer
+    /// The last grid generation forwarded per remote terminal.
+    private var supermuxGridGenerations: [UUID: UInt64] = [:]
+    // SUPERMUX:end terminal-stream-grid-viewer
 
     func stream(surfaceID: UUID) -> AsyncStream<DeviceTerminalEvent> {
         let id = UUID()
@@ -110,6 +119,14 @@ final class DeviceLinkTerminalEvents {
         if case .bytes(_, let data) = decoded.event { supermuxOnBytes?(decoded.surfaceID, data.count) }
         #endif
         // SUPERMUX:end terminal-stream-viewer
+        // SUPERMUX:begin terminal-stream-grid-viewer (the generation goes ahead of the bytes sent under it)
+        if case .bytes = decoded.event, let payload = envelope.payloadJSON,
+           let generation = SupermuxTerminalGridTracker.generation(inBytesPayload: payload),
+           supermuxGridGenerations[decoded.surfaceID] != generation {
+            supermuxGridGenerations[decoded.surfaceID] = generation
+            send(.supermuxGridGeneration(generation), surfaceID: decoded.surfaceID)
+        }
+        // SUPERMUX:end terminal-stream-grid-viewer
         send(decoded.event, surfaceID: decoded.surfaceID)
     }
 
@@ -120,6 +137,9 @@ final class DeviceLinkTerminalEvents {
     }
 
     func broadcast(_ event: DeviceTerminalEvent) {
+        // SUPERMUX:begin terminal-stream-grid-viewer (a new connection may be a new host process: forward its first generation)
+        if event == .linkLost || event == .linkReconnected { supermuxGridGenerations.removeAll() }
+        // SUPERMUX:end terminal-stream-grid-viewer
         for (surfaceID, surface) in continuations {
             for (id, continuation) in surface {
                 deliver(event, to: continuation, surfaceID: surfaceID, id: id)
@@ -133,6 +153,9 @@ final class DeviceLinkTerminalEvents {
         // A detach must never be dropped by the bounded queue.
         case .linkReconnected, .linkLost, .resyncRequired, .sharingDetached: isControl = true
         case .bytes, .updated, .sizeState: isControl = false
+        // SUPERMUX:begin terminal-stream-grid-viewer (a dropped one is followed by `resyncRequired`, a replay)
+        case .supermuxGridGeneration: isControl = false
+        // SUPERMUX:end terminal-stream-grid-viewer
         }
         if isControl {
             pendingControls[surfaceID, default: [:]][id, default: []].append(event)

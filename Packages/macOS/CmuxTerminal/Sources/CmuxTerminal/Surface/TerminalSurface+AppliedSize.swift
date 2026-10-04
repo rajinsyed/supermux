@@ -14,11 +14,17 @@ extension TerminalSurface {
     ) {
         let work = terminalWork.begin(.resizePublication, workspaceID: tabId)
         defer { work?.end() }
-        #if DEBUG
+        // SUPERMUX:begin terminal-stream-grid-generation (upstream reads `previous` in DEBUG only)
         let previous = ghostty_surface_size(surface)
-        #endif
+        // SUPERMUX:end terminal-stream-grid-generation
 
         ghostty_surface_set_size(surface, width, height)
+        // SUPERMUX:begin terminal-stream-grid-generation
+        let supermuxApplied = ghostty_surface_size(surface)
+        if supermuxApplied.columns != previous.columns || supermuxApplied.rows != previous.rows {
+            supermuxGridRequestGeneration &+= 1
+        }
+        // SUPERMUX:end terminal-stream-grid-generation
 
         #if DEBUG
         let applied = ghostty_surface_size(surface)

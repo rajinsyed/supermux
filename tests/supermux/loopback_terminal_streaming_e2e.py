@@ -16,9 +16,13 @@ source terminal without any mirror (the UNWATCHED terminal), then checks:
   3. reanchor_resumes_from_bytes: a forced re-anchor of the mirror pane (the
      DEBUG `terminal_close.replay`, what a dropped chunk starts) resumes from the
      mirror's byte position instead of a full replay.
-  4. remote_resize_keeps_stream: the source grid changes twice (a fake phone
-     reports a small viewport, then a less small one) and the mirror follows
-     without a full replay; output after each resize still arrives.
+  4. remote_resize_reanchors: the source grid changes twice (a fake phone
+     reports a small viewport, then a less small one); the mirror re-anchors
+     on each (`grid_resyncs`, a full replay at the new grid: bytes written for
+     one grid are never drawn into another; until 2026-10-04 a resize only
+     re-pinned and output around it garbled, see
+     loopback_terminal_resize_integrity_e2e.py) and output after each resize
+     still arrives.
   5. scrollback_survives_link_drop: 3000 numbered lines, then the link drops
      and comes back while the source prints more; afterwards the mirror still
      has every one of the 3000 lines (a full replay used to cut history to ~240
@@ -389,6 +393,7 @@ class StreamingE2E:
         if original is None:
             raise Failure("the watched terminal reports no grid")
         before = self.settled_full_replays(f["watched_surface_id"])
+        resyncs_before = int(self.pane_stats().get("grid_resyncs", 0))
         # Fit everyone sizes to the smallest counting viewer, so the fake
         # phone's viewport decides the grid (the panes count only on screen).
         smallest = (max(20, original[0] - 17), max(6, original[1] - 5))
@@ -404,9 +409,11 @@ class StreamingE2E:
         self.send_text(f["watched_workspace_id"], f["watched_surface_id"], f"echo AFTER_GROW_$((4*4))_{self.nonce}\n")
         self.wait_text("output after the growth in the MIRROR", f["mirror_workspace_id"], f["mirror_surface_id"], marker2, self.timeout_s)
         after = self.settled_full_replays(f["watched_surface_id"])
-        result = {"grids": [list(original), list(shrunk), list(restored)], "full_replays": after - before}
-        if after != before:
-            raise Failure(f"the remote resizes forced {after - before} full replay(s): {result}")
+        resyncs = int(self.pane_stats().get("grid_resyncs", 0)) - resyncs_before
+        result = {"grids": [list(original), list(shrunk), list(restored)], "full_replays": after - before,
+                  "grid_resyncs": resyncs}
+        if resyncs < 2 or after - before < 2:
+            raise Failure(f"the mirror did not re-anchor on each remote resize: {result}")
         return result
 
     def check_reanchor(self) -> Dict[str, Any]:
@@ -520,7 +527,7 @@ class StreamingE2E:
             # a resize the mirror may still hold the previous grid, and a resume
             # at a grid the mirror does not have rightly falls back to a replay.
             self.step("reanchor_resumes_from_bytes", self.check_reanchor)
-            self.step("remote_resize_keeps_stream", self.check_resize)
+            self.step("remote_resize_reanchors", self.check_resize)
             self.step("scrollback_survives_link_drop", self.check_link_drop)
             self.step("older_host_keeps_upstream_path", self.check_older_host)
         except Failure:

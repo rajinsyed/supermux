@@ -18,7 +18,12 @@ import SupermuxMobileCore
 ///   `supermux_stream_epoch`) and the grid is the one the viewer has; else the
 ///   usual render-grid replay runs (`terminal-stream-resume`).
 /// - PTY reads are coalesced into fewer, larger `terminal.bytes` events
-///   (``SupermuxTerminalByteCoalescer``).
+///   (``SupermuxTerminalByteCoalescer``), never across a grid change.
+/// - Grid generations (`supermux.terminal_stream.v2`): every `terminal.bytes`
+///   event carries `supermux_grid_gen`, the count of grid changes asked of
+///   the PTY when it was sent (``SupermuxTerminalGridGeneration``); replays
+///   report the generation they captured and a resume continues only the
+///   one it names. A mirror re-anchors whenever the generation moves.
 enum SupermuxTerminalStreamHost {
     nonisolated static let watchMethod = SupermuxMobileMethod.terminalWatch.rawValue
     /// Replay params a streaming viewer sends.
@@ -27,9 +32,12 @@ enum SupermuxTerminalStreamHost {
     nonisolated static let resumeEpochParam = "supermux_resume_epoch"
     nonisolated static let resumeColumnsParam = "supermux_resume_columns"
     nonisolated static let resumeRowsParam = "supermux_resume_rows"
+    nonisolated static let resumeGridGenerationParam = "supermux_resume_grid_gen"
     /// Replay reply keys.
     nonisolated static let epochKey = "supermux_stream_epoch"
     nonisolated static let resumedKey = "supermux_resumed"
+    /// `terminal.bytes` and replay key: the grid generation (v2).
+    nonisolated static let gridGenerationKey = "supermux_grid_gen"
 
     /// `mobile.supermux.terminal.watch`, answered on the connection itself
     /// (its event queue is the filter).
@@ -86,6 +94,13 @@ extension TerminalController {
         guard current == (columns, rows) else {
             return refuse("grid host=\(current.columns)x\(current.rows) viewer=\(columns)x\(rows)")
         }
+        // The same grid may have been left and come back since: bytes from the
+        // other grid in between would land in the wrong one.
+        let generation = SupermuxTerminalGridGeneration.current(surfaceID: surfaceID)
+        guard let viewerGeneration = (params[SupermuxTerminalStreamHost.resumeGridGenerationParam] as? NSNumber)?.uint64Value,
+              viewerGeneration == generation else {
+            return refuse("grid_generation host=\(generation.map(String.init) ?? "nil")")
+        }
         if let expectedViewport, !MobileTerminalReplayViewportFence.accepts(
             capturedColumns: current.columns, capturedRows: current.rows,
             expectedColumns: expectedViewport.columns, expectedRows: expectedViewport.rows
@@ -102,17 +117,32 @@ extension TerminalController {
             "data_b64": bytes.data.base64EncodedString(),
             SupermuxTerminalStreamHost.resumedKey: true,
             SupermuxTerminalStreamHost.epochKey: epoch,
+            SupermuxTerminalStreamHost.gridGenerationKey: viewerGeneration,
         ]
     }
 
     /// Adds the byte stream's epoch to a replay a streaming viewer asked for,
-    /// so its next resume can prove the stream stayed continuous.
+    /// so its next resume can prove the stream stayed continuous, and the
+    /// grid generation the capture holds. A capture taken while the PTY's
+    /// grid change is still on its way to the parser holds the previous grid,
+    /// so it reports none: the viewer re-anchors once the new grid shows.
     func supermuxAddTerminalStreamEpoch(to payload: inout [String: Any], params: [String: Any], surfaceID: UUID) {
         guard params[SupermuxTerminalStreamHost.streamParam] != nil else { return }
         #if DEBUG
         if SupermuxTerminalStreamDebug.pretendsOldHost { return }
         #endif
         payload[SupermuxTerminalStreamHost.epochKey] = MobileTerminalByteTee.shared.supermuxStreamEpoch(surfaceID: surfaceID)
+        if let columns = (payload["columns"] as? NSNumber)?.intValue,
+           let rows = (payload["rows"] as? NSNumber)?.intValue,
+           let requested = SupermuxTerminalGridGeneration.requestedGrid(surfaceID: surfaceID),
+           requested == (columns, rows),
+           let generation = SupermuxTerminalGridGeneration.current(surfaceID: surfaceID) {
+            payload[SupermuxTerminalStreamHost.gridGenerationKey] = generation
+        }
+        #if DEBUG
+        let generation = payload[SupermuxTerminalStreamHost.gridGenerationKey].map { "\($0)" } ?? "nil"
+        cmuxDebugLog("supermux.terminal.replay surface=\(surfaceID.uuidString.prefix(8)) gridGen=\(generation)")
+        #endif
     }
 }
 
@@ -178,6 +208,8 @@ extension MobileTerminalByteTee {
 /// chunk after a quiet spell goes out at once (keystroke echo never waits),
 /// and chunks arriving within the next ~2 ms join one event per terminal,
 /// up to 32 KB. Sequences are untouched, so every receiver's gap check holds.
+/// Each event carries the grid generation its bytes were sent under, and two
+/// generations never share an event.
 @MainActor
 final class SupermuxTerminalByteCoalescer {
     static let shared = SupermuxTerminalByteCoalescer()
@@ -187,6 +219,7 @@ final class SupermuxTerminalByteCoalescer {
     private struct Pending {
         var sequence: UInt64
         var data: Data
+        var gridGeneration: UInt64?
         var end: UInt64 { sequence &+ UInt64(data.count) }
     }
 
@@ -194,18 +227,20 @@ final class SupermuxTerminalByteCoalescer {
     private var windowOpen = false
 
     func append(surfaceID: UUID, sequence: UInt64, data: Data) {
+        let generation = SupermuxTerminalGridGeneration.current(surfaceID: surfaceID)
+        let chunk = Pending(sequence: sequence, data: data, gridGeneration: generation)
         if var queued = pending[surfaceID] {
-            if queued.end == sequence {
+            if queued.end == sequence, queued.gridGeneration == generation {
                 queued.data.append(data)
             } else {
                 emit(surfaceID: surfaceID, queued)
-                queued = Pending(sequence: sequence, data: data)
+                queued = chunk
             }
             pending[surfaceID] = queued
         } else if windowOpen {
-            pending[surfaceID] = Pending(sequence: sequence, data: data)
+            pending[surfaceID] = chunk
         } else {
-            emit(surfaceID: surfaceID, Pending(sequence: sequence, data: data))
+            emit(surfaceID: surfaceID, chunk)
             openWindow()
             return
         }
@@ -234,12 +269,17 @@ final class SupermuxTerminalByteCoalescer {
     }
 
     private func emit(surfaceID: UUID, _ chunk: Pending) {
-        // Upstream's wire payload (JSON + base64), one event per coalesced chunk.
-        MobileHostService.shared.emitEvent(topic: "terminal.bytes", payload: [
+        // Upstream's wire payload (JSON + base64), one event per coalesced
+        // chunk, plus its grid generation (receivers ignore unknown keys).
+        var payload: [String: Any] = [
             "surface_id": surfaceID.uuidString,
             "seq": chunk.sequence,
             "data_b64": chunk.data.base64EncodedString(),
-        ])
+        ]
+        if let generation = chunk.gridGeneration {
+            payload[SupermuxTerminalStreamHost.gridGenerationKey] = generation
+        }
+        MobileHostService.shared.emitEvent(topic: "terminal.bytes", payload: payload)
     }
 }
 

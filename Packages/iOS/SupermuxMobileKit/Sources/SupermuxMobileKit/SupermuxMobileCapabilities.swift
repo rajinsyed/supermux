@@ -77,6 +77,10 @@ public struct SupermuxMobileCapabilities: Sendable, Equatable {
     /// and resumes it from a byte position (Mac-to-Mac only; no phone UI
     /// depends on it).
     public var supportsTerminalStream: Bool { contains(.terminalStreamV1) }
+    /// The Mac's terminal stream also says when the grid changed, so another
+    /// Mac's mirror re-anchors instead of drawing bytes into the wrong grid
+    /// (Mac-to-Mac only; no phone UI depends on it).
+    public var supportsTerminalStreamGrid: Bool { contains(.terminalStreamV2) }
     /// The Mac serves simulator controls for another Mac's simulator viewer
     /// (Mac-to-Mac only; no phone UI depends on it).
     public var supportsRemoteSimulator: Bool { contains(.remoteSimulatorV1) }

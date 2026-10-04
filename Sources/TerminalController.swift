@@ -15710,6 +15710,9 @@ class TerminalController {
             )
         }
         // SUPERMUX:begin terminal-stream-resume
+        // Count every PTY read the parser may already show before a capture
+        // takes the byte position (SupermuxTerminalTeeInbox).
+        SupermuxTerminalTeeInbox.shared.drainNow()
         // A device mirror resumes from its byte position when the host's byte
         // tail still holds it (SupermuxTerminalStreamHost.swift).
         if var resumed = supermuxTerminalStreamResume(

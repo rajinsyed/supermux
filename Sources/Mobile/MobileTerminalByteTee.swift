@@ -135,11 +135,9 @@ final class MobileTerminalByteTee {
         }
         guard let base = bytes.baseAddress, bytes.count > 0 else { return }
         let copy = Data(bytes: base, count: bytes.count)
-        publishQueue.async { [weak self] in
-            Task { @MainActor [weak self] in
-                self?.publishFromMain(surfaceID: surfaceID, data: copy)
-            }
-        }
+        // SUPERMUX:begin terminal-stream-tee-inbox (a replay drains it first, so its byte position counts every read it shows; upstream: `publishQueue.async { Task { @MainActor in self?.publishFromMain(...) } }`)
+        SupermuxTerminalTeeInbox.shared.push(surfaceID: surfaceID, data: copy)
+        // SUPERMUX:end terminal-stream-tee-inbox
     }
 
     /// The replay buffer for a surface, suitable for sending in response

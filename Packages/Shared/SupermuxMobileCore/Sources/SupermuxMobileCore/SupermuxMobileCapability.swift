@@ -86,6 +86,16 @@ public enum SupermuxMobileCapability: String, CaseIterable, Codable, Sendable, E
     /// and this host applies them in sequence order, once each, answering
     /// with `input_ack`. Without it the mirror sends one request at a time.
     case terminalInputPipelineV1 = "supermux.terminal_input_pipeline.v1"
+    /// ``terminalStreamV1`` whose stream says when the terminal's grid
+    /// changed: each `terminal.bytes` event carries `supermux_grid_gen` (the
+    /// count of grid changes asked of the PTY when its bytes were sent, never
+    /// mixing two in one event), replays report the generation they captured,
+    /// and a resume names the one it continues (`supermux_resume_grid_gen`).
+    /// A mirror re-anchors on a replay whenever the generation moves, so no
+    /// byte is drawn into a grid the program did not write it for. A host
+    /// advertises it instead of v1: a v1-only mirror would only re-pin on a
+    /// resize and garble, so it keeps upstream's replay path.
+    case terminalStreamV2 = "supermux.terminal_stream.v2"
 
     /// Every capability, in declaration order (derived from `CaseIterable`).
     public static let all: [SupermuxMobileCapability] = SupermuxMobileCapability.allCases

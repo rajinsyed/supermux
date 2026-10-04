@@ -14,10 +14,15 @@ import SupermuxMobileCore
 ///   host's byte tail holds them and the stream stayed continuous); only then a
 ///   render-grid replay, which asks for deep scrollback (screen-anchored,
 ///   ``scrollbackRows`` rows) instead of upstream's ~240.
-/// - A remote grid change only re-pins the mirror; the bytes that follow
-///   repaint it, as on the owning Mac itself.
+/// - Grid integrity (`supermux.terminal_stream.v2`): a remote grid change,
+///   seen as a new grid generation on the stream or a new grid from the
+///   host, re-anchors the mirror on a full replay, applied only once the
+///   mirror has parsed what came before and holds the replay's grid
+///   (``SupermuxTerminalGridTracker``). Bytes are never drawn into a grid
+///   the program did not write them for. (Until 2026-10-04 a resize only
+///   re-pinned the mirror, and output written around it garbled.)
 ///
-/// A host without the capability keeps upstream's path unchanged.
+/// A host without v2 keeps upstream's path unchanged.
 @MainActor
 final class SupermuxTerminalStream {
     /// Events a mirror session may hold before its stream drops (upstream: 512).
@@ -42,6 +47,12 @@ final class SupermuxTerminalStream {
     private(set) var fullReplays = 0
     private(set) var resumes = 0
     private(set) var gaps = 0
+    /// Re-anchors because the grid moved (a new generation or host grid).
+    private(set) var gridResyncs = 0
+    /// The host's grid generations as this mirror saw them.
+    private(set) var grid = SupermuxTerminalGridTracker()
+    /// The newest grid the host reported (`terminal.updated`, `device.terminal.grid`).
+    private var hostGrid: (columns: Int, rows: Int)?
 
     init(link: DeviceLink, surfaceID: UUID) {
         watch = SupermuxTerminalStreamWatch.of(link)
@@ -73,6 +84,30 @@ final class SupermuxTerminalStream {
 
     func noteGap() { gaps += 1 }
 
+    /// An attach begins.
+    func attachStarted() { grid.attachStarted() }
+
+    /// The stream announced a grid generation. True when the attached
+    /// mirror must re-anchor on a full replay now.
+    func streamedGridGeneration(_ generation: UInt64, attached: Bool) -> Bool {
+        guard isActive, grid.streamed(generation, attached: attached) else { return false }
+        gridResyncs += 1
+        return true
+    }
+
+    /// The host reported a grid the mirror does not hold: the next attach is
+    /// a full replay.
+    func gridChanged() {
+        grid.needsFullReplay = true
+        gridResyncs += 1
+    }
+
+    /// The link is gone; the next connection may be another host process.
+    func linkLost() {
+        grid.reset()
+        hostGrid = nil
+    }
+
     /// The replay request's streaming params: deep scrollback, and the byte
     /// position to resume from when the mirror has one on this stream.
     func replayParams(expectedSequence: UInt64?, grid: (columns: Int, rows: Int)?) -> [String: Any] {
@@ -82,11 +117,13 @@ final class SupermuxTerminalStream {
             "anchor": "screen",
             "max_scrollback_rows": Self.scrollbackRows,
         ]
-        if let epoch, let expectedSequence, let grid {
+        if !self.grid.needsFullReplay, let epoch, let expectedSequence, let grid,
+           let generation = self.grid.screen {
             params[SupermuxTerminalStreamHost.resumeFromParam] = expectedSequence
             params[SupermuxTerminalStreamHost.resumeEpochParam] = epoch
             params[SupermuxTerminalStreamHost.resumeColumnsParam] = grid.columns
             params[SupermuxTerminalStreamHost.resumeRowsParam] = grid.rows
+            params[SupermuxTerminalStreamHost.resumeGridGenerationParam] = generation
         }
         return params
     }
@@ -94,7 +131,44 @@ final class SupermuxTerminalStream {
     func noteReply(_ reply: Reply) {
         epoch = reply.epoch
         if reply.resumed == nil { fullReplays += 1 } else { resumes += 1 }
+        if isActive { grid.replied(reply.gridGeneration) }
     }
+
+    /// The host's latest grid, as its grid events report it.
+    func noteHostGrid(columns: Int, rows: Int) {
+        hostGrid = (columns, rows)
+    }
+
+    /// After an attach: whether the screen it applied is already behind the
+    /// host's grid (a newer generation streamed, or the host reports another
+    /// grid than the one the mirror holds). The caller re-anchors again.
+    func attachFellBehindGrid(assigned: (columns: Int, rows: Int)?) -> Bool {
+        guard isActive else { return false }
+        var behind = grid.movedPastScreen()
+        if let hostGrid, let assigned, hostGrid != assigned {
+            grid.needsFullReplay = true
+            behind = true
+        }
+        guard behind else {
+            consecutiveBehind = 0
+            return false
+        }
+        // A host whose reports never match its captures must not spin the
+        // attach loop; the next grid event or generation tries again.
+        consecutiveBehind += 1
+        guard consecutiveBehind <= Self.maxConsecutiveGridReanchors else {
+            #if DEBUG
+            cmuxDebugLog("supermux.terminal.mirror grid re-anchor gave up host=\(hostGrid.map { "\($0.columns)x\($0.rows)" } ?? "nil")")
+            #endif
+            consecutiveBehind = 0
+            return false
+        }
+        gridResyncs += 1
+        return true
+    }
+
+    private var consecutiveBehind = 0
+    static let maxConsecutiveGridReanchors = 4
 
     /// A replay reply, as far as streaming reads it.
     struct Reply: Sendable {
@@ -108,6 +182,8 @@ final class SupermuxTerminalStream {
         var epoch: String?
         /// The bytes since the requested position, when the host resumed.
         var resumed: Resumed?
+        /// The grid generation the reply's screen holds (v2), if settled.
+        var gridGeneration: UInt64?
     }
 
     private nonisolated static let resumedMarker = Data("\"\(SupermuxTerminalStreamHost.resumedKey)\":true".utf8)
@@ -120,14 +196,14 @@ final class SupermuxTerminalStream {
     #endif
     nonisolated static func decodeReply(_ data: Data) async -> Reply {
         guard data.range(of: resumedMarker) != nil else {
-            return Reply(epoch: scannedEpoch(data))
+            return Reply(epoch: scannedEpoch(data), gridGeneration: SupermuxTerminalGridTracker.generation(inBytesPayload: data))
         }
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               object[SupermuxTerminalStreamHost.resumedKey] as? Bool == true,
               let sequence = (object["seq"] as? NSNumber)?.uint64Value,
               let encoded = object["data_b64"] as? String,
               let bytes = Data(base64Encoded: encoded) else {
-            return Reply(epoch: scannedEpoch(data))
+            return Reply(epoch: scannedEpoch(data), gridGeneration: SupermuxTerminalGridTracker.generation(inBytesPayload: data))
         }
         return Reply(
             epoch: object[SupermuxTerminalStreamHost.epochKey] as? String,
@@ -136,7 +212,8 @@ final class SupermuxTerminalStream {
                 sequence: sequence,
                 columns: (object["columns"] as? NSNumber)?.intValue,
                 rows: (object["rows"] as? NSNumber)?.intValue
-            )
+            ),
+            gridGeneration: (object[SupermuxTerminalStreamHost.gridGenerationKey] as? NSNumber)?.uint64Value
         )
     }
 
@@ -222,7 +299,7 @@ final class SupermuxTerminalStreamWatch {
     func ensure(including surfaceID: UUID?) async -> Bool {
         let connection = self.connection
         guard let link, link.isConnected,
-              await SupermuxComposition.devices.supports(.terminalStreamV1, on: .device(instance)),
+              await SupermuxComposition.devices.supports(.terminalStreamV2, on: .device(instance)),
               connection == self.connection else { return false }
         for _ in 0..<3 {
             if let acked, acked.connection == connection, acked.surfaces == Set(counts.keys) { break }
@@ -275,6 +352,7 @@ extension SupermuxTerminalStreamWatch {
                 "full_replays": stream?.fullReplays ?? 0,
                 "resumes": stream?.resumes ?? 0,
                 "gaps": stream?.gaps ?? 0,
+                "grid_resyncs": stream?.gridResyncs ?? 0,
             ]
         }
         return [
