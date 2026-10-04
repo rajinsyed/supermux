@@ -8,7 +8,9 @@ import SupermuxMobileCore
 ///
 /// - Per-terminal subscription: each link names the terminals it mirrors
 ///   (``SupermuxTerminalStreamWatch``); the host sends `terminal.bytes` only for
-///   those, and never sheds them.
+///   those, and never sheds them. A terminal whose panes here have all been off
+///   screen for ``backgroundAfter`` is named as background too, and the host
+///   sends its bytes in ~500 ms batches until a pane shows it again.
 /// - Resume instead of replay: a seq gap, a reconnect or a re-anchor asks the
 ///   host for the bytes since the mirror's last byte position (exact while the
 ///   host's byte tail holds them and the stream stayed continuous); only then a
@@ -78,7 +80,7 @@ final class SupermuxTerminalStream {
     func prepare() async -> Bool {
         if !registered {
             registered = true
-            watch.add(surfaceID)
+            watch.add(surfaceID, background: background)
         }
         let connection = watch.connection
         let streams = await watch.ensure(including: surfaceID)
@@ -88,10 +90,12 @@ final class SupermuxTerminalStream {
 
     func stop() {
         cancelConfirmation()
+        backgroundTask?.cancel()
+        backgroundTask = nil
         guard registered else { return }
         registered = false
         streamingConnection = nil
-        watch.remove(surfaceID)
+        watch.remove(surfaceID, background: background)
     }
 
     func noteGap() { gaps += 1 }
@@ -131,19 +135,45 @@ final class SupermuxTerminalStream {
 
     // MARK: Visibility
 
+    /// How long a pane stays off screen before its terminal is named as
+    /// background: the portal hides panes briefly during layout churn.
+    static let backgroundAfter: Duration = .seconds(2)
     /// Whether the mirror's pane is off screen here
     /// (`DeviceTerminalMirrorSession.supermuxHidden`).
     private var hidden = false
+    /// Whether this mirror names its terminal as background.
+    private var background = false
+    private var backgroundTask: Task<Void, Never>?
 
     /// The pane went off screen or came back. Hidden, an armed confirmation
-    /// waits for the show (``takeDueConfirmation()``).
+    /// waits for the show (``takeDueConfirmation()``) and, after
+    /// ``backgroundAfter``, the terminal becomes background; shown, it leaves
+    /// the background at once.
     func visibilityChanged(hidden: Bool) {
         guard hidden != self.hidden else { return }
         self.hidden = hidden
-        if hidden, confirmationTask != nil {
+        backgroundTask?.cancel()
+        backgroundTask = nil
+        guard hidden else {
+            setBackground(false)
+            return
+        }
+        if confirmationTask != nil {
             cancelConfirmation()
             pendingConfirmation = true
         }
+        backgroundTask = Task { [weak self] in
+            guard (try? await Task.sleep(for: Self.backgroundAfter)) != nil,
+                  let self, self.hidden, !Task.isCancelled else { return }
+            self.backgroundTask = nil
+            self.setBackground(true)
+        }
+    }
+
+    private func setBackground(_ value: Bool) {
+        guard value != background else { return }
+        background = value
+        if registered { watch.setBackground(surfaceID, value) }
     }
 
     // MARK: Replay boundary
@@ -396,8 +426,9 @@ final class SupermuxTerminalStream {
 }
 
 /// One link's watched terminals: the set its host sends `terminal.bytes` for,
-/// kept in step with the mirror sessions that stream on it. Each connection
-/// starts topic-wide on the host, so the set is sent again after every
+/// kept in step with the mirror sessions that stream on it, and the ones of
+/// them every session has off screen (sent in batches). Each connection
+/// starts topic-wide on the host, so both sets are sent again after every
 /// (re)connect (``SupermuxDeviceLinkEvents``).
 @MainActor
 final class SupermuxTerminalStreamWatch {
@@ -414,12 +445,20 @@ final class SupermuxTerminalStreamWatch {
         byInstance[instance]
     }
 
+    /// What the host is asked for.
+    struct Watched: Equatable {
+        var surfaces: Set<UUID>
+        var background: Set<UUID>
+    }
+
     private weak var link: DeviceLink?
     let instance: SurfaceDeviceInstanceID
     /// Bumps when the link loses its connection: what was watched is gone.
     private(set) var connection: UInt64 = 0
+    /// Sessions streaming each terminal, and how many of them are background.
     private var counts: [UUID: Int] = [:]
-    private var acked: (connection: UInt64, surfaces: Set<UUID>)?
+    private var backgroundCounts: [UUID: Int] = [:]
+    private var acked: (connection: UInt64, watched: Watched)?
     private var failedConnection: UInt64?
     private var syncTask: Task<Void, Never>?
     #if DEBUG
@@ -437,16 +476,37 @@ final class SupermuxTerminalStreamWatch {
         #endif
     }
 
-    var watching: Set<UUID>? { acked?.connection == connection ? acked?.surfaces : nil }
+    var watching: Set<UUID>? { acked?.connection == connection ? acked?.watched.surfaces : nil }
 
-    func add(_ surfaceID: UUID) {
-        counts[surfaceID, default: 0] += 1
+    /// A terminal is background only while every session streaming it is.
+    private var desired: Watched {
+        let background = backgroundCounts.compactMap { surfaceID, count in count == counts[surfaceID] ? surfaceID : nil }
+        return Watched(surfaces: Set(counts.keys), background: Set(background))
     }
 
-    func remove(_ surfaceID: UUID) {
+    func add(_ surfaceID: UUID, background: Bool) {
+        counts[surfaceID, default: 0] += 1
+        if background { adjustBackground(surfaceID, by: 1) }
+        syncIfAcked()
+    }
+
+    func remove(_ surfaceID: UUID, background: Bool) {
         guard let count = counts[surfaceID] else { return }
         counts[surfaceID] = count > 1 ? count - 1 : nil
-        if acked?.connection == connection { _ = sync() }
+        if background { adjustBackground(surfaceID, by: -1) }
+        syncIfAcked()
+    }
+
+    /// One session's pane went to the background or came back.
+    func setBackground(_ surfaceID: UUID, _ background: Bool) {
+        guard counts[surfaceID] != nil else { return }
+        adjustBackground(surfaceID, by: background ? 1 : -1)
+        syncIfAcked()
+    }
+
+    private func adjustBackground(_ surfaceID: UUID, by delta: Int) {
+        let count = backgroundCounts[surfaceID, default: 0] + delta
+        backgroundCounts[surfaceID] = count > 0 ? count : nil
     }
 
     func linkLost() {
@@ -462,35 +522,45 @@ final class SupermuxTerminalStreamWatch {
     }
 
     /// Whether the host streams on the current connection with `surfaceID`
-    /// (when given) watched; sends the set first when it changed.
+    /// (when given) watched; sends the sets first when the watched one
+    /// changed (a background change alone goes out without holding this up).
     func ensure(including surfaceID: UUID?) async -> Bool {
         let connection = self.connection
         guard let link, link.isConnected,
               await SupermuxComposition.devices.supports(.terminalStreamV2, on: .device(instance)),
               connection == self.connection else { return false }
         for _ in 0..<3 {
-            if let acked, acked.connection == connection, acked.surfaces == Set(counts.keys) { break }
+            if let acked, acked.connection == connection, acked.watched.surfaces == Set(counts.keys) { break }
             failedConnection = nil
             await sync().value
             guard connection == self.connection, failedConnection != connection else { return false }
         }
         guard let acked, acked.connection == connection else { return false }
-        return surfaceID.map(acked.surfaces.contains) ?? true
+        return surfaceID.map(acked.watched.surfaces.contains) ?? true
     }
 
-    /// Single-flight: sends the watched set until the host has the latest one.
+    /// A change once the host has the sets on this connection goes out now;
+    /// before that, ``ensure(including:)`` sends the latest.
+    private func syncIfAcked() {
+        if acked?.connection == connection { _ = sync() }
+    }
+
+    /// Single-flight: sends the sets until the host has the latest ones.
     private func sync() -> Task<Void, Never> {
         if let syncTask { return syncTask }
         let task = Task { [weak self] in
             while let self {
                 let connection = self.connection
-                let desired = Set(self.counts.keys)
-                if let acked = self.acked, acked.connection == connection, acked.surfaces == desired { break }
+                let desired = self.desired
+                if let acked = self.acked, acked.connection == connection, acked.watched == desired { break }
                 guard let link = self.link, link.isConnected else { break }
                 do {
                     _ = try await link.request(
                         SupermuxMobileMethod.terminalWatch.rawValue,
-                        params: ["surface_ids": desired.map(\.uuidString).sorted()]
+                        params: [
+                            SupermuxTerminalStreamHost.watchSurfacesParam: desired.surfaces.map(\.uuidString).sorted(),
+                            SupermuxTerminalStreamHost.watchBackgroundParam: desired.background.map(\.uuidString).sorted(),
+                        ]
                     )
                     guard connection == self.connection else { break }
                     self.acked = (connection, desired)
@@ -523,9 +593,11 @@ extension SupermuxTerminalStreamWatch {
                 "replay_confirmations": stream?.confirmations ?? 0,
             ]
         }
+        let background = acked?.connection == connection ? acked?.watched.background : nil
         return [
             "supported": watching != nil,
             "watching": watching.map { $0.map(\.uuidString).sorted() } ?? NSNull(),
+            "background": background.map { $0.map(\.uuidString).sorted() } ?? NSNull(),
             "bytes_received_by_surface": Dictionary(uniqueKeysWithValues: bytesReceived.map { ($0.key.uuidString, $0.value) }),
             "panes": panes,
         ]
