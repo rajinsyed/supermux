@@ -520,7 +520,7 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   once it is; when the forward stops or moves it goes back through the alias, and every main-frame
   navigation (reload, link, redirect, back and forward) is routed the same way, so none lands on this
   Mac's own `localhost:3000`. A server that restarts comes back by itself: once a forward's port leaves
-  that Mac's listing this Mac asks it again after 2, 4, 8, 15, 30 and 60 s (a quick restart never
+  that Mac's listing this Mac asks it again after 3, 10 and 30 s (a quick restart never
   changes that Mac's sidebar ports, which keep a port through two missed scans, so it sends no poke),
   and an open mirror tab on the alias of a port whose last try found it unlisted, not yet a workspace's
   (a restarted server that is only one of that Mac's other ports until its sidebar scan attributes it),
@@ -528,8 +528,8 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   once that Mac lists it as a workspace's (or you forwarded it). That Mac also notices a server binding
   after its terminal's port scans are over (a dev script doing other work first): for 2 minutes after one
   of its terminals starts a command, while another Mac follows its ports, it compares its loopback
-  listeners (every 4 s for the first 20 s after the command or a new listener, then less often, up to
-  30 s; never otherwise) and scans its terminals again when one appears; the attribution that follows
+  listeners (5, 15, 45 and 120 s after the latest command start, also once the command exited; never
+  otherwise) and scans its terminals again when one appears; the attribution that follows
   pokes. A page loaded as written (and its same-origin `localhost` iframes)
   calls that Mac's other ports with `fetch`, XHR, `WebSocket` and `EventSource` (#755): a port
   forwarded here on the same port goes to its
@@ -567,7 +567,7 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   other loopback listeners (asked with `include_other`); ports ≥ 1024 of a mirrored workspace are
   forwarded automatically, the other ones only by hand or for a mirror tab you open on them (#757). A
   connection refused for a listed port, and a forward whose port left the listing (followed by fetches
-  2 s to 60 s later), make this Mac ask for the listing again, since the other ports change without a
+  3 s to 30 s later), make this Mac ask for the listing again, since the other ports change without a
   poke. A forward listens on `127.0.0.1` and `::1` at the
   same port when it is free here, else the next free one (up to +50, then any), and a port in use
   here is never taken (every candidate is probed with a connect on both addresses, so a dual-stack
