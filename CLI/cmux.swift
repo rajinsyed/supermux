@@ -2743,6 +2743,13 @@ final class ClaudeHookSessionStore {
         if let deadline, Date.now >= deadline {
             throw CLIError(message: "Claude hook state deadline exceeded: \(statePath)")
         }
+        // SUPERMUX:begin hook-store-unchanged-skip (an unchanged store is not rewritten)
+        // Most hooks only read the store (or write a value it already has);
+        // rewriting the same bytes cost a full write and woke every watcher
+        // of the store's folder on every tool call of every agent. The
+        // encoder sorts keys, so the same state always encodes the same.
+        if fileManager.contents(atPath: statePath) == data { return }
+        // SUPERMUX:end hook-store-unchanged-skip
         let tempURL = parentURL.appendingPathComponent(".\(stateURL.lastPathComponent).\(UUID().uuidString).tmp")
         guard fileManager.createFile(atPath: tempURL.path, contents: data, attributes: [
             .posixPermissions: NSNumber(value: Int16(0o600))

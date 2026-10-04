@@ -304,6 +304,9 @@ extension CMUXCLI {
         let pollerKey = UUID().uuidString
         var registered = false
         var consecutiveFailures = 0
+        // SUPERMUX:begin agent-inbox-poll-backoff
+        let startedAt = Date()
+        // SUPERMUX:end agent-inbox-poll-backoff
         while true {
             if let agentPID, agentPID > 1, kill(agentPID, 0) != 0, errno == ESRCH {
                 exit(0)
@@ -353,11 +356,30 @@ extension CMUXCLI {
                 consecutiveFailures += 1
                 if consecutiveFailures >= Self.agentInboxMaximumPollFailures { exit(0) }
             }
-            Thread.sleep(forTimeInterval: Self.agentInboxPollInterval)
+            // SUPERMUX:begin agent-inbox-poll-backoff (upstream: `Thread.sleep(forTimeInterval: Self.agentInboxPollInterval)`)
+            Thread.sleep(forTimeInterval: Self.agentInboxPollInterval(
+                idleFor: Date().timeIntervalSince(startedAt),
+                failing: consecutiveFailures > 0
+            ))
+            // SUPERMUX:end agent-inbox-poll-backoff
         }
     }
 
     static let agentInboxPollInterval: TimeInterval = 2
+    // SUPERMUX:begin agent-inbox-poll-backoff
+    /// How often an idle session checks after its first minute. Every idle
+    /// Claude session keeps one poller, so 25 idle agents made 12 socket
+    /// connections a second to the app at the 2 s rate.
+    static let agentInboxIdlePollInterval: TimeInterval = 6
+    static let agentInboxFastPollDuration: TimeInterval = 60
+
+    /// 2 s for the first minute after the turn ended (a message then is the
+    /// likely case) and while the app does not answer (so the failure budget
+    /// keeps its ~10 minutes), every 6 s after that.
+    static func agentInboxPollInterval(idleFor elapsed: TimeInterval, failing: Bool) -> TimeInterval {
+        failing || elapsed < agentInboxFastPollDuration ? agentInboxPollInterval : agentInboxIdlePollInterval
+    }
+    // SUPERMUX:end agent-inbox-poll-backoff
     static let agentInboxMaximumPollFailures = 300
 
     private static func agentInboxDeferredClaim(
