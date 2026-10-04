@@ -262,6 +262,9 @@ struct RightSidebarPanelView: View {
                 }
                 .background(RightSidebarModeBarDragAnchorView(anchor: modeBarDrag.anchor))
                 .coordinateSpace(.named(RightSidebarModeBarDragController.coordinateSpace))
+                // SUPERMUX:begin right-sidebar-mode-bar-overflow
+                .modifier(SupermuxModeBarOverflow())
+                // SUPERMUX:end right-sidebar-mode-bar-overflow
                 .layoutPriority(1)
                 Spacer(minLength: 0)
                 if fileExplorerState.mode.canOpenAsPane, fileExplorerState.mode.isAvailable() {

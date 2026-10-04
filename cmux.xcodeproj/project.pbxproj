@@ -3667,6 +3667,7 @@
 		50BE00050000000000000006 /* SupermuxMobileSidebarStatusObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00050000000000000005 /* SupermuxMobileSidebarStatusObserver.swift */; };
 		50BE000200000000000000C6 /* SupermuxMobileWorkspaceListAugmenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000200000000000000C5 /* SupermuxMobileWorkspaceListAugmenter.swift */; };
 		50BE00050000000000000004 /* SupermuxMobileWorkspaceStatusFields.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00050000000000000003 /* SupermuxMobileWorkspaceStatusFields.swift */; };
+		50BE00010000000000000149 /* SupermuxModeBarOverflow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00010000000000000148 /* SupermuxModeBarOverflow.swift */; };
 		50BE00130000000000000002 /* SupermuxNestedWorkspaceRows.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00130000000000000001 /* SupermuxNestedWorkspaceRows.swift */; };
 		50BE00140000000000000004 /* SupermuxNewWorkspaceButtonHelp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00140000000000000003 /* SupermuxNewWorkspaceButtonHelp.swift */; };
 		50BE000A000000000000001C /* SupermuxNewWorkspaceDeviceMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000A000000000000001B /* SupermuxNewWorkspaceDeviceMenu.swift */; };
@@ -8290,6 +8291,7 @@
 		50BE00050000000000000005 /* SupermuxMobileSidebarStatusObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxMobileSidebarStatusObserver.swift; sourceTree = "<group>"; };
 		50BE000200000000000000C5 /* SupermuxMobileWorkspaceListAugmenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxMobileWorkspaceListAugmenter.swift; sourceTree = "<group>"; };
 		50BE00050000000000000003 /* SupermuxMobileWorkspaceStatusFields.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxMobileWorkspaceStatusFields.swift; sourceTree = "<group>"; };
+		50BE00010000000000000148 /* SupermuxModeBarOverflow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SupermuxModeBarOverflow.swift"; sourceTree = "<group>"; };
 		50BE00130000000000000001 /* SupermuxNestedWorkspaceRows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Projects/SupermuxNestedWorkspaceRows.swift; sourceTree = "<group>"; };
 		50BE00140000000000000003 /* SupermuxNewWorkspaceButtonHelp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mirrors/SupermuxNewWorkspaceButtonHelp.swift; sourceTree = "<group>"; };
 		50BE000A000000000000001B /* SupermuxNewWorkspaceDeviceMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Mirrors/SupermuxNewWorkspaceDeviceMenu.swift; sourceTree = "<group>"; };
@@ -9638,6 +9640,7 @@
 				50BE000200000000000000B1 /* TerminalController+SupermuxMobile.swift */,
 				50BE00010000000000000142 /* SupermuxFocusedPaneNotificationPolicy.swift */,
 				50BE00010000000000000146 /* SupermuxFileDiffOpener.swift */,
+				50BE00010000000000000148 /* SupermuxModeBarOverflow.swift */,
 				50BE000200000000000000B3 /* SupermuxMobileHost+Projects.swift */,
 				50BE000200000000000000C7 /* SupermuxMobileHost+Worktrees.swift */,
 				50BE000200000000000000C9 /* SupermuxMobileHost+PresetsActions.swift */,
@@ -17023,6 +17026,7 @@
 				50BE00050000000000000006 /* SupermuxMobileSidebarStatusObserver.swift in Sources */,
 				50BE000200000000000000C6 /* SupermuxMobileWorkspaceListAugmenter.swift in Sources */,
 				50BE00050000000000000004 /* SupermuxMobileWorkspaceStatusFields.swift in Sources */,
+				50BE00010000000000000149 /* SupermuxModeBarOverflow.swift in Sources */,
 				50BE00130000000000000002 /* SupermuxNestedWorkspaceRows.swift in Sources */,
 				50BE00140000000000000004 /* SupermuxNewWorkspaceButtonHelp.swift in Sources */,
 				50BE000A000000000000001C /* SupermuxNewWorkspaceDeviceMenu.swift in Sources */,
