@@ -23,4 +23,12 @@ extension SupermuxProjectsModel {
             .filter { SupermuxWorktreePath.canonical($0.rootPath) == root }
             .map { SupermuxWorktreePath.lexicalWorktreesDir(canonicalRoot: root, project: $0) }
     }
+
+    /// What ``worktreeContainers(forRoot:)`` reads: every project's
+    /// configured container. When it changes, a running watcher's exclusions
+    /// may be stale (the list loads after launch, and a watched folder can
+    /// become a project root while its panel is open).
+    public var worktreeContainerPaths: [String] {
+        projects.map(\.worktreesDirPath)
+    }
 }

@@ -5,6 +5,7 @@ import CmuxGit
 import CmuxSettings
 import CmuxSidebar
 import Foundation
+import Observation
 import SupermuxKit
 import SwiftUI
 
@@ -502,6 +503,41 @@ private final class SupermuxChangesModelBox: ObservableObject {
         SupermuxComposition.mirrorChangesPanels.insert(source)
         return source
     }()
+    /// Rebuilds the local model's running watcher when the projects'
+    /// containers change. The list loads after launch, so a root panel open
+    /// from the start (or a folder registered while its panel is open) would
+    /// otherwise keep waking on every nested-worktree write all session.
+    private var containersTask: Task<Void, Never>?
+
+    init() {
+        let projects = SupermuxComposition.projectsModel
+        // Read now, before the panel's first watcher can start: a load
+        // landing before the task runs still counts as a change.
+        let initial = projects.worktreeContainerPaths
+        containersTask = Task { @MainActor [weak self] in
+            var applied = initial
+            while !Task.isCancelled {
+                let current = projects.worktreeContainerPaths
+                if current != applied {
+                    applied = current
+                    self?.model.restartObserving()
+                }
+                await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                    withObservationTracking {
+                        _ = projects.worktreeContainerPaths
+                    } onChange: {
+                        continuation.resume()
+                    }
+                }
+                // onChange fires at willSet: let the change land first.
+                await Task.yield()
+            }
+        }
+    }
+
+    deinit {
+        containersTask?.cancel()
+    }
 }
 
 /// The git Changes panel mounted as the right sidebar's `changes` mode (see

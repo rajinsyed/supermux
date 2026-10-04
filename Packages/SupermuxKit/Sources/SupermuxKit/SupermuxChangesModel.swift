@@ -289,6 +289,14 @@ public final class SupermuxChangesModel {
         observeTask = nil
     }
 
+    /// Rebuilds a running observation, so its change stream is made again
+    /// (a project root's watcher picks up the worktrees container it now
+    /// skips). A no-op while not observing: a hidden panel stays idle.
+    public func restartObserving() {
+        guard observeTask != nil else { return }
+        startObserving()
+    }
+
     /// Stages one change.
     /// - Parameter change: File to stage; for renames the old path is staged too.
     public func stage(_ change: SupermuxGitFileChange) async {
