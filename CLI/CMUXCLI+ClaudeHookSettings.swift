@@ -81,6 +81,12 @@ extension CMUXCLI {
                 matcher: "PushNotification",
                 subcommand: "push-notification"
             ),
+            // SUPERMUX:begin claude-answer-hook
+            Self.claudeQueuedHookGroup(
+                matcher: Self.supermuxClaudeAnsweredToolMatcher,
+                subcommand: "post-tool-use"
+            ),
+            // SUPERMUX:end claude-answer-hook
         ]
         hooks["PermissionRequest"] = [
             Self.claudeHookGroup(
