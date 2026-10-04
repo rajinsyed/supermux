@@ -9,9 +9,9 @@ import SupermuxMobileCore
 /// instead of on the next link connect. They refetch `ports.list` on receipt.
 ///
 /// Watches every main window's workspaces' `listeningPorts` (the sidebar's
-/// port detection), only while a device link subscribes to the topic, so a
-/// Mac nobody forwards from pays nothing. Pokes are coalesced into one per
-/// ``throttle`` window. It also watches its own terminals' commands: the sidebar
+/// port detection) and which workspaces there are (not their order), only
+/// while a device link subscribes to the topic, so a Mac nobody forwards from
+/// pays nothing. Pokes are coalesced into one per ``throttle`` window. It also watches its own terminals' commands: the sidebar
 /// scans a terminal only for about 10 s after a command starts, so a server that
 /// binds later (a dev script that does other work first) would never be a
 /// workspace's port; for a while after a command starts,
@@ -27,6 +27,8 @@ final class SupermuxHostPortsObserver {
     private var observers: [any NSObjectProtocol] = []
     private var tabsCancellables: [ObjectIdentifier: AnyCancellable] = [:]
     private var workspaceCancellables: [UUID: AnyCancellable] = [:]
+    /// The workspaces seen last; nil while detached, so attaching counts as a change.
+    private var lastWorkspaceIDs: Set<UUID>?
     private var pendingPoke: Task<Void, Never>?
     private var commandWatch: Task<Void, Never>?
     private let lateListeners = SupermuxLateListenerCheck()
@@ -46,6 +48,7 @@ final class SupermuxHostPortsObserver {
         guard MobileHostService.hasEventSubscribers(topic: Self.topic) else {
             tabsCancellables.removeAll()
             workspaceCancellables.removeAll()
+            lastWorkspaceIDs = nil
             commandWatch?.cancel()
             commandWatch = nil
             lateListeners.stop()
@@ -74,7 +77,11 @@ final class SupermuxHostPortsObserver {
                 .removeDuplicates()
                 .sink { [weak self] _ in self?.schedulePoke() }
         }
-        // A workspace that appears or goes may take ports with it.
+        // A reorder (every agent notification moves its workspace up) changes
+        // no ports and no terminals: only a workspace that appears or goes
+        // may take ports with it, or bring terminals to watch.
+        guard ids != lastWorkspaceIDs else { return }
+        lastWorkspaceIDs = ids
         schedulePoke()
         watchCommands()
     }
@@ -124,64 +131,90 @@ final class SupermuxHostPortsObserver {
 }
 
 /// Catches a server that binds after its terminal's port scans are over, so it
-/// is still attributed to its workspace: for ``window`` after one of this Mac's
-/// terminals starts a command, it compares the loopback listeners (a full
-/// process and socket scan) and, when one appears, re-kicks every own terminal's
-/// port scan (one burst scans them all). Every ``fastInterval`` for the first
-/// ``fastPeriod`` after the latest command start or new listener, then less often
-/// as it stays quiet, up to ``slowestInterval``. Nothing runs between windows,
-/// and it never pokes: an attribution changes the workspace's ports, which pokes.
+/// is still attributed to its workspace: at each of ``checkOffsets`` after the
+/// latest time one of this Mac's terminals started a command, it compares the
+/// loopback listeners (a full process and socket scan) and, when one appeared
+/// since the previous check, re-kicks every own terminal's port scan (one burst
+/// scans them all). The window ends with the last offset, not when the command
+/// exits (a daemonized server binds later). Its first check is the baseline: a
+/// server that bound before it is in its terminal's own port scans (about 10 s
+/// after the command starts). A command start never postpones a check already
+/// due, and checks stay ``minimumGap`` apart, so a burst of commands scans no
+/// more often. Nothing runs between windows, and it never pokes: an
+/// attribution changes the workspace's ports, which pokes.
 @MainActor
 final class SupermuxLateListenerCheck {
-    static let window: Duration = .seconds(120)
-    static let fastPeriod: Duration = .seconds(20)
-    static let fastInterval: Duration = .seconds(4)
-    static let slowestInterval: Duration = .seconds(30)
+    /// When the checks run, counted from the latest command start: 10 s apart
+    /// for the first 25 s, where a dev script's server usually binds (after an
+    /// install or a build), so it is attributed within about 10 s; sparser after.
+    static let checkOffsets: [Duration] = [.seconds(5), .seconds(15), .seconds(25), .seconds(45), .seconds(120)]
+    /// The least time between two checks.
+    static let minimumGap: Duration = .seconds(5)
 
     private var task: Task<Void, Never>?
-    private var windowEnds: ContinuousClock.Instant?
-    private var lastActivity = ContinuousClock.now
+    private var latestStart: ContinuousClock.Instant?
+    /// When the pending (or running) check is due.
+    private var nextCheck: ContinuousClock.Instant?
+    /// The previous check's listeners in this window.
+    private var listeners: Set<Int>?
 
-    /// A terminal of this Mac started a command: (re)opens the window.
+    /// A terminal of this Mac started a command: (re)opens the window, and
+    /// brings the next check forward when it is due later than the first offset.
     func commandStarted() {
         let now = ContinuousClock.now
-        windowEnds = now + Self.window
-        lastActivity = now
-        guard task == nil else { return }
-        task = Task { @MainActor [weak self] in
-            var last: Set<Int>?
-            while !Task.isCancelled {
-                guard let self, let ends = self.windowEnds, ContinuousClock.now < ends else { break }
-                let live = await Self.loopbackListeners()
-                #if DEBUG
-                SupermuxDeviceTunnelSocketCommands.liveChecks.increment()
-                #endif
-                guard !Task.isCancelled else { return }
-                if let last, !live.subtracting(last).isEmpty {
-                    Self.kickTerminalScans()
-                    self.lastActivity = .now
-                }
-                last = live
-                try? await Task.sleep(for: self.interval())
-            }
-            // The window ended (stop() already let go of a cancelled task).
-            if !Task.isCancelled { self?.task = nil }
-        }
+        latestStart = now
+        let first = now + Self.checkOffsets[0]
+        if let nextCheck, nextCheck <= first { return }
+        run(from: first)
     }
 
     /// No Mac follows this Mac's ports any more.
     func stop() {
         task?.cancel()
-        task = nil
-        windowEnds = nil
+        endWindow()
     }
 
-    /// ``fastInterval`` for ``fastPeriod`` after the latest activity, then a
-    /// quarter of the quiet time, at most ``slowestInterval``.
-    private func interval() -> Duration {
-        let quiet = ContinuousClock.now - lastActivity
-        guard quiet > Self.fastPeriod else { return Self.fastInterval }
-        return min(Self.slowestInterval, max(Self.fastInterval, quiet / 4))
+    /// Runs the checks from `first` until the window ends, replacing a pending
+    /// one. Only a check still waiting is ever replaced: a running one is due
+    /// already, so ``commandStarted()`` keeps it.
+    private func run(from first: ContinuousClock.Instant) {
+        task?.cancel()
+        nextCheck = first
+        task = Task { @MainActor [weak self] in
+            var due = first
+            while true {
+                // Cancelled while waiting: replaced by a sooner check, or stopped.
+                guard (try? await Task.sleep(until: due, clock: .continuous)) != nil else { return }
+                let live = await Self.loopbackListeners()
+                #if DEBUG
+                SupermuxDeviceTunnelSocketCommands.liveChecks.increment()
+                #endif
+                // Stopped while scanning (a new window may run already).
+                guard let self, !Task.isCancelled else { return }
+                if let listeners = self.listeners, !live.subtracting(listeners).isEmpty {
+                    Self.kickTerminalScans()
+                }
+                self.listeners = live
+                guard let next = self.check(after: .now) else { break }
+                due = next
+                self.nextCheck = next
+            }
+            self?.endWindow()
+        }
+    }
+
+    /// The first of ``checkOffsets`` after the latest command start that is at
+    /// least ``minimumGap`` after `now`; nil once the window is over.
+    private func check(after now: ContinuousClock.Instant) -> ContinuousClock.Instant? {
+        guard let latestStart else { return nil }
+        return Self.checkOffsets.map { latestStart + $0 }.first { $0 >= now + Self.minimumGap }
+    }
+
+    private func endWindow() {
+        task = nil
+        latestStart = nil
+        nextCheck = nil
+        listeners = nil
     }
 
     /// This Mac's loopback listeners, without the ones this app holds for
