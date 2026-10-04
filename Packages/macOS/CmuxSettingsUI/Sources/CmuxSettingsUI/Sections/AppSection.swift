@@ -18,6 +18,12 @@ import SwiftUI
 public struct AppSection: View {
     private let catalog: SettingCatalog
     private let hostActions: SettingsHostActions
+    // SUPERMUX:begin remote-host-mode
+    // Upstream dropped its own unused `defaultsStore` property (2026-10-04
+    // merge); the fork's Remote Host Mode row still builds its value model
+    // from the injected store.
+    private let supermuxDefaultsStore: UserDefaultsSettingsStore
+    // SUPERMUX:end remote-host-mode
 
     // Every bound value-model lives here as view state, constructed once
     // and persisted across renders so the @Observable change tracking
@@ -94,6 +100,9 @@ public struct AppSection: View {
     ) {
         self.catalog = catalog
         self.hostActions = hostActions
+        // SUPERMUX:begin remote-host-mode
+        self.supermuxDefaultsStore = defaultsStore
+        // SUPERMUX:end remote-host-mode
         self.soundAgentCache = soundAgentCache
         _language = State(initialValue: DefaultsValueModel(store: defaultsStore, key: catalog.app.language))
         _appIcon = State(initialValue: DefaultsValueModel(store: defaultsStore, key: catalog.app.appIcon))
@@ -676,7 +685,7 @@ public struct AppSection: View {
             SettingsCardDivider()
 
             // SUPERMUX:begin remote-host-mode
-            SupermuxRemoteHostModeSettingsRow(defaultsStore: defaultsStore)
+            SupermuxRemoteHostModeSettingsRow(defaultsStore: supermuxDefaultsStore)
             SettingsCardDivider()
             // SUPERMUX:end remote-host-mode
 
