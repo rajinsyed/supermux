@@ -74,8 +74,9 @@ public final class SupermuxWindowVisibility: ObservableObject {
     /// on another Space drops `.visible`), but a virtual or headless display
     /// never raises `.visible` for a window that is ordered in and drawing, so
     /// until a window has reported it once its ordinary on-screen state is
-    /// trusted instead. A key window always counts as on screen.
-    private static func windowIsOnScreen(_ window: NSWindow?) -> Bool {
+    /// trusted instead. A key window always counts as on screen. Every
+    /// Supermux "is this window on screen" gate uses this one rule.
+    public static func windowIsOnScreen(_ window: NSWindow?) -> Bool {
         guard let window, !NSApplication.shared.isHidden,
               window.isVisible, !window.isMiniaturized else { return false }
         if window.occlusionState.contains(.visible) {

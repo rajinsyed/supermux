@@ -518,36 +518,34 @@ private final class SupermuxChangesModelBox: ObservableObject {
     /// containers change. The list loads after launch, so a root panel open
     /// from the start (or a folder registered while its panel is open) would
     /// otherwise keep waking on every nested-worktree write all session.
-    private var containersTask: Task<Void, Never>?
+    private var appliedContainers: [String]
 
     init() {
         let projects = SupermuxComposition.projectsModel
         // Read now, before the panel's first watcher can start: a load
-        // landing before the task runs still counts as a change.
-        let initial = projects.worktreeContainerPaths
-        containersTask = Task { @MainActor [weak self] in
-            var applied = initial
-            while !Task.isCancelled {
-                let current = projects.worktreeContainerPaths
-                if current != applied {
-                    applied = current
-                    self?.model.restartObserving()
-                }
-                await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                    withObservationTracking {
-                        _ = projects.worktreeContainerPaths
-                    } onChange: {
-                        continuation.resume()
-                    }
-                }
-                // onChange fires at willSet: let the change land first.
-                await Task.yield()
-            }
+        // landing after this still counts as a change.
+        appliedContainers = projects.worktreeContainerPaths
+        observeContainers(projects)
+    }
+
+    /// One observation at a time, re-armed after each change. Nothing waits
+    /// on it, so a closed panel's box leaves nothing behind.
+    private func observeContainers(_ projects: SupermuxProjectsModel) {
+        withObservationTracking {
+            _ = projects.worktreeContainerPaths
+        } onChange: { [weak self] in
+            // onChange fires at willSet: read once the change has landed.
+            Task { @MainActor [weak self] in self?.containersMayHaveChanged(projects) }
         }
     }
 
-    deinit {
-        containersTask?.cancel()
+    private func containersMayHaveChanged(_ projects: SupermuxProjectsModel) {
+        let current = projects.worktreeContainerPaths
+        if current != appliedContainers {
+            appliedContainers = current
+            model.restartObserving()
+        }
+        observeContainers(projects)
     }
 }
 

@@ -608,6 +608,7 @@ final class SupermuxTerminalStreamWatch {
                     self.acked = (connection, desired)
                 } catch {
                     self.failedConnection = connection
+                    self.retryAfterFailure(on: connection)
                     break
                 }
             }
@@ -615,6 +616,19 @@ final class SupermuxTerminalStreamWatch {
         }
         syncTask = task
         return task
+    }
+
+    /// A send that failed on a connection that stays up (a busy host, a missed
+    /// deadline) goes out again shortly: a background change alone has no
+    /// other path that sends it again, and a shown pane would keep getting
+    /// its bytes in background batches.
+    private func retryAfterFailure(on connection: UInt64) {
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard let self, self.connection == connection, self.failedConnection == connection else { return }
+            self.failedConnection = nil
+            self.syncIfAcked()
+        }
     }
 }
 

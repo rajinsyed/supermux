@@ -27,11 +27,13 @@ public actor SupermuxGitChangesService {
     /// never takes the optional `.git/index` lock (or rewrites the index),
     /// which would re-trigger the FSEvents watcher that requested the refresh.
     static let noOptionalLocks = "--no-optional-locks"
-    /// Status flag: a submodule still shows when its commit or tracked files
-    /// changed, but git no longer runs a child `git status` per submodule on
-    /// every refresh just to look for untracked files in it. (The worktree
-    /// removal dirty guard keeps counting those.)
-    static let ignoreUntrackedInSubmodules = "--ignore-submodules=untracked"
+    /// Global git option for status: a submodule still shows when its commit
+    /// or tracked files changed, but git no longer runs a child `git status`
+    /// per submodule on every refresh just to look for untracked files in it.
+    /// A config default rather than `--ignore-submodules`, so a submodule's
+    /// own `submodule.<name>.ignore` still wins. (The worktree removal dirty
+    /// guard keeps counting untracked files.)
+    static let ignoreUntrackedInSubmodules = ["-c", "diff.ignoreSubmodules=untracked"]
 
     /// Creates a service.
     /// - Parameter runner: Executes git; defaults to a production ``CommandRunner``.
@@ -41,8 +43,8 @@ public actor SupermuxGitChangesService {
 
     /// Reads the repository status at `repoPath`.
     ///
-    /// Runs `git status --porcelain=v2 -z --branch --show-stash
-    /// --ignore-submodules=untracked` and parses the output with
+    /// Runs `git -c diff.ignoreSubmodules=untracked status --porcelain=v2 -z
+    /// --branch --show-stash` and parses the output with
     /// ``SupermuxGitStatusParser``. `-z` makes git print paths
     /// verbatim (no C-quoting of non-ASCII/special filenames) with
     /// NUL-terminated records. `--show-stash` folds the stash depth
@@ -57,8 +59,9 @@ public actor SupermuxGitChangesService {
             directory: repoPath,
             executable: "git",
             arguments: [
-                Self.noOptionalLocks, "status", "--porcelain=v2", "-z", "--branch", "--show-stash",
-                Self.ignoreUntrackedInSubmodules,
+                Self.noOptionalLocks,
+            ] + Self.ignoreUntrackedInSubmodules + [
+                "status", "--porcelain=v2", "-z", "--branch", "--show-stash",
             ],
             timeout: Self.gitTimeout
         )
@@ -93,8 +96,8 @@ public actor SupermuxGitChangesService {
     /// artifact (a transient of the concurrent pipe reads, shared by every
     /// runner call site) — it is not purely an encoding fallback.
     private func statusViaLossyCapture(repoPath: String) async -> SupermuxGitStatusSnapshot {
-        let script = "set -o pipefail; git \(Self.noOptionalLocks) status"
-            + " --porcelain=v2 -z --branch --show-stash \(Self.ignoreUntrackedInSubmodules) | /usr/bin/base64"
+        let script = "set -o pipefail; git \(Self.noOptionalLocks) \(Self.ignoreUntrackedInSubmodules.joined(separator: " ")) status"
+            + " --porcelain=v2 -z --branch --show-stash | /usr/bin/base64"
         let result = await runShellPipeline(script, in: repoPath, shell: "/bin/bash")
         guard result.exitStatus == 0,
               let armored = result.stdout,

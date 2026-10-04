@@ -205,6 +205,6 @@ final class SupermuxTabActivitySync {
               let window = app.mainWindowContainingWorkspace(ownerID) ?? app.windowForMainWindowId(ownerID) else {
             return true
         }
-        return window.isVisible && !window.isMiniaturized && window.occlusionState.contains(.visible)
+        return SupermuxWindowVisibility.windowIsOnScreen(window)
     }
 }

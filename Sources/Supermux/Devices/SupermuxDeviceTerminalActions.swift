@@ -106,7 +106,9 @@ enum SupermuxDeviceTerminalActions {
             let onScreen = SupermuxTerminalSizingVisibility.isOnScreen(surface)
             let focused = surface.debugDesiredFocusState() && onScreen
             applyGhosttyFocus(surface, onScreen: onScreen)
-            guard sentFocus[panelID] != focused, let target = forwardingTarget(for: surface) else { return }
+            // Nothing sent yet counts as unfocused, so a pane built hidden
+            // never takes focus from whoever uses that terminal on its Mac.
+            guard (sentFocus[panelID] ?? false) != focused, let target = forwardingTarget(for: surface) else { return }
             sentFocus[panelID] = focused
             send(focused ? "focus_in" : "focus_out", to: target)
         }

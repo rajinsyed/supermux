@@ -248,6 +248,9 @@ final class MobileTerminalByteTee {
     /// Drop replay history for a surface (e.g. when the surface closes).
     func dropSurface(surfaceID: UUID) {
         statesBySurfaceID.removeValue(forKey: surfaceID)
+        // SUPERMUX:begin terminal-stream-resume (a closed terminal's skip mark goes with it)
+        _ = SupermuxTerminalStreamContinuity.takeSkipped(surfaceID: surfaceID)
+        // SUPERMUX:end terminal-stream-resume
         let continuations = laneContinuationsBySurfaceID.removeValue(forKey: surfaceID)
             .map { Array($0.values) } ?? []
         if !continuations.isEmpty {

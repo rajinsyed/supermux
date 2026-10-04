@@ -3,6 +3,7 @@ import CmuxTerminal
 import CmuxTerminalSharing
 import CmuxTerminalSizing
 import Foundation
+import SupermuxKit
 
 /// A terminal pane that nobody can see does not size a shared terminal.
 ///
@@ -264,6 +265,6 @@ final class SupermuxTerminalSizingVisibility {
     static func isOnScreen(_ surface: TerminalSurface) -> Bool {
         let view = surface.hostedView
         guard view.isVisibleInUI, !view.isHiddenOrHasHiddenAncestor, let window = view.window else { return false }
-        return window.isVisible && window.occlusionState.contains(.visible)
+        return SupermuxWindowVisibility.windowIsOnScreen(window)
     }
 }

@@ -1,6 +1,7 @@
 import AppKit
 import CmuxMobileSimulatorStream
 import CmuxSimulatorStreamKit
+import SupermuxKit
 import SwiftUI
 
 /// A remote-simulator viewer tab: a toolbar (the owning Mac's device menu,
@@ -365,8 +366,7 @@ private struct SupermuxRemoteSimulatorWindowVisibility: NSViewRepresentable {
         }
 
         private var isWindowVisible: Bool {
-            guard let window else { return false }
-            return window.isVisible && !window.isMiniaturized && window.occlusionState.contains(.visible)
+            SupermuxWindowVisibility.windowIsOnScreen(window)
         }
 
         private func reconcile() {

@@ -243,7 +243,7 @@ import SupermuxKit
             directory: String, executable: String, arguments: [String], timeout: TimeInterval?
         ) async -> CommandResult {
             let isStatus = executable == "git"
-                && subcommand(of: arguments) == "status"
+                && gitSubcommand(of: arguments) == "status"
             return CommandResult(
                 stdout: isStatus ? statusStdout : "",
                 stderr: nil,
@@ -274,7 +274,7 @@ import SupermuxKit
 
         private func handle(arguments: [String]) -> CommandResult {
             var stdout = ""
-            switch subcommand(of: arguments) {
+            switch gitSubcommand(of: arguments) {
             case "add":
                 recordedAddCalls.append(arguments)
             case "status":
@@ -340,8 +340,8 @@ import SupermuxKit
         ) async -> CommandResult {
             let isStatus = executable == "git"
                 && arguments == [
-                    "--no-optional-locks", "status", "--porcelain=v2", "-z", "--branch", "--show-stash",
-                    "--ignore-submodules=untracked",
+                    "--no-optional-locks", "-c", "diff.ignoreSubmodules=untracked",
+                    "status", "--porcelain=v2", "-z", "--branch", "--show-stash",
                 ]
             guard isStatus else {
                 return CommandResult(
@@ -467,7 +467,7 @@ import SupermuxKit
         nonisolated func run(
             directory: String, executable: String, arguments: [String], timeout: TimeInterval?
         ) async -> CommandResult {
-            let sub = subcommand(
+            let sub = gitSubcommand(
                 of: unwrappedGitArguments(executable: executable, arguments: arguments)
             )
             if sub == "commit" {
@@ -509,8 +509,19 @@ import SupermuxKit
     }
 }
 
-/// The git subcommand of an argument vector, skipping global flags such as
-/// `--no-optional-locks` that the service prepends to read-only invocations.
-private func subcommand(of arguments: [String]) -> String? {
-    arguments.first { !$0.hasPrefix("-") }
+/// The git subcommand of an argument vector, skipping global options such as
+/// `--no-optional-locks` and `-c <name>=<value>` that the service prepends.
+func gitSubcommand(of arguments: [String]) -> String? {
+    var index = arguments.startIndex
+    while index < arguments.endIndex {
+        let argument = arguments[index]
+        if argument == "-c" {
+            index += 2
+        } else if argument.hasPrefix("-") {
+            index += 1
+        } else {
+            return argument
+        }
+    }
+    return nil
 }
