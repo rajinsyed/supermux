@@ -72,6 +72,7 @@ enum SupermuxTabIndicatorSocket {
         let remoteSurfaceID = projection.flatMap { $0.resource.machine.isDevice ? $0.resource.key.uppercased() : nil }
         let lifecycle = panelID.flatMap { workspace.agentLifecycleStatesByPanelId[$0] }?.mapValues(\.rawValue) ?? [:]
         let heldOffScreen = SupermuxTabActivitySync.shared.isHeldOffScreen(tab.id)
+        let isLoading = tab.isLoading || heldOffScreen
         return [
             "tab_id": tab.id.uuid.uuidString,
             "pane_id": pane.id.uuidString,
@@ -79,7 +80,7 @@ enum SupermuxTabIndicatorSocket {
             "panel_type": panel?.panelType.rawValue ?? NSNull(),
             "title": tab.title,
             "is_selected": isSelected,
-            "is_loading": tab.isLoading || heldOffScreen,
+            "is_loading": isLoading,
             "spinner_held_off_screen": heldOffScreen,
             "shows_notification_badge": tab.showsNotificationBadge,
             "remote_surface_id": remoteSurfaceID ?? NSNull(),
@@ -96,12 +97,13 @@ enum SupermuxTabIndicatorSocket {
         }
         let lifecycle = dock.agentRuntimeByPanelId[panelID]?.agentLifecycleStates.mapValues(\.rawValue) ?? [:]
         let heldOffScreen = SupermuxTabActivitySync.shared.isHeldOffScreen(tabID)
+        let isLoading = tab.isLoading || heldOffScreen
         return [
             "in_dock": true,
             "dock_owner_id": dock.workspaceId.uuidString,
             "tab_id": tabID.uuid.uuidString,
             "panel_type": dock.panels[panelID]?.panelType.rawValue ?? NSNull(),
-            "is_loading": tab.isLoading || heldOffScreen,
+            "is_loading": isLoading,
             "spinner_held_off_screen": heldOffScreen,
             "lifecycle": lifecycle,
         ]
