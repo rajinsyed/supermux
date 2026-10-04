@@ -323,8 +323,15 @@ final class SupermuxRemoteProjectsModel {
     // MARK: - Fetch
 
     private func performRefresh(_ machine: SurfaceMachineID) async {
-        guard let device = facade.device(for: machine), device.isConnected else { return }
-        guard let capabilities = await facade.hostCapabilities(on: machine) else { return }
+        // Taken as the pass starts: a sweep asked for during this pass's
+        // requests is left to the pass queued after it, which lists newer projects.
+        let sweep = worktreeSweepDue.remove(machine) != nil
+        guard let device = facade.device(for: machine), device.isConnected,
+              let capabilities = await facade.hostCapabilities(on: machine) else {
+            // Not refreshed: the next pass still sweeps.
+            if sweep { worktreeSweepDue.insert(machine) }
+            return
+        }
         let supportsProjects = capabilities.contains(SupermuxMobileCapability.projectsV1.rawValue)
         update(machine) { $0.supportsProjects = supportsProjects }
         guard supportsProjects else {
@@ -354,11 +361,12 @@ final class SupermuxRemoteProjectsModel {
                 entry.worktreesByProjectID = entry.worktreesByProjectID.filter { listed.contains($0.key) }
             }
             if !device.isLoopback { saveCache(machine: machine, name: device.displayName, projects: projects) }
-            if worktreeSweepDue.remove(machine) != nil {
+            if sweep {
                 Task { await refreshWantedWorktrees(on: machine) }
             }
             await refreshIcons(on: machine, projects: projects)
         } catch {
+            if sweep { worktreeSweepDue.insert(machine) }
             update(machine) { $0.lastError = error.localizedDescription }
         }
     }
