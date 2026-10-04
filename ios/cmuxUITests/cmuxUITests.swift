@@ -433,10 +433,9 @@ final class cmuxUITests: XCTestCase {
         XCTAssertTrue(cmuxFixAccessory.waitForExistence(timeout: 5), "cmux-fix shows its branch")
         assertOnStudio(cmuxFixAccessory.label, branch: "fix/studio-sidebar-sync", "cmux-fix (the Studio clone's workspace)")
         XCTAssertFalse(accessory("ws-docs-notes").exists, "docs-notes has no branch, PR or run to show")
-        // feat-x has a changes chip at the end of its branch line; its
-        // status (the PR badge) must end before it rather than cover it.
-        // cmux-main has no chip, so its status (the run indicator) sits at the
-        // row's end.
+        // feat-x has uncommitted changes, but like the Mac sidebar a nested
+        // row shows no changes chip: its status (the PR badge) ends at the
+        // row's end, like cmux-main's (the run indicator).
         let cmuxMainAccessory = accessory("ws-cmux-main")
         XCTAssertTrue(cmuxMainAccessory.waitForExistence(timeout: 5), "cmux-main shows its branch")
         XCTAssertTrue(cmuxMainAccessory.label.hasPrefix("main"),
@@ -448,15 +447,16 @@ final class cmuxUITests: XCTestCase {
         XCTAssertFalse(element("SupermuxNestedWorkspaceStatus-ws-cmux-fix").exists, "cmux-fix has no PR or run to show")
         let featXInset = try frame(featX, "feat-x").maxX - frame(featXStatus, "feat-x status").maxX
         let cmuxMainInset = try frame(cmuxMain, "cmux-main").maxX - frame(cmuxMainStatus, "cmux-main status").maxX
-        XCTAssertGreaterThan(featXInset, cmuxMainInset + 30,
-                             "feat-x's status moves clear of its changes chip (\(featXInset) vs \(cmuxMainInset))")
+        XCTAssertFalse(element("MobileChangesChip-ws-feat-x").exists, "A nested row shows no changes chip")
+        XCTAssertEqual(featXInset, cmuxMainInset, accuracy: 4,
+                       "feat-x's status ends at the row's end like cmux-main's (\(featXInset) vs \(cmuxMainInset))")
         // As on the Mac sidebar, the status sits centered on the row's
         // trailing edge, beside both lines, where the time used to be.
         let cmuxMainFrame = try frame(cmuxMain, "cmux-main")
         let cmuxMainStatusFrame = try frame(cmuxMainStatus, "cmux-main status")
         XCTAssertEqual(cmuxMainStatusFrame.midY, cmuxMainFrame.midY, accuracy: 4,
                        "cmux-main's status is centered on its row (status \(cmuxMainStatusFrame), row \(cmuxMainFrame))")
-        capture("01c-accessory-beside-changes-chip")
+        capture("01c-nested-row-status")
         // A project that lives only on the Studio is still on another Mac:
         // like a remote-only project on the Mac, its rows carry the icon.
         let infraAPI = workspaceRow("ws-infra-api")
