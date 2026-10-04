@@ -39,6 +39,10 @@ public final class SupermuxRemoteChangesBackend: SupermuxChangesBackend {
     /// The repository root the host reported last (the `expected_root` guard).
     private var lastRoot: String?
     private var lastSnapshot: SupermuxGitStatusSnapshot?
+    /// The last status's `unpushed_count` (a branch without an upstream), or
+    /// `nil` when it carried none: a branch with an upstream, or a Mac too
+    /// old to report it (then the history page counts).
+    private var lastUnpushedCount: Int?
     private var history: (readAt: ContinuousClock.Instant, page: HistoryPage)?
     /// Whether the owning Mac can write commit messages: what its last status
     /// reported (`ai_commit_configured`, the same key check its own panel
@@ -70,12 +74,13 @@ public final class SupermuxRemoteChangesBackend: SupermuxChangesBackend {
     /// way instead of acting on the other repository.
     private func readStatus(pinnedTo repoPath: String?) async -> SupermuxGitStatusSnapshot {
         do {
-            let result = try await call(.changesStatus, repoPath: repoPath)
+            let result = try await call(.changesStatus, ["include_unpushed_count": true], repoPath: repoPath)
             let dto = try SupermuxWireJSON().decode(SupermuxChangesStatusDTO.self, from: result)
             if let root = dto.root, !root.isEmpty { lastRoot = root }
             if let configured = dto.aiCommitConfigured { isAICommitConfigured = configured }
             let snapshot = SupermuxGitStatusSnapshot(wire: dto)
             lastSnapshot = snapshot
+            lastUnpushedCount = dto.unpushedCount
             return snapshot
         } catch {
             // A dropped reply keeps the panel as it was instead of blanking it.
@@ -143,8 +148,13 @@ public final class SupermuxRemoteChangesBackend: SupermuxChangesBackend {
         return await historyPage(repoPath: repoPath, fetching: true) != nil
     }
 
+    /// The count the status just read carried (the panel asks right after
+    /// each status). Never cached past it: a push without `-u` moves remote
+    /// refs, not `HEAD`. A Mac too old to send it is counted from the
+    /// history page, as before.
     public func unpushedCountWithoutUpstream(repoPath: String) async -> Int {
-        await historyPage(repoPath: repoPath)?.unpushed.count ?? 0
+        if let lastUnpushedCount { return lastUnpushedCount }
+        return await historyPage(repoPath: repoPath)?.unpushed.count ?? 0
     }
 
     public func unpushedCommits(repoPath: String, hasUpstream: Bool, limit: Int) async -> [SupermuxGitCommit] {
