@@ -18,6 +18,7 @@ public struct SupermuxLocalInterface: Hashable, Sendable, CustomStringConvertibl
     public let isPointToPoint: Bool
     let family: SupermuxSocketAddress.Family
     let bytes: [UInt8]
+    private let parsed: SupermuxSocketAddress
 
     /// Nil for an address that does not parse or a prefix out of range.
     /// - Parameters:
@@ -35,6 +36,7 @@ public struct SupermuxLocalInterface: Hashable, Sendable, CustomStringConvertibl
         self.isPointToPoint = isPointToPoint
         family = parsed.family
         bytes = parsed.bytes
+        self.parsed = parsed
     }
 
     public var description: String {
@@ -61,6 +63,51 @@ public struct SupermuxLocalInterface: Hashable, Sendable, CustomStringConvertibl
     /// A global unicast IPv6 address (`2000::/3`).
     var isGlobalIPv6: Bool {
         family == .ipv6 && (bytes[0] & 0xE0) == 0x20
+    }
+
+    /// Cellular: a carrier's private address (often 10/8) is no LAN.
+    var isCellular: Bool {
+        name.hasPrefix("pdp_ip")
+    }
+
+    /// An address on a private network (private IPv4, ULA): Wi-Fi, wired or
+    /// a VPN tunnel of its own. Link-local and Tailscale addresses are not.
+    var isOnPrivateNetwork: Bool {
+        !isCellular && parsed.routeScope == .lan && parsed.isDialable
+    }
+
+    /// A self-assigned link-local address (`169.254/16`, `fe80::/10`).
+    private var isLinkLocal: Bool {
+        family == .ipv4 ? bytes[0] == 169 && bytes[1] == 254 : bytes[0] == 0xFE && (bytes[1] & 0xC0) == 0x80
+    }
+
+    /// The first 64 bits of an IPv6 address, spelled `2001:db8:1:2::`.
+    private var ipv6Prefix64: String {
+        stride(from: 0, to: 8, by: 2)
+            .map { String(UInt16(bytes[$0]) << 8 | UInt16(bytes[$0 + 1]), radix: 16) }
+            .joined(separator: ":") + "::"
+    }
+
+    /// Interfaces that come and go while the network stays the same: Apple
+    /// Wireless Direct Link (`awdl`, `llw`), IPsec tunnels the system opens
+    /// on its own (`ipsec`), and the accessory links of Apple silicon (`anpi`).
+    private static let transientInterfacePrefixes = ["awdl", "llw", "ipsec", "anpi"]
+
+    /// What names the networks `interfaces` are on, without what changes
+    /// while they stay the same: link-local addresses, interfaces that come
+    /// and go on their own (``transientInterfacePrefixes``), and rotating
+    /// temporary IPv6 addresses (an IPv6 address counts as its /64). Equal
+    /// fingerprints mean the same networks: a foreground or a path update
+    /// with the same fingerprint is not a network change.
+    /// - Parameter interfaces: This device's (``current()``).
+    /// - Returns: One entry per network, order-free (`en0 192.168.1.20/24`,
+    ///   `en0 2001:db8:1:2::/64`).
+    public static func networkFingerprint(_ interfaces: [SupermuxLocalInterface]) -> Set<String> {
+        Set(interfaces.compactMap { interface in
+            guard !interface.isLinkLocal,
+                  !transientInterfacePrefixes.contains(where: { interface.name.hasPrefix($0) }) else { return nil }
+            return interface.family == .ipv6 ? "\(interface.name) \(interface.ipv6Prefix64)/64" : interface.description
+        })
     }
 
     /// This device's addresses now: every IPv4 and IPv6 address of an
@@ -125,31 +172,57 @@ public struct SupermuxLocalInterface: Hashable, Sendable, CustomStringConvertibl
 
 extension SupermuxRouteCandidates {
     /// The addresses among a peer's that this device can reach directly,
-    /// judged from its own interfaces, in their order:
+    /// judged from its own interfaces:
     /// - never one of this device's own addresses (a VM bridge address both
     ///   Macs have would reach this device's own host);
-    /// - LAN (private IPv4, ULA) only when a Wi-Fi or wired interface (not
-    ///   point-to-point) is on that subnet;
+    /// - LAN (private IPv4, ULA) while this device is on a private network of
+    ///   that family (Wi-Fi, wired or a VPN tunnel, never cellular) or
+    ///   Tailscale is up: a routed second subnet, a WireGuard tunnel and
+    ///   Tailscale's subnet routes reach it too;
     /// - Tailscale only when Tailscale's tunnel is up here;
     /// - global IPv6 only when this device has a global IPv6 address.
     ///
     /// Anything else (public IPv4, unparsable) is left out. A dial with
     /// nothing left skips the direct lane instead of waiting out its deadline.
+    /// The order is what a dial's cap keeps first: LAN on one of this
+    /// device's own subnets, then Tailscale, then other LAN, then global
+    /// IPv6, each in the peer's order.
     /// - Parameters:
     ///   - addresses: The peer's direct addresses.
     ///   - interfaces: This device's (``SupermuxLocalInterface/current()``).
-    /// - Returns: The ones worth dialing.
+    /// - Returns: The ones worth dialing; a dial takes the first ``limit``.
     public static func reachable(_ addresses: [String], from interfaces: [SupermuxLocalInterface]) -> [String] {
         let hasTailscale = interfaces.contains { $0.isTailscale }
         let hasGlobalIPv6 = interfaces.contains { $0.isGlobalIPv6 }
-        return addresses.filter { raw in
-            guard let address = SupermuxSocketAddress(raw),
-                  !interfaces.contains(where: { $0.bytes == address.bytes }) else { return false }
+        let ranked = excludingOwn(addresses, from: interfaces).compactMap { raw -> (rank: Int, address: String)? in
+            guard let address = SupermuxSocketAddress(raw) else { return nil }
             switch address.routeScope {
-            case .tailscale: return hasTailscale
-            case .lan: return interfaces.contains { !$0.isPointToPoint && $0.contains(address) }
-            case .internet: return address.isGlobalIPv6 && hasGlobalIPv6
+            case .tailscale:
+                return hasTailscale ? (1, raw) : nil
+            case .lan:
+                if interfaces.contains(where: { !$0.isCellular && $0.contains(address) }) { return (0, raw) }
+                let onPrivateNetwork = interfaces.contains { $0.isOnPrivateNetwork && $0.family == address.family }
+                return onPrivateNetwork || hasTailscale ? (2, raw) : nil
+            case .internet:
+                return address.isGlobalIPv6 && hasGlobalIPv6 ? (3, raw) : nil
             }
+        }
+        return ranked.enumerated()
+            .sorted { ($0.element.rank, $0.offset) < ($1.element.rank, $1.offset) }
+            .map(\.element.address)
+    }
+
+    /// `addresses` without this device's own and without unparsable ones:
+    /// the only rule for the user's own Private Addresses, which may reach
+    /// paths this device cannot tell from its interfaces.
+    /// - Parameters:
+    ///   - addresses: Socket addresses.
+    ///   - interfaces: This device's (``SupermuxLocalInterface/current()``).
+    /// - Returns: The others, in their order.
+    public static func excludingOwn(_ addresses: [String], from interfaces: [SupermuxLocalInterface]) -> [String] {
+        addresses.filter { raw in
+            guard let address = SupermuxSocketAddress(raw) else { return false }
+            return !interfaces.contains { $0.bytes == address.bytes }
         }
     }
 }
