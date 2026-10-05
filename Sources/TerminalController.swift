@@ -16721,6 +16721,12 @@ class TerminalController {
                        ),
                    writer != connectionID { continue }
                 // SUPERMUX:end sizing-connection-scoped-clear
+                // SUPERMUX:begin sizing-mac-close-grace (a viewing Mac's report outlives its connection's close by a grace: its link redials within seconds and its mirrors re-attach at the same grid)
+                if let connectionID, SupermuxMacViewerCloseGrace.defers(
+                    deviceKind: mobileViewportReportsBySurfaceID[surfaceID]?[clientID]?.deviceKind,
+                    clientID: clientID, connectionID: connectionID, reason: reason
+                ) { continue }
+                // SUPERMUX:end sizing-mac-close-grace
                 _ = clearMobileViewportReport(surfaceID: surfaceID, clientID: clientID, reason: reason)
             }
         }
