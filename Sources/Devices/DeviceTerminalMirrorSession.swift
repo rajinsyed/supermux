@@ -106,7 +106,7 @@ final class DeviceTerminalMirrorSession {
     private var viewportTransitionRetries = 0
     // SUPERMUX:begin device-mirror-replay-timed-out
     /// Consecutive replays that missed their deadline on a live link
-    /// (SupermuxDeviceLinkEvents.isMissedDeadline), bounded like the above.
+    /// (SupermuxDeviceLinkEvents.isMissedDeadline); each retry waits longer.
     private var supermuxTimedOutRetries = 0
     // SUPERMUX:end device-mirror-replay-timed-out
     // SUPERMUX:begin device-mirror-hidden-counts
@@ -161,7 +161,7 @@ final class DeviceTerminalMirrorSession {
             remoteWorkspaceID: remoteWorkspaceID, remoteSurfaceID: remoteSurfaceID,
             events: link.terminalEvents,
             isConnected: { link.isConnected },
-            // SUPERMUX:begin terminal-replay-deadline (a replay gets its own deadline; upstream: `try await link.requestData(method, params: params)`)
+            // SUPERMUX:begin terminal-replay-deadline (a replay's reply is MBs on a slow link: it gets its own, longer deadline; upstream: `try await link.requestData(method, params: params)`)
             requestData: { method, params in
                 try await link.requestData(
                     method, params: params, timeoutNanoseconds: SupermuxTerminalStream.deadline(forMethod: method)
@@ -798,11 +798,15 @@ final class DeviceTerminalMirrorSession {
             // SUPERMUX:begin device-mirror-replay-timed-out
             // The replay missed its deadline but the link stayed up (a slow Mac is
             // not a lost Mac): ask again, as the reconnect used to, instead of
-            // staying detached on a connected link.
-            if SupermuxDeviceLinkEvents.isMissedDeadline(error), isConnected(), supermuxTimedOutRetries < 3 {
+            // staying detached on a connected link. Each retry waits longer
+            // (2 s doubling to 30 s) and there is no limit while the link stays
+            // up (it showed "Mac disconnected" until Retry after three). The
+            // host drops the older reply if it still waits there
+            // (SupermuxTerminalReplaySupersession).
+            if SupermuxDeviceLinkEvents.isMissedDeadline(error), isConnected() {
                 supermuxTimedOutRetries += 1
                 replayNeeded = true
-                try? await Task.sleep(nanoseconds: SupermuxDeviceLinkEvents.missedDeadlineRetryDelayNanoseconds)
+                try? await Task.sleep(nanoseconds: SupermuxTerminalStream.replayRetryDelayNanoseconds(attempt: supermuxTimedOutRetries))
                 return
             }
             // SUPERMUX:end device-mirror-replay-timed-out

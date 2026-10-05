@@ -1509,6 +1509,11 @@ actor MobileHostConnection {
     private let onClose: @Sendable (UUID) async -> Void
     private let requestSimulatorFrameReplay: @Sendable (UUID, Set<String>) async -> Void
     private let responseWorkQuota = MobileHostRPCWorkQuota()
+    // SUPERMUX:begin terminal-replay-supersede
+    /// A mirror pane's newer replay request turns its older reply, still
+    /// waiting to be written, into a small `superseded` error.
+    private let supermuxReplays = SupermuxTerminalReplaySupersession()
+    // SUPERMUX:end terminal-replay-supersede
     /// Pre-write mailbox with synchronous admission from the event
     /// fan-out. Nonisolated so ``MobileHostService/emitEvent(topic:payload:)``
     /// admits events without scheduling any per-event actor work.
@@ -1908,10 +1913,19 @@ actor MobileHostConnection {
         }
         switch decodedRequest {
         case let .success(request):
+            // SUPERMUX:begin terminal-replay-supersede (a newer replay from the same mirror pane supersedes this one)
+            let supermuxTicket = supermuxReplays.begin(method: request.method, params: request.params)
+            defer { supermuxReplays.end(supermuxTicket) }
+            // SUPERMUX:end terminal-replay-supersede
             guard let response = await successResponsePayload(for: request) else {
                 return
             }
-            if await sendResponse(response.data) {
+            // SUPERMUX:begin terminal-replay-supersede (upstream: `if await sendResponse(response.data) {`)
+            if await sendResponse(
+                response.data,
+                supermuxReplacement: supermuxReplays.replacement(for: supermuxTicket, requestID: request.id)
+            ) {
+            // SUPERMUX:end terminal-replay-supersede
                 await recordReadinessContribution(response.readinessContribution)
             }
         case let .failure(error):
@@ -2648,7 +2662,9 @@ actor MobileHostConnection {
         await independentEventWriter?.reset()
     }
 
-    private func sendResponse(_ response: Data) async -> Bool {
+    // SUPERMUX:begin terminal-replay-supersede (`supermuxReplacement`, passed to the writer; upstream: `(_ response: Data)`)
+    private func sendResponse(_ response: Data, supermuxReplacement: (@Sendable () -> Data?)? = nil) async -> Bool {
+    // SUPERMUX:end terminal-replay-supersede
         guard !isClosed else {
             return false
         }
@@ -2670,16 +2686,21 @@ actor MobileHostConnection {
 
         // SUPERMUX:begin host-writer-bulk-yields (a large reply yields to every other write; upstream: `return await sendControlFrame(frame)`)
         return await sendControlFrame(
-            frame, bulk: frame.count > MobileHostSerializedTransportWriter.supermuxBulkReplyByteCount
+            frame, bulk: frame.count > MobileHostSerializedTransportWriter.supermuxBulkReplyByteCount,
+            // SUPERMUX:begin terminal-replay-supersede
+            supermuxReplacement: supermuxReplacement
+            // SUPERMUX:end terminal-replay-supersede
         )
         // SUPERMUX:end host-writer-bulk-yields
     }
 
     // SUPERMUX:begin host-writer-bulk-yields (`bulk`, passed to the writer; upstream: `(_ frame: Data)` and `writer.send(frame)`)
-    private func sendControlFrame(_ frame: Data, bulk: Bool = false) async -> Bool {
+    // SUPERMUX:begin terminal-replay-supersede (`supermuxReplacement`, passed to the writer)
+    private func sendControlFrame(_ frame: Data, bulk: Bool = false, supermuxReplacement: (@Sendable () -> Data?)? = nil) async -> Bool {
         guard !isClosed else { return false }
         do {
-            try await writer.send(frame, bulk: bulk)
+            try await writer.send(frame, bulk: bulk, supermuxReplacement: supermuxReplacement)
+    // SUPERMUX:end terminal-replay-supersede
     // SUPERMUX:end host-writer-bulk-yields
             return true
         } catch {

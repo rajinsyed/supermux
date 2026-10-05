@@ -76,6 +76,10 @@ final class SupermuxTerminalStream {
     /// dragged on the other Mac replays once it stops, not for every step.
     static let gridQuietNanoseconds: UInt64 = 120_000_000
     static let gridQuietLimitNanoseconds: UInt64 = 2_000_000_000
+    /// Names this mirror's replay requests to the host, so a newer one from
+    /// the same pane supersedes an older reply still waiting there
+    /// (``SupermuxTerminalReplaySupersession``).
+    let replayOwner = UUID().uuidString
 
     init(link: DeviceLink, surfaceID: UUID) {
         watch = SupermuxTerminalStreamWatch.of(link)
@@ -349,6 +353,7 @@ final class SupermuxTerminalStream {
         requestIsShallow = hidden && epoch != nil
         var params: [String: Any] = [
             SupermuxTerminalStreamHost.streamParam: 1,
+            SupermuxTerminalStreamHost.replayOwnerParam: replayOwner,
             "anchor": "screen",
             "max_scrollback_rows": requestIsShallow ? Self.hiddenScrollbackRows : Self.scrollbackRows,
         ]
@@ -365,14 +370,27 @@ final class SupermuxTerminalStream {
 
     // MARK: Replay deadline
 
-    /// The deadline of a mirror request: a suite's replay deadline
-    /// (`terminal_stream.replay_deadline`), else the link's.
+    /// How long a replay's reply may take. A full replay is MBs: on a slow
+    /// relay several of them leave the host one after another (7 at 300 KB/s
+    /// took ~40 s), so the link's 20 s missed the late ones, and each was
+    /// asked for again while the host still sent the first (STREAM.md H3b).
+    nonisolated static let replayDeadlineNanoseconds: UInt64 = 90_000_000_000
+
+    /// The deadline of a mirror request: a replay's own (a suite may set it,
+    /// `terminal_stream.replay_deadline`), else the link's.
     nonisolated static func deadline(forMethod method: String) -> UInt64? {
         guard method == "mobile.terminal.replay" else { return nil }
         #if DEBUG
         if let seconds = SupermuxTerminalStreamDebug.replayDeadlineSeconds { return UInt64(seconds * 1_000_000_000) }
         #endif
-        return nil
+        return replayDeadlineNanoseconds
+    }
+
+    /// The wait before asking again after the `attempt`-th replay in a row
+    /// missed its deadline on a live link: 2 s, doubling, at most 30 s.
+    static func replayRetryDelayNanoseconds(attempt: Int) -> UInt64 {
+        let seconds = min(UInt64(2) << UInt64(min(max(attempt - 1, 0), 4)), 30)
+        return seconds * 1_000_000_000
     }
 
     func noteReply(_ reply: Reply) {

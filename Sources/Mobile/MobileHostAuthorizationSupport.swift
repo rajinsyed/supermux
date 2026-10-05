@@ -241,12 +241,16 @@ actor MobileHostSerializedTransportWriter {
     }
 
     // SUPERMUX:begin host-writer-bulk-yields (`bulk`: a large reply that yields to every other write; upstream: `func send(_ data: Data)` and `await acquire()`)
-    func send(_ data: Data, bulk: Bool = false) async throws {
+    // SUPERMUX:begin terminal-replay-supersede (`supermuxReplacement`: read once the write's turn comes; a superseded replay's reply goes as a small error instead)
+    func send(_ data: Data, bulk: Bool = false, supermuxReplacement: (@Sendable () -> Data?)? = nil) async throws {
+    // SUPERMUX:end terminal-replay-supersede
         await acquire(bulk: bulk)
     // SUPERMUX:end host-writer-bulk-yields
         defer { release() }
         try Task.checkCancellation()
-        try await transport.send(data)
+        // SUPERMUX:begin terminal-replay-supersede (upstream: `try await transport.send(data)`)
+        try await transport.send(supermuxReplacement?() ?? data)
+        // SUPERMUX:end terminal-replay-supersede
     }
 
     // SUPERMUX:begin host-writer-bulk-yields (upstream: `private func acquire() async` appending every waiter to `waiters`)

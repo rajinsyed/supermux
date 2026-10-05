@@ -40,6 +40,9 @@ enum SupermuxTerminalStreamHost {
     nonisolated static let resumeColumnsParam = "supermux_resume_columns"
     nonisolated static let resumeRowsParam = "supermux_resume_rows"
     nonisolated static let resumeGridGenerationParam = "supermux_resume_grid_gen"
+    /// Names the mirror pane asking, so its newer replay request supersedes
+    /// its older one (``SupermuxTerminalReplaySupersession``).
+    nonisolated static let replayOwnerParam = "supermux_replay_owner"
     /// Replay reply keys.
     nonisolated static let epochKey = "supermux_stream_epoch"
     nonisolated static let resumedKey = "supermux_resumed"
@@ -159,6 +162,74 @@ extension TerminalController {
         let generation = payload[SupermuxTerminalStreamHost.gridGenerationKey].map { "\($0)" } ?? "nil"
         cmuxDebugLog("supermux.terminal.replay surface=\(surfaceID.uuidString.prefix(8)) gridGen=\(generation)")
         #endif
+    }
+}
+
+// MARK: - Replay: a newer request supersedes an older reply
+
+/// A mirror pane's newer replay request supersedes its older one on the host.
+///
+/// On a slow link a full replay's reply (MBs) can wait in the host's writer
+/// behind others past the viewer's deadline; the viewer then asked again
+/// while the host still held the first reply, and both went out in full
+/// (STREAM.md H3b). Each streaming mirror names itself on its replays
+/// (`supermux_replay_owner`, one per pane), so a newer request from the same
+/// pane for the same terminal on the same connection turns the older reply,
+/// if it has not started on the wire, into a small `superseded` error (a
+/// frame already on the wire is never cut). The viewer stopped waiting for
+/// the older request, so nothing reads that error. A request without an
+/// owner (an older Mac, a phone) is never superseded. One per connection.
+final class SupermuxTerminalReplaySupersession: Sendable {
+    struct Ticket: Sendable {
+        fileprivate let key: String
+        fileprivate let serial: UInt64
+    }
+
+    private struct State {
+        var nextSerial: UInt64 = 0
+        /// The newest request's serial per terminal and pane.
+        var latest: [String: UInt64] = [:]
+    }
+
+    private let state = OSAllocatedUnfairLock(initialState: State())
+
+    /// A request arrives: a replay from a named pane supersedes that pane's
+    /// older ones for the same terminal. Nil for anything else.
+    func begin(method: String, params: [String: Any]) -> Ticket? {
+        guard method == "mobile.terminal.replay",
+              let owner = params[SupermuxTerminalStreamHost.replayOwnerParam] as? String,
+              let surfaceID = (params["surface_id"] as? String).flatMap(UUID.init(uuidString:)) else { return nil }
+        let key = "\(surfaceID.uuidString)/\(owner)"
+        return state.withLock { state in
+            state.nextSerial &+= 1
+            state.latest[key] = state.nextSerial
+            return Ticket(key: key, serial: state.nextSerial)
+        }
+    }
+
+    /// The request's reply was written or dropped.
+    func end(_ ticket: Ticket?) {
+        guard let ticket else { return }
+        state.withLock { state in
+            if state.latest[ticket.key] == ticket.serial { state.latest[ticket.key] = nil }
+        }
+    }
+
+    /// What the writer sends in place of the reply once its turn comes: the
+    /// `superseded` error when a newer request of the same pane arrived.
+    func replacement(for ticket: Ticket?, requestID: Any?) -> (@Sendable () -> Data?)? {
+        guard let ticket,
+              let frame = try? MobileSyncFrameCodec.encodeFrame(MobileHostRPCEnvelope.error(
+                  id: requestID, code: "superseded", message: "A newer replay of this terminal was requested"
+              )) else { return nil }
+        let state = state
+        return {
+            guard state.withLock({ $0.latest[ticket.key] != ticket.serial }) else { return nil }
+            #if DEBUG
+            cmuxDebugLog("supermux.terminal.replay SUPERSEDED surface=\(ticket.key.prefix(8))")
+            #endif
+            return frame
+        }
     }
 }
 
