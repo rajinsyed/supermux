@@ -534,22 +534,30 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   Addresses; its own probe schedule, `SupermuxRouteUpgradeSchedule`, is gone):
   `SupermuxPhoneRoutePolicies` (SupermuxMobileKit) holds one `SupermuxRouteSwitchPolicy` per Mac. It
   asks each Mac for its `route.candidates` on the shared `SupermuxRouteCandidateFetchSchedule` (on each
-  new connection and admitted session, 10 min after a settled answer, a minute after a failure, an empty
-  list or `not_ready`; `direct_off` forgets the Mac), keeps them with the direct paths its sessions used
-  in the Iroh state dir's `supermux-route/candidates.json` (0700, excluded from backups, protected until
-  first unlock; sign-out forgets them), and runs the Mac's own `SupermuxIrxDirectFirstDial.race` from a
-  direct-only endpoint (the one its Direct method builds), one handshake per address it can reach
-  (`SupermuxRouteCandidates.reachable`), so direct wins whenever it connects within 1.5 s, even when the
-  relay is ready first. A cold launch races under the warmed cached identity, and sign-in for that
-  account keeps the lane and its sessions. A direct-lane session never authorizes NAT traversal. The
+  new connection and admitted session, 10 min after a settled answer, a minute after a failure or an
+  empty list, 5 s after `not_ready`; `direct_off` forgets the Mac), keeps them with the direct paths its
+  sessions used in the Iroh state dir's `supermux-route/candidates.json` (0700, excluded from backups,
+  protected until first unlock; the first builds' `supermux-route-candidates.json` beside the Iroh state
+  moves in once; sign-out forgets them all, and a write it overtook is undone), and runs the Mac's own
+  `SupermuxIrxDirectFirstDial.race` from a direct-only endpoint (the one its Direct method builds), one
+  handshake per address: the Mac's that it can reach (`SupermuxRouteCandidates.reachable`, the Mac's
+  rules above), best 16 first, then the user's Private Addresses less its own (`excludingOwn`; until
+  2026-10-06 they were filtered too), so direct wins whenever it connects within 1.5 s, even when the
+  relay is ready first. An expired relay credential is refreshed inside the relay leg, as on the Mac
+  (until 2026-10-06 before the race, so with the internet down the dial failed before the lane). A cold
+  launch races under the warmed cached identity, and sign-in for that account keeps the lane and its
+  sessions. A direct-lane session never authorizes NAT traversal. The
   hold-off after a flap, the skip after a failed lane admission and the end of the relay hold after two
   lost races are the Mac's. While the app is active a 2 s loop probes a relayed session when the policy
   says so (10 s ±20 %, 30 s after five misses) and moves it with one planned redial (at most one per
   30 s), and checks every direct-lane session (two misses redial onto the relay and count a flap). Path
-  updates and foregrounds are judged once they stop for 1 s (`SupermuxTrailingDebounce`): only a real
-  change of the phone's interfaces clears the hold-off and probes at once; a foreground on the same
-  network probes soon and keeps the hold-off (until 2026-10-06 every foreground, and the first change of
-  a burst, counted as a network change, and dials under the warmed identity did not race). Relay-only
+  updates and foregrounds are judged once they stop for 1 s, at most 5 s after a burst's first update
+  (`SupermuxTrailingDebounce`), and a dial judges a changed network first (a foreground's dial comes
+  before that judgement): only a real change of the phone's networks
+  (`SupermuxLocalInterface.networkFingerprint`: no link-local addresses, AWDL, IPsec tunnels or rotating
+  temporary IPv6) clears the hold-off and probes at once; a foreground on the same network probes soon and
+  keeps the hold-off (until 2026-10-06 every foreground, and the first change of a burst, counted as a
+  network change, and dials under the warmed identity did not race). Relay-only
   mode and the Direct and Tailscale methods are unchanged. Journal: `supermux-route/{candidates,
   dial-race, dial-direct-skipped, probe, redial, liveness-miss, fallback, direct-admission-failed,
   network-settled}`.

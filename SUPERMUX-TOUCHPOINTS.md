@@ -936,16 +936,16 @@ Rules for adding a touchpoint:
 | 1108 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/SupermuxRenderGridPayloadPeek.swift` | `render-grid-sink-first` | Whole new file (fenced top to bottom): a `Decodable` that reads only `surface_id` (bare) or `render_grid.surface_id` (wrapped) and decodes the frame once in the form it found |
 | 1109 | `Packages/iOS/CmuxMobileShell/Tests/CmuxMobileShellTests/SupermuxRenderGridPayloadPeekTests.swift` | `render-grid-sink-first` | **Whole-file fork test inside an upstream package.** Bare and wrapped payloads name their terminal and decode once; malformed payloads drop; the peek is far cheaper than the decode it skips |
 | 1110 | `ios/cmuxPackage/Package.swift` | `phone-route-direct-race` | Three fences. The package dependencies gain `../../Packages/iOS/SupermuxMobileKit` and `../../Packages/Shared/SupermuxMobileCore`; the `cmuxFeature` target gains `"SupermuxMobileKit"` and `"SupermuxMobileCore"`; the `cmuxFeatureTests` target gains `"SupermuxMobileKit"` and `"SupermuxMobileCore"` (`SupermuxPhoneDialRaceTests` names `SupermuxDialLane`, `SupermuxPhoneRouteStateTests` the address store's keys) |
-| 1111 | `ios/cmuxPackage/Sources/cmuxFeature/MobileIrxRuntimeComposition.swift` | `phone-route-direct-race` | Three fences. Imports `SupermuxMobileCore` and `SupermuxMobileKit`; stored state after `admittedSessionCount`: `let supermuxRouteCandidates: SupermuxRouteCandidateStore`, `var supermuxRoutePolicies = SupermuxPhoneRoutePolicies()`, `let supermuxNetworkDebounce = SupermuxTrailingDebounce(settle: …supermuxNetworkSettle)`, `var supermuxRouteLoop: Task<Void, Never>?`; `init` ends with `supermuxRouteCandidates = SupermuxRouteCandidateStore(fileURL: Self.supermuxRouteCandidatesFile(stateDirectory: configuration.stateDirectory))` |
-| 1112 | `ios/cmuxPackage/Sources/cmuxFeature/MobileIrxRuntimeComposition+Dial.swift` | `phone-route-direct-race` | Four fences, all inside `dialOnce` (itself inside the `mobile-irx-cached-dial-authority` fence). `let connection = try await supervisor.dial(address:credentials:)` becomes `let dialed = try await supermuxDial(peerHex:record:intent:privateAddresses: direct) { try await supervisor.dial(address: address, credentials: dialCredentials) }` and `let connection = dialed.connection`; after upstream's `authorizesDirectPaths` line, `if dialed.lane == .direct { authorizesDirectPaths = false }`; after `activeDialIntentByPeer[peerHex] = intent`, `supermuxSessionAdmitted(peerHex:sessionID: admit.session, intent:lane: dialed.lane)`; in the admission `catch`, after the close, `supermuxAdmissionFailed(peerHex:lane: dialed.lane)` |
+| 1111 | `ios/cmuxPackage/Sources/cmuxFeature/MobileIrxRuntimeComposition.swift` | `phone-route-direct-race` | Three fences. Imports `SupermuxMobileCore` and `SupermuxMobileKit`; stored state after `admittedSessionCount`: `let supermuxRouteCandidates: SupermuxRouteCandidateStore`, `var supermuxRouteAddressEpoch: UInt64 = 0` (the sign-outs that forgot every address), `var supermuxRoutePolicies = SupermuxPhoneRoutePolicies()`, `let supermuxNetworkDebounce = SupermuxTrailingDebounce(settle: …supermuxNetworkSettle)`, `var supermuxRouteLoop: Task<Void, Never>?`; `init` ends with `supermuxRouteCandidates = SupermuxRouteCandidateStore(fileURL: Self.supermuxRouteCandidatesFile(stateDirectory: configuration.stateDirectory))` |
+| 1112 | `ios/cmuxPackage/Sources/cmuxFeature/MobileIrxRuntimeComposition+Dial.swift` | `phone-route-direct-race` | Five fences, all inside `dialOnce` (itself inside the `mobile-irx-cached-dial-authority` fence). Upstream's relay credential refresh before the dial (`var credentials = Self.credentials(cache)`, then `if case .automatic = intent, !credentials.contains(where: { $0.isUsable(at: Date()) }), let control { credentials = try await control.refreshRelayCredentials().map { … } }`) becomes `let credentials = Self.credentials(cache)` and `let refresh = supermuxCredentialRefresh(intent: intent, authority: authority)` (upstream's `assertDialAuthority` after it stays); `let connection = try await supervisor.dial(address:credentials:)` becomes `let relayLeg = Self.supermuxRelayLeg(cached: credentials, refresh: refresh) { fresh in try await supervisor.dial(address: address, credentials: fresh) }`, `let dialed = try await supermuxDial(peerHex:record:intent:privateAddresses: direct, automatic: relayLeg)` and `let connection = dialed.connection` (an expired credential is refreshed inside the race's relay leg, beside the direct lane); after upstream's `authorizesDirectPaths` line, `if dialed.lane == .direct { authorizesDirectPaths = false }`; after `activeDialIntentByPeer[peerHex] = intent`, `supermuxSessionAdmitted(peerHex:sessionID: admit.session, intent:lane: dialed.lane)`; in the admission `catch`, after the close, `supermuxAdmissionFailed(peerHex:lane: dialed.lane)` |
 | 1113 | `ios/cmuxPackage/Sources/cmuxFeature/MobileIrxRuntimeComposition+Lifecycle.swift` | `phone-route-direct-race` | Four fences. At the end of `notifyNetworkChange()` (runs on every reachability update and every foreground): `supermuxRouteNetworkChanged()`. In `detachCurrentRuntime`: `let oldDirectSupervisor = directEndpointSupervisor` becomes `let supermuxKeptDirectLane = preservePrepared ? directEndpointSupervisor : nil` and `let oldDirectSupervisor = preservePrepared ? nil : directEndpointSupervisor` (sign-in for the warmed account keeps the direct lane a launch dial raced on, with its sessions); after upstream's `control = nil; endpointSupervisor = nil; directEndpointSupervisor = nil`, `directEndpointSupervisor = supermuxKeptDirectLane`; before the final `return DetachedRuntime(…)`, `if !preservePrepared { await supermuxResetRouteState(forgetAddresses: activeScope == nil) }` |
-| 1114 | `ios/cmuxPackage/Sources/cmuxFeature/MobileIrxRuntimeComposition+SupermuxRoute.swift` | `phone-route-direct-race` | Whole new file (fenced top to bottom): `MobileIrxRuntimeComposition: SupermuxPhoneRouteRuntime` (`supermuxLinkPaths()` with each session's id, `supermuxRecordRouteCandidates(_:macDeviceID:instanceTag:) -> Answer` (`.stored`, `.empty` for an empty answer that keeps the old addresses, `.failed` for an unknown Mac or another endpoint's answer), `supermuxForgetRouteCandidates(macDeviceID:instanceTag:)` for `direct_off`); the dial (`supermuxDial` asks `supermuxRoutePolicies.dialPlan` (hold-off, skip-once, relay hold), dials `SupermuxIrxDirectFirstDial.laneLeg` at the addresses `SupermuxPhoneRoutePolicies.directAddresses` keeps (reachable from `SupermuxLocalInterface.current()`), reports `raceFinished`; `static supermuxRace(timing:direct:automatic:discard:)` = `SupermuxIrxDirectFirstDial.race` with the leg mapped to `SupermuxDialLane`; `supermuxSessionAdmitted(peerHex:sessionID:intent:lane:)`, `supermuxAdmissionFailed`, `supermuxDirectLane()` built with `identity ?? preparedCachedRuntime?.identity`); the 2 s loop over the followed Macs (learn direct paths, `observe` → probe via `SupermuxIrxDirectFirstDial.probe` 1.5 s then `probeFinished` → `upgradeStarted` and one planned redial `engine.ensureSession(explicit: true, trigger: "supermux-route-*")` only while that session is still live; `checkLiveness` via `SupermuxIrxDirectFirstDial.answers` (at once within 10 s of a network change; counts as answered while suspended) then `livenessChecked` → redial on `fallBack`); `supermuxRouteNetworkChanged()` (pokes the 1 s trailing debounce) and `supermuxNetworkSettled()` (`networkSettled(on: SupermuxLocalInterface.current())`); `static supermuxRouteCandidatesFile(stateDirectory:)` (`<state>/supermux-route/candidates.json`, directory 0700, excluded from backup, `completeUntilFirstUserAuthentication` on iOS, the old `supermux-route-candidates.json` removed); `supermuxResetRouteState(forgetAddresses:)` |
+| 1114 | `ios/cmuxPackage/Sources/cmuxFeature/MobileIrxRuntimeComposition+SupermuxRoute.swift` | `phone-route-direct-race` | Whole new file (fenced top to bottom): `MobileIrxRuntimeComposition: SupermuxPhoneRouteRuntime` (`supermuxLinkPaths()` with each session's id, `supermuxRecordRouteCandidates(_:macDeviceID:instanceTag:) -> Answer` (`.stored`, `.empty` for an empty answer that keeps the old addresses, `.failed` for an unknown Mac or another endpoint's answer), `supermuxForgetRouteCandidates(macDeviceID:instanceTag:)` for `direct_off`); the dial (`supermuxDial` first judges a network that changed since the last judgement (`judgeNetworkForDial`, journaled `network-settled` `by=dial`), asks `supermuxRoutePolicies.dialPlan` (hold-off, skip-once, relay hold), dials `SupermuxIrxDirectFirstDial.laneLeg` at the addresses `SupermuxPhoneRoutePolicies.directAddresses` keeps (the Mac's reachable from the same `SupermuxLocalInterface.current()` read, then the user's Private Addresses less the phone's own), reports `raceFinished`; `static supermuxRelayLeg(cached:refresh:dial:)` (the automatic dial as the relay leg, an expired credential refreshed inside it through the shared `relayLeg`) and `supermuxCredentialRefresh(intent:authority:)` (the control service's refresh, the authority re-checked after it); `static supermuxRace(timing:direct:automatic:discard:)` = `SupermuxIrxDirectFirstDial.race` with the leg mapped to `SupermuxDialLane`; `supermuxSessionAdmitted(peerHex:sessionID:intent:lane:)`, `supermuxAdmissionFailed`, `supermuxDirectLane()` built with `identity ?? preparedCachedRuntime?.identity`); the 2 s loop over the followed Macs (learn direct paths, `observe` → probe via `SupermuxIrxDirectFirstDial.probe` 1.5 s then `probeFinished` → `upgradeStarted` and one planned redial `engine.ensureSession(explicit: true, trigger: "supermux-route-*")` only while that session is still live; `checkLiveness` via `SupermuxIrxDirectFirstDial.answers` (at once within 10 s of a network change; counts as answered while suspended) then `livenessChecked` → redial on `fallBack`); `supermuxRouteNetworkChanged()` (pokes the 1 s trailing debounce) and `supermuxNetworkSettled()` (`networkSettled(on: SupermuxLocalInterface.current())`); `static supermuxRouteCandidatesFile(stateDirectory:)` (`<state>/supermux-route/candidates.json`, directory 0700, excluded from backup, `completeUntilFirstUserAuthentication` on iOS, the old `supermux-route-candidates.json` moved in once, never over a newer file, then removed); `supermuxResetRouteState(forgetAddresses:)` (a forgetting reset bumps `supermuxRouteAddressEpoch` before its first await); `supermuxRecordFetched(_:for:epoch:)` and `supermuxLearn(_:for:epoch:)`, the only writes of handed-over and learned addresses, which skip a write a sign-out came before and undo one it overtook |
 | 1115 | `ios/cmux/AppCompositionRoot.swift` | `phone-route-direct-race` | Three fences: `import SupermuxMobileKit`; `let supermuxRoutes: SupermuxPhoneRouteModel` after `irx`; `self.supermuxRoutes = SupermuxPhoneRouteModel(runtime: irx)` after `self.irx = irx` |
 | 1116 | `ios/cmux/cmuxApp.swift` | `phone-route-direct-race` | Two fences: `import SupermuxMobileKit`; in `rootScene`, `.environment(Self.root.supermuxRoutes)` after the `scrollInteractionReporter` environment |
-| 1117 | `ios/cmuxPackage/Tests/cmuxFeatureTests/SupermuxPhoneDialRaceTests.swift` | `phone-route-direct-race` | **Whole-file fork test inside an upstream package** (fenced top to bottom). Drives `MobileIrxRuntimeComposition.supermuxRace` at the phone's real timing: relay ready at 300 ms and direct at 900 ms picks direct and closes the relay; a direct leg that never answers picks the relay at the 1.5 s deadline (not before, not after); direct at once never dials the relay; direct failing fast uses the relay at once |
+| 1117 | `ios/cmuxPackage/Tests/cmuxFeatureTests/SupermuxPhoneDialRaceTests.swift` | `phone-route-direct-race` | **Whole-file fork test inside an upstream package** (fenced top to bottom). Drives `MobileIrxRuntimeComposition.supermuxRace` at the phone's real timing: relay ready at 300 ms and direct at 900 ms picks direct and closes the relay; a direct leg that never answers picks the relay at the 1.5 s deadline (not before, not after); direct at once never dials the relay; direct failing fast uses the relay at once; an expired relay credential is refreshed in the relay leg, so the lane races at once and wins while the refresh fails, and a lane that wins first never refreshes; the leg dials with a usable credential as it is and with the fresh one after a refresh (`supermuxRelayLeg`) |
 | 1118 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite.swift` | `agent-feed-retry-backoff` | One fence after `agentFeedRefreshTasksByMac`: `@ObservationIgnored var supermuxAgentFeedRefreshOwners: [String: SupermuxAgentFeedRefreshOwner] = [:]` (which connection each agent-feed refresh task serves, and its token; #1104) |
 | 1119 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/CMUXMobileRootView.swift` | `phone-route-direct-race` | Two fences: `import SupermuxMobileUI`; at the top of `body`'s second `#if os(iOS)` modifier block (before the notification-tap `onChange(of: store.workspaceTopologyVersion)`), `.supermuxPhoneRoutes(seams: { store.supermuxConnectionSeams })`, which runs the route model (each Mac's route and the fetch of its direct addresses) while the app is active, on every screen |
-| 1120 | `ios/cmuxPackage/Tests/cmuxFeatureTests/SupermuxPhoneRouteStateTests.swift` | `phone-route-direct-race` | **Whole-file fork test inside an upstream package** (fenced top to bottom). The address file's directory is not the Iroh state directory, is 0700 and excluded from backups; sign-out forgets a lane skip and the cached addresses; a launch dial has a direct lane under the warmed identity; sign-in for the warmed account keeps that lane and another account's drops it |
+| 1120 | `ios/cmuxPackage/Tests/cmuxFeatureTests/SupermuxPhoneRouteStateTests.swift` | `phone-route-direct-race` | **Whole-file fork test inside an upstream package** (fenced top to bottom). The address file's directory is not the Iroh state directory, is 0700 and excluded from backups; sign-out forgets a lane skip and the cached addresses; a launch dial has a direct lane under the warmed identity; sign-in for the warmed account keeps that lane and another account's drops it; the old address file moves into the private directory once and never over a newer one; an address write a sign-out overtook is undone and one decided after it stands |
 
 ## How to re-apply
 
@@ -969,24 +969,33 @@ direct, whether via Tailscale or local direct" (W8 and W8b of the latency work's
 - **Addresses.** The route model asks every Mac advertising `supermux.route_candidates.v1` for
   `mobile.supermux.route.candidates` on `SupermuxRouteCandidateFetchSchedule` (SupermuxMobileCore, shared with the
   Mac): at once on each new connection and each newly admitted session (the runtime reports each path's session id),
-  10 min after an answer that settled it, a minute after one that did not (a failure, an empty list, `not_ready`). An
+  10 min after an answer that settled it, a minute after a failure or an empty list, 5 s after `not_ready`. An
   empty answer keeps the old addresses; `direct_off` forgets the Mac (`supermuxForgetRouteCandidates`). Answers are
   filed under the directory's endpoint id for that Mac in `<Iroh state dir>/supermux-route/candidates.json`, a 0700
   directory excluded from backups and protected until first unlock. The direct path any session used is learned (the
-  store keeps only servable addresses). Sign-out forgets them all. Nothing is sent to the backend. Until 2026-10-06
-  it asked once per connection and again only 10 min later or a minute after a failure (an empty answer counted as
-  settled), and the file was `<Iroh state dir>/supermux-route-candidates.json`, backed up and kept across sign-out
-  (the old file is removed).
+  store keeps only servable addresses). Sign-out forgets them all, and a handed-over answer or learned path already
+  past its guard then is undone (`supermuxRouteAddressEpoch`; `supermuxRecordFetched`/`supermuxLearn` are the only
+  writes). Nothing is sent to the backend. Until 2026-10-06 it asked once per connection and again only 10 min later
+  or a minute after a failure (an empty answer counted as settled), and the file was
+  `<Iroh state dir>/supermux-route-candidates.json`, backed up and kept across sign-out (its addresses move into the
+  new file once, never over a newer one, and the old file is removed; until the second review it was deleted
+  unread).
 - **Policy.** `SupermuxPhoneRoutePolicies` (SupermuxMobileKit) holds one `SupermuxRouteSwitchPolicy` (SupermuxMobileCore,
   the Mac's) per Mac endpoint, the lane each admitted session went out on, and the phone's last interface set. The
   phone's own `SupermuxRouteUpgradeSchedule` is deleted, so both platforms decide alike.
 - **Race.** An Automatic-method dial races the direct-only endpoint against the automatic dial with the Mac's
   `SupermuxIrxDirectFirstDial.race` (`supermuxRace`), the lane dialing each reachable address as its own handshake
   (`laneLeg`): direct wins whenever it connects within 1.5 s. Skipped while the policy holds direct off after a flap
-  (30 s, doubling to 10 min), once after a direct-lane admission failed, and when no address is reachable from the
-  phone's interfaces (`SupermuxRouteCandidates.reachable`: not its own addresses, LAN only on a Wi-Fi/wired subnet it
-  is on, Tailscale only with its tunnel up, global IPv6 only with its own); after two lost races on one network a dial
-  stops holding a ready relay (`noRelayHold`). The direct lane is built with the warmed cached identity before sign-in
+  (30 s, doubling to 10 min), once after a direct-lane admission failed, and when it has no address: the Mac's that
+  the phone can reach from its interfaces (`SupermuxRouteCandidates.reachable`: not its own addresses; LAN while the
+  phone is on a private network of that family or Tailscale is up, never from cellular alone; Tailscale only with its
+  tunnel up; global IPv6 only with its own), best first, then the user's Private Addresses less the phone's own
+  (`excludingOwn`), 16 in all (`SupermuxPhoneRoutePolicies.directAddresses`; until the second review LAN needed a
+  subnet the phone was on and the Private Addresses were filtered too); after two lost races on one network a dial
+  stops holding a ready relay (`noRelayHold`). An expired or missing relay credential is refreshed inside the relay
+  leg (`supermuxRelayLeg` over the shared `relayLeg`), so the lane races at once (until the second review the refresh
+  came first: after 30 min idle every dial waited an HTTPS round trip, and with the internet down and the LAN up the
+  dial failed before the lane). The direct lane is built with the warmed cached identity before sign-in
   finishes, so a cold launch races too (until 2026-10-06 dials under the warmed identity did not race); sign-in for
   that account keeps the lane and its sessions (#1113). A direct-lane session never authorizes NAT traversal. The
   journal's `supermux-route/dial-race` event carries the race's per-leg fields. The phone's own first-success race
@@ -999,20 +1008,28 @@ direct, whether via Tailscale or local direct" (W8 and W8b of the latency work's
   with no relay path beside it (every direct-lane session, even while iroh reports no path) is checked with
   `SupermuxIrxDirectFirstDial.answers`; two misses redial (`supermux-route-fallback`) and record a flap. A session
   admitted before the engine adopts it stays followed.
-- **Network.** Every path update and foreground pokes a 1 s trailing debounce (`SupermuxTrailingDebounce`); the last
-  one judges the phone's interfaces: a real change (`SupermuxLocalInterface` set differs) clears every hold-off, flap
+- **Network.** Every path update and foreground pokes a 1 s trailing debounce (`SupermuxTrailingDebounce`, at most
+  5 s after a burst's first update); the last one judges the phone's networks: a real change
+  (`SupermuxLocalInterface.networkFingerprint` differs: link-local addresses, AWDL/`llw`, IPsec and `anpi`
+  interfaces and rotating temporary IPv6 do not count, an IPv6 address counts as its /64) clears every hold-off, flap
   count and lost race, probes relayed sessions at once (or the next session within 30 s) and has checks ping at once
-  for 10 s; anything else (a foreground on the same network) only probes relayed sessions soon, and a hold-off holds
-  (until 2026-10-06 the phone's own `SupermuxRouteUpgradeSchedule` acted on the first change of a burst and counted
-  every foreground as a network change).
+  for 10 s; anything else (a foreground on the same network) only probes relayed sessions soon, and a hold-off holds.
+  A dial judges a changed network first (`judgeNetworkForDial`), so a foreground's dial, which comes before the
+  debounce's judgement, never runs on the old network's hold-off (until 2026-10-06 the phone's own
+  `SupermuxRouteUpgradeSchedule` acted on the first change of a burst and counted every foreground as a network
+  change; until the second review the full interface set was compared, so nearly every foreground still did, a burst
+  that never paused was never judged, and the foreground's dial ran before the judgement).
 - Journal events: `supermux-route/{candidates, dial-race, dial-direct-skipped, probe, redial, liveness-miss, fallback,
   direct-admission-failed, network-settled}`.
 
 Failure modes the tests pin: the race at the phone's timing (#1117); a fall back holds direct off and doubles, a
 foreground keeps the hold, a real change clears it, a direct lane without a path is checked, a failed lane admission
 skips once, lost races stop holding the relay, an ended session is not followed, a session admitted before adoption
-stays followed, only reachable addresses are dialed, sign-out forgets (`SupermuxPhoneRoutePoliciesTests`); a burst of
-network changes acts once, after the last (`SupermuxTrailingDebounceTests`); the fetch schedule, a new session asked
+stays followed, only reachable addresses are dialed and Private Addresses lose only the phone's own, sign-out
+forgets, a foreground on the same network is no change whatever comes and goes on it, a dial right after a change
+runs on the fresh judgement (`SupermuxPhoneRoutePoliciesTests`); a burst of network changes acts once, after the last,
+and at most 5 s after its first (`SupermuxTrailingDebounceTests`); an expired relay credential never holds up the
+lane (#1117); the old address file moves in once, a write a sign-out overtook is undone (#1120); the fetch schedule, a new session asked
 again, empty/not_ready asked again in a minute, direct_off forgotten, IPv6 in the phone's /64 is the LAN
 (`SupermuxPhoneRouteModelTests`); a reconnecting Mac keeps its line (`SupermuxProjectsRouteStripTests`); the file's
 privacy, sign-out, the launch lane (#1120).
@@ -1023,13 +1040,24 @@ preserving detach, the route reset otherwise); #1111's stored state and the stor
 dependencies (`cmuxFeatureTests` too); #1115/#1116 the model and its environment; #1119 the root view's driver.
 #1114, #1117 and #1120 are whole fork files.
 
-Verify: `swift test --package-path Packages/iOS/SupermuxMobileKit` (258; the review fixes red at `50a5a418d59`,
-`86611b20e8b` and `94e1638b232`); `swift test --package-path Packages/iOS/SupermuxMobileUI` (252; red at
-`e42448a69fc`); `swift test --package-path Packages/Shared/CmuxIrxTransport --filter SupermuxIrxDirectFirstDialTests`
+Second review (2026-10-06, `/tmp/latency-work/REVIEW2-FINDINGS.md` on the branch that made it), the phone's parts of
+#1, #6, #7, #10, #11 and #16; rows #1111, #1112, #1114, #1117 and #1120 updated, no new rows (the policy and the
+debounce are fork-package files). Red at `5982ce5e62c`: SupermuxMobileKit, compile errors for the debounce's
+`maximumWait`/`now` and `judgeNetworkForDial`, and without those tests 4 issues (policies 13: a foreground counted as
+a change and cleared the hold-off; 10: the routed subnet, cellular Private Addresses); cmuxFeatureTests, compile
+errors for `supermuxRelayLeg`, `supermuxRouteAddressEpoch`, `supermuxRecordFetched`, `supermuxLearn`, and without
+those tests route state 5 (the update dropped the old file's addresses). Green: SupermuxMobileKit 261/261,
+SupermuxMobileUI 252/252, cmuxFeatureTests 271/271, `CmuxMobileShell --filter
+'Route|Lane|AgentFeed|RenderGrid|TerminalLane|Feed'` 383/384 (`signOutCancelsInFlightIrohRecoveryOwner`, which failed
+on the pre-change baseline too and passes alone), the iOS simulator app builds.
+
+Verify: `swift test --package-path Packages/iOS/SupermuxMobileKit` (261; the review fixes red at `50a5a418d59`,
+`86611b20e8b` and `94e1638b232`, the second review's at `5982ce5e62c`); `swift test --package-path
+Packages/iOS/SupermuxMobileUI` (252; red at `e42448a69fc`); `swift test --package-path Packages/Shared/CmuxIrxTransport --filter SupermuxIrxDirectFirstDialTests`
 (the shared race);
 `xcodebuild test -workspace ios/cmux.xcworkspace -scheme <a scheme with cmuxFeatureTests> -destination 'platform=iOS Simulator,name=iPhone 18 Pro' -only-testing:cmuxFeatureTests/SupermuxPhoneDialRaceTests -only-testing:cmuxFeatureTests/SupermuxPhoneRouteStateTests`
-(#1117 red at `61e77314781`, 2 of 4 fail, the relay won at ~0.3 s; #1120 red at `99f3a83d62c`, 4 of 4 fail; the
-`cmuxFeature` scheme has no test action, so use a temporary scheme).
+(#1117 red at `61e77314781`, 2 of 4 fail, the relay won at ~0.3 s; #1120 red at `99f3a83d62c`, 4 of 4 fail; both
+again at `5982ce5e62c`, 12 tests now; the `cmuxFeature` scheme has no test action, so use a temporary scheme).
 
 ### 1100–1109 and 1118. Remote terminal latency, phone side — `terminal-lane-retry`, `agent-feed-retry-backoff`, `render-grid-sink-first`
 
