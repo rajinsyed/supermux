@@ -225,19 +225,26 @@ public struct SupermuxPhoneRoutePolicies: Sendable {
         lanes = [:]
     }
 
-    /// The addresses a dial or a probe tries on the direct lane: the Mac's
-    /// handed-over and learned ones, then the user's Private Addresses,
-    /// without duplicates and less those the phone cannot reach from its
-    /// interfaces now (``SupermuxRouteCandidates/reachable(_:from:)``: its own
-    /// addresses, LAN on a subnet it is not on, Tailscale with its tunnel
-    /// down, global IPv6 with none of its own), at most
-    /// ``SupermuxRouteCandidates/limit``. Empty means no dial waits for direct.
+    /// The addresses a dial or a probe tries on the direct lane, at most
+    /// ``SupermuxRouteCandidates/limit``, without duplicates:
+    /// - the Mac's handed-over and learned ones the phone can reach from its
+    ///   interfaces now, best first (``SupermuxRouteCandidates/reachable(_:from:)``:
+    ///   never its own addresses; LAN while it is on a private network of
+    ///   that family or Tailscale is up, never from cellular alone; Tailscale
+    ///   with its tunnel up; global IPv6 with one of its own);
+    /// - then the user's Private Addresses less the phone's own
+    ///   (``SupermuxRouteCandidates/excludingOwn(_:from:)``): the user named
+    ///   them, and they may reach the Mac through a path the phone's
+    ///   interfaces do not show.
+    ///
+    /// Empty means no dial waits for direct.
     public static func directAddresses(
         stored: [String], privateAddresses: [String], interfaces: [SupermuxLocalInterface]
     ) -> [String] {
+        let reachable = SupermuxRouteCandidates.reachable(stored, from: interfaces)
+        let named = SupermuxRouteCandidates.excludingOwn(privateAddresses, from: interfaces)
         var seen = Set<String>()
-        let unique = (stored + privateAddresses).filter { seen.insert($0).inserted }
-        return Array(SupermuxRouteCandidates.reachable(unique, from: interfaces).prefix(SupermuxRouteCandidates.limit))
+        return Array((reachable + named).filter { seen.insert($0).inserted }.prefix(SupermuxRouteCandidates.limit))
     }
 
     // MARK: - State
