@@ -575,6 +575,10 @@ class SizingPolicyE2E:
             mirror, mac = self.row(state, MIRROR_PREFIX), self.row(state, "mac:")
             if not mirror or not mirror.get("viewport") or not mac:
                 raise Failure(f"the mirror and the source pane are not both participants yet: {self.rows(state)}")
+            # Shown (its workspace is selected), so it counts: later steps' steadiness holds start
+            # after the hidden source pane has handed the grid to it, not during that hand-over.
+            if not mirror.get("counts"):
+                raise Failure(f"the shown mirror does not count yet: {self.rows(state)}")
 
         found = self.wait_state("the shown mirror to join the source terminal", self.source_surface, keys)
         self.mirror_key = self.key_of(self.source_surface, MIRROR_PREFIX)

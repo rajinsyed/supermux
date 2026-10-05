@@ -390,8 +390,10 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   counts overrides (Don't Resize from This Mac, a device's own "Counts toward size") stay per
   terminal. A viewing Mac's pane counts up to 500x200 (a phone's, 300x120). A
   pane that is not on screen (a tab never shown on its Mac, a mirror in a background workspace, a hidden
-  or fully covered window) does not count, so a tab opened from a mirror takes the mirror's size at
-  once; a mirror still off screen when its link reconnects keeps not counting (the other Mac forgets the
+  or fully covered window) does not count while someone else would size the terminal, so a tab opened
+  from a mirror takes the mirror's size at once; with nobody else counting it does, so the last viewer
+  leaving puts the terminal back on the pane's own grid at once;
+  a mirror still off screen when its link reconnects keeps not counting (the other Mac forgets the
   override with the connection, and the re-attach sends it again); a terminal that starts after its
   grid was decided gets it when it becomes ready. A terminal's tab draws no avatar for the attached
   Macs (#720); its context menu keeps Size to My Window, Terminal Size and Disconnect Others, and the

@@ -17,6 +17,11 @@ import Foundation
 /// - Host: a local terminal's own Mac pane gets `counts_override: false`
 ///   while off screen and its automatic rule back when it shows again
 ///   (`sizing-hidden-mac-pane` touchpoint for a new host, updates here).
+///   Only while someone else would size the terminal, though: with nobody
+///   else counting the engine holds the last grid, so a departed viewer's
+///   size would outlive it. An off-screen pane nobody else would replace
+///   keeps counting ("released"), and the terminal goes back to the pane's
+///   own grid as soon as the last viewer leaves.
 /// - Viewer: a device mirror reports `counts_override: false` to the other
 ///   Mac while its pane is off screen (`device-mirror-hidden-counts`).
 ///
@@ -45,6 +50,9 @@ final class SupermuxTerminalSizingVisibility {
     private var mirrors: [UUID: TrackedMirror] = [:]
     /// Local terminals whose Mac pane this class marked as not counting.
     private var hiddenHosts: Set<UUID> = []
+    /// Local terminals whose Mac pane is off screen but still counts, because
+    /// nobody else would size the terminal. Disjoint from `hiddenHosts`.
+    private var releasedHosts: Set<UUID> = []
     private var observers: [NSObjectProtocol] = []
 
     /// Starts following visibility changes. Later calls are no-ops.
@@ -116,30 +124,64 @@ final class SupermuxTerminalSizingVisibility {
 
     // MARK: - Host (local terminals with viewers)
 
-    /// Called as a local terminal's sizing host is created: an off-screen
-    /// Mac pane starts out not counting, before the first grid is applied.
+    /// Called as a local terminal's sizing host is created. Only the Mac
+    /// pane is attached yet, so an off-screen pane starts out released: it
+    /// stops counting once another viewer attaches (`hostWillApply`), before
+    /// that viewer's first grid is applied.
     func prepareHost(_ host: inout LocalTerminalSizingHost, surface: TerminalSurface) {
         start()
+        hiddenHosts.remove(surface.id)
+        releasedHosts.remove(surface.id)
         guard !Self.isOnScreen(surface) else { return }
-        host.setCountsOverride(host.macParticipantID, false)
-        hiddenHosts.insert(surface.id)
+        releasedHosts.insert(surface.id)
     }
 
-    /// Called before a local terminal's sizing decision applies: a Mac pane
-    /// marked off screen that is on screen again counts again first, so the
-    /// decision never holds a departed viewer's size on a pane in view. A set
-    /// lookup unless the pane is marked.
+    /// Called before a local terminal's sizing decision applies, so the
+    /// decision never holds a departed viewer's size. A set lookup unless the
+    /// pane is off screen.
+    /// - On screen: the pane counts again.
+    /// - Marked, but nobody else would size the terminal any more: the pane
+    ///   counts again, released.
+    /// - Released, and someone else would size it now: marked again.
+    /// The caller's immediacy is kept: a leave applies now, a TTL expiry
+    /// after the governor's window.
     func hostWillApply(surfaceID: UUID) {
-        guard hiddenHosts.contains(surfaceID) else { return }
+        let marked = hiddenHosts.contains(surfaceID)
+        guard marked || releasedHosts.contains(surfaceID) else { return }
         let controller = TerminalController.shared
         guard var host = controller.localSizingHostsBySurfaceID[surfaceID],
               let surface = controller.terminalSocketTarget(surfaceID: surfaceID)?.surface,
-              Self.isOnScreen(surface) else { return }
-        hiddenHosts.remove(surfaceID)
-        let macID = host.macParticipantID
-        guard host.state.participant(macID)?.participant.countsOverride == false else { return }
-        host.setCountsOverride(macID, nil)
+              let row = host.state.participant(host.macParticipantID) else { return }
+        let override = row.participant.countsOverride
+        let value: Bool?
+        if Self.isOnScreen(surface) {
+            hiddenHosts.remove(surfaceID)
+            releasedHosts.remove(surfaceID)
+            guard marked, override == false else { return }
+            value = nil
+        } else if marked, !Self.othersWouldCount(host) {
+            hiddenHosts.remove(surfaceID)
+            releasedHosts.insert(surfaceID)
+            guard override == false else { return }
+            value = nil
+        } else if !marked, override == nil, Self.othersWouldCount(host) {
+            releasedHosts.remove(surfaceID)
+            hiddenHosts.insert(surfaceID)
+            value = false
+        } else {
+            return
+        }
+        host.setCountsOverride(host.macParticipantID, value)
         controller.localSizingHostsBySurfaceID[surfaceID] = host
+    }
+
+    /// Whether someone other than the Mac pane would size the terminal if
+    /// the pane stopped counting: it has a viewport and is not opted out.
+    private static func othersWouldCount(_ host: LocalTerminalSizingHost) -> Bool {
+        host.state.participants.contains { row in
+            row.id != host.macParticipantID && row.participant.viewport != nil
+                && row.participant.countsOverride != false
+        }
     }
 
     /// The portal revealed a pane it had hidden (layout churn): look again,
@@ -226,17 +268,20 @@ final class SupermuxTerminalSizingVisibility {
 
     /// Shows at once; hides, as a mirror does, only once the pane is still off
     /// screen a moment later (the portal hides a pane briefly during layout).
+    /// A hidden pane nobody else would replace is released instead of marked.
     private func refreshHost(_ surfaceID: UUID, settled: Bool = false) {
         let controller = TerminalController.shared
         guard let host = controller.localSizingHostsBySurfaceID[surfaceID] else {
             hiddenHosts.remove(surfaceID)
+            releasedHosts.remove(surfaceID)
             return
         }
         guard let surface = controller.terminalSocketTarget(surfaceID: surfaceID)?.surface else { return }
         let macID = host.macParticipantID
         let current = host.state.participant(macID)?.participant.countsOverride
         if !Self.isOnScreen(surface) {
-            guard current == nil else { return }
+            // A released pane is hostWillApply's: it marks it once someone else counts.
+            guard current == nil, !releasedHosts.contains(surfaceID) else { return }
             guard settled else {
                 Task { @MainActor [weak self] in
                     try? await Task.sleep(nanoseconds: Self.hideSettleNanoseconds)
@@ -244,9 +289,15 @@ final class SupermuxTerminalSizingVisibility {
                 }
                 return
             }
+            guard Self.othersWouldCount(host) else {
+                releasedHosts.insert(surfaceID)
+                return
+            }
             if controller.localSizingSetCountsOverride(surfaceID: surfaceID, participantID: macID, value: false) {
                 hiddenHosts.insert(surfaceID)
             }
+        } else if releasedHosts.remove(surfaceID) != nil {
+            return
         } else if hiddenHosts.remove(surfaceID) != nil, current == false {
             // Coming on screen is an explicit return, not a flap: apply at
             // once rather than after the governor's uncap window.
