@@ -2272,7 +2272,10 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
             || runtime?.terminalInputLaneProvider != nil {
             self.terminalLaneCoordinator = MobileTerminalLaneCoordinator(
                 provider: runtime?.terminalLaneProvider,
-                inputOnlyProvider: runtime?.terminalInputLaneProvider
+                inputOnlyProvider: runtime?.terminalInputLaneProvider,
+                // SUPERMUX:begin terminal-lane-retry
+                retryObserver: Self.terminalLaneRetryObserver(diagnosticLog: diagnosticLog)
+                // SUPERMUX:end terminal-lane-retry
             )
         } else {
             self.terminalLaneCoordinator = nil
