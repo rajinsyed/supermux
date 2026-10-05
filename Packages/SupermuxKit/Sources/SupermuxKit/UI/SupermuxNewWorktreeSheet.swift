@@ -2,6 +2,7 @@ public import SwiftUI
 public import AppKit
 import Foundation
 import SupermuxMobileCore
+import UniformTypeIdentifiers
 
 /// Modal sheet for creating a git worktree in a project — optionally with
 /// Claude already running in it — on this Mac or another Mac that has the
@@ -19,6 +20,9 @@ import SupermuxMobileCore
 ///   the workspace with its terminal already running the command with the
 ///   prompt as the first message. On this Mac that path goes through
 ///   ``SupermuxAgentWorktreeLauncher`` — the same path the phone uses.
+///   Images pasted, dropped or attached to the prompt go with it: copied on
+///   this Mac, or uploaded to the Mac that runs Claude (see
+///   ``SupermuxAgentPromptAttachments``).
 ///
 /// When the project lives on several Macs (or other Macs could set it up), a
 /// device picker at the top chooses where; another Mac creates the worktree
@@ -37,8 +41,10 @@ public struct SupermuxNewWorktreeSheet: View {
     @Environment(\.dismiss) private var dismiss
     @FocusState private var focusedField: Field?
     @State var showsCommandEditor = false
+    @State private var promptIsFocused = false
+    @State private var showsImagePicker = false
 
-    private enum Field { case prompt, workspace, branch }
+    private enum Field { case workspace, branch }
 
     /// Creates the device-aware sheet.
     /// - Parameters:
@@ -143,7 +149,12 @@ public struct SupermuxNewWorktreeSheet: View {
         .frame(width: sheet.showsPromptEditor || sheet.showsDevicePicker ? 460 : 380)
         .animation(.snappy(duration: 0.18), value: sheet.hasPrompt)
         .onAppear {
-            focusedField = sheet.showsPromptEditor ? .prompt : .workspace
+            // The prompt editor focuses itself when it shows.
+            if !sheet.showsPromptEditor { focusedField = .workspace }
+        }
+        .fileImporter(isPresented: $showsImagePicker, allowedContentTypes: [.image], allowsMultipleSelection: true) { result in
+            guard case let .success(files) = result else { return }
+            Task { await sheet.attachImages(files) }
         }
         // Loads the selected Mac's branches and Claude options, again after
         // every device switch and when that Mac (re)connects.
@@ -176,29 +187,38 @@ public struct SupermuxNewWorktreeSheet: View {
         }
     }
 
+    /// The prompt, then the attached images and the attach button. Images
+    /// can also be pasted or dropped on the text.
     private var promptEditor: some View {
-        ZStack(alignment: .topLeading) {
-            if sheet.prompt.isEmpty {
-                Text(String(
-                    localized: "supermux.newWorktree.prompt.placeholder",
-                    defaultValue: "What should Claude work on? Leave empty for a plain worktree."
-                ))
-                .font(.system(size: 13))
-                .foregroundStyle(.tertiary)
-                .padding(.horizontal, 9)
-                .padding(.vertical, 8)
-                .allowsHitTesting(false)
+        VStack(spacing: 0) {
+            ZStack(alignment: .topLeading) {
+                if sheet.prompt.isEmpty {
+                    Text(promptPlaceholder)
+                        .font(.system(size: 13))
+                        .foregroundStyle(.tertiary)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 8)
+                        .allowsHitTesting(false)
+                }
+                SupermuxPromptTextView(
+                    text: $sheet.prompt,
+                    isFocused: $promptIsFocused,
+                    isEditable: sheet.phase == .idle,
+                    acceptsImages: sheet.canAttachImages,
+                    focusOnAppear: true,
+                    onImages: { images in Task { await sheet.importImages(images) } }
+                )
             }
-            TextEditor(text: $sheet.prompt)
-                .font(.system(size: 13))
-                .scrollContentBackground(.hidden)
-                .padding(.horizontal, 4)
-                .padding(.vertical, 3)
-                .focused($focusedField, equals: .prompt)
-                .disabled(sheet.phase != .idle)
+            .frame(minHeight: sheet.attachments.isEmpty ? 56 : 44, maxHeight: 160)
+            .fixedSize(horizontal: false, vertical: true)
+            SupermuxPromptAttachmentStrip(
+                attachments: sheet.attachments,
+                canAttach: sheet.canAttachImages,
+                canEdit: sheet.phase == .idle,
+                onAttach: { showsImagePicker = true },
+                onRemove: { id in sheet.removeAttachment(id: id) }
+            )
         }
-        .frame(minHeight: 76, maxHeight: 160)
-        .fixedSize(horizontal: false, vertical: true)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(Color(nsColor: .textBackgroundColor))
@@ -206,7 +226,7 @@ public struct SupermuxNewWorktreeSheet: View {
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .strokeBorder(
-                    focusedField == .prompt ? Color.accentColor.opacity(0.7) : Color.primary.opacity(0.12),
+                    promptIsFocused ? Color.accentColor.opacity(0.7) : Color.primary.opacity(0.12),
                     lineWidth: 1
                 )
         )
@@ -286,6 +306,19 @@ public struct SupermuxNewWorktreeSheet: View {
     }
 
     // MARK: - Text
+
+    /// Asks for the task; with images attached, for what to do with them.
+    private var promptPlaceholder: String {
+        sheet.attachments.isEmpty
+            ? String(
+                localized: "supermux.newWorktree.prompt.placeholder",
+                defaultValue: "What should Claude work on? Leave empty for a plain worktree."
+            )
+            : String(
+                localized: "supermux.newWorktree.prompt.imagesPlaceholder",
+                defaultValue: "What should Claude do with the images?"
+            )
+    }
 
     /// Offline preview of the names the prompt would produce (AI refines at
     /// submit when configured).

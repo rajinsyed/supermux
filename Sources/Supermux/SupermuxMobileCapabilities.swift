@@ -111,6 +111,9 @@ enum SupermuxMobileCapabilities {
             // agent.options / agent.start are served: prompt-first worktree
             // creation that opens a workspace already running Claude.
             SupermuxMobileCapability.agentLaunchV1.rawValue,
+            // agent.attachment.upload is served and agent.start takes
+            // `attachment_paths`: images attached to a Start Claude prompt.
+            SupermuxMobileCapability.agentAttachmentsV1.rawValue,
             // phone_push.status / phone_push.share are served: another of the
             // user's Macs can fill this Mac's missing direct-APNs credentials
             // and phone registrations over the device link.

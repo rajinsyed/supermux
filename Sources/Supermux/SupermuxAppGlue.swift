@@ -62,7 +62,10 @@ enum SupermuxComposition {
         settings: agentLauncherSettings,
         promptFileDirectory: CmuxSettings.CmuxStateDirectory.url(
             homeDirectory: FileManager.default.homeDirectoryForCurrentUser
-        ).appendingPathComponent("supermux-agent-prompts", isDirectory: true)
+        ).appendingPathComponent("supermux-agent-prompts", isDirectory: true),
+        attachmentDirectory: CmuxSettings.CmuxStateDirectory.url(
+            homeDirectory: FileManager.default.homeDirectoryForCurrentUser
+        ).appendingPathComponent("supermux-agent-attachments", isDirectory: true)
     )
 
     /// Bundle handed to every window's Projects section.

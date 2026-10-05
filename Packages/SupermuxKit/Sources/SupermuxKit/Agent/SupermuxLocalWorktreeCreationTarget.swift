@@ -114,6 +114,13 @@ public final class SupermuxLocalWorktreeCreationTarget: SupermuxWorktreeCreation
         agentLaunch?.launcher.shellLine(command: command, model: model, effort: effort, prompt: prompt)
     }
 
+    public var supportsPromptAttachments: Bool { agentLaunch != nil }
+
+    public func stageAttachments(_ files: [URL]) async throws -> [String] {
+        guard let agentLaunch, !files.isEmpty else { return [] }
+        return try await agentLaunch.launcher.stageAttachments(files)
+    }
+
     public func startAgent(
         _ request: SupermuxAgentLaunchRequest,
         willCreateWorktree: @escaping @MainActor () -> Void
