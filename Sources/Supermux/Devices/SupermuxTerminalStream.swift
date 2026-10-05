@@ -502,6 +502,10 @@ final class SupermuxTerminalStreamWatch {
     private var backgroundCounts: [UUID: Int] = [:]
     private var acked: (connection: UInt64, watched: Watched)?
     private var failedConnection: UInt64?
+    /// Sends that failed in a row; retries stop at ``maximumRetries`` (a host
+    /// that always rejects the call, such as a workspace-scoped ticket).
+    private var consecutiveFailures = 0
+    private static let maximumRetries = 5
     private var syncTask: Task<Void, Never>?
     #if DEBUG
     /// Every `terminal.bytes` byte this link received, by remote terminal.
@@ -555,6 +559,7 @@ final class SupermuxTerminalStreamWatch {
         connection &+= 1
         acked = nil
         failedConnection = nil
+        consecutiveFailures = 0
     }
 
     /// A fresh connection: name the watched terminals (none yet, possibly) so
@@ -606,9 +611,11 @@ final class SupermuxTerminalStreamWatch {
                     )
                     guard connection == self.connection else { break }
                     self.acked = (connection, desired)
+                    self.consecutiveFailures = 0
                 } catch {
                     self.failedConnection = connection
-                    self.retryAfterFailure(on: connection)
+                    self.consecutiveFailures += 1
+                    if self.consecutiveFailures <= Self.maximumRetries { self.retryAfterFailure(on: connection) }
                     break
                 }
             }
@@ -622,8 +629,9 @@ final class SupermuxTerminalStreamWatch {
     /// deadline) goes out again shortly: a background change alone has no
     /// other path that sends it again, and a shown pane would keep getting
     /// its bytes in background batches. A connection's first send retries
-    /// too, or the host would keep sending every terminal's bytes. Only a
-    /// send that ran fails here, so the host supports the method.
+    /// too, or the host would keep sending every terminal's bytes. At most
+    /// ``maximumRetries`` in a row: a host that keeps rejecting the call is
+    /// asked again only by the next change or attach.
     private func retryAfterFailure(on connection: UInt64) {
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(2))

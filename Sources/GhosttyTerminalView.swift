@@ -4242,6 +4242,13 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
     /// visibility rule knows when that signal is trustworthy (see
     /// `TerminalRendererWindowVisibility`). Weak: windows come and go.
     private static let windowsThatReportedVisible = NSHashTable<NSWindow>.weakObjects()
+    // SUPERMUX:begin renderer-key-window-honors-occlusion
+    /// Displays on which some window has reported `.visible`. A virtual display
+    /// never does, so a window moved to one is judged by the untrusted rule
+    /// (#991 would otherwise stop a key window there from presenting), while a
+    /// window moved to a known real display (an undock) keeps its trust.
+    private static var displaysThatReportedVisible = Set<UInt32>()
+    // SUPERMUX:end renderer-key-window-honors-occlusion
     private var lastScrollEventTime: CFTimeInterval = 0
     private let scrollSpeedAccumulator = TerminalScrollSpeedAccumulator()
     private var visibleInUI: Bool = true
@@ -9970,10 +9977,18 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         if occlusionVisible {
             Self.windowsThatReportedVisible.add(window)
         }
+        // SUPERMUX:begin renderer-key-window-honors-occlusion (upstream: `windowHasReportedVisible: Self.windowsThatReportedVisible.contains(window),`)
+        let displayID = window.screen?.displayID
+        if occlusionVisible, let displayID { Self.displaysThatReportedVisible.insert(displayID) }
+        let occlusionIsTrusted = Self.windowsThatReportedVisible.contains(window)
+            && displayID.map { Self.displaysThatReportedVisible.contains($0) } ?? false
+        // SUPERMUX:end renderer-key-window-honors-occlusion
         terminalSurface?.setRendererWindowVisible(
             TerminalRendererWindowVisibility(
                 occlusionVisible: occlusionVisible,
-                windowHasReportedVisible: Self.windowsThatReportedVisible.contains(window),
+                // SUPERMUX:begin renderer-key-window-honors-occlusion
+                windowHasReportedVisible: occlusionIsTrusted,
+                // SUPERMUX:end renderer-key-window-honors-occlusion
                 isWindowVisible: window.isVisible,
                 isMiniaturized: window.isMiniaturized,
                 isOnActiveSpace: window.isOnActiveSpace,
@@ -9985,12 +10000,6 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
     private func windowDidChangeScreen(_ notification: Notification) {
         guard let window else { return }
         guard let object = notification.object as? NSWindow, window == object else { return }
-        // SUPERMUX:begin renderer-key-window-honors-occlusion
-        // Occlusion trusted on the old display says nothing about the new one
-        // (a virtual display never raises `.visible`); trust it again only
-        // once it reports there, so a key window moved there keeps presenting.
-        Self.windowsThatReportedVisible.remove(window)
-        // SUPERMUX:end renderer-key-window-honors-occlusion
         applyRendererWindowVisibility(for: window)
         guard let screen = window.screen else { return }
         guard let surface = terminalSurface?.surface else { return }

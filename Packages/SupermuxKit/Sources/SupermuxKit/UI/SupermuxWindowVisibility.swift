@@ -65,14 +65,17 @@ public final class SupermuxWindowVisibility: ObservableObject {
         }
     }
 
-    /// Windows whose occlusion state has reported `.visible`, with the
-    /// display they reported it on. Weak, so a closed window drops out on its
-    /// own. A window moved to another display (a virtual one may never raise
-    /// `.visible`) is untrusted until it reports there.
-    private static let displayWhereWindowReportedVisible = NSMapTable<NSWindow, NSNumber>.weakToStrongObjects()
+    /// Windows whose occlusion state has reported `.visible` at least once.
+    /// Weak, so a closed window drops out on its own.
+    private static let windowsThatReportedVisible = NSHashTable<NSWindow>.weakObjects()
+    /// Displays on which some window has reported `.visible`. A virtual
+    /// display never does, so a window moved to one falls back to the
+    /// untrusted rule; one moved to a known real display (an undock) keeps
+    /// its trust.
+    private static var displaysThatReportedVisible = Set<NSNumber>()
 
-    private static func displayID(of window: NSWindow) -> NSNumber {
-        window.screen?.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber ?? 0
+    private static func displayID(of window: NSWindow) -> NSNumber? {
+        window.screen?.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
     }
 
     /// The same rule as cmux's `TerminalRendererWindowVisibility`, plus the
@@ -87,13 +90,17 @@ public final class SupermuxWindowVisibility: ObservableObject {
     public static func windowIsOnScreen(_ window: NSWindow?, trustingActiveSpace: Bool = true) -> Bool {
         guard let window, !NSApplication.shared.isHidden,
               window.isVisible, !window.isMiniaturized else { return false }
+        let display = displayID(of: window)
         if window.occlusionState.contains(.visible) {
-            displayWhereWindowReportedVisible.setObject(displayID(of: window), forKey: window)
+            windowsThatReportedVisible.add(window)
+            if let display { displaysThatReportedVisible.insert(display) }
             return true
         }
-        // Occlusion has been trustworthy for this window on this display:
+        // Occlusion has been trustworthy for this window and its display:
         // honor its verdict.
-        if displayWhereWindowReportedVisible.object(forKey: window) == displayID(of: window) { return false }
+        if windowsThatReportedVisible.contains(window), let display, displaysThatReportedVisible.contains(display) {
+            return false
+        }
         return window.isKeyWindow || (trustingActiveSpace && window.isOnActiveSpace)
     }
 }
