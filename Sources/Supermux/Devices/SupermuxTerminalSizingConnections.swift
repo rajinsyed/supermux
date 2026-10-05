@@ -108,11 +108,24 @@ enum SupermuxViewportFenceWriters {
 /// connection-scoped clear, so a report its reconnect wrote again by then
 /// stays (it carries the new connection's stamp). A phone's report still
 /// goes at once: the phone's sizing contract (and its E2E) times that clear.
+///
+/// The grace counts awake time only (the suspending clock) and starts over
+/// at a full wake (``restartAfterWake()``): a connection closed before this
+/// Mac slept would otherwise have its grace end the moment it woke, before
+/// the viewer could redial, and every terminal it showed resized and came
+/// back as a full replay (review S1).
 @MainActor
 enum SupermuxMacViewerCloseGrace {
     static let grace: Duration = .seconds(15)
-    /// The Mac client ids whose reports each closed connection left for now.
-    private static var deferred: [UUID: Set<String>] = [:]
+
+    /// A closed connection's reports waiting for their clear.
+    private struct Deferred {
+        var clientIDs: Set<String> = []
+        let reason: String
+        var timer: Task<Void, Never>?
+    }
+
+    private static var deferred: [UUID: Deferred] = [:]
     /// The connection whose deferred clear runs now (it clears, not defers).
     private static var clearing: UUID?
 
@@ -121,13 +134,18 @@ enum SupermuxMacViewerCloseGrace {
     static func defers(deviceKind: TerminalDeviceKind?, clientID: String, connectionID: UUID, reason: String) -> Bool {
         guard deviceKind == .mac, clearing != connectionID else { return false }
         if deferred[connectionID] == nil {
-            Task { @MainActor in
-                try? await Task.sleep(for: grace)
-                clear(connectionID: connectionID, reason: reason)
-            }
+            deferred[connectionID] = Deferred(reason: reason)
+            startGrace(connectionID)
         }
-        deferred[connectionID, default: []].insert(clientID)
+        deferred[connectionID]?.clientIDs.insert(clientID)
         return true
+    }
+
+    /// A full wake: every deferred clear waits a whole ``grace`` from now.
+    /// The viewers' links redial after the wake, so their reports come back
+    /// first.
+    static func restartAfterWake() {
+        for connectionID in deferred.keys { startGrace(connectionID) }
     }
 
     #if DEBUG
@@ -135,14 +153,24 @@ enum SupermuxMacViewerCloseGrace {
     static var deferredConnections: [UUID] { Array(deferred.keys) }
     #endif
 
-    private static func clear(connectionID: UUID, reason: String) {
-        guard let clientIDs = deferred.removeValue(forKey: connectionID) else { return }
+    private static func startGrace(_ connectionID: UUID) {
+        deferred[connectionID]?.timer?.cancel()
+        deferred[connectionID]?.timer = Task { @MainActor in
+            guard (try? await Task.sleep(for: grace, tolerance: nil, clock: .suspending)) != nil else { return }
+            clear(connectionID: connectionID)
+        }
+    }
+
+    private static func clear(connectionID: UUID) {
+        guard let entry = deferred.removeValue(forKey: connectionID) else { return }
         #if DEBUG
-        cmuxDebugLog("supermux.sizing mac close grace over connection=\(connectionID.uuidString.prefix(8)) clients=\(clientIDs.count)")
+        cmuxDebugLog("supermux.sizing mac close grace over connection=\(connectionID.uuidString.prefix(8)) clients=\(entry.clientIDs.count)")
         #endif
         clearing = connectionID
         defer { clearing = nil }
-        TerminalController.shared.clearMobileViewportReports(clientIDs: clientIDs, connectionID: connectionID, reason: reason)
+        TerminalController.shared.clearMobileViewportReports(
+            clientIDs: entry.clientIDs, connectionID: connectionID, reason: entry.reason
+        )
     }
 }
 
