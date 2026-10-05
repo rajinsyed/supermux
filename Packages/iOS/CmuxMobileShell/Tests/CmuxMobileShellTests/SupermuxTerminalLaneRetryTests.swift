@@ -28,9 +28,14 @@ import Testing
         let survivor = LaneRetryTestConnection(frames: [Self.baseline], waitsAfterFrames: true)
         lanes.append(survivor)
         let provider = LaneRetryTestProvider(lanes: lanes)
-        let coordinator = MobileTerminalLaneCoordinator { request, surfaceID, cursor in
-            try await provider.open(request, surfaceID, cursor)
-        }
+        // Each drop comes at once, so the backoff grows; this test is about
+        // never parking the lane, not about the waits.
+        let coordinator = MobileTerminalLaneCoordinator(
+            provider: { request, surfaceID, cursor in
+                try await provider.open(request, surfaceID, cursor)
+            },
+            retrySleep: { _ in }
+        )
         await coordinator.ensure(Self.configuration(try Self.request()))
 
         #expect(await Self.eventually { await provider.requestCount() == 5 })
@@ -80,7 +85,8 @@ import Testing
     @Test func consecutiveFailuresBackOffAndAWorkingLaneResetsIt() async throws {
         let survivor = LaneRetryTestConnection(frames: [Self.baseline], waitsAfterFrames: true)
         // Three refused opens, a lane that works and then drops, one more
-        // refused open, then a lane that stays.
+        // refused open, then a lane that stays. Every lane counts as having
+        // stayed up long enough (`stableLaneLifetime: .zero`).
         let provider = LaneRetryTestProvider(
             script: [.refuse, .refuse, .refuse,
                      .lane(LaneRetryTestConnection(frames: [Self.baseline], waitsAfterFrames: false)),
@@ -94,7 +100,8 @@ import Testing
             },
             retryDelay: { .milliseconds($0) },
             retrySleep: { sleeps.append($0) },
-            retryObserver: { events.append($0) }
+            retryObserver: { events.append($0) },
+            stableLaneLifetime: .zero
         )
         await coordinator.ensure(Self.configuration(try Self.request()))
 

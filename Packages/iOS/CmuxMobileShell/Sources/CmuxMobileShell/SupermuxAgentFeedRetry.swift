@@ -1,6 +1,14 @@
 // SUPERMUX:begin agent-feed-retry-backoff
 import Foundation
 
+/// Which connection a Mac's agent-feed refresh task serves. A refresh for an
+/// earlier connection is replaced, not joined, and only the task holding the
+/// current token unregisters itself when it ends.
+struct SupermuxAgentFeedRefreshOwner {
+    let token = UUID()
+    let client: ObjectIdentifier
+}
+
 extension MobileShellComposite {
     /// Failed `feed.list` attempts a refresh makes before it waits for the
     /// next trigger (`feed.changed`, a new connection, a pull to refresh).

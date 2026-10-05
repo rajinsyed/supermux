@@ -275,10 +275,21 @@ extension MobileShellComposite {
     ) -> Task<Void, Never>? {
         guard agentFeedClient(for: macDeviceID) === client,
               agentFeedClientSupportsCapability(macDeviceID: macDeviceID) else { return nil }
+        // SUPERMUX:begin agent-feed-retry-backoff (a refresh for an earlier connection, maybe asleep in its backoff, is replaced instead of joined: it would end without fetching for this one)
+        if agentFeedRefreshTasksByMac[macDeviceID] != nil,
+           supermuxAgentFeedRefreshOwners[macDeviceID]?.client != ObjectIdentifier(client) {
+            agentFeedRefreshTasksByMac[macDeviceID]?.cancel()
+            agentFeedRefreshTasksByMac[macDeviceID] = nil
+        }
+        // SUPERMUX:end agent-feed-retry-backoff
         if let task = agentFeedRefreshTasksByMac[macDeviceID] {
             agentFeedRefreshPendingMacIDs.insert(macDeviceID)
             return task
         }
+        // SUPERMUX:begin agent-feed-retry-backoff
+        let owner = SupermuxAgentFeedRefreshOwner(client: ObjectIdentifier(client))
+        supermuxAgentFeedRefreshOwners[macDeviceID] = owner
+        // SUPERMUX:end agent-feed-retry-backoff
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
             // SUPERMUX:begin agent-feed-retry-backoff
@@ -301,14 +312,20 @@ extension MobileShellComposite {
                     consecutiveFailures = 0
                 } else {
                     consecutiveFailures += 1
-                    guard await self.supermuxAgentFeedRetryWait(
-                        afterFailures: consecutiveFailures
-                    ) else { break }
+                    // A failure of a connection that is no longer the Mac's
+                    // ends here; the new connection has its own refresh.
+                    guard self.agentFeedClient(for: macDeviceID) === client,
+                          await self.supermuxAgentFeedRetryWait(afterFailures: consecutiveFailures)
+                    else { break }
                 }
                 // SUPERMUX:end agent-feed-retry-backoff
             } while !Task.isCancelled
                 && self.agentFeedClient(for: macDeviceID) === client
                 && self.agentFeedRefreshPendingMacIDs.contains(macDeviceID)
+            // SUPERMUX:begin agent-feed-retry-backoff (a replaced refresh leaves its successor's registration alone)
+            guard self.supermuxAgentFeedRefreshOwners[macDeviceID]?.token == owner.token else { return }
+            self.supermuxAgentFeedRefreshOwners[macDeviceID] = nil
+            // SUPERMUX:end agent-feed-retry-backoff
             self.agentFeedRefreshTasksByMac[macDeviceID] = nil
             self.agentFeedRefreshPendingMacIDs.remove(macDeviceID)
             if self.agentFeedRefreshTasksByMac.isEmpty {

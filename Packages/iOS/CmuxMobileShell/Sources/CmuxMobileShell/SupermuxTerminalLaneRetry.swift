@@ -10,11 +10,17 @@ private let terminalLaneLog = Logger(
 
 /// When a phone's terminal lane is opened again after it ended or failed.
 ///
-/// A lane that delivered its baseline resets the attempt count, so relay
-/// drops never add up to giving the lane up. Consecutive failures wait
+/// A lane that delivered its baseline and then stayed up for
+/// ``stableLaneLifetime`` resets the attempt count, so relay drops never add
+/// up to giving the lane up; one that ends sooner (a host that accepts the
+/// lane and drops it) counts as a failure. Consecutive failures wait
 /// 250 ms × 2ⁿ (±20 %), at most 5 s. The lane is retried for as long as its
 /// terminal stays mounted on a live connection.
 struct SupermuxTerminalLaneRetryDelay: Sendable {
+    /// How long a lane must stay up after its baseline to reset the backoff:
+    /// the longest delay, so a lane that resets has outlived any wait.
+    static let stableLaneLifetime: Duration = .seconds(5)
+
     var base: Duration = .milliseconds(250)
     var cap: Duration = .seconds(5)
 
