@@ -220,11 +220,20 @@ extension MobileIrxRuntimeComposition {
         }
         try await assertDialAuthority(authority)
         let address = try supervisor.dialAddress(peerEndpointIDHex: peerHex, relayURL: relay, directAddresses: direct)
-        let connection = try await supervisor.dial(address: address, credentials: credentials)
+        // SUPERMUX:begin phone-route-direct-race (an automatic dial races the direct lane first; upstream: `let connection = try await supervisor.dial(address: address, credentials: credentials)`)
+        let dialCredentials = credentials
+        let dialed = try await supermuxDial(peerHex: peerHex, record: record, intent: intent, privateAddresses: direct) {
+            try await supervisor.dial(address: address, credentials: dialCredentials)
+        }
+        let connection = dialed.connection
+        // SUPERMUX:end phone-route-direct-race
         do {
             try await assertDialAuthority(authority)
             var authorizesDirectPaths = false
             if !forceRelayOnly, case .automatic = intent { authorizesDirectPaths = true }
+            // SUPERMUX:begin phone-route-direct-race (a direct-lane session never authorizes NAT traversal, like the Direct method's)
+            if dialed.lane == .direct { authorizesDirectPaths = false }
+            // SUPERMUX:end phone-route-direct-race
             let (admit, control) = try await IrxAdmission().performClient(
                 connection: connection, journal: journal,
                 authorizesDirectPaths: authorizesDirectPaths,
@@ -241,6 +250,9 @@ extension MobileIrxRuntimeComposition {
             await connection.raiseRemoteStreamCredit(bi: 0, uni: 40)
             try await assertDialAuthority(authority)
             activeDialIntentByPeer[peerHex] = intent
+            // SUPERMUX:begin phone-route-direct-race
+            supermuxSessionAdmitted(peerHex: peerHex, intent: intent, dialed: dialed)
+            // SUPERMUX:end phone-route-direct-race
             admittedSessionCount += 1
             journal.record("v2-peer", "admitted", ["session": admit.session, "count": String(admittedSessionCount),
                 "launchMs": String(Int(Date().timeIntervalSince(launchTime) * 1000))])

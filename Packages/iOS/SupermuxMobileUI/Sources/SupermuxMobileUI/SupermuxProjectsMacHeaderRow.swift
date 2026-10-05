@@ -10,6 +10,9 @@ import SwiftUI
 /// per Mac under PROJECTS.
 struct SupermuxProjectsMacHeaderRow: View {
     let header: SupermuxProjectsMacHeader
+    /// Drawn as one line of the iPhone's route strip, not as a header over
+    /// rows.
+    var isRouteLine = false
 
     var body: some View {
         HStack(spacing: 6) {
@@ -40,8 +43,8 @@ struct SupermuxProjectsMacHeaderRow: View {
         .padding(.top, 6)
         .padding(.bottom, 2)
         .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isHeader)
-        .accessibilityIdentifier("SupermuxProjectsMacHeader")
+        .accessibilityAddTraits(isRouteLine ? [] : .isHeader)
+        .accessibilityIdentifier(isRouteLine ? "SupermuxMacRouteLine" : "SupermuxProjectsMacHeader")
     }
 
     /// Shown only for an unhealthy link; a connected Mac needs no status.

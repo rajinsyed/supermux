@@ -570,5 +570,8 @@ extension MobileIrxRuntimeComposition {
         for supervisor in supervisors {
             await supervisor.notifyNetworkChange()
         }
+        // SUPERMUX:begin phone-route-direct-race (probe relayed Macs' direct lanes now; check direct-lane sessions still answer)
+        supermuxRouteNetworkChanged()
+        // SUPERMUX:end phone-route-direct-race
     }
 }

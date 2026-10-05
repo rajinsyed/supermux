@@ -12,6 +12,9 @@ import CmuxSentryReporting
 import Foundation
 import SwiftUI
 import cmuxFeature
+// SUPERMUX:begin phone-route-direct-race
+import SupermuxMobileKit
+// SUPERMUX:end phone-route-direct-race
 
 /// Holds the de-singletonized graph the `cmuxApp` builds once at launch.
 ///
@@ -24,6 +27,9 @@ final class AppCompositionRoot {
     let runtime: CMUXMobileRuntime
     let auth: MobileAuthComposition
     let irx: MobileIrxRuntimeComposition
+    // SUPERMUX:begin phone-route-direct-race (each Mac's live route for the Projects list, over the Iroh runtime)
+    let supermuxRoutes: SupermuxPhoneRouteModel
+    // SUPERMUX:end phone-route-direct-race
     let irohSettingsController: any CmxIrohSettingsControlling
     let irxDiscovery: MobileIrxDiscoveryProvider
     /// One build-compatibility policy shared by discovery, persistence, and
@@ -122,6 +128,9 @@ final class AppCompositionRoot {
         self.runtime = runtime
         self.auth = auth
         self.irx = irx
+        // SUPERMUX:begin phone-route-direct-race
+        self.supermuxRoutes = SupermuxPhoneRouteModel(runtime: irx)
+        // SUPERMUX:end phone-route-direct-race
         self.irohSettingsController = MobileIrxSettingsController(irx: irx, diagnosticLog: diagnosticLog)
         self.irxDiscovery = irxDiscovery
         self.buildCompatibilityPolicy = buildCompatibilityPolicy

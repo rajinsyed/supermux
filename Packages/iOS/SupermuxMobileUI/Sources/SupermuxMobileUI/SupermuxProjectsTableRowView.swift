@@ -81,7 +81,7 @@ public struct SupermuxProjectsTableRowView: View {
         case .macRoutes(let macs):
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(macs, id: \.pairingID) { mac in
-                    SupermuxProjectsMacHeaderRow(header: mac)
+                    SupermuxProjectsMacHeaderRow(header: mac, isRouteLine: true)
                 }
             }
         case .notice:

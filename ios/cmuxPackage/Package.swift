@@ -55,6 +55,10 @@ let package = Package(
         .package(path: "../../Packages/iOS/CmuxMobileTransport"),
         .package(path: "../../Packages/iOS/CmuxMobileWorkspace"),
         .package(path: "../../vendor/stack-auth-swift-sdk-prerelease"),
+        // SUPERMUX:begin phone-route-direct-race (the per-Mac route model and the direct-lane race/prober policy)
+        .package(path: "../../Packages/iOS/SupermuxMobileKit"),
+        .package(path: "../../Packages/Shared/SupermuxMobileCore"),
+        // SUPERMUX:end phone-route-direct-race
     ],
     targets: [
         .target(
@@ -91,6 +95,10 @@ let package = Package(
                 "CmuxMobileTransport",
                 "CmuxMobileWorkspace",
                 .product(name: "StackAuth", package: "stack-auth-swift-sdk-prerelease"),
+                // SUPERMUX:begin phone-route-direct-race
+                "SupermuxMobileKit",
+                "SupermuxMobileCore",
+                // SUPERMUX:end phone-route-direct-race
             ],
             swiftSettings: [
                 .define("CMUX_DEV_AUTH", .when(configuration: .debug)),

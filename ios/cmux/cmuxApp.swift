@@ -7,6 +7,9 @@ import Foundation
 import OSLog
 import SwiftUI
 import cmuxFeature
+// SUPERMUX:begin phone-route-direct-race
+import SupermuxMobileKit
+// SUPERMUX:end phone-route-direct-race
 #if DEBUG
 import CmuxIrohReleaseGateSupport
 #endif
@@ -203,6 +206,9 @@ struct cmuxApp: App {
         .environment(\.mobileLocalDataEraser, Self.localDataEraser)
         .environment(\.mobileKeyboardFrameTracker, Self.root.keyboardFrameTracker)
         .environment(\.scrollInteractionReporter, Self.root.scrollInteractionReporter)
+        // SUPERMUX:begin phone-route-direct-race (the Projects list's per-Mac route captions)
+        .environment(Self.root.supermuxRoutes)
+        // SUPERMUX:end phone-route-direct-race
         .environment(
             \.dogfoodAttachPreparation,
             DogfoodAttachPreparation {

@@ -67,7 +67,8 @@ public struct SupermuxDialRace: Sendable {
 
 /// Decides one ``SupermuxDialRace``. The legs run as unstructured tasks so
 /// the race returns as soon as it is decided; a leg that finishes later is
-/// discarded here.
+/// discarded here. The tasks inherit this actor's isolation; each leg's dial
+/// runs off it.
 private actor SupermuxDialRaceReferee<Value: Sendable> {
     private enum Leg {
         case notStarted, running, failed(any Error)
@@ -103,19 +104,19 @@ private actor SupermuxDialRaceReferee<Value: Sendable> {
                 let value = try await direct()
                 await self.succeeded(value, lane: .direct)
             } catch {
-                await self.directFailed(error)
+                self.directFailed(error)
             }
         })
         tasks.append(Task {
             try? await Task.sleep(for: directDeadline)
             guard !Task.isCancelled else { return }
-            await self.directFailed(SupermuxDialRace.Failure.directTimedOut)
+            self.directFailed(SupermuxDialRace.Failure.directTimedOut)
         })
         if fallbackDial != nil {
             tasks.append(Task {
                 try? await Task.sleep(for: headStart)
                 guard !Task.isCancelled else { return }
-                await self.startFallback()
+                self.startFallback()
             })
         }
     }
@@ -132,7 +133,7 @@ private actor SupermuxDialRaceReferee<Value: Sendable> {
                 let value = try await fallbackDial()
                 await self.succeeded(value, lane: .automatic)
             } catch {
-                await self.fallbackFailed(error)
+                self.fallbackFailed(error)
             }
         })
     }
