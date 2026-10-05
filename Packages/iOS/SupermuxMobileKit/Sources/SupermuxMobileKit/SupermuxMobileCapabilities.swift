@@ -96,4 +96,7 @@ public struct SupermuxMobileCapabilities: Sendable, Equatable {
     /// The Mac takes pipelined device-mirror input (Mac-to-Mac only; no
     /// phone UI depends on it).
     public var supportsTerminalInputPipeline: Bool { contains(.terminalInputPipelineV1) }
+    /// The Mac hands over its direct addresses (`route.candidates`), so this
+    /// device can dial it directly instead of starting on a relay.
+    public var supportsRouteCandidates: Bool { contains(.routeCandidatesV1) }
 }
