@@ -9,7 +9,7 @@ import Foundation
 /// comes back after the wake, all within `limit` (how long dials wait for
 /// the rebuild). The endpoint is closed only once a usable credential is in
 /// hand; without one it is kept, and the owner may run the rebuild later
-/// (``SupermuxWakePolicy/rebuildPostponed(at:)``).
+/// (``SupermuxWakePolicy/rebuildFinished(keptEndpoint:)``).
 public enum SupermuxMainEndpointRebuild {
     /// What a run did, as the power journal's `main` field shows it.
     public enum Outcome: String, Equatable, Sendable {

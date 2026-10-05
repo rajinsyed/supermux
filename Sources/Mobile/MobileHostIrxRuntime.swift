@@ -623,6 +623,9 @@ final class MobileHostIrxRuntime: MobileHostPairingRuntime {
                 await supervisor.rotateCredentials(Self.credentials(snapshot.cache))
                 guard isCurrent(token) else { return }
             }
+            // SUPERMUX:begin device-wake-rebuild-credentials (a main-endpoint rebuild the last wake kept for lack of a fresh credential runs now)
+            SupermuxComposition.systemPower.credentialsReceived()
+            // SUPERMUX:end device-wake-rebuild-credentials
         }
         requestEndpointReady(token: token)
         if activeDeviceCapabilities != deviceCapabilities { updateDeviceHostingMetadata() }

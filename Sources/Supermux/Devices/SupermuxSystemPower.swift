@@ -20,8 +20,10 @@ import SupermuxKit
 ///   sleep of 60 s or more the main endpoint is closed and bound again (every
 ///   QUIC session on it is dead by then; phones and Macs redial, see
 ///   ``rebuildMainEndpoint()``; expired relay credentials are refreshed
-///   first, and without fresh ones the rebuild waits for the next network
-///   change within 30 s), iroh is told the network changed, the route
+///   first for at most 4 s, a second under the dials' 5 s wait, and without
+///   fresh ones the rebuild runs again at the next network change or when
+///   credentials arrive, within 30 s of the wake), iroh is told the network
+///   changed, the route
 ///   switcher gives direct a fresh chance (hold-off cleared, probes now), the
 ///   idle direct lane is rebound, and links waiting in a backoff dial at
 ///   once. Dials wait for the rebuild, at most 5 s. A viewing Mac's sizing
@@ -29,7 +31,11 @@ import SupermuxKit
 ///   (``SupermuxMacViewerCloseGrace``), so that Mac's redial comes first.
 /// - **A network change** (interfaces or IPv4 addresses, Tailscale's `utun`
 ///   too, debounced 1 s) recovers the same way while awake, without the
-///   rebuild (unless one was put off at the wake) or the redials.
+///   rebuild (unless the wake's has not run yet) or the redials.
+/// - **Fresh relay credentials** (``credentialsReceived()``) run a rebuild
+///   the wake kept for lack of them. One rebuild runs at a time; a network
+///   change or credentials during one make it go once more if it kept the
+///   endpoint.
 ///
 /// The sleep is measured on the wall clock. Journals (category `power`):
 /// `will-sleep {links}`, `recovered {reason, slept_s, main, lane_rebuilt,
@@ -42,12 +48,17 @@ final class SupermuxSystemPower {
     static let displayCheckInterval: Duration = .seconds(15)
     /// How long dials may wait for the main endpoint's rebuild.
     static let rebuildWaitLimit: Duration = .seconds(5)
+    /// How long the rebuild waits for a fresh relay credential: a second
+    /// under ``rebuildWaitLimit``, so its close and bind are done before the
+    /// waiting dials go.
+    static let credentialWaitLimit: Duration = .seconds(4)
 
     /// What the last recovery did, for the DEBUG drivers.
     struct RecoveryRecord {
         let recovery: SupermuxWakePolicy.Recovery
         /// `rebuilt`, `rebuilt-after-refresh`, `no-endpoint`,
-        /// `kept-expired-credentials` or `kept` (no rebuild planned).
+        /// `kept-expired-credentials`, `running` (another recovery's rebuild
+        /// was under way) or `kept` (no rebuild planned).
         let main: String
         let laneRebuilt: Bool
         let redialed: Int
@@ -58,6 +69,11 @@ final class SupermuxSystemPower {
     private var rebuilding = false
     /// The rebuild `rebuilding` belongs to; an older one finishing never clears a newer one's.
     private var rebuildToken: UInt64 = 0
+    /// A rebuild is running (it may outlast the dials' wait).
+    private var rebuildRunning = false
+    /// A network change or credentials came while it ran: if it kept the
+    /// endpoint, it goes once more.
+    private var rebuildAgain = false
     private var observers: [NSObjectProtocol] = []
     private var pathMonitor: MobileHostNetworkPathMonitor?
     private var sawFirstPath = false
@@ -123,7 +139,7 @@ final class SupermuxSystemPower {
         displayTask?.cancel()
         displayTask = nil
         let token = recovery.rebuildsMainEndpoint ? beginRebuild() : nil
-        return Task { await recover(recovery, rebuild: token, redialsWaitingLinks: true) }
+        return Task { await recover(recovery, gate: token, redialsWaitingLinks: true) }
     }
 
     /// The network path changed; recovers after the burst settles. Returns
@@ -134,11 +150,22 @@ final class SupermuxSystemPower {
         let task = Task { [weak self] in
             guard (try? await Task.sleep(for: Self.networkDebounce)) != nil, let self else { return }
             guard let recovery = policy.networkChanged(at: Date()) else { return }
-            let token = recovery.rebuildsMainEndpoint ? beginRebuild() : nil
-            await recover(recovery, rebuild: token, redialsWaitingLinks: false)
+            await recover(recovery, gate: nil, redialsWaitingLinks: false)
         }
         networkTask = task
         return task
+    }
+
+    /// Fresh relay credentials arrived (`MobileHostIrxRuntime`): a rebuild
+    /// the last wake kept for lack of them runs now; one still running sees
+    /// them.
+    func credentialsReceived() {
+        guard let recovery = policy.credentialsReceived(at: Date()) else { return }
+        guard !rebuildRunning else {
+            rebuildAgain = true
+            return
+        }
+        Task { await recover(recovery, gate: nil, redialsWaitingLinks: false) }
     }
 
     private func pathChanged() {
@@ -182,20 +209,10 @@ final class SupermuxSystemPower {
 
     // MARK: - Recovery
 
-    private func recover(_ recovery: SupermuxWakePolicy.Recovery, rebuild token: UInt64?, redialsWaitingLinks: Bool) async {
+    /// `gate`: the dial gate a wake closed for its rebuild.
+    private func recover(_ recovery: SupermuxWakePolicy.Recovery, gate token: UInt64?, redialsWaitingLinks: Bool) async {
         var main = "kept"
-        if let token {
-            // Dials wait for the new endpoint, but never longer than the limit.
-            let limit = Task { [weak self] in
-                guard (try? await Task.sleep(for: Self.rebuildWaitLimit)) != nil else { return }
-                self?.endRebuild(token)
-            }
-            let outcome = await Self.rebuildMainEndpoint()
-            limit.cancel()
-            endRebuild(token)
-            if outcome == .keptExpiredCredentials { policy.rebuildPostponed(at: Date()) }
-            main = outcome.rawValue
-        }
+        if recovery.rebuildsMainEndpoint { main = await rebuildIfWanted(gate: token) }
         await MobileHostIrxRuntime.shared.endpointSupervisor?.notifyNetworkChange()
         SupermuxComposition.routeSwitcher.probeNow(reason: recovery.reason.rawValue)
         let laneRebuilt = await SupermuxComposition.directLane.rebuildIfIdle(reason: recovery.reason.rawValue)
@@ -211,6 +228,45 @@ final class SupermuxSystemPower {
         ])
     }
 
+    /// Rebuilds the main endpoint while the last wake still wants it, one
+    /// run at a time: a trigger during a run marks ``rebuildAgain`` and
+    /// returns `running`; a run that kept the endpoint goes once more when
+    /// one came.
+    private func rebuildIfWanted(gate token: UInt64?) async -> String {
+        guard !rebuildRunning else {
+            rebuildAgain = true
+            if let token { endRebuild(token) }
+            return "running"
+        }
+        rebuildRunning = true
+        defer { rebuildRunning = false }
+        var gate = token
+        var main = "kept"
+        while policy.wantsRebuild(at: Date()) {
+            rebuildAgain = false
+            let outcome = await gatedRebuild(token: gate ?? beginRebuild())
+            gate = nil
+            policy.rebuildFinished(keptEndpoint: outcome == .keptExpiredCredentials)
+            main = outcome.rawValue
+            guard outcome == .keptExpiredCredentials, rebuildAgain else { break }
+        }
+        if let gate { endRebuild(gate) }
+        return main
+    }
+
+    /// One rebuild, with dials waiting for the new endpoint, but never
+    /// longer than ``rebuildWaitLimit``.
+    private func gatedRebuild(token: UInt64) async -> SupermuxMainEndpointRebuild.Outcome {
+        let limit = Task { [weak self] in
+            guard (try? await Task.sleep(for: Self.rebuildWaitLimit)) != nil else { return }
+            self?.endRebuild(token)
+        }
+        let outcome = await Self.rebuildMainEndpoint()
+        limit.cancel()
+        endRebuild(token)
+        return outcome
+    }
+
     private func beginRebuild() -> UInt64 {
         rebuildToken &+= 1
         rebuilding = true
@@ -224,7 +280,7 @@ final class SupermuxSystemPower {
     /// Closes the main endpoint and binds a new one
     /// (``SupermuxMainEndpointRebuild``): at once with a usable relay
     /// credential; after refreshing expired ones (credentials last 30 min, so
-    /// after a night they always have) within the dials' wait limit; or not
+    /// after a night they always have) within ``credentialWaitLimit``; or not
     /// at all without one (a relay endpoint cannot bind without it).
     ///
     /// After a sleep of a minute or more every session on it is dead: peers
@@ -247,7 +303,7 @@ final class SupermuxSystemPower {
                 await runtime.endpointSupervisor?.close()
                 await runtime.foreground()
             })
-        return await SupermuxMainEndpointRebuild.run(steps, limit: rebuildWaitLimit)
+        return await SupermuxMainEndpointRebuild.run(steps, limit: credentialWaitLimit)
     }
 
     /// Whether the main endpoint could bind now: a relay credential that has
@@ -279,6 +335,7 @@ final class SupermuxSystemPower {
         policy = SupermuxWakePolicy()
         rebuildToken &+= 1
         rebuilding = false
+        rebuildAgain = false
         displayTask?.cancel()
         displayTask = nil
         lastRecovery = nil
