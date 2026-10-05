@@ -41,11 +41,20 @@ final class SupermuxPromptNSTextView: NSTextView {
         onImages?(files)
     }
 
+    // A plain-text view disables Paste for an image-only pasteboard; both
+    // validation paths (menu item and generic) enable it here.
+    override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        pastesImages(menuItem.action) ?? super.validateMenuItem(menuItem)
+    }
+
     override func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
-        if item.action == #selector(paste(_:)), SupermuxPromptImageImporter.holdsImages(.general) {
-            return isEditable
-        }
-        return super.validateUserInterfaceItem(item)
+        pastesImages(item.action) ?? super.validateUserInterfaceItem(item)
+    }
+
+    /// Whether Paste is enabled for images, or `nil` to let the text view decide.
+    private func pastesImages(_ action: Selector?) -> Bool? {
+        guard action == #selector(paste(_:)), SupermuxPromptImageImporter.holdsImages(.general) else { return nil }
+        return isEditable
     }
 
     // MARK: - Drop

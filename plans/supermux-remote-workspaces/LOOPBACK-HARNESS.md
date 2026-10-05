@@ -419,6 +419,12 @@ changes no selection. Because the loopback's two Macs share one window list, sel
 per workspace (`workspace.list`), and the sheet path checks the source workspace is not selected
 while its mirror is. `--only a,b` runs a subset of steps.
 
+Steps 14–16 cover prompt images: an image attached without text keeps Start disabled (and a
+non-image is refused); Start Claude with an image on the Loopback Mac uploads it
+(`agent.attachment.upload`) and the echoed launch names its path in `~/.cache/cmux/task-attachments`
+with matching bytes and its folder as `--add-dir`; on This Mac it is a private copy under
+`~/.local/state/cmux/supermux-agent-attachments`.
+
 ```bash
 open -g --env SUPERMUX_DEBUG_LOOPBACK_DEVICE=1 --env SUPERMUX_PROJECTS_FILE=/tmp/<tag>/projects.json "<App path>"
 CMUX_TAG=<tag> python3 tests/supermux/loopback_new_worktree_picker_e2e.py --scratch /tmp/<tag>
