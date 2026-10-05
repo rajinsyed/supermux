@@ -281,13 +281,31 @@ extension MobileShellComposite {
         }
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
+            // SUPERMUX:begin agent-feed-retry-backoff
+            var consecutiveFailures = 0
+            // SUPERMUX:end agent-feed-retry-backoff
             repeat {
                 self.agentFeedRefreshPendingMacIDs.remove(macDeviceID)
-                await self.fetchAgentFeed(
+                // SUPERMUX:begin agent-feed-retry-backoff (upstream: `await self.fetchAgentFeed(`, result unused)
+                let fetched = await self.fetchAgentFeed(
+                // SUPERMUX:end agent-feed-retry-backoff
                     macDeviceID: macDeviceID,
                     client: client,
                     displayName: displayName
                 )
+                // SUPERMUX:begin agent-feed-retry-backoff
+                // A failed fetch re-arms the pending flag; without a pause the
+                // loop redialed thousands of times a second while the peer
+                // engine failed every dial fast (the resume dial storm).
+                if fetched {
+                    consecutiveFailures = 0
+                } else {
+                    consecutiveFailures += 1
+                    guard await self.supermuxAgentFeedRetryWait(
+                        afterFailures: consecutiveFailures
+                    ) else { break }
+                }
+                // SUPERMUX:end agent-feed-retry-backoff
             } while !Task.isCancelled
                 && self.agentFeedClient(for: macDeviceID) === client
                 && self.agentFeedRefreshPendingMacIDs.contains(macDeviceID)
@@ -301,11 +319,14 @@ extension MobileShellComposite {
         return task
     }
 
+    // SUPERMUX:begin agent-feed-retry-backoff (upstream returns Void; true once `feed.list` answered)
+    @discardableResult
     private func fetchAgentFeed(
         macDeviceID: String,
         client: MobileCoreRPCClient,
         displayName: String
-    ) async {
+    ) async -> Bool {
+    // SUPERMUX:end agent-feed-retry-backoff
         do {
             let request = try MobileCoreRPCClient.requestData(
                 method: "feed.list",
@@ -313,15 +334,22 @@ extension MobileShellComposite {
             )
             let data = try await client.sendRequest(request)
             let response = try MobileAgentFeedListResponse.decode(data)
+            // SUPERMUX:begin agent-feed-retry-backoff (upstream: `else { return }`)
             guard !Task.isCancelled,
-                  agentFeedClient(for: macDeviceID) === client else { return }
+                  agentFeedClient(for: macDeviceID) === client else { return true }
+            // SUPERMUX:end agent-feed-retry-backoff
             applyAgentFeedSnapshot(
                 response,
                 macDeviceID: macDeviceID,
                 displayName: displayName
             )
+            // SUPERMUX:begin agent-feed-retry-backoff
+            return true
+            // SUPERMUX:end agent-feed-retry-backoff
         } catch {
-            guard agentFeedClient(for: macDeviceID) === client else { return }
+            // SUPERMUX:begin agent-feed-retry-backoff (upstream: `else { return }`)
+            guard agentFeedClient(for: macDeviceID) === client else { return false }
+            // SUPERMUX:end agent-feed-retry-backoff
             agentFeedLog.error(
                 "list failed mac=\(macDeviceID, privacy: .public) error=\(String(describing: error), privacy: .private)"
             )
@@ -329,6 +357,9 @@ extension MobileShellComposite {
             // transient failure; leave the mac marked pending so the next
             // trigger refetches.
             agentFeedRefreshPendingMacIDs.insert(macDeviceID)
+            // SUPERMUX:begin agent-feed-retry-backoff
+            return false
+            // SUPERMUX:end agent-feed-retry-backoff
         }
     }
 
