@@ -100,6 +100,9 @@ public struct SupermuxRouteSwitchPolicy: Equatable, Sendable {
     private var path: Path?
     private var nextProbeAt: Date?
     private var probing = false
+    /// The network changed or new addresses came while a probe was out: it
+    /// tried the old ones, so a failed answer probes again at once.
+    private var probeAgain = false
     private var checking = false
     private var misses = 0
     private var lastUpgradeAt: Date?
@@ -122,6 +125,7 @@ public struct SupermuxRouteSwitchPolicy: Equatable, Sendable {
         startedAt = now
         path = nil
         probing = false
+        probeAgain = false
         checking = false
         misses = 0
         if let until = probeSoonUntil, now < until {
@@ -137,6 +141,7 @@ public struct SupermuxRouteSwitchPolicy: Equatable, Sendable {
         startedAt = nil
         path = nil
         probing = false
+        probeAgain = false
         checking = false
         misses = 0
     }
@@ -213,6 +218,8 @@ public struct SupermuxRouteSwitchPolicy: Equatable, Sendable {
     public mutating func probeFinished(session: Int, succeeded: Bool, at now: Date, jitter: Double = 0.5) -> Action {
         guard session == self.session, startedAt != nil, probing else { return .none }
         probing = false
+        let again = probeAgain
+        probeAgain = false
         if succeeded {
             probeFailures = 0
             // Direct works on this network now: the move's race holds the relay for it.
@@ -224,7 +231,7 @@ public struct SupermuxRouteSwitchPolicy: Equatable, Sendable {
         }
         probeFailures += 1
         let base = probeFailures >= Self.failuresBeforeSlowProbing ? Self.slowProbeInterval : Self.probeInterval
-        nextProbeAt = now.addingTimeInterval(Self.interval(base, jitter: jitter))
+        nextProbeAt = again ? now : now.addingTimeInterval(Self.interval(base, jitter: jitter))
         return .none
     }
 
@@ -266,22 +273,25 @@ public struct SupermuxRouteSwitchPolicy: Equatable, Sendable {
     }
 
     /// Probe a relayed session at its next sample, or the next session if it
-    /// starts within ``recoveryWindow`` (the app came to the foreground). A
-    /// hold-off after a flap still holds.
+    /// starts within ``recoveryWindow`` (the app came to the foreground); a
+    /// probe still out is followed by another once it fails. A hold-off
+    /// after a flap still holds.
     public mutating func probeSoon(at now: Date) {
         probeFailures = 0
         if startedAt != nil {
             nextProbeAt = now
+            if probing { probeAgain = true }
         } else {
             probeSoonUntil = now.addingTimeInterval(Self.recoveryWindow)
         }
     }
 
     /// The peer handed over new direct addresses: a relayed session probes at
-    /// its next sample.
+    /// its next sample (after a probe still out, if that one fails).
     public mutating func candidatesChanged(at now: Date) {
         guard startedAt != nil else { return }
         nextProbeAt = now
+        if probing { probeAgain = true }
     }
 
     // MARK: - Arithmetic
