@@ -54,7 +54,7 @@ import Testing
 
     @Test func allExposesEveryCapabilityExactlyOnce() {
         #expect(SupermuxMobileCapability.all == SupermuxMobileCapability.allCases)
-        #expect(SupermuxMobileCapability.all.count == 28)
-        #expect(Set(SupermuxMobileCapability.all).count == 28)
+        #expect(SupermuxMobileCapability.all.count == 29)
+        #expect(Set(SupermuxMobileCapability.all).count == 29)
     }
 }
