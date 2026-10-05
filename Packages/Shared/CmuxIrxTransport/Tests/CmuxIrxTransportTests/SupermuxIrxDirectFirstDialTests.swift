@@ -31,6 +31,8 @@ import Testing
 ///     or a value that arrives afterwards leaks.
 /// 11. A relay connection held while direct was still trying is not used when
 ///     direct then fails.
+/// 12. (Review T13) Where direct cannot work, a race that should not hold a
+///     ready relay connection still holds it until the direct deadline.
 ///
 /// On live iroh endpoints (the "relay" leg is a second endpoint of the same
 /// identity behind a link with 120 ms each way; the "direct" leg is the lane
@@ -44,6 +46,11 @@ import Testing
 ///   within its deadline when the path is cut.
 /// - L5. A direct session whose path is cut stops answering within a few
 ///   seconds (the evidence for falling back to the relay).
+/// - L7 (review T2). One wrong address among the peer's (another endpoint
+///   answers there first: a VM bridge address reaching this Mac's own host,
+///   a stale address reaching another cmux host) fails the key check; the
+///   race still lands direct at the right address, admitted once, and a
+///   probe still answers.
 /// - L6 (opt-in, public relays: `CMUX_IROH_PUBLIC_RELAY_TEST=1`). With the
 ///   direct address blackholed the race lands on a real relay path; with that
 ///   relay session admitted and authorized, the lane of the same identity
@@ -178,6 +185,19 @@ struct SupermuxIrxDirectFirstDialTests {
         #expect(describe(early.handle(.headStartElapsed)) == [], "no relay after a cancel")
     }
 
+    @Test("12. a race that does not hold the relay takes it when it is ready and cancels direct")
+    func noHoldTakesTheRelayAtOnce() {
+        var state = State(hasDirect: true, holdsRelay: false)
+        _ = state.start()
+        #expect(describe(state.handle(.headStartElapsed)) == ["startRelay"])
+        #expect(describe(state.handle(.relaySucceeded(2))) == ["cancelDirect", "finish(relay 2)"])
+        #expect(describe(state.handle(.directSucceeded(1))) == ["discard(1)"])
+
+        var early = State(hasDirect: true, holdsRelay: false)
+        _ = early.start()
+        #expect(describe(early.handle(.directSucceeded(1))) == ["finish(direct 1)"], "direct inside the head start still wins")
+    }
+
     // MARK: - The race running
 
     @Test("6. running: direct answers at once, the relay leg is never called", .timeLimit(.minutes(1)))
@@ -307,6 +327,34 @@ struct SupermuxIrxDirectFirstDialTests {
         rig.directLink.blocked = false
         #expect(await lane.probeLiveness(deadline: .seconds(3)), "the path came back")
         #expect(await SupermuxIrxDirectFirstDial.answers(lane))
+        await rig.shutDown()
+    }
+
+    @Test("L7. one wrong address among the peer's does not sink the right one", .timeLimit(.minutes(1)))
+    func wrongAddressDoesNotSinkTheRightOne() async throws {
+        let rig = try await LiveRig.make()
+        let wrong = try await WrongHost.make(journal: rig.journal)
+        // The right host is 100 ms away, so the wrong endpoint answers first.
+        let right = try SupermuxShapedUDPLink(hostPort: rig.hostPort, shape: .init(
+            bytesPerSecond: 100_000_000, oneWayDelay: 0.05, queueBytes: 4_000_000))
+        let addresses = [wrong.address, right.clientFacingAddress]
+        let outcome = try await SupermuxIrxDirectFirstDial.dial(
+            lane: rig.lane, directAddresses: addresses,
+            main: rig.main, relayAddress: rig.address(rig.relayLink), credentials: [])
+        print("race with a wrong address first: \(outcome.journalFields), wrong host saw \(wrong.host.incoming)")
+        #expect(outcome.leg == .direct, "the wrong endpoint's answer sank the direct leg: \(outcome.journalFields)")
+        #expect(outcome.value.supermuxSelectedPathSample()?.remoteAddress == right.clientFacingAddress)
+        _ = try await rig.admit(outcome.value)
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(rig.host.admitted == 1)
+        #expect(wrong.host.admitted == 0, "nothing is admitted at the wrong endpoint")
+
+        let probed = await SupermuxIrxDirectFirstDial.probe(
+            lane: rig.lane, peerEndpointIDHex: rig.host.endpointIDHex,
+            addresses: addresses, deadline: .milliseconds(1500))
+        #expect(probed != nil, "a probe with a wrong address first still reaches the right one")
+        right.stop()
+        await wrong.host.stop()
         await rig.shutDown()
     }
 
@@ -500,6 +548,25 @@ private final class CountingHost: @unchecked Sendable {
     }
 }
 
+/// Another cmux host (its own identity) answering at an address the client
+/// believes is the peer's.
+private struct WrongHost {
+    let host: CountingHost
+    let address: String
+
+    static func make(journal: IrxJournal) async throws -> WrongHost {
+        let endpoint = try await Endpoint.bind(options: EndpointOptions(
+            preset: presetMinimal(), bindAddr: "127.0.0.1:0", secretKey: IrxLiveTestSupport.identitySeed(),
+            alpns: [IrxProtocol().alpnData], relayMode: RelayMode.disabled(), portMappingEnabled: false,
+            deferNatTraversalUntilAuthorized: true,
+            initialMaxConcurrentBiStreams: 8, initialMaxConcurrentUniStreams: 0))
+        let host = CountingHost(endpoint: endpoint)
+        host.start(journal: journal)
+        let address = try #require(IrxLiveTestSupport.loopbackAddr(of: endpoint).directAddresses().first)
+        return WrongHost(host: host, address: address)
+    }
+}
+
 /// A host; a client identity with two endpoints (the main one behind a slow
 /// "relay" link, the direct-only lane behind a link that can be cut).
 private final class LiveRig: Sendable {
@@ -509,15 +576,19 @@ private final class LiveRig: Sendable {
     let relayLink: SupermuxShapedUDPLink
     let directLink: SupermuxShapedUDPLink
     let journal: IrxJournal
+    /// The host's UDP port on 127.0.0.1.
+    let hostPort: UInt16
 
     private init(host: CountingHost, main: IrxEndpointSupervisor, lane: IrxEndpointSupervisor,
-                 relayLink: SupermuxShapedUDPLink, directLink: SupermuxShapedUDPLink, journal: IrxJournal) {
+                 relayLink: SupermuxShapedUDPLink, directLink: SupermuxShapedUDPLink, journal: IrxJournal,
+                 hostPort: UInt16) {
         self.host = host
         self.main = main
         self.lane = lane
         self.relayLink = relayLink
         self.directLink = directLink
         self.journal = journal
+        self.hostPort = hostPort
     }
 
     static func make() async throws -> LiveRig {
@@ -543,10 +614,10 @@ private final class LiveRig: Sendable {
                 initialRemoteBiStreams: 0, initialRemoteUniStreams: 0), journal: journal)
         }
         return LiveRig(host: host, main: supervisor(), lane: supervisor(),
-                       relayLink: relayLink, directLink: directLink, journal: journal)
+                       relayLink: relayLink, directLink: directLink, journal: journal, hostPort: hostPort)
     }
 
-    private func address(_ link: SupermuxShapedUDPLink) throws -> EndpointAddr {
+    func address(_ link: SupermuxShapedUDPLink) throws -> EndpointAddr {
         EndpointAddr(id: try EndpointId.fromString(s: host.endpointIDHex), relayUrl: nil,
                      addresses: [link.clientFacingAddress])
     }

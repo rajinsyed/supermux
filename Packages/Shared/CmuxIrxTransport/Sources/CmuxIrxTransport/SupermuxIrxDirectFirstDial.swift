@@ -181,7 +181,8 @@ struct SupermuxIrxDialRaceState<Value: Sendable> {
     private var relay: Relay = .notStarted
     private(set) var decided = false
 
-    init(hasDirect: Bool) {
+    init(hasDirect: Bool, holdsRelay: Bool = true) {
+        // Red stub (review T13): `holdsRelay` is not implemented yet.
         direct = hasDirect ? .pending : .absent
     }
 
