@@ -709,7 +709,9 @@ extension TerminalController {
             guard let mode = TerminalSizingMode(rawValue: rawMode) else {
                 return .err(code: "invalid_params", message: "Unknown mode \(rawMode)", data: nil)
             }
-            policy = policy.withMode(mode, fallbackFixed: snapshot.state.size)
+            // SUPERMUX:begin sizing-fixed-seed (Fixed without a size fixes this window's own grid, not the shared grid that may be a phone's; upstream: `fallbackFixed: snapshot.state.size`)
+            policy = policy.withMode(mode, fallbackFixed: SupermuxTerminalSizingDefaults.fixedSeed(snapshot))
+            // SUPERMUX:end sizing-fixed-seed
         }
         if let cols = v2Int(params, "fixed_cols"), let rows = v2Int(params, "fixed_rows") {
             let requested = TerminalSizingPolicy(mode: policy.mode, priority: policy.priority, fixed: TerminalGridSize(cols: cols, rows: rows))
