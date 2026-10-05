@@ -18,7 +18,9 @@ import Foundation
 /// It is rebound (``rebuildIfIdle(reason:)``, on wake and network changes)
 /// only while nothing uses it: no adopted session is live and no dial or
 /// probe holds it (``beginUse(matching:)`` … ``endUse()``). Sign-out takes
-/// it down with the old identity (``deactivate()``).
+/// it down with the old identity (``deactivate(retiring:)``), and a dial or
+/// probe that read the old account's main endpoint before the sign-out never
+/// makes a lane with that identity afterwards.
 actor SupermuxDeviceDirectLane {
     private let journal: IrxJournal
     private var supervisor: IrxEndpointSupervisor?
@@ -27,9 +29,15 @@ actor SupermuxDeviceDirectLane {
     private var sessions: [WeakConnection] = []
     /// Dials and probes using the lane now.
     private var inFlight = 0
+    /// Main endpoints of accounts that signed out or changed.
+    private var retired: [WeakSupervisor] = []
 
     private struct WeakConnection {
         weak var connection: IrxConnection?
+    }
+
+    private struct WeakSupervisor {
+        weak var supervisor: IrxEndpointSupervisor?
     }
 
     init(journal: IrxJournal) {
@@ -38,10 +46,16 @@ actor SupermuxDeviceDirectLane {
 
     /// The lane for the identity `main` uses, held for one dial or probe until
     /// ``endUse()``: made on first use, replaced when the identity changes
-    /// (another account). It binds on its first dial.
-    func beginUse(matching main: IrxEndpointSupervisor) async -> IrxEndpointSupervisor {
+    /// (another account). It binds on its first dial. Nil (and not held) when
+    /// `main` belongs to an account that signed out since it was read.
+    func beginUse(matching main: IrxEndpointSupervisor) async -> IrxEndpointSupervisor? {
         inFlight += 1
         let identity = await main.identity()
+        // After the last suspension: a sign-out may have run while it waited.
+        guard !retired.contains(where: { $0.supervisor === main }) else {
+            inFlight -= 1
+            return nil
+        }
         if let supervisor, endpointID == identity.endpointIDHex { return supervisor }
         let previous = supervisor
         let lane = IrxEndpointSupervisor(
@@ -84,8 +98,13 @@ actor SupermuxDeviceDirectLane {
         return true
     }
 
-    /// The account changed or signed out: the lane and its identity go now.
-    func deactivate() async {
+    /// The account changed or signed out: the lane and its identity go now,
+    /// and `main` (the old account's endpoint) never makes a lane again.
+    func deactivate(retiring main: IrxEndpointSupervisor?) async {
+        if let main {
+            retired.removeAll { $0.supervisor == nil }
+            retired.append(WeakSupervisor(supervisor: main))
+        }
         guard let previous = supervisor else { return }
         supervisor = nil
         endpointID = nil

@@ -101,7 +101,10 @@ enum SupermuxDeviceDirectDial {
                 for: instance, endpointID: endpointID, allowsDirectPaths: allowsDirectPaths, journal: journal)
             if addresses.isEmpty { skipped = "no-addresses" }
         }
-        if skipped == nil { lane = await directLane.beginUse(matching: main) }
+        if skipped == nil {
+            lane = await directLane.beginUse(matching: main)
+            if lane == nil { skipped = "signed-out" }
+        }
         let holdsRelay = await SupermuxComposition.routeSwitcher.holdsRelayInRace(instance)
         var fields = ["device": String(instance.deviceID.prefix(8)), "candidates": String(addresses.count)]
         fields["direct_skipped"] = skipped

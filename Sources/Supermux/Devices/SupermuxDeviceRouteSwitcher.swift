@@ -327,7 +327,7 @@ final class SupermuxIrxRouteSwitchSession: SupermuxRouteSwitchLinkSession {
         let lane = SupermuxComposition.directLane
         guard !addresses.isEmpty, let main = MobileHostIrxRuntime.shared.endpointSupervisor else { return nil }
         // Made here when no dial has used the lane yet (the first dial had no address).
-        let supervisor = await lane.beginUse(matching: main)
+        guard let supervisor = await lane.beginUse(matching: main) else { return nil }
         let took = await SupermuxIrxDirectFirstDial.probe(
             lane: supervisor, peerEndpointIDHex: connection.remoteEndpointIDHex,
             addresses: addresses, deadline: SupermuxDeviceRouteSwitcher.probeDeadline)
