@@ -58,6 +58,9 @@ public final class SupermuxProjectsModel: SupermuxDirectoryAssociationPersisting
     /// Whether the projects document was read, so ``projects`` is known. The
     /// first load's config imports and worktree listing may still be running.
     public private(set) var hasLoaded = false
+    /// Whether the first load finished, config imports and worktree listing
+    /// included. Not observed: nothing redraws on it.
+    @ObservationIgnored public private(set) var hasFinishedLoading = false
     /// The in-flight (or completed) load; concurrent ``loadIfNeeded()`` callers
     /// await this single task instead of re-running the load body.
     @ObservationIgnored private var loadTask: Task<Void, Never>?
@@ -175,6 +178,7 @@ public final class SupermuxProjectsModel: SupermuxDirectoryAssociationPersisting
                 }
             }
         }
+        hasFinishedLoading = true
     }
 
     /// Registers a folder as a project and returns the new record.

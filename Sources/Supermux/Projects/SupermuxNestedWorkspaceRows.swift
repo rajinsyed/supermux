@@ -28,11 +28,12 @@ enum SupermuxNestedWorkspaceRows {
         // what re-renders the mount on association changes.
         let resolutionCache = SupermuxMainListFilter.resolutionCache(for: tabManager)
         // Device mirrors nest by their remote record's project (never by
-        // local path); reading it here re-renders on ownership changes.
+        // local path); reading it here re-renders on ownership changes. A
+        // nested mirror's record fields (branch, PR) re-render it through
+        // the unified model's `mirrorRemoteFields`, and its activity through
+        // the status projector's lifecycle relay, so this body follows no
+        // device revision.
         let ownership = SupermuxMirrorOwnership.current()
-        // Nested mirrors render remote record fields (branch, activity, PR);
-        // follow the device revision only while any mirror nests here.
-        let _ = ownership.owners.isEmpty ? 0 : SupermuxComposition.devices.revision
         let rows = tabManager.tabs.map { workspace -> SupermuxOpenWorkspace in
             let isSelected = workspace.id == tabManager.selectedTabId
             // Full snapshots (branch/PR/activity, each walking the bonsplit
@@ -44,7 +45,11 @@ enum SupermuxNestedWorkspaceRows {
                 associations: associations,
                 ownership: ownership
             ) else {
-                return SupermuxWorkspaceRow.standaloneSnapshot(for: workspace, isSelected: isSelected)
+                return SupermuxWorkspaceRow.standaloneSnapshot(
+                    for: workspace,
+                    isSelected: isSelected,
+                    isMirror: ownership.isMirror(workspace)
+                )
             }
             if ownership.isMirror(workspace) {
                 return SupermuxMirrorRowSnapshot.snapshot(

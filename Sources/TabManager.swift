@@ -2881,6 +2881,9 @@ class TabManager: ObservableObject {
         if select {
             selectedTabId = workspace.id
         }
+        // SUPERMUX:begin tab-activity-workspace-moved (its working-tab spinners follow the new window)
+        SupermuxTabActivitySync.shared.workspaceMoved(workspace)
+        // SUPERMUX:end tab-activity-workspace-moved
     }
 
     // Keep closeTab as convenience alias

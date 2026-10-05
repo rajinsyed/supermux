@@ -245,12 +245,12 @@ import SupermuxKit
         func fetchCallCount() -> Int { calls.filter { $0.contains("fetch") }.count }
 
         func revListCallCount() -> Int {
-            calls.filter { $0.first(where: { !$0.hasPrefix("-") }) == "rev-list" }.count
+            calls.filter { gitSubcommand(of: $0) == "rev-list" }.count
         }
 
         func incomingLogCallCount() -> Int {
             calls.filter {
-                $0.first(where: { !$0.hasPrefix("-") }) == "log" && $0.contains("HEAD..@{upstream}")
+                gitSubcommand(of: $0) == "log" && $0.contains("HEAD..@{upstream}")
             }.count
         }
 
@@ -272,7 +272,7 @@ import SupermuxKit
                 return result(stdout: "")
             }
             // Skip global flags (`--no-optional-locks`) to find the subcommand.
-            switch arguments.first(where: { !$0.hasPrefix("-") }) {
+            switch gitSubcommand(of: arguments) {
             case "status":
                 var stdout = "# branch.head main\u{0}"
                 if hasUpstream {
@@ -354,7 +354,7 @@ import SupermuxKit
                 }
                 return ok("")
             }
-            if arguments.first(where: { !$0.hasPrefix("-") }) == "status" {
+            if gitSubcommand(of: arguments) == "status" {
                 return ok(
                     "# branch.head main\u{0}# branch.upstream origin/main\u{0}# branch.ab +1 -0\u{0}"
                 )
@@ -422,7 +422,7 @@ import SupermuxKit
                 pushRanWhileFetchHeld = !fetchReleased
                 return ok("")
             }
-            if arguments.first(where: { !$0.hasPrefix("-") }) == "status" {
+            if gitSubcommand(of: arguments) == "status" {
                 return ok(
                     "# branch.head main\u{0}# branch.upstream origin/main\u{0}# branch.ab +1 -0\u{0}"
                 )

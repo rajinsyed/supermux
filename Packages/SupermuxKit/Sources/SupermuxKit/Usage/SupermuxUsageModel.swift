@@ -2,8 +2,8 @@ public import Foundation
 public import Observation
 
 /// App-wide model behind the sidebar usage tracker: owns the latest Claude and
-/// Codex states and refreshes them on a fixed cadence while any sidebar is
-/// visible.
+/// Codex states and refreshes them on a fixed cadence while any window showing
+/// the gauge is on screen.
 ///
 /// Cadence: one pass every 2 minutes, with a hard floor between passes that
 /// popover-open and manual refreshes cannot bypass — so the UI alone can never
@@ -15,10 +15,13 @@ public import Observation
 /// no matter what the UI does. Codex's endpoint is polled by its own TUI at
 /// 60s, so 120s is comfortably polite.
 ///
-/// The model is view-driven exactly like ``SupermuxWorktreePullRequestModel``:
-/// the mounted button runs `.task { await model.runPollLoop() }`, so polling
-/// stops when no sidebar is mounted and multiple windows share one loop via
-/// the `pollLoopOwner` guard.
+/// The model is view-driven like ``SupermuxWorktreePullRequestModel``: each
+/// mounted button runs `.task { await model.runPollLoop(isObserved:) }`, which
+/// keeps one shared loop alive while any button is mounted. The loop polls
+/// only while one of those buttons' windows is on screen; otherwise it waits,
+/// with no timer, for ``observationDidChange()``. A Mac with no window on
+/// screen (a headless Remote Host Mode host) therefore spends nothing here;
+/// the phone's `usage.state` request refreshes on demand.
 @MainActor
 @Observable
 public final class SupermuxUsageModel {
@@ -54,10 +57,16 @@ public final class SupermuxUsageModel {
     /// Bumped on every successful cswap mutation. A pass that started under
     /// an older generation measured pre-mutation state and must not publish.
     @ObservationIgnored private var accountStateGeneration = 0
-    /// Identity of the view instance currently driving the poll loop, so
-    /// N mounted sidebars run one loop, and the loop migrates when its owner
-    /// unmounts.
-    @ObservationIgnored private var pollLoopOwner: UUID?
+    /// The mounted views showing usage (one per window's sidebar footer), each
+    /// with whether its window is on screen.
+    @ObservationIgnored private var mounts: [UUID: @MainActor @Sendable () -> Bool] = [:]
+    /// Each mounted view's `.task`, parked in ``runPollLoop(isObserved:)``
+    /// until SwiftUI cancels it.
+    @ObservationIgnored private var parkedMounts: [UUID: CheckedContinuation<Void, Never>] = [:]
+    /// The one poll loop, running while any view is mounted.
+    @ObservationIgnored private var pollTask: Task<Void, Never>?
+    /// The poll loop while it waits for a mounted view to come on screen.
+    @ObservationIgnored private var onScreenWaiter: CheckedContinuation<Void, Never>?
 
     public init(
         claudeSource: SupermuxClaudeUsageSource = SupermuxClaudeUsageSource(),
@@ -126,23 +135,75 @@ public final class SupermuxUsageModel {
         return dates.min()
     }
 
-    /// Long-running per-view poll loop; safe to call from several mounted
-    /// views (only the first becomes the owner, the rest return immediately
-    /// and re-candidate when the owner cancels).
-    public func runPollLoop() async {
-        let me = UUID()
-        while !Task.isCancelled {
-            if pollLoopOwner == nil { pollLoopOwner = me }
-            if pollLoopOwner == me {
-                await refresh()
+    /// Keeps the shared poll loop running while the calling view is mounted,
+    /// and returns once the view's task is cancelled (unmount, window close).
+    /// Safe to call from several mounted views: they share one loop, which
+    /// stops when the last of them leaves.
+    /// - Parameter isObserved: Whether the calling view's window is on
+    ///   screen. Call ``observationDidChange()`` whenever it changes.
+    public func runPollLoop(isObserved: @escaping @MainActor @Sendable () -> Bool) async {
+        let id = UUID()
+        mounts[id] = isObserved
+        startPollLoopIfNeeded()
+        // A loop waiting while every other window is off screen looks again:
+        // this view's window may be on screen.
+        observationDidChange()
+        // Park (no timer, no wakeups) until SwiftUI cancels the view's task.
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                if Task.isCancelled {
+                    continuation.resume()
+                } else {
+                    parkedMounts[id] = continuation
+                }
             }
-            do {
-                try await Task.sleep(for: pollLoopOwner == me ? pollInterval : .seconds(5))
-            } catch {
-                break
-            }
+        } onCancel: {
+            Task { @MainActor in self.unparkMount(id) }
         }
-        if pollLoopOwner == me { pollLoopOwner = nil }
+        mounts[id] = nil
+        if mounts.isEmpty { stopPollLoop() }
+    }
+
+    /// A mounted view's window came on screen or went off it. A loop waiting
+    /// for an on-screen view looks again, refreshing (floor-throttled) when
+    /// one is, so the gauge is current as soon as a window shows it.
+    public func observationDidChange() {
+        onScreenWaiter?.resume()
+        onScreenWaiter = nil
+    }
+
+    private var isAnyMountOnScreen: Bool {
+        mounts.values.contains { $0() }
+    }
+
+    private func unparkMount(_ id: UUID) {
+        parkedMounts.removeValue(forKey: id)?.resume()
+    }
+
+    private func startPollLoopIfNeeded() {
+        guard pollTask == nil else { return }
+        pollTask = Task { [weak self] in await self?.pollLoop() }
+    }
+
+    private func stopPollLoop() {
+        pollTask?.cancel()
+        pollTask = nil
+        // Cancellation does not resume a loop waiting for an on-screen view.
+        observationDidChange()
+    }
+
+    /// One pass per ``pollInterval`` while a mounted view is on screen;
+    /// otherwise waits for ``observationDidChange()``. The sleep's tolerance
+    /// lets the system coalesce the wakeup with others.
+    private func pollLoop() async {
+        while !Task.isCancelled {
+            guard isAnyMountOnScreen else {
+                await withCheckedContinuation { onScreenWaiter = $0 }
+                continue
+            }
+            await refresh()
+            try? await Task.sleep(for: pollInterval, tolerance: pollInterval / 6)
+        }
     }
 
     /// What a `refresh()` call actually did, so the UI can acknowledge a
@@ -193,10 +254,10 @@ public final class SupermuxUsageModel {
             async let claudeResult = claudeFetch()
             async let codexResult = codexFetch()
             let (newClaude, newCodex) = await (claudeResult, codexResult)
-            // A cancelled pass (the owning sidebar unmounted mid-fetch)
+            // A cancelled pass (the last sidebar unmounted mid-fetch)
             // measured nothing trustworthy — CommandRunner reports the
             // cancellation as a generic failure the sources can't tell from
-            // a real one. Don't publish it, and let the next owner re-run
+            // a real one. Don't publish it, and let the next loop re-run
             // immediately instead of waiting out the floor.
             if Task.isCancelled {
                 lastPassStartedAt = nil

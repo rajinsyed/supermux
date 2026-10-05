@@ -274,10 +274,22 @@ enum SupermuxWorkspaceRow {
     /// ``SupermuxMirrorRowSnapshot`` does) and never excludes a same-path
     /// local worktree.
     static func standaloneSnapshot(for workspace: Workspace, isSelected: Bool) -> SupermuxOpenWorkspace {
+        standaloneSnapshot(
+            for: workspace,
+            isSelected: isSelected,
+            isMirror: SupermuxDeviceWorkspaceIndex.isDeviceMirror(workspace)
+        )
+    }
+
+    /// ``standaloneSnapshot(for:isSelected:)`` with the mirror question
+    /// already answered: the Projects mount passes its
+    /// ``SupermuxMirrorOwnership``, which reads no surface catalog for this
+    /// Mac's own workspaces.
+    static func standaloneSnapshot(for workspace: Workspace, isSelected: Bool, isMirror: Bool) -> SupermuxOpenWorkspace {
         SupermuxOpenWorkspace(
             id: workspace.id,
             title: workspace.customTitle ?? workspace.title,
-            directory: SupermuxDeviceWorkspaceIndex.isDeviceMirror(workspace) ? "" : workspace.currentDirectory,
+            directory: isMirror ? "" : workspace.currentDirectory,
             isSelected: isSelected
         )
     }

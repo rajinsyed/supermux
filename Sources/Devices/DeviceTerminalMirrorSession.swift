@@ -131,6 +131,11 @@ final class DeviceTerminalMirrorSession {
     /// Lossless streaming when the other Mac's host streams (SupermuxTerminalStream).
     private(set) var supermuxStream: SupermuxTerminalStream?
     // SUPERMUX:end terminal-stream-viewer
+    // SUPERMUX:begin terminal-stream-attach-limiter
+    /// A hidden mirror's re-attach after a reconnect, waiting its turn in
+    /// SupermuxTerminalAttachLimiter.
+    private var supermuxQueuedAttach: Task<Void, Never>?
+    // SUPERMUX:end terminal-stream-attach-limiter
     // SUPERMUX:begin sizing-one-setting
     /// Whether the other Mac adopts a mode picked on this mirror as its own
     /// setting (`supermux.terminal_sizing_preference.v1`).
@@ -409,7 +414,9 @@ final class DeviceTerminalMirrorSession {
                 linkDropped()
             }
         case .linkReconnected:
-            scheduleAttach()
+            // SUPERMUX:begin terminal-stream-attach-limiter (a hidden mirror waits its turn; upstream: `scheduleAttach()`)
+            supermuxAttachAfterReconnect()
+            // SUPERMUX:end terminal-stream-attach-limiter
         case .linkLost:
             linkDropped()
         case let .sizeState(state, selfParticipantID):
@@ -476,6 +483,57 @@ final class DeviceTerminalMirrorSession {
         }
     }
     // SUPERMUX:end terminal-stream-grid-viewer
+    // SUPERMUX:begin terminal-stream-show-hook
+
+    /// Tells the stream the pane went off screen or came back (a replay
+    /// confirmation that waited for the show then waits for quiet output).
+    /// Shown, a mirror behind the host's grid re-anchors now.
+    private func supermuxStreamVisibilityChanged() {
+        guard let supermuxStream else { return }
+        supermuxStream.visibilityChanged(hidden: supermuxHidden)
+        guard !supermuxHidden, phase == .attached, supermuxStream.isBehind(assigned: assignedGrid) else { return }
+        supermuxStream.gridChanged()
+        supermuxResyncGrid()
+    }
+    // SUPERMUX:end terminal-stream-show-hook
+    // SUPERMUX:begin terminal-stream-attach-limiter
+
+    /// After a reconnect every mirror on the link re-attaches: one on screen
+    /// at once, a hidden one through SupermuxTerminalAttachLimiter (a few at
+    /// a time, at utility priority), holding its slot until its replay is
+    /// applied or failed.
+    private func supermuxAttachAfterReconnect() {
+        supermuxQueuedAttach?.cancel()
+        supermuxQueuedAttach = nil
+        guard supermuxHidden else {
+            scheduleAttach()
+            return
+        }
+        supermuxQueuedAttach = Task(priority: .utility) { [weak self] in
+            await SupermuxTerminalAttachLimiter.shared.run {
+                guard let self, self.phase != .stopped else { return }
+                self.supermuxQueuedAttach = nil
+                self.scheduleAttach()
+                // A retry queued by the attach (`replayNeeded`) is a new
+                // attachTask, set before the old one ends: it keeps the slot
+                // too, for a few rounds, so a mirror that keeps needing a
+                // replay cannot hold the slot for good.
+                for _ in 0..<4 {
+                    guard let task = self.attachTask else { break }
+                    await task.value
+                }
+            }
+        }
+    }
+
+    /// A hidden mirror still waiting to re-attach came on screen: it goes now.
+    private func supermuxAttachQueuedNow() {
+        guard let queued = supermuxQueuedAttach else { return }
+        queued.cancel()
+        supermuxQueuedAttach = nil
+        scheduleAttach()
+    }
+    // SUPERMUX:end terminal-stream-attach-limiter
 
     /// Single-flight replay of the source screen, followed by sequenced live bytes.
     private func scheduleAttach() {
@@ -559,7 +617,7 @@ final class DeviceTerminalMirrorSession {
             let supermuxReply = await SupermuxTerminalStream.decodeReply(response)
             let replay: Replay
             if let resumed = supermuxReply.resumed {
-                replay = Replay(bytes: resumed.bytes, columns: resumed.columns, rows: resumed.rows, sequence: resumed.sequence, supermuxResumed: true)
+                replay = Replay(bytes: resumed.bytes, columns: resumed.columns, rows: resumed.rows, sequence: resumed.sequence, supermuxResumed: true, supermuxSizing: supermuxReply.sizing)
             } else {
                 replay = try await Self.decodeReplay(response)
             }
@@ -572,7 +630,9 @@ final class DeviceTerminalMirrorSession {
             // SUPERMUX:begin device-mirror-replay-timed-out
             supermuxTimedOutRetries = 0
             // SUPERMUX:end device-mirror-replay-timed-out
-            receiveReplaySizing(response)
+            // SUPERMUX:begin terminal-stream-replay-sizing (decoded off the main actor with the replay; upstream: `receiveReplaySizing(response)`)
+            receiveReplaySizing(replay.supermuxSizing)
+            // SUPERMUX:end terminal-stream-replay-sizing
             // SUPERMUX:begin device-mirror-hidden-counts (the replay settled this Mac's counts on this host)
             if params["viewport_columns"] != nil { supermuxHostMayHoldHiddenCounts = false }
             // SUPERMUX:end device-mirror-hidden-counts
@@ -696,6 +756,11 @@ final class DeviceTerminalMirrorSession {
         /// the screen as it is.
         var supermuxResumed = false
         // SUPERMUX:end terminal-stream-viewer
+        // SUPERMUX:begin terminal-stream-replay-sizing
+        /// The reply's `size_state` and `self_participant_id`, decoded off the
+        /// main actor (SupermuxTerminalStream.replaySizing).
+        var supermuxSizing: MobileTerminalReplaySizing?
+        // SUPERMUX:end terminal-stream-replay-sizing
     }
 
     #if compiler(>=6.2)
@@ -707,6 +772,14 @@ final class DeviceTerminalMirrorSession {
         guard let response = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw DeviceLinkError.malformedResponse("mobile.terminal.replay")
         }
+        // SUPERMUX:begin terminal-stream-replay-sizing (the sizing fields are read here, off the main actor, from the dictionary already parsed; upstream decoded the whole reply a second time on the main actor in `receiveReplaySizing`)
+        var replay = try decodeReplay(object: response)
+        replay.supermuxSizing = SupermuxTerminalStream.replaySizing(in: response)
+        return replay
+    }
+
+    nonisolated private static func decodeReplay(object response: [String: Any]) throws -> Replay {
+        // SUPERMUX:end terminal-stream-replay-sizing
         let sequence = (response["seq"] as? NSNumber)?.uint64Value
         if let raw = response["render_grid"] {
             let frame = try MobileTerminalRenderGridFrame.decodeJSONObject(raw)
@@ -814,9 +887,11 @@ final class DeviceTerminalMirrorSession {
         sendSizing("mobile.terminal.viewport", report)
     }
 
-    private func receiveReplaySizing(_ response: Data) {
+    // SUPERMUX:begin terminal-stream-replay-sizing (upstream: `private func receiveReplaySizing(_ response: Data) {` and `if let sizing = MobileTerminalReplaySizing.decodeIfPresent(response), let state = sizing.sizeState {`)
+    private func receiveReplaySizing(_ sizing: MobileTerminalReplaySizing?) {
         guard viewer != nil else { return }
-        if let sizing = MobileTerminalReplaySizing.decodeIfPresent(response), let state = sizing.sizeState {
+        if let sizing, let state = sizing.sizeState {
+    // SUPERMUX:end terminal-stream-replay-sizing
             viewer?.receive(state, selfParticipantID: sizing.selfParticipantID)
         }
         publishSharing()
@@ -898,6 +973,10 @@ final class DeviceTerminalMirrorSession {
         if phase == .attached || supermuxGridResyncing { supermuxReconcileHiddenCounts() }
         // Shown, this Mac claims the terminal's grid again; hidden, it gives the claim up.
         SupermuxTerminalSizingDefaults.shared.mirrorVisibilityChanged(self)
+        // SUPERMUX:begin terminal-stream-show-hook
+        if !hidden { supermuxAttachQueuedNow() }
+        supermuxStreamVisibilityChanged()
+        // SUPERMUX:end terminal-stream-show-hook
     }
 
     private func supermuxReconcileHiddenCounts() {

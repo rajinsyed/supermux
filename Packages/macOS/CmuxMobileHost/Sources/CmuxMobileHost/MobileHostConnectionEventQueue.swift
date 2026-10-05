@@ -222,6 +222,12 @@ public final class MobileHostConnectionEventQueue: @unchecked Sendable {
     /// were dropped (the viewer resumes it from its byte position).
     public private(set) var supermuxWatchedByteResyncCount = 0
     // SUPERMUX:end terminal-stream-watch
+    // SUPERMUX:begin terminal-stream-byte-demand
+    /// The watched terminals this connection has off screen
+    /// (`background_surface_ids`), reported with the rest of its ask to
+    /// ``SupermuxTerminalByteDemand``.
+    private var supermuxBackgroundByteSurfaceIDs: Set<String> = []
+    // SUPERMUX:end terminal-stream-byte-demand
 
     public init(
         maximumEventCount: Int = MobileHostConnectionEventQueue.defaultMaximumEventCount,
@@ -248,6 +254,9 @@ public final class MobileHostConnectionEventQueue: @unchecked Sendable {
     public func updateSubscribedTopics(_ topics: Set<String>) {
         lock.lock()
         subscribedTopics = topics
+        // SUPERMUX:begin terminal-stream-byte-demand
+        supermuxReportByteDemandLocked()
+        // SUPERMUX:end terminal-stream-byte-demand
         lock.unlock()
     }
 
@@ -642,6 +651,10 @@ public final class MobileHostConnectionEventQueue: @unchecked Sendable {
         supermuxWatchedBytesBySurfaceID.removeAll()
         supermuxWatchedQueuedByteCount = 0
         // SUPERMUX:end terminal-stream-watch
+        // SUPERMUX:begin terminal-stream-byte-demand
+        supermuxBackgroundByteSurfaceIDs.removeAll()
+        supermuxReportByteDemandLocked()
+        // SUPERMUX:end terminal-stream-byte-demand
         subscribedTopics.removeAll()
         queuedCountByLane.removeAll()
         surfaceLaneLimit = 0
@@ -792,10 +805,15 @@ public final class MobileHostConnectionEventQueue: @unchecked Sendable {
     public static let supermuxWatchedSurfaceByteBudget = 8 * 1024 * 1024
 
     /// Limits this connection's `terminal.bytes` to `surfaceIDs` (nil: every
-    /// terminal again, upstream's delivery). Bytes already queued stay.
-    public func supermuxWatchTerminalBytes(surfaceIDs: Set<String>?) {
+    /// terminal again, upstream's delivery); `background` names the watched
+    /// ones it has off screen (``SupermuxTerminalByteDemand``). Bytes already
+    /// queued stay.
+    public func supermuxWatchTerminalBytes(surfaceIDs: Set<String>?, background: Set<String> = []) {
         lock.lock()
-        supermuxWatchedByteSurfaceIDs = surfaceIDs.map { Set($0.map { $0.uppercased() }) }
+        let watched = surfaceIDs.map { Set($0.map { $0.uppercased() }) }
+        supermuxWatchedByteSurfaceIDs = watched
+        supermuxBackgroundByteSurfaceIDs = Set(background.map { $0.uppercased() }).intersection(watched ?? [])
+        supermuxReportByteDemandLocked()
         lock.unlock()
     }
 
@@ -847,4 +865,22 @@ public final class MobileHostConnectionEventQueue: @unchecked Sendable {
         supermuxWatchedBytesBySurfaceID[watched.surfaceID] = remaining > 0 ? remaining : nil
     }
     // SUPERMUX:end terminal-stream-watch
+    // SUPERMUX:begin terminal-stream-byte-demand
+
+    /// Reports this connection's ask for terminal bytes to
+    /// ``SupermuxTerminalByteDemand``, while it is open and subscribed to
+    /// `terminal.bytes` (the only time its queue admits them).
+    private func supermuxReportByteDemandLocked() {
+        let connection = ObjectIdentifier(self)
+        guard !isClosed, subscribedTopics.contains("terminal.bytes") else {
+            SupermuxTerminalByteDemand.shared.remove(connection: connection)
+            return
+        }
+        SupermuxTerminalByteDemand.shared.update(
+            connection: connection,
+            watched: supermuxWatchedByteSurfaceIDs,
+            background: supermuxBackgroundByteSurfaceIDs
+        )
+    }
+    // SUPERMUX:end terminal-stream-byte-demand
 }

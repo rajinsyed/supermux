@@ -46,7 +46,10 @@ extension SupermuxDevices {
     func receive(topic rawTopic: String, payload: Data?, from instance: SurfaceDeviceInstanceID) {
         guard let topic = SupermuxMobileTopic(rawValue: rawTopic) else { return }
         emit(.topic(.device(instance), topic, payload: payload))
-        scheduleRefresh()
+        // The Changes and Files pokes concern only their panels, which follow
+        // the events; a refresh would wake every revision follower per git
+        // or folder change on that Mac.
+        if topic != .changesUpdated, topic != .filesUpdated { scheduleRefresh() }
     }
 
     private func emit(_ event: SupermuxDeviceEvent) {

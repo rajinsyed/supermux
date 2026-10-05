@@ -5,11 +5,22 @@
 public struct SupermuxLocalChangesBackend: SupermuxChangesBackend {
     /// The git engine every call forwards to.
     public let service: SupermuxGitChangesService
+    /// Directories under a watched repository whose changes never matter to
+    /// it (a project root's nested worktrees), skipped by its change watcher.
+    private let watchExclusions: @MainActor @Sendable (_ repoPath: String) -> [String]
 
     /// Creates the backend.
-    /// - Parameter service: The local git engine.
-    public init(service: SupermuxGitChangesService) {
+    /// - Parameters:
+    ///   - service: The local git engine.
+    ///   - watchExclusions: The directories the change watcher on a given
+    ///     repository skips; defaults to none (git's own bookkeeping is
+    ///     always skipped).
+    public init(
+        service: SupermuxGitChangesService,
+        watchExclusions: @escaping @MainActor @Sendable (_ repoPath: String) -> [String] = { _ in [] }
+    ) {
         self.service = service
+        self.watchExclusions = watchExclusions
     }
 
     public var isRemote: Bool { false }
@@ -94,7 +105,8 @@ public struct SupermuxLocalChangesBackend: SupermuxChangesBackend {
         await service.trackedDiffDigest(repoPath: repoPath)
     }
 
+    @MainActor
     public func changeSignals(repoPath: String) -> AsyncStream<Void> {
-        SupermuxRepositoryWatcher(path: repoPath).changes()
+        SupermuxRepositoryWatcher(path: repoPath, excludedPaths: watchExclusions(repoPath)).changes()
     }
 }

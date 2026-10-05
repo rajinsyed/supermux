@@ -23,6 +23,21 @@ public struct DeviceTerminalGridPublisher: Sendable {
     private var topologyGeneration: UInt64?
     private var liveSurfaceIDs = Set<UUID>()
     private var grids: [UUID: Grid] = [:]
+    // SUPERMUX:begin device-grid-global-sample-floor
+    /// A global tick samples every terminal at most this often; the terminals
+    /// a tick names are always sampled. While another Mac is connected every
+    /// Ghostty tick (one per output burst of any terminal) read every
+    /// terminal's grid under its renderer lock.
+    public static let globalSampleInterval: Duration = .seconds(1)
+    private var lastGlobalSampleAt: ContinuousClock.Instant?
+    /// A topology change waits for the next global tick's full sample, even
+    /// when the refresh that saw it named only some terminals.
+    private var topologyNeedsFullSample = false
+    /// Set when the last refresh skipped a global sample: when the next one
+    /// is allowed. The caller refreshes again then, so a grid that changed on
+    /// that tick is still published.
+    public private(set) var deferredGlobalSampleDeadline: ContinuousClock.Instant?
+    // SUPERMUX:end device-grid-global-sample-floor
 
     public mutating func refresh(
         updatedSurfaceIDs: Set<UUID>,
@@ -32,12 +47,23 @@ public struct DeviceTerminalGridPublisher: Sendable {
         sample: (UUID) -> Grid?,
         publish: (UUID, Grid) -> Void
     ) {
+        // SUPERMUX:begin device-grid-global-sample-floor (upstream: the topology check without `topologyNeedsFullSample`, then `for id in global ? liveSurfaceIDs : updatedSurfaceIDs {`)
         if self.topologyGeneration != topologyGeneration {
             liveSurfaceIDs = allSurfaceIDs()
             grids = grids.filter { liveSurfaceIDs.contains($0.key) }
             self.topologyGeneration = topologyGeneration
+            topologyNeedsFullSample = true
         }
-        for id in global ? liveSurfaceIDs : updatedSurfaceIDs {
+        let now = ContinuousClock.now
+        let nextGlobalSampleAt = lastGlobalSampleAt.map { $0 + Self.globalSampleInterval }
+        let samplesAll = global && (topologyNeedsFullSample || nextGlobalSampleAt.map { now >= $0 } ?? true)
+        if samplesAll {
+            lastGlobalSampleAt = now
+            topologyNeedsFullSample = false
+        }
+        deferredGlobalSampleDeadline = global && !samplesAll ? nextGlobalSampleAt : nil
+        for id in samplesAll ? liveSurfaceIDs : updatedSurfaceIDs {
+        // SUPERMUX:end device-grid-global-sample-floor
             guard liveSurfaceIDs.contains(id), let grid = sample(id),
                   (1...Int(UInt16.max)).contains(grid.columns),
                   (1...Int(UInt16.max)).contains(grid.rows), grids[id] != grid else { continue }
@@ -49,6 +75,11 @@ public struct DeviceTerminalGridPublisher: Sendable {
     public mutating func reset() {
         guard topologyGeneration != nil else { return }
         topologyGeneration = nil
+        // SUPERMUX:begin device-grid-global-sample-floor
+        lastGlobalSampleAt = nil
+        topologyNeedsFullSample = false
+        deferredGlobalSampleDeadline = nil
+        // SUPERMUX:end device-grid-global-sample-floor
         liveSurfaceIDs.removeAll()
         grids.removeAll()
     }

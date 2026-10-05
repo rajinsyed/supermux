@@ -73,12 +73,14 @@ final class SupermuxPortForwards {
     /// The longest wait before a Mac that did not answer is asked again.
     nonisolated static let longestRetryDelay = 30
     /// When a Mac is asked for its ports again, counted from the moment a
-    /// forward's port left its listing (its server went away): 2, 4, 8, 15, 30
-    /// and 60 s later. A restart may never be announced: a quick one keeps the
+    /// forward's port left its listing (its server went away): 3, 10, 30 and
+    /// 60 s later. A restart may never be announced: a quick one keeps the
     /// owner's sidebar ports as they were (it keeps a port through two missed
     /// scans), so it sends no `supermux.ports.updated`, and a server outside its
-    /// workspaces' terminals never does.
-    nonisolated static let followUpDelays: [Duration] = [.seconds(2), .seconds(4), .seconds(8), .seconds(15), .seconds(30), .seconds(60)]
+    /// workspaces' terminals never does (the 60 s ask is for one that takes
+    /// longer than 30 s to come back). Not gated on this app being active:
+    /// forwards serve other apps too.
+    nonisolated static let followUpDelays: [Duration] = [.seconds(3), .seconds(10), .seconds(30), .seconds(60)]
 
     private(set) var forwards: [Key: Forward] = [:]
     /// Each available Mac's last port listing.
@@ -131,6 +133,7 @@ final class SupermuxPortForwards {
     @ObservationIgnored private var revisionTask: Task<Void, Never>?
     @ObservationIgnored private var defaultsObserver: (any NSObjectProtocol)?
     @ObservationIgnored private var lastAutoForward: Bool?
+    @ObservationIgnored private var lastDevicesFingerprint: DevicesFingerprint?
     /// Called after every change of forwards or listings (the mirror chips and pills).
     @ObservationIgnored var onChange: (@MainActor () -> Void)?
     #if DEBUG
@@ -160,7 +163,7 @@ final class SupermuxPortForwards {
                 await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
                     withObservationTracking { _ = devices.revision } onChange: { continuation.resume() }
                 }
-                self?.scheduleReconcile()
+                self?.devicesMayHaveChanged()
             }
         }
         defaultsObserver = NotificationCenter.default.addObserver(
@@ -359,9 +362,17 @@ final class SupermuxPortForwards {
     }
 
     private func linkConnected(_ machine: SurfaceMachineID) {
+        var retried = false
         for (key, forward) in forwards where key.machine == machine {
-            if case .failed = forward.state { forwards[key]?.state = .waiting }
+            if case .failed = forward.state {
+                forwards[key]?.state = .waiting
+                retried = true
+            }
         }
+        // A listing that comes back unchanged reconciles nothing, so a failed
+        // forward that waits again is started here (it listens only while
+        // that Mac is available).
+        if retried { scheduleReconcile() }
         checkAvailability(machine)
     }
 
@@ -409,6 +420,17 @@ final class SupermuxPortForwards {
             hostPorts[machine] = nil
             reconcile()
         }
+    }
+
+    /// After a `devices.revision` bump: reconciles only when the mirrors or
+    /// the Macs changed as the forwards and their chips see them. The revision
+    /// bumps on every catalog change and `supermux.*` event of any Mac, and
+    /// most change neither (a reorder, a status update, another topic).
+    private func devicesMayHaveChanged() {
+        let fingerprint = DevicesFingerprint(mirrors: index.mirrors(), devices: devices.devices)
+        guard fingerprint != lastDevicesFingerprint else { return }
+        lastDevicesFingerprint = fingerprint
+        scheduleReconcile()
     }
 
     private func settingMayHaveChanged() {
@@ -470,8 +492,11 @@ final class SupermuxPortForwards {
             // before a reconnect).
             guard availability[machine] == .available, sequence > (appliedSequence[machine] ?? 0) else { return }
             appliedSequence[machine] = sequence
-            hostPorts[machine] = listing
             fetchFailures[machine] = nil
+            // The same listing again (a follow-up or a poke that changed
+            // nothing here): the forwards already follow it.
+            guard hostPorts[machine] != listing else { return }
+            hostPorts[machine] = listing
         } catch {
             fetchFailures[machine, default: 0] += 1
             #if DEBUG
@@ -662,6 +687,30 @@ final class SupermuxPortForwards {
 
     static func noFreePortMessage(near port: Int) -> String {
         String(localized: "supermux.ports.failed.noFreePort", defaultValue: "No free local port near \(String(port))")
+    }
+}
+
+/// What the forwards and the mirror chips read from the mirrors and the Macs:
+/// each mirror's remote workspace and local workspace, each Mac's link and name.
+private struct DevicesFingerprint: Equatable {
+    struct Mirror: Hashable {
+        let ref: SupermuxRemoteWorkspaceRef
+        let workspaceID: UUID
+    }
+
+    struct Mac: Hashable {
+        let machine: SurfaceMachineID
+        let isConnected: Bool
+        let displayName: String
+    }
+
+    /// Sets, so a reorder of the mirrors (their windows' tabs) is no change.
+    let mirrors: Set<Mirror>
+    let macs: Set<Mac>
+
+    init(mirrors: [SupermuxDeviceMirror], devices: [SupermuxDevice]) {
+        self.mirrors = Set(mirrors.map { Mirror(ref: $0.ref, workspaceID: $0.workspace.id) })
+        self.macs = Set(devices.map { Mac(machine: $0.machine, isConnected: $0.isConnected, displayName: $0.displayName) })
     }
 }
 

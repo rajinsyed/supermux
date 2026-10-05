@@ -80,12 +80,16 @@ public struct SupermuxProjectsSectionView: View {
     @State private var dragState = SupermuxSidebarDragState()
     /// Clears `dragState` on mouse-up / Escape so an aborted drag (released off
     /// any row) doesn't leave a row stuck dimmed. Mirrors cmux's failsafe.
+    /// Armed only while a drag is in flight.
     @State private var dragFailsafe = SupermuxSidebarDragFailsafe()
     /// Resolves and caches each project's auto-detected logo. Owned above the
     /// project list so rows receive only an immutable `NSImage?` snapshot. May
     /// be a shared, host-injected instance (see `init`) so every window — and
     /// the workspace switcher — reuses one decoded-logo cache.
     @State var iconStore: SupermuxProjectIconStore
+    /// ``makeIconResolutionToken(for:)`` of the current projects, kept here so
+    /// the icon task's id is not rebuilt on every body pass.
+    @State private var iconResolutionToken = ""
     /// Sidebar font scale (cmux's `sidebar-font-size`); scales the section
     /// header alongside the project rows. `1` at the default size. Internal
     /// (not private) for the header extension in
@@ -182,6 +186,7 @@ public struct SupermuxProjectsSectionView: View {
                         canMoveUp: index > 0,
                         canMoveDown: index < projects.count - 1,
                         beginDrag: {
+                            dragFailsafe.start(clearing: dragState)
                             dragState.draggingProjectId = project.id
                             return NSItemProvider(object: project.id.uuidString as NSString)
                         },
@@ -204,11 +209,13 @@ public struct SupermuxProjectsSectionView: View {
                         ),
                         draggingProjectId: $dragState.draggingProjectId,
                         draggingWorkspaceId: $dragState.draggingWorkspaceId,
+                        onWorkspaceDragStart: { dragFailsafe.start(clearing: dragState) },
                         remoteExtras: remote.extrasByLocalProjectID[project.id],
                         remoteActions: remote.actions,
                         setUp: { destination in presentSetUp(project: project, destination: destination) },
                         newWorktreeOn: { deviceKey in presentNewWorktree(forLocal: project, preferredDeviceKey: deviceKey) }
                     )
+                    .equatable()
                 }
                 remoteProjectRows(grouped: grouped)
                 if model.projects.isEmpty && remote.rows.isEmpty {
@@ -219,13 +226,15 @@ public struct SupermuxProjectsSectionView: View {
         .padding(.horizontal, 6)
         .padding(.top, 6)
         // A drag released off any row never reaches a `performDrop`, so without
-        // this the source row would stay dimmed. The failsafe ends the drag on
-        // the next mouse-up or Escape; the deferred end lets a real drop's
-        // `performDrop` run first. A release commits the previewed project
-        // order — even off-row, the order the user last saw persists (once per
-        // drag, not per hovered row) — while Escape cancels and discards it.
+        // the failsafe the source row would stay dimmed. Each drag start (the
+        // rows' `beginDrag`) arms it; it ends the drag on the next mouse-up or
+        // Escape, then removes its event monitors until the next drag, so no
+        // app-wide (or other apps') mouse-up wakes this process while idle.
+        // The deferred end lets a real drop's `performDrop` run first. A
+        // release commits the previewed project order — even off-row, the
+        // order the user last saw persists (once per drag, not per hovered
+        // row) — while Escape cancels and discards it.
         .onAppear {
-            dragFailsafe.start(clearing: dragState)
             // Commits a finished drag's previewed order to the model as a
             // single `moveProject` (one reorder + one persist per drag).
             // Captures ONLY the class-reference model, never the view struct:
@@ -242,6 +251,7 @@ public struct SupermuxProjectsSectionView: View {
             }
         }
         .onDisappear {
+            // Backstop for a drag still in flight when the section goes away.
             dragFailsafe.stop()
             dragState.commitProjectOrder = nil
             // The (possibly shared) PR model prunes badges to the union of all
@@ -255,7 +265,12 @@ public struct SupermuxProjectsSectionView: View {
         .task { await model.loadIfNeeded() }
         // Re-resolve logos whenever the set of projects (or their roots) changes.
         // The store skips projects whose resolved icon file is unchanged, so
-        // this is cheap.
+        // this is cheap. The token is rebuilt only when the projects change
+        // (an unchanged array compares in O(1)), not on every body pass.
+        .onChange(of: model.projects, initial: true) {
+            let token = Self.makeIconResolutionToken(for: model.projects)
+            if token != iconResolutionToken { iconResolutionToken = token }
+        }
         .task(id: iconResolutionToken) {
             await iconStore.refresh(projects: model.projects)
         }
@@ -284,8 +299,8 @@ public struct SupermuxProjectsSectionView: View {
     /// A value that changes whenever a project is added, removed, moved, or has
     /// its icon source edited, so the icon-resolution task re-runs only when an
     /// avatar could actually differ.
-    private var iconResolutionToken: String {
-        model.projects
+    private static func makeIconResolutionToken(for projects: [SupermuxProject]) -> String {
+        projects
             .map { "\($0.id.uuidString):\($0.rootPath):\($0.customIconPath ?? "")" }
             .joined(separator: "|")
     }

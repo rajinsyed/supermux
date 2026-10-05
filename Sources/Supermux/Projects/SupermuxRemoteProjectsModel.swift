@@ -17,10 +17,15 @@ import SupermuxMobileCore
 /// holds up the next project list or run state. It is the single
 /// source of each Mac's Supermux state: the sidebar and the device-mirror
 /// behaviors (⌘G / Run, presets bar) all read it, so each Mac is polled once. It refreshes on the matching `supermux.*`
-/// topics, on every link (re)connect, and on a slow safety-net timer. The last
+/// topics (`run.updated` refetches only the run state), once per link
+/// (re)connect, and on a slow safety-net timer. The timer's worktree sweep
+/// runs only while this Mac is in use (`isInUse()`), where it is how a
+/// worktree created outside Supermux shows up; otherwise it waits for the
+/// app to become active. The last
 /// project list of each Mac is cached on disk
 /// (``SupermuxRemoteProjectsCache``), so an offline Mac's projects still
-/// render (dimmed). Icons come from `project.icon` with etag caching.
+/// render (dimmed). Icons come from `project.icon` with etag caching, asked
+/// only when the project's listed icon token changed.
 ///
 /// ```swift
 /// let remote = SupermuxComposition.remoteProjects
@@ -37,6 +42,8 @@ final class SupermuxRemoteProjectsModel {
 
     /// How often every connected Mac is refreshed even without events.
     static let safetyNetInterval: Duration = .seconds(120)
+    /// How late the safety net may fire, so the system can batch its wakeup.
+    static let safetyNetTolerance: Duration = .seconds(20)
     /// How many `worktrees.list` calls one Mac's sweep keeps in flight.
     static let worktreeSweepWidth = 4
 
@@ -45,14 +52,32 @@ final class SupermuxRemoteProjectsModel {
     @ObservationIgnored private var cachedEntries: [String: SupermuxRemoteProjectsCache.Entry] = [:]
     /// The latest offline-cache write; each save waits for it, so writes land in call order.
     @ObservationIgnored private var cacheWrite: Task<Void, Never>?
+    /// The `project.icon` etag (a hash of the image bytes) of each fetched icon.
     @ObservationIgnored private var iconETags: [String: String] = [:]
+    /// The `projects.list` icon token each fetched icon was last confirmed
+    /// against. It is a different value from the `project.icon` etag, so it
+    /// is kept apart: an unchanged token needs no `project.icon` call.
+    @ObservationIgnored private var iconListTokens: [String: String] = [:]
     /// `machine|projectID` keys whose worktree list is kept fresh: every
     /// project each Mac listed at its last refresh (and any a row or socket
     /// asked for since).
     @ObservationIgnored private var wantedWorktrees: Set<String> = []
+    /// Macs refreshed since their link last connected, so the link event and
+    /// the device list reporting the same connection refresh it once. A
+    /// refresh that cannot reach the host (`host.status` failed) clears the
+    /// mark, so the next device-list change tries that connection again.
+    @ObservationIgnored private var refreshedSinceConnect: Set<SurfaceMachineID> = []
+    /// Macs whose next refresh pass also sweeps their worktree lists. A set
+    /// rather than a pass argument, so a sweep asked for while a pass without
+    /// one runs still happens in the pass queued after it.
+    @ObservationIgnored private var worktreeSweepDue: Set<SurfaceMachineID> = []
+    /// The last safety-net tick skipped its worktree sweep because this Mac
+    /// was not in use; the app becoming active runs it.
+    @ObservationIgnored private var sweepMissedWhileIdle = false
     @ObservationIgnored private let refreshes = SupermuxPerMachinePasses()
     @ObservationIgnored private let worktreeSweeps = SupermuxPerMachinePasses()
     @ObservationIgnored private var tasks: [Task<Void, Never>] = []
+    @ObservationIgnored private var activationObserver: (any NSObjectProtocol)?
 
     init(facade: SupermuxDevices, cache: SupermuxRemoteProjectsCache) {
         self.facade = facade
@@ -78,10 +103,15 @@ final class SupermuxRemoteProjectsModel {
         })
         tasks.append(Task { @MainActor [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: Self.safetyNetInterval)
-                self?.refreshAll()
+                try? await Task.sleep(for: Self.safetyNetInterval, tolerance: Self.safetyNetTolerance)
+                self?.safetyNetTick()
             }
         })
+        activationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.catchUpMissedSweep() }
+        }
     }
 
     // MARK: - Lookup
@@ -103,18 +133,47 @@ final class SupermuxRemoteProjectsModel {
 
     // MARK: - Refresh
 
-    /// Refreshes every connected Mac.
-    func refreshAll() {
+    /// Refreshes every connected Mac (see ``refresh(_:sweepingWorktrees:)``).
+    func refreshAll(sweepingWorktrees: Bool = true) {
         for device in devices where device.isOnline {
-            Task { await refresh(device.machine) }
+            Task { await refresh(device.machine, sweepingWorktrees: sweepingWorktrees) }
         }
     }
 
-    /// Refetches one Mac's projects, run states and icons, and starts a sweep
-    /// of every listed project's worktree list (not awaited). Concurrent calls
-    /// coalesce into one extra pass.
-    func refresh(_ machine: SurfaceMachineID) async {
+    /// Refetches one Mac's projects, run states and changed icons, and
+    /// (unless `sweepingWorktrees` is false) starts a sweep of every listed
+    /// project's worktree list (not awaited). Concurrent calls coalesce into
+    /// one extra pass, which sweeps when a call since the last sweep asked to.
+    func refresh(_ machine: SurfaceMachineID, sweepingWorktrees: Bool = true) async {
+        if sweepingWorktrees { worktreeSweepDue.insert(machine) }
         await refreshes.run(machine) { await performRefresh(machine) }
+    }
+
+    /// The safety net: a full refresh of every connected Mac while this Mac
+    /// is in use. Otherwise the project lists, run states and changed icons
+    /// are still refetched (project sync and notification icons read them),
+    /// and the worktree sweep waits for the app to become active.
+    private func safetyNetTick() {
+        let inUse = Self.isInUse()
+        sweepMissedWhileIdle = !inUse
+        refreshAll(sweepingWorktrees: inUse)
+    }
+
+    /// The app became active after a tick skipped its worktree sweep: one
+    /// full refresh now, so an outside worktree shows up as the user returns.
+    private func catchUpMissedSweep() {
+        guard sweepMissedWhileIdle, Self.isInUse() else { return }
+        sweepMissedWhileIdle = false
+        refreshAll()
+    }
+
+    /// Whether someone may be looking at this Mac's sidebar: the app is
+    /// active, or one of its main windows is on screen and not fully covered.
+    /// Never while Remote Host Mode keeps it headless.
+    private static func isInUse() -> Bool {
+        let hostMode = SupermuxRemoteHostMode.shared
+        guard !hostMode.isHeadless else { return false }
+        return NSApp.isActive || hostMode.visibleMainWindows().contains { $0.occlusionState.contains(.visible) }
     }
 
     /// Loads a project's worktrees if no refresh has yet (every refresh
@@ -146,7 +205,8 @@ final class SupermuxRemoteProjectsModel {
         update(machine) { $0.worktreesByProjectID[projectID] = worktrees }
     }
 
-    /// Refetches only one Mac's `run.state` (after a mirror's Run / Stop).
+    /// Refetches only one Mac's `run.state` (after a mirror's Run / Stop, and
+    /// on that Mac's `supermux.run.updated`).
     func refreshRuns(_ machine: SurfaceMachineID) async {
         guard device(machine)?.isOnline == true, let state = try? await fetchRuns(on: machine) else { return }
         update(machine) { $0.setRuns(state) }
@@ -172,11 +232,16 @@ final class SupermuxRemoteProjectsModel {
         switch event {
         case .linkConnected(let machine):
             update(machine) { $0.isOnline = true }
-            Task { await refresh(machine) }
+            refreshOncePerConnection(machine)
         case .linkLost(let machine):
+            refreshedSinceConnect.remove(machine)
             update(machine) { $0.isOnline = false }
-        case .topic(let machine, .projectsUpdated, _), .topic(let machine, .runUpdated, _):
+        case .topic(let machine, .projectsUpdated, _):
             Task { await refresh(machine) }
+        case .topic(let machine, .runUpdated, _):
+            // A Run / Stop changes only the run state: no project list,
+            // worktree sweep or icon pass on that Mac.
+            Task { await refreshRuns(machine) }
         case .topic(let machine, .worktreesUpdated, _):
             Task { await refreshWantedWorktrees(on: machine) }
         case .topic:
@@ -221,25 +286,31 @@ final class SupermuxRemoteProjectsModel {
     }
 
     /// Mirrors the facade's device list: names and link state, cached
-    /// projects for Macs not refreshed yet, and a refresh for Macs that just
-    /// came online.
+    /// projects for Macs not refreshed yet, and one refresh per connection
+    /// for a Mac whose link connected and ran its post-connect fetch (usually
+    /// `.linkConnected` got there first; this covers a link that connected
+    /// before the model started following events). A refresh started before
+    /// that fetch would lose its capability request to the reset it does.
     private func reconcileDevices() {
         var next: [SupermuxDeviceProjects] = []
-        var cameOnline: [SurfaceMachineID] = []
         for device in facade.devices {
             var entry = self.device(device.machine) ?? cachedEntry(for: device) ?? .empty(for: device)
-            if device.isConnected && (!entry.isOnline || entry.supportsProjects == nil) {
-                cameOnline.append(device.machine)
-            }
             entry.name = device.displayName
             entry.isOnline = device.isConnected
             entry.isLoopback = device.isLoopback
             next.append(entry)
         }
         if next != devices { devices = next }
-        for machine in cameOnline {
-            Task { await refresh(machine) }
+        refreshedSinceConnect.formIntersection(facade.devices.filter(\.isConnected).map(\.machine))
+        for device in facade.devices where device.hasFetchedRecords {
+            refreshOncePerConnection(device.machine)
         }
+    }
+
+    /// Refreshes a Mac unless it was already refreshed since its link connected.
+    private func refreshOncePerConnection(_ machine: SurfaceMachineID) {
+        guard refreshedSinceConnect.insert(machine).inserted else { return }
+        Task { await refresh(machine) }
     }
 
     private func cachedEntry(for device: SupermuxDevice) -> SupermuxDeviceProjects? {
@@ -254,8 +325,17 @@ final class SupermuxRemoteProjectsModel {
     // MARK: - Fetch
 
     private func performRefresh(_ machine: SurfaceMachineID) async {
-        guard let device = facade.device(for: machine), device.isConnected else { return }
-        guard let capabilities = await facade.hostCapabilities(on: machine) else { return }
+        // Taken as the pass starts: a sweep asked for during this pass's
+        // requests is left to the pass queued after it, which lists newer projects.
+        let sweep = worktreeSweepDue.remove(machine) != nil
+        guard let device = facade.device(for: machine), device.isConnected,
+              let capabilities = await facade.hostCapabilities(on: machine) else {
+            // Not refreshed: the next device-list change may retry this
+            // connection's refresh, and the next pass still sweeps.
+            refreshedSinceConnect.remove(machine)
+            if sweep { worktreeSweepDue.insert(machine) }
+            return
+        }
         let supportsProjects = capabilities.contains(SupermuxMobileCapability.projectsV1.rawValue)
         update(machine) { $0.supportsProjects = supportsProjects }
         guard supportsProjects else {
@@ -285,9 +365,12 @@ final class SupermuxRemoteProjectsModel {
                 entry.worktreesByProjectID = entry.worktreesByProjectID.filter { listed.contains($0.key) }
             }
             if !device.isLoopback { saveCache(machine: machine, name: device.displayName, projects: projects) }
-            Task { await refreshWantedWorktrees(on: machine) }
+            if sweep {
+                Task { await refreshWantedWorktrees(on: machine) }
+            }
             await refreshIcons(on: machine, projects: projects)
         } catch {
+            if sweep { worktreeSweepDue.insert(machine) }
             update(machine) { $0.lastError = error.localizedDescription }
         }
     }
@@ -300,28 +383,34 @@ final class SupermuxRemoteProjectsModel {
             .union(listed.map { Self.projectKey(machine: machine, projectID: $0) })
     }
 
+    /// Fetches the icons whose `projects.list` token changed since they were
+    /// last fetched or confirmed (`not_modified`), and drops the icons of
+    /// projects no longer listed. An unchanged token makes no call.
     private func refreshIcons(on machine: SurfaceMachineID, projects: [SupermuxProjectDTO]) async {
         var live: Set<String> = []
         for project in projects {
             guard let id = UUID(uuidString: project.id), project.iconETag != nil || project.hasCustomIcon == true else { continue }
             let key = Self.projectKey(machine: machine, projectID: id)
             live.insert(key)
-            if let etag = project.iconETag, iconETags[key] == etag, icons[key] != nil { continue }
+            if let token = project.iconETag, iconListTokens[key] == token, icons[key] != nil { continue }
             var params: [String: Any] = ["project_id": project.id]
             if icons[key] != nil, let etag = iconETags[key] { params["etag"] = etag }
-            guard let result = try? await facade.request(SupermuxMobileMethod.projectIcon.rawValue, params: params, on: machine),
-                  result["not_modified"] as? Bool != true else { continue }
-            if let base64 = result["png_base64"] as? String,
-               let data = Data(base64Encoded: base64),
-               let image = NSImage(data: data) {
+            guard let result = try? await facade.request(SupermuxMobileMethod.projectIcon.rawValue, params: params, on: machine) else { continue }
+            if result["not_modified"] as? Bool == true {
+                iconListTokens[key] = project.iconETag
+            } else if let base64 = result["png_base64"] as? String,
+                      let data = Data(base64Encoded: base64),
+                      let image = NSImage(data: data) {
                 icons[key] = image
                 iconETags[key] = result["etag"] as? String
+                iconListTokens[key] = project.iconETag
             }
         }
         let prefix = "\(machine.rawValue)|"
         for key in icons.keys where key.hasPrefix(prefix) && !live.contains(key) {
             icons[key] = nil
             iconETags[key] = nil
+            iconListTokens[key] = nil
         }
     }
 
