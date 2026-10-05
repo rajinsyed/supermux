@@ -2,8 +2,9 @@ import Foundation
 
 /// When a device asks one Mac for its direct addresses
 /// (`mobile.supermux.route.candidates`): at once on each new connection,
-/// again ``refreshInterval`` after an answer that settled it, and
-/// ``retryInterval`` after one that did not. Shared by the Mac and the phone.
+/// again ``refreshInterval`` after an answer that settled it,
+/// ``notReadyRetryInterval`` after a host said it has none yet, and
+/// ``retryInterval`` after any other that did not. Shared by the Mac and the phone.
 ///
 /// Pure state, one per Mac connection; the owner asks when ``isDue(at:)``
 /// says so and reports what came back.
@@ -50,11 +51,15 @@ public struct SupermuxRouteCandidateFetchSchedule: Equatable, Sendable {
     public static let refreshInterval: TimeInterval = 600
     /// The least time between asks.
     public static let retryInterval: TimeInterval = 60
+    /// The least time between asks after ``Answer/notReady``: iroh fills a
+    /// host's addresses 1–3 s after it binds.
+    public static let notReadyRetryInterval: TimeInterval = 5
 
     /// Whether an ask is out.
     public private(set) var inFlight = false
     private var attemptedAt: Date?
     private var settledAt: Date?
+    private var lastAnswer: Answer?
 
     public init() {}
 
@@ -62,7 +67,8 @@ public struct SupermuxRouteCandidateFetchSchedule: Equatable, Sendable {
     public func isDue(at now: Date) -> Bool {
         guard !inFlight else { return false }
         if let settledAt, now.timeIntervalSince(settledAt) < Self.refreshInterval { return false }
-        if let attemptedAt, now.timeIntervalSince(attemptedAt) < Self.retryInterval { return false }
+        let retry = lastAnswer == .notReady ? Self.notReadyRetryInterval : Self.retryInterval
+        if let attemptedAt, now.timeIntervalSince(attemptedAt) < retry { return false }
         return true
     }
 
@@ -75,6 +81,7 @@ public struct SupermuxRouteCandidateFetchSchedule: Equatable, Sendable {
     /// The ask came back with `answer`.
     public mutating func finished(_ answer: Answer, at now: Date) {
         inFlight = false
+        lastAnswer = answer
         if answer.settles { settledAt = now }
     }
 

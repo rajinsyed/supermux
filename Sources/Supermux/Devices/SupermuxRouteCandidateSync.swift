@@ -7,9 +7,9 @@ import SupermuxMobileCore
 /// ``SupermuxComposition/routeCandidateStore``, where the dialer reads them
 /// (``SupermuxRouteDialCandidates``), on the schedule the phone shares
 /// (``SupermuxRouteCandidateFetchSchedule``): at once on each link
-/// connection, again 10 min after an answer that settled it and 1 min after
-/// one that did not (a host with no address yet, an empty list, a failure),
-/// whose addresses stay as they were.
+/// connection, again 10 min after an answer that settled it, 5 s after a
+/// host with no address yet and 1 min after any other that did not (an empty
+/// list, a failure), whose addresses stay as they were.
 ///
 /// The addresses are filed under the endpoint the outgoing session actually
 /// reached (its TLS-verified id), never only under the id the answer claims.
