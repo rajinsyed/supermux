@@ -16,7 +16,7 @@ Rules for adding a touchpoint:
 - Numbering: the highest number in use is **783** (remote terminal streaming, #777–#783; #764–#776 are
   reserved for open PRs #74/#75). The remote-workspaces work (#517–#599) left
 - Numbering: the highest number in use is **818**. The remote-workspaces work (#517–#599) left
-- Numbering: the highest number in use is **924** (#920–#924: only this Mac's own input hands an Auto grid to the Mac pane). #907–#913: answering a Claude question or plan brings the working indicator back. Before that **906** (#900–#906: a streaming mirror re-anchors when the other Mac's grid changes). Before that **883** (#880–#883: Remote Host Mode's hotkey and notification shows, Auto's `view_appeared` report; #850–#879 are held by another open branch). The remote-workspaces work (#517–#599) left
+- Numbering: the highest number in use is **954** (#954: the apply governor no longer wedges after an immediate apply; #950–#953 are earlier). Before that **924** (#920–#924: only this Mac's own input hands an Auto grid to the Mac pane). #907–#913: answering a Claude question or plan brings the working indicator back. Before that **906** (#900–#906: a streaming mirror re-anchors when the other Mac's grid changes). Before that **883** (#880–#883: Remote Host Mode's hotkey and notification shows, Auto's `view_appeared` report; #850–#879 are held by another open branch). The remote-workspaces work (#517–#599) left
   unassigned gaps it may still grow into: **523–524, 527–529, 539–544, 558–559, 562–569,
   578–579 and 588–589** (never assigned, not retired); #600–#601 came from the 2026-10-01 upstream merge; #620–#622 and
   #630–#639 are the remote-workspaces feedback round (602–619 and 623–629 unassigned). The second
@@ -764,6 +764,7 @@ Rules for adding a touchpoint:
 | 951 | `Sources/RightSidebarModeBarTabsLayout.swift` | `right-sidebar-mode-bar-overflow` | One fence in `tabWidths` (replacing upstream's `guard let available, available.isFinite`): an unspecified width (the ideal size, which `ViewThatFits` and the `ScrollView` ask for) lays the tabs out at their narrowest (`available ?? 0`: the selected tab's full label, the others at their floor) instead of at full labels. Finite and infinite proposals are upstream's, so a bar with room still shrinks and grows the tabs as upstream does, and #950 scrolls only below the narrowest layout |
 | 952 | `Sources/Mobile/MobileHostIrxTerminalLaneServer.swift` | `sizing-lane-input-driver` | One DEBUG fence at the end of the file: `MobileHostIrxTerminalLaneServer.debugDeliverInput(text:surfaceID:controlConnectionID:)`, an extension that runs one `MobileTerminalInputFrame` through the lane's private `deliverInput` (true for `.continue`, false for `.close`). The sizing recovery E2E's `terminal_sizing.lane_input` driver types as a phone over its IRX input lane through it; `controlConnectionID` names the phone's control connection (which carries its client id) for the lane fix that credits lane input to that phone. No release code |
 | 953 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/Devices/SupermuxTerminalSizingRecoveryDrivers.swift` (DEBUG drivers for the sizing recovery E2E) into the cmux target (ids `47BDB4A9CEAC687DCDAF901D`/`50446900D08DBFAD1EF0097E` from `scripts/wire-app-sources.py`, four entries, `Devices/…` path in the Supermux group) |
+| 954 | `Packages/macOS/CmuxMobileHost/Sources/CmuxMobileHost/MobileViewportApplyGovernor.swift` | `sizing-governor-immediate-flush` | Three fences in `MobileViewportApplyGovernor`. In `request`, the `immediate` branch sets `flushScheduled = false` (upstream left it set: "A pending timer fires as a no-op because nothing stays staged."), and the cold-attach branch does `if immediate { flushScheduled = false }`; a doc paragraph above the struct says the owner cancels the timer on an immediate apply. The owner (`TerminalController.governMobileViewportTarget`) cancels the flush Task on every immediate `.apply`, so upstream's governor kept `flushScheduled` true with no timer: every later change was staged with `scheduleFlush: false` and never applied (a phone's keyboard or rotation, and the uncap after it left) until the app restarted. Upstream bug from #13734; no upstream PR fixes it yet (checked 2026-10-05) |
 | 810 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the remote-terminal polish into the cmux target, four entries each (build file, file reference, Supermux group child, Sources phase) next to #764's `SupermuxDeviceTerminalUpload.swift`: `Devices/SupermuxDeviceTerminalLinks.swift` (`50BE001B0200000000000001`/`…02`, a Cmd-click on a path in another Mac's terminal), `Devices/SupermuxDeviceTerminalActions.swift` (`…03`/`…04`, forwarded Cmd+K/reset, focus and Ctrl+V of an image) and `SupermuxMobileHost+TerminalActions.swift` (`…05`/`…06`, the host's `terminal.action`) |
 | 811 | `Sources/Workspace+TerminalLinkOpening.swift` | `device-terminal-file-link` | First thing in `deferRemoteTerminalFileLinkOpen`: `SupermuxDeviceTerminalLinks.open(rawValue, panelID:in:)` claims a file path clicked in another Mac's terminal and opens that Mac's file in the mirror's read-only preview (upstream refused it: only SSH terminals resolved a remote path) |
 | 812 | `Sources/DockSplitStore+TerminalLinkOpening.swift` | `device-terminal-file-link` | Adds `deferRemoteTerminalFileLinkOpen` to the Dock's link container (upstream relies on the protocol's `false` default): the same `SupermuxDeviceTerminalLinks.open` for another Mac's terminal moved into the Dock |
@@ -6872,3 +6873,20 @@ Re-apply after an upstream merge:
 - **#953**: run `scripts/wire-app-sources.py` (it re-derives the same ids from the path).
 
 Verify: `CMUX_E2E_SUITES="loopback_terminal_sizing_recovery_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`.
+
+### 954. The apply governor no longer wedges after an immediate apply — `sizing-governor-immediate-flush`
+
+User report (2026-10-05): a terminal stays at the phone's size after the phone leaves, Size to My Window does not
+help, and only an app restart fixes it. `MobileViewportApplyGovernor.request` returned `.apply` for an immediate
+request (an explicit leave, an on-screen apply) without clearing `flushScheduled`, while its owner cancels the flush
+Task on every immediate apply. A change staged inside the 400 ms window before such an apply (a keyboard or rotation
+report, then the phone leaving) left the governor with `flushScheduled == true` and no timer, so every later change
+was staged with no timer and dropped as already staged. The fix clears the flag exactly where the owner cancels the
+timer. Not by keeping the timer instead: an old 400 ms timer would then flush a later uncap inside its 3 s window.
+
+Re-apply after an upstream merge:
+- **#954**: keep `flushScheduled = false` in the `immediate` branch and in the cold-attach branch when `immediate`,
+  matching every place the owner cancels its flush Task. Drop the fence if upstream fixes it the same way.
+
+Verify: `swift test --package-path Packages/macOS/CmuxMobileHost --filter Governor`, then steps R1, R2 and R18 of
+`CMUX_E2E_SUITES="loopback_terminal_sizing_recovery_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`.
