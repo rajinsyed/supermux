@@ -356,6 +356,25 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   then SIGKILL), and one still running when the app quits ends with the app
   (`SupermuxGitChildProcesses`: on `willTerminate`, every git child with its process group); before,
   those were left under launchd and ran for hours.
+- **Which path a link uses, and dialing it direct first** (#1060–#1064, capability
+  `supermux.route_candidates.v1`; design: the latency work's `ROUTING-DESIGN.md` W1, W2, W4): every
+  connected Mac's link has a route, direct (`lan`, `tailscale` or `internet`, Tailscale's
+  `100.64/10` and `fd7a:115c:a1e0::/48` checked before LAN) or through a relay (its id, `apne1`, and
+  place: Tokyo, Singapore and Taiwan are confirmed; the US and EU relays show their catalog region
+  until their cities are confirmed), with QUIC's own RTT on the selected path. The model is shared
+  (`SupermuxLinkRoute`, `SupermuxLinkRouteClassifier`, `SupermuxRelayPlace`,
+  `SupermuxLinkRoutePublishing` in SupermuxMobileCore). `SupermuxDeviceRouteMonitor` samples each
+  outgoing session every 2 s while the app is in use (30 s otherwise, at once on a connect) into
+  `SupermuxComposition.deviceRoutes`, the store UI reads (kind changes publish at once, RTT moves at
+  most every 5 s); `supermux.devices.list` reports it as `route`. Each Mac also hands the others its
+  LAN, Tailscale and global IPv6 addresses over the admitted session (`route.candidates`, answered
+  off the main actor, Iroh sessions only; never sent to the backend); the viewer caches them with
+  the direct paths its sessions used (`supermux-route-candidates.json` beside the projects file, 7
+  days) and passes them to every dial (`supermux.route.dialCandidates`, on by default), so a dial
+  with no path selected yet starts on the LAN or Tailscale instead of the relay. Not done yet: the
+  UI, a dedicated direct-only dial lane racing the relay, moving a relayed link back, wake handling.
+  E2E: `tests/supermux/loopback_device_route_e2e.py` (the loopback device's route is pinned by a
+  DEBUG driver; it has no Iroh path).
 - **Terminal size: Auto, one setting** (upstream's shared sizing, #633, #665–#669, #790–#797, #920–#924,
   #952–#969, #1011–#1032): every terminal starts in Auto (upstream's `latest`, labelled Auto on the Mac and
   the phone): the device you are viewing it from sets its grid. A phone opening a terminal, or returning
