@@ -125,19 +125,24 @@ enum SupermuxTerminalSizingRecoveryDrivers {
             scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: lines, wheel2: 0, wheel3: 0
         ) else { throw invalid("could not create a scroll event") }
         cgEvent.location = CGPoint(x: screenPoint.x, y: primaryHeight - screenPoint.y)
-        cgEvent.setIntegerValueField(.mouseEventWindowUnderMousePointer, value: Int64(window.windowNumber))
-        cgEvent.setIntegerValueField(
-            .mouseEventWindowUnderMousePointerThatCanHandleThisEvent, value: Int64(window.windowNumber)
-        )
+        // `NSEvent(cgEvent:)` takes its window number from the event's window
+        // id field (51, not public API), which the window server fills in for
+        // a real wheel event; the window-under-pointer fields are not read.
+        guard let windowIDField = CGEventField(rawValue: 51) else {
+            throw invalid("could not address the scroll event to a window")
+        }
+        cgEvent.setIntegerValueField(windowIDField, value: Int64(window.windowNumber))
         guard let event = NSEvent(cgEvent: cgEvent), event.type == .scrollWheel else {
             throw invalid("could not create a scroll event")
         }
         guard event.windowNumber == window.windowNumber else {
             throw invalid("the scroll event is not addressed to the pane's window (\(event.windowNumber) != \(window.windowNumber))")
         }
-        // Where AppKit will deliver it: the view under the pane's center.
-        let contentView = window.contentView
-        let hit = contentView.flatMap { $0.hitTest($0.superview?.convert(center, from: nil) ?? center) }
+        // Where AppKit will deliver it: the view under the pane's center, hit
+        // tested from the window's frame view (terminals are hosted in a
+        // portal above the content view). Its coordinates are the window's.
+        let frameView = window.contentView?.superview ?? window.contentView
+        let hit = frameView?.hitTest(center)
         let hitsTerminal = hit.map { $0 === view || $0.isDescendant(of: view) } ?? false
         NSApp.postEvent(event, atStart: false)
         return [

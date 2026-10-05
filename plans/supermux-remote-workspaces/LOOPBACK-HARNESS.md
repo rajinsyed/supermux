@@ -641,6 +641,13 @@ artifact holds per step its checks, decided states, governor snapshots and 100 m
 It drives `supermux.devices.terminal_sizing.{governor,reset_hosts,local_scroll,activate,local_select,
 connection_request,connection_close,lane_input}` (`SupermuxTerminalSizingRecoveryDrivers.swift`).
 
+The local steps run with auto-mirror off: otherwise every new terminal has the loopback's hidden
+mirror as a second remote participant, and Auto's "phones stay attached" path tears the apply
+governor down, which hides the wedge (R1–R3 and R18 then pass for the wrong reason). The mirror
+steps turn auto-mirror back on, after closing the local steps' workspaces. `local_scroll` addresses
+its wheel event through the CGEvent window-id field (51), the field `NSEvent(cgEvent:)` reads; R8
+first proves delivery (the terminal's viewport scrolls into its scrollback).
+
 ```bash
 CMUX_E2E_SUITES="loopback_terminal_sizing_recovery_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
 ```

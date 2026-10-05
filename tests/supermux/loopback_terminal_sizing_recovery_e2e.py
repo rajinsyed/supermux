@@ -7,7 +7,11 @@ Auto (`latest`): the device you are viewing a terminal from owns its grid. These
 reproduce the paths that left a terminal at a departed or inactive viewer's grid, and the
 guards that keep the fixes from breaking the rules around them. Each step builds its own
 state: a fresh shown local terminal (a new workspace), fresh fake viewer client ids, and
-for the mirror steps the loopback's source terminal and its auto mirror. Every step runs
+for the mirror steps the loopback's source terminal and its auto mirror. The local steps
+(R1-R10, R13b-R18) run with auto-mirror off, so their terminals have no loopback mirror as
+a second remote participant: like the reported case, the phone is the only other viewer
+(a hidden mirror would send Auto down its "phones stay attached" path, which tears the apply
+governor down and so hides R1-R3's wedge). The mirror steps turn it back on. Every step runs
 even when an earlier one failed; a step made of several checks runs all of them and
 reports each (`checks` in the artifact).
 
@@ -51,8 +55,9 @@ Steps (fix, what it proves; why it fails today):
                                       again: the Mac owns. Today activity that changes no published
                                       state is thrown away, so the phone is still the newest.
   R8  mac_scroll_is_activity          (F7) the phone owns; this Mac's user scrolls over the pane
-                                      (`local_scroll`, a posted wheel event): the Mac owns. Today
-                                      scrolling never notes activity.
+                                      (`local_scroll`, a posted wheel event, first shown to reach
+                                      the terminal: its viewport scrolls into the scrollback): the
+                                      Mac owns. Today scrolling never notes activity.
   R9  soft_leave                      (F8) transient_return: a clear with `transient: true`, then the
                                       phone returns with the same viewport 1 s later: no live grid
                                       sample (every 100 ms) leaves 40x12. Today the clear uncaps at once
@@ -189,6 +194,11 @@ class SizingRecoveryE2E(SizingPolicyE2E):
             raise Failure(f"no Mac pane row on {surface_id}")
         return row["id"]
 
+    def note(self, label: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Records a driver's reply in the step's trace (kept when the step fails)."""
+        self.trace.append({"t": self.elapsed(), "label": label, "reply": payload})
+        return payload
+
     def elapsed(self) -> float:
         return round(time.monotonic() - self.step_started, 2)
 
@@ -255,6 +265,27 @@ class SizingRecoveryE2E(SizingPolicyE2E):
         return self.sock.call(SIZING + "lane_input", {
             "surface_id": surface_id, "client_id": client_id, "connection_id": connection_id, "text": text,
         }) or {}
+
+    def set_auto_mirror(self, enabled: bool) -> None:
+        self.sock.call("supermux.devices.set_auto_mirror", {"enabled": enabled})
+        self.facts.setdefault("auto_mirror", []).append(enabled)
+
+    def no_mirror_row(self, label: str, surface_id: str) -> None:
+        """A local step's terminal has no loopback mirror (auto-mirror is off for these steps)."""
+        mirror = self.row(self.state(surface_id), MIRROR_PREFIX)
+        if mirror:
+            raise Failure(f"harness: the {label} terminal has a loopback mirror participant ({mirror['id']}); "
+                          "the local steps need auto-mirror off")
+
+    def keeps(self, what: str, surface_id: str, check: Callable[[Dict[str, Any]], None],
+              seconds: float) -> Dict[str, Any]:
+        """`check` keeps passing for `seconds`; a failure says what was expected and when it broke."""
+        started = time.monotonic()
+        try:
+            return self.hold(surface_id, check, seconds, steady=False)
+        except Failure as error:
+            self.snap(f"broke: {what}", surface_id)
+            raise Failure(f"{what}: broke after {time.monotonic() - started:.1f}s of {seconds}s: {error}") from None
 
     def size_to_me(self, surface_id: str) -> Dict[str, Any]:
         return self.sock.call("terminal.size_to_me", {"surface_id": surface_id}) or {}
@@ -382,6 +413,7 @@ class SizingRecoveryE2E(SizingPolicyE2E):
         surface = wait_for(f"the {label} terminal", lambda: self.surfaces(workspace), self.timeout)[0]
         self.wait_state(f"the {label} Mac pane to count", surface,
                         lambda state: (self.expect_mode("latest")(state), self.mac_counts(True)(state)))
+        self.no_mirror_row(label, surface)
         self.snap(f"{label}: fresh terminal", surface)
         return workspace, surface
 
@@ -415,9 +447,25 @@ class SizingRecoveryE2E(SizingPolicyE2E):
         self.snap("after the leave", surface_id)
         return {"after_leave": snap, "mac_grid": list(mac), "mac_restored": reached}
 
+    def close_created(self) -> None:
+        for workspace_id in self.created:
+            try:
+                self.sock.call("workspace.close", {"workspace_id": workspace_id, "force": True})
+            except Failure as error:
+                if "not_found" not in str(error):
+                    self.facts.setdefault("cleanup_errors", []).append(str(error))
+        # Their terminals are gone: nothing is left to clear for their fake viewers.
+        closed = set(self.created)
+        self.reports = {key: generation for key, generation in self.reports.items() if key[0] not in closed}
+        self.created.clear()
+
     def ensure_mirror(self) -> None:
         """The loopback's source terminal and its auto mirror, the mirror shown and counting."""
         if not self.source_surface:
+            # The local steps are done: close their workspaces so turning auto-mirror back on
+            # does not open a mirror of each.
+            self.close_created()
+            self.set_auto_mirror(True)
             self.source_and_mirror()
         self.select(self.mirror_id)
         self.wait_state("the shown mirror to count", self.source_surface, self.mirror_counts(True))
@@ -596,14 +644,41 @@ class SizingRecoveryE2E(SizingPolicyE2E):
         decided = self.within("the Mac pane (newest by its key press) to own the grid", surface, self.mac_owns(), 3)
         return {"pressed": pressed, "decided": decided}
 
+    def screen_text(self, workspace_id: str, surface_id: str) -> str:
+        reply = self.sock.call("surface.read_text", {"workspace_id": workspace_id, "surface_id": surface_id}) or {}
+        return str(reply.get("text") or "")
+
+    def scroll_delivered(self, workspace_id: str, surface_id: str, before: str) -> bool:
+        """The posted wheel event reached the terminal: its viewport moved into the scrollback."""
+        try:
+            wait_for("the scroll to move the terminal's viewport",
+                     lambda: self.screen_text(workspace_id, surface_id) != before, 1.5, interval_s=0.1)
+            return True
+        except Failure:
+            return False
+
     def r8_mac_scroll_is_activity(self) -> Dict[str, Any]:
         workspace, surface = self.fresh("r8")
         phone = self.client("r8")
         self.phone_takes(workspace, surface, phone)
+        # Scrollback to scroll into (socket input: not the Mac's user, so the phone keeps the grid).
+        self.sock.call("surface.send_text", {"workspace_id": workspace, "surface_id": surface,
+                                             "text": "seq 1 200\n"})
+        wait_for("the scrollback to fill", lambda: "200" in self.screen_text(workspace, surface), 5, interval_s=0.2)
+        self.within("the phone to still own the grid after the socket input", surface, self.owns(phone), 2)
         for attempt in (1, 2):
             activations = self.mac_activations()
-            scrolled = self.sock.call(SIZING + "local_scroll", {"surface_id": surface}) or {}
-            decided = self.within("a scroll on the Mac pane to give it the grid", surface, self.mac_owns(), 3)
+            before = self.screen_text(workspace, surface)
+            scrolled = self.note("local_scroll", self.sock.call(
+                SIZING + "local_scroll", {"surface_id": surface, "lines": 5}) or {})
+            # Harness checks: the wheel event must really reach the terminal, or this step proves nothing.
+            if not scrolled.get("hits_terminal"):
+                raise Failure(f"harness: the scroll event's location is not over the terminal: {scrolled}")
+            if not self.scroll_delivered(workspace, surface, before):
+                raise Failure(f"harness: the posted scroll never reached the terminal (its viewport did not move): "
+                              f"{scrolled}")
+            decided = self.within("a scroll on the Mac pane (delivered: the viewport moved) to give it the grid",
+                                  surface, self.mac_owns(), 3)
             if self.mac_activations() == activations:
                 return {"scroll": scrolled, "decided": decided, "attempt": attempt}
             # The app became active meanwhile (the Mac's own activity): try again.
@@ -660,13 +735,15 @@ class SizingRecoveryE2E(SizingPolicyE2E):
         workspace = self.create_workspace(label)
         surface = wait_for(f"the {label} terminal", lambda: self.surfaces(workspace), self.timeout)[0]
         self.wait_state(f"the {label} terminal's size state", surface, self.has_row("mac:", "the Mac pane"))
+        self.no_mirror_row(label, surface)
         return workspace, surface
 
     def r10_mac_selection_keeps_grid(self) -> Dict[str, Any]:
         def mac_user_selection() -> Dict[str, Any]:
             workspace, surface = self.hidden_terminal("r10")
             phone = self.client("r10")
-            selected = self.sock.call(SIZING + "local_select", {"workspace_id": workspace, "surface_id": surface}) or {}
+            selected = self.note("local_select", self.sock.call(
+                SIZING + "local_select", {"workspace_id": workspace, "surface_id": surface}) or {})
             chosen_at = time.monotonic()
             self.within("the selected pane to count", surface, self.mac_counts(True), 2)
             mac = self.mac_grid(surface)
@@ -674,7 +751,8 @@ class SizingRecoveryE2E(SizingPolicyE2E):
             attached_after = round(time.monotonic() - chosen_at, 2)
             self.within("the phone to join", surface, self.has_row("mobile:" + phone, "the phone"), 2)
             self.snap("the phone attached after this Mac's user selected", surface)
-            held = self.hold(surface, self.mac_owns(), 2.0, steady=False)
+            held = self.keeps("the Mac pane keeps the grid (this Mac's user selected it; the phone only attached)",
+                              surface, self.mac_owns(), 2.0)
             live = self.wait_grid(surface, mac, 0.5, "the live grid to stay the Mac grid")
             self.viewer_types(workspace, surface, phone)
             typed = self.within("typing on the phone to give it the grid", surface, self.owns(phone), 5)
@@ -699,7 +777,8 @@ class SizingRecoveryE2E(SizingPolicyE2E):
         workspace, surface = self.fresh("r13b")
         phone = self.client("r13b")
         self.phone_takes(workspace, surface, phone)
-        activated = self.sock.call(SIZING + "activate", {"surface_id": surface, "textbox": True}) or {}
+        activated = self.note("activate (textbox)", self.sock.call(
+            SIZING + "activate", {"surface_id": surface, "textbox": True}) or {})
         if not activated.get("textbox_focused"):
             raise Failure(f"the TextBox did not take focus: {activated}")
         decided = self.within("switching to the app with the TextBox focused to give the Mac the grid", surface,
@@ -721,9 +800,10 @@ class SizingRecoveryE2E(SizingPolicyE2E):
             self.connection_request(newer, "mobile.terminal.viewport",
                                     self.viewport_params(workspace, surface, phone, 40, 12))
             time.sleep(0.3)
-            closed = self.connection_close(older)
+            closed = self.note("connection A closed", self.connection_close(older))
             self.snap("connection A closed", surface)
-            held = self.hold(surface, self.owns(phone), 2.0, steady=False)
+            held = self.keeps("the phone keeps the grid after its older connection A closed (B re-sent its report)",
+                              surface, self.owns(phone), 2.0)
             return {"closed": closed, **held}
 
         def own_connection_close() -> Dict[str, Any]:
@@ -756,7 +836,7 @@ class SizingRecoveryE2E(SizingPolicyE2E):
             self.phone_takes(workspace, surface, phone)
             self.mac_types(workspace, surface)
             self.within("the Mac pane to take the grid back", surface, self.mac_owns(), 5)
-            typed = self.lane_input(surface, phone, connection, " ")
+            typed = self.note("lane_input", self.lane_input(surface, phone, connection, " "))
             if not typed.get("delivered"):
                 raise Failure(f"the lane refused an attached phone's input: {typed}")
             decided = self.within("typing on the phone's input lane to give it the grid", surface, self.owns(phone), 2)
@@ -770,7 +850,7 @@ class SizingRecoveryE2E(SizingPolicyE2E):
                            {"surface_id": surface, "participant_id": "mobile:" + phone})
             self.within("the disconnected phone to leave", surface, self.not_participant(phone), 2)
             marker = "zq" + self.nonce
-            typed = self.lane_input(surface, phone, connection, marker)
+            typed = self.note("lane_input (disconnected)", self.lane_input(surface, phone, connection, marker))
             time.sleep(1.0)
             screen = self.sock.call("surface.read_text", {"workspace_id": workspace, "surface_id": surface}) or {}
             reached = marker in str(screen.get("text") or "")
@@ -797,7 +877,8 @@ class SizingRecoveryE2E(SizingPolicyE2E):
         wait_for("the phone's replay with its viewport", replay, 10, interval_s=0.5)
         attached = self.within("the phone attaching by its replay to own the grid", surface, self.owns(phone), 3)
         self.snap("attached by replay", surface)
-        held = self.hold(surface, self.owns(phone), 8.0, steady=False)
+        held = self.keeps("the phone attached by its replay keeps the grid (a sticky claim, TTL 5 s)",
+                          surface, self.owns(phone), 8.0)
         return {"attached": attached, **held}
 
     # -- R17: Fixed seeds from the Mac pane ---------------------------------------------
@@ -920,7 +1001,8 @@ class SizingRecoveryE2E(SizingPolicyE2E):
         phone = self.client("r13")
         try:
             self.phone_takes(self.source_id, self.source_surface, phone)
-            activated = self.sock.call(SIZING + "activate", {"surface_id": self.mirror_surface}) or {}
+            activated = self.note("activate (mirror)", self.sock.call(
+                SIZING + "activate", {"surface_id": self.mirror_surface}) or {})
             decided = self.within("switching to the app with the mirror focused to give the mirror the grid",
                                   self.source_surface, self.owned_by(MIRROR_PREFIX), 2)
         finally:
@@ -942,7 +1024,7 @@ class SizingRecoveryE2E(SizingPolicyE2E):
         self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "stop"})
         try:
             wait_for("the loopback link to drop", lambda: self.device().get("link_state") != "connected", self.timeout)
-            reset = self.sock.call(SIZING + "reset_hosts", {}) or {}
+            reset = self.note("reset_hosts", self.sock.call(SIZING + "reset_hosts", {}) or {})
         finally:
             self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "restore"})
         wait_for("the loopback link to reconnect", lambda: self.device().get("link_state") == "connected", self.timeout)
@@ -956,7 +1038,8 @@ class SizingRecoveryE2E(SizingPolicyE2E):
             if mirror and mirror["id"] in (state.get("owners") or []):
                 raise Failure(f"the hidden mirror owns the grid: owners {state.get('owners')}")
 
-        held = self.hold(self.source_surface, hidden_and_not_owner, 3.0, steady=False)
+        held = self.keeps("the hidden mirror stays non-counting and not the owner after the host restarted",
+                          self.source_surface, hidden_and_not_owner, 3.0)
         return {"before": before, "reset": reset, **held}
 
     # -- run ------------------------------------------------------------------------------
@@ -991,11 +1074,16 @@ class SizingRecoveryE2E(SizingPolicyE2E):
                 self.connection_close(connection_id)
             except (Failure, OSError) as error:
                 self.facts.setdefault("cleanup_errors", []).append(str(error))
+        try:
+            self.set_auto_mirror(True)
+        except (Failure, OSError) as error:
+            self.facts.setdefault("cleanup_errors", []).append(str(error))
         super().cleanup()
 
     def run(self) -> bool:
         ok = self.step("setup", self.setup)
         if ok:
+            self.set_auto_mirror(False)
             for name, action in self.plan():
                 ok = self.step(name, action) and ok
         self.cleanup()
