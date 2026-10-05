@@ -435,7 +435,9 @@ extension TerminalController {
         return .err(
             code: "detached",
             message: "This device was disconnected from the terminal. Reattach to continue.",
-            data: ["surface_id": surfaceID.uuidString]
+            // SUPERMUX:begin sizing-detach-reannounce (the detachment itself, and once per connection `mobile.terminal.detached` again; upstream: `data: ["surface_id": surfaceID.uuidString]`)
+            data: supermuxDetachedErrorData(surfaceID: surfaceID, clientID: clientID)
+            // SUPERMUX:end sizing-detach-reannounce
         )
     }
 

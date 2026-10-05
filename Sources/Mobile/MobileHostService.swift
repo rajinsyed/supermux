@@ -1195,6 +1195,9 @@ final class MobileHostService {
                 reason: "mobile.connection.closed"
             )
         }
+        // SUPERMUX:begin sizing-detach-reannounce (a later connection of a detached phone is told again)
+        SupermuxMobileDetachAnnouncements.connectionClosed(id)
+        // SUPERMUX:end sizing-detach-reannounce
         MobileHostRequestActivity.endConnection()
     }
 

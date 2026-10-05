@@ -84,8 +84,9 @@ Steps (fix, what it proves; why it fails today):
                                       input lane (`lane_input`): the phone owns. Today lane input is
                                       nobody's activity. detached_lane_refused: a phone someone
                                       disconnected types over the lane: the frame is refused and the
-                                      text never reaches the terminal. Today the lane skips the
-                                      detach gate.
+                                      text never reaches the terminal, and its next viewport report on
+                                      that connection is refused with the detachment (`reason`, `at`)
+                                      in the error data. Today the lane skips the detach gate.
   R16 sticky_replay_claim             (G2a) the phone attaches only through `mobile.terminal.replay`
                                       with viewport fields and `viewport_generation` (its reconnect
                                       path): it still owns 8 s later (TTL 5 s). Today the replay's
@@ -857,7 +858,17 @@ class SizingRecoveryE2E(SizingPolicyE2E):
             if typed.get("delivered") or reached:
                 raise Failure(f"a disconnected phone's lane input was delivered (delivered={typed.get('delivered')}, "
                               f"on screen={reached})")
-            return {"typed": typed, "on_screen": reached}
+            # A relaunched phone forgot the detach: its next report is refused with the detachment itself.
+            refused = self.note("viewport (disconnected)", self.sock.call(SIZING + "connection_request", {
+                "connection_id": connection, "method": "mobile.terminal.viewport",
+                "params": self.viewport_params(workspace, surface, phone, 40, 12),
+            }) or {})
+            error = refused.get("error") or {}
+            data = error.get("data") or {}
+            if refused.get("ok") or error.get("code") != "detached" or data.get("reason") != "disconnected-by" \
+                    or data.get("surface_id") != surface or not data.get("at"):
+                raise Failure(f"a disconnected phone's report should be refused with its detachment: {refused}")
+            return {"typed": typed, "on_screen": reached, "refused": refused}
 
         self.check("lane_activity", lane_activity)
         self.check("detached_lane_refused", detached_lane_refused)
