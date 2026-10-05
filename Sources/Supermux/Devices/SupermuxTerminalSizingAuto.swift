@@ -160,6 +160,42 @@ final class SupermuxTerminalSizingAuto {
         TerminalController.shared.noteLocalTerminalSizingActivity(surfaceID: surfaceID)
     }
 
+    /// Size to My Window on a local terminal, from any entry point: notes the
+    /// Mac pane's activity, then puts the decided size on the PTY now.
+    ///
+    /// Noting activity alone changes nothing once the engine already names
+    /// the Mac, and an apply through the governor waits its uncap window (or,
+    /// wedged, never lands), so a terminal left at a departed viewer's grid
+    /// stayed there. This drops the governor (and any change it staged) and
+    /// applies the host's target directly; a resize happens only when the
+    /// size differs. Only Size to My Window forces: app activation and
+    /// keystrokes keep ``noteMacAction(surfaceID:)``.
+    func sizeToMe(surfaceID: UUID) {
+        noteMacAction(surfaceID: surfaceID)
+        let controller = TerminalController.shared
+        guard let host = controller.localSizingHostsBySurfaceID[surfaceID],
+              !host.isDetached(host.macParticipantID) else { return }
+        let reason = "terminal.size_to_me"
+        controller.teardownMobileViewportGovernor(surfaceID: surfaceID)
+        switch host.applyTarget {
+        case .uncapped:
+            // Direct, not governed: a fresh governor drops an uncap it never
+            // capped, and a repeated clear also retries a font restore.
+            _ = controller.performMobileViewportTarget(surfaceID: surfaceID, target: .uncapped, reason: reason)
+        case let .grid(size):
+            // A fresh governor applies the first cap at once and records it.
+            controller.governMobileViewportTarget(
+                surfaceID: surfaceID,
+                target: .cap(columns: size.cols, rows: size.rows),
+                immediate: true,
+                reason: reason
+            )
+        }
+        // The uncapped pane's grid can differ from the one last reported
+        // (the font fit is restored): report it again.
+        controller.localSizingMacViewportChanged(surfaceID: surfaceID)
+    }
+
     #if DEBUG
     /// Runs the app-activation handler, as `didBecomeActiveNotification`
     /// does (`terminal_sizing.activate`).

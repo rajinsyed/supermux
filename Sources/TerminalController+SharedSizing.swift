@@ -524,8 +524,8 @@ extension TerminalController {
     }
 
     func localSizingNoteSelfActivity(surfaceID: UUID) {
-        // SUPERMUX:begin sizing-auto-local-input (Size to Me is this Mac's user's choice, from any entry point; upstream: `noteLocalTerminalSizingActivity(surfaceID: surfaceID)`)
-        SupermuxTerminalSizingAuto.shared.noteMacAction(surfaceID: surfaceID)
+        // SUPERMUX:begin sizing-auto-local-input (Size to Me is this Mac's user's choice, from any entry point, and puts the decided size on the PTY now; upstream: `noteLocalTerminalSizingActivity(surfaceID: surfaceID)`)
+        SupermuxTerminalSizingAuto.shared.sizeToMe(surfaceID: surfaceID)
         // SUPERMUX:end sizing-auto-local-input
     }
 
