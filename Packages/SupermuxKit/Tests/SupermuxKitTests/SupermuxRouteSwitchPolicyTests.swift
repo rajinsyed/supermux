@@ -316,6 +316,7 @@ struct SupermuxRouteSwitchPolicyTests {
             }
         }
         let worst = reconnects.map { start in reconnects.filter { $0 >= start && $0 < start + 60 }.count }.max() ?? 0
+        print("flapping path: \(reconnects.count) reconnects in 10 min at \(reconnects), at most \(worst) in a minute")
         #expect(reconnects.count >= 4, "the path must actually flap the link: \(reconnects)")
         #expect(worst <= 4, "reconnects at \(reconnects)")
         #expect(reconnects.count <= 14, "ten minutes of flapping: \(reconnects)")
