@@ -5,6 +5,9 @@ import CmuxMobileHost
 import CmuxSurfaceCatalogModel
 import Foundation
 import OSLog
+// SUPERMUX:begin device-link-unproven-session-backoff
+import SupermuxKit
+// SUPERMUX:end device-link-unproven-session-backoff
 
 nonisolated private let deviceLinkLog = Logger(subsystem: "dev.cmux", category: "device-link")
 
@@ -159,6 +162,19 @@ final class DeviceLink {
         onChange?()
     }
 
+    // SUPERMUX:begin device-link-unproven-session-backoff
+    /// The other Mac stopped answering: a reply missed its deadline and the
+    /// liveness check after it found no sign of life. Reconnects like
+    /// ``reportTransportLost(_:)``, but never at once
+    /// (``DeviceLinkReconnectPolicy``).
+    func supermuxReportUnresponsive(_ error: any Error) {
+        deviceLinkLog.error("device link unresponsive \(self.instance.wireValue, privacy: .private(mask: .hash)): \(String(describing: error), privacy: .private)")
+        lastFailure = DeviceLinkFailure.classify(error, hostName: record.deviceName)
+        transition(applyPolicy(.supermuxUnresponsive))
+        onChange?()
+    }
+    // SUPERMUX:end device-link-unproven-session-backoff
+
     private func applyPolicy(_ event: DeviceLinkReconnectPolicy.Event) -> Phase {
         policy.apply(event, now: runtime.now())
     }
@@ -232,6 +248,10 @@ final class DeviceLink {
         do {
             let data = try await client.sendRequest(requestData, timeoutNanoseconds: timeoutNanoseconds)
             guard !Task.isCancelled, requestGeneration == generation else { throw CancellationError() }
+            // SUPERMUX:begin device-link-unproven-session-backoff
+            // An answer beyond the dial's handshake: the session may prove itself.
+            _ = applyPolicy(.supermuxExchanged)
+            // SUPERMUX:end device-link-unproven-session-backoff
             return data
         } catch let error as MobileShellConnectionError {
             guard !Task.isCancelled, requestGeneration == generation else { throw CancellationError() }
@@ -272,6 +292,10 @@ final class DeviceLink {
             // shape `CloudMachineLink` and the presence heartbeat use.
             waitTask = Task { [weak self] in
                 guard let self else { return }
+                // SUPERMUX:begin device-link-unproven-session-backoff
+                // Spread by ±20 % so links that failed together do not dial in step.
+                let delay = SupermuxDeviceLinkBackoff.jittered(delay)
+                // SUPERMUX:end device-link-unproven-session-backoff
                 guard (try? await self.clock.sleep(for: delay)) != nil else { return }
                 self.transition(self.applyPolicy(.waitElapsed))
                 self.onChange?()

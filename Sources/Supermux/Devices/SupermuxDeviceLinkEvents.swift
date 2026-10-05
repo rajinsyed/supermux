@@ -115,8 +115,9 @@ extension DeviceLink {
     /// unanswered macOS privacy prompt took the link down every ~20 s. So the
     /// link first checks whether the other Mac still shows life
     /// (``supermuxHostAnswers(_:)``): any sign keeps the link and fails only
-    /// this request (`timed_out`); none is a dead link, which reconnects as
-    /// upstream does. On an Iroh route the
+    /// this request (`timed_out`); none is a dead link, which reconnects after
+    /// a backoff, never at once (``DeviceLinkReconnectPolicy``, touchpoint
+    /// `device-link-unproven-session-backoff`). On an Iroh route the
     /// other Mac's connection answers without its main thread, so a Mac whose
     /// main thread is stuck still counts as alive; on a Tailscale route its
     /// authorization runs on that main thread, so a Mac stuck there for 10 s
@@ -132,7 +133,7 @@ extension DeviceLink {
         let answers = await Self.supermuxHostAnswers(client)
         guard isCurrent() else { return CancellationError() }
         guard answers else {
-            reportTransportLost(error)
+            supermuxReportUnresponsive(error)
             return DeviceLinkError.notConnected
         }
         #if DEBUG

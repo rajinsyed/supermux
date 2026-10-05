@@ -1,5 +1,8 @@
 import Foundation
 import Testing
+// SUPERMUX:begin device-link-unproven-session-backoff
+import SupermuxKit
+// SUPERMUX:end device-link-unproven-session-backoff
 
 #if canImport(cmux_DEV)
 @testable import cmux_DEV
@@ -17,41 +20,72 @@ struct DeviceLinkReconnectPolicyTests {
         DeviceLinkFailure(kind: kind, code: kind.rawValue, message: message)
     }
 
-    @Test("Repeated connect-and-close cycles back off after the first immediate retry")
+    // SUPERMUX:begin device-link-unproven-session-backoff
+    // Upstream: a loss after 30 s up redialed at once, as did the first of a
+    // run of short-lived losses, and the backoff table stopped at 30 s. A
+    // session now has to prove the other Mac healthy (an answered request and
+    // two minutes up); any other loss backs off (SupermuxDeviceLinkBackoffTests
+    // in SupermuxKit holds the full matrix).
+    private let connectedAt = Date(timeIntervalSince1970: 1_000)
+
+    private var provenAt: Date {
+        connectedAt.addingTimeInterval(SupermuxDeviceLinkSession.provenLifetime)
+    }
+
+    @Test("Repeated connect-and-close cycles back off from the first loss, doubling")
     func flappingTransportBacksOff() {
         var policy = DeviceLinkReconnectPolicy()
         _ = policy.apply(.directory(dialable: true))
-        _ = policy.apply(.connectSucceeded)
-        #expect(policy.apply(.transportLost) == .connecting(attempt: 1))
         for failure in 1...8 {
-            _ = policy.apply(.connectSucceeded)
-            #expect(policy.apply(.transportLost) == .waiting(
+            _ = policy.apply(.connectSucceeded, now: connectedAt)
+            _ = policy.apply(.supermuxExchanged, now: connectedAt)
+            // About 31 s up, as on the congested relay: past upstream's bar, not proven.
+            #expect(policy.apply(.transportLost, now: connectedAt.addingTimeInterval(31)) == .waiting(
                 attempt: failure, delay: DeviceLinkReconnectPolicy.delay(afterFailures: failure)
             ))
-            _ = policy.apply(.waitElapsed)
+            #expect(policy.apply(.waitElapsed) == .connecting(attempt: failure + 1))
         }
     }
 
-    @Test("A dialable device connects; a live link that drops redials at once, then backs off")
+    @Test("A proven link that drops redials at once, then backs off; a proven recovery resets the count")
     func connectLoseRetry() {
         var policy = DeviceLinkReconnectPolicy()
         #expect(policy.phase == .idle)
         #expect(policy.apply(.directory(dialable: true)) == .connecting(attempt: 1))
-        #expect(policy.apply(.connectSucceeded) == .connected)
-        #expect(policy.apply(.transportLost) == .connecting(attempt: 1), "a blip or remote restart redials immediately")
+        #expect(policy.apply(.connectSucceeded, now: connectedAt) == .connected)
+        _ = policy.apply(.supermuxExchanged, now: connectedAt)
+        #expect(policy.apply(.transportLost, now: provenAt) == .connecting(attempt: 1), "a blip or remote restart redials immediately")
         #expect(policy.apply(.connectFailed(failure(.transient, "refused"))) == .waiting(attempt: 1, delay: .seconds(1)))
         #expect(policy.apply(.waitElapsed) == .connecting(attempt: 2))
         #expect(policy.apply(.connectFailed(failure(.transient, "refused"))) == .waiting(attempt: 2, delay: .seconds(2)))
         #expect(policy.apply(.waitElapsed) == .connecting(attempt: 3))
-        #expect(policy.apply(.connectFailed(failure(.transient, "refused"))) == .waiting(attempt: 3, delay: .seconds(5)))
+        #expect(policy.apply(.connectFailed(failure(.transient, "refused"))) == .waiting(attempt: 3, delay: .seconds(4)))
         #expect(policy.apply(.waitElapsed) == .connecting(attempt: 4))
-        let recoveredAt = Date(timeIntervalSince1970: 1_000)
-        #expect(policy.apply(.connectSucceeded, now: recoveredAt) == .connected)
-        #expect(
-            policy.apply(.transportLost, now: recoveredAt.addingTimeInterval(DeviceLinkReconnectPolicy.stableConnectionInterval)) == .connecting(attempt: 1),
-            "a stable recovered link resets the attempt count"
-        )
+        #expect(policy.apply(.connectSucceeded, now: connectedAt) == .connected)
+        _ = policy.apply(.supermuxExchanged, now: connectedAt)
+        #expect(policy.apply(.transportLost, now: provenAt) == .connecting(attempt: 1), "a proven recovered link resets the attempt count")
     }
+
+    @Test("A session that proved nothing, or went silent, never redials at once")
+    func unprovenOrSilentSessionBacksOff() {
+        var policy = DeviceLinkReconnectPolicy()
+        _ = policy.apply(.directory(dialable: true))
+        _ = policy.apply(.connectSucceeded, now: connectedAt)
+        #expect(
+            policy.apply(.transportLost, now: connectedAt.addingTimeInterval(600)) == .waiting(attempt: 1, delay: .seconds(1)),
+            "ten minutes up without an answer beyond the handshake proves nothing"
+        )
+        _ = policy.apply(.waitElapsed)
+        _ = policy.apply(.connectSucceeded, now: connectedAt)
+        _ = policy.apply(.supermuxExchanged, now: connectedAt)
+        #expect(
+            policy.apply(.supermuxUnresponsive, now: provenAt) == .waiting(attempt: 1, delay: .seconds(1)),
+            "a proven session that stopped answering backs off from the first step"
+        )
+        #expect(policy.apply(.supermuxExchanged, now: provenAt) == .waiting(attempt: 1, delay: .seconds(1)), "an exchange changes no phase")
+        #expect(policy.apply(.supermuxUnresponsive, now: provenAt) == .waiting(attempt: 1, delay: .seconds(1)), "only a live link can be lost")
+    }
+    // SUPERMUX:end device-link-unproven-session-backoff
 
     @Test("A below-link cancellation during a dial enters the reconnect policy")
     func interruptedConnectRetries() {
@@ -66,16 +100,18 @@ struct DeviceLinkReconnectPolicyTests {
         #expect(policy.apply(.waitElapsed) == .connecting(attempt: 2))
     }
 
-    @Test("Backoff is bounded at thirty seconds")
+    // SUPERMUX:begin device-link-unproven-session-backoff
+    @Test("Backoff doubles to a two-minute ceiling")
     func backoffTable() {
         #expect(DeviceLinkReconnectPolicy.delay(afterFailures: 0) == .seconds(1))
         #expect(DeviceLinkReconnectPolicy.delay(afterFailures: 1) == .seconds(1))
         #expect(DeviceLinkReconnectPolicy.delay(afterFailures: 2) == .seconds(2))
-        #expect(DeviceLinkReconnectPolicy.delay(afterFailures: 4) == .seconds(10))
-        #expect(DeviceLinkReconnectPolicy.delay(afterFailures: 5) == .seconds(30))
-        #expect(DeviceLinkReconnectPolicy.delay(afterFailures: 50) == .seconds(30))
-        #expect(DeviceLinkReconnectPolicy.delays.last == .seconds(30))
+        #expect(DeviceLinkReconnectPolicy.delay(afterFailures: 4) == .seconds(8))
+        #expect(DeviceLinkReconnectPolicy.delay(afterFailures: 6) == .seconds(32))
+        #expect(DeviceLinkReconnectPolicy.delay(afterFailures: 8) == .seconds(120))
+        #expect(DeviceLinkReconnectPolicy.delay(afterFailures: 50) == .seconds(120))
     }
+    // SUPERMUX:end device-link-unproven-session-backoff
 
     @Test("A presence drop parks the link; coming back online redials from the first attempt")
     func presenceEdges() {
