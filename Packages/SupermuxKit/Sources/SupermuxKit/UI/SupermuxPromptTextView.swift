@@ -12,6 +12,9 @@ struct SupermuxPromptTextView: NSViewRepresentable {
     @Binding var text: String
     @Binding var isFocused: Bool
     var isEditable: Bool
+    /// Whether pasted or dropped images are attached (else they act as in
+    /// a plain-text view).
+    var acceptsImages: Bool
     var focusOnAppear: Bool
     var onImages: ([URL]) -> Void
 
@@ -78,6 +81,7 @@ struct SupermuxPromptTextView: NSViewRepresentable {
     private func update(_ textView: SupermuxPromptNSTextView, coordinator: Coordinator) {
         textView.isEditable = isEditable
         textView.isSelectable = true
+        textView.acceptsImages = acceptsImages
         textView.onImages = { files in coordinator.parent.onImages(files) }
         // Focus can change while SwiftUI is placing the view (focus on
         // appear); the binding is written after that pass.

@@ -114,7 +114,8 @@ public enum SupermuxAgentLaunchCommand {
             model: model,
             effort: effort,
             readableDirectories: readableDirectories,
-            promptArgument: fileReadingArgument(path: file.url.path, shell: shell)
+            promptArgument: fileReadingArgument(path: file.url.path, shell: shell),
+            shell: shell
         )
         return SupermuxAgentLaunchLine(line: line, promptFile: file)
     }
@@ -150,7 +151,8 @@ public enum SupermuxAgentLaunchCommand {
             model: model,
             effort: effort,
             readableDirectories: readableDirectories,
-            promptArgument: trimmedPrompt.isEmpty ? nil : SupermuxShellQuoting.oneLineQuoted(trimmedPrompt, for: shell)
+            promptArgument: trimmedPrompt.isEmpty ? nil : SupermuxShellQuoting.oneLineQuoted(trimmedPrompt, for: shell),
+            shell: shell
         )
     }
 
@@ -186,20 +188,26 @@ public enum SupermuxAgentLaunchCommand {
         model: String?,
         effort: String?,
         readableDirectories: [String],
-        promptArgument: String?
+        promptArgument: String?,
+        shell: SupermuxShellFlavor
     ) -> String {
+        // Every value is quoted for the shell that reads the line: POSIX
+        // single quotes are not safe in fish, where `\'` stays inside them.
+        let quote = { (value: String) in
+            shell == .fish ? SupermuxShellQuoting.fishQuoted(value) : SupermuxShellQuoting.singleQuoted(value)
+        }
         var parts = [command.trimmingCharacters(in: .whitespacesAndNewlines)]
         if let model = normalized(model) {
             parts.append("--model")
-            parts.append(SupermuxShellQuoting.singleQuoted(model))
+            parts.append(quote(model))
         }
         if let effort = normalized(effort) {
             parts.append("--effort")
-            parts.append(SupermuxShellQuoting.singleQuoted(effort))
+            parts.append(quote(effort))
         }
         for directory in readableDirectories.compactMap(normalized) {
             parts.append("--add-dir")
-            parts.append(SupermuxShellQuoting.singleQuoted(directory))
+            parts.append(quote(directory))
         }
         if let promptArgument {
             parts.append("--")

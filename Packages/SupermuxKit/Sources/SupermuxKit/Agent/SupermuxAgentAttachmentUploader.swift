@@ -5,9 +5,11 @@ public import SupermuxMobileCore
 /// that runs Claude, in `agent.attachment.upload` chunks, and returns their
 /// paths there for `agent.start`'s `attachment_paths`.
 ///
-/// All files of one prompt share one `operation_id`, so the other Mac stores
-/// them in one folder (the `--add-dir` Claude gets there). The chunk contract
-/// is upstream's `mobile.task.attachment.upload`; `send` performs one call.
+/// Each file is its own upload operation (`operation_id`), so the host's
+/// per-operation total (64 MiB) never refuses a set the sheet accepted
+/// (10 × 32 MiB); each lands in a folder of its own there, made readable to
+/// Claude with `--add-dir`. The chunk contract is upstream's
+/// `mobile.task.attachment.upload`; `send` performs one call.
 ///
 /// ```swift
 /// let uploader = SupermuxAgentAttachmentUploader { params in
@@ -39,11 +41,10 @@ public struct SupermuxAgentAttachmentUploader {
     ///   reply without a path, `CancellationError` between chunks, otherwise
     ///   the error `send` threw.
     public func upload(_ files: [URL]) async throws -> [String] {
-        let operationID = UUID()
         var paths: [String] = []
         for file in files {
             let data = try await Self.read(file)
-            paths.append(try await upload(data, named: file.lastPathComponent, operationID: operationID))
+            paths.append(try await upload(data, named: file.lastPathComponent, operationID: UUID()))
         }
         return paths
     }

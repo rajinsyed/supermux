@@ -75,6 +75,10 @@ Steps:
  16. prompt_images_on_this_mac: the same on This Mac copies the image into a
      private folder of its own (0700, file 0600) under the cmux state
      directory, and the launch line names it the same way.
+ 17. agent_start_rejects_foreign_attachment_paths: agent.start with an
+     attachment path outside the attachment store (a file that exists, a
+     path that climbs out of the store) is rejected before git runs, so no
+     caller can make Claude read another folder without asking.
 
 `--only a,b` runs just those steps (after 1-2) and records each result.
 
@@ -151,6 +155,8 @@ class PickerE2E:
         self.other_project_id: Optional[str] = None
         # Projects this run created, with their main checkout (deleted in cleanup).
         self.registered: Dict[str, str] = {}
+        # Folders the launches copied or uploaded test images into (deleted in cleanup).
+        self.image_folders: List[Path] = []
 
     # -- helpers -------------------------------------------------------------
 
@@ -782,6 +788,7 @@ class PickerE2E:
         path = Path(echoed["path"])
         if store not in path.parents:
             raise SmokeFailure(f"the image path {path} is not in {store}")
+        self.image_folders.append(path.parent)
         if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != digest:
             raise SmokeFailure(f"{path} is missing or differs from the attached image")
         if not echoed["add_dir"]:
@@ -862,6 +869,31 @@ class PickerE2E:
         facts["workspace_id"] = worktree["workspace_id"]
         return facts
 
+    def check_foreign_attachment_paths(self) -> Dict[str, Any]:
+        self.ensure_echo_command()
+        store = Path.home() / ".cache" / "cmux" / "task-attachments"
+        outside, _ = self.write_png(f"img-{self.nonce}-outside.png")
+        attempts = {"outside": str(outside), "climbs_out": f"{store}/{os.path.relpath(outside, store)}"}
+        rejected: Dict[str, str] = {}
+        for label, path in attempts.items():
+            branch = f"foreign-{label.replace('_', '-')}-{self.nonce}"
+            try:
+                result = self.request(
+                    "mobile.supermux.agent.start",
+                    {"project_id": self.project_id, "prompt": "say nothing", "command": "echo",
+                     "branch_name": branch, "attachment_paths": [path], "select": False},
+                    timeout_s=120,
+                )
+            except SmokeFailure as error:
+                if "invalid_params" not in str(error):
+                    raise
+                rejected[label] = str(error)
+            else:
+                raise SmokeFailure(f"agent.start accepted attachment path {path}: {result}")
+            if any(w.get("branch") == branch for w in self.remote_worktrees()):
+                raise SmokeFailure(f"a rejected agent.start still created {branch}")
+        return {"rejected": rejected}
+
     # -- cleanup -------------------------------------------------------------
 
     def cleanup(self) -> None:
@@ -905,6 +937,8 @@ class PickerE2E:
                             ))
             for project_id in self.registered:
                 attempt(lambda p=project_id: self.request("mobile.supermux.project.delete", {"project_id": p}))
+            for folder in self.image_folders:
+                shutil.rmtree(folder, ignore_errors=True)
             shutil.rmtree(self.root, ignore_errors=True)
         if errors:
             self.facts["cleanup_errors"] = errors
@@ -946,6 +980,7 @@ class PickerE2E:
             ("prompt_images_need_text", self.check_prompt_images_need_text),
             ("prompt_images_reach_other_mac", self.check_prompt_images_reach_other_mac),
             ("prompt_images_on_this_mac", self.check_prompt_images_on_this_mac),
+            ("agent_start_rejects_foreign_attachment_paths", self.check_foreign_attachment_paths),
         ]
         try:
             self.step("device_connected", self.check_device)

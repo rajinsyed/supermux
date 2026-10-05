@@ -24,10 +24,11 @@ struct SupermuxPromptImageImporter {
     }
 
     /// Whether the pasteboard holds images to attach rather than text to type:
-    /// files of which at least one is an image, or image data without text.
+    /// files that are all images, or image data without text. Files mixed
+    /// with non-images paste or drop as their paths, as before.
     static func holdsImages(_ pasteboard: NSPasteboard) -> Bool {
         let files = fileURLs(in: pasteboard)
-        if !files.isEmpty { return files.contains(where: isImageFile) }
+        if !files.isEmpty { return files.allSatisfy(isImageFile) }
         return pasteboard.string(forType: .string) == nil && NSImage.canInit(with: pasteboard)
     }
 
@@ -36,7 +37,7 @@ struct SupermuxPromptImageImporter {
     func imageFiles(from pasteboard: NSPasteboard) -> [URL]? {
         guard Self.holdsImages(pasteboard) else { return nil }
         let files = Self.fileURLs(in: pasteboard)
-        if !files.isEmpty { return attachable(files.filter(Self.isImageFile)) }
+        if !files.isEmpty { return attachable(files) }
         return NSImage(pasteboard: pasteboard).flatMap { writePNG($0, stem: "pasted-image") }.map { [$0] }
     }
 

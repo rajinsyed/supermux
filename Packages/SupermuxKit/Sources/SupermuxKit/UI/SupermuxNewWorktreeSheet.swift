@@ -204,6 +204,7 @@ public struct SupermuxNewWorktreeSheet: View {
                     text: $sheet.prompt,
                     isFocused: $promptIsFocused,
                     isEditable: sheet.phase == .idle,
+                    acceptsImages: sheet.canAttachImages,
                     focusOnAppear: true,
                     onImages: { files in sheet.addAttachments(files) }
                 )

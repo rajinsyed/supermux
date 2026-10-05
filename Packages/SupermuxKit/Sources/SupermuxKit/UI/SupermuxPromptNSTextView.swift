@@ -6,6 +6,9 @@ import AppKit
 final class SupermuxPromptNSTextView: NSTextView {
     /// Receives the image files of a paste or drop.
     var onImages: (([URL]) -> Void)?
+    /// Whether images are taken; when not, a paste or drop behaves as in a
+    /// plain-text view (a dropped file inserts its path).
+    var acceptsImages = true
     /// Told when the view gains or loses keyboard focus.
     var onFocusChange: ((Bool) -> Void)?
     /// Takes keyboard focus once, when first placed in a window.
@@ -34,7 +37,7 @@ final class SupermuxPromptNSTextView: NSTextView {
     // MARK: - Paste
 
     override func paste(_ sender: Any?) {
-        guard isEditable, let files = importer.imageFiles(from: .general) else {
+        guard isEditable, acceptsImages, let files = importer.imageFiles(from: .general) else {
             super.paste(sender)
             return
         }
@@ -53,7 +56,9 @@ final class SupermuxPromptNSTextView: NSTextView {
 
     /// Whether Paste is enabled for images, or `nil` to let the text view decide.
     private func pastesImages(_ action: Selector?) -> Bool? {
-        guard action == #selector(paste(_:)), SupermuxPromptImageImporter.holdsImages(.general) else { return nil }
+        guard action == #selector(paste(_:)), acceptsImages, SupermuxPromptImageImporter.holdsImages(.general) else {
+            return nil
+        }
         return isEditable
     }
 
@@ -64,22 +69,22 @@ final class SupermuxPromptNSTextView: NSTextView {
     }
 
     override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
-        acceptsImages(sender) ? .copy : super.draggingEntered(sender)
+        takesImages(sender) ? .copy : super.draggingEntered(sender)
     }
 
     override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
-        acceptsImages(sender) ? .copy : super.draggingUpdated(sender)
+        takesImages(sender) ? .copy : super.draggingUpdated(sender)
     }
 
     override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
-        guard isEditable, let files = importer.imageFiles(from: sender.draggingPasteboard) else {
+        guard takesImages(sender), let files = importer.imageFiles(from: sender.draggingPasteboard) else {
             return super.performDragOperation(sender)
         }
         onImages?(files)
         return true
     }
 
-    private func acceptsImages(_ sender: any NSDraggingInfo) -> Bool {
-        isEditable && SupermuxPromptImageImporter.holdsImages(sender.draggingPasteboard)
+    private func takesImages(_ sender: any NSDraggingInfo) -> Bool {
+        isEditable && acceptsImages && SupermuxPromptImageImporter.holdsImages(sender.draggingPasteboard)
     }
 }
