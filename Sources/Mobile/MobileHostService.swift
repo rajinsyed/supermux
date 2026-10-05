@@ -2691,9 +2691,9 @@ actor MobileHostConnection {
             return false
         }
 
-        // SUPERMUX:begin host-writer-bulk-yields (a large reply yields to every other write; upstream: `return await sendControlFrame(frame)`)
+        // SUPERMUX:begin host-writer-bulk-yields (a device mirror's large replay reply, the one with a replacement, yields to every other write; upstream: `return await sendControlFrame(frame)`)
         return await sendControlFrame(
-            frame, bulk: frame.count > MobileHostSerializedTransportWriter.supermuxBulkReplyByteCount,
+            frame, bulk: supermuxReplacement != nil && frame.count > MobileHostSerializedTransportWriter.supermuxBulkReplyByteCount,
             // SUPERMUX:begin terminal-replay-supersede
             supermuxReplacement: supermuxReplacement
             // SUPERMUX:end terminal-replay-supersede

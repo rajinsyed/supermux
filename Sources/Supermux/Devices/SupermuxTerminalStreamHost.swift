@@ -217,16 +217,26 @@ final class SupermuxTerminalReplaySupersession: Sendable {
 
     /// What the writer sends in place of the reply once its turn comes: the
     /// `superseded` error when a newer request of the same pane arrived.
+    /// Once superseded, always (a newer serial never goes back). The writer
+    /// may ask more than once (a superseded reply waiting as bulk goes
+    /// first); the DEBUG log line counts it once.
     func replacement(for ticket: Ticket?, requestID: Any?) -> (@Sendable () -> Data?)? {
         guard let ticket,
               let frame = try? MobileSyncFrameCodec.encodeFrame(MobileHostRPCEnvelope.error(
                   id: requestID, code: "superseded", message: "A newer replay of this terminal was requested"
               )) else { return nil }
         let state = state
+        #if DEBUG
+        let logged = OSAllocatedUnfairLock(initialState: false)
+        #endif
         return {
             guard state.withLock({ $0.latest[ticket.key] != ticket.serial }) else { return nil }
             #if DEBUG
-            cmuxDebugLog("supermux.terminal.replay SUPERSEDED surface=\(ticket.key.prefix(8))")
+            let first = logged.withLock { logged in
+                defer { logged = true }
+                return !logged
+            }
+            if first { cmuxDebugLog("supermux.terminal.replay SUPERSEDED surface=\(ticket.key.prefix(8))") }
             #endif
             return frame
         }
