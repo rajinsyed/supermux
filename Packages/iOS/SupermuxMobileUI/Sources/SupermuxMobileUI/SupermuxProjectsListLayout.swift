@@ -132,7 +132,8 @@ public struct SupermuxProjectsListLayout: Sendable {
         ))
         // The route each shown Mac's session uses, one line per Mac, even
         // while the block is folded: the merged list has no per-Mac headers.
-        let routed = groups.map(\.header).filter { $0.route != nil && isShown($0) }
+        // A Mac that is reconnecting keeps its line, which shows that instead.
+        let routed = groups.map(\.header).filter { ($0.route != nil || $0.status != .connected) && isShown($0) }
         if !routed.isEmpty {
             builder.fork("routes", .macRoutes(routed))
         }

@@ -63,8 +63,8 @@ public enum SupermuxProjectsTableRowValue: Equatable, Sendable {
     case newWorktree(projectRowID: String, isPreparing: Bool)
     /// An expanded project with nothing under it.
     case notice
-    /// One caption line per connected Mac: its name and the route the
-    /// phone's session to it uses (`Direct · LAN · 6 ms`).
+    /// One caption line per Mac: its name and the route the phone's session
+    /// to it uses (`Direct · LAN · 6 ms`), or its status while it reconnects.
     case macRoutes([SupermuxProjectsMacHeader])
 
     /// The id of the row's swipe tray (``SupermuxSidebarSwipeRow``), or
