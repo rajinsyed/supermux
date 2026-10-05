@@ -283,7 +283,7 @@ actor MobileHostSerializedTransportWriter {
             supermuxBulkWaiters.remove(at: superseded).continuation.resume()
         } else if !waiters.isEmpty,
                   supermuxBulkWaiters.isEmpty || supermuxSmallWritesPassedBulk < Self.supermuxSmallWritesPerBulkTurn {
-            if !supermuxBulkWaiters.isEmpty { supermuxSmallWritesPassedBulk += 1 }
+            supermuxSmallWritesPassedBulk = supermuxBulkWaiters.isEmpty ? 0 : supermuxSmallWritesPassedBulk + 1
             waiters.removeFirst().resume()
         } else if !supermuxBulkWaiters.isEmpty {
             supermuxSmallWritesPassedBulk = 0
