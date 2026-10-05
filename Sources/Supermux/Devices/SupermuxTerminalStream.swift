@@ -44,10 +44,10 @@ final class SupermuxTerminalStream {
     /// gets its screen and this much history; the rest comes with a full
     /// replay once a pane shows it, its output is quiet and nobody types in
     /// it (the replay boundary's confirmation, ``fullReplayApplied(confirm:)``).
-    /// Until then any other full replay it needs asks for the short form too:
-    /// showing a pane often resizes its terminal on the other Mac, and that
-    /// grid re-anchor would otherwise fetch the whole history while the user
-    /// starts typing (review S2).
+    /// A grid re-anchor of a shown pane still asks for the whole history: a
+    /// short one there left Ghostty's soft-wrap flags on every other row
+    /// until the history came (2026-10-06, D7), so the echo waits for it when
+    /// showing the pane resizes its terminal on the other Mac.
     static let hiddenScrollbackRows = 100
     /// Drops this Mac's scrollback before a full replay: a screen-anchored
     /// replay without history repaints in place and would keep stale rows.
@@ -378,9 +378,8 @@ final class SupermuxTerminalStream {
     func replayParams(expectedSequence: UInt64?, grid: (columns: Int, rows: Int)?) -> [String: Any] {
         guard isActive else { return [:] }
         // A hidden mirror that attached before (it has an epoch) asks for its
-        // screen and a short history, and so does one that still owes the rest
-        // from such a reply, unless this is the re-capture that fetches it.
-        requestIsShallow = epoch != nil && (hidden || (historyIsShallow && !confirming))
+        // screen and a short history; the rest comes once it is shown.
+        requestIsShallow = hidden && epoch != nil
         var params: [String: Any] = [
             SupermuxTerminalStreamHost.streamParam: 1,
             SupermuxTerminalStreamHost.replayOwnerParam: replayOwner,
