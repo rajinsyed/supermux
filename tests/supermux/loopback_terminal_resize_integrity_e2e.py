@@ -36,24 +36,29 @@ terminals' render grids (`mobile.terminal.replay` on this control socket; see
                                       grid changes (the cold cap, one per 400 ms cap window, the
                                       leave), not one per step;
                                     - the mirror replays per applied grid, not per step: at most
-                                      2 x `applied_grid_changes` + 2 full replays. Each grid that
-                                      lands costs its replay, plus a re-anchor when the next grid
-                                      lands while that replay is in flight (verdict `behind`);
-                                      the + 2 is the confirmation replay once output is quiet and
-                                      a pane-geometry commit after the leave that restores the
-                                      pane's pixel box (a host grid generation at the same
-                                      cols x rows, which the sampler cannot see).
-                                    Per-step replays fail either way: 20 replays against the ~8
+                                      `applied_grid_changes` + 8 full replays. Beyond each applied
+                                      grid's own replay the stream adds, by its own limits
+                                      (SupermuxTerminalStream): one chain of `behind` re-anchors
+                                      while the host's grid event (sampled at most once a second)
+                                      catches up with the last landing, capped at 4
+                                      (maxConsecutiveGridReanchors) before it backs off;
+                                      confirmation replays once output is quiet, at most 3 in a row
+                                      (maximumConfirmationsInRow); and one pane-geometry commit
+                                      after the leave that restores the pane's pixel box (a host
+                                      grid generation at the same cols x rows, which the sampler
+                                      cannot see).
+                                    Per-step replays fail either way: 20 replays against the 11
                                     that 3 applied grids allow, or, with an ungoverned PTY, ~20
                                     applied grids against a governor bound of ~5.
                                     History: until 2026-10-05 the budget was 4 (the governor was
                                     wedged by the previous step's clear, so the drag never reached
                                     the PTY); then a fixed 6, which failed on the stream's own
                                     variance (5, 6, 7 replays). At 6a16a4ac47e the PTY took 3
-                                    grids in each of 7 runs while the mirror replayed 4-6 times, so
-                                    `applied_grid_changes` + 2 failed one run in seven (6 replays:
-                                    three `behind` re-anchors on the first cap, then the
-                                    pane-geometry commit)
+                                    grids in each of 11 runs while the mirror replayed 4 to 8
+                                    times; the extra replays were `behind` re-anchors (1 to 4 in a
+                                    row), the geometry commit and 1 confirmation, never more
+                                    applied grids, so `applied_grid_changes` + 2 failed 2 runs in
+                                    11 (6 and 8 replays)
 
 Usage:
   CMUX_TAG=<tag> python3 tests/supermux/loopback_terminal_resize_integrity_e2e.py [--report PATH]
@@ -225,6 +230,13 @@ class GridSampler:
         }
 
 
+# The full replays a drag may cost beyond one per applied grid, by the stream's own limits
+# (Sources/Supermux/Devices/SupermuxTerminalStream.swift): one chain of `behind` re-anchors
+# (maxConsecutiveGridReanchors), confirmations once output is quiet (maximumConfirmationsInRow),
+# and the pane-geometry commit after the leave.
+STREAM_EXTRA_REPLAYS = 4 + 3 + 1
+
+
 def drag_verdict(applied: Optional[Dict[str, Any]], changes: int, replays: int, governor_bound: int,
                  steps: int) -> Optional[str]:
     """What is wrong with a drag (None when nothing): `applied` is the
@@ -236,7 +248,7 @@ def drag_verdict(applied: Optional[Dict[str, Any]], changes: int, replays: int, 
         return f"the drag never reached the PTY (governor applied {applied})"
     if changes > governor_bound:
         return f"{changes} grid changes reached the PTY for one drag of {steps} steps (governor bound {governor_bound})"
-    if replays > 2 * changes + 2:
+    if replays > changes + STREAM_EXTRA_REPLAYS:
         return f"{replays} full replays for {changes} applied grid changes ({steps} steps)"
     return None
 
@@ -589,7 +601,7 @@ class ResizeIntegrityE2E:
         governor_bound = 2 + math.ceil(drag_seconds / 0.4)
         result.update({"grid_steps": steps, "full_replays": replays, "governor_applied": applied,
                        "drag_seconds": round(drag_seconds, 2), "governor_bound": governor_bound,
-                       "replay_bound": 2 * changes + 2, "stream": stream, **sampled})
+                       "replay_bound": changes + STREAM_EXTRA_REPLAYS, "stream": stream, **sampled})
         if sampled["sampler_error"] or sampled["grid_samples"] < 10:
             raise Failure(f"the grid sampler did not run, so the step proves nothing: {result}")
         problem = drag_verdict(applied, changes, replays, governor_bound, steps)
