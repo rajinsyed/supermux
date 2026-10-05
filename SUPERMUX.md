@@ -353,7 +353,9 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   a phone-sized grid even while the Mac window is on screen; typing, a paste, a focus click, a scroll
   (a wheel notch or a gesture's start, never its momentum) or switching to the app with the terminal
   (or its TextBox) focused gives it back to the Mac; another Mac's mirror takes
-  it when it attaches, is shown again or types, and a phone when it types (over its input lane as
+  it when it attaches, is shown again or types, or when the user picks Size to My Window on it or
+  switches to the app with it focused (its report carries `view_appeared`, activity in every mode,
+  #973), and a phone when it types (over its input lane as
   over RPC, #960–#963). A phone's claim lasts while it views: the replay a mounted phone sends after
   a reconnect claims like its viewport report instead of expiring after 5 s (#964), and a connection
   closing drops only the reports it wrote last, so an old connection's late close never drops what
@@ -410,7 +412,8 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   from a mirror takes the mirror's size at once; with nobody else counting it does, so the last viewer
   leaving puts the terminal back on the pane's own grid at once;
   a mirror still off screen when its link reconnects keeps not counting (the other Mac forgets the
-  override with the connection, and the re-attach sends it again); a terminal that starts after its
+  override with the connection, and the re-attach sends it again, also after that Mac relaunched:
+  the mirror drops the old host's state with the link, #972); a terminal that starts after its
   grid was decided gets it when it becomes ready. A terminal's tab draws no avatar for the attached
   Macs (#720); its context menu keeps Size to My Window, Terminal Size and Disconnect Others, and the
   size panel lists who is attached.
