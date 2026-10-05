@@ -171,6 +171,7 @@ final class SupermuxTerminalStream {
         backgroundTask?.cancel()
         backgroundTask = nil
         guard hidden else {
+            shownAt = .now
             setBackground(false)
             resumePendingConfirmation()
             return
@@ -203,6 +204,14 @@ final class SupermuxTerminalStream {
     /// its request. A hidden pane's confirmation waits for its show, then for
     /// quiet output. (Until 2026-10-05 the wait polled at 10 Hz, and a
     /// terminal printing every second chained full replays.)
+    ///
+    /// Each one also waits until nothing was typed into the pane for
+    /// ``inputIdle``, nor since it was last shown: a multi-MB reply shares
+    /// the link with the echo (on one ordered stream it holds it for its
+    /// whole transfer), and the pane the user just looked at is the one
+    /// they are about to type in. A keystroke moves the wait on. The re-capture
+    /// itself keeps the pane attached (the session's live re-capture): output
+    /// is drawn as it comes and again over the new screen.
     private var lastBytesAt: ContinuousClock.Instant?
     private var bytesDuringAttach = false
     private var requestRacedOutput = false
@@ -227,6 +236,13 @@ final class SupermuxTerminalStream {
     /// (`SupermuxTerminalByteCoalescer.backgroundWindow`).
     static let backgroundOutputRaceWindow: Duration = .milliseconds(750)
     static let outputQuiet: Duration = .milliseconds(400)
+    /// How long a re-capture of the pane waits after its last keystroke, and
+    /// after the pane was shown.
+    static let inputIdle: Duration = .seconds(3)
+    /// When typing last went to the pane (the session's input pipeline).
+    var lastInputAt: (@MainActor () -> ContinuousClock.Instant?)?
+    /// When the pane was last shown.
+    private var shownAt: ContinuousClock.Instant?
     static let maximumConfirmationQuiet: Duration = .seconds(8)
     static let maximumConfirmationsInRow = 3
     static let confirmationTolerance: Duration = .milliseconds(100)
@@ -324,10 +340,15 @@ final class SupermuxTerminalStream {
         grid.needsFullReplay = true
     }
 
-    /// When output will have been quiet for `quiet`; nil once it has.
+    /// When output will have been quiet for `quiet`, and the pane free of
+    /// typing (and shown) for ``inputIdle``; nil once both hold.
     private func quietDeadline(after quiet: Duration) -> ContinuousClock.Instant? {
-        guard let lastBytesAt else { return nil }
-        let deadline = lastBytesAt + quiet
+        let deadlines = [
+            lastBytesAt.map { $0 + quiet },
+            lastInputAt?().map { $0 + Self.inputIdle },
+            shownAt.map { $0 + Self.inputIdle },
+        ]
+        guard let deadline = deadlines.compactMap({ $0 }).max() else { return nil }
         return deadline > .now ? deadline : nil
     }
 

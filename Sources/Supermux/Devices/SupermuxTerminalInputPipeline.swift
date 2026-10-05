@@ -85,6 +85,9 @@ final class SupermuxTerminalInputPipeline {
     /// stream the other Mac lost): the keys the mirror's router still holds
     /// were typed after it, so they go too, never landing without it.
     var onInputDropped: (@MainActor () -> Void)?
+    /// When the router last handed this pipeline a batch: the pane's
+    /// typing, which a history fetch waits out (``SupermuxTerminalStream``).
+    private(set) var lastInputAt: ContinuousClock.Instant?
 
     init(
         surfaceID: UUID,
@@ -134,6 +137,7 @@ final class SupermuxTerminalInputPipeline {
     /// itself, one request at a time.
     func offer(_ batch: SupermuxTerminalInputBatch) -> Bool {
         guard !invalidated else { return true }
+        lastInputAt = .now
         // Input still waiting to be sent again goes first: a later batch never
         // takes upstream's path ahead of it while capabilities are unknown.
         guard isSupported() || !outbox.isEmpty else { return false }
