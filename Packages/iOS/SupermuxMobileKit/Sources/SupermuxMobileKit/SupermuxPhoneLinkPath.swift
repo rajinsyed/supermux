@@ -12,6 +12,9 @@ public struct SupermuxPhoneLinkPath: Equatable, Sendable {
     public let remoteAddress: String
     /// QUIC's smoothed round trip on the path, in milliseconds.
     public let rttMs: UInt64?
+    /// The admitted session's id; a new one means the phone dialed the Mac
+    /// again (a reconnect, a move between direct and relay).
+    public let sessionID: String?
 
     /// Creates a path.
     /// - Parameters:
@@ -20,11 +23,20 @@ public struct SupermuxPhoneLinkPath: Equatable, Sendable {
     ///   - isRelay: Whether the path is relayed.
     ///   - remoteAddress: The relay URL or the Mac's socket address.
     ///   - rttMs: The round trip in milliseconds.
-    public init(macDeviceID: String, instanceTag: String?, isRelay: Bool, remoteAddress: String, rttMs: UInt64?) {
+    ///   - sessionID: The admitted session's id.
+    public init(
+        macDeviceID: String,
+        instanceTag: String?,
+        isRelay: Bool,
+        remoteAddress: String,
+        rttMs: UInt64?,
+        sessionID: String? = nil
+    ) {
         self.macDeviceID = macDeviceID
         self.instanceTag = instanceTag
         self.isRelay = isRelay
         self.remoteAddress = remoteAddress
         self.rttMs = rttMs
+        self.sessionID = sessionID
     }
 }

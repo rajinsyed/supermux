@@ -15,7 +15,12 @@ public struct SupermuxRouteCandidatesClient: SupermuxRouteCandidatesCalling {
 
     public func routeCandidates() async throws -> SupermuxRouteCandidatesDTO {
         let request = try MobileCoreRPCClient.requestData(method: SupermuxMobileMethod.routeCandidates.rawValue)
-        let result = try await client.sendRequest(request)
+        let result: Data
+        do {
+            result = try await client.sendRequest(request)
+        } catch MobileShellConnectionError.rpcError(let code?, _) {
+            throw SupermuxRouteCandidatesRefusal(code: code)
+        }
         return try JSONDecoder().decode(SupermuxRouteCandidatesDTO.self, from: result)
     }
 }

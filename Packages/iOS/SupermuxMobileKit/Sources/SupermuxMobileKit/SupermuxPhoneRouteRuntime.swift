@@ -14,9 +14,21 @@ public protocol SupermuxPhoneRouteRuntime: Sendable {
     ///   - answer: The Mac's `route.candidates` answer.
     ///   - macDeviceID: The Mac that answered.
     ///   - instanceTag: Its build tag, if any.
+    /// - Returns: ``SupermuxRouteCandidateFetchSchedule/Answer/stored``, or
+    ///   ``SupermuxRouteCandidateFetchSchedule/Answer/empty`` when the answer
+    ///   listed nothing the phone keeps (the old addresses stay), or
+    ///   ``SupermuxRouteCandidateFetchSchedule/Answer/failed`` when it could
+    ///   not be filed under the Mac (unknown Mac, another endpoint's answer).
     func supermuxRecordRouteCandidates(
         _ answer: SupermuxRouteCandidatesDTO,
         macDeviceID: String,
         instanceTag: String?
-    ) async
+    ) async -> SupermuxRouteCandidateFetchSchedule.Answer
+
+    /// Forgets a Mac's direct addresses: it said its direct paths are off
+    /// (relay-only), so the phone must not dial it directly.
+    /// - Parameters:
+    ///   - macDeviceID: The Mac.
+    ///   - instanceTag: Its build tag, if any.
+    func supermuxForgetRouteCandidates(macDeviceID: String, instanceTag: String?) async
 }

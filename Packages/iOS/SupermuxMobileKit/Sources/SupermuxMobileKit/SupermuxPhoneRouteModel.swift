@@ -46,7 +46,11 @@ public final class SupermuxPhoneRouteModel {
     /// - Parameters:
     ///   - runtime: The phone's Iroh runtime.
     ///   - now: The clock.
-    public init(runtime: any SupermuxPhoneRouteRuntime, now: @escaping @Sendable () -> Date = { Date() }) {
+    public init(
+        runtime: any SupermuxPhoneRouteRuntime,
+        now: @escaping @Sendable () -> Date = { Date() },
+        localInterfaces: @escaping @Sendable () -> [SupermuxLocalInterface] = { SupermuxLocalInterface.current() }
+    ) {  // RED STUB: interfaces unused
         self.runtime = runtime
         self.now = now
     }
@@ -135,7 +139,7 @@ public final class SupermuxPhoneRouteModel {
         Task { [weak self] in
             let answer = try? await caller.routeCandidates()
             if let answer {
-                await runtime.supermuxRecordRouteCandidates(answer, macDeviceID: deviceID, instanceTag: tag)
+                _ = await runtime.supermuxRecordRouteCandidates(answer, macDeviceID: deviceID, instanceTag: tag)
             }
             self?.fetchFinished(pairingID: pairingID, connectionID: connectionID, stored: answer != nil)
         }

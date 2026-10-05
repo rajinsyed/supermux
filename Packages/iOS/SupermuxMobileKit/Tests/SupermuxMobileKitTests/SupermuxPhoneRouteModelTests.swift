@@ -20,30 +20,73 @@ import Testing
 /// 9. A failed ask is retried on every sample.
 /// 10. A Mac that does not serve its addresses is asked anyway.
 /// 11. The answer reaches the dialer without the Mac it came from.
+/// 12. After the Mac answered once, a failed ask is retried on every sample
+///     (every 2 s) instead of a minute later (review finding I4).
+/// 13. The phone dials the Mac again (a reconnect, a move between direct and
+///     relay) on the same RPC connection and is not asked again, so it keeps
+///     the addresses from before the Mac's network changed (I10).
+/// 14. An empty answer (a Mac before its first network report) settles the
+///     question for ten minutes instead of a minute.
+/// 15. A Mac that turned its direct paths off keeps its addresses on the
+///     phone, which keeps dialing them.
+/// 16. A global IPv6 path inside the phone's own /64 shows as
+///     "Direct · Internet" instead of the LAN.
 @MainActor
 @Suite struct SupermuxPhoneRouteModelTests {
     private actor FakeRuntime: SupermuxPhoneRouteRuntime {
         var paths: [SupermuxPhoneLinkPath] = []
         private(set) var recorded: [(answer: SupermuxRouteCandidatesDTO, deviceID: String, tag: String?)] = []
+        private(set) var forgotten: [(deviceID: String, tag: String?)] = []
 
         func set(_ paths: [SupermuxPhoneLinkPath]) { self.paths = paths }
         func supermuxLinkPaths() async -> [SupermuxPhoneLinkPath] { paths }
-        func supermuxRecordRouteCandidates(_ answer: SupermuxRouteCandidatesDTO, macDeviceID: String, instanceTag: String?) async {
+        func supermuxRecordRouteCandidates(
+            _ answer: SupermuxRouteCandidatesDTO, macDeviceID: String, instanceTag: String?
+        ) async -> SupermuxRouteCandidateFetchSchedule.Answer {
             recorded.append((answer, macDeviceID, instanceTag))
+            return SupermuxRouteCandidateFetchSchedule.Answer(addresses: answer.addresses)
+        }
+        func supermuxForgetRouteCandidates(macDeviceID: String, instanceTag: String?) async {
+            forgotten.append((macDeviceID, instanceTag))
         }
         var recordedCount: Int { recorded.count }
     }
 
     private final class FakeCandidates: SupermuxRouteCandidatesCalling, @unchecked Sendable {
+        enum Reply {
+            case addresses([String])
+            case failure
+            case refusal(String)
+        }
+
         private let lock = NSLock()
         private var count = 0
-        let fails: Bool
-        init(fails: Bool = false) { self.fails = fails }
+        private var replies: [Reply]
+        private let fallback: Reply
+
+        init(fails: Bool = false) {
+            replies = []
+            fallback = fails ? .failure : .addresses(["192.168.1.5:58465"])
+        }
+
+        /// Answers `replies` in order, then the last one forever.
+        init(replies: [Reply]) {
+            self.replies = replies
+            fallback = replies.last ?? .failure
+        }
+
         var calls: Int { lock.withLock { count } }
+
         func routeCandidates() async throws -> SupermuxRouteCandidatesDTO {
-            lock.withLock { count += 1 }
-            if fails { throw URLError(.timedOut) }
-            return SupermuxRouteCandidatesDTO(endpointID: "abc", addresses: ["192.168.1.5:58465"])
+            let reply = lock.withLock { () -> Reply in
+                count += 1
+                return replies.isEmpty ? fallback : replies.removeFirst()
+            }
+            switch reply {
+            case .addresses(let addresses): return SupermuxRouteCandidatesDTO(endpointID: "abc", addresses: addresses)
+            case .failure: throw URLError(.timedOut)
+            case .refusal(let code): throw SupermuxRouteCandidatesRefusal(code: code)
+            }
         }
     }
 
@@ -72,10 +115,18 @@ import Testing
             candidates: candidates)
     }
 
-    private func path(tag: String?, device: String = Self.device, relay: Bool = false, rtt: UInt64? = 6) -> SupermuxPhoneLinkPath {
+    private func path(
+        tag: String?, device: String = Self.device, relay: Bool = false, rtt: UInt64? = 6,
+        address: String = "192.168.1.5:58465", session: String? = nil
+    ) -> SupermuxPhoneLinkPath {
         SupermuxPhoneLinkPath(
             macDeviceID: device, instanceTag: tag, isRelay: relay,
-            remoteAddress: relay ? "https://apne1.relay.cmux.dev/" : "192.168.1.5:58465", rttMs: rtt)
+            remoteAddress: relay ? "https://apne1.relay.cmux.dev/" : address, rttMs: rtt, sessionID: session)
+    }
+
+    /// Refreshes until the Mac's ask is no longer out.
+    private func settle(_ model: SupermuxPhoneRouteModel, _ mac: SupermuxPhoneRouteMac) async throws {
+        try await TestWait().until { !model.isFetchingCandidates(pairingID: mac.pairingID) }
     }
 
     @Test func routeShowsUnderItsPairing() async {
@@ -245,5 +296,98 @@ import Testing
         try await Task.sleep(for: .milliseconds(30))
         #expect(await runtime.recordedCount == 0)
         #expect(!model.isFetchingCandidates(pairingID: laptop.pairingID))
+    }
+
+    @Test func aFailedAskAfterAnAnswerWaitsAMinuteToo() async throws {
+        let runtime = FakeRuntime()
+        let clock = Clock()
+        let candidates = FakeCandidates(replies: [.addresses(["192.168.1.5:58465"]), .failure])
+        let laptop = mac(tag: "nightly", connection: Connection(), candidates: candidates)
+        let model = SupermuxPhoneRouteModel(runtime: runtime, now: { clock.now })
+        await model.refresh(macs: [laptop])
+        try await TestWait().until { candidates.calls == 1 }
+        try await settle(model, laptop)
+        clock.advance(601)
+        await model.refresh(macs: [laptop])
+        try await TestWait().until { candidates.calls == 2 }
+        try await settle(model, laptop)
+        clock.advance(2)
+        await model.refresh(macs: [laptop])
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(candidates.calls == 2, "a failed refresh was retried on the next sample")
+        clock.advance(59)
+        await model.refresh(macs: [laptop])
+        try await TestWait().until { candidates.calls == 3 }
+    }
+
+    @Test func aNewSessionOnTheSameConnectionIsAskedAgain() async throws {
+        let runtime = FakeRuntime()
+        let clock = Clock()
+        let candidates = FakeCandidates()
+        let laptop = mac(tag: "nightly", connection: Connection(), candidates: candidates)
+        let model = SupermuxPhoneRouteModel(runtime: runtime, now: { clock.now })
+        await runtime.set([path(tag: "nightly", relay: true, session: "s1")])
+        await model.refresh(macs: [laptop])
+        try await TestWait().until { candidates.calls == 1 }
+        try await settle(model, laptop)
+        clock.advance(2)
+        await model.refresh(macs: [laptop])
+        // The path drops out while the phone redials: not a new session yet.
+        await runtime.set([])
+        clock.advance(2)
+        await model.refresh(macs: [laptop])
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(candidates.calls == 1)
+        await runtime.set([path(tag: "nightly", relay: true, session: "s2")])
+        clock.advance(2)
+        await model.refresh(macs: [laptop])
+        try await TestWait().until { candidates.calls == 2 }
+    }
+
+    @Test func anEmptyOrNotReadyAnswerIsAskedAgainInAMinute() async throws {
+        let runtime = FakeRuntime()
+        let clock = Clock()
+        let candidates = FakeCandidates(replies: [
+            .addresses([]), .refusal(SupermuxRouteCandidates.notReadyErrorCode), .addresses(["192.168.1.5:58465"]),
+        ])
+        let laptop = mac(tag: "nightly", connection: Connection(), candidates: candidates)
+        let model = SupermuxPhoneRouteModel(runtime: runtime, now: { clock.now })
+        for expected in 1...3 {
+            await model.refresh(macs: [laptop])
+            try await TestWait().until { candidates.calls == expected }
+            try await settle(model, laptop)
+            clock.advance(61)
+        }
+        // The third answer listed an address: settled for ten minutes.
+        await model.refresh(macs: [laptop])
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(candidates.calls == 3)
+        #expect(await runtime.forgotten.isEmpty)
+    }
+
+    @Test func aMacWithDirectOffIsForgotten() async throws {
+        let runtime = FakeRuntime()
+        let candidates = FakeCandidates(replies: [.refusal(SupermuxRouteCandidates.directOffErrorCode)])
+        let laptop = mac(tag: "nightly", connection: Connection(), candidates: candidates)
+        let model = SupermuxPhoneRouteModel(runtime: runtime)
+        await model.refresh(macs: [laptop])
+        try await TestWait().until { candidates.calls == 1 }
+        try await settle(model, laptop)
+        let forgotten = await runtime.forgotten
+        #expect(forgotten.map(\.deviceID) == [Self.device])
+        #expect(forgotten.first?.tag == "nightly")
+    }
+
+    @Test func aGlobalIPv6PathInsideThePhonesSubnetIsTheLAN() async {
+        let runtime = FakeRuntime()
+        let laptop = mac(tag: "nightly", connection: Connection())
+        let home = [SupermuxLocalInterface(name: "en0", address: "2001:db8:1:2::20", prefixLength: 64, isPointToPoint: false)!]
+        let model = SupermuxPhoneRouteModel(runtime: runtime, localInterfaces: { home })
+        await runtime.set([path(tag: "nightly", address: "[2001:db8:1:2::5]:58465")])
+        await model.refresh(macs: [laptop])
+        #expect(model.routes[laptop.pairingID]?.kind == .direct(.lan))
+        await runtime.set([path(tag: "nightly", address: "[2001:db8:9:9::5]:58465")])
+        await model.refresh(macs: [laptop])
+        #expect(model.routes[laptop.pairingID]?.kind == .direct(.internet))
     }
 }
