@@ -63,6 +63,18 @@ Steps:
      without it (the phone) still selects.
  13. unfocused_remote_create_keeps_selection: a remote create whose mirror
      opens without focus changes no selection on either side.
+ 14. prompt_images_need_text: an image attached on the Loopback Mac puts the
+     sheet in Start Claude mode, hides the (not yet known) launch line and
+     keeps Start disabled until there is text; a non-image is refused with a
+     sentence, the same image is not added twice, and removing it re-enables
+     Create.
+ 15. prompt_images_reach_other_mac: Start Claude on the Loopback Mac with an
+     image uploads it (agent.attachment.upload): the terminal there echoes the
+     prompt followed by "Attached images:" and the image's path in that Mac's
+     attachment store, whose bytes match, with its folder as --add-dir.
+ 16. prompt_images_on_this_mac: the same on This Mac copies the image into a
+     private folder of its own (0700, file 0600) under the cmux state
+     directory, and the launch line names it the same way.
 
 `--only a,b` runs just those steps (after 1-2) and records each result.
 
@@ -76,17 +88,22 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
+import re
 import shutil
+import stat
+import struct
 import subprocess
 import sys
 import threading
 import time
 import uuid
+import zlib
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from loopback_device_smoke import (  # noqa: E402
@@ -719,6 +736,132 @@ class PickerE2E:
             raise SmokeFailure(f"an unfocused remote create changed the selection: {before} -> {after}")
         return {"remote_workspace_id": remote_id, "mirror_workspace_id": mirror_id}
 
+    # -- prompt images ---------------------------------------------------------
+
+    def write_png(self, name: str) -> Tuple[Path, str]:
+        """A small valid PNG (stdlib only, its pixels keyed to the run) and its SHA-256."""
+        width, height = 4, 4
+        seed = int(self.nonce[:6], 16)
+        pixel = bytes([seed >> 16 & 0xFF, seed >> 8 & 0xFF, seed & 0xFF])
+        raw = b"".join(b"\x00" + pixel * width for _ in range(height))
+
+        def chunk(kind: bytes, data: bytes) -> bytes:
+            return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+        png = (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+               + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+        path = self.root / name
+        path.write_bytes(png)
+        return path, hashlib.sha256(png).hexdigest()
+
+    def echoed_attachment(self, workspace_id: str, marker: str, file_name: str) -> Dict[str, Any]:
+        """Waits for the echo launch in `workspace_id` and returns the image
+        path and --add-dir folder its output names (soft wraps removed; the
+        typed line quotes its arguments, so only the output matches)."""
+        pattern = re.compile(r"Attached images:(/\S+?/" + re.escape(file_name) + ")")
+
+        def found() -> Optional[Dict[str, Any]]:
+            surfaces = (self.client.call("surface.list", {"workspace_id": workspace_id}) or {}).get("surfaces") or []
+            for surface in surfaces:
+                surface_id = surface.get("id") or surface.get("surface_id")
+                text = str((self.client.call(
+                    "surface.read_text",
+                    {"workspace_id": workspace_id, "surface_id": surface_id, "scrollback": True},
+                ) or {}).get("text") or "")
+                flat = text.replace("\r", "").replace("\n", "")
+                match = pattern.search(flat) if f"say {marker}" in flat else None
+                if match:
+                    path = match.group(1)
+                    return {"path": path, "add_dir": f"--add-dir {os.path.dirname(path)} --" in flat,
+                            "surface_id": surface_id}
+            return None
+
+        return wait_for("the launch to echo the prompt and its image path", found, self.timeout_s)
+
+    def check_image_copy(self, echoed: Dict[str, Any], digest: str, store: Path) -> Dict[str, Any]:
+        path = Path(echoed["path"])
+        if store not in path.parents:
+            raise SmokeFailure(f"the image path {path} is not in {store}")
+        if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != digest:
+            raise SmokeFailure(f"{path} is missing or differs from the attached image")
+        if not echoed["add_dir"]:
+            raise SmokeFailure(f"the launch line does not pass --add-dir {path.parent}")
+        return {"image_path": str(path), "folder_mode": oct(stat.S_IMODE(path.parent.stat().st_mode)),
+                "file_mode": oct(stat.S_IMODE(path.stat().st_mode))}
+
+    def check_prompt_images_need_text(self) -> Dict[str, Any]:
+        self.ensure_echo_command()
+        image, _ = self.write_png(f"img-{self.nonce}-check.png")
+        not_image = self.root / f"notes-{self.nonce}.txt"
+        not_image.write_text("not an image\n", encoding="utf-8")
+        session = self.open_session(preferred_device=self.machine)["session_id"]
+        state = self.call("load", {"session_id": session}, timeout_s=180)
+        if not state.get("can_attach_images") or not (state.get("target") or {}).get("supports_prompt_attachments"):
+            raise SmokeFailure(f"the Loopback Mac does not take prompt images: {state}")
+        state = self.call("fill", {"session_id": session, "prompt": "", "attachments": [str(image)]})
+        if state.get("attachments") != [str(image)] or not state.get("has_prompt"):
+            raise SmokeFailure(f"the image did not attach in Start Claude mode: {state}")
+        if state.get("can_create") or state.get("preview_line") is not None:
+            raise SmokeFailure(f"images without text must keep Start disabled and the line unpreviewed: {state}")
+        state = self.call("fill", {"session_id": session, "attachments": [str(not_image), str(image)]})
+        if state.get("attachments") != [str(image)] or not state.get("error_message"):
+            raise SmokeFailure(f"a non-image was not refused with a sentence (or the image doubled): {state}")
+        refusal = state.get("error_message")
+        state = self.call("remove_attachment", {"session_id": session, "index": 0})
+        if state.get("attachments") or state.get("has_prompt") or not state.get("can_create"):
+            raise SmokeFailure(f"removing the image did not restore the plain sheet: {state}")
+        self.call("close", {"session_id": session})
+        return {"refusal": refusal}
+
+    def check_prompt_images_reach_other_mac(self) -> Dict[str, Any]:
+        self.ensure_echo_command()
+        name = f"img-{self.nonce}-remote.png"
+        image, digest = self.write_png(name)
+        session = self.open_session(preferred_device=self.machine)["session_id"]
+        self.call("load", {"session_id": session}, timeout_s=180)
+        marker = f"picker-image-{self.nonce}"
+        result = self.call(
+            "submit",
+            {"session_id": session, "prompt": f"say {marker}", "command": "echo", "attachments": [str(image)]},
+            timeout_s=300,
+        )
+        facts = self.check_mirror_selected(result)
+        echoed = self.echoed_attachment(facts["remote_workspace_id"], marker, name)
+        store = Path.home() / ".cache" / "cmux" / "task-attachments"
+        facts.update(self.check_image_copy(echoed, digest, store))
+        return facts
+
+    def check_prompt_images_on_this_mac(self) -> Dict[str, Any]:
+        self.ensure_echo_command()
+        name = f"img-{self.nonce}-local.png"
+        image, digest = self.write_png(name)
+        branch = f"picker-image-local-{self.nonce}"
+        session = self.open_session(preferred_device=THIS_MAC)["session_id"]
+        state = self.call("load", {"session_id": session}, timeout_s=180)
+        if state.get("selected_entry_id") != THIS_MAC:
+            raise SmokeFailure(f"the sheet did not open on This Mac: {state.get('selected_entry_id')}")
+        marker = f"picker-image-local-{self.nonce}"
+        result = self.call(
+            "submit",
+            {"session_id": session, "prompt": f"say {marker}", "command": "echo", "attachments": [str(image)],
+             "workspace_name": f"picker image {self.nonce}", "branch_name": branch},
+            timeout_s=300,
+        )
+        if not result.get("finished"):
+            raise SmokeFailure(f"Start Claude on This Mac did not finish: {result}")
+        worktree = self.adopt_orphan(branch)
+        if not worktree or not worktree.get("workspace_id"):
+            raise SmokeFailure(f"the launch on This Mac opened no workspace for {branch}: {worktree}")
+        echoed = self.echoed_attachment(worktree["workspace_id"], marker, name)
+        store = Path.home() / ".local" / "state" / "cmux" / "supermux-agent-attachments"
+        facts = self.check_image_copy(echoed, digest, store)
+        if facts["folder_mode"] != "0o700" or facts["file_mode"] != "0o600":
+            raise SmokeFailure(f"the copy is not private: {facts}")
+        if Path(facts["image_path"]) == image:
+            raise SmokeFailure("the launch names the attached file itself, not a private copy")
+        facts["workspace_id"] = worktree["workspace_id"]
+        return facts
+
     # -- cleanup -------------------------------------------------------------
 
     def cleanup(self) -> None:
@@ -800,6 +943,9 @@ class PickerE2E:
             ("dropped_link_start_claude_reports_unknown_outcome", lambda: self.check_dropped_link(prompt=True)),
             ("host_open_keeps_selection_for_other_macs", self.check_host_open_keeps_selection),
             ("unfocused_remote_create_keeps_selection", self.check_unfocused_remote_create),
+            ("prompt_images_need_text", self.check_prompt_images_need_text),
+            ("prompt_images_reach_other_mac", self.check_prompt_images_reach_other_mac),
+            ("prompt_images_on_this_mac", self.check_prompt_images_on_this_mac),
         ]
         try:
             self.step("device_connected", self.check_device)

@@ -13,7 +13,9 @@ import SupermuxKit
 /// Methods (suffix after `supermux.devices.new_worktree.`):
 /// `open {project_id, preferred_device?, window_id?}` → session state,
 /// `select {session_id, entry_id}`, `load {session_id}`,
-/// `fill {session_id, prompt?, workspace_name?, branch_name?, base_branch?, command?}`,
+/// `fill {session_id, prompt?, workspace_name?, branch_name?, base_branch?, command?, attachments?}`
+/// (`attachments`: image file paths, added as a paste or drop adds them),
+/// `remove_attachment {session_id, index}`,
 /// `submit {session_id, <fill fields>, await_open?, stop_link_after_seconds?}`,
 /// `state {session_id}`, `close {session_id}`, `last_device {set?}` (the one
 /// remembered Mac; `set` replaces it and returns `previous`),
@@ -59,6 +61,12 @@ enum SupermuxNewWorktreeSocketCommands {
         case "fill":
             let session = try session(params)
             fill(session.model, params)
+            return state(session)
+        case "remove_attachment":
+            let session = try session(params)
+            let index = (params["index"] as? NSNumber)?.intValue ?? -1
+            guard session.model.attachments.indices.contains(index) else { throw invalid("index names no attachment") }
+            session.model.removeAttachment(id: session.model.attachments[index].id)
             return state(session)
         case "submit":
             return try await submit(params, payloads: payloads)
@@ -124,6 +132,9 @@ enum SupermuxNewWorktreeSocketCommands {
             model.baseBranchWasEdited = true
         }
         if let command = params["command"] as? String { model.selectCommand(command) }
+        if let paths = params["attachments"] as? [String] {
+            model.addAttachments(paths.map { URL(fileURLWithPath: $0) })
+        }
     }
 
     /// Fills the fields, presses Create / Start Claude, waits for the flow,
@@ -230,6 +241,7 @@ enum SupermuxNewWorktreeSocketCommands {
                 "project_id": target.projectID.uuidString,
                 "remote_device_name": target.remoteDeviceName ?? NSNull(),
                 "supports_agent_launch": target.supportsAgentLaunch,
+                "supports_prompt_attachments": target.supportsPromptAttachments,
             ]
         } ?? NSNull()
         return [
@@ -252,7 +264,10 @@ enum SupermuxNewWorktreeSocketCommands {
             "status_message": model.statusMessage ?? NSNull(),
             "error_message": model.errorMessage ?? NSNull(),
             "can_create": model.canCreate,
+            "has_prompt": model.hasPrompt,
             "shows_prompt_editor": model.showsPromptEditor,
+            "can_attach_images": model.canAttachImages,
+            "attachments": model.attachments.map(\.fileURL.path),
             "preview_line": model.previewLine ?? NSNull(),
             "set_up_requests": session.setUps.names,
         ]
