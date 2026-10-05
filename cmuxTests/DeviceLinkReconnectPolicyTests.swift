@@ -96,7 +96,7 @@ struct DeviceLinkReconnectPolicyTests {
         _ = policy.apply(.waitElapsed)
         #expect(policy.apply(.connectSucceeded, now: connectedAt) == .connected)
         #expect(policy.apply(.supermuxPlannedRedial, now: connectedAt) == .waiting(
-            attempt: 0, delay: SupermuxRouteSwitchPolicy.plannedRedialSettle))
+            attempt: 0, delay: SupermuxDeviceLinkBackoff.plannedRedialSettle))
         #expect(policy.apply(.waitElapsed) == .connecting(attempt: 1), "a move is not a failure: the streak starts over")
         #expect(policy.apply(.supermuxPlannedRedial) == .connecting(attempt: 1), "only a live link moves")
         _ = policy.apply(.connectSucceeded, now: connectedAt)

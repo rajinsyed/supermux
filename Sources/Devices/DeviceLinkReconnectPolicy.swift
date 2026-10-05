@@ -171,7 +171,7 @@ struct DeviceLinkReconnectPolicy: Equatable, Sendable {
             supermuxSession = nil
             connectedSince = nil
             // The settle lets the old session release its slot; `waitElapsed` dials attempt 1.
-            phase = .waiting(attempt: 0, delay: SupermuxRouteSwitchPolicy.plannedRedialSettle)
+            phase = .waiting(attempt: 0, delay: SupermuxDeviceLinkBackoff.plannedRedialSettle)
         // SUPERMUX:end route-switch
         case .waitElapsed:
             guard case .waiting(let attempt, _) = phase else { return phase }

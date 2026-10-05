@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import SupermuxKit
+@testable import SupermuxMobileCore
 
 /// When a remote Mac's link moves between the direct lane and the relay.
 ///

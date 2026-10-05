@@ -1,6 +1,8 @@
-public import Foundation
+import Foundation
 
-/// When one remote Mac's link moves between the direct lane and the relay.
+/// When a link to one of the user's Macs moves between the direct lane and
+/// the relay. Shared by the Mac (its links to other Macs) and the phone (its
+/// sessions to each Mac).
 ///
 /// A dial races the direct lane (the other Mac's LAN and Tailscale addresses
 /// on a relay-less endpoint) against the relay, direct first. This decides
@@ -12,9 +14,9 @@ public import Foundation
 ///
 /// Pure state, one per link: the owner feeds it the live session's path about
 /// once a second and the answers to the probes and checks it asked for, and
-/// acts on what it returns. The redials themselves go through the link's own
-/// reconnect policy (``SupermuxDeviceLinkSession``), so a fall back from a
-/// session that proved nothing still waits its backoff.
+/// acts on what it returns. The redials themselves go through the owner's own
+/// reconnect policy (on the Mac, the link's: a fall back from a session that
+/// proved nothing still waits its backoff).
 ///
 /// ```swift
 /// policy.sessionStarted(at: now)
@@ -61,12 +63,9 @@ public struct SupermuxRouteSwitchPolicy: Equatable, Sendable {
     public static let holdOffBase: TimeInterval = 30
     public static let holdOffCap: TimeInterval = 600
     /// A direct session up this long proves the path; the flap count starts over.
-    public static let stableDirectLifetime: TimeInterval = SupermuxDeviceLinkSession.provenLifetime
+    public static let stableDirectLifetime: TimeInterval = 120
     /// Probe waits are spread by up to this fraction either way, so links do not probe in step.
     public static let jitterFraction = 0.2
-    /// How long a link waits between leaving its session for a better path and
-    /// dialing again, so the old session has released its slot.
-    public static let plannedRedialSettle: Duration = .milliseconds(300)
 
     /// The live session's number (each start bumps it); answers carry it so
     /// an answer about an ended session is ignored.

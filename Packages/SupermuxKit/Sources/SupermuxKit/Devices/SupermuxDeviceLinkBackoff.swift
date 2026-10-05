@@ -14,6 +14,10 @@ public enum SupermuxDeviceLinkBackoff {
     /// failed together (one Mac's mirrors, several Macs after a network
     /// change) do not dial in step.
     public static let jitterFraction = 0.2
+    /// How long a link waits between leaving its session for a better path
+    /// (a planned redial: the route switcher moving it to the direct lane)
+    /// and dialing again, so the old session has released its slot.
+    public static let plannedRedialSettle: Duration = .milliseconds(300)
 
     /// The wait before the next dial after `failures` consecutive failures.
     public static func delay(afterFailures failures: Int) -> Duration {
