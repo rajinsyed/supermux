@@ -50,6 +50,22 @@ extension MobileShellComposite {
         ownerKey == foregroundMacKey ? remoteClient : secondaryMacSubscriptions[ownerKey]?.client
     }
 
+    // MARK: Hidden under another tab
+
+    /// Records whether a mounted terminal is hidden under another tab with
+    /// the phone's counts off, the state its dedicated reports carry as
+    /// `counts_override: false`.
+    /// - Parameters:
+    ///   - hidden: `true` while hidden with the phone's counts off.
+    ///   - surfaceID: The terminal surface id.
+    public func supermuxSetTerminalCountsHidden(_ hidden: Bool, surfaceID: String) {
+        if hidden {
+            supermuxCountsHiddenSurfaceIDs.insert(surfaceID)
+        } else {
+            supermuxCountsHiddenSurfaceIDs.remove(surfaceID)
+        }
+    }
+
     // MARK: Detached
 
     /// Shows the Detached card when the Mac refuses a terminal request with

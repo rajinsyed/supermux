@@ -1749,6 +1749,11 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
     /// goes to that Mac even after the phone switched to another one.
     @ObservationIgnored var supermuxViewportLeaseOwnersBySurfaceID: [String: MacPairingKey] = [:]
     // SUPERMUX:end sizing-clear-lease-owner
+    // SUPERMUX:begin sizing-hidden-terminal
+    /// Terminals hidden under another tab whose reports set
+    /// `counts_override: false`, so their viewport piggybacks say it too.
+    @ObservationIgnored var supermuxCountsHiddenSurfaceIDs: Set<String> = []
+    // SUPERMUX:end sizing-hidden-terminal
     /// Monotonic viewport fences scoped to the Mac app instance that consumes
     /// them. Warm Iroh focus swaps keep both peer connections alive, so their
     /// counters must survive independently for the signed-in account lifetime.
