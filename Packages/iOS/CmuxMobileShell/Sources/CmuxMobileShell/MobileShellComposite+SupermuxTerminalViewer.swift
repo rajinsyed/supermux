@@ -66,6 +66,22 @@ extension MobileShellComposite {
         }
     }
 
+    /// Adds `counts_override: false` to a hidden terminal's request that
+    /// carries its grid (a replay, an input or a paste). Any of them can
+    /// attach the phone, a reconnect's replay first of all, and the Mac keeps
+    /// a generation-carrying replay as a sticky claim, so without the flag
+    /// the hidden terminal would take the grid before its dedicated report
+    /// lands. Never `null`: once shown, only the dedicated report clears the
+    /// override, so a piggyback cannot undo one the user set.
+    /// - Parameters:
+    ///   - params: The request parameters, with the grid already merged in.
+    ///   - surfaceID: The terminal surface id.
+    func supermuxMarkCountsHidden(_ params: inout [String: Any], surfaceID: String) {
+        guard params["viewport_columns"] != nil,
+              supermuxCountsHiddenSurfaceIDs.contains(surfaceID) else { return }
+        params["counts_override"] = false
+    }
+
     // MARK: Detached
 
     /// Shows the Detached card when the Mac refuses a terminal request with

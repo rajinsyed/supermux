@@ -400,8 +400,14 @@ struct GhosttySurfaceRepresentable: UIViewControllerRepresentable {
         /// Whether the terminal is the workspace's shown tab.
         var terminalSurfaceShown = true
         /// The phone set `counts_override: false` because the terminal is
-        /// hidden under another tab; every report carries it until shown.
-        var phoneHidesCounts = false
+        /// hidden under another tab; every report carries it until shown,
+        /// and the store adds it to every request that carries the grid.
+        var phoneHidesCounts = false {
+            didSet {
+                guard phoneHidesCounts != oldValue else { return }
+                store?.supermuxSetTerminalCountsHidden(phoneHidesCounts, surfaceID: surfaceID)
+            }
+        }
         /// Shown again after the phone hid its counts: the next delivered
         /// report carries `counts_override: null`.
         var countsRestorePending = false
@@ -1331,9 +1337,10 @@ struct GhosttySurfaceRepresentable: UIViewControllerRepresentable {
 
         // SUPERMUX:begin sizing-reconnect-report
         /// A new Mac connection was adopted. The Mac dropped this phone's
-        /// sticky report with the old one, and the replay piggyback that
-        /// re-registers it is not sticky, so an on-screen terminal sends a
-        /// fresh dedicated report with a fresh retry budget.
+        /// sticky report with the old one. The replay piggyback re-registers
+        /// it (sticky when it carries a generation) but never says
+        /// `view_appeared` or clears a counts override, so an on-screen
+        /// terminal sends a fresh dedicated report with a fresh retry budget.
         /// - Parameter generation: The store's remote-client generation.
         func supermuxRemoteClientChanged(to generation: UInt64) {
             guard generation != appliedRemoteClientGeneration else { return }
@@ -1361,6 +1368,9 @@ struct GhosttySurfaceRepresentable: UIViewControllerRepresentable {
         // SUPERMUX:end sizing-soft-leave
 
         func detach() {
+            // SUPERMUX:begin sizing-hidden-terminal (an unmounted terminal no longer hides its counts)
+            if phoneHidesCounts { store?.supermuxSetTerminalCountsHidden(false, surfaceID: surfaceID) }
+            // SUPERMUX:end sizing-hidden-terminal
             outputConsumerRecoveryAlertPending = false
             stopMountedTasks(releaseViewport: true)
             surfaceView = nil

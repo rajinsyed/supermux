@@ -14256,6 +14256,9 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
         if let generation = terminalViewportGeneration(for: terminalID.rawValue) {
             params["viewport_generation"] = Int(clamping: generation)
         }
+        // SUPERMUX:begin sizing-hidden-terminal (a hidden terminal's grid does not count)
+        supermuxMarkCountsHidden(&params, surfaceID: terminalID.rawValue)
+        // SUPERMUX:end sizing-hidden-terminal
         return params
     }
 
@@ -14378,6 +14381,9 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
                     params["viewport_generation"] = Int(clamping: generation)
                 }
             }
+            // SUPERMUX:begin sizing-hidden-terminal (a hidden terminal's grid does not count)
+            supermuxMarkCountsHidden(&params, surfaceID: terminalID.rawValue)
+            // SUPERMUX:end sizing-hidden-terminal
             let responseData = try await client.sendRequest(
                 MobileCoreRPCClient.requestData(
                     method: "terminal.paste",
@@ -16320,6 +16326,9 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
                     "surface_id": surfaceID,
                 ]
                 params.merge(replayViewportParams) { _, new in new }
+                // SUPERMUX:begin sizing-hidden-terminal (read at send time, as the dedicated report's flag is)
+                self?.supermuxMarkCountsHidden(&params, surfaceID: surfaceID)
+                // SUPERMUX:end sizing-hidden-terminal
                 // Screen-anchored replays hydrate this device's deep local
                 // scrollback only when the mirror has none (cold attach, a
                 // rebuilt-blank surface). Steady-state replays request no
