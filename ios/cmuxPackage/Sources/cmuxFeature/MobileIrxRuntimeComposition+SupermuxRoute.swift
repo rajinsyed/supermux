@@ -16,9 +16,10 @@ public import SupermuxMobileKit
 ///   used is learned too.
 /// - **Race.** An automatic dial with addresses on hand races the
 ///   direct-only endpoint (the Direct method's, relay disabled, same
-///   identity) against the automatic dial, direct first
-///   (``SupermuxDialRace``). A direct-lane session never authorizes NAT
-///   traversal.
+///   identity) against the automatic dial, direct first, with the Mac's
+///   race (``supermuxRace(direct:automatic:discard:)``): direct wins
+///   whenever it connects within 1.5 s. A direct-lane session never
+///   authorizes NAT traversal.
 /// - **Prober.** While the app is active, a relayed session's direct lane
 ///   is probed on ``SupermuxRouteUpgradeSchedule``'s schedule; a probe that
 ///   works moves the session with one planned redial, whose race lands on
@@ -129,16 +130,20 @@ extension MobileIrxRuntimeComposition: SupermuxPhoneRouteRuntime {
         return (result.value, result.lane, true)
     }
 
-    /// The phone's dial race: `direct` on the direct lane against
-    /// `automatic`, direct first.
+    /// The phone's dial race, which is the Mac's (``SupermuxIrxDirectFirstDial``
+    /// at its standard timing). `direct` starts at once; `automatic` after
+    /// 250 ms, or as soon as `direct` fails. Direct wins whenever it connects
+    /// within 1.5 s, even when `automatic` is ready first: that connection is
+    /// held, then closed. Exactly one connection comes out.
     /// - Returns: The winner, its lane, and what each leg did (journal fields).
     static func supermuxRace<Value: Sendable>(
         direct: @escaping @Sendable () async throws -> Value,
         automatic: @escaping @Sendable () async throws -> Value,
         discard: @escaping @Sendable (Value) async -> Void
     ) async throws -> (value: Value, lane: SupermuxDialLane, journalFields: [String: String]) {
-        let result = try await SupermuxDialRace().run(direct: direct, fallback: automatic, discard: discard)
-        return (result.value, result.lane, [:])
+        let outcome = try await SupermuxIrxDirectFirstDial.race(
+            timing: .standard, direct: direct, relay: automatic, discard: discard)
+        return (outcome.value, outcome.leg == .direct ? .direct : .automatic, outcome.journalFields)
     }
 
     /// A dial's admission failed: a direct-lane one makes the next dial skip
@@ -237,14 +242,10 @@ extension MobileIrxRuntimeComposition: SupermuxPhoneRouteRuntime {
     private func supermuxProbe(peerHex: String, session: IrxClientSession, addresses: [String]) async {
         let started = ContinuousClock.now
         var worked = false
-        if let lane = supermuxDirectLane(),
-           let address = try? lane.dialAddress(peerEndpointIDHex: peerHex, relayURL: nil, directAddresses: addresses),
-           let probe = try? await SupermuxDialRace().run(
-               direct: { try await lane.dial(address: address, credentials: []) },
-               fallback: nil,
-               discard: { await $0.close(code: .explicitRedial, origin: .local) }) {
-            await probe.value.close(code: .explicitRedial, origin: .local)
-            worked = true
+        if let lane = supermuxDirectLane() {
+            worked = await SupermuxIrxDirectFirstDial.probe(
+                lane: lane, peerEndpointIDHex: peerHex, addresses: addresses,
+                deadline: SupermuxIrxDirectFirstDial.Timing.standard.directDeadline) != nil
         }
         let move = supermuxRouteSchedules[peerHex, default: .init()].probeFinished(
             succeeded: worked, now: Date(), jitter: Double.random(in: -1...1))

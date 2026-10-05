@@ -4,7 +4,8 @@ public import Foundation
 /// relay, and when a probe that worked moves the session there.
 ///
 /// One per Mac. A probe is one direct handshake that is never admitted
-/// (``SupermuxDialRace`` with no fallback). The move is one planned redial,
+/// (the app runs it with the Mac's `SupermuxIrxDirectFirstDial.probe`,
+/// bounded by 1.5 s). The move is one planned redial,
 /// whose dial race then lands on the direct lane. Probes run every
 /// ``probeInterval`` (±``jitterFraction``) while the session is relayed and
 /// the Mac's direct addresses are known, slowing to ``slowProbeInterval``
