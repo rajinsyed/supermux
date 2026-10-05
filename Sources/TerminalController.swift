@@ -259,12 +259,16 @@ class TerminalController {
         var deviceKind: TerminalDeviceKind = .iphone; var deviceName: String? = nil
         /// The viewer's stable per-install `device_id`, when it sent one.
         var deviceID: String? = nil
+        // SUPERMUX:begin sizing-sticky-replay (upstream's doc named only the dedicated report as sticky)
         /// Sticky reports come from the dedicated `mobile.terminal.viewport`
-        /// RPC and live for the client's connection lifetime (cleared on
-        /// disconnect or surface detach), so an idle paired device keeps its
-        /// viewport border. Non-sticky reports piggyback on `terminal.input`
-        /// and expire on the TTL so a client that only ever typed once does
-        /// not pin the grid forever.
+        /// RPC, and from a `mobile.terminal.replay` that carries a viewport
+        /// generation (a mounted viewer's reconnect), and live for the
+        /// client's connection lifetime (cleared on disconnect or surface
+        /// detach), so an idle paired device keeps its viewport border.
+        /// Non-sticky reports piggyback on `terminal.input` (and a
+        /// generationless replay) and expire on the TTL so a client that only
+        /// ever typed once does not pin the grid forever.
+        // SUPERMUX:end sizing-sticky-replay
         var sticky: Bool = false
         // SUPERMUX:begin sizing-report-connection (the phone connection that last wrote this report; nil from the control socket)
         var connectionID: UUID? = nil

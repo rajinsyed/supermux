@@ -361,7 +361,10 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   keyboard or rotation grid, and the Mac's grid after the phone left, reached the PTY only after a
   relaunch). Another Mac's mirror takes the grid when it attaches, is shown again or types, or when the
   user picks Size to My Window on it or switches to the app with it focused (its report carries
-  `view_appeared`, activity in every mode; until 2026-10-05 both did nothing in Auto, #973); a phone when
+  `view_appeared`, activity in every mode; until 2026-10-05 both did nothing in Auto, #973; the claim also
+  carries the counts lift when Size to My Window turns counting back on, so the two cannot arrive out of
+  order, and a mirror shown again after a reconnect lifts an automatic false the other Mac may have kept
+  across it, #631); a phone when
   it types, over its input lane as over RPC (until 2026-10-05 lane typing, the phone's usual path, was
   nobody's activity, #960–#963). A phone's claim lasts while it views: the replay a mounted phone sends
   after a reconnect claims like its viewport report (until 2026-10-05 it expired after 5 s, #964), each
@@ -376,7 +379,7 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   resized the terminal twice, #970, #975, #990–#991). A phone's clear goes to the Mac that holds its lease, so
   switching the phone to another Mac releases the first (#999–#1000). A phone someone disconnected types
   nothing over its lane either and is told again on each connection (the `detached` refusal carries the
-  detachment and re-sends `mobile.terminal.detached`, #965–#966; the phone applies the refusal itself,
+  detachment and re-sends `mobile.terminal.detached` once the connection subscribes to it, #965–#966; the phone applies the refusal itself,
   #1001–#1003), so a relaunched phone shows its Detached card and Reattach. Upstream's rule that a phone
   defers to a Mac pane on screen is lifted in Auto by giving each phone without an override of its own
   `counts_override: true` (cleared when the terminal leaves Auto; "Counts toward size" off on the phone
@@ -391,7 +394,9 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   reverse: an awake phone follows the Mac's selection, so a phone that attaches to or starts viewing a
   terminal within 3 s of this Mac's user selecting it (a workspace, a tab or a pane, by their own input;
   never a socket or the phone) leaves the Mac pane the owner, and typing on the phone still takes it
-  (until 2026-10-05 the phone took every terminal the Mac's user opened, #968–#969). A phone that
+  (until 2026-10-05 the phone took every terminal the Mac's user opened, #968–#969). Another Mac's
+  mirror attaching or coming on screen is held the same way, but its Size to My Window or activation
+  claim always wins (`SupermuxTerminalSizingAuto.viewersReported`). A phone that
   returns to a terminal it never left (its view only left the window, so it keeps its viewport) flags
   its next report `view_appeared`, which the host counts as starting to view; the flag stays pending
   until a report carrying it is delivered (#881–#883; an older Mac ignores the flag and waits for the

@@ -42,7 +42,9 @@ import Foundation
 /// user just selected, which would take the grid from the Mac. So a phone
 /// attaching to or starting to view a terminal within 3 s of this Mac's
 /// user selecting it leaves the Mac pane the newest
-/// (``macUserSelected(workspace:)``, ``macUserSelected(panelID:)``).
+/// (``macUserSelected(workspace:)``, ``macUserSelected(panelID:)``). A
+/// mirror's Size to My Window or activation claim still wins: it is never a
+/// view following this Mac's selection.
 ///
 /// Only this Mac's user is the Mac pane's activity (``isMacPaneActivity``).
 /// Every terminal input path runs the pane's explicit-input hook: a phone's
@@ -105,8 +107,14 @@ final class SupermuxTerminalSizingAuto {
         // Fit everyone to Auto wins whichever of its two requests lands first.
         let auto = host.state.policy.mode == .latest
         let appeared = viewAppearedClientID.map { LocalTerminalSizingHost.phoneParticipantID(clientID: $0) }
+        // Another Mac's mirror sends `view_appeared` only for its user's Size
+        // to My Window or app activation: an explicit claim, never a view
+        // that follows this Mac's selection, so it is noted last.
+        let mirrorClaim = appeared.flatMap { id in
+            host.state.participant(id)?.participant.deviceKind.isHandheld == false ? id : nil
+        }
         var phoneStarted = false
-        for id in host.phoneParticipantIDs {
+        for id in host.phoneParticipantIDs where id != mirrorClaim {
             if id == appeared || (auto && Self.startedViewing(id, now: host.state, before: previous)) {
                 host.noteActivity(id)
                 phoneStarted = true
@@ -115,6 +123,7 @@ final class SupermuxTerminalSizingAuto {
             }
         }
         if auto, phoneStarted { keepMacSelection(&host, surfaceID: surfaceID) }
+        if let mirrorClaim, host.phoneParticipantIDs.contains(mirrorClaim) { host.noteActivity(mirrorClaim) }
         reconcileCounts(&host, surfaceID: surfaceID)
     }
 
@@ -282,6 +291,9 @@ final class SupermuxTerminalSizingAuto {
     /// A phone attached to, or started viewing, a terminal this Mac's user
     /// selected a moment ago: the phone follows the Mac's selection (its
     /// terminal view remounts on the pushed tab), so the user is at the Mac.
+    /// Another Mac's mirror attaching or coming on screen is held the same
+    /// way (a tab this Mac's user just opened shows in that mirror too), but
+    /// never its explicit claim (``viewersReported``).
     /// The Mac pane's activity is noted after the phone's, so it stays the
     /// newest; typing on the phone still takes the grid. Only the Mac's own
     /// selection: a socket, automation or the phone's selection is not.

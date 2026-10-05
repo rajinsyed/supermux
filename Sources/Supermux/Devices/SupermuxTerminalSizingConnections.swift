@@ -1,3 +1,4 @@
+import CmuxMobileHost
 import CmuxTerminalSharing
 import Foundation
 
@@ -28,15 +29,21 @@ enum SupermuxMobileConnectionContext {
 /// The Mac keeps a Disconnect for the terminal's life, while the phone keeps
 /// it in memory only. A relaunched phone sent reports and replays that were
 /// refused, with no Detached card to explain it. The first refusal on a
-/// connection now pushes `mobile.terminal.detached` to the phone again.
+/// connection now pushes `mobile.terminal.detached` to the phone again, once
+/// the connection subscribes to it: a refusal that arrives while its
+/// `mobile.events.subscribe` is still in flight would drop the push, so it
+/// leaves the next refusal to tell it.
 @MainActor
 enum SupermuxMobileDetachAnnouncements {
     /// Terminal and client pairs announced, by connection.
     private static var announced: [UUID: Set<String>] = [:]
 
-    /// True the first time `clientID` is refused on `surfaceID` over `connectionID`.
+    /// True the first time `clientID` is refused on `surfaceID` over
+    /// `connectionID` while that connection subscribes to the push.
     static func firstRefusal(connectionID: UUID, surfaceID: UUID, clientID: String) -> Bool {
-        announced[connectionID, default: []].insert("\(surfaceID.uuidString)/\(clientID)").inserted
+        guard MobileHostConnectionRegistry.shared.connection(id: connectionID)?.eventQueue
+            .isSubscribed(topic: TerminalController.mobileDetachedTopic) == true else { return false }
+        return announced[connectionID, default: []].insert("\(surfaceID.uuidString)/\(clientID)").inserted
     }
 
     static func connectionClosed(_ connectionID: UUID) {

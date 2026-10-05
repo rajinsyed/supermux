@@ -39,6 +39,9 @@ final class SupermuxDeviceViewportGenerations {
     /// The remote terminals, per client id, where the host holds this Mac's
     /// automatic `counts_override: false`.
     private var hiddenCounts: [String: Set<UUID>] = [:]
+    /// The remote terminals, per client id, where the host may still hold
+    /// that false after the link dropped (the mirror lifts it on reattach).
+    private var mayHoldHiddenCounts: [String: Set<UUID>] = [:]
 
     /// Raises `viewer` to the floor of its client id and `surfaceID`.
     func raise(_ viewer: inout RemoteMacTerminalViewer?, surfaceID: UUID) {
@@ -106,6 +109,22 @@ final class SupermuxDeviceViewportGenerations {
             hiddenCounts[viewer.clientID, default: []].insert(surfaceID)
         } else {
             hiddenCounts[viewer.clientID]?.remove(surfaceID)
+        }
+    }
+
+    /// Whether the host may still hold this Mac's automatic false from
+    /// before the link dropped, for `viewer`'s link on `surfaceID`.
+    func mayHoldHiddenCounts(_ viewer: RemoteMacTerminalViewer?, surfaceID: UUID) -> Bool {
+        guard let viewer else { return false }
+        return mayHoldHiddenCounts[viewer.clientID]?.contains(surfaceID) ?? false
+    }
+
+    func setMayHoldHiddenCounts(_ mayHold: Bool, _ viewer: RemoteMacTerminalViewer?, surfaceID: UUID) {
+        guard let viewer else { return }
+        if mayHold {
+            mayHoldHiddenCounts[viewer.clientID, default: []].insert(surfaceID)
+        } else {
+            mayHoldHiddenCounts[viewer.clientID]?.remove(surfaceID)
         }
     }
 
