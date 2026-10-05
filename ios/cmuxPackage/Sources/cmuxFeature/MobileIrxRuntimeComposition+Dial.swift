@@ -251,7 +251,7 @@ extension MobileIrxRuntimeComposition {
             try await assertDialAuthority(authority)
             activeDialIntentByPeer[peerHex] = intent
             // SUPERMUX:begin phone-route-direct-race
-            supermuxSessionAdmitted(peerHex: peerHex, intent: intent, dialed: dialed)
+            supermuxSessionAdmitted(peerHex: peerHex, sessionID: admit.session, intent: intent, lane: dialed.lane)
             // SUPERMUX:end phone-route-direct-race
             admittedSessionCount += 1
             journal.record("v2-peer", "admitted", ["session": admit.session, "count": String(admittedSessionCount),

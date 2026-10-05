@@ -1,11 +1,14 @@
-// SUPERMUX:begin phone-route-direct-race (whole file: the phone's per-Mac route, direct-lane dial race and upgrade prober — see SUPERMUX-TOUCHPOINTS.md)
+// SUPERMUX:begin phone-route-direct-race (whole file: the phone's per-Mac route, direct-lane dial race and switch policy — see SUPERMUX-TOUCHPOINTS.md)
 import CMUXMobileCore
 import CmuxIrxTransport
 import Foundation
 public import SupermuxMobileCore
 public import SupermuxMobileKit
 
-/// The phone's side of "always direct, via Tailscale or the LAN".
+/// The phone's side of "always direct, via Tailscale or the LAN", on the
+/// switch policy the Mac runs for its links to other Macs
+/// (``SupermuxPhoneRoutePolicies`` over SupermuxMobileCore's
+/// `SupermuxRouteSwitchPolicy`).
 ///
 /// - **Route.** ``supermuxLinkPaths()`` reports every Mac session's
 ///   selected path for the Projects list (`SupermuxPhoneRouteModel`).
@@ -13,32 +16,32 @@ public import SupermuxMobileKit
 ///   authenticated link (`route.candidates`, fetched by the route model);
 ///   ``supermuxRecordRouteCandidates(_:macDeviceID:instanceTag:)`` keeps
 ///   them in a local file, never sent anywhere. A direct path a session
-///   used is learned too.
-/// - **Race.** An automatic dial with addresses on hand races the
+///   used is learned too. Dials and probes use only the ones the phone can
+///   reach from its interfaces now.
+/// - **Race.** An automatic dial with reachable addresses races the
 ///   direct-only endpoint (the Direct method's, relay disabled, same
-///   identity) against the automatic dial, direct first, with the Mac's
-///   race (``supermuxRace(direct:automatic:discard:)``): direct wins
-///   whenever it connects within 1.5 s. A direct-lane session never
-///   authorizes NAT traversal.
+///   identity), one handshake per address, against the automatic dial with
+///   the Mac's race (``supermuxRace(timing:direct:automatic:discard:)``):
+///   direct wins whenever it connects within 1.5 s. Not while the policy
+///   holds direct off after a flap, not once after a lane admission failed;
+///   where direct keeps losing, the race stops holding a ready relay. A
+///   direct-lane session never authorizes NAT traversal.
 /// - **Prober.** While the app is active, a relayed session's direct lane
-///   is probed on ``SupermuxRouteUpgradeSchedule``'s schedule; a probe that
-///   works moves the session with one planned redial, whose race lands on
-///   the direct lane.
+///   is probed when the policy says so; a probe that works moves the
+///   session with one planned redial, whose race lands on the direct lane.
 /// - **Fallback.** A direct-lane session has no relay path to fall back on,
-///   so one that goes silent, or stops answering after a network change, is
-///   redialed at once; the race then picks the relay.
+///   so the policy has it checked; two unanswered checks redial it, and the
+///   redial skips the lane while the flap's hold-off lasts.
+/// - **Network.** A burst of path updates (and each foreground) settles for
+///   a second, then the phone's interfaces decide: a real change clears the
+///   hold-offs, anything else only probes relayed sessions soon.
 extension MobileIrxRuntimeComposition: SupermuxPhoneRouteRuntime {
     /// The time between prober passes.
     static let supermuxRouteTickInterval: Duration = .seconds(2)
-    /// Silence on a direct-lane session that proves its path dead: two full
-    /// keepalive cycles (5 s interval + 2 s deadline each).
-    static let supermuxDirectSilenceWindow: Duration = .seconds(14)
-    /// How long a network change settles before direct-lane sessions are
-    /// checked, and each check's deadline.
+    /// How long the phone's network stays quiet before a change is judged.
     static let supermuxNetworkSettle: Duration = .seconds(1)
-    static let supermuxLivenessDeadline: Duration = .milliseconds(1500)
-    /// Network changes closer together than this re-probe only once.
-    static let supermuxNetworkDebounce: Duration = .seconds(3)
+    /// How long a probe's handshake may take.
+    static let supermuxProbeDeadline = SupermuxIrxDirectFirstDial.Timing.standard.directDeadline
 
     // MARK: - SupermuxPhoneRouteRuntime
 
@@ -53,7 +56,8 @@ extension MobileIrxRuntimeComposition: SupermuxPhoneRouteRuntime {
                 instanceTag: record.descriptor.identity.buildTag,
                 isRelay: sample.isRelay,
                 remoteAddress: sample.remoteAddress,
-                rttMs: sample.rttMs))
+                rttMs: sample.rttMs,
+                sessionID: session.admit.session))
         }
         return paths
     }
@@ -62,118 +66,123 @@ extension MobileIrxRuntimeComposition: SupermuxPhoneRouteRuntime {
         _ answer: SupermuxRouteCandidatesDTO,
         macDeviceID: String,
         instanceTag: String?
-    ) async {
-        guard let record = supermuxMacRecord(macDeviceID: macDeviceID, instanceTag: instanceTag) else { return }
+    ) async -> SupermuxRouteCandidateFetchSchedule.Answer {
+        guard let record = supermuxMacRecord(macDeviceID: macDeviceID, instanceTag: instanceTag) else { return .failed }
         let endpointID = record.descriptor.endpointID
         // Filed under the endpoint the directory names for this Mac; dials
         // to it are TLS-verified against that id, so a wrong address can only
         // waste a probe. An answer for another endpoint is dropped.
-        if let claimed = answer.endpointID, claimed.lowercased() != endpointID.lowercased() { return }
+        if let claimed = answer.endpointID, claimed.lowercased() != endpointID.lowercased() { return .failed }
         let key = Self.supermuxRoutePeerKey(record)
         let before = await supermuxRouteCandidates.dialAddresses(for: key)
-        await supermuxRouteCandidates.recordFetched(answer.addresses, for: key)
+        // An empty answer (a Mac before its first network report) keeps what the phone had.
+        let stored = await supermuxRouteCandidates.recordFetched(answer.addresses, for: key)
         let after = await supermuxRouteCandidates.dialAddresses(for: key)
         journal.record("supermux-route", "candidates", [
-            "peer": String(endpointID.prefix(12)), "count": String(after.count),
+            "peer": String(endpointID.prefix(12)), "count": String(after.count), "answer": stored ? "stored" : "empty",
         ])
-        if after != before { supermuxRouteSchedules[endpointID, default: .init()].candidatesChanged() }
+        if after != before { supermuxRoutePolicies.candidatesChanged(for: endpointID, at: Date()) }
         supermuxStartRouteLoopIfNeeded()
+        return stored ? .stored : .empty
+    }
+
+    public func supermuxForgetRouteCandidates(macDeviceID: String, instanceTag: String?) async {
+        guard let record = supermuxMacRecord(macDeviceID: macDeviceID, instanceTag: instanceTag) else { return }
+        await supermuxRouteCandidates.forget(Self.supermuxRoutePeerKey(record))
+        journal.record("supermux-route", "candidates", [
+            "peer": String(record.descriptor.endpointID.prefix(12)), "count": "0", "answer": "direct_off",
+        ])
     }
 
     // MARK: - Dial race
 
-    /// Dials a Mac for `dialOnce`. An automatic dial with the Mac's direct
-    /// addresses on hand races the direct lane against `automatic`; every
-    /// other dial is `automatic` alone.
+    /// Dials a Mac for `dialOnce`. An automatic dial races the direct lane
+    /// against `automatic` when the Mac's policy allows it and the phone can
+    /// reach one of the Mac's direct addresses; every other dial is
+    /// `automatic` alone.
     /// - Parameters:
     ///   - peerHex: The Mac's endpoint id.
     ///   - record: Its directory record.
     ///   - intent: The pairing's dial intent.
     ///   - privateAddresses: The user's Private Addresses for this Mac.
     ///   - automatic: The automatic endpoint's dial.
-    /// - Returns: The connection, its lane, and whether the direct lane raced.
+    /// - Returns: The connection and the lane it went out on.
     func supermuxDial(
         peerHex: String,
         record: V2DeviceRecord,
         intent: DialIntent,
         privateAddresses: [String],
         automatic: @escaping @Sendable () async throws -> IrxConnection
-    ) async throws -> (connection: IrxConnection, lane: SupermuxDialLane, raced: Bool) {
-        // A direct-lane admission that just failed sends the next dial to
-        // the automatic endpoint alone, so it can never loop without the relay.
-        let skipsRace = supermuxSkipRaceOnce.remove(peerHex) != nil
-        guard case .automatic = intent, !forceRelayOnly, !skipsRace else {
-            return (try await automatic(), .automatic, false)
-        }
-        let stored = await supermuxRouteCandidates.dialAddresses(for: Self.supermuxRoutePeerKey(record))
-        var seen = Set<String>()
-        let addresses = (stored + privateAddresses).filter { seen.insert($0).inserted }
-            .prefix(SupermuxRouteCandidates.limit)
-        guard !addresses.isEmpty, let lane = supermuxDirectLane(),
-              let address = try? lane.dialAddress(
-                  peerEndpointIDHex: peerHex, relayURL: nil, directAddresses: Array(addresses)) else {
-            return (try await automatic(), .automatic, false)
+    ) async throws -> (connection: IrxConnection, lane: SupermuxDialLane) {
+        guard case .automatic = intent, !forceRelayOnly else { return (try await automatic(), .automatic) }
+        let plan = supermuxRoutePolicies.dialPlan(for: peerHex, at: Date())
+        let addresses = plan.racesDirect
+            ? await supermuxDirectAddresses(record: record, privateAddresses: privateAddresses) : []
+        guard let lane = plan.racesDirect ? supermuxDirectLane() : nil,
+              let direct = SupermuxIrxDirectFirstDial.laneLeg(lane: lane, peerEndpointIDHex: peerHex, addresses: addresses)
+        else {
+            let reason = !plan.racesDirect ? "hold-off" : addresses.isEmpty ? "no-addresses" : "no-lane"
+            journal.record("supermux-route", "dial-direct-skipped", ["peer": String(peerHex.prefix(12)), "reason": reason])
+            return (try await automatic(), .automatic)
         }
         let started = ContinuousClock.now
         let result = try await Self.supermuxRace(
-            direct: { try await lane.dial(address: address, credentials: []) },
+            timing: plan.holdsRelay ? .standard : .noRelayHold,
+            direct: direct,
             automatic: automatic,
             discard: { await $0.close(code: .explicitRedial, origin: .local) })
-        let fields: [String: String] = [
+        supermuxRoutePolicies.raceFinished(for: peerHex, directWon: result.lane == .direct)
+        var fields: [String: String] = [
             "peer": String(peerHex.prefix(12)),
             "lane": result.lane.rawValue,
             "candidates": String(addresses.count),
             "elapsed_ms": String(Self.supermuxMilliseconds(started.duration(to: .now))),
             "path": result.value.selectedPathDescription(),
         ]
+        if !plan.holdsRelay { fields["holds_relay"] = "false" }
         journal.record("supermux-route", "dial-race", fields.merging(result.journalFields) { current, _ in current })
-        return (result.value, result.lane, true)
+        return (result.value, result.lane)
     }
 
-    /// The phone's dial race, which is the Mac's (``SupermuxIrxDirectFirstDial``
-    /// at its standard timing). `direct` starts at once; `automatic` after
-    /// 250 ms, or as soon as `direct` fails. Direct wins whenever it connects
-    /// within 1.5 s, even when `automatic` is ready first: that connection is
-    /// held, then closed. Exactly one connection comes out.
+    /// The phone's dial race, which is the Mac's (``SupermuxIrxDirectFirstDial``).
+    /// `direct` starts at once; `automatic` after 250 ms, or as soon as
+    /// `direct` fails. Direct wins whenever it connects within 1.5 s, even
+    /// when `automatic` is ready first (unless `timing` stops holding it):
+    /// that connection is held, then closed. Exactly one connection comes out.
     /// - Returns: The winner, its lane, and what each leg did (journal fields).
     static func supermuxRace<Value: Sendable>(
+        timing: SupermuxIrxDirectFirstDial.Timing = .standard,
         direct: @escaping @Sendable () async throws -> Value,
         automatic: @escaping @Sendable () async throws -> Value,
         discard: @escaping @Sendable (Value) async -> Void
     ) async throws -> (value: Value, lane: SupermuxDialLane, journalFields: [String: String]) {
         let outcome = try await SupermuxIrxDirectFirstDial.race(
-            timing: .standard, direct: direct, relay: automatic, discard: discard)
+            timing: timing, direct: direct, relay: automatic, discard: discard)
         return (outcome.value, outcome.leg == .direct ? .direct : .automatic, outcome.journalFields)
     }
 
     /// A dial's admission failed: a direct-lane one makes the next dial skip
-    /// the race.
+    /// the lane once.
     func supermuxAdmissionFailed(peerHex: String, lane: SupermuxDialLane) {
+        supermuxRoutePolicies.admissionFailed(for: peerHex, lane: lane)
         guard lane == .direct else { return }
-        supermuxSkipRaceOnce.insert(peerHex)
         journal.record("supermux-route", "direct-admission-failed", ["peer": String(peerHex.prefix(12))])
     }
 
-    /// Records the lane an admitted session used; arms the prober.
-    func supermuxSessionAdmitted(
-        peerHex: String,
-        intent: DialIntent,
-        dialed: (connection: IrxConnection, lane: SupermuxDialLane, raced: Bool)
-    ) {
-        guard case .automatic = intent else {
-            supermuxLaneByPeer[peerHex] = nil
-            return
-        }
-        supermuxLaneByPeer[peerHex] = dialed.lane
-        supermuxRouteSchedules[peerHex, default: .init()].sessionAdmitted(
-            direct: dialed.lane == .direct, directTried: dialed.raced, now: Date())
+    /// A session was admitted: an automatic one is followed by the Mac's
+    /// policy (and arms the prober); any other is not.
+    func supermuxSessionAdmitted(peerHex: String, sessionID: String, intent: DialIntent, lane: SupermuxDialLane) {
+        var followed: SupermuxDialLane?
+        if case .automatic = intent { followed = lane }
+        supermuxRoutePolicies.sessionAdmitted(
+            for: peerHex, sessionID: sessionID, lane: followed, at: Date(), jitter: .random(in: 0...1))
         supermuxStartRouteLoopIfNeeded()
     }
 
     /// The direct-only endpoint, built on first use with this installation's
     /// identity (the same construction as the Direct method's). Nil in
     /// relay-only mode and before the live identity is known.
-    private func supermuxDirectLane() -> IrxEndpointSupervisor? {
+    func supermuxDirectLane() -> IrxEndpointSupervisor? {
         guard !forceRelayOnly, let identity else { return nil }
         if let directEndpointSupervisor { return directEndpointSupervisor }
         let lane = IrxEndpointSupervisor(configuration: IrxEndpointConfiguration(
@@ -181,6 +190,14 @@ extension MobileIrxRuntimeComposition: SupermuxPhoneRouteRuntime {
             initialRemoteUniStreams: 0), journal: journal, diagnosticLog: diagnosticLog)
         directEndpointSupervisor = lane
         return lane
+    }
+
+    /// The Mac's direct addresses the phone can reach now (its handed-over
+    /// and learned ones, then `privateAddresses`).
+    private func supermuxDirectAddresses(record: V2DeviceRecord, privateAddresses: [String] = []) async -> [String] {
+        let stored = await supermuxRouteCandidates.dialAddresses(for: Self.supermuxRoutePeerKey(record))
+        return SupermuxPhoneRoutePolicies.directAddresses(
+            stored: stored, privateAddresses: privateAddresses, interfaces: SupermuxLocalInterface.current())
     }
 
     // MARK: - Prober
@@ -198,111 +215,130 @@ extension MobileIrxRuntimeComposition: SupermuxPhoneRouteRuntime {
         }
     }
 
-    /// One pass over the automatic sessions; false ends the loop.
+    /// One pass over the followed Macs; false ends the loop.
     private func supermuxRouteTick() async -> Bool {
         guard applicationActive else {
             supermuxRouteLoop = nil
             return false
         }
-        for (peerHex, engine) in enginesByPeer {
-            guard case .automatic = dialIntentByPeer[peerHex] ?? .automatic,
-                  let record = supermuxMacRecord(endpointID: peerHex),
-                  let session = await engine.currentSession(),
-                  let sample = session.connection.supermuxSelectedPathSample() else { continue }
-            let key = Self.supermuxRoutePeerKey(record)
-            if sample.isRelay {
-                await supermuxProbeIfDue(peerHex: peerHex, key: key, session: session)
-            } else {
-                // Every phone session is outgoing, so its direct path is one
-                // the Mac accepts dials on. Only LAN and Tailscale are kept.
-                if let scope = SupermuxSocketAddress(sample.remoteAddress)?.routeScope, scope != .internet {
-                    await supermuxRouteCandidates.learn(sample.remoteAddress, for: key)
-                }
-                if supermuxLaneByPeer[peerHex] == .direct,
-                   await session.connection.applicationSilenceEvidence(
-                       since: .now - Self.supermuxDirectSilenceWindow) == .silent {
-                    await supermuxRedial(peerHex: peerHex, engine: engine, replacing: session, reason: "fallback-silent")
-                }
-            }
+        for peerHex in supermuxRoutePolicies.followedMacs {
+            await supermuxRouteStep(peerHex: peerHex, now: Date())
         }
         return true
     }
 
-    private func supermuxProbeIfDue(peerHex: String, key: SupermuxRoutePeerKey, session: IrxClientSession) async {
-        guard supermuxRouteSchedules[peerHex, default: .init()].probeDue(
-            onRelay: true, hasCandidates: true, now: Date()) else { return }
-        let addresses = await supermuxRouteCandidates.dialAddresses(for: key)
-        guard !addresses.isEmpty else { return }
-        supermuxRouteSchedules[peerHex, default: .init()].probeStarted()
-        Task { await self.supermuxProbe(peerHex: peerHex, session: session, addresses: addresses) }
+    /// Feeds one Mac's live session to its policy and starts what it asks for.
+    private func supermuxRouteStep(peerHex: String, now: Date) async {
+        let engine = enginesByPeer[peerHex]
+        let session = await engine?.currentSession()
+        let sample = session?.connection.supermuxSelectedPathSample()
+        let record = supermuxMacRecord(endpointID: peerHex)
+        if let sample, !sample.isRelay, let record {
+            // Every phone session is outgoing, so its direct path is one the
+            // Mac accepts dials on; the store keeps only servable addresses.
+            await supermuxRouteCandidates.learn(sample.remoteAddress, for: Self.supermuxRoutePeerKey(record))
+        }
+        var hasCandidates = false
+        if sample?.isRelay == true, let record {
+            hasCandidates = await !supermuxDirectAddresses(record: record).isEmpty
+        }
+        let step = supermuxRoutePolicies.observe(
+            peerHex,
+            sessionID: session?.admit.session,
+            sample: sample.map { SupermuxPhoneRoutePolicies.Sample(isRelay: $0.isRelay, hasRelayPath: $0.hasRelayPath) },
+            hasCandidates: hasCandidates,
+            at: now)
+        guard let engine, let session else { return }
+        switch step {
+        case .none:
+            break
+        case .probe(let number):
+            Task { await self.supermuxProbe(peerHex: peerHex, engine: engine, session: session, number: number) }
+        case .checkLiveness(let number):
+            Task { await self.supermuxCheck(peerHex: peerHex, engine: engine, session: session, number: number) }
+        }
     }
 
     /// One direct handshake that is never admitted; a success may move the
     /// session.
-    private func supermuxProbe(peerHex: String, session: IrxClientSession, addresses: [String]) async {
+    private func supermuxProbe(peerHex: String, engine: IrxPeerEngine, session: IrxClientSession, number: Int) async {
         let started = ContinuousClock.now
-        var worked = false
-        if let lane = supermuxDirectLane() {
-            worked = await SupermuxIrxDirectFirstDial.probe(
-                lane: lane, peerEndpointIDHex: peerHex, addresses: addresses,
-                deadline: SupermuxIrxDirectFirstDial.Timing.standard.directDeadline) != nil
+        var took: Duration?
+        if let record = supermuxMacRecord(endpointID: peerHex), let lane = supermuxDirectLane() {
+            took = await SupermuxIrxDirectFirstDial.probe(
+                lane: lane, peerEndpointIDHex: peerHex,
+                addresses: await supermuxDirectAddresses(record: record),
+                deadline: Self.supermuxProbeDeadline)
         }
-        let move = supermuxRouteSchedules[peerHex, default: .init()].probeFinished(
-            succeeded: worked, now: Date(), jitter: Double.random(in: -1...1))
+        let action = supermuxRoutePolicies.probeFinished(
+            for: peerHex, session: number, succeeded: took != nil, at: Date(), jitter: .random(in: 0...1))
         journal.record("supermux-route", "probe", [
-            "peer": String(peerHex.prefix(12)), "ok": String(worked), "move": String(move),
+            "peer": String(peerHex.prefix(12)), "ok": String(took != nil), "move": String(action == .upgrade),
+            "failures": String(supermuxRoutePolicies.policy(for: peerHex)?.probeFailures ?? 0),
             "elapsed_ms": String(Self.supermuxMilliseconds(started.duration(to: .now))),
         ])
-        guard move, let engine = enginesByPeer[peerHex],
-              session.connection.supermuxSelectedPathSample()?.isRelay == true else { return }
-        await supermuxRedial(peerHex: peerHex, engine: engine, replacing: session, reason: "upgrade")
+        guard action == .upgrade, await supermuxMayRedial(engine, replacing: session) else { return }
+        // Only a move that happened spaces the next one and counts as a
+        // flap should it land on the relay.
+        supermuxRoutePolicies.upgradeStarted(for: peerHex, at: Date())
+        await supermuxRedial(peerHex: peerHex, engine: engine, reason: "upgrade")
     }
 
-    /// One planned redial of a Mac's session, if it is still the current one
-    /// and the app is active. The new dial races the direct lane again.
-    private func supermuxRedial(
-        peerHex: String, engine: IrxPeerEngine, replacing session: IrxClientSession, reason: String
-    ) async {
-        guard applicationActive, await engine.currentSession()?.admit.session == session.admit.session else { return }
+    /// Whether a direct session still answers: its peer's bytes arrived
+    /// lately, or it answers a ping (at once within a few seconds of a real
+    /// network change). Two misses fall back to the relay.
+    private func supermuxCheck(peerHex: String, engine: IrxPeerEngine, session: IrxClientSession, number: Int) async {
+        let urgent = supermuxRoutePolicies.isUrgent(at: Date())
+        // A suspended app's sessions prove nothing either way.
+        let answered = applicationActive
+            ? await SupermuxIrxDirectFirstDial.answers(
+                session.connection, quietFor: urgent ? .zero : SupermuxIrxDirectFirstDial.quietBeforeProbe)
+            : true
+        let action = supermuxRoutePolicies.livenessChecked(for: peerHex, session: number, answered: answered, at: Date())
+        guard !answered else { return }
+        journal.record("supermux-route", "liveness-miss", ["peer": String(peerHex.prefix(12)), "urgent": String(urgent)])
+        guard action == .fallBack, await supermuxMayRedial(engine, replacing: session) else { return }
+        let policy = supermuxRoutePolicies.policy(for: peerHex)
+        journal.record("supermux-route", "fallback", [
+            "peer": String(peerHex.prefix(12)),
+            "flaps": String(policy?.flaps ?? 0),
+            "hold_off_s": policy?.holdOffUntil.map { String(Int($0.timeIntervalSinceNow.rounded())) } ?? "0",
+        ])
+        await supermuxRedial(peerHex: peerHex, engine: engine, reason: "fallback")
+    }
+
+    /// Whether a planned redial may replace `session`: the app is active and
+    /// it is still the engine's live session.
+    private func supermuxMayRedial(_ engine: IrxPeerEngine, replacing session: IrxClientSession) async -> Bool {
+        guard applicationActive else { return false }
+        return await engine.currentSession()?.admit.session == session.admit.session
+    }
+
+    /// One planned redial of a Mac's session; the new dial asks the policy
+    /// whether to race the direct lane again.
+    private func supermuxRedial(peerHex: String, engine: IrxPeerEngine, reason: String) async {
         journal.record("supermux-route", "redial", ["peer": String(peerHex.prefix(12)), "reason": reason])
         _ = try? await engine.ensureSession(explicit: true, trigger: "supermux-route-\(reason)")
     }
 
     // MARK: - Network change
 
-    /// The phone's network changed (also on every foreground): probe relayed
-    /// sessions at once, and check that direct-lane sessions still answer.
+    /// The phone's network may have changed (every path update, and every
+    /// foreground): judged once the updates stop for
+    /// ``supermuxNetworkSettle``.
     func supermuxRouteNetworkChanged() {
-        guard applicationActive, !forceRelayOnly else { return }
-        let now = ContinuousClock.now
-        if let last = supermuxLastNetworkChange, last.duration(to: now) < Self.supermuxNetworkDebounce {
-            supermuxStartRouteLoopIfNeeded()
-            return
-        }
-        supermuxLastNetworkChange = now
-        for peerHex in supermuxRouteSchedules.keys {
-            supermuxRouteSchedules[peerHex]?.networkChanged()
-        }
+        guard !forceRelayOnly else { return }
+        supermuxNetworkDebounce.poke { [weak self] in await self?.supermuxNetworkSettled() }
         supermuxStartRouteLoopIfNeeded()
-        for (peerHex, lane) in supermuxLaneByPeer where lane == .direct && !supermuxRouteChecks.contains(peerHex) {
-            guard let engine = enginesByPeer[peerHex] else { continue }
-            supermuxRouteChecks.insert(peerHex)
-            Task { await self.supermuxCheckDirectSession(peerHex: peerHex, engine: engine) }
-        }
     }
 
-    /// Two missed liveness probes after the network settles redial the
-    /// session. One miss proves nothing (a probe also fails while the
-    /// connection is still resuming).
-    private func supermuxCheckDirectSession(peerHex: String, engine: IrxPeerEngine) async {
-        defer { supermuxRouteChecks.remove(peerHex) }
-        try? await Task.sleep(for: Self.supermuxNetworkSettle)
-        guard applicationActive, let session = await engine.currentSession() else { return }
-        for _ in 0..<2 {
-            if await session.connection.probeLiveness(deadline: Self.supermuxLivenessDeadline) { return }
-            guard applicationActive else { return }
-        }
-        await supermuxRedial(peerHex: peerHex, engine: engine, replacing: session, reason: "fallback-network")
+    /// The network settled: a real change (other interfaces or addresses)
+    /// clears every Mac's hold-off and has direct sessions checked at once;
+    /// otherwise relayed sessions only probe soon.
+    func supermuxNetworkSettled() {
+        let changed = supermuxRoutePolicies.networkSettled(on: SupermuxLocalInterface.current(), at: Date())
+        journal.record("supermux-route", "network-settled", ["changed": String(changed)])
+        supermuxStartRouteLoopIfNeeded()
     }
 
     // MARK: - Directory

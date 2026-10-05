@@ -77,15 +77,11 @@ public actor MobileIrxRuntimeComposition {
     // SUPERMUX:begin phone-route-direct-race (MobileIrxRuntimeComposition+SupermuxRoute.swift)
     /// Each Mac's direct addresses (handed over or learned), on this phone only.
     let supermuxRouteCandidates: SupermuxRouteCandidateStore
-    /// The direct-lane prober's schedule, by Mac endpoint id.
-    var supermuxRouteSchedules: [String: SupermuxRouteUpgradeSchedule] = [:]
-    /// The lane each Mac's admitted automatic session went out on.
-    var supermuxLaneByPeer: [String: SupermuxDialLane] = [:]
-    /// Macs whose direct-lane session is being checked after a network change.
-    var supermuxRouteChecks: Set<String> = []
-    /// Macs whose next dial skips the race (a direct-lane admission failed).
-    var supermuxSkipRaceOnce: Set<String> = []
-    var supermuxLastNetworkChange: ContinuousClock.Instant?
+    /// Each Mac's switch policy (shared with the Mac), the lane its session
+    /// went out on, and the network the phone was last on.
+    var supermuxRoutePolicies = SupermuxPhoneRoutePolicies()
+    /// Judges the phone's network once its path updates stop.
+    let supermuxNetworkDebounce = SupermuxTrailingDebounce(settle: MobileIrxRuntimeComposition.supermuxNetworkSettle)
     var supermuxRouteLoop: Task<Void, Never>?
     // SUPERMUX:end phone-route-direct-race
 

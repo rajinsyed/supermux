@@ -88,7 +88,7 @@ public struct SupermuxPhoneRoutePolicies: Sendable {
     /// How the dial to `mac` starting now runs.
     public mutating func dialPlan(for mac: String, at now: Date) -> DialPlan {
         update(mac) { policy in
-            DialPlan(racesDirect: policy.dialUsesDirect(at: .distantFuture), holdsRelay: true)  // RED STUB: the old phone ignored the hold-off and always held the relay
+            DialPlan(racesDirect: policy.dialUsesDirect(at: now), holdsRelay: policy.holdsRelayInRace)
         }
     }
 
@@ -191,11 +191,13 @@ public struct SupermuxPhoneRoutePolicies: Sendable {
         let current = Set(interfaces)
         let previous = self.interfaces
         self.interfaces = current
-        // RED STUB: the old phone treated every path update and foreground as a network change.
-        _ = previous
+        guard let previous, previous != current else {
+            for mac in Array(policies.keys) { policies[mac]?.probeSoon(at: now) }
+            return false
+        }
         lastRecoveryAt = now
         for mac in Array(policies.keys) { policies[mac]?.networkChanged(at: now) }
-        return previous != nil && previous != current
+        return true
     }
 
     /// `mac` handed over new direct addresses: a relayed session probes them now.
@@ -205,7 +207,9 @@ public struct SupermuxPhoneRoutePolicies: Sendable {
 
     /// Forgets every Mac (sign-out); the network snapshot stays.
     public mutating func reset() {
-        // RED STUB: sign-out kept the route state
+        policies = [:]
+        sessions = [:]
+        lanes = [:]
     }
 
     /// The addresses a dial or a probe tries on the direct lane: the Mac's
@@ -220,15 +224,15 @@ public struct SupermuxPhoneRoutePolicies: Sendable {
     ) -> [String] {
         var seen = Set<String>()
         let unique = (stored + privateAddresses).filter { seen.insert($0).inserted }
-        return Array(unique.prefix(SupermuxRouteCandidates.limit))  // RED STUB: no interface filter
+        return Array(SupermuxRouteCandidates.reachable(unique, from: interfaces).prefix(SupermuxRouteCandidates.limit))
     }
 
     // MARK: - State
 
     private func path(of mac: String, sample: Sample?) -> SupermuxRouteSwitchPolicy.Path? {
         // A direct-lane session has no relay path, whatever iroh reports now.
-        guard let sample else { return nil }  // RED STUB: the old phone needed a path sample
         if lanes[mac] == .direct { return .direct(backedUp: false) }
+        guard let sample else { return nil }
         return sample.isRelay ? .relay : .direct(backedUp: sample.hasRelayPath)
     }
 
