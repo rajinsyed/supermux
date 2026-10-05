@@ -48,6 +48,52 @@ enum SupermuxMobileConnectionContext {
     }
 }
 
+/// The phone connection whose generation-carrying viewport clear wrote a
+/// generation fence (#1000).
+///
+/// A clear removes the phone's report and keeps its generation as a fence,
+/// so a report the phone sent before the clear that arrives late is refused.
+/// With the report gone, nothing named the connection that wrote the fence,
+/// so another connection of the same phone closing (an older one, after a
+/// reconnect) dropped it and the late report pinned the phone again. A close
+/// reads the clear's connection as it reads a report's stamp, as long as the
+/// fence still holds the clear's generation (a later report stamps itself).
+@MainActor
+enum SupermuxViewportFenceWriters {
+    private struct Writer {
+        let connectionID: UUID
+        let generation: UInt64
+    }
+
+    private static var writers: [String: Writer] = [:]
+
+    /// A viewport clear of `clientID` on `surfaceID` ran. `generation`: the
+    /// fence a generation-carrying clear wrote, written by the running
+    /// connection; nil when the clear left no fence of its own.
+    static func noteClear(surfaceID: UUID, clientID: String, generation: UInt64?) {
+        let entry = Self.key(surfaceID: surfaceID, clientID: clientID)
+        guard let generation,
+              let connectionID = SupermuxMobileConnectionContext.controlConnectionID,
+              SupermuxMobileConnectionContext.isOpen(connectionID) else {
+            writers[entry] = nil
+            return
+        }
+        writers[entry] = Writer(connectionID: connectionID, generation: generation)
+    }
+
+    /// The connection whose clear wrote `fence`, the client's current
+    /// generation fence on `surfaceID`; nil when no clear wrote it.
+    static func writer(surfaceID: UUID, clientID: String, fence: UInt64?) -> UUID? {
+        guard let writer = writers[Self.key(surfaceID: surfaceID, clientID: clientID)],
+              writer.generation == fence else { return nil }
+        return writer.connectionID
+    }
+
+    private static func key(surfaceID: UUID, clientID: String) -> String {
+        "\(surfaceID.uuidString)/\(clientID)"
+    }
+}
+
 /// A phone someone disconnected, told so again on each connection.
 ///
 /// The Mac keeps a Disconnect for the terminal's life, while the phone keeps

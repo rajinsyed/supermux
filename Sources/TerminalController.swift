@@ -16665,6 +16665,11 @@ class TerminalController {
         if requireGeneration, let generation { if let existingGeneration = mobileViewportReportsBySurfaceID[surfaceID]?[clientID]?.generation ?? mobileViewportGenerationsBySurfaceID[surfaceID]?[clientID], existingGeneration > generation { return nil }; mobileViewportGenerationsBySurfaceID[surfaceID, default: [:]][clientID] = generation }
         else if requireGeneration, (mobileViewportReportsBySurfaceID[surfaceID]?[clientID]?.generation ?? mobileViewportGenerationsBySurfaceID[surfaceID]?[clientID]) != nil { return nil }
         else if var generations = mobileViewportGenerationsBySurfaceID[surfaceID] { generations.removeValue(forKey: clientID); mobileViewportGenerationsBySurfaceID[surfaceID] = generations.isEmpty ? nil : generations }
+        // SUPERMUX:begin sizing-fence-writer (a generation clear's fence remembers the connection that wrote it; any other clear left no fence of its own)
+        SupermuxViewportFenceWriters.noteClear(
+            surfaceID: surfaceID, clientID: clientID, generation: requireGeneration ? generation : nil
+        )
+        // SUPERMUX:end sizing-fence-writer
         guard var reports = mobileViewportReportsBySurfaceID[surfaceID], reports[clientID] != nil else { return nil }
         reports.removeValue(forKey: clientID)
         if reports.isEmpty {
@@ -16697,9 +16702,13 @@ class TerminalController {
         guard !clientIDs.isEmpty else { return }
         for surfaceID in Set(mobileViewportReportsBySurfaceID.keys).union(mobileViewportGenerationsBySurfaceID.keys) {
             for clientID in clientIDs {
-                // SUPERMUX:begin sizing-connection-scoped-clear (a report another connection wrote last stays, with its generation fence)
+                // SUPERMUX:begin sizing-connection-scoped-clear (a report another connection wrote last stays, with its generation fence; so does a fence another connection's clear wrote, #1000)
                 if let connectionID,
-                   let writer = mobileViewportReportsBySurfaceID[surfaceID]?[clientID]?.connectionID,
+                   let writer = mobileViewportReportsBySurfaceID[surfaceID]?[clientID]?.connectionID
+                       ?? SupermuxViewportFenceWriters.writer(
+                           surfaceID: surfaceID, clientID: clientID,
+                           fence: mobileViewportGenerationsBySurfaceID[surfaceID]?[clientID]
+                       ),
                    writer != connectionID { continue }
                 // SUPERMUX:end sizing-connection-scoped-clear
                 _ = clearMobileViewportReport(surfaceID: surfaceID, clientID: clientID, reason: reason)
