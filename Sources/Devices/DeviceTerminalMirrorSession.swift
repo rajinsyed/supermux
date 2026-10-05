@@ -53,12 +53,12 @@ final class DeviceTerminalMirrorSession {
             if phase != .attaching { supermuxGridResyncing = false }
             let supermuxLive = phase == .attached || supermuxGridResyncing
             // SUPERMUX:end terminal-stream-grid-viewer
+            // SUPERMUX:begin terminal-input-pipeline (before the router: input it drops as expired takes the router's held keys with it before they are released)
+            supermuxInputPipeline.setEnabled(supermuxLive)
+            // SUPERMUX:end terminal-input-pipeline
             // SUPERMUX:begin device-mirror-reattach-input (typing during a re-attach is held, not dropped; was `inputRouter.setEnabled(supermuxLive)`)
             supermuxUpdateInput(live: supermuxLive)
             // SUPERMUX:end device-mirror-reattach-input
-            // SUPERMUX:begin terminal-input-pipeline
-            supermuxInputPipeline.setEnabled(supermuxLive)
-            // SUPERMUX:end terminal-input-pipeline
             // SUPERMUX:begin terminal-stream-grid-viewer
             attachment.update(connected: supermuxLive, connecting: phase == .attaching && !supermuxGridResyncing)
             // SUPERMUX:end terminal-stream-grid-viewer
@@ -253,9 +253,17 @@ final class DeviceTerminalMirrorSession {
                 deviceMirrorLog.error("device terminal input failed: \(String(describing: error), privacy: .private)")
             },
             // SUPERMUX:begin terminal-input-pipeline
-            pipelined: { batch in await pipeline.offer(batch) }
+            pipelined: { batch in await pipeline.offer(batch) },
             // SUPERMUX:end terminal-input-pipeline
+            // SUPERMUX:begin device-mirror-reattach-input (held keys dropped for their age take what the pipeline still holds from before them)
+            supermuxHeldInputExpired: { [weak pipeline] in
+                Task { @MainActor in pipeline?.expireStalled() }
+            }
+            // SUPERMUX:end device-mirror-reattach-input
         )
+        // SUPERMUX:begin device-mirror-reattach-input (input the pipeline drops takes the keys held after it)
+        pipeline.onInputDropped = { [weak inputRouter] in inputRouter?.supermuxDropHeldInput() }
+        // SUPERMUX:end device-mirror-reattach-input
     }
 
     private static func responseObject(_ data: Data, method: String) throws -> [String: Any] {
@@ -586,28 +594,45 @@ final class DeviceTerminalMirrorSession {
     }
 
     /// The link dropped under an attached mirror: typing waits for it, at
-    /// most ``SupermuxTerminalInputPipeline/replayWindow``, then is dropped
-    /// (keystrokes must not land long after they were typed).
+    /// most ``SupermuxTerminalInputPipeline/replayWindow`` from the first
+    /// drop (a link that drops again while it re-attaches does not start it
+    /// over), then is dropped (keystrokes must not land long after they were
+    /// typed).
     private func supermuxHoldWhileDown() {
         supermuxLinkLostSinceAttach = true
+        guard !supermuxHoldsWhileDown else { return }
         supermuxHoldsWhileDown = true
         supermuxHoldWhileDownExpiry?.cancel()
         supermuxHoldWhileDownExpiry = Task { [weak self] in
             try? await Task.sleep(for: SupermuxTerminalInputPipeline.replayWindow)
             guard let self, !Task.isCancelled else { return }
-            self.supermuxHoldsWhileDown = false
-            if self.phase == .detached { self.supermuxUpdateInput(live: false) }
+            self.supermuxHoldWhileDownExpired()
         }
     }
 
+    /// The hold from the drop ran out, whatever the phase (a re-attach may
+    /// still be on its way): every key typed so far goes, held, set apart,
+    /// and what the pipeline still holds from before the drop, so nothing
+    /// typed later lands without what came before it (an Enter without its
+    /// command). A mirror still detached takes no keys from now on.
+    private func supermuxHoldWhileDownExpired() {
+        supermuxHoldsWhileDown = false
+        supermuxHoldWhileDownExpiry = nil
+        inputRouter.supermuxDropHeldInput()
+        supermuxInputPipeline.expireStalled()
+        if phase == .detached { supermuxUpdateInput(live: false) }
+    }
+
     /// A replay answered this attach. After a lost link, keys typed while it
-    /// was down go to the terminal only when the reply resumed it: the same
-    /// host process continues the same byte stream. A full replay may come
-    /// from a restarted Mac that restored the terminal under the same id
-    /// with a new shell, so they are dropped then. Keys typed since the link
-    /// came back go either way.
+    /// was down go to the terminal only if the reply resumed it within their
+    /// hold: the same host process continues the same byte stream. A full
+    /// replay may come from a restarted Mac that restored the terminal under
+    /// the same id with a new shell, so nothing typed before it goes then,
+    /// not even since the link came back.
     private func supermuxReplyArrived(resumed: Bool) {
-        if supermuxLinkLostSinceAttach { inputRouter.supermuxSettleHeldInput(deliver: resumed) }
+        if supermuxLinkLostSinceAttach {
+            inputRouter.supermuxSettleHeldInput(deliver: resumed && supermuxHoldsWhileDown, keepPending: resumed)
+        }
         supermuxLinkLostSinceAttach = false
         supermuxHoldsWhileDown = false
         supermuxHoldWhileDownExpiry?.cancel()

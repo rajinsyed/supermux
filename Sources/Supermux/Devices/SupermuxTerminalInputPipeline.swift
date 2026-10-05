@@ -57,8 +57,9 @@ final class SupermuxTerminalInputPipeline {
     }
 
     /// How long the link may be down before pending input is dropped
-    /// rather than sent on reconnect.
-    static let replayWindow: Duration = .seconds(10)
+    /// rather than sent on reconnect; also how long the mirror's router
+    /// holds keys during a re-attach.
+    nonisolated static let replayWindow: Duration = .seconds(10)
     /// The pause before sending again after a request failed without an
     /// answer while the mirror stayed attached, or the terminal was busy.
     static let retryDelay: Duration = .milliseconds(150)
@@ -80,6 +81,10 @@ final class SupermuxTerminalInputPipeline {
     /// Sequences sent at least once, so a send again counts as a resend.
     private var sentBefore: Set<UInt64> = []
     private var retryTask: Task<Void, Never>?
+    /// Runs whenever pending input is dropped (expired, refused, or for a
+    /// stream the other Mac lost): the keys the mirror's router still holds
+    /// were typed after it, so they go too, never landing without it.
+    var onInputDropped: (@MainActor () -> Void)?
 
     init(
         surfaceID: UUID,
@@ -129,7 +134,9 @@ final class SupermuxTerminalInputPipeline {
     /// itself, one request at a time.
     func offer(_ batch: SupermuxTerminalInputBatch) -> Bool {
         guard !invalidated else { return true }
-        guard isSupported() else { return false }
+        // Input still waiting to be sent again goes first: a later batch never
+        // takes upstream's path ahead of it while capabilities are unknown.
+        guard isSupported() || !outbox.isEmpty else { return false }
         guard outbox.enqueue(batch, byteCount: batch.byteCount) != nil else {
             onFailure(Failure.queueFull)
             return true
@@ -160,6 +167,14 @@ final class SupermuxTerminalInputPipeline {
             dropAll(Failure.expired(batches: outbox.entries.count))
         }
         pump()
+    }
+
+    /// The mirror dropped keys it held for too long: what this pipeline
+    /// still holds unsent from before them goes too, while it cannot send
+    /// (on a live, attached mirror it is on its way).
+    func expireStalled() {
+        guard !invalidated, !enabled, !outbox.isEmpty else { return }
+        dropAll(Failure.expired(batches: outbox.entries.count))
     }
 
     func invalidate() {
@@ -304,5 +319,6 @@ final class SupermuxTerminalInputPipeline {
         attempts.removeAll()
         sentBefore.removeAll()
         onFailure(error)
+        onInputDropped?()
     }
 }

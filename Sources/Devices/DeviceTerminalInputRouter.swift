@@ -53,8 +53,16 @@ final class DeviceTerminalInputRouter: @unchecked Sendable {
     private var supermuxHolding = false
     /// Keys held while the link was down, set apart once it is back: the
     /// mirror sends them only when its re-attach proves the terminal is the
-    /// one they were typed for (``supermuxSettleHeldInput(deliver:)``).
+    /// one they were typed for (``supermuxSettleHeldInput(deliver:keepPending:)``).
     private var supermuxHeldWhileDown = SupermuxTerminalInputBatch()
+    /// When the oldest key held now was taken: once it has waited
+    /// ``SupermuxTerminalInputPipeline/replayWindow`` every held key is
+    /// dropped (keystrokes must not land long after they were typed, and
+    /// none may land without the ones before it).
+    private var supermuxHeldSince: ContinuousClock.Instant?
+    /// Told when held keys were dropped for their age (the mirror's pipeline
+    /// drops what it still holds from before them).
+    private let supermuxHeldInputExpired: (@Sendable () -> Void)?
     // SUPERMUX:end device-mirror-reattach-input
     // SUPERMUX:begin device-mirror-input-batch
 
@@ -69,14 +77,20 @@ final class DeviceTerminalInputRouter: @unchecked Sendable {
         sendBatch: @escaping @Sendable (SupermuxTerminalInputBatch) async throws -> Void,
         onFailure: @escaping @Sendable (any Error) -> Void,
         // SUPERMUX:begin terminal-input-pipeline
-        pipelined: (@Sendable (SupermuxTerminalInputBatch) async -> Bool)? = nil
+        pipelined: (@Sendable (SupermuxTerminalInputBatch) async -> Bool)? = nil,
         // SUPERMUX:end terminal-input-pipeline
+        // SUPERMUX:begin device-mirror-reattach-input
+        supermuxHeldInputExpired: (@Sendable () -> Void)? = nil
+        // SUPERMUX:end device-mirror-reattach-input
     ) {
         self.send = sendBatch
         self.onFailure = onFailure
         // SUPERMUX:begin terminal-input-pipeline
         self.pipelined = pipelined
         // SUPERMUX:end terminal-input-pipeline
+        // SUPERMUX:begin device-mirror-reattach-input
+        self.supermuxHeldInputExpired = supermuxHeldInputExpired
+        // SUPERMUX:end device-mirror-reattach-input
     }
     // SUPERMUX:end device-mirror-input-batch
 
@@ -99,7 +113,8 @@ final class DeviceTerminalInputRouter: @unchecked Sendable {
                 return
             }
     // SUPERMUX:end device-mirror-input-batch
-            // SUPERMUX:begin device-mirror-reattach-input (held keys wait for the attach; upstream: `guard !draining else { return }`)
+            // SUPERMUX:begin device-mirror-reattach-input (held keys wait for the attach, at most the replay window; upstream: `guard !draining else { return }`)
+            if supermuxHolding { supermuxStartHoldClock() }
             guard !draining, !supermuxHolding else { return }
             // SUPERMUX:end device-mirror-reattach-input
             draining = true
@@ -137,17 +152,16 @@ final class DeviceTerminalInputRouter: @unchecked Sendable {
             enabled = accepting
             supermuxHolding = accepting && holding
             guard accepting else {
-                #if DEBUG
-                for _ in 0..<(pending.items.count + supermuxHeldWhileDown.items.count) {
-                    SupermuxTerminalInputDebug.inputDroppedWhileDetached()
-                }
-                #endif
-                pending.removeAll()
-                supermuxHeldWhileDown.removeAll()
+                supermuxDropHeldLocked()
                 drainTask?.cancel()
                 return
             }
-            guard !supermuxHolding, !invalidated, !pending.isEmpty, !draining else { return }
+            guard !supermuxHolding else {
+                if !pending.isEmpty || !supermuxHeldWhileDown.isEmpty { supermuxStartHoldClock() }
+                return
+            }
+            supermuxHeldSince = nil
+            guard !invalidated, !pending.isEmpty, !draining else { return }
             draining = true
             drainTask = Task { await self.drain() }
         }
@@ -166,10 +180,19 @@ final class DeviceTerminalInputRouter: @unchecked Sendable {
 
     /// The re-attach after a lost link is answered: the keys set aside while
     /// the link was down go before the ones typed since (`deliver`), or are
-    /// dropped.
-    func supermuxSettleHeldInput(deliver: Bool) {
+    /// dropped; the ones typed since stay only when `keepPending`.
+    func supermuxSettleHeldInput(deliver: Bool, keepPending: Bool) {
         queue.async { [self] in
-            defer { supermuxHeldWhileDown.removeAll() }
+            defer {
+                supermuxHeldWhileDown.removeAll()
+                if pending.isEmpty { supermuxHeldSince = nil }
+            }
+            if !keepPending {
+                #if DEBUG
+                for _ in pending.items { SupermuxTerminalInputDebug.inputDroppedWhileDetached() }
+                #endif
+                pending.removeAll()
+            }
             guard deliver else {
                 #if DEBUG
                 for _ in supermuxHeldWhileDown.items { SupermuxTerminalInputDebug.inputDroppedWhileDetached() }
@@ -183,6 +206,38 @@ final class DeviceTerminalInputRouter: @unchecked Sendable {
                 break
             }
             pending = merged
+        }
+    }
+
+    /// Drops every key held or queued now, set apart or not: the hold ran
+    /// out, or what was typed before them was dropped.
+    func supermuxDropHeldInput() {
+        queue.async { [self] in supermuxDropHeldLocked() }
+    }
+
+    private func supermuxDropHeldLocked() {
+        #if DEBUG
+        for _ in 0..<(pending.items.count + supermuxHeldWhileDown.items.count) {
+            SupermuxTerminalInputDebug.inputDroppedWhileDetached()
+        }
+        #endif
+        pending.removeAll()
+        supermuxHeldWhileDown.removeAll()
+        supermuxHeldSince = nil
+    }
+
+    /// Starts the hold's clock at the first key it takes; when the clock
+    /// reads the replay window and the hold still keeps it, every held key
+    /// goes (later keys start a new clock).
+    private func supermuxStartHoldClock() {
+        guard supermuxHeldSince == nil else { return }
+        let since = ContinuousClock.now
+        supermuxHeldSince = since
+        let window = SupermuxTerminalInputPipeline.replayWindow / .milliseconds(1)
+        queue.asyncAfter(deadline: .now() + .milliseconds(Int(window))) { [weak self] in
+            guard let self, supermuxHolding, supermuxHeldSince == since else { return }
+            supermuxDropHeldLocked()
+            supermuxHeldInputExpired?()
         }
     }
     // SUPERMUX:end device-mirror-reattach-input
