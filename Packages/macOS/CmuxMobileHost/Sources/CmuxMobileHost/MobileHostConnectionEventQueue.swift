@@ -1017,4 +1017,10 @@ public final class MobileHostConnectionEventQueue: @unchecked Sendable {
         }
     }
     // SUPERMUX:end terminal-stream-fair-queue
+    // SUPERMUX:begin render-grid-watch
+
+    /// Limits this connection's `terminal.render_grid` to `surfaceIDs` (nil:
+    /// every terminal, upstream's delivery).
+    public func supermuxShowRenderGrid(surfaceIDs: Set<String>?) {}
+    // SUPERMUX:end render-grid-watch
 }
