@@ -63,7 +63,15 @@ Steps (fix, what it proves; why it fails today):
                                       sample (every 100 ms) leaves 40x12. Today the clear uncaps at once
                                       and the return caps again (two resizes). transient_no_return:
                                       live = Mac grid within 3.5 s (passes today); hard_leave: live =
-                                      Mac grid within 1 s (passes today).
+                                      Mac grid within 1 s (passes today). transient_return_hidden_viewer:
+                                      the same soft leave and return with a hidden mirror-like viewer
+                                      (kind mac, counts_override false) still attached; then a soft leave
+                                      with no return gives the Mac grid within 3.5 s. Today the Mac owns
+                                      with a viewer attached, so the uncap skips the governor and applies
+                                      at once (two resizes). transient_return_second_phone: a second phone
+                                      (50x16) attached first stays; the same soft leave and return moves
+                                      nothing; a soft leave with no return hands it 50x16 within 3.5 s.
+                                      Today its grid applies after the 400 ms cap window (two resizes).
   R10 mac_selection_keeps_grid        (F9, Mac-only signal) mac_user_selection: this Mac's user
                                       selects a terminal (`local_select`) and a phone that attaches
                                       right after does not take it (2 s hold: the Mac owns, live = Mac
@@ -688,6 +696,21 @@ class SizingRecoveryE2E(SizingPolicyE2E):
 
     # -- R9: a scene-phase leave is soft ------------------------------------------------
 
+    def soft_leave_and_return(self, workspace_id: str, surface_id: str, client_id: str) -> Dict[str, Any]:
+        """A transient clear, the phone back with the same 40x12 1 s later: the live grid never moves."""
+        samples: List[Dict[str, Any]] = []
+        origin = time.monotonic()
+        self.leave(workspace_id, surface_id, client_id, transient=True)
+        self.sample_grids(surface_id, 1.0, samples, origin)
+        self.report(workspace_id, surface_id, client_id, PHONE[0], PHONE[1])
+        self.sample_grids(surface_id, 2.5, samples, origin)
+        self.trace.append({"t": self.elapsed(), "label": "soft leave and return", "samples": samples})
+        moved = [s for s in samples if s["grid"] != list(PHONE)]
+        if moved:
+            raise Failure(f"the live grid left 40x12 during a soft leave and return: {moved[:5]}")
+        decided = self.within("the returning phone to own the grid", surface_id, self.owns(client_id), 1)
+        return {"samples": len(samples), "decided": decided}
+
     def r9_soft_leave(self) -> Dict[str, Any]:
         workspace, surface = self.fresh("r9")
         phone = self.client("r9")
@@ -701,18 +724,7 @@ class SizingRecoveryE2E(SizingPolicyE2E):
 
         def transient_return() -> Dict[str, Any]:
             ensure_phone()
-            samples: List[Dict[str, Any]] = []
-            origin = time.monotonic()
-            self.leave(workspace, surface, phone, transient=True)
-            self.sample_grids(surface, 1.0, samples, origin)
-            self.report(workspace, surface, phone, 40, 12)
-            self.sample_grids(surface, 2.5, samples, origin)
-            self.trace.append({"t": self.elapsed(), "label": "soft leave and return", "samples": samples})
-            moved = [s for s in samples if s["grid"] != list(PHONE)]
-            if moved:
-                raise Failure(f"the live grid left 40x12 during a soft leave and return: {moved[:5]}")
-            decided = self.within("the returning phone to own the grid", surface, self.owns(phone), 1)
-            return {"samples": len(samples), "decided": decided}
+            return self.soft_leave_and_return(workspace, surface, phone)
 
         def transient_no_return() -> Dict[str, Any]:
             ensure_phone()
@@ -724,9 +736,39 @@ class SizingRecoveryE2E(SizingPolicyE2E):
             self.leave(workspace, surface, phone)
             return {"restored": self.wait_grid(surface, mac, 1.0, "the Mac grid after an explicit leave")}
 
+        def with_hidden_viewer() -> Dict[str, Any]:
+            # Another Mac's hidden mirror: attached, not counting. The Mac pane owns once the phone leaves.
+            hidden_workspace, hidden_surface = self.fresh("r9h")
+            hidden_phone, mirror = self.client("r9h"), self.client("r9h-mirror")
+            self.phone_takes(hidden_workspace, hidden_surface, hidden_phone)
+            self.report(hidden_workspace, hidden_surface, mirror, 100, 30, kind="mac", counts_override=False)
+            self.within("the hidden viewer to join without sizing", hidden_surface,
+                        lambda state: (self.owns(hidden_phone)(state),
+                                       self.has_row("mobile:" + mirror, "the hidden viewer")(state)), 3)
+            returned = self.soft_leave_and_return(hidden_workspace, hidden_surface, hidden_phone)
+            self.leave(hidden_workspace, hidden_surface, hidden_phone, transient=True)
+            hidden_mac = self.mac_grid(hidden_surface)
+            restored = self.wait_grid(hidden_surface, hidden_mac, 3.5, "the Mac grid after a soft leave (hidden viewer)")
+            return {"returned": returned, "no_return_restored": restored}
+
+        def with_second_phone() -> Dict[str, Any]:
+            # A second phone stays attached and is the newest viewer once the first leaves.
+            second_workspace, second_surface = self.fresh("r9p")
+            first, second = self.client("r9p-a"), self.client("r9p-b")
+            other = (50, 16)
+            self.phone_takes(second_workspace, second_surface, second, other)
+            self.phone_takes(second_workspace, second_surface, first)
+            returned = self.soft_leave_and_return(second_workspace, second_surface, first)
+            self.leave(second_workspace, second_surface, first, transient=True)
+            handed = self.wait_grid(second_surface, other, 3.5, "the second phone's grid after a soft leave")
+            self.within("the second phone to own the grid", second_surface, self.owns(second, other), 1)
+            return {"returned": returned, "no_return_handed": handed}
+
         self.check("transient_return", transient_return)
         self.check("transient_no_return", transient_no_return)
         self.check("hard_leave", hard_leave)
+        self.check("transient_return_hidden_viewer", with_hidden_viewer)
+        self.check("transient_return_second_phone", with_second_phone)
         return {"mac_grid": list(mac)}
 
     # -- R10: this Mac's user's selection ---------------------------------------------
