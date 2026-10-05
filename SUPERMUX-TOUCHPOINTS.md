@@ -7017,7 +7017,9 @@ size on the Mac). Sizing knew a phone by its client id only, never by the connec
   input passed `mobileDetachedGateError`, so after the Mac took the grid back, typing on the phone did not return
   it, and a phone someone disconnected could still type. The runtime runs a session's lanes with its control
   connection's id in the same task-local, and the lane's delivery asks `supermuxAdmitLaneInput` before writing.
-  The legacy dialect's lanes (old phone builds) do the same since #1002.
+  The legacy dialect's lanes (old phone builds) do the same since #1002. On a Cloud terminal the activity is a
+  request to the cmux-tui host, so lane typing relays it at most once a second per phone
+  (`SupermuxPhoneActivityThrottle`, Supermux-owned).
 - **A reconnect's claim expired** (#964). After a reconnect the phone's replay, with its viewport fields, is its
   only claim; as a non-sticky piggyback it lasted 5 s.
 - **A relaunched phone forgot its detach** (#965–#966). The `detached` refusal now carries the detachment and

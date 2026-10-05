@@ -94,6 +94,31 @@ enum SupermuxViewportFenceWriters {
     }
 }
 
+/// A Cloud terminal's host hears a phone's lane typing at most once a second.
+///
+/// Each keystroke on the phone's input lane is its sizing activity (#960).
+/// On a Cloud terminal that activity is a request to the cmux-tui host,
+/// which the relay skips only while the phone alone owns the grid. In any
+/// other case (Priority with this Mac first, Fit everyone) every keystroke
+/// sent one.
+@MainActor
+enum SupermuxPhoneActivityThrottle {
+    static let interval: Duration = .seconds(1)
+
+    private static var lastRelay: [String: ContinuousClock.Instant] = [:]
+
+    /// True when the phone's activity on `surfaceID` was last relayed at
+    /// least `interval` ago (or never); records now when it was.
+    static func admits(surfaceID: UUID, clientID: String) -> Bool {
+        let now = ContinuousClock.now
+        let key = "\(surfaceID.uuidString)/\(clientID)"
+        if let last = lastRelay[key], now - last < interval { return false }
+        if lastRelay.count >= 256 { lastRelay = lastRelay.filter { now - $0.value < interval } }
+        lastRelay[key] = now
+        return true
+    }
+}
+
 /// A phone someone disconnected, told so again on each connection.
 ///
 /// The Mac keeps a Disconnect for the terminal's life, while the phone keeps
@@ -127,7 +152,8 @@ extension TerminalController {
     /// phone's sizing activity, as `mobile.terminal.input` is
     /// (`mobileDetachedGateError`). The lane's control connection names the
     /// phone. Runs on every keystroke, so it stops at a few emptiness checks
-    /// while no terminal is shared.
+    /// while no terminal is shared. A Cloud terminal's host hears it at most
+    /// once a second per phone (`SupermuxPhoneActivityThrottle`).
     func supermuxAdmitLaneInput(surfaceID: UUID) -> Bool {
         guard let connectionID = SupermuxMobileConnectionContext.controlConnectionID,
               !localSizingHostsBySurfaceID.isEmpty || !cloudSizingRelaysBySurfaceID.isEmpty
@@ -136,7 +162,9 @@ extension TerminalController {
         if clientIDs.contains(where: { isMobileClientDetached(surfaceID: surfaceID, clientID: $0) }) {
             return false
         }
-        for clientID in clientIDs {
+        let relayed = cloudSizingRelaysBySurfaceID[surfaceID]?.value?.relaysPhones == true
+        for clientID in clientIDs
+        where !relayed || SupermuxPhoneActivityThrottle.admits(surfaceID: surfaceID, clientID: clientID) {
             noteMobileSizingActivity(surfaceID: surfaceID, clientID: clientID)
         }
         return true
