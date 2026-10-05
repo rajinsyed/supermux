@@ -370,11 +370,26 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   LAN, Tailscale and global IPv6 addresses over the admitted session (`route.candidates`, answered
   off the main actor, Iroh sessions only; never sent to the backend); the viewer caches them with
   the direct paths its sessions used (`supermux-route-candidates.json` beside the projects file, 7
-  days) and passes them to every dial (`supermux.route.dialCandidates`, on by default), so a dial
-  with no path selected yet starts on the LAN or Tailscale instead of the relay. Not done yet: the
-  UI, a dedicated direct-only dial lane racing the relay, moving a relayed link back, wake handling.
+  days). Not done yet: the UI, wake handling.
   E2E: `tests/supermux/loopback_device_route_e2e.py` (the loopback device's route is pinned by a
   DEBUG driver; it has no Iroh path).
+- **Always direct between Macs** (#1064–#1070; design: `ROUTING-DESIGN.md` W5, W6): each Mac dials the
+  others from a direct lane, a second endpoint with the same identity and relays disabled
+  (`SupermuxDeviceDirectLane`; outgoing only, never advertised, rebound when idle without touching the
+  phone or inbound links). Every dial races the lane at the peer's cached addresses against the relay
+  dial (`SupermuxIrxDirectFirstDial`, CmuxIrxTransport): direct wins whenever it connects within 1.5 s,
+  the relay only when no address answers, and exactly one connection is admitted.
+  `SupermuxDeviceRouteSwitcher` (policy: `SupermuxRouteSwitchPolicy`, SupermuxKit) looks at each link
+  every second: on the relay it tries a lane handshake every ~10 s (30 s after five misses; never
+  admitted) and on success redials once (`DeviceLink.supermuxPlannedRedial`, a 300 ms settle); a lane
+  session that misses two liveness checks redials as a liveness failure would, with the lane held off,
+  so it lands on the relay in seconds. A flapping path holds direct off 30 s, doubling to 10 min.
+  `probeNow(reason:)` is the hook for wake and network changes (not wired yet).
+  `supermux.route.dialCandidates = false` turns the lane off (upstream's relay dial). Journal
+  (`/tmp/cmux-irx-journal-mac-<tag>.jsonl`, category `route`): `dial-race`, `probe`, `upgrade`,
+  `liveness-miss`, `fallback`, `lane-created`, `lane-rebuilt`. E2E:
+  `tests/supermux/loopback_device_route_switch_e2e.py` (a simulated network under the loopback link,
+  `supermux.devices.route.switch`).
 - **Terminal size: Auto, one setting** (upstream's shared sizing, #633, #665–#669, #790–#797, #920–#924,
   #952–#969, #1011–#1032): every terminal starts in Auto (upstream's `latest`, labelled Auto on the Mac and
   the phone): the device you are viewing it from sets its grid. A phone opening a terminal, or returning
