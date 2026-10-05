@@ -471,16 +471,28 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   (`SupermuxDeviceDirectLane`; outgoing only, never advertised, rebound when idle without touching the
   phone or inbound links). Every dial races the lane at the peer's cached addresses against the relay
   dial (`SupermuxIrxDirectFirstDial`, CmuxIrxTransport): direct wins whenever it connects within 1.5 s,
-  the relay only when no address answers, and exactly one connection is admitted.
-  `SupermuxDeviceRouteSwitcher` (policy: `SupermuxRouteSwitchPolicy`, SupermuxKit) looks at each link
-  every second: on the relay it tries a lane handshake every ~10 s (30 s after five misses; never
-  admitted) and on success redials once (`DeviceLink.supermuxPlannedRedial`, a 300 ms settle); a lane
-  session that misses two liveness checks redials as a liveness failure would, with the lane held off,
-  so it lands on the relay in seconds. A flapping path holds direct off 30 s, doubling to 10 min.
-  `probeNow(reason:)` runs on every wake and network change (next bullet).
+  the relay only when no address answers, and exactly one connection is admitted. The lane dials each
+  address as its own handshake (one wrong address, answered by another endpoint, cannot sink the right
+  one), and only addresses this Mac can reach now (`SupermuxRouteCandidates.reachable`, SupermuxMobileCore:
+  never its own, LAN only on a shared Wi-Fi/wired subnet, Tailscale only with its tunnel up, global IPv6
+  only with its own); a dial without a relay credential still runs the lane. `SupermuxDeviceRouteSwitcher`
+  (policy: `SupermuxRouteSwitchPolicy`, SupermuxMobileCore, shared with the phone) looks at each link
+  every second: on the relay, with a reachable address, it tries a lane handshake every ~10 s (30 s after
+  five misses; never admitted; at once when new addresses arrive) and on success redials once
+  (`DeviceLink.supermuxPlannedRedial`, a 300 ms settle); a lane session that misses two liveness checks
+  (after a keepalive interval of quiet, at once within 10 s of a network change) redials as a liveness
+  failure would, with the lane held off, so it lands on the relay in seconds. A flapping path holds
+  direct off 30 s, doubling to 10 min; a failed lane admission skips the lane once; after two lost races
+  on a network the race takes a ready relay at once. `probeNow(reason:)` runs on every wake and network
+  change (next bullet): the hold-off clears, the first fall back within 30 s is not a flap, and relayed
+  links, and links that come up within 30 s, probe at once.
   `supermux.route.dialCandidates = false` turns the lane off (upstream's relay dial). Journal
-  (`/tmp/cmux-irx-journal-mac-<tag>.jsonl`, category `route`): `dial-race`, `probe`, `upgrade`,
-  `liveness-miss`, `fallback`, `lane-created`, `lane-rebuilt`. E2E:
+  (`/tmp/cmux-irx-journal-mac-<tag>.jsonl`, category `route`): `dial-candidates`, `dial-race`, `upgrade`,
+  `upgrade-not-made`, `liveness-miss`, `fallback`, `direct-admission-failed`, `lane-created`,
+  `lane-rebuilt`, `lane-deactivated`; probes are `route-probe/probe`, kept out of the link history. A
+  host answers `route.candidates` with `not_ready` until iroh's first network report and `direct_off`
+  when relay-only; an empty or not-ready answer keeps the cached addresses
+  (`SupermuxRouteCandidateFetchSchedule`, SupermuxMobileCore). E2E:
   `tests/supermux/loopback_device_route_switch_e2e.py` (a simulated network under the loopback link,
   `supermux.devices.route.switch`). The iPhone does the same for an Automatic-method dial (#1110–#1117;
   until 2026-10-06 it offered iroh only the relay and the user's Private Addresses): it asks each Mac
@@ -505,13 +517,16 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   links inside them). A full wake recovers once, the sleep measured on the wall clock (iroh's clock
   stops in sleep, and until 2026-10-06 nothing told it, so direct took up to minutes after a wake):
   after a minute or more the main endpoint is closed and bound again (every session on it is dead by
-  then; kept while no relay credential is live), iroh is told the network changed, the route switcher
-  probes direct now and rebuilds the idle direct lane, and links waiting in a backoff dial at once. A
-  network change (interfaces, IPv4 addresses, Tailscale's `utun`; debounced 1 s) recovers the same way
-  while awake, without the rebuild or redials. The notice is the event `supermux.device.sleeping`
+  then; expired relay credentials, always the case after a night, are refreshed first within the dials'
+  5 s wait, `SupermuxMainEndpointRebuild`; without fresh ones the next network change within 30 s
+  rebuilds), iroh is told the network changed, the route switcher gives direct a fresh chance, the idle
+  direct lane is rebound (only while no dial or probe holds it), and links waiting in a backoff dial at
+  once. A network change (interfaces, IPv4 addresses, Tailscale's `utun`; debounced 1 s) recovers the
+  same way while awake, without the rebuild or redials. The notice is the event `supermux.device.sleeping`
   (`SupermuxDeviceSleepCourtesy`, policy `SupermuxPeerSleep`; additive, an older Mac never subscribes):
-  a link that hears it drops its session and waits at least 5 min between dials, until that Mac dials in
-  (its waiting link then dials back at once, at most every 15 s) or a session started after the notice
+  a link that hears it drops its session and waits at least 5 min between dials (4–6 min with the
+  link's spread), until that Mac dials in (its waiting link then dials back at once, at most every 15 s;
+  a link that is dialing redials at once should that dial fail) or a session started after the notice
   stays up 2 min. `SupermuxRemoteSessionActivity` holds a `ProcessInfo` activity
   (`.userInitiatedAllowingIdleSystemSleep`) while any phone or Mac session is live, so App Nap never
   throttles one. The control plane's directory refreshes are at least 30 s apart unless the ticket was
