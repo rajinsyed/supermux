@@ -85,6 +85,9 @@ public struct SupermuxWakePolicy: Equatable, Sendable {
         return Recovery(reason: reason, sleptSeconds: nil, rebuildsMainEndpoint: false)
     }
 
+    /// Red stub (review T1): not implemented yet.
+    public mutating func rebuildPostponed(at now: Date) {}
+
     /// The network path changed. Nil while dark: the full wake recovers.
     /// Bursts are the caller's to debounce.
     public mutating func networkChanged(at now: Date) -> Recovery? {

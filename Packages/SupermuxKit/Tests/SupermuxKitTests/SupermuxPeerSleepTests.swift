@@ -28,6 +28,9 @@ import Testing
 /// 9. A notice that comes again (it woke unseen and sleeps again) is measured
 ///    from the first, so the session live when it came clears it; or a
 ///    dial-in long after the last one is refused.
+/// 10. (Review T9) A dial-in while this link's own dial is out is lost: that
+///    dial (started while the Mac slept) fails and the link waits up to its
+///    2 min backoff although the Mac is awake.
 struct SupermuxPeerSleepTests {
     typealias Sleep = SupermuxPeerSleep
     private let t0 = Date(timeIntervalSince1970: 1_000)
@@ -131,5 +134,18 @@ struct SupermuxPeerSleepTests {
         later.announced(at: at(20))
         let dialsBack7 = later.dialedIn(at: at(20 + 3_600))
         #expect(dialsBack7)
+    }
+
+    @Test("10. a dial-in while this link is dialing makes the next wait, after that dial fails, zero")
+    func dialInDuringADialIsKept() {
+        var sleep = announced()
+        _ = sleep.dialedIn(at: at(600))
+        sleep.dialedInDuringDial()
+        let waits = [sleep.takeWait(after: .seconds(64)), sleep.takeWait(after: .seconds(64))]
+        #expect(waits == [.zero, .seconds(64)], "the failed dial is redialed at once, once")
+        sleep.dialedInDuringDial()
+        sleep.connected(at: at(601))
+        let afterConnect = sleep.takeWait(after: .seconds(4))
+        #expect(afterConnect == .seconds(4), "a dial that worked used the nudge")
     }
 }

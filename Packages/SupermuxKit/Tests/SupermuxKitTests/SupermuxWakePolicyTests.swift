@@ -28,6 +28,8 @@ import Testing
 ///    a DarkWake) recovers: probes and lane rebuilds out of a sleeping laptop.
 /// 9. The screens waking without a system sleep (display sleep only) runs a
 ///    recovery; only a screens wake that ends a sleep is a full wake.
+/// 12. (Review T1) A rebuild skipped for lack of a fresh relay credential at
+///    the wake never runs, even when the network comes back seconds later.
 /// 10. A network change while awake does not recover (Tailscale up, a new LAN).
 /// 11. A stuck dark state (a lost wake notification) can never be left: a
 ///     display that is awake ends it.
@@ -158,5 +160,24 @@ struct SupermuxWakePolicyTests {
         let recovery = policy.woke(.displayAwake, at: at(120))
         #expect(recovery == .init(reason: .displayAwake, sleptSeconds: 120, rebuildsMainEndpoint: true))
         #expect(!policy.isDark)
+    }
+
+    @Test("12. a rebuild kept for expired credentials runs at the next network change within 30 s (review T1)")
+    func postponedRebuildRunsAtTheNextNetworkChange() {
+        var policy = Policy()
+        policy.willSleep(at: at(0))
+        let wake = policy.woke(.wake, at: at(8 * 3600))
+        #expect(wake?.rebuildsMainEndpoint == true)
+        policy.rebuildPostponed(at: at(8 * 3600 + 5))
+        let network = policy.networkChanged(at: at(8 * 3600 + 12))
+        #expect(network?.rebuildsMainEndpoint == true, "the Wi-Fi came back: rebuild now")
+        #expect(policy.networkChanged(at: at(8 * 3600 + 14))?.rebuildsMainEndpoint == false, "once")
+
+        var late = Policy()
+        late.willSleep(at: at(0))
+        _ = late.woke(.wake, at: at(3600))
+        late.rebuildPostponed(at: at(3605))
+        #expect(late.networkChanged(at: at(3636))?.rebuildsMainEndpoint == false,
+                "sessions may be live again 30 s after the wake")
     }
 }

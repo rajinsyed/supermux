@@ -42,6 +42,10 @@ public struct SupermuxPeerSleep: Equatable, Sendable {
         isAsleep ? max(computed, Self.wait) : computed
     }
 
+    /// Red stubs (review T9): not implemented yet.
+    public mutating func dialedInDuringDial() {}
+    public mutating func takeWait(after computed: Duration) -> Duration { wait(after: computed) }
+
     /// A session of the link started.
     public mutating func connected(at now: Date) {
         connectedAt = now
