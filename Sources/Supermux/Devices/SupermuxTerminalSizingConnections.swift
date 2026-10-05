@@ -13,13 +13,13 @@ import Foundation
 ///   reports it wrote (SUPERMUX-TOUCHPOINTS.md #957). Without the stamp a
 ///   phone that reconnected lost the report it had just sent on its new
 ///   connection when the old one's close arrived.
-/// - **An IRX lane** (the runtime's lane loop) runs with the id of the
-///   control connection of the same session, so a keystroke on the phone's
-///   input lane is that phone's sizing activity and passes the detach gate
-///   (#960).
+/// - **An IRX lane** (the runtime's lane loop, and the legacy dialect's lane
+///   router for old phone builds, #1002) runs with the id of the control
+///   connection of the same session, so a keystroke on the phone's input
+///   lane is that phone's sizing activity and passes the detach gate (#960).
 ///
-/// `nil` on the control socket and the legacy dialect: their reports stay
-/// unstamped and keep upstream's behavior.
+/// `nil` on the control socket: its reports stay unstamped and keep
+/// upstream's behavior.
 enum SupermuxMobileConnectionContext {
     @TaskLocal static var controlConnectionID: UUID?
 

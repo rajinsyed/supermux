@@ -805,6 +805,7 @@ Rules for adding a touchpoint:
 | 999 | `Sources/TerminalController+SharedSizing.swift` | `sizing-user-mac-counts` | In `localSizingSetCountsOverride`, after the `sizing-auto` fence: when `participantID` is the host's Mac pane, `SupermuxTerminalSizingVisibility.shared.userSetMacCounts(surfaceID)` drops the terminal from the class's off-screen marks (`hiddenHosts`) and released panes. A false set by hand (the size panel, `terminal.size_counts.set`) on a pane already marked off screen looked like the automatic mark, and the "marked, nobody else counts" branch of `hostWillApply` lifted it once the last viewer left. The class's own mark goes through this setter too and records itself right after it returns |
 | 1000 | `Sources/TerminalController.swift` | `sizing-fence-writer` | In `clearMobileViewportReport`, after upstream's three-branch generation statement and before the report guard: `SupermuxViewportFenceWriters.noteClear(surfaceID:clientID:generation: requireGeneration ? generation : nil)`. A generation-carrying clear that wrote the fence records the running phone connection (`SupermuxMobileConnectionContext.controlConnectionID`, when still open) with that generation; any other clear (a close, a disconnect) dropped the fence and forgets it. #958 reads it. Before, once a newer connection's clear left only the fence, an older connection of the same phone closing deleted it, and a delayed report from before the clear pinned the phone again (recovery E2E R14 `clear_fence_after_older_close`) |
 | 1001 | `Sources/TerminalController.swift` | `sizing-report-live-connection` | In `applyMobileViewportReport`, after the detached-client check and before any write (the generation fence included): `guard SupermuxMobileConnectionContext.isLive else { return nil }`. A mobile RPC that waited for the main actor past its connection's close (the registry drops a connection before `removeConnection` clears its reports) wrote a report stamped with that dead connection, which no later close clears: sticky for the terminal's life. `isLive` is true off a phone connection (the control socket) and checks `MobileHostConnectionRegistry.shared.connection(id:)`; DEBUG builds also accept the sizing E2E's synthetic connections (`SupermuxTerminalSizingRecoveryDrivers.isOpenConnection`). Recovery E2E R14 `late_request_after_close` |
+| 1002 | `Sources/Mobile/MobileHostIrxLegacyDialectServer.swift` | `sizing-lane-input` | Three fences in `serve`: `let controlConnectionID = UUID()` before the supervisor; its `acceptTransport` call passes `connectionID: controlConnectionID` (#962); and `runApplicationLanes` runs `laneRouter.run(isCurrent:)` inside `SupermuxMobileConnectionContext.$controlConnectionID.withValue(controlConnectionID)` (upstream: `await laneRouter.run(isCurrent: isCurrent)`), as #961 does for the irx runtime. The lane tasks (`Task { … }` in `MobileHostIrohApplicationLaneRouter.start`) inherit it, so an old phone build's lane input passes the detach gate and is its sizing activity (#960) |
 | 810 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the remote-terminal polish into the cmux target, four entries each (build file, file reference, Supermux group child, Sources phase) next to #764's `SupermuxDeviceTerminalUpload.swift`: `Devices/SupermuxDeviceTerminalLinks.swift` (`50BE001B0200000000000001`/`…02`, a Cmd-click on a path in another Mac's terminal), `Devices/SupermuxDeviceTerminalActions.swift` (`…03`/`…04`, forwarded Cmd+K/reset, focus and Ctrl+V of an image) and `SupermuxMobileHost+TerminalActions.swift` (`…05`/`…06`, the host's `terminal.action`) |
 | 811 | `Sources/Workspace+TerminalLinkOpening.swift` | `device-terminal-file-link` | First thing in `deferRemoteTerminalFileLinkOpen`: `SupermuxDeviceTerminalLinks.open(rawValue, panelID:in:)` claims a file path clicked in another Mac's terminal and opens that Mac's file in the mirror's read-only preview (upstream refused it: only SSH terminals resolved a remote path) |
 | 812 | `Sources/DockSplitStore+TerminalLinkOpening.swift` | `device-terminal-file-link` | Adds `deferRemoteTerminalFileLinkOpen` to the Dock's link container (upstream relies on the protocol's `false` default): the same `SupermuxDeviceTerminalLinks.open` for another Mac's terminal moved into the Dock |
@@ -7016,7 +7017,7 @@ size on the Mac). Sizing knew a phone by its client id only, never by the connec
   input passed `mobileDetachedGateError`, so after the Mac took the grid back, typing on the phone did not return
   it, and a phone someone disconnected could still type. The runtime runs a session's lanes with its control
   connection's id in the same task-local, and the lane's delivery asks `supermuxAdmitLaneInput` before writing.
-  The legacy dialect's lanes (old phone builds) run without it and keep upstream's behavior.
+  The legacy dialect's lanes (old phone builds) do the same since #1002.
 - **A reconnect's claim expired** (#964). After a reconnect the phone's replay, with its viewport fields, is its
   only claim; as a non-sticky piggyback it lasted 5 s.
 - **A relaunched phone forgot its detach** (#965–#966). The `detached` refusal now carries the detachment and
@@ -7091,6 +7092,8 @@ Found by review of the 2026-10-05 sizing fixes:
   of that connection still deletes it: a relaunched phone starts its generations over.
 - **A report that ran after its connection closed stuck** (#1001). It was stamped with a connection whose close
   had already run. The write is dropped unless the running connection is still in the registry.
+- **Old phone builds' lane input skipped the detach gate** (#1002). The legacy dialect runs its lanes with its
+  control connection's id, as the irx runtime does (#961).
 
 Re-apply after an upstream merge:
 - **#999**: keep the call in the setter every hand-set override goes through. If upstream adds a separate
@@ -7100,6 +7103,7 @@ Re-apply after an upstream merge:
   fence, use it and retire this.
 - **#1001**: keep it before the generation fence write. If upstream gives requests a cancellation on close, the
   check can go.
+- **#1002**: as #961: if upstream moves the legacy lanes to `Task.detached`, pass the id instead.
 
 Verify: steps R14 and R20 of
 `CMUX_E2E_SUITES="loopback_terminal_sizing_recovery_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`
