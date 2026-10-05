@@ -45,6 +45,11 @@ private enum MobileHostEventSubscriptionTracker {
     static func replace(previousTopics: Set<String>?, nextTopics: Set<String>?) {
         let changedTopics = updateCounts(previousTopics: previousTopics, nextTopics: nextTopics)
         guard !changedTopics.isEmpty else { return }
+        // SUPERMUX:begin terminal-stream-tee-grace (the byte tee records for a while after the last mirror left)
+        if changedTopics.contains("terminal.bytes") {
+            SupermuxTerminalTeeGrace.subscribersChanged(active: hasSubscribers(topic: "terminal.bytes"))
+        }
+        // SUPERMUX:end terminal-stream-tee-grace
         NotificationCenter.default.post(
             name: .mobileHostEventSubscriptionsDidChange,
             object: nil,

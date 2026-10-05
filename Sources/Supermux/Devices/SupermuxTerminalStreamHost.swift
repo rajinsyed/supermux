@@ -188,6 +188,38 @@ enum SupermuxTerminalStreamContinuity {
     }
 }
 
+/// The byte tee keeps recording for a while after the last mirror left.
+///
+/// With no `terminal.bytes` subscriber the tee records nothing, so every
+/// terminal that printed while a viewing Mac's link redialed moved its
+/// stream epoch, and the reconnect's resume was refused for a multi-MB full
+/// replay (2026-10-05 red run, D3: every ticker printing a line a second;
+/// STREAM.md P5). The tee now records for ``grace`` after the last
+/// subscriber left, into the same bounded tail (256-512 KB per terminal), so
+/// a reconnect after a short drop resumes. Meanwhile each PTY read costs
+/// what it costs with a subscriber, minus the sending: one copy and a main
+/// hop. Phones' render frames need no byte position, so only the Mac
+/// mirrors' topic arms it.
+enum SupermuxTerminalTeeGrace {
+    nonisolated static let graceNanoseconds: UInt64 = 120 * 1_000_000_000
+    /// Uptime (ns) until which the tee records without a subscriber; 0 while
+    /// one subscribes or before the first left.
+    nonisolated private static let recordUntil = OSAllocatedUnfairLock(initialState: UInt64(0))
+
+    /// Whether the tee records although nobody subscribes. On the PTY read
+    /// thread, only after the subscriber checks failed.
+    nonisolated static var isRecording: Bool {
+        let until = recordUntil.withLock { $0 }
+        return until != 0 && DispatchTime.now().uptimeNanoseconds < until
+    }
+
+    /// `terminal.bytes` gained its first subscriber (`active`) or lost its last.
+    nonisolated static func subscribersChanged(active: Bool) {
+        let until = active ? 0 : DispatchTime.now().uptimeNanoseconds + graceNanoseconds
+        recordUntil.withLock { $0 = until }
+    }
+}
+
 extension MobileTerminalByteTee {
     /// The surface's stream epoch: stable while its byte sequence stayed
     /// continuous, new after the tee skipped some of its output.
