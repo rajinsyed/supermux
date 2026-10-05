@@ -8,7 +8,7 @@ reproduce the paths that left a terminal at a departed or inactive viewer's grid
 guards that keep the fixes from breaking the rules around them. Each step builds its own
 state: a fresh shown local terminal (a new workspace), fresh fake viewer client ids, and
 for the mirror steps the loopback's source terminal and its auto mirror. The local steps
-(R1-R10, R13b-R18) run with auto-mirror off, so their terminals have no loopback mirror as
+(R1-R10, R13b-R18, R20) run with auto-mirror off, so their terminals have no loopback mirror as
 a second remote participant: like the reported case, the phone is the only other viewer
 (a hidden mirror would send Auto down its "phones stay attached" path, which tears the apply
 governor down and so hides R1-R3's wedge). The mirror steps turn it back on. Every step runs
@@ -23,7 +23,10 @@ own viewport (its participant row), which is what the PTY must return to.
 Steps (fix, what it proves; why it fails today):
 
   R1  governor_wedge                  (F1) the phone (40x12) owns; it reports 44x14 and leaves
-                                      inside 400 ms (the Mac takes its grid within 1 s); it comes
+                                      inside 400 ms (the two calls are timed, `report_to_clear_ms`;
+                                      a pair of 350 ms or more retries on a fresh terminal, up to 3
+                                      times, then fails as "wedge precondition not reproduced"; R2
+                                      and R3 wedge the same way) (the Mac takes its grid within 1 s); it comes
                                       back at 40x12 (cold attach) and then reports 46x16: the live
                                       grid follows within 1.5 s. Today the immediate leave cancelled
                                       the flush timer without clearing `flush_scheduled`, so 46x16 is
@@ -72,6 +75,11 @@ Steps (fix, what it proves; why it fails today):
                                       (50x16) attached first stays; the same soft leave and return moves
                                       nothing; a soft leave with no return hands it 50x16 within 3.5 s.
                                       Today its grid applies after the 400 ms cap window (two resizes).
+                                      resize_then_transient_return_second_phone: the same, but the first
+                                      phone reports 44x14 right before its soft leave (inside 350 ms, so
+                                      inside the 400 ms cap window that change starts): nothing moves.
+                                      Today the soft leave's stage rides the pending 400 ms timer, which
+                                      applies 50x16 before the phone returns (two resizes).
   R10 mac_selection_keeps_grid        (F9, Mac-only signal) mac_user_selection: this Mac's user
                                       selects a terminal (`local_select`) and a phone that attaches
                                       right after does not take it (2 s hold: the Mac owns, live = Mac
@@ -87,7 +95,14 @@ Steps (fix, what it proves; why it fails today):
                                       Today the close clears every report of its client id. Guards
                                       (pass today): B closing drops the phone; a control-socket
                                       (unstamped) report is still cleared by a closing connection of
-                                      its client.
+                                      its client. clear_fence_after_older_close: reports on A and B,
+                                      a generation clear on B, A closes, then a copy of B's report
+                                      from before the clear: the phone stays out. Today A's close drops
+                                      the clear's generation fence (no report names a writer), so the
+                                      stale report re-pins the phone. late_request_after_close: a report
+                                      whose handler ran after its connection closed (`after_close`)
+                                      writes nothing. Today it is stamped with the dead connection, and
+                                      no later close clears it.
   R15 lane_input                      (G1) lane_activity: the Mac owns; the phone types over its IRX
                                       input lane (`lane_input`): the phone owns. Today lane input is
                                       nobody's activity. detached_lane_refused: a phone someone
@@ -112,6 +127,12 @@ Steps (fix, what it proves; why it fails today):
                                       nothing staged); the phone comes back and rotates (60x20): live
                                       follows within 1.5 s (today: stuck at 40x12, the wedge from the
                                       lock moment carried over).
+  R20 hand_set_mac_counts             the phone owns; the Mac switches away (the pane's automatic
+                                      off-screen false); the user sets the Mac row's counts to false
+                                      by hand (`terminal.size_counts.set`); the phone leaves: the Mac
+                                      row keeps `counts_override: false` for 2 s. Today the off-screen
+                                      mark cannot tell the user's false from its own, and with nobody
+                                      else counting it lifts it.
   R12 mirror_size_to_me               (F13) the phone owns the source terminal; Size to My Window on
                                       this Mac's mirror of it, from Auto and from Fit everyone: the
                                       mirror (`mobile:mac-…`) owns within 2 s. Today the mirror sends
@@ -180,6 +201,8 @@ from loopback_terminal_sizing_policy_e2e import (  # noqa: E402
 
 Grid = Tuple[int, int]
 PHONE = (40, 12)
+# A report and the leave right after it land well inside the governor's 400 ms cap window.
+FAST_PAIR_MS = 350
 
 
 class SizingRecoveryE2E(SizingPolicyE2E):
@@ -257,20 +280,29 @@ class SizingRecoveryE2E(SizingPolicyE2E):
         self.sock.call("mobile.terminal.viewport",
                        self.viewport_params(workspace_id, surface_id, client_id, cols, rows, kind, **extra))
 
-    def leave(self, workspace_id: str, surface_id: str, client_id: str, **extra: Any) -> None:
-        """The viewer's clear (`transient: true` for a scene-phase leave)."""
+    def clear_params(self, workspace_id: str, surface_id: str, client_id: str, **extra: Any) -> Dict[str, Any]:
+        """A viewport clear's params, with this viewer's next generation."""
         key = (workspace_id, surface_id, client_id)
         generation = self.reports.get(key, 0) + 1
         self.reports[key] = generation
         params = {"workspace_id": workspace_id, "surface_id": surface_id, "client_id": client_id,
                   "clear": True, "viewport_generation": generation}
         params.update(extra)
-        self.sock.call("mobile.terminal.viewport", params)
+        return params
 
-    def connection_request(self, connection_id: str, method: str, params: Dict[str, Any]) -> Dict[str, Any]:
-        self.connections.add(connection_id)
+    def leave(self, workspace_id: str, surface_id: str, client_id: str, **extra: Any) -> None:
+        """The viewer's clear (`transient: true` for a scene-phase leave)."""
+        self.sock.call("mobile.terminal.viewport", self.clear_params(workspace_id, surface_id, client_id, **extra))
+
+    def connection_request(self, connection_id: str, method: str, params: Dict[str, Any],
+                           after_close: bool = False) -> Dict[str, Any]:
+        """`after_close`: the request's handler ran after its connection closed (it was waiting for the main
+        actor), so the driver does not open the connection again."""
+        if not after_close:
+            self.connections.add(connection_id)
         result = self.sock.call(SIZING + "connection_request",
-                                {"connection_id": connection_id, "method": method, "params": params}) or {}
+                                {"connection_id": connection_id, "method": method, "params": params,
+                                 "after_close": after_close}) or {}
         if not result.get("ok"):
             raise Failure(f"{method} on connection {connection_id[:8]} failed: {result.get('error')}")
         return result
@@ -457,17 +489,42 @@ class SizingRecoveryE2E(SizingPolicyE2E):
         wait_for(f"{client_id} to take the grid again", again, 10, interval_s=0.7)
         self.wait_grid(surface_id, grid, 3, f"the live grid to be the phone's {grid} again")
 
-    def wedge(self, workspace_id: str, surface_id: str, client_id: str) -> Dict[str, Any]:
-        """The phone owns 40x12, reports 44x14 (staged for 400 ms) and leaves at once."""
-        self.phone_takes(workspace_id, surface_id, client_id)
-        self.report(workspace_id, surface_id, client_id, 44, 14)
-        self.leave(workspace_id, surface_id, client_id)
+    def report_then_leave(self, workspace_id: str, surface_id: str, client_id: str, grid: Grid,
+                          **leave_extra: Any) -> int:
+        """The viewer reports `grid` and leaves right after; returns the milliseconds both calls took.
+        The leave must land inside the report's 400 ms cap window, or the change applied first."""
+        started = time.monotonic()
+        self.report(workspace_id, surface_id, client_id, grid[0], grid[1])
+        self.leave(workspace_id, surface_id, client_id, **leave_extra)
+        return round((time.monotonic() - started) * 1000)
+
+    def wedge(self, label: str) -> Tuple[str, str, str, Dict[str, Any]]:
+        """A fresh terminal the phone owns at 40x12; it reports 44x14 (staged for 400 ms) and leaves at
+        once. A slow report and leave (the 44x14 flush may have run first: nothing staged, nothing to
+        wedge) retries on another fresh terminal, up to 3 times."""
+        timings: List[int] = []
+        for attempt in range(1, 4):
+            name = label if attempt == 1 else f"{label}-try{attempt}"
+            workspace_id, surface_id = self.fresh(name)
+            client_id = self.client(name)
+            self.phone_takes(workspace_id, surface_id, client_id)
+            report_to_clear_ms = self.report_then_leave(workspace_id, surface_id, client_id, (44, 14))
+            timings.append(report_to_clear_ms)
+            self.trace.append({"t": self.elapsed(), "label": "wedge: 44x14 then an immediate leave",
+                               "attempt": attempt, "report_to_clear_ms": report_to_clear_ms})
+            if report_to_clear_ms < FAST_PAIR_MS:
+                break
+        else:
+            raise Failure(f"wedge precondition not reproduced: the 44x14 report and the leave took {timings} ms "
+                          f"(each >= {FAST_PAIR_MS} ms, so the 400 ms cap window may have flushed first)")
         snap = self.snap("44x14 then an immediate leave", surface_id)
         mac = self.mac_grid(surface_id)
         self.within("the Mac pane to own the grid after the leave", surface_id, self.mac_owns(), 2)
         reached = self.wait_grid(surface_id, mac, 1.0, "the live grid to be the Mac grid after the leave")
         self.snap("after the leave", surface_id)
-        return {"after_leave": snap, "mac_grid": list(mac), "mac_restored": reached}
+        info = {"report_to_clear_ms": report_to_clear_ms, "attempts": timings, "after_leave": snap,
+                "mac_grid": list(mac), "mac_restored": reached}
+        return workspace_id, surface_id, client_id, info
 
     def close_created(self) -> None:
         for workspace_id in self.created:
@@ -495,9 +552,7 @@ class SizingRecoveryE2E(SizingPolicyE2E):
     # -- R1-R3: nothing could recover a wrong size -------------------------------------
 
     def r1_governor_wedge(self) -> Dict[str, Any]:
-        workspace, surface = self.fresh("r1")
-        phone = self.client("r1")
-        wedged = self.wedge(workspace, surface, phone)
+        workspace, surface, phone, wedged = self.wedge("r1")
         self.report(workspace, surface, phone, 40, 12)
         cold = self.wait_grid(surface, PHONE, 2.0, "the phone's 40x12 again (a cold attach)")
         self.report(workspace, surface, phone, 46, 16)
@@ -509,9 +564,7 @@ class SizingRecoveryE2E(SizingPolicyE2E):
 
     def held_after_wedge(self, label: str) -> Tuple[str, str, str, str, Grid]:
         """R2 up to "held": wedged, the Mac row not counting, the phone viewed and left."""
-        workspace, surface = self.fresh(label)
-        phone = self.client(label)
-        self.wedge(workspace, surface, phone)
+        workspace, surface, phone, _ = self.wedge(label)
         mac_id = self.mac_id(surface)
         mac = self.mac_grid(surface)
         self.set_counts(surface, mac_id, False)
@@ -777,11 +830,38 @@ class SizingRecoveryE2E(SizingPolicyE2E):
             self.within("the second phone to own the grid", second_surface, self.owns(second, other), 1)
             return {"returned": returned, "no_return_handed": handed}
 
+        def resize_then_soft_leave() -> Dict[str, Any]:
+            # The first phone's size change starts the 400 ms cap window; its soft leave inside that
+            # window stages the second phone's grid, which must wait the 3 s uncap window as well.
+            resize_workspace, resize_surface = self.fresh("r9r")
+            first, second = self.client("r9r-a"), self.client("r9r-b")
+            self.phone_takes(resize_workspace, resize_surface, second, (50, 16))
+            self.phone_takes(resize_workspace, resize_surface, first)
+            samples: List[Dict[str, Any]] = []
+            origin = time.monotonic()
+            report_to_leave_ms = self.report_then_leave(resize_workspace, resize_surface, first, (44, 14),
+                                                        transient=True)
+            if report_to_leave_ms >= FAST_PAIR_MS:
+                raise Failure(f"precondition not reproduced: the 44x14 report and the soft leave took "
+                              f"{report_to_leave_ms} ms (the 400 ms cap window may have flushed first)")
+            self.sample_grids(resize_surface, 1.0, samples, origin)
+            self.report(resize_workspace, resize_surface, first, PHONE[0], PHONE[1])
+            self.sample_grids(resize_surface, 2.5, samples, origin)
+            self.trace.append({"t": self.elapsed(), "label": "resize, soft leave and return", "samples": samples,
+                               "report_to_leave_ms": report_to_leave_ms})
+            moved = [s for s in samples if s["grid"] != list(PHONE)]
+            if moved:
+                raise Failure(f"the live grid left 40x12 after a size change, a soft leave inside its cap window "
+                              f"and a return: {moved[:5]}")
+            decided = self.within("the returning phone to own the grid", resize_surface, self.owns(first), 1)
+            return {"report_to_leave_ms": report_to_leave_ms, "samples": len(samples), "decided": decided}
+
         self.check("transient_return", transient_return)
         self.check("transient_no_return", transient_no_return)
         self.check("hard_leave", hard_leave)
         self.check("transient_return_hidden_viewer", with_hidden_viewer)
         self.check("transient_return_second_phone", with_second_phone)
+        self.check("resize_then_transient_return_second_phone", resize_then_soft_leave)
         return {"mac_grid": list(mac)}
 
     # -- R10: this Mac's user's selection ---------------------------------------------
@@ -878,9 +958,44 @@ class SizingRecoveryE2E(SizingPolicyE2E):
             return {"decided": self.within("a closing connection of its client to clear a control-socket report",
                                            surface, self.not_participant(phone2), 1.5)}
 
+        def clear_fence_after_older_close() -> Dict[str, Any]:
+            phone3 = self.client("r14-fence")
+            a, b = str(uuid.uuid4()), str(uuid.uuid4())
+            self.connection_request(a, "mobile.terminal.viewport",
+                                    self.viewport_params(workspace, surface, phone3, 40, 12))
+            # The phone reconnected: B re-sends its report, then leaves the terminal (a generation clear).
+            stale = self.viewport_params(workspace, surface, phone3, 40, 12)
+            self.connection_request(b, "mobile.terminal.viewport", stale)
+            self.within("the phone (connection B) to own the grid", surface, self.owns(phone3), 3)
+            self.connection_request(b, "mobile.terminal.viewport", self.clear_params(workspace, surface, phone3))
+            self.within("the phone to leave by its clear on B", surface, self.not_participant(phone3), 2)
+            closed = self.note("connection A closed after B's clear", self.connection_close(a))
+            # A copy of B's report from before its clear (generation below the clear's) arrives late.
+            self.connection_request(b, "mobile.terminal.viewport", stale)
+            held = self.keeps("B's clear fences off its own earlier report after the older connection A closed",
+                              surface, self.not_participant(phone3), 1.5)
+            return {"closed": closed, "stale_generation": stale["viewport_generation"], **held}
+
+        def late_request_after_close() -> Dict[str, Any]:
+            # Last: before the fix, the late report pins this terminal for good.
+            phone4 = self.client("r14-late")
+            connection = str(uuid.uuid4())
+            self.connection_request(connection, "mobile.terminal.viewport",
+                                    self.viewport_params(workspace, surface, phone4, 40, 12))
+            self.within("the phone (connection C) to own the grid", surface, self.owns(phone4), 3)
+            self.connection_close(connection)
+            self.within("the phone to leave with its connection", surface, self.not_participant(phone4), 1.5)
+            # A report whose handler waited for the main actor past its connection's close.
+            self.connection_request(connection, "mobile.terminal.viewport",
+                                    self.viewport_params(workspace, surface, phone4, 40, 12), after_close=True)
+            return self.keeps("a report that ran after its connection closed writes nothing",
+                              surface, self.not_participant(phone4), 1.5)
+
         self.check("stamped_reports", stamped_reports)
         self.check("own_connection_close", own_connection_close)
         self.check("unstamped_report", unstamped_report)
+        self.check("clear_fence_after_older_close", clear_fence_after_older_close)
+        self.check("late_request_after_close", late_request_after_close)
         return {}
 
     # -- R15: typing over the IRX input lane --------------------------------------------
@@ -1030,6 +1145,31 @@ class SizingRecoveryE2E(SizingPolicyE2E):
         self.check("governor_settled", governor_settled)
         self.check("phone_returns_and_rotates", phone_returns_and_rotates)
         return {"mac_grid": list(mac)}
+
+    # -- R20: a hand-set counts override on an off-screen Mac pane ------------------------
+
+    def r20_hand_set_mac_counts(self) -> Dict[str, Any]:
+        workspace, surface = self.fresh("r20")
+        away = self.create_workspace("r20-away")
+        phone = self.client("r20")
+        self.phone_takes(workspace, surface, phone)
+        mac_id = self.mac_id(surface)
+        self.select(away)
+        self.within("the hidden Mac pane to stop counting (the off-screen mark)", surface, self.mac_counts(False), 3)
+        # The user turns the Mac row's counting off by hand: the same false, now theirs.
+        self.set_counts(surface, mac_id, False)
+        self.leave(workspace, surface, phone)
+        self.within("the phone to leave", surface, self.not_participant(phone), 2)
+        self.snap("the phone left; the Mac row was set to false by hand", surface)
+
+        def users_false(state: Dict[str, Any]) -> None:
+            row = self.row(state, "mac:") or {}
+            if row.get("counts_override") is not False:
+                raise Failure(f"the Mac row's counts_override is {row.get('counts_override')!r}, expected the "
+                              f"user's false: {self.rows(state)}")
+
+        return self.keeps("the Mac row keeps the user's counts false once nobody else counts", surface,
+                          users_false, 2.0)
 
     # -- R11-R13: Mac to Mac (the loopback's mirror) ------------------------------------
 
@@ -1189,6 +1329,7 @@ class SizingRecoveryE2E(SizingPolicyE2E):
             ("R16_sticky_replay_claim", self.r16_sticky_replay_claim),
             ("R17_fixed_seed", self.r17_fixed_seed),
             ("R18_composite_return", self.r18_composite_return),
+            ("R20_hand_set_mac_counts", self.r20_hand_set_mac_counts),
             ("R12_mirror_size_to_me", self.r12_mirror_size_to_me),
             ("R13_mirror_activation", self.r13_mirror_activation),
             ("R19_mirror_claim_after_mac_selection", self.r19_mirror_claim_after_mac_selection),

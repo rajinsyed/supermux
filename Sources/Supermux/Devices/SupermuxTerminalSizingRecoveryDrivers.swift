@@ -39,7 +39,9 @@ import Foundation
 ///   connection, as the connection's authorized-request hook does, then the
 ///   request runs through the mobile RPC dispatcher with that connection as
 ///   its execution context. A refusal answers `ok: false` with the error's
-///   `code`, `message` and `data`.
+///   `code`, `message` and `data`. With `after_close: true` the connection
+///   is not opened again: a request whose handler waited for the main actor
+///   past its connection's close.
 /// - `connection_close {connection_id, client_id?}` — that phone connection
 ///   closes (`removeConnection`, which drops its clients' viewport reports).
 ///   With `client_id`, the connection carried that client first: one call
@@ -249,7 +251,10 @@ enum SupermuxTerminalSizingRecoveryDrivers {
             throw invalid("method must be a mobile.terminal.* method")
         }
         let rpcParams = (params["params"] as? [String: Any]) ?? [:]
-        open(connectionID, clientID: rpcParams["client_id"] as? String)
+        // A request whose handler ran after its connection closed leaves it closed.
+        if params["after_close"] as? Bool != true {
+            open(connectionID, clientID: rpcParams["client_id"] as? String)
+        }
         let context = MobileHostRPCExecutionContext(
             connectionID: connectionID, authorization: .stackBearer, artifactTransfers: nil
         )
