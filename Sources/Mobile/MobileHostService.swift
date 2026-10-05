@@ -2108,7 +2108,10 @@ actor MobileHostConnection {
             ])
         // SUPERMUX:begin terminal-stream-watch
         case SupermuxTerminalStreamHost.watchMethod:
-            return SupermuxTerminalStreamHost.watch(request.params, queue: eventQueue)
+            let watched = SupermuxTerminalStreamHost.watch(request.params, queue: eventQueue)
+            // A paused terminal shown again queued its newest chunk: send it now.
+            for lane in eventQueue.claimDrains() { startEventDrain(lane: lane) }
+            return watched
         // SUPERMUX:end terminal-stream-watch
         default:
             return nil

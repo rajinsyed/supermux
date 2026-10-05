@@ -222,10 +222,12 @@ extension MobileTerminalByteTee {
 ///   (keystroke echo never waits), and chunks arriving within the next ~2 ms
 ///   join one event per terminal, up to 32 KB.
 /// - Background (every connection watching it has it off screen): chunks join
-///   one event per terminal for ~500 ms, up to 256 KB, so a hidden mirror
+///   one event per terminal for ~500 ms, up to 64 KB, so a hidden mirror
 ///   costs about two events a second instead of one per redraw. A terminal
 ///   back on screen, or about to be captured by a full replay, sends its
-///   batch before anything newer.
+///   batch before anything newer. The cap bounds the frame a shown
+///   terminal's echo may find on the wire ahead of it (~90 KB encoded, 0.3 s
+///   at 300 KB/s; it was 256 KB, ~1.1 s, until 2026-10-05).
 /// - Unwatched: no event at all; the byte tee's tail keeps the bytes for a
 ///   resume.
 /// Sequences are untouched, so every receiver's gap check holds. Each event
@@ -238,7 +240,7 @@ final class SupermuxTerminalByteCoalescer {
     static let maximumEventByteCount = 32 * 1024
     static let backgroundWindow: DispatchTimeInterval = .milliseconds(500)
     static let backgroundLeeway: DispatchTimeInterval = .milliseconds(100)
-    static let maximumBackgroundEventByteCount = 256 * 1024
+    static let maximumBackgroundEventByteCount = 64 * 1024
 
     private struct Pending {
         var sequence: UInt64

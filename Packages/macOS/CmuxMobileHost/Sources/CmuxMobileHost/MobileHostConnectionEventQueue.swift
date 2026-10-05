@@ -214,8 +214,8 @@ public final class MobileHostConnectionEventQueue: @unchecked Sendable {
     /// (`mobile.supermux.terminal.watch`); nil keeps upstream's topic-wide
     /// delivery. Their bytes ride a budget of their own, never shed.
     private var supermuxWatchedByteSurfaceIDs: Set<String>?
-    /// Queued watched-byte events: their surface and frame size.
-    private var supermuxWatchedEvents: [UUID: (surfaceID: String, byteCount: Int)] = [:]
+    /// Queued watched-byte events: their surface, frame size and admission time.
+    private var supermuxWatchedEvents: [UUID: (surfaceID: String, byteCount: Int, queuedAt: ContinuousClock.Instant)] = [:]
     private var supermuxWatchedBytesBySurfaceID: [String: Int] = [:]
     private var supermuxWatchedQueuedByteCount = 0
     /// Times one watched terminal outran its budget and its queued bytes
@@ -223,10 +223,17 @@ public final class MobileHostConnectionEventQueue: @unchecked Sendable {
     public private(set) var supermuxWatchedByteResyncCount = 0
     // SUPERMUX:end terminal-stream-watch
     // SUPERMUX:begin terminal-stream-fair-queue
-    /// How long a hidden terminal's oldest queued bytes may wait before it pauses.
+    /// How long a hidden terminal's oldest queued bytes may wait before it
+    /// pauses (``supermuxPausesLocked``).
     var supermuxBackgroundByteMaximumAge: Duration = .seconds(8)
     /// Times a hidden terminal fell that far behind and paused.
     public private(set) var supermuxWatchedBytePauseCount = 0
+    /// Each watched terminal's queued byte events, oldest first.
+    private var supermuxWatchedTerminals: [String: SupermuxWatchedTerminal] = [:]
+    /// Watched terminals with queued bytes, in the order the drain serves them.
+    private var supermuxServeOrder: [String] = []
+    /// Paused hidden terminals and the newest chunk each was refused since.
+    private var supermuxPausedNewest: [String: SupermuxHeldChunk] = [:]
     // SUPERMUX:end terminal-stream-fair-queue
     // SUPERMUX:begin terminal-stream-byte-demand
     /// The watched terminals this connection has off screen
@@ -445,6 +452,9 @@ public final class MobileHostConnectionEventQueue: @unchecked Sendable {
             guard let event = removeQueuedEventLocked(eventID) else { continue }
             return event
         }
+        // SUPERMUX:begin terminal-stream-fair-queue (watched terminals' bytes after every other shared event)
+        if lane == .shared { return supermuxDequeueWatchedLocked() }
+        // SUPERMUX:end terminal-stream-fair-queue
         return nil
     }
 
@@ -657,6 +667,11 @@ public final class MobileHostConnectionEventQueue: @unchecked Sendable {
         supermuxWatchedBytesBySurfaceID.removeAll()
         supermuxWatchedQueuedByteCount = 0
         // SUPERMUX:end terminal-stream-watch
+        // SUPERMUX:begin terminal-stream-fair-queue
+        supermuxWatchedTerminals.removeAll()
+        supermuxServeOrder.removeAll()
+        supermuxPausedNewest.removeAll()
+        // SUPERMUX:end terminal-stream-fair-queue
         // SUPERMUX:begin terminal-stream-byte-demand
         supermuxBackgroundByteSurfaceIDs.removeAll()
         supermuxReportByteDemandLocked()
@@ -813,12 +828,14 @@ public final class MobileHostConnectionEventQueue: @unchecked Sendable {
     /// Limits this connection's `terminal.bytes` to `surfaceIDs` (nil: every
     /// terminal again, upstream's delivery); `background` names the watched
     /// ones it has off screen (``SupermuxTerminalByteDemand``). Bytes already
-    /// queued stay.
+    /// queued stay. A paused terminal shown again gets its newest chunk back
+    /// in the queue (the caller claims its drain, ``claimDrains()``).
     public func supermuxWatchTerminalBytes(surfaceIDs: Set<String>?, background: Set<String> = []) {
         lock.lock()
         let watched = surfaceIDs.map { Set($0.map { $0.uppercased() }) }
         supermuxWatchedByteSurfaceIDs = watched
         supermuxBackgroundByteSurfaceIDs = Set(background.map { $0.uppercased() }).intersection(watched ?? [])
+        supermuxResumePausedLocked()
         supermuxReportByteDemandLocked()
         lock.unlock()
     }
@@ -831,8 +848,8 @@ public final class MobileHostConnectionEventQueue: @unchecked Sendable {
     }
 
     /// Admits a `terminal.bytes` event of a connection that names its
-    /// terminals: refused for the others, appended in order on the shared
-    /// lane for the watched ones, outside the shared budget. Nil for every
+    /// terminals: refused for the others, queued in order per watched
+    /// terminal on the shared lane, outside the shared budget. Nil for every
     /// other event (upstream's admission runs).
     private func supermuxEnqueueWatchedBytesLocked(
         topic: String,
@@ -842,20 +859,13 @@ public final class MobileHostConnectionEventQueue: @unchecked Sendable {
     ) -> MobileHostEventEnqueueResult? {
         guard topic == "terminal.bytes", let watched = supermuxWatchedByteSurfaceIDs else { return nil }
         guard let surfaceID = coalesceKey?.uppercased(), watched.contains(surfaceID) else { return .rejected }
+        let chunk = SupermuxHeldChunk(coalesceKey: coalesceKey, stateSeq: stateSeq, frame: frame)
+        if supermuxPausesLocked(surfaceID: surfaceID, chunk) { return .rejected }
         if supermuxWatchedBytesBySurfaceID[surfaceID, default: 0] + frame.count > Self.supermuxWatchedSurfaceByteBudget {
-            let backlog = supermuxWatchedEvents.filter { $0.value.surfaceID == surfaceID }.map(\.key)
-            for eventID in backlog { _ = removeQueuedEventLocked(eventID) }
+            supermuxDropWatchedBacklogLocked(surfaceID: surfaceID)
             supermuxWatchedByteResyncCount += 1
         }
-        let eventID = UUID()
-        queuedEvents[eventID] = QueuedEvent(topic: topic, coalesceKey: coalesceKey, frame: frame, stateSeq: stateSeq)
-        arrivalOrder.append(eventID)
-        laneOrders[.shared, default: MobileHostQueuedEventOrder()].append(eventID)
-        queuedByteCount += frame.count
-        queuedCountByLane[.shared, default: 0] += 1
-        supermuxWatchedEvents[eventID] = (surfaceID, frame.count)
-        supermuxWatchedBytesBySurfaceID[surfaceID, default: 0] += frame.count
-        supermuxWatchedQueuedByteCount += frame.count
+        supermuxQueueWatchedLocked(surfaceID: surfaceID, chunk)
         let startDrain = drainingLanes.insert(.shared).inserted
         return MobileHostEventEnqueueResult(
             admitted: true, startDrain: startDrain, drainLane: .shared,
@@ -869,6 +879,7 @@ public final class MobileHostConnectionEventQueue: @unchecked Sendable {
         supermuxWatchedQueuedByteCount -= watched.byteCount
         let remaining = supermuxWatchedBytesBySurfaceID[watched.surfaceID, default: 0] - watched.byteCount
         supermuxWatchedBytesBySurfaceID[watched.surfaceID] = remaining > 0 ? remaining : nil
+        supermuxForgetQueuedLocked(surfaceID: watched.surfaceID)
     }
     // SUPERMUX:end terminal-stream-watch
     // SUPERMUX:begin terminal-stream-byte-demand
@@ -889,4 +900,121 @@ public final class MobileHostConnectionEventQueue: @unchecked Sendable {
         )
     }
     // SUPERMUX:end terminal-stream-byte-demand
+    // SUPERMUX:begin terminal-stream-fair-queue
+
+    // A watching connection's terminal bytes, fair and shown terminals first.
+    //
+    // Each watched terminal queues its own bytes in order. The shared lane's
+    // drain sends every other event first (status, grids, layouts: small, and
+    // never overtaken by later bytes), then one chunk per terminal in turn,
+    // shown terminals before hidden ones (`background_surface_ids`). So a
+    // keystroke's echo waits for at most one chunk of each other shown
+    // terminal plus the frame already on the wire, never for a backlog.
+    // (Until 2026-10-05 one queue in arrival order held every terminal: on a
+    // 300 KB/s relay the echo waited 11 s behind a hidden terminal's output.)
+    //
+    // A hidden terminal whose oldest queued chunk has waited
+    // ``supermuxBackgroundByteMaximumAge`` pauses: its backlog goes and its
+    // bytes stop, keeping only the newest chunk refused since. Shown again
+    // (the connection's next watch), that chunk is queued first: its position
+    // is past what the viewer has, so the viewer sees the gap and resumes or
+    // replays the terminal, as for any gap; when the viewer already holds
+    // that position (a replay since), it ignores the chunk. A hidden mirror
+    // stays at its last screen meanwhile, and the link carries what is shown.
+
+    /// One watched terminal's queued byte events.
+    private struct SupermuxWatchedTerminal {
+        var order = MobileHostQueuedEventOrder()
+        var count = 0
+    }
+
+    /// A `terminal.bytes` event as `enqueue` received it.
+    private struct SupermuxHeldChunk {
+        let coalesceKey: String?
+        let stateSeq: UInt64?
+        let frame: Data
+    }
+
+    private func supermuxQueueWatchedLocked(surfaceID: String, _ chunk: SupermuxHeldChunk) {
+        let eventID = UUID()
+        queuedEvents[eventID] = QueuedEvent(
+            topic: "terminal.bytes", coalesceKey: chunk.coalesceKey, frame: chunk.frame, stateSeq: chunk.stateSeq
+        )
+        arrivalOrder.append(eventID)
+        if supermuxWatchedTerminals[surfaceID] == nil { supermuxServeOrder.append(surfaceID) }
+        supermuxWatchedTerminals[surfaceID, default: SupermuxWatchedTerminal()].order.append(eventID)
+        supermuxWatchedTerminals[surfaceID]?.count += 1
+        queuedByteCount += chunk.frame.count
+        queuedCountByLane[.shared, default: 0] += 1
+        supermuxWatchedEvents[eventID] = (surfaceID, chunk.frame.count, .now)
+        supermuxWatchedBytesBySurfaceID[surfaceID, default: 0] += chunk.frame.count
+        supermuxWatchedQueuedByteCount += chunk.frame.count
+    }
+
+    /// A queued event of `surfaceID` left the queue.
+    private func supermuxForgetQueuedLocked(surfaceID: String) {
+        guard var terminal = supermuxWatchedTerminals[surfaceID] else { return }
+        terminal.count -= 1
+        guard terminal.count > 0 else {
+            supermuxWatchedTerminals[surfaceID] = nil
+            supermuxServeOrder.removeAll { $0 == surfaceID }
+            return
+        }
+        terminal.order.compact(liveCount: terminal.count) { queuedEvents[$0] != nil }
+        supermuxWatchedTerminals[surfaceID] = terminal
+    }
+
+    /// The next watched chunk: the oldest of the first shown terminal in
+    /// turn, else of the first hidden one; that terminal goes to the back.
+    private func supermuxDequeueWatchedLocked() -> QueuedEvent? {
+        let background = supermuxBackgroundByteSurfaceIDs
+        guard let surfaceID = supermuxServeOrder.first(where: { !background.contains($0) })
+            ?? supermuxServeOrder.first else { return nil }
+        while let eventID = supermuxWatchedTerminals[surfaceID]?.order.popFirst() {
+            guard let event = removeQueuedEventLocked(eventID) else { continue }
+            if let index = supermuxServeOrder.firstIndex(of: surfaceID) {
+                supermuxServeOrder.remove(at: index)
+                supermuxServeOrder.append(surfaceID)
+            }
+            return event
+        }
+        return nil
+    }
+
+    private func supermuxDropWatchedBacklogLocked(surfaceID: String) {
+        guard let terminal = supermuxWatchedTerminals[surfaceID] else { return }
+        for eventID in terminal.order.ids[terminal.order.head...] { _ = removeQueuedEventLocked(eventID) }
+    }
+
+    /// Whether `chunk` is refused because its hidden terminal is paused, or
+    /// pauses now (its oldest queued chunk waited too long).
+    private func supermuxPausesLocked(surfaceID: String, _ chunk: SupermuxHeldChunk) -> Bool {
+        guard supermuxBackgroundByteSurfaceIDs.contains(surfaceID) else { return false }
+        if supermuxPausedNewest[surfaceID] != nil {
+            supermuxPausedNewest[surfaceID] = chunk
+            return true
+        }
+        guard let terminal = supermuxWatchedTerminals[surfaceID],
+              let oldest = terminal.order.ids[terminal.order.head...].lazy
+                  .compactMap({ self.supermuxWatchedEvents[$0]?.queuedAt }).first,
+              ContinuousClock.now - oldest >= supermuxBackgroundByteMaximumAge else { return false }
+        supermuxDropWatchedBacklogLocked(surfaceID: surfaceID)
+        supermuxPausedNewest[surfaceID] = chunk
+        supermuxWatchedBytePauseCount += 1
+        return true
+    }
+
+    /// After a watch: a paused terminal shown again queues its newest chunk;
+    /// one no longer watched is forgotten.
+    private func supermuxResumePausedLocked() {
+        for (surfaceID, chunk) in supermuxPausedNewest {
+            if supermuxWatchedByteSurfaceIDs?.contains(surfaceID) != true {
+                supermuxPausedNewest[surfaceID] = nil
+            } else if !supermuxBackgroundByteSurfaceIDs.contains(surfaceID) {
+                supermuxPausedNewest[surfaceID] = nil
+                supermuxQueueWatchedLocked(surfaceID: surfaceID, chunk)
+            }
+        }
+    }
+    // SUPERMUX:end terminal-stream-fair-queue
 }
