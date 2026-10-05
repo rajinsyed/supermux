@@ -177,7 +177,7 @@ final class SupermuxSystemPower {
         if recovery.rebuildsMainEndpoint {
             // Dials wait for the new endpoint, but never longer than the limit.
             let limit = Task { [weak self] in
-                try? await Task.sleep(for: Self.rebuildWaitLimit)
+                guard (try? await Task.sleep(for: Self.rebuildWaitLimit)) != nil else { return }
                 self?.rebuilding = false
             }
             main = await Self.rebuildMainEndpoint()

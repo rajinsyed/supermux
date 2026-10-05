@@ -310,11 +310,17 @@ class SleepWakeE2E:
     def cleanup(self) -> None:
         if not self.machine:
             return
+        # The candidate cache outlives the app: forget this suite's peer (an empty
+        # answer for its endpoint) so the route suites start from their own state.
         calls = (
             lambda: self.power("reset"),
             lambda: self.switch(active=False),
-            lambda: self.client.call("supermux.devices.route.candidates_serve", {}),
             lambda: self.link("restore"),
+            lambda: self.wait_for("a connected link for the cleanup fetch", self.connected, 30),
+            lambda: self.client.call("supermux.devices.route.candidates_serve",
+                                     {"addresses": [], "endpoint_id": ENDPOINT_ID}),
+            lambda: self.client.call("supermux.devices.route.candidates_fetch", {"machine": self.machine}),
+            lambda: self.client.call("supermux.devices.route.candidates_serve", {}),
         )
         for call in calls:
             try:
