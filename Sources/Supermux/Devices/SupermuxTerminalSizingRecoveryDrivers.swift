@@ -17,7 +17,8 @@ import Foundation
 ///   size-state generations over). Mirrors on another Mac keep their state.
 /// - `local_scroll {surface_id, lines?}` — this Mac's user scrolling over a
 ///   shown terminal: a legacy wheel event (no phase, no momentum) addressed
-///   to the pane's window at the pane's center, posted to the app's event
+///   to the pane's window at the pane's center (`hits_terminal` hit tests
+///   the event's own location), posted to the app's event
 ///   queue so `NSApplication.sendEvent` dispatches it as user input. The
 ///   app is not activated and nothing gets focus.
 /// - `activate {surface_id, textbox?}` — this Mac's user switching to the
@@ -132,17 +133,22 @@ enum SupermuxTerminalSizingRecoveryDrivers {
             throw invalid("could not address the scroll event to a window")
         }
         cgEvent.setIntegerValueField(windowIDField, value: Int64(window.windowNumber))
+        // An event addressed to a window of this app takes `locationInWindow`
+        // from the event's window location (top-left based, relative to the
+        // window's frame), which only the window server fills in: left at
+        // zero, the event lands on the window's corner, outside the pane.
+        try setWindowLocation(cgEvent, CGPoint(x: center.x, y: window.frame.height - center.y))
         guard let event = NSEvent(cgEvent: cgEvent), event.type == .scrollWheel else {
             throw invalid("could not create a scroll event")
         }
         guard event.windowNumber == window.windowNumber else {
             throw invalid("the scroll event is not addressed to the pane's window (\(event.windowNumber) != \(window.windowNumber))")
         }
-        // Where AppKit will deliver it: the view under the pane's center, hit
-        // tested from the window's frame view (terminals are hosted in a
+        // Where AppKit will deliver it: the view under the event's location,
+        // hit tested from the window's frame view (terminals are hosted in a
         // portal above the content view). Its coordinates are the window's.
         let frameView = window.contentView?.superview ?? window.contentView
-        let hit = frameView?.hitTest(center)
+        let hit = frameView?.hitTest(event.locationInWindow)
         let hitsTerminal = hit.map { $0 === view || $0.isDescendant(of: view) } ?? false
         NSApp.postEvent(event, atStart: false)
         return [
@@ -152,6 +158,16 @@ enum SupermuxTerminalSizingRecoveryDrivers {
             "hits_terminal": hitsTerminal,
             "app_active": NSApp.isActive,
         ]
+    }
+
+    /// `CGEventSetWindowLocation` (CoreGraphics SPI, no public setter): the
+    /// location AppKit reads for an event addressed to one of its windows.
+    private static func setWindowLocation(_ event: CGEvent, _ location: CGPoint) throws {
+        typealias Setter = @convention(c) (CGEvent, CGPoint) -> Void
+        guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGEventSetWindowLocation") else {
+            throw invalid("CGEventSetWindowLocation is unavailable")
+        }
+        unsafeBitCast(symbol, to: Setter.self)(event, location)
     }
 
     private static func activate(_ params: [String: Any]) async throws -> [String: Any] {
