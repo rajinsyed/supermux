@@ -114,18 +114,31 @@ extension MobileIrxRuntimeComposition: SupermuxPhoneRouteRuntime {
             return (try await automatic(), .automatic, false)
         }
         let started = ContinuousClock.now
-        let result = try await SupermuxDialRace().run(
+        let result = try await Self.supermuxRace(
             direct: { try await lane.dial(address: address, credentials: []) },
-            fallback: automatic,
+            automatic: automatic,
             discard: { await $0.close(code: .explicitRedial, origin: .local) })
-        journal.record("supermux-route", "dial-race", [
+        let fields: [String: String] = [
             "peer": String(peerHex.prefix(12)),
             "lane": result.lane.rawValue,
             "candidates": String(addresses.count),
             "elapsed_ms": String(Self.supermuxMilliseconds(started.duration(to: .now))),
             "path": result.value.selectedPathDescription(),
-        ])
+        ]
+        journal.record("supermux-route", "dial-race", fields.merging(result.journalFields) { current, _ in current })
         return (result.value, result.lane, true)
+    }
+
+    /// The phone's dial race: `direct` on the direct lane against
+    /// `automatic`, direct first.
+    /// - Returns: The winner, its lane, and what each leg did (journal fields).
+    static func supermuxRace<Value: Sendable>(
+        direct: @escaping @Sendable () async throws -> Value,
+        automatic: @escaping @Sendable () async throws -> Value,
+        discard: @escaping @Sendable (Value) async -> Void
+    ) async throws -> (value: Value, lane: SupermuxDialLane, journalFields: [String: String]) {
+        let result = try await SupermuxDialRace().run(direct: direct, fallback: automatic, discard: discard)
+        return (result.value, result.lane, [:])
     }
 
     /// A dial's admission failed: a direct-lane one makes the next dial skip

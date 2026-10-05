@@ -156,6 +156,9 @@ let package = Package(
                 "CmuxMobileToast",
                 "CmuxMobileTransport",
                 "CmuxMobileWorkspace",
+                // SUPERMUX:begin phone-route-direct-race (SupermuxPhoneDialRaceTests names the race's lanes)
+                "SupermuxMobileKit",
+                // SUPERMUX:end phone-route-direct-race
                 .product(name: "StackAuth", package: "stack-auth-swift-sdk-prerelease"),
             ],
             swiftSettings: [
