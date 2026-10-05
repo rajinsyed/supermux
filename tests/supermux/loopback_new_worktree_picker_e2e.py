@@ -140,6 +140,12 @@ def git(*args: str, cwd: Optional[Path] = None) -> str:
     return result.stdout.strip()
 
 
+
+def real_paths(paths: Optional[List[str]]) -> List[str]:
+    """`paths` with symlinks resolved: the app drops /private from /tmp paths, Python adds it."""
+    return [os.path.realpath(path) for path in paths or []]
+
+
 class PickerE2E:
     def __init__(self, client: SocketClient, scratch: Path, timeout_s: float, keep: bool) -> None:
         self.client = client
@@ -831,12 +837,12 @@ class PickerE2E:
         if not state.get("can_attach_images") or not (state.get("target") or {}).get("supports_prompt_attachments"):
             raise SmokeFailure(f"the Loopback Mac does not take prompt images: {state}")
         state = self.call("fill", {"session_id": session, "prompt": "", "attachments": [str(image)]})
-        if state.get("attachments") != [os.path.realpath(image)] or not state.get("has_prompt"):
+        if real_paths(state.get("attachments")) != [os.path.realpath(image)] or not state.get("has_prompt"):
             raise SmokeFailure(f"the image did not attach in Start Claude mode: {state}")
         if state.get("can_create") or state.get("preview_line") is not None:
             raise SmokeFailure(f"images without text must keep Start disabled and the line unpreviewed: {state}")
         state = self.call("fill", {"session_id": session, "attachments": [str(not_image), str(image)]})
-        if state.get("attachments") != [os.path.realpath(image)] or not state.get("error_message"):
+        if real_paths(state.get("attachments")) != [os.path.realpath(image)] or not state.get("error_message"):
             raise SmokeFailure(f"a non-image was not refused with a sentence (or the image doubled): {state}")
         refusal = state.get("error_message")
         state = self.call("remove_attachment", {"session_id": session, "index": 0})
@@ -958,7 +964,7 @@ class PickerE2E:
         for converted in (photo, scan):
             if converted.parent not in self.image_folders:
                 self.image_folders.append(converted.parent)
-        if photo.suffix != ".jpg" or not photo.read_bytes().startswith(b"\xff\xd8\xff"):
+        if photo.suffix not in (".jpg", ".jpeg") or not photo.read_bytes().startswith(b"\xff\xd8\xff"):
             raise SmokeFailure(f"the HEIC photo did not convert to a JPEG: {photo}")
         if scan.suffix != ".png" or not scan.read_bytes().startswith(b"\x89PNG"):
             raise SmokeFailure(f"the opaque TIFF did not convert to a PNG: {scan}")
@@ -967,7 +973,7 @@ class PickerE2E:
                       for p in (photo, scan)]
         if any(d != ["4", "4"] for d in dimensions):
             raise SmokeFailure(f"a converted image changed size: {dimensions}")
-        if str(linked) != os.path.realpath(png):
+        if real_paths([str(linked)]) != [os.path.realpath(png)] or linked.name != png.name:
             raise SmokeFailure(f"the symlink did not attach as the file it points to: {linked}")
         return {"photo": photo.name, "scan": scan.name, "linked": str(linked)}
 
