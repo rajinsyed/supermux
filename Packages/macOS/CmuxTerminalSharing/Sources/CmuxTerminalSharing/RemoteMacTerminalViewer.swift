@@ -140,4 +140,16 @@ public struct RemoteMacTerminalViewer: Sendable {
     public mutating func reattached() {
         detachment = nil
     }
+
+    // SUPERMUX:begin remote-mac-viewer-connection-ended
+    /// The device link dropped. The next host (the other Mac relaunched, or
+    /// a new sizing host) restarts its generations under the same participant
+    /// id, so the old state must not order the new ones, nor stand for this
+    /// viewer's counts override, which the host dropped with the connection.
+    /// A detach stays: the host keeps it across the reconnect.
+    public mutating func connectionEnded() {
+        state = nil
+        selfParticipantID = nil
+    }
+    // SUPERMUX:end remote-mac-viewer-connection-ended
 }

@@ -427,8 +427,9 @@ final class DeviceTerminalMirrorSession {
         // SUPERMUX:begin device-mirror-sizing-claim (the next attach is a reconnect: push the claim again)
         SupermuxTerminalSizingDefaults.shared.connectionDropped(self)
         // SUPERMUX:end device-mirror-sizing-claim
-        // SUPERMUX:begin device-mirror-hidden-counts (the other Mac drops this link's counts override with its connection: the re-attach sends it again)
+        // SUPERMUX:begin device-mirror-hidden-counts (the other Mac drops this link's counts override with its connection: the re-attach sends it again, judged against the next host's state only; no publish, which would blank the size panel)
         supermuxHostHoldsHiddenCounts = false
+        viewer?.connectionEnded()
         // SUPERMUX:end device-mirror-hidden-counts
     }
 
