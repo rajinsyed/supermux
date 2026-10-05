@@ -79,6 +79,8 @@ public enum SupermuxAgentLaunchCommand {
     ///   - command: The user's Claude command (`claude`, `cc`, `ccx`, …).
     ///   - model: A `--model` selector, or `nil` for the CLI default.
     ///   - effort: An `--effort` level, or `nil` for the CLI default.
+    ///   - readableDirectories: Folders Claude may read without asking
+    ///     (`--add-dir`), e.g. where the prompt's attached images are.
     ///   - prompt: The task Claude should start on.
     ///   - shell: The dialect of the shell that will read the line.
     ///   - promptFileDirectory: Where long prompts are stored.
@@ -86,11 +88,19 @@ public enum SupermuxAgentLaunchCommand {
         command: String,
         model: String?,
         effort: String?,
+        readableDirectories: [String] = [],
         prompt: String,
         shell: SupermuxShellFlavor,
         promptFileDirectory: URL
     ) -> SupermuxAgentLaunchLine {
-        let inline = shellLine(command: command, model: model, effort: effort, prompt: prompt, shell: shell)
+        let inline = shellLine(
+            command: command,
+            model: model,
+            effort: effort,
+            readableDirectories: readableDirectories,
+            prompt: prompt,
+            shell: shell
+        )
         let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedPrompt.isEmpty, inline.utf8.count + 1 > maxInputUTF8Length else {
             return SupermuxAgentLaunchLine(line: inline)
@@ -103,13 +113,14 @@ public enum SupermuxAgentLaunchCommand {
             command: command,
             model: model,
             effort: effort,
+            readableDirectories: readableDirectories,
             promptArgument: fileReadingArgument(path: file.url.path, shell: shell)
         )
         return SupermuxAgentLaunchLine(line: line, promptFile: file)
     }
 
-    /// Composes `<command> [--model M] [--effort E] -- '<prompt>'` with the
-    /// prompt inline.
+    /// Composes `<command> [--model M] [--effort E] [--add-dir D]… -- '<prompt>'`
+    /// with the prompt inline.
     ///
     /// The `--` terminator keeps a prompt that happens to start with `-` from
     /// being parsed as an option. The prompt is quoted for `shell` so a
@@ -121,6 +132,7 @@ public enum SupermuxAgentLaunchCommand {
     ///   - command: The user's Claude command (`claude`, `cc`, `ccx`, …).
     ///   - model: A `--model` selector, or `nil` for the CLI default.
     ///   - effort: An `--effort` level, or `nil` for the CLI default.
+    ///   - readableDirectories: Folders Claude may read without asking (`--add-dir`).
     ///   - prompt: The task Claude should start on.
     ///   - shell: The dialect of the shell that will read the line.
     /// - Returns: The shell line to run, without a trailing newline.
@@ -128,6 +140,7 @@ public enum SupermuxAgentLaunchCommand {
         command: String,
         model: String?,
         effort: String?,
+        readableDirectories: [String] = [],
         prompt: String,
         shell: SupermuxShellFlavor = .posix
     ) -> String {
@@ -136,6 +149,7 @@ public enum SupermuxAgentLaunchCommand {
             command: command,
             model: model,
             effort: effort,
+            readableDirectories: readableDirectories,
             promptArgument: trimmedPrompt.isEmpty ? nil : SupermuxShellQuoting.oneLineQuoted(trimmedPrompt, for: shell)
         )
     }
@@ -167,7 +181,13 @@ public enum SupermuxAgentLaunchCommand {
         }
     }
 
-    private static func compose(command: String, model: String?, effort: String?, promptArgument: String?) -> String {
+    private static func compose(
+        command: String,
+        model: String?,
+        effort: String?,
+        readableDirectories: [String],
+        promptArgument: String?
+    ) -> String {
         var parts = [command.trimmingCharacters(in: .whitespacesAndNewlines)]
         if let model = normalized(model) {
             parts.append("--model")
@@ -176,6 +196,10 @@ public enum SupermuxAgentLaunchCommand {
         if let effort = normalized(effort) {
             parts.append("--effort")
             parts.append(SupermuxShellQuoting.singleQuoted(effort))
+        }
+        for directory in readableDirectories.compactMap(normalized) {
+            parts.append("--add-dir")
+            parts.append(SupermuxShellQuoting.singleQuoted(directory))
         }
         if let promptArgument {
             parts.append("--")

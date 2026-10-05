@@ -1,4 +1,5 @@
 import AppKit
+import CmuxCloud
 import CmuxSurfaceCatalogModel
 import Foundation
 import SupermuxKit
@@ -8,7 +9,8 @@ import SupermuxMobileCore
 /// link: `worktrees.list {include_branches}` for the starting branches,
 /// `agent.options` for Claude commands / models (whether that Mac AI-names,
 /// and its shell's dialect for the launch-line preview),
-/// `worktree.suggest_branch` for AI branch names, and
+/// `worktree.suggest_branch` for AI branch names,
+/// `agent.attachment.upload` for images attached to the prompt, and
 /// `worktree.create {open: true}` / `agent.start` with the long deadline.
 ///
 /// After a create the other Mac has opened a workspace there; its mirror is
@@ -186,6 +188,38 @@ final class SupermuxRemoteWorktreeCreationTarget: SupermuxWorktreeCreationTarget
             shell: shellFlavor
         )
         return line.utf8.count + 1 > SupermuxAgentLaunchCommand.maxInputUTF8Length ? nil : line
+    }
+
+    /// Shown until that Mac's capabilities are known; staging then checks
+    /// them, so an older Mac fails with an update hint before anything is sent.
+    var supportsPromptAttachments: Bool {
+        devices.cachedHostCapabilities(on: machine)
+            .map { $0.contains(SupermuxMobileCapability.agentAttachmentsV1.rawValue) } ?? true
+    }
+
+    /// Uploads the images to that Mac's attachment store; their paths there
+    /// go into `agent.start`.
+    func stageAttachments(_ files: [URL]) async throws -> [String] {
+        guard !files.isEmpty else { return [] }
+        guard ManagedFileTransferPolicy.isEnabled else { throw ManagedFileTransferPolicy.refusalError() }
+        guard let capabilities = await devices.hostCapabilities(on: machine) else {
+            throw failure(SupermuxDeviceError.notConnected(deviceName))
+        }
+        guard capabilities.contains(SupermuxMobileCapability.agentAttachmentsV1.rawValue) else {
+            throw SupermuxAgentAttachmentError.updateMac(deviceName)
+        }
+        let uploader = SupermuxAgentAttachmentUploader { [devices, machine] params in
+            try await devices.request(.agentAttachmentUpload, params: params, on: machine)
+        }
+        do {
+            return try await uploader.upload(files)
+        } catch let error as CancellationError where Task.isCancelled {
+            throw error
+        } catch let error as SupermuxAgentAttachmentError {
+            throw error
+        } catch {
+            throw failure(error)
+        }
     }
 
     func startAgent(

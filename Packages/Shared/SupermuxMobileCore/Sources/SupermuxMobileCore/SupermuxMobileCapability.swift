@@ -97,6 +97,12 @@ public enum SupermuxMobileCapability: String, CaseIterable, Codable, Sendable, E
     /// resize and garble, so it keeps upstream's replay path.
     case terminalStreamV2 = "supermux.terminal_stream.v2"
 
+    /// Images can be attached to an `agent.start` prompt: they are uploaded
+    /// with `agent.attachment.upload` and `agent.start` takes their paths as
+    /// `attachment_paths`, adding them to the prompt and Claude's readable
+    /// directories.
+    case agentAttachmentsV1 = "supermux.agent_attachments.v1"
+
     /// Every capability, in declaration order (derived from `CaseIterable`).
     public static let all: [SupermuxMobileCapability] = SupermuxMobileCapability.allCases
 }

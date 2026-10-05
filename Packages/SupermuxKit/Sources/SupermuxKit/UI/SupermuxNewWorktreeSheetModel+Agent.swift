@@ -24,10 +24,12 @@ extension SupermuxNewWorktreeSheetModel {
     public var canEditCommands: Bool { target?.canEditAgentCommands == true }
 
     /// The exact shell line the new terminal will run; `nil` when it is not
-    /// known here (another Mac that has not named its shell yet, or a prompt
-    /// that Mac reads from a file).
+    /// known here (another Mac that has not named its shell yet, a prompt
+    /// that Mac reads from a file, or attached images, whose paths exist
+    /// only once they are staged at Start).
     public var previewLine: String? {
-        target?.shellLinePreview(command: command, model: selectedModel, effort: selectedEffort, prompt: prompt)
+        guard attachments.isEmpty else { return nil }
+        return target?.shellLinePreview(command: command, model: selectedModel, effort: selectedEffort, prompt: prompt)
     }
 
     /// Drops an effort the newly chosen model does not accept.

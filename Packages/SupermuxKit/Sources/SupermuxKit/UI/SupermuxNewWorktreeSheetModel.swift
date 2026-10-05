@@ -10,8 +10,8 @@ public import SupermuxMobileCore
 /// and another Mac run the same code; the sheet view only renders this model,
 /// and the app's E2E socket drivers run it exactly as a click does.
 ///
-/// Switching Mac keeps the prompt, workspace name and branch the user typed,
-/// and reloads that Mac's starting branches and Claude options. A load that
+/// Switching Mac keeps the prompt, attached images, workspace name and branch
+/// the user typed, and reloads that Mac's starting branches and Claude options. A load that
 /// was still running for the previous Mac is dropped.
 @MainActor
 @Observable
@@ -43,6 +43,8 @@ public final class SupermuxNewWorktreeSheetModel {
 
     // Typed input: kept when the Mac changes.
     public var prompt = ""
+    /// Images attached to the prompt (``addAttachments(_:)``), in order.
+    public internal(set) var attachments: [SupermuxPromptAttachment] = []
     public var workspaceName = ""
     public var branchInput = ""
 
@@ -177,16 +179,23 @@ public final class SupermuxNewWorktreeSheetModel {
     /// Whether the prompt editor shows (the target offers "Start Claude").
     public var showsPromptEditor: Bool { target?.supportsAgentLaunch == true }
 
-    /// Whether a prompt was typed (and the target can start Claude with it).
+    /// Whether a prompt was typed or an image attached (and the target can
+    /// start Claude with it): the sheet is in its Start Claude mode.
     public var hasPrompt: Bool {
-        showsPromptEditor && !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        showsPromptEditor && (hasPromptText || !attachments.isEmpty)
     }
 
-    /// Whether the primary button is enabled: a reachable target, not mid-create.
+    /// Whether the prompt has text (images alone do not tell Claude the task).
+    public var hasPromptText: Bool {
+        !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// Whether the primary button is enabled: a reachable target, not
+    /// mid-create, and text for Claude when images are attached.
     /// The branch list is optional (an untouched picker defers to the service
     /// default), so a failed or slow branch read never blocks creating.
     public var canCreate: Bool {
-        phase == .idle && target != nil && selectedEntry?.canCreate == true
+        phase == .idle && target != nil && selectedEntry?.canCreate == true && (!hasPrompt || hasPromptText)
     }
 
     /// The target's configured default starting branch.
@@ -308,8 +317,24 @@ public final class SupermuxNewWorktreeSheetModel {
             workspaceName: workspaceName,
             branchName: branchInput
         )
+        let files = attachments.map(\.fileURL)
+        let namingStatus = statusMessage
         return Task {
+            var request = request
             do {
+                // The images go first (an upload to another Mac): a failure
+                // there leaves nothing created.
+                if !files.isEmpty {
+                    if let name = target.remoteDeviceName {
+                        statusMessage = String(
+                            localized: "supermux.newWorktree.status.sendingImages",
+                            defaultValue: "Sending images to \(name)…"
+                        )
+                    }
+                    request.attachmentPaths = try await target.stageAttachments(files)
+                    try Task.checkCancellation()
+                    statusMessage = namingStatus
+                }
                 try await target.startAgent(request) {
                     self.phase = .runningGit
                     self.statusMessage = self.creatingStatus

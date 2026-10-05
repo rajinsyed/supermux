@@ -42,7 +42,7 @@ public enum SupermuxDeviceReplyDeadline {
     /// A `files.duplicate` or `files.trash`: the host's bound on copying or
     /// moving a whole tree.
     public static let fileCopy: Duration = seconds(SupermuxMobileFileBrowser.copyTimeout + git)
-    /// One `terminal.attachment.upload` chunk: up to 3 MB of file data
+    /// One `terminal.attachment.upload` or `agent.attachment.upload` chunk: up to 3 MB of file data
     /// (4 MB as base64) over a slow relay, then one file write there.
     public static let attachmentChunk: Duration = .seconds(60)
 
@@ -68,7 +68,7 @@ public enum SupermuxDeviceReplyDeadline {
             return localWork
         case .filesDuplicate, .filesTrash:
             return fileCopy
-        case .terminalAttachmentUpload:
+        case .terminalAttachmentUpload, .agentAttachmentUpload:
             return attachmentChunk
         case .worktreeCreate, .worktreeRemove, .agentStart:
             return checkout

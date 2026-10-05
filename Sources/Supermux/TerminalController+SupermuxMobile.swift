@@ -67,6 +67,8 @@ extension TerminalController {
             return await v2SupermuxAgentOptions(params: params)
         case .agentStart:
             return await v2SupermuxAgentStart(params: params)
+        case .agentAttachmentUpload:
+            return v2SupermuxAgentAttachmentUpload(params: params)
         case .changesWatch:
             return await v2SupermuxChangesWatch(params: params)
         case .changesStatus:

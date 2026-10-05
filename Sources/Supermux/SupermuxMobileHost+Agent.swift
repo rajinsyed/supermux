@@ -54,7 +54,10 @@ extension TerminalController {
     }
 
     /// `mobile.supermux.agent.start`: `{project_id, prompt, command?, model?,
-    /// effort?, base_branch?, workspace_name?, branch_name?}`. Names the
+    /// effort?, base_branch?, workspace_name?, branch_name?, attachment_paths?}`.
+    /// `attachment_paths` names images already uploaded here
+    /// (`agent.attachment.upload`); they are listed after the prompt and
+    /// their folders made readable to Claude. Names the
     /// workspace and branch from the prompt (typed names win),
     /// creates the worktree, and opens a workspace whose first terminal runs
     /// the Claude command with the prompt (setup script in its own terminal,
@@ -83,6 +86,7 @@ extension TerminalController {
             baseBranch: supermuxNonBlank(params["base_branch"]),
             workspaceName: supermuxNonBlank(params["workspace_name"]),
             branchName: supermuxNonBlank(params["branch_name"]),
+            attachmentPaths: supermuxAttachmentPaths(params["attachment_paths"]),
             preservesUserFocus: true
         )
         let launch: SupermuxAgentWorktreeLaunch
@@ -154,6 +158,12 @@ extension TerminalController {
             }
         }
         return FileManager.default.homeDirectoryForCurrentUser
+    }
+
+    /// The absolute paths in `attachment_paths`, at most the attachment limit.
+    private func supermuxAttachmentPaths(_ value: Any?) -> [String] {
+        let paths = (value as? [Any] ?? []).compactMap { $0 as? String }.filter { $0.hasPrefix("/") }
+        return Array(paths.prefix(SupermuxAgentAttachmentLimits.maximumAttachments))
     }
 
     private func supermuxNonBlank(_ value: Any?) -> String? {

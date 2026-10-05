@@ -1,0 +1,54 @@
+public import Foundation
+import SupermuxMobileCore
+
+/// Images attached to the prompt: added by the attach button, a drop or a
+/// paste, staged on the selected Mac when Start Claude runs.
+extension SupermuxNewWorktreeSheetModel {
+    /// Whether the attach button is offered: the selected Mac starts Claude
+    /// and takes images, and the sheet is editable.
+    public var canAttachImages: Bool {
+        phase == .idle && showsPromptEditor && target?.supportsPromptAttachments == true
+    }
+
+    /// Adds image files in order. A file that is not a PNG, JPEG, GIF or WebP
+    /// image, is over 32 MB, or would pass the limit of
+    /// ``SupermuxAgentAttachmentLimits/maximumAttachments`` is left out and
+    /// the first such problem is shown; the others are still added. A file
+    /// already attached is not added twice.
+    /// - Parameter files: Image files on this Mac.
+    public func addAttachments(_ files: [URL]) {
+        guard phase == .idle else { return }
+        var problem: SupermuxAgentAttachmentError?
+        for file in files {
+            if attachments.contains(where: { $0.fileURL.standardizedFileURL == file.standardizedFileURL }) { continue }
+            if let refusal = Self.refusal(for: file, attachedCount: attachments.count) {
+                problem = problem ?? refusal
+                continue
+            }
+            attachments.append(SupermuxPromptAttachment(fileURL: file))
+        }
+        errorMessage = problem?.localizedDescription
+    }
+
+    /// Removes one attached image.
+    /// - Parameter id: The attachment's id.
+    public func removeAttachment(id: UUID) {
+        guard phase == .idle else { return }
+        attachments.removeAll { $0.id == id }
+    }
+
+    /// Why `file` cannot be attached next, or `nil` when it can.
+    static func refusal(for file: URL, attachedCount: Int) -> SupermuxAgentAttachmentError? {
+        let name = file.lastPathComponent
+        guard SupermuxAgentAttachmentLimits.imageFileExtensions.contains(file.pathExtension.lowercased()) else {
+            return .unsupported(name)
+        }
+        let values = try? file.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+        guard values?.isRegularFile == true else { return .unreadable(name) }
+        guard (values?.fileSize ?? 0) <= SupermuxAgentAttachmentLimits.maximumFileBytes else {
+            return .tooLarge(name)
+        }
+        guard attachedCount < SupermuxAgentAttachmentLimits.maximumAttachments else { return .tooMany }
+        return nil
+    }
+}
