@@ -236,7 +236,13 @@ enum SupermuxTerminalSizingRecoveryDrivers {
     // MARK: - Phone connections
 
     /// Phone connections these drivers opened, so the host's connection count stays balanced.
+    /// They stand in for the connection registry: one in here is a live connection
+    /// (`SupermuxMobileConnectionContext.isOpen`), and a close leaves it before it clears.
     private static var openConnections: Set<UUID> = []
+
+    static func isOpenConnection(_ connectionID: UUID) -> Bool {
+        openConnections.contains(connectionID)
+    }
 
     private static func open(_ connectionID: UUID, clientID: String?) {
         if openConnections.insert(connectionID).inserted { MobileHostRequestActivity.beginConnection() }

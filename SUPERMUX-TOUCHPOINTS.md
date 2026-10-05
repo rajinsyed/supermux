@@ -802,6 +802,7 @@ Rules for adding a touchpoint:
 | 1024 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite+ExactlyOnceInput.swift` | `sizing-detached-rpc-error` | First statement of `sendExactlyOnceOverRPC`'s `catch MobileShellConnectionError.rpcError`: `supermuxApplyTerminalDetached(ifCode: code, surfaceID:)`; the unit is still `.refused` as before |
 | 1025 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite.swift` | `sizing-hidden-terminal` | Four fences. After #1020's: `@ObservationIgnored var supermuxCountsHiddenSurfaceIDs: Set<String> = []`. `supermuxMarkCountsHidden(&params, surfaceID:)` (#1019's file) runs before `terminalViewportParameters` returns (the input and exactly-once key/paste piggyback), before `terminal.paste` sends, and in `requestTerminalReplay`'s request task right after the viewport fields are merged (read at send time), so a hidden terminal's replay, the request that re-attaches the phone after a reconnect and that the Mac keeps sticky when it carries a generation (#964), says `counts_override: false` like its dedicated report |
 | 1026 | `Packages/iOS/CmuxMobileShell/Tests/CmuxMobileShellTests/SupermuxHiddenTerminalCountsTests.swift` | `sizing-hidden-terminal` | **Whole-file fork test inside an upstream package.** A hidden terminal's grid piggyback carries `counts_override: false`; shown again it carries no key (never `null`); with no grid it carries nothing |
+| 1001 | `Sources/TerminalController.swift` | `sizing-report-live-connection` | In `applyMobileViewportReport`, after the detached-client check and before any write (the generation fence included): `guard SupermuxMobileConnectionContext.isLive else { return nil }`. A mobile RPC that waited for the main actor past its connection's close (the registry drops a connection before `removeConnection` clears its reports) wrote a report stamped with that dead connection, which no later close clears: sticky for the terminal's life. `isLive` is true off a phone connection (the control socket) and checks `MobileHostConnectionRegistry.shared.connection(id:)`; DEBUG builds also accept the sizing E2E's synthetic connections (`SupermuxTerminalSizingRecoveryDrivers.isOpenConnection`). Recovery E2E R14 `late_request_after_close` |
 | 810 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the remote-terminal polish into the cmux target, four entries each (build file, file reference, Supermux group child, Sources phase) next to #764's `SupermuxDeviceTerminalUpload.swift`: `Devices/SupermuxDeviceTerminalLinks.swift` (`50BE001B0200000000000001`/`…02`, a Cmd-click on a path in another Mac's terminal), `Devices/SupermuxDeviceTerminalActions.swift` (`…03`/`…04`, forwarded Cmd+K/reset, focus and Ctrl+V of an image) and `SupermuxMobileHost+TerminalActions.swift` (`…05`/`…06`, the host's `terminal.action`) |
 | 811 | `Sources/Workspace+TerminalLinkOpening.swift` | `device-terminal-file-link` | First thing in `deferRemoteTerminalFileLinkOpen`: `SupermuxDeviceTerminalLinks.open(rawValue, panelID:in:)` claims a file path clicked in another Mac's terminal and opens that Mac's file in the mirror's read-only preview (upstream refused it: only SSH terminals resolved a remote path) |
 | 812 | `Sources/DockSplitStore+TerminalLinkOpening.swift` | `device-terminal-file-link` | Adds `deferRemoteTerminalFileLinkOpen` to the Dock's link container (upstream relies on the protocol's `false` default): the same `SupermuxDeviceTerminalLinks.open` for another Mac's terminal moved into the Dock |
@@ -7073,6 +7074,21 @@ Re-apply after an upstream merge:
 Verify: steps R9, R10 and R17 of
 `CMUX_E2E_SUITES="loopback_terminal_sizing_recovery_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`,
 and `loopback_terminal_sizing_policy_e2e` (its Auto and Fixed steps).
+
+### 999–1002. Review fixes: a hand-set Mac false, a clear's fence writer, a report from a closed connection, old phones' lanes — `sizing-user-mac-counts`, `sizing-fence-writer`, `sizing-report-live-connection`, `sizing-lane-input`
+
+Found by review of the 2026-10-05 sizing fixes:
+
+- **A report that ran after its connection closed stuck** (#1001). It was stamped with a connection whose close
+  had already run. The write is dropped unless the running connection is still in the registry.
+
+Re-apply after an upstream merge:
+- **#1001**: keep it before the generation fence write. If upstream gives requests a cancellation on close, the
+  check can go.
+
+Verify: steps R14 and R20 of
+`CMUX_E2E_SUITES="loopback_terminal_sizing_recovery_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`
+(#1002 has no loopback leg: the loopback speaks irx; check an old phone build on a dogfood Mac).
 
 ### 1029–1031. Another Mac's mirror: a relaunched host, Size to My Window, activation and its own participant — `remote-mac-viewer-connection-ended`, `device-mirror-size-to-me`, `remote-mac-viewer-own-participant`
 

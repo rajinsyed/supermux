@@ -22,6 +22,30 @@ import Foundation
 /// unstamped and keep upstream's behavior.
 enum SupermuxMobileConnectionContext {
     @TaskLocal static var controlConnectionID: UUID?
+
+    /// Whether the phone connection behind the running work is still open
+    /// (true off a phone connection). A request handler that waited for the
+    /// main actor can run after its connection closed: a report it wrote
+    /// would carry the stamp of a connection whose close already ran, so no
+    /// close would ever clear it (#1001).
+    @MainActor
+    static var isLive: Bool {
+        guard let connectionID = controlConnectionID else { return true }
+        return isOpen(connectionID)
+    }
+
+    /// Whether `connectionID` is an open phone connection. A connection
+    /// leaves the registry before its close clears its reports.
+    @MainActor
+    static func isOpen(_ connectionID: UUID) -> Bool {
+        if MobileHostConnectionRegistry.shared.connection(id: connectionID) != nil { return true }
+        #if DEBUG
+        // The sizing E2E's synthetic phone connections.
+        return SupermuxTerminalSizingRecoveryDrivers.isOpenConnection(connectionID)
+        #else
+        return false
+        #endif
+    }
 }
 
 /// A phone someone disconnected, told so again on each connection.

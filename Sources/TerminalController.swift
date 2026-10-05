@@ -16452,6 +16452,9 @@ class TerminalController {
         }
         // A phone someone disconnected stays out until it reattaches.
         if isMobileClientDetached(surfaceID: terminalPanel.id, clientID: clientID) { return nil }
+        // SUPERMUX:begin sizing-report-live-connection (a request that ran after its connection closed writes nothing: no later close would clear its stamp)
+        guard SupermuxMobileConnectionContext.isLive else { return nil }
+        // SUPERMUX:end sizing-report-live-connection
         // SUPERMUX:begin device-mirror-viewport-limit (a viewing Mac's full-screen pane may be larger than a phone's)
         let viewportLimit = SupermuxTerminalSizingDefaults.viewportLimit(
             deviceKind: v2String(params, "device_kind").flatMap(TerminalDeviceKind.init(rawValue:))
