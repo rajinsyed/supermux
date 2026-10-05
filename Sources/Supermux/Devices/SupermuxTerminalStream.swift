@@ -572,7 +572,8 @@ final class SupermuxTerminalStreamWatch {
     private var acked: (connection: UInt64, watched: Watched)?
     private var failedConnection: UInt64?
     /// Sends that failed in a row; retries stop at ``maximumRetries`` (a host
-    /// that always rejects the call, such as a workspace-scoped ticket).
+    /// that always rejects the call, such as a workspace-scoped ticket),
+    /// unless a pane shown here is still background on the host.
     private var consecutiveFailures = 0
     private static let maximumRetries = 5
     private var syncTask: Task<Void, Never>?
@@ -684,7 +685,9 @@ final class SupermuxTerminalStreamWatch {
                 } catch {
                     self.failedConnection = connection
                     self.consecutiveFailures += 1
-                    if self.consecutiveFailures <= Self.maximumRetries { self.retryAfterFailure(on: connection) }
+                    if self.consecutiveFailures <= Self.maximumRetries || self.hostBatchesAShownTerminal(on: connection) {
+                        self.retryAfterFailure(on: connection)
+                    }
                     break
                 }
             }
@@ -697,17 +700,33 @@ final class SupermuxTerminalStreamWatch {
     /// A send that failed on a connection that stays up (a busy host, a missed
     /// deadline) goes out again shortly: a background change alone has no
     /// other path that sends it again, and a shown pane would keep getting
-    /// its bytes in background batches. A connection's first send retries
-    /// too, or the host would keep sending every terminal's bytes. At most
-    /// ``maximumRetries`` in a row: a host that keeps rejecting the call is
-    /// asked again only by the next change or attach.
+    /// its bytes in background batches, or stay frozen where the host paused
+    /// it. A connection's first send retries too, or the host would keep
+    /// sending every terminal's bytes. ``maximumRetries`` in a row 2 s
+    /// apart; past them only while the host still batches a terminal shown
+    /// here, backing off to 30 s (a host that keeps rejecting the call is
+    /// otherwise asked again only by the next change or attach).
     private func retryAfterFailure(on connection: UInt64) {
+        let delay = Self.retryDelay(afterFailures: consecutiveFailures)
         Task { [weak self] in
-            try? await Task.sleep(for: .seconds(2))
+            try? await Task.sleep(for: delay)
             guard let self, self.connection == connection, self.failedConnection == connection else { return }
             self.failedConnection = nil
             _ = self.sync()
         }
+    }
+
+    /// 2 s for the first ``maximumRetries`` failures in a row, then doubling to 30 s.
+    static func retryDelay(afterFailures failures: Int) -> Duration {
+        let past = min(max(failures - maximumRetries, 0), 4)
+        return .seconds(min(2 << past, 30))
+    }
+
+    /// Whether the host, as last acknowledged on `connection`, still batches
+    /// (or paused) a terminal that some pane here now shows.
+    private func hostBatchesAShownTerminal(on connection: UInt64) -> Bool {
+        guard let acked, acked.connection == connection else { return false }
+        return !acked.watched.background.subtracting(desired.background).isEmpty
     }
 }
 

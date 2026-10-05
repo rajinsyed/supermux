@@ -947,13 +947,25 @@ public final class MobileHostConnectionEventQueue: @unchecked Sendable {
         return nil
     }
 
-    /// The terminal this connection last typed into: its echo goes out
+    /// Input typed into `surfaceID` on this connection: its echo goes out
     /// every other turn among shown terminals, so it waits for at most one
     /// other terminal's chunk, and a flood in it still leaves half the turns.
-    public func supermuxNoteInteractiveSurface(_ surfaceID: String) {
+    /// The input proves the terminal is on screen there, so one the
+    /// connection named background is shown until its next watch, and a
+    /// paused one queues its newest chunk again (true: the caller claims
+    /// the drain, ``claimDrains()``). Its viewer may never have reached the
+    /// host with the watch that showed it.
+    @discardableResult
+    public func supermuxNoteInteractiveSurface(_ surfaceID: String) -> Bool {
         lock.lock()
-        supermuxScheduler.noteInteractive(surfaceID.uppercased())
-        lock.unlock()
+        defer { lock.unlock() }
+        let surfaceID = surfaceID.uppercased()
+        supermuxScheduler.noteInteractive(surfaceID)
+        guard supermuxBackgroundByteSurfaceIDs.remove(surfaceID) != nil else { return false }
+        let queued = queuedEvents.count
+        supermuxResumePausedLocked()
+        supermuxReportByteDemandLocked()
+        return queuedEvents.count > queued
     }
 
     private func supermuxDropWatchedBacklogLocked(surfaceID: String) {

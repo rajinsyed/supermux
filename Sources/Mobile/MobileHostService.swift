@@ -2618,11 +2618,13 @@ actor MobileHostConnection {
     }
 
     private func noteInteractiveSurface(_ surfaceKey: String) {
+        // SUPERMUX:begin terminal-stream-fair-queue (every input: its echo gets every other turn among watched terminals, and a background or paused terminal typed into is shown again)
+        if !surfaceKey.isEmpty, eventQueue.supermuxNoteInteractiveSurface(surfaceKey) {
+            for lane in eventQueue.claimDrains() { startEventDrain(lane: lane) }
+        }
+        // SUPERMUX:end terminal-stream-fair-queue
         guard !surfaceKey.isEmpty, lastInteractiveSurfaceKey != surfaceKey else { return }
         lastInteractiveSurfaceKey = surfaceKey
-        // SUPERMUX:begin terminal-stream-fair-queue (its echo gets every other turn among watched terminals)
-        eventQueue.supermuxNoteInteractiveSurface(surfaceKey)
-        // SUPERMUX:end terminal-stream-fair-queue
         guard surfaceEventLanesActive, let independentEventWriter else { return }
         Task { await independentEventWriter.noteInteractiveSurface(surfaceKey) }
     }
