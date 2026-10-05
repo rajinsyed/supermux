@@ -26,7 +26,20 @@ host's admissions (`connections_admitted` counts every reconnect).
   4. flapping_is_bounded     The lane opens and blocks every 4 s for 100 s: at
                              most 4 reconnects in any 60 s, and the link still
                              switches (at least 2).
-  5. healthy_after           The link is connected and answers a request.
+  5. network_change_restores_direct
+                             (Review T4) Direct dies under a direct session and
+                             is held off ~30 s; the path comes back and the
+                             network changes (`power.simulate network_change`):
+                             the hold-off clears at once and the link is direct
+                             again within 5 s, not after the 30 s.
+  6. recovery_probes_next_session
+                             (Review T5) The network changes while the link is
+                             down; the session that starts right after lands on
+                             the relay and probes direct within 3 s of
+                             connecting, not after the 8-12 s cadence.
+  7. healthy_after           The link is connected and answers a request.
+
+CMUX_E2E_STEPS=<step,step> runs only those steps after setup (all by default).
 
 Writes a JSON report (default tests/supermux/artifacts/loopback_device_route_switch_e2e-<tag>.json)
 with a timeline of route kinds and admissions, and exits non-zero on any failed
@@ -138,6 +151,9 @@ class RouteSwitchE2E:
     def status(self) -> Dict[str, Any]:
         return self.client.call("supermux.devices.route.switch_status", {"machine": self.machine}) or {}
 
+    def power(self, method: str, **params: Any) -> Dict[str, Any]:
+        return self.client.call(f"supermux.devices.power.{method}", params) or {}
+
     def serve(self, addresses: Optional[List[str]]) -> None:
         params: Dict[str, Any] = {} if addresses is None else {"addresses": addresses, "endpoint_id": ENDPOINT_ID}
         self.client.call("supermux.devices.route.candidates_serve", params)
@@ -183,6 +199,12 @@ class RouteSwitchE2E:
         self.serve(addresses)
         expect(self.fetch() == "stored", "the candidate fetch was not stored")
 
+    def forget(self) -> None:
+        """The host says direct is off (relay-only): the link forgets its addresses."""
+        self.client.call("supermux.devices.route.candidates_serve", {"refuse": "direct_off"})
+        outcome = self.fetch()
+        expect(outcome == "direct_off", f"the direct-off answer read {outcome}")
+
     # -- steps -----------------------------------------------------------------
 
     def step(self, name: str, action: Callable[[], Dict[str, Any]]) -> None:
@@ -215,7 +237,7 @@ class RouteSwitchE2E:
         landed = self.wait_for("a direct landing with an address cached", self.on("direct"), 5)
         landings = self.status().get("landings") or []
         expect(landings and landings[-1]["direct"] is True, f"the last landing was not direct: {landings}")
-        self.cache([])
+        self.forget()
         self.reconnect()
         relayed = self.wait_for("a relay landing with no address cached", self.on("relay"), 5)
         before = self.link().get("connections_admitted")
@@ -298,6 +320,48 @@ class RouteSwitchE2E:
         return {"reconnects": reconnects, "worst_minute": worst, "moments_s": [round(m, 1) for m in moments],
                 "stats": stats}
 
+    def network_change_restores_direct(self) -> Dict[str, Any]:
+        self.switch(reset=True, lane="open")
+        self.wait_for("a direct session", self.on("direct"), 16)
+        before = self.link().get("connections_admitted")
+        self.switch(lane="blocked")
+        self.wait_for("the fall back to the relay", self.on("relay"), 8)
+        held = self.status()["policy"]
+        expect(held["allows_direct"] is False and held["hold_off_ms"] >= 20_000,
+               f"direct is not held off after the fall back: {held}")
+        self.switch(lane="open")
+        self.power("simulate", event="network_change")
+        changed = time.monotonic()
+        cleared = self.status()["policy"]
+        expect(cleared["allows_direct"] is True and cleared["hold_off_ms"] == 0,
+               f"the network change left direct held off: {cleared}")
+        self.wait_for("the move back to direct after the network change", self.on("direct"), 5)
+        took = round(time.monotonic() - changed, 2)
+        time.sleep(1)
+        after = self.link().get("connections_admitted")
+        expect(after == before + 2, f"fall back and move back took {after - before} reconnects, not two")
+        self.facts["direct_after_network_change_s"] = took
+        return {"held_before": held, "cleared": cleared, "direct_after_s": took, "reconnects": after - before}
+
+    def recovery_probes_next_session(self) -> Dict[str, Any]:
+        self.switch(reset=True, lane="blocked")
+        self.link("stop")
+        self.wait_for("the link to drop", lambda s: s["link"] != "connected", 20)
+        self.power("simulate", event="network_change")
+        self.link("restore")
+        self.wait_for("a relay landing with the lane blocked", self.on("relay"), 15)
+        connected = time.monotonic()
+        while self.status()["stats"]["probes"] == 0 and time.monotonic() - connected < 4:
+            time.sleep(0.1)
+        took = round(time.monotonic() - connected, 2)
+        stats = self.status()["stats"]
+        expect(stats["probes"] >= 1, f"no probe within 4 s of the session after the recovery: {stats}")
+        expect(took <= 3, f"the session after the recovery first probed after {took} s, not at once")
+        self.switch(lane="open")
+        self.wait_for("the move to direct", self.on("direct"), 16)
+        self.facts["first_probe_after_recovery_session_s"] = took
+        return {"first_probe_after_connect_s": took, "stats": stats}
+
     def healthy_after(self) -> Dict[str, Any]:
         sample = self.wait_for("a connected link with a route", lambda s: s["link"] == "connected" and s["route"], 30)
         answer = self.client.call("supermux.devices.request", {
@@ -308,7 +372,8 @@ class RouteSwitchE2E:
     def cleanup(self) -> None:
         if not self.machine:
             return
-        for call in (lambda: self.switch(active=False), lambda: self.cache([]), lambda: self.serve(None)):
+        for call in (lambda: self.switch(active=False), lambda: self.power("reset"), self.forget,
+                     lambda: self.serve(None)):
             try:
                 call()
             except SwitchFailure as error:
@@ -317,11 +382,11 @@ class RouteSwitchE2E:
     def run(self) -> bool:
         try:
             self.step("setup", self.setup)
-            self.step("starts_direct", self.starts_direct)
-            self.step("relay_to_direct", self.relay_to_direct)
-            self.step("direct_dies_falls_back", self.direct_dies_falls_back)
-            self.step("flapping_is_bounded", self.flapping_is_bounded)
-            self.step("healthy_after", self.healthy_after)
+            wanted = [s for s in os.environ.get("CMUX_E2E_STEPS", "").split(",") if s]
+            for name in ("starts_direct", "relay_to_direct", "direct_dies_falls_back", "flapping_is_bounded",
+                         "network_change_restores_direct", "recovery_probes_next_session", "healthy_after"):
+                if not wanted or name in wanted:
+                    self.step(name, getattr(self, name))
             return True
         except SwitchFailure:
             return False
