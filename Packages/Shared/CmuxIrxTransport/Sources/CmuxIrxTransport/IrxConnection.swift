@@ -409,6 +409,19 @@ public actor IrxConnection {
         return (selected.isRelay, "\(selected.remoteAddr)")
     }
 
+    // SUPERMUX:begin irx-route-sample
+    /// The selected path with iroh's RTT on it (``SupermuxIrxPathSample``),
+    /// for the route a device link shows; nil before a path is selected.
+    /// Here because `connection` is private.
+    public nonisolated func supermuxSelectedPathSample() -> SupermuxIrxPathSample? {
+        let paths = connection.paths()
+        guard let selected = paths.first(where: { $0.isSelected }) else { return nil }
+        return SupermuxIrxPathSample(
+            isRelay: selected.isRelay, remoteAddress: "\(selected.remoteAddr)", rttMs: selected.rttMs,
+            pathCount: paths.count, hasRelayPath: paths.contains { $0.isRelay })
+    }
+    // SUPERMUX:end irx-route-sample
+
     /// The selected QUIC path right now, for relay attribution evidence.
     public nonisolated func selectedPathDescription() -> String {
         let paths = connection.paths()
