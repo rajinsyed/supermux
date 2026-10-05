@@ -445,6 +445,9 @@ extension MobileShellComposite {
                 )
                 return nil
             }
+            // SUPERMUX:begin sizing-detached-rpc-error
+            let detached = supermuxApplyTerminalDetached(ifError: error, surfaceID: surfaceID)
+            // SUPERMUX:end sizing-detached-rpc-error
             let replayRequested = finishPrearmedTerminalViewportBarrierWithoutResize(
                 surfaceID: surfaceID,
                 token: prearmedReplayBarrierToken,
@@ -454,6 +457,20 @@ extension MobileShellComposite {
                 requestColdReplay: !replayRequested,
                 replayAlreadyRequested: replayRequested
             )
+            // SUPERMUX:begin sizing-detached-rpc-error
+            if detached {
+                // Answer like the detached branch above, so the mounted view
+                // does not enter its retry loop.
+                let heldGrid = effectiveViewportSizesBySurfaceID[surfaceID] ?? reportedGrid
+                reportedTerminalViewportSizesBySurfaceID[surfaceID] = reportedGrid
+                return (
+                    columns: heldGrid.columns,
+                    rows: heldGrid.rows,
+                    renderEpoch: nil,
+                    renderRevisionFloor: nil
+                )
+            }
+            // SUPERMUX:end sizing-detached-rpc-error
             terminalViewportLog.error("viewport report failed surface=\(surfaceID, privacy: .public) error=\(String(describing: error), privacy: .public)")
             recordAppEvent(
                 .terminalViewportReportFailed,

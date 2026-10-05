@@ -16779,6 +16779,16 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
                 // force-refresh-and-retry already gave up) must drive the re-auth
                 // prompt instead of silently leaving a stale frame.
                 guard !self.disconnectForAuthorizationFailureIfNeeded(error) else { return }
+                // SUPERMUX:begin sizing-detached-rpc-error
+                if self.supermuxApplyTerminalDetached(ifError: error, surfaceID: surfaceID) {
+                    self.clearTerminalReplayBarrierIfCurrent(
+                        surfaceID: surfaceID,
+                        token: replayBarrierTokenForRequest,
+                        reason: "detached"
+                    )
+                    return
+                }
+                // SUPERMUX:end sizing-detached-rpc-error
                 if self.isTerminalReplayViewportTransition(error) {
                     // Ghostty is still applying the viewport reported by this
                     // request. Do not consume replay retries or fail the
