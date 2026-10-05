@@ -63,6 +63,30 @@ Steps:
      without it (the phone) still selects.
  13. unfocused_remote_create_keeps_selection: a remote create whose mirror
      opens without focus changes no selection on either side.
+ 14. prompt_images_need_text: an image attached on the Loopback Mac puts the
+     sheet in Start Claude mode, hides the (not yet known) launch line and
+     keeps Start disabled until there is text; a non-image is refused with a
+     sentence, the same image is not added twice, and removing it re-enables
+     Create.
+ 15. prompt_images_reach_other_mac: Start Claude on the Loopback Mac with 10
+     images (the most a prompt takes) uploads them (agent.attachment.upload)
+     in one operation: the terminal there echoes the prompt followed by
+     "Attached images:" and all 10 paths, in order, in one folder of that
+     Mac's attachment store, whose bytes match, with that folder as the one
+     --add-dir (one per image overflowed the 1000-byte launch line).
+ 16. prompt_images_on_this_mac: the same on This Mac copies the image into a
+     private folder of its own (0700, file 0600) under the cmux state
+     directory, and the launch line names it the same way.
+ 17. agent_start_rejects_foreign_attachment_paths: agent.start with an
+     attachment path outside an upload folder of the attachment store (a
+     file that exists, a path that climbs out of the store, a file directly
+     in the store whose --add-dir would be the whole store) is rejected
+     before git runs, so no caller can make Claude read another folder
+     without asking.
+ 18. prompt_images_convert_and_follow_links: a HEIC photo attaches as a JPEG,
+     an opaque TIFF as a PNG (both copies of the image at its size), an SVG
+     (which only NSImage reads) as a PNG, and a symlink to an image as the
+     file it points to.
 
 `--only a,b` runs just those steps (after 1-2) and records each result.
 
@@ -76,17 +100,22 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
+import re
 import shutil
+import stat
+import struct
 import subprocess
 import sys
 import threading
 import time
 import uuid
+import zlib
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from loopback_device_smoke import (  # noqa: E402
@@ -112,6 +141,12 @@ def git(*args: str, cwd: Optional[Path] = None) -> str:
     return result.stdout.strip()
 
 
+
+def real_paths(paths: Optional[List[str]]) -> List[str]:
+    """`paths` with symlinks resolved: the app drops /private from /tmp paths, Python adds it."""
+    return [os.path.realpath(path) for path in paths or []]
+
+
 class PickerE2E:
     def __init__(self, client: SocketClient, scratch: Path, timeout_s: float, keep: bool) -> None:
         self.client = client
@@ -134,6 +169,8 @@ class PickerE2E:
         self.other_project_id: Optional[str] = None
         # Projects this run created, with their main checkout (deleted in cleanup).
         self.registered: Dict[str, str] = {}
+        # Folders the launches copied or uploaded test images into (deleted in cleanup).
+        self.image_folders: List[Path] = []
 
     # -- helpers -------------------------------------------------------------
 
@@ -719,6 +756,233 @@ class PickerE2E:
             raise SmokeFailure(f"an unfocused remote create changed the selection: {before} -> {after}")
         return {"remote_workspace_id": remote_id, "mirror_workspace_id": mirror_id}
 
+    # -- prompt images ---------------------------------------------------------
+
+    def write_png(self, name: str) -> Tuple[Path, str]:
+        """A small valid PNG (stdlib only, its pixels keyed to the run) and its SHA-256."""
+        width, height = 4, 4
+        seed = int(self.nonce[:6], 16)
+        pixel = bytes([seed >> 16 & 0xFF, seed >> 8 & 0xFF, seed & 0xFF])
+        raw = b"".join(b"\x00" + pixel * width for _ in range(height))
+
+        def chunk(kind: bytes, data: bytes) -> bytes:
+            return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+        png = (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+               + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+        path = self.root / name
+        path.write_bytes(png)
+        return path, hashlib.sha256(png).hexdigest()
+
+    def echoed_attachment(self, workspace_id: str, marker: str, file_name: str) -> Dict[str, Any]:
+        """Waits for the echo launch in `workspace_id` and returns the image
+        path and --add-dir folder its output names (soft wraps removed; the
+        typed line quotes its arguments, so only the output matches)."""
+        pattern = re.compile(r"Attached images:(/\S+?/" + re.escape(file_name) + ")")
+
+        def found() -> Optional[Dict[str, Any]]:
+            surfaces = (self.client.call("surface.list", {"workspace_id": workspace_id}) or {}).get("surfaces") or []
+            for surface in surfaces:
+                surface_id = surface.get("id") or surface.get("surface_id")
+                text = str((self.client.call(
+                    "surface.read_text",
+                    {"workspace_id": workspace_id, "surface_id": surface_id, "scrollback": True},
+                ) or {}).get("text") or "")
+                flat = text.replace("\r", "").replace("\n", "")
+                match = pattern.search(flat) if f"say {marker}" in flat else None
+                if match:
+                    path = match.group(1)
+                    return {"path": path, "add_dir": f"--add-dir {os.path.dirname(path)} --" in flat,
+                            "surface_id": surface_id}
+            return None
+
+        return wait_for("the launch to echo the prompt and its image path", found, self.timeout_s)
+
+    def echoed_attachments(self, workspace_id: str, marker: str, file_names: List[str]) -> Dict[str, Any]:
+        """Like ``echoed_attachment`` for several images: their paths in the
+        echoed output, in order, and whether the line passed their one folder
+        as --add-dir."""
+        last = self.echoed_attachment(workspace_id, marker, file_names[-1])
+        text = str((self.client.call(
+            "surface.read_text",
+            {"workspace_id": workspace_id, "surface_id": last["surface_id"], "scrollback": True},
+        ) or {}).get("text") or "")
+        flat = text.replace("\r", "").replace("\n", "")
+        listed = flat[flat.rindex("Attached images:") + len("Attached images:"):]
+        paths = re.findall(r"(/\S*?/(?:" + "|".join(re.escape(n) for n in file_names) + "))", listed)
+        if [os.path.basename(p) for p in paths[:len(file_names)]] != file_names:
+            raise SmokeFailure(f"the launch did not list all {len(file_names)} images in order: {paths}")
+        paths = paths[:len(file_names)]
+        return {"paths": paths, "add_dir": f"--add-dir {os.path.dirname(paths[0])} --" in flat}
+
+    def check_image_copy(self, echoed: Dict[str, Any], digest: str, store: Path) -> Dict[str, Any]:
+        path = Path(echoed["path"])
+        if store not in path.parents:
+            raise SmokeFailure(f"the image path {path} is not in {store}")
+        if path.parent not in self.image_folders:
+            self.image_folders.append(path.parent)
+        if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != digest:
+            raise SmokeFailure(f"{path} is missing or differs from the attached image")
+        if not echoed["add_dir"]:
+            raise SmokeFailure(f"the launch line does not pass --add-dir {path.parent}")
+        return {"image_path": str(path), "folder_mode": oct(stat.S_IMODE(path.parent.stat().st_mode)),
+                "file_mode": oct(stat.S_IMODE(path.stat().st_mode))}
+
+    def check_prompt_images_need_text(self) -> Dict[str, Any]:
+        self.ensure_echo_command()
+        image, _ = self.write_png(f"img-{self.nonce}-check.png")
+        not_image = self.root / f"notes-{self.nonce}.txt"
+        not_image.write_text("not an image\n", encoding="utf-8")
+        session = self.open_session(preferred_device=self.machine)["session_id"]
+        state = self.call("load", {"session_id": session}, timeout_s=180)
+        if not state.get("can_attach_images") or not (state.get("target") or {}).get("supports_prompt_attachments"):
+            raise SmokeFailure(f"the Loopback Mac does not take prompt images: {state}")
+        state = self.call("fill", {"session_id": session, "prompt": "", "attachments": [str(image)]})
+        if real_paths(state.get("attachments")) != [os.path.realpath(image)] or not state.get("has_prompt"):
+            raise SmokeFailure(f"the image did not attach in Start Claude mode: {state}")
+        if state.get("can_create") or state.get("preview_line") is not None:
+            raise SmokeFailure(f"images without text must keep Start disabled and the line unpreviewed: {state}")
+        state = self.call("fill", {"session_id": session, "attachments": [str(not_image), str(image)]})
+        if real_paths(state.get("attachments")) != [os.path.realpath(image)] or not state.get("error_message"):
+            raise SmokeFailure(f"a non-image was not refused with a sentence (or the image doubled): {state}")
+        refusal = state.get("error_message")
+        state = self.call("remove_attachment", {"session_id": session, "index": 0})
+        if state.get("attachments") or state.get("has_prompt") or not state.get("can_create"):
+            raise SmokeFailure(f"removing the image did not restore the plain sheet: {state}")
+        self.call("close", {"session_id": session})
+        return {"refusal": refusal}
+
+    def check_prompt_images_reach_other_mac(self) -> Dict[str, Any]:
+        self.ensure_echo_command()
+        names = [f"img-{self.nonce}-remote-{index}.png" for index in range(10)]
+        images = [self.write_png(name) for name in names]
+        session = self.open_session(preferred_device=self.machine)["session_id"]
+        self.call("load", {"session_id": session}, timeout_s=180)
+        marker = f"picker-image-{self.nonce}"
+        result = self.call(
+            "submit",
+            {"session_id": session, "prompt": f"say {marker}", "command": "echo",
+             "attachments": [str(image) for image, _ in images]},
+            timeout_s=300,
+        )
+        facts = self.check_mirror_selected(result)
+        echoed = self.echoed_attachments(facts["remote_workspace_id"], marker, names)
+        folders = {os.path.dirname(path) for path in echoed["paths"]}
+        if len(folders) != 1:
+            raise SmokeFailure(f"10 small images did not share one upload folder: {sorted(folders)}")
+        store = Path.home() / ".cache" / "cmux" / "task-attachments"
+        for path, (_, digest) in zip(echoed["paths"], images):
+            copy = self.check_image_copy({"path": path, "add_dir": echoed["add_dir"]}, digest, store)
+        facts.update(copy)
+        facts["image_count"] = len(echoed["paths"])
+        return facts
+
+    def check_prompt_images_on_this_mac(self) -> Dict[str, Any]:
+        self.ensure_echo_command()
+        name = f"img-{self.nonce}-local.png"
+        image, digest = self.write_png(name)
+        branch = f"picker-image-local-{self.nonce}"
+        session = self.open_session(preferred_device=THIS_MAC)["session_id"]
+        state = self.call("load", {"session_id": session}, timeout_s=180)
+        if state.get("selected_entry_id") != THIS_MAC:
+            raise SmokeFailure(f"the sheet did not open on This Mac: {state.get('selected_entry_id')}")
+        marker = f"picker-image-local-{self.nonce}"
+        result = self.call(
+            "submit",
+            {"session_id": session, "prompt": f"say {marker}", "command": "echo", "attachments": [str(image)],
+             "workspace_name": f"picker image {self.nonce}", "branch_name": branch},
+            timeout_s=300,
+        )
+        if not result.get("finished"):
+            raise SmokeFailure(f"Start Claude on This Mac did not finish: {result}")
+        worktree = self.adopt_orphan(branch)
+        if not worktree or not worktree.get("workspace_id"):
+            raise SmokeFailure(f"the launch on This Mac opened no workspace for {branch}: {worktree}")
+        echoed = self.echoed_attachment(worktree["workspace_id"], marker, name)
+        store = Path.home() / ".local" / "state" / "cmux" / "supermux-agent-attachments"
+        facts = self.check_image_copy(echoed, digest, store)
+        if facts["folder_mode"] != "0o700" or facts["file_mode"] != "0o600":
+            raise SmokeFailure(f"the copy is not private: {facts}")
+        if Path(facts["image_path"]) == image:
+            raise SmokeFailure("the launch names the attached file itself, not a private copy")
+        facts["workspace_id"] = worktree["workspace_id"]
+        return facts
+
+    def check_foreign_attachment_paths(self) -> Dict[str, Any]:
+        self.ensure_echo_command()
+        store = Path.home() / ".cache" / "cmux" / "task-attachments"
+        outside, _ = self.write_png(f"img-{self.nonce}-outside.png")
+        in_store_root = store / f"img-{self.nonce}-store-root.png"
+        store.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(outside, in_store_root)
+        attempts = {"outside": str(outside), "climbs_out": f"{store}/{os.path.relpath(outside, store)}",
+                    "store_root": str(in_store_root)}
+        try:
+            rejected = self.attempt_foreign_paths(attempts)
+        finally:
+            in_store_root.unlink(missing_ok=True)
+        return {"rejected": rejected}
+
+    def attempt_foreign_paths(self, attempts: Dict[str, str]) -> Dict[str, str]:
+        """Sends agent.start with each path; every one must be refused before git runs."""
+        rejected: Dict[str, str] = {}
+        for label, path in attempts.items():
+            branch = f"foreign-{label.replace('_', '-')}-{self.nonce}"
+            try:
+                result = self.request(
+                    "mobile.supermux.agent.start",
+                    {"project_id": self.project_id, "prompt": "say nothing", "command": "echo",
+                     "branch_name": branch, "attachment_paths": [path], "select": False},
+                    timeout_s=120,
+                )
+            except SmokeFailure as error:
+                if "invalid_params" not in str(error):
+                    raise
+                rejected[label] = str(error)
+            else:
+                raise SmokeFailure(f"agent.start accepted attachment path {path}: {result}")
+            if any(w.get("branch") == branch for w in self.remote_worktrees()):
+                raise SmokeFailure(f"a rejected agent.start still created {branch}")
+        return rejected
+
+    def check_prompt_images_convert_and_follow_links(self) -> Dict[str, Any]:
+        png, _ = self.write_png(f"img-{self.nonce}-source.png")
+        heic = self.root / f"img-{self.nonce}-photo.heic"
+        tiff = self.root / f"img-{self.nonce}-scan.tiff"
+        for fmt, out in (("heic", heic), ("tiff", tiff)):
+            subprocess.run(["sips", "-s", "format", fmt, str(png), "--out", str(out)],
+                           check=True, capture_output=True, timeout=60)
+        svg = self.root / f"img-{self.nonce}-drawing.svg"
+        svg.write_text('<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8">'
+                       '<rect width="8" height="8" fill="#336699"/></svg>', encoding="utf-8")
+        link = self.root / f"img-{self.nonce}-link.png"
+        link.symlink_to(png)
+        session = self.open_session(preferred_device=THIS_MAC)["session_id"]
+        self.call("load", {"session_id": session}, timeout_s=180)
+        state = self.call("fill", {"session_id": session, "attachments": [str(heic), str(tiff), str(svg), str(link)]})
+        attached = state.get("attachments") or []
+        self.call("close", {"session_id": session})
+        if state.get("error_message") or len(attached) != 4:
+            raise SmokeFailure(f"the HEIC, TIFF, SVG and symlink did not all attach: {state}")
+        photo, scan, drawing, linked = (Path(path) for path in attached)
+        for converted in (photo, scan, drawing):
+            if converted.parent not in self.image_folders:
+                self.image_folders.append(converted.parent)
+        if photo.suffix not in (".jpg", ".jpeg") or not photo.read_bytes().startswith(b"\xff\xd8\xff"):
+            raise SmokeFailure(f"the HEIC photo did not convert to a JPEG: {photo}")
+        if scan.suffix != ".png" or not scan.read_bytes().startswith(b"\x89PNG"):
+            raise SmokeFailure(f"the opaque TIFF did not convert to a PNG: {scan}")
+        if drawing.suffix != ".png" or not drawing.read_bytes().startswith(b"\x89PNG"):
+            raise SmokeFailure(f"the SVG did not render to a PNG: {drawing}")
+        dimensions = [subprocess.run(["sips", "-g", "pixelWidth", "-g", "pixelHeight", str(p)],
+                                     check=True, capture_output=True, text=True, timeout=60).stdout.split()[-3::2]
+                      for p in (photo, scan)]
+        if any(d != ["4", "4"] for d in dimensions):
+            raise SmokeFailure(f"a converted image changed size: {dimensions}")
+        if real_paths([str(linked)]) != [os.path.realpath(png)] or linked.name != png.name:
+            raise SmokeFailure(f"the symlink did not attach as the file it points to: {linked}")
+        return {"photo": photo.name, "scan": scan.name, "drawing": drawing.name, "linked": str(linked)}
+
     # -- cleanup -------------------------------------------------------------
 
     def cleanup(self) -> None:
@@ -762,6 +1026,8 @@ class PickerE2E:
                             ))
             for project_id in self.registered:
                 attempt(lambda p=project_id: self.request("mobile.supermux.project.delete", {"project_id": p}))
+            for folder in self.image_folders:
+                shutil.rmtree(folder, ignore_errors=True)
             shutil.rmtree(self.root, ignore_errors=True)
         if errors:
             self.facts["cleanup_errors"] = errors
@@ -800,6 +1066,11 @@ class PickerE2E:
             ("dropped_link_start_claude_reports_unknown_outcome", lambda: self.check_dropped_link(prompt=True)),
             ("host_open_keeps_selection_for_other_macs", self.check_host_open_keeps_selection),
             ("unfocused_remote_create_keeps_selection", self.check_unfocused_remote_create),
+            ("prompt_images_need_text", self.check_prompt_images_need_text),
+            ("prompt_images_reach_other_mac", self.check_prompt_images_reach_other_mac),
+            ("prompt_images_on_this_mac", self.check_prompt_images_on_this_mac),
+            ("agent_start_rejects_foreign_attachment_paths", self.check_foreign_attachment_paths),
+            ("prompt_images_convert_and_follow_links", self.check_prompt_images_convert_and_follow_links),
         ]
         try:
             self.step("device_connected", self.check_device)

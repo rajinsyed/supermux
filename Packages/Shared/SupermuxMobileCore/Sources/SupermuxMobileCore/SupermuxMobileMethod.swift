@@ -47,7 +47,14 @@ public enum SupermuxMobileMethod: String, CaseIterable, Codable, Sendable, Equat
     /// Reads the configured Claude commands plus one command's model catalog.
     case agentOptions = "mobile.supermux.agent.options"
     /// Creates a worktree named from a prompt and starts Claude in it.
+    /// `attachment_paths` (``SupermuxMobileCapability/agentAttachmentsV1``)
+    /// names images already stored here that Claude reads with the prompt.
     case agentStart = "mobile.supermux.agent.start"
+    /// Stores one chunk of an image attached to an `agent.start` prompt, and
+    /// answers the stored file's absolute path on the last chunk. Same store
+    /// and chunk contract as ``terminalAttachmentUpload``, but no workspace
+    /// exists yet, so it needs a Mac-wide ticket like `agent.start`.
+    case agentAttachmentUpload = "mobile.supermux.agent.attachment.upload"
 
     // MARK: Changes
 

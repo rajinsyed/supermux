@@ -24,6 +24,7 @@ import Testing
         // Agent launch
         "mobile.supermux.agent.options",
         "mobile.supermux.agent.start",
+        "mobile.supermux.agent.attachment.upload",
         // Changes
         "mobile.supermux.changes.watch",
         "mobile.supermux.changes.status",

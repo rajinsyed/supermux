@@ -49,6 +49,7 @@ import Testing
         #expect(SupermuxMobileCapability.terminalInputPipelineV1.rawValue == "supermux.terminal_input_pipeline.v1")
         #expect(SupermuxMobileCapability.terminalStreamV2.rawValue == "supermux.terminal_stream.v2")
         #expect(SupermuxMobileCapability.routeCandidatesV1.rawValue == "supermux.route_candidates.v1")
+        #expect(SupermuxMobileCapability.agentAttachmentsV1.rawValue == "supermux.agent_attachments.v1")
     }
 
     @Test func allExposesEveryCapabilityExactlyOnce() {

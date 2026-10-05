@@ -74,6 +74,15 @@ public protocol SupermuxWorktreeCreationTarget: AnyObject, Sendable {
     /// known here (another Mac that has not named its shell's dialect yet,
     /// or a prompt long enough that Mac reads it from a file).
     func shellLinePreview(command: String, model: String?, effort: String?, prompt: String) -> String?
+    /// Whether images can be attached to the prompt there.
+    var supportsPromptAttachments: Bool { get }
+    /// Puts the prompt's attached images where that Mac's Claude reads them
+    /// (a private copy on this Mac, an upload to another Mac). Runs before
+    /// ``startAgent(_:willCreateWorktree:)``, so a failure creates nothing.
+    /// - Parameter files: The attached image files on this Mac.
+    /// - Returns: Their paths on that Mac, in order, for
+    ///   ``SupermuxAgentLaunchRequest/attachmentPaths``.
+    func stageAttachments(_ files: [URL]) async throws -> [String]
     /// Names, creates and opens a worktree whose terminal runs the command.
     /// Calls `willCreateWorktree` right before the point of no return.
     func startAgent(

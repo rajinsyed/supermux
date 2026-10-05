@@ -6,6 +6,9 @@ public struct SupermuxAgentLaunchRequest: Equatable, Sendable {
     public var projectId: UUID
     /// The task Claude starts on.
     public var prompt: String
+    /// Images Claude reads with the prompt, by their paths on the Mac that
+    /// runs it (see ``SupermuxAgentPromptAttachments``).
+    public var attachmentPaths: [String]
     /// The Claude command to run (`claude`, `cc`, `ccx`, …).
     public var command: String
     /// A `--model` selector, or `nil` for the CLI default.
@@ -32,10 +35,12 @@ public struct SupermuxAgentLaunchRequest: Equatable, Sendable {
         baseBranch: String? = nil,
         workspaceName: String? = nil,
         branchName: String? = nil,
+        attachmentPaths: [String] = [],
         preservesUserFocus: Bool = false
     ) {
         self.projectId = projectId
         self.prompt = prompt
+        self.attachmentPaths = attachmentPaths
         self.command = command
         self.model = model
         self.effort = effort
@@ -109,6 +114,8 @@ public final class SupermuxAgentWorktreeLauncher {
     /// Where prompts too long for the pty's input line are stored (see
     /// ``SupermuxAgentLaunchCommand/maxInputUTF8Length``).
     public let promptFileDirectory: URL
+    /// Where images attached on this Mac are copied for Claude to read.
+    public let attachmentStore: SupermuxAgentAttachmentStore
 
     /// Creates the launcher.
     /// - Parameters:
@@ -120,38 +127,68 @@ public final class SupermuxAgentWorktreeLauncher {
     ///   - promptFileDirectory: Where long prompts are written; defaults to
     ///     a folder under the temporary directory, so the app passes its
     ///     state directory.
+    ///   - attachmentDirectory: Where attached images are copied; defaults
+    ///     to a folder under the temporary directory, so the app passes its
+    ///     state directory.
     public init(
         projectsModel: SupermuxProjectsModel,
         namer: (any SupermuxAIWorktreeNaming)?,
         settings: SupermuxAgentLauncherSettings,
         shell: SupermuxShellFlavor = .detect(shellPath: SupermuxAgentCommandProbePlan.shellPath()),
         promptFileDirectory: URL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("supermux-agent-prompts", isDirectory: true)
+            .appendingPathComponent("supermux-agent-prompts", isDirectory: true),
+        attachmentDirectory: URL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("supermux-agent-attachments", isDirectory: true)
     ) {
         self.projectsModel = projectsModel
         self.namer = namer
         self.settings = settings
         self.shell = shell
         self.promptFileDirectory = promptFileDirectory
+        self.attachmentStore = SupermuxAgentAttachmentStore(rootDirectory: attachmentDirectory)
     }
 
     /// The exact shell line a launch with these choices would run — the
     /// sheet's preview, built by the same code as the real launch.
-    public func shellLine(command: String, model: String?, effort: String?, prompt: String) -> String {
-        launchLine(command: command, model: model, effort: effort, prompt: prompt).line
+    public func shellLine(
+        command: String,
+        model: String?,
+        effort: String?,
+        prompt: String,
+        attachments: SupermuxAgentPromptAttachments = SupermuxAgentPromptAttachments()
+    ) -> String {
+        launchLine(command: command, model: model, effort: effort, prompt: prompt, attachments: attachments).line
     }
 
     /// The launch line plus the prompt file it reads when the prompt is too
-    /// long to go inline.
-    public func launchLine(command: String, model: String?, effort: String?, prompt: String) -> SupermuxAgentLaunchLine {
+    /// long to go inline. Attached images are listed after the prompt and
+    /// their folders made readable (`--add-dir`).
+    public func launchLine(
+        command: String,
+        model: String?,
+        effort: String?,
+        prompt: String,
+        attachments: SupermuxAgentPromptAttachments = SupermuxAgentPromptAttachments()
+    ) -> SupermuxAgentLaunchLine {
         SupermuxAgentLaunchCommand.launchLine(
             command: command,
             model: model,
             effort: effort,
-            prompt: prompt,
+            readableDirectories: attachments.directories,
+            prompt: attachments.prompt(appendingTo: prompt.trimmingCharacters(in: .whitespacesAndNewlines)),
             shell: shell,
             promptFileDirectory: promptFileDirectory
         )
+    }
+
+    /// Copies images attached on this Mac to where Claude reads them, off
+    /// the main actor.
+    /// - Parameter files: The attached files.
+    /// - Returns: The copies' paths, for ``SupermuxAgentLaunchRequest/attachmentPaths``.
+    /// - Throws: The file system error of a failed copy.
+    public func stageAttachments(_ files: [URL]) async throws -> [String] {
+        let store = attachmentStore
+        return try await Task.detached(priority: .userInitiated) { try store.store(files) }.value
     }
 
     /// Whether AI naming will be attempted (a key is configured).
@@ -211,7 +248,8 @@ public final class SupermuxAgentWorktreeLauncher {
             command: request.command,
             model: request.model,
             effort: request.effort,
-            prompt: prompt
+            prompt: prompt,
+            attachments: SupermuxAgentPromptAttachments(paths: request.attachmentPaths)
         )
         if let promptFile = launchLine.promptFile {
             do {

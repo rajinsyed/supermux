@@ -393,6 +393,10 @@ struct FakeFailure: Error, LocalizedError {
         remoteDeviceName == nil ? "\(command) \(prompt)" : nil
     }
 
+    var supportsPromptAttachments: Bool { true }
+
+    func stageAttachments(_ files: [URL]) async throws -> [String] { files.map(\.path) }
+
     func startAgent(
         _ request: SupermuxAgentLaunchRequest,
         willCreateWorktree: @escaping @MainActor () -> Void

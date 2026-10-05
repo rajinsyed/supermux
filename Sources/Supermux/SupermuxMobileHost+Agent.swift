@@ -1,3 +1,4 @@
+import CmuxControlSocket
 import Foundation
 import SupermuxKit
 import SupermuxMobileCore
@@ -54,7 +55,11 @@ extension TerminalController {
     }
 
     /// `mobile.supermux.agent.start`: `{project_id, prompt, command?, model?,
-    /// effort?, base_branch?, workspace_name?, branch_name?}`. Names the
+    /// effort?, base_branch?, workspace_name?, branch_name?, attachment_paths?}`.
+    /// `attachment_paths` names images already uploaded here
+    /// (`agent.attachment.upload`); they are listed after the prompt and
+    /// their folders made readable to Claude, so any other path (one outside
+    /// the attachment store, or not a file) rejects the request. Names the
     /// workspace and branch from the prompt (typed names win),
     /// creates the worktree, and opens a workspace whose first terminal runs
     /// the Claude command with the prompt (setup script in its own terminal,
@@ -68,6 +73,13 @@ extension TerminalController {
         switch await supermuxResolveProject(params: params) {
         case let .failure(error): return error
         case let .success(resolved): project = resolved
+        }
+        guard let attachmentPaths = supermuxAttachmentPaths(params["attachment_paths"]) else {
+            return .err(
+                code: "invalid_params",
+                message: "attachment_paths must name files uploaded with agent.attachment.upload",
+                data: nil
+            )
         }
         let environment = SupermuxComposition.agentLaunch
         let requestedCommand = (params["command"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -83,6 +95,7 @@ extension TerminalController {
             baseBranch: supermuxNonBlank(params["base_branch"]),
             workspaceName: supermuxNonBlank(params["workspace_name"]),
             branchName: supermuxNonBlank(params["branch_name"]),
+            attachmentPaths: attachmentPaths,
             preservesUserFocus: true
         )
         let launch: SupermuxAgentWorktreeLaunch
@@ -154,6 +167,31 @@ extension TerminalController {
             }
         }
         return FileManager.default.homeDirectoryForCurrentUser
+    }
+
+    /// The files `attachment_paths` names (symlinks resolved), or `nil` when
+    /// one is not a regular file directly inside one upload operation's
+    /// folder of this Mac's attachment store, or there are more than the
+    /// attachment limit. Each folder becomes Claude's `--add-dir`, so nothing
+    /// else on this Mac may be named — not the store itself, which holds
+    /// every other upload.
+    private func supermuxAttachmentPaths(_ value: Any?) -> [String]? {
+        guard let value else { return [] }
+        guard let raw = value as? [Any], raw.count <= SupermuxAgentAttachmentLimits.maximumAttachments else { return nil }
+        let store = MobileTaskAttachmentStore.defaultRootURL(
+            homeDirectory: FileManager.default.homeDirectoryForCurrentUser
+        ).resolvingSymlinksInPath().path
+        var paths: [String] = []
+        for item in raw {
+            guard let path = item as? String, path.hasPrefix("/") else { return nil }
+            let resolved = URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath()
+            let operationFolder = resolved.deletingLastPathComponent()
+            guard operationFolder.deletingLastPathComponent().path == store,
+                  UUID(uuidString: operationFolder.lastPathComponent) != nil,
+                  (try? resolved.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true else { return nil }
+            paths.append(resolved.path)
+        }
+        return paths
     }
 
     private func supermuxNonBlank(_ value: Any?) -> String? {

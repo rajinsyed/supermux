@@ -55,6 +55,20 @@ anything.** It is the contract that keeps the fork mergeable with upstream cmux.
    so a prompt that would not fit inline is saved under the cmux state directory
    (`supermux-agent-prompts/<sha256>.txt`, pruned after 7 days) and the line reads it with
    `"$(command cat -- …)"` (`(command cat -- … | string collect)` on fish).
+   **Images** can be pasted, dropped or attached (paperclip) in the Mac sheet's prompt; they put the
+   sheet in Start Claude mode, which then needs text too. Formats Claude cannot read are converted
+   off the main thread (HEIC/RAW photos to JPEG, transparent images to PNG, others to PNG or JPEG
+   when the PNG would pass 32 MB), and Start waits for that. When an organization disables file
+   transfer, another Mac's sheet offers no attaching. At Start they are staged on the Mac that
+   runs Claude — copied on this Mac into `supermux-agent-attachments/<uuid>/` under the cmux state
+   directory (0700, pruned after 7 days), or uploaded to another Mac with
+   `agent.attachment.upload` (`supermux.agent_attachments.v1`, upstream's task-attachment store and
+   chunk contract, Mac-wide ticket; images share an operation up to its 10-file / 64 MiB limits, so
+   the launch line gets few `--add-dir`s) before `agent.start` gets their paths as
+   `attachment_paths`, each of which must be a file in an upload folder of that store. The
+   launch lists the paths after the prompt ("Attached images:") and passes their folders as
+   `--add-dir`, so Claude reads them without a permission prompt. The phone sheet has no attach UI
+   yet; the RPCs are phone-ready.
 
 9. **Remote Macs as first-class workspaces (Superset-style).** Every workspace on every one of the
    user's other Macs appears in the LEFT sidebar automatically, as a real local "mirror" workspace

@@ -65,6 +65,7 @@ enum SupermuxMobileAuthorization {
              .projectProbe, .projectClone,
              .worktreesList, .worktreeSuggestBranch, .worktreeCreate,
              .worktreeOpen, .worktreeRemove, .agentOptions, .agentStart,
+             .agentAttachmentUpload,
              .runState, .runStart, .runStop,
              .presetCreate, .presetUpdate, .presetDelete, .presetLaunch,
              .actionRun, .phonePushRegister, .phonePushStatus, .phonePushShare,

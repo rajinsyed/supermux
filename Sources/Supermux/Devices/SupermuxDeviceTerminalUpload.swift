@@ -2,6 +2,7 @@ import CmuxCloud
 import CmuxControlSocket
 import CmuxSurfaceCatalogModel
 import Foundation
+import SupermuxKit
 import SupermuxMobileCore
 
 /// The Mac a file pasted or dropped into a device-mirror terminal goes to.
@@ -25,7 +26,8 @@ struct SupermuxDeviceUploadTarget: Equatable, Sendable {
 /// A device-mirror pane resolves to ``SupermuxDeviceUploadTarget`` instead
 /// (the `device-terminal-upload` touchpoint in
 /// `TerminalSurface+ImageTransferTarget.swift`), and each file is uploaded in
-/// 3 MB chunks with `mobile.supermux.terminal.attachment.upload`. The owning
+/// 3 MB chunks with `mobile.supermux.terminal.attachment.upload`, by the
+/// same ``SupermuxAgentAttachmentUploader`` that sends prompt images. The owning
 /// Mac stores it under `~/.cache/cmux/task-attachments` and answers its path
 /// there, which the paste types (shell-escaped) like an SSH upload's.
 ///
@@ -110,72 +112,31 @@ enum SupermuxDeviceTerminalUpload {
         guard fileURLs.count <= MobileTaskAttachmentStore.maximumAttachmentsPerOperation else {
             throw SupermuxDeviceTerminalUploadError.tooManyFiles(MobileTaskAttachmentStore.maximumAttachmentsPerOperation)
         }
-        let operationID = UUID()
-        var paths: [String] = []
         for fileURL in fileURLs {
-            let data = try await readRegularFile(fileURL)
-            paths.append(try await uploadFile(
-                data, named: fileURL.lastPathComponent, operationID: operationID,
-                workspaceID: workspaceID, machine: machine, operation: operation
-            ))
+            try await validateRegularFile(fileURL)
         }
-        return paths
-    }
-
-    /// One file, chunk by chunk; the last chunk's reply names the stored file.
-    @MainActor
-    private static func uploadFile(
-        _ data: Data,
-        named fileName: String,
-        operationID: UUID,
-        workspaceID: String,
-        machine: SurfaceMachineID,
-        operation: TerminalImageTransferOperation
-    ) async throws -> String {
-        let uploadID = UUID()
-        var offset = 0
-        repeat {
-            try Task.checkCancellation()
+        let uploader = SupermuxAgentAttachmentUploader(chunkBytes: chunkBytes) { [devices] params in
             try operation.throwIfCancelled()
-            let end = min(offset + chunkBytes, data.count)
-            let isLast = end == data.count
-            let reply = try await SupermuxComposition.devices.request(
-                .terminalAttachmentUpload,
-                params: [
-                    "workspace_id": workspaceID,
-                    "operation_id": operationID.uuidString,
-                    "upload_id": uploadID.uuidString,
-                    "file_name": fileName,
-                    "total_bytes": data.count,
-                    "offset": offset,
-                    "data_b64": data.subdata(in: offset..<end).base64EncodedString(),
-                    "last": isLast,
-                ],
-                on: machine
-            )
-            if isLast {
-                guard let path = reply["path"] as? String, path.hasPrefix("/") else {
-                    throw SupermuxDeviceError.malformedResponse(SupermuxMobileMethod.terminalAttachmentUpload.rawValue)
-                }
-                return path
-            }
-            offset = end
-        } while true
+            var params = params
+            params["workspace_id"] = workspaceID
+            return try await devices.request(.terminalAttachmentUpload, params: params, on: machine)
+        }
+        return try await uploader.upload(fileURLs)
     }
 
-    /// The file's bytes, read off the main actor. Only regular files within
-    /// the host store's size cap upload.
-    private static func readRegularFile(_ fileURL: URL) async throws -> Data {
+    /// Refuses, off the main actor, anything but a regular file within the
+    /// host store's size cap.
+    private static func validateRegularFile(_ fileURL: URL) async throws {
         try await Task.detached(priority: .userInitiated) {
             let url = fileURL.standardizedFileURL
-            let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+            // A symlink counts as the file it points to.
+            let values = try? url.resolvingSymlinksInPath().resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
             guard values?.isRegularFile == true else {
                 throw SupermuxDeviceTerminalUploadError.notAFile(url.lastPathComponent)
             }
             guard (values?.fileSize ?? 0) <= MobileTaskAttachmentStore.maximumFileBytes else {
                 throw SupermuxDeviceTerminalUploadError.tooLarge(url.lastPathComponent)
             }
-            return try Data(contentsOf: url)
         }.value
     }
 }
