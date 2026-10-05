@@ -16564,7 +16564,9 @@ class TerminalController {
                 "reschedule=\(scheduleFlush ? 1 : 0) reason=\(reason)"
             )
             #endif
-            if scheduleFlush {
+            // SUPERMUX:begin sizing-soft-leave (upstream: `if scheduleFlush {`; a soft leave re-arms a pending cap window, so its stage waits the uncap window)
+            if scheduleFlush || softLeave {
+            // SUPERMUX:end sizing-soft-leave
                 scheduleMobileViewportGovernorFlush(
                     surfaceID: surfaceID,
                     // SUPERMUX:begin sizing-soft-leave (upstream: `window: Self.mobileViewportStabilityWindow(for: target),`)
