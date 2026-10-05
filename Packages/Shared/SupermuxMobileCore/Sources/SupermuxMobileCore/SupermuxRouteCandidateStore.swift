@@ -101,34 +101,39 @@ public actor SupermuxRouteCandidateStore {
 
     /// Records what a peer handed over, replacing what it handed over
     /// before; learned addresses stay. Only servable addresses are kept
-    /// (``SupermuxRouteCandidates/servable(_:)``); an empty list forgets
-    /// what the peer handed over.
+    /// (``SupermuxRouteCandidates/servable(_:)``). An answer with none is not
+    /// authoritative (a host asks iroh before its first network report, an
+    /// older host answers an empty list then): it changes nothing. A host
+    /// that turned direct off says so explicitly (``forget(_:)``).
+    /// - Returns: Whether the answer was stored.
     @discardableResult
     public func recordFetched(_ addresses: [String], for key: SupermuxRoutePeerKey) -> Bool {
-        defer { _ = 0 }
-        return recordFetchedStub(addresses, for: key)
-    }
-
-    // Red stub (review T3, T12): an empty answer still wipes; forget does nothing.
-    public func forget(_ key: SupermuxRoutePeerKey) {}
-
-    private func recordFetchedStub(_ addresses: [String], for key: SupermuxRoutePeerKey) -> Bool {
+        let fetched = SupermuxRouteCandidates.servable(addresses)
+        guard !fetched.isEmpty else { return false }
         loadIfNeeded()
         let time = now()
-        let fetched = SupermuxRouteCandidates.servable(addresses)
-            .map { Candidate(address: $0, source: .fetched, lastOK: time) }
+        let candidates = fetched.map { Candidate(address: $0, source: .fetched, lastOK: time) }
         let learned = (peersByKey[key]?.candidates ?? []).filter { candidate in
-            candidate.source == .learned && !fetched.contains { $0.address == candidate.address }
+            candidate.source == .learned && !fetched.contains(candidate.address)
         }
-        update(key, candidates: fetched + learned)
+        update(key, candidates: candidates + learned)
         return true
     }
 
+    /// Forgets every address of the peer: it said direct paths are off.
+    public func forget(_ key: SupermuxRoutePeerKey) {
+        loadIfNeeded()
+        guard peersByKey[key] != nil else { return }
+        update(key, candidates: [])
+    }
+
     /// Records that an outgoing session to the peer used `address`. Ignored
-    /// when the address is not dialable; rewrites the file only when the
-    /// address is new or its confirmation is older than ``learnedRefreshInterval``.
+    /// when the address is not servable (a public IPv4 is a NAT mapping a
+    /// cold dial cannot use); rewrites the file only when the address is new
+    /// or its confirmation is older than ``learnedRefreshInterval``.
     public func learn(_ address: String, for key: SupermuxRoutePeerKey) {
-        guard let parsed = SupermuxSocketAddress(address), parsed.isDialable else { return }
+        guard SupermuxRouteCandidates.servable([address]).count == 1,
+              let parsed = SupermuxSocketAddress(address) else { return }
         loadIfNeeded()
         let time = now()
         var candidates = peersByKey[key]?.candidates ?? []

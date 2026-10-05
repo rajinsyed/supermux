@@ -157,7 +157,7 @@ import Testing
     @Test func undialableAndUnservableAddressesAreNotLearned() async {
         let store = store()
         for address in ["127.0.0.1:58465", "[fe80::1%en0]:58465", "0.0.0.0:1", "nonsense", "https://apne1.relay.cmux.dev/",
-                        "203.0.113.7:58465", "100.64.0.1:58465"] {
+                        "203.0.113.7:58465"] {
             await store.learn(address, for: key)
         }
         #expect(await store.peers().isEmpty)
