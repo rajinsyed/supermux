@@ -762,6 +762,8 @@ Rules for adding a touchpoint:
 | 949 | `Packages/iOS/CmuxMobileShell/Tests/CmuxMobileShellTests/DelayedTeamPairedMacStore.swift` | `mobile-startup-parallel-secondary` | Three fences: `blockBackupRefreshForEveryCaller()` makes a later `refreshFromBackup` join the blocked one (the production store merges into a refresh still running) and `releaseBackupRefresh()` wakes those joiners. Unused, the store behaves as upstream's |
 | 950 | `Sources/RightSidebarPanelView.swift` | `right-sidebar-mode-bar-overflow` | One fence in `modeBar`: `.modifier(SupermuxModeBarOverflow())` directly on upstream's `RightSidebarModeBarTabsLayout`, before its drag-anchor `.background` and `.coordinateSpace`, so a single anchor view serves both layouts (`ViewThatFits` keeps each child's platform views and can show one again without `updateNSView`, which would leave the drag anchor on a view outside the window). When the tabs' narrowest layout does not fit (every tab shown at the fork's 200 pt minimum, or the 220 pt opening width), the row scrolls sideways instead of overflowing the bar, which clipped both ends and pushed open-as-pane/close out of the window. `SupermuxModeBarOverflow` (`Sources/Supermux/SupermuxModeBarOverflow.swift`) is `ViewThatFits(in: .horizontal) { content; ScrollView(.horizontal) { content } }` |
 | 951 | `Sources/RightSidebarModeBarTabsLayout.swift` | `right-sidebar-mode-bar-overflow` | One fence in `tabWidths` (replacing upstream's `guard let available, available.isFinite`): an unspecified width (the ideal size, which `ViewThatFits` and the `ScrollView` ask for) lays the tabs out at their narrowest (`available ?? 0`: the selected tab's full label, the others at their floor) instead of at full labels. Finite and infinite proposals are upstream's, so a bar with room still shrinks and grows the tabs as upstream does, and #950 scrolls only below the narrowest layout |
+| 952 | `Sources/Mobile/MobileHostIrxTerminalLaneServer.swift` | `sizing-lane-input-driver` | One DEBUG fence at the end of the file: `MobileHostIrxTerminalLaneServer.debugDeliverInput(text:surfaceID:controlConnectionID:)`, an extension that runs one `MobileTerminalInputFrame` through the lane's private `deliverInput` (true for `.continue`, false for `.close`). The sizing recovery E2E's `terminal_sizing.lane_input` driver types as a phone over its IRX input lane through it; `controlConnectionID` names the phone's control connection (which carries its client id) for the lane fix that credits lane input to that phone. No release code |
+| 953 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/Devices/SupermuxTerminalSizingRecoveryDrivers.swift` (DEBUG drivers for the sizing recovery E2E) into the cmux target (ids `47BDB4A9CEAC687DCDAF901D`/`50446900D08DBFAD1EF0097E` from `scripts/wire-app-sources.py`, four entries, `Devices/…` path in the Supermux group) |
 | 810 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the remote-terminal polish into the cmux target, four entries each (build file, file reference, Supermux group child, Sources phase) next to #764's `SupermuxDeviceTerminalUpload.swift`: `Devices/SupermuxDeviceTerminalLinks.swift` (`50BE001B0200000000000001`/`…02`, a Cmd-click on a path in another Mac's terminal), `Devices/SupermuxDeviceTerminalActions.swift` (`…03`/`…04`, forwarded Cmd+K/reset, focus and Ctrl+V of an image) and `SupermuxMobileHost+TerminalActions.swift` (`…05`/`…06`, the host's `terminal.action`) |
 | 811 | `Sources/Workspace+TerminalLinkOpening.swift` | `device-terminal-file-link` | First thing in `deferRemoteTerminalFileLinkOpen`: `SupermuxDeviceTerminalLinks.open(rawValue, panelID:in:)` claims a file path clicked in another Mac's terminal and opens that Mac's file in the mirror's read-only preview (upstream refused it: only SSH terminals resolved a remote path) |
 | 812 | `Sources/DockSplitStore+TerminalLinkOpening.swift` | `device-terminal-file-link` | Adds `deferRemoteTerminalFileLinkOpen` to the Dock's link container (upstream relies on the protocol's `false` default): the same `SupermuxDeviceTerminalLinks.open` for another Mac's terminal moved into the Dock |
@@ -6856,3 +6858,17 @@ Re-apply after an upstream merge:
 - **#942**: keep the defaulted parameter so every other caller still probes.
 
 Verify: `swift test --package-path Packages/iOS/CmuxMobileShell --filter foregroundAfterHostIdleTimeoutRedialsWithoutProbingTheDeadSession`.
+
+### 952–953. Sizing recovery E2E drivers — `sizing-lane-input-driver`
+
+The terminal sizing recovery E2E (`tests/supermux/loopback_terminal_sizing_recovery_e2e.py`) drives
+`supermux.devices.terminal_sizing.*` DEBUG methods in `SupermuxTerminalSizingRecoveryDrivers.swift`. One of
+them, `lane_input`, must type the way a phone's IRX input lane does, and the lane's delivery function is
+private to its file, so the file gets a DEBUG-only extension that calls it.
+
+Re-apply after an upstream merge:
+- **#952**: keep the `#if DEBUG` extension at the end of `MobileHostIrxTerminalLaneServer.swift`; if upstream
+  renames `deliverInput(_:surfaceID:)` or its outcome cases, follow the rename.
+- **#953**: run `scripts/wire-app-sources.py` (it re-derives the same ids from the path).
+
+Verify: `CMUX_E2E_SUITES="loopback_terminal_sizing_recovery_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`.

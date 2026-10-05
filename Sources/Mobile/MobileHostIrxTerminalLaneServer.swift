@@ -387,3 +387,23 @@ enum MobileHostIrxTerminalLaneServer {
         await stream.receiveStream.stop(errorCode: errorCode)
     }
 }
+
+// SUPERMUX:begin sizing-lane-input-driver (DEBUG: the sizing E2E delivers a frame through this lane's own delivery path)
+#if DEBUG
+extension MobileHostIrxTerminalLaneServer {
+    /// Delivers `text` as one input frame the way a lane bound to
+    /// `surfaceID` does (`terminal_sizing.lane_input`). `controlConnectionID`
+    /// is the phone's control connection, which carries its client id; the
+    /// lane does not know it yet, so typing on the lane is nobody's sizing
+    /// activity and skips the detach gate.
+    ///
+    /// - Returns: false when the lane refused the frame and would close.
+    static func debugDeliverInput(text: String, surfaceID: UUID, controlConnectionID: UUID) async -> Bool {
+        switch await deliverInput(MobileTerminalInputFrame(text: text), surfaceID: surfaceID) {
+        case .continue: return true
+        case .close: return false
+        }
+    }
+}
+#endif
+// SUPERMUX:end sizing-lane-input-driver

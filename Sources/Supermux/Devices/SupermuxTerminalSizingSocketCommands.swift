@@ -34,6 +34,10 @@ import Foundation
 ///   The run loop dequeues it and dispatches it through
 ///   `NSApplication.sendEvent`, as a key press: a socket handler calling
 ///   `sendEvent` itself is programmatic input, never the Mac's activity.
+///
+/// The sizing recovery drivers (`governor`, `reset_hosts`, `local_scroll`,
+/// `activate`, `local_select`, `connection_request`, `connection_close`,
+/// `lane_input`) live in ``SupermuxTerminalSizingRecoveryDrivers``.
 @MainActor
 enum SupermuxTerminalSizingSocketCommands {
     static let methodPrefix = "terminal_sizing."
@@ -42,8 +46,12 @@ enum SupermuxTerminalSizingSocketCommands {
         name.hasPrefix(methodPrefix)
     }
 
-    static func handle(_ name: String, params: [String: Any]) throws -> [String: Any] {
-        switch name.dropFirst(methodPrefix.count) {
+    static func handle(_ name: String, params: [String: Any]) async throws -> [String: Any] {
+        let method = String(name.dropFirst(methodPrefix.count))
+        if SupermuxTerminalSizingRecoveryDrivers.methods.contains(method) {
+            return try await SupermuxTerminalSizingRecoveryDrivers.handle(method, params: params)
+        }
+        switch method {
         case "state":
             return state()
         case "reset":

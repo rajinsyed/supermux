@@ -160,6 +160,14 @@ final class SupermuxTerminalSizingAuto {
         TerminalController.shared.noteLocalTerminalSizingActivity(surfaceID: surfaceID)
     }
 
+    #if DEBUG
+    /// Runs the app-activation handler, as `didBecomeActiveNotification`
+    /// does (`terminal_sizing.activate`).
+    func debugAppDidBecomeActive() {
+        focusedTerminalActivated()
+    }
+    #endif
+
     /// The user switched to this app: the terminal focused in its key window
     /// is where they are now.
     private func focusedTerminalActivated() {
