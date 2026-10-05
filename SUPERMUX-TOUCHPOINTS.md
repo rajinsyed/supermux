@@ -16,7 +16,7 @@ Rules for adding a touchpoint:
 - Numbering: the highest number in use is **783** (remote terminal streaming, #777–#783; #764–#776 are
   reserved for open PRs #74/#75). The remote-workspaces work (#517–#599) left
 - Numbering: the highest number in use is **818**. The remote-workspaces work (#517–#599) left
-- Numbering: the highest number in use is **956** (#956: a scroll on the Mac pane is its activity; #955: activity that decides nothing is kept). Before that **954** (#954: the apply governor no longer wedges after an immediate apply; #950–#953 are earlier). Before that **924** (#920–#924: only this Mac's own input hands an Auto grid to the Mac pane). #907–#913: answering a Claude question or plan brings the working indicator back. Before that **906** (#900–#906: a streaming mirror re-anchors when the other Mac's grid changes). Before that **883** (#880–#883: Remote Host Mode's hotkey and notification shows, Auto's `view_appeared` report; #850–#879 are held by another open branch). The remote-workspaces work (#517–#599) left
+- Numbering: the highest number in use is **967** (#957–#967: a phone's connection behind sizing: a connection close clears only its own reports, lane input is the phone's activity, a replay's claim is sticky, a detached phone is told again; #990–#1019 are reserved for the sizing fix's iOS rows). Before that **956** (#956: a scroll on the Mac pane is its activity; #955: activity that decides nothing is kept). Before that **954** (#954: the apply governor no longer wedges after an immediate apply; #950–#953 are earlier). Before that **924** (#920–#924: only this Mac's own input hands an Auto grid to the Mac pane). #907–#913: answering a Claude question or plan brings the working indicator back. Before that **906** (#900–#906: a streaming mirror re-anchors when the other Mac's grid changes). Before that **883** (#880–#883: Remote Host Mode's hotkey and notification shows, Auto's `view_appeared` report; #850–#879 are held by another open branch). The remote-workspaces work (#517–#599) left
   unassigned gaps it may still grow into: **523–524, 527–529, 539–544, 558–559, 562–569,
   578–579 and 588–589** (never assigned, not retired); #600–#601 came from the 2026-10-01 upstream merge; #620–#622 and
   #630–#639 are the remote-workspaces feedback round (602–619 and 623–629 unassigned). The second
@@ -6942,3 +6942,43 @@ Re-apply after an upstream merge:
 Verify: step R8 of `CMUX_E2E_SUITES="loopback_terminal_sizing_recovery_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`
 (its `local_scroll` driver posts a legacy wheel event over the pane), and the Auto steps of
 `loopback_terminal_sizing_policy_e2e`.
+
+### 957–967. The phone connection behind sizing — `sizing-report-connection`, `sizing-connection-scoped-clear`, `sizing-lane-input`, `sizing-sticky-replay`, `sizing-detach-reannounce`
+
+Found while fixing the 2026-10-05 reports (a terminal stuck at the desktop size on the phone, or at the phone's
+size on the Mac). Sizing knew a phone by its client id only, never by the connection a request came over:
+
+- **A connection close cleared every report of its client** (#957–#959). Phones reuse one client id across
+  connections, so when an Iroh session was replaced the old connection's close dropped the report the phone had
+  just sent on its new one. Each report now remembers the connection that last wrote it, and a close clears only
+  those. The mobile RPC dispatcher runs each request with its connection in a task-local
+  (`SupermuxMobileConnectionContext.controlConnectionID`); control-socket reports stay unstamped and keep
+  upstream's rule.
+- **Typing over the IRX input lane was nobody's activity** (#960–#963). The phone sends keys lane-first; only RPC
+  input passed `mobileDetachedGateError`, so after the Mac took the grid back, typing on the phone did not return
+  it, and a phone someone disconnected could still type. The runtime runs a session's lanes with its control
+  connection's id in the same task-local, and the lane's delivery asks `supermuxAdmitLaneInput` before writing.
+  The legacy dialect's lanes (old phone builds) run without it and keep upstream's behavior.
+- **A reconnect's claim expired** (#964). After a reconnect the phone's replay, with its viewport fields, is its
+  only claim; as a non-sticky piggyback it lasted 5 s.
+- **A relaunched phone forgot its detach** (#965–#966). The `detached` refusal now carries the detachment and
+  re-sends `mobile.terminal.detached` once per connection.
+
+Re-apply after an upstream merge:
+- **#957**: keep the stamp after the report is built (a new `MobileViewportReport` replaces the old one, so the
+  stamp is restamped on every write) and the task-local entry at the top of `mobileHostHandleRPC`, after any
+  upstream guard that must run once.
+- **#958–#959**: if upstream changes how a close finds its reports (for example by subtracting client ids still
+  live on another connection), keep the per-report check: subtracting would pin a report the new connection never
+  wrote.
+- **#960–#962**: the gate must run before the PTY write and after admission. If upstream moves the lane tasks to
+  `Task.detached` or a new executor, they lose the task-local: pass the connection id instead. If upstream gives
+  `acceptTransport` its own id parameter, use it.
+- **#963**: drop if upstream makes the function internal.
+- **#964**: drop if upstream makes generation-carrying replays sticky.
+- **#965–#966**: keep `surface_id` in the error data; older phones read only the code.
+- **#967**: run `scripts/wire-app-sources.py`.
+
+Verify: steps R14, R15 and R16 of
+`CMUX_E2E_SUITES="loopback_terminal_sizing_recovery_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`,
+and `loopback_terminal_sizing_policy_e2e` (every mirror report rides the device link's connection).

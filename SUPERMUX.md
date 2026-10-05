@@ -353,7 +353,14 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   a phone-sized grid even while the Mac window is on screen; typing, a paste, a focus click, a scroll
   (a wheel notch or a gesture's start, never its momentum) or switching to the app with the terminal
   (or its TextBox) focused gives it back to the Mac; another Mac's mirror takes
-  it when it attaches, is shown again or types. Upstream's rule that a phone defers to a Mac pane on
+  it when it attaches, is shown again or types, and a phone when it types (over its input lane as
+  over RPC, #960–#963). A phone's claim lasts while it views: the replay a mounted phone sends after
+  a reconnect claims like its viewport report instead of expiring after 5 s (#964), and a connection
+  closing drops only the reports it wrote last, so an old connection's late close never drops what
+  the phone's new connection just sent (#957–#959). A phone someone disconnected types nothing over
+  its lane either, and is told again on each connection (the `detached` refusal carries the
+  detachment and re-sends `mobile.terminal.detached`, #965–#966), so a relaunched phone shows its
+  Detached card. Upstream's rule that a phone defers to a Mac pane on
   screen is lifted in Auto by giving each phone without an override of its own `counts_override:
   true` (cleared when the terminal leaves Auto; "Counts toward size" off on the phone stays off). A
   viewport report that repeats the same grid is no activity (the phone sends one in answer to every
