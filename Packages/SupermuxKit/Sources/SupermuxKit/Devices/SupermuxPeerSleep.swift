@@ -13,7 +13,13 @@ public import Foundation
 /// timeout).
 ///
 /// Pure state, one per remote Mac; the owner feeds it the notice, the link's
-/// sessions and dial-ins, and stretches the link's waits with ``wait(after:)``.
+/// sessions and dial-ins, and stretches the link's waits with
+/// ``takeWait(after:)``. The link spreads each wait by ±20 % after this, so
+/// the sleeping wait lands between 4 and 6 min.
+///
+/// A dial-in while the link's own dial is out cannot dial back (nothing is
+/// waiting); it is kept instead, and should that dial fail (it started while
+/// the Mac slept) the next wait is zero.
 public struct SupermuxPeerSleep: Equatable, Sendable {
     /// The least wait before redialing a Mac that is asleep.
     public static let wait: Duration = .seconds(300)
@@ -26,6 +32,8 @@ public struct SupermuxPeerSleep: Equatable, Sendable {
     public private(set) var asleepSince: Date?
     private var connectedAt: Date?
     private var lastNudgeAt: Date?
+    /// A dial-in came while the link was dialing.
+    public private(set) var nudgePending = false
 
     public init() {}
 
@@ -42,13 +50,25 @@ public struct SupermuxPeerSleep: Equatable, Sendable {
         isAsleep ? max(computed, Self.wait) : computed
     }
 
-    /// Red stubs (review T9): not implemented yet.
-    public mutating func dialedInDuringDial() {}
-    public mutating func takeWait(after computed: Duration) -> Duration { wait(after: computed) }
+    /// The link's wait before its next dial, using up a dial-in kept from
+    /// while it was dialing (then zero).
+    public mutating func takeWait(after computed: Duration) -> Duration {
+        guard !nudgePending else {
+            nudgePending = false
+            return .zero
+        }
+        return wait(after: computed)
+    }
+
+    /// The Mac dialed in while the link's own dial was out.
+    public mutating func dialedInDuringDial() {
+        nudgePending = true
+    }
 
     /// A session of the link started.
     public mutating func connected(at now: Date) {
         connectedAt = now
+        nudgePending = false
     }
 
     /// The session ended. One that started after the notice and stayed up

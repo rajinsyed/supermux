@@ -13,7 +13,10 @@ public import Foundation
 ///   sleep of at least ``endpointRebuildSleep`` the main endpoint is rebuilt
 ///   too: by then every QUIC session on it is dead (30 s of idle on the peers'
 ///   clocks) and its relay socket and per-peer path blocks are stale.
-/// - A network change while awake recovers the same way, never rebuilding.
+/// - A network change while awake recovers the same way, never rebuilding,
+///   except once within ``postponedRebuildWindow`` of a wake whose rebuild
+///   was put off for lack of a fresh relay credential
+///   (``rebuildPostponed(at:)``): the Wi-Fi coming back is when one arrives.
 ///
 /// The sleep is measured on the wall clock: iroh's and Swift's monotonic
 /// clocks stop while the Mac sleeps. Pure state; the owner feeds it the
@@ -51,10 +54,14 @@ public struct SupermuxWakePolicy: Equatable, Sendable {
     public static let endpointRebuildSleep: TimeInterval = 60
     /// Wake signals this close to the last recovery belong to the same wake.
     public static let wakeDedupWindow: TimeInterval = 10
+    /// How long after a wake a postponed rebuild may still run: later, phones
+    /// and Macs may have sessions on the kept endpoint again.
+    public static let postponedRebuildWindow: TimeInterval = 30
 
     /// When `willSleep` came, while the Mac is dark.
     public private(set) var asleepSince: Date?
     private var lastWakeRecoveryAt: Date?
+    private var postponedRebuildUntil: Date?
 
     public init() {}
 
@@ -65,6 +72,7 @@ public struct SupermuxWakePolicy: Equatable, Sendable {
     /// a DarkWake) keeps the first, so a whole night is measured.
     public mutating func willSleep(at now: Date) {
         if asleepSince == nil { asleepSince = now }
+        postponedRebuildUntil = nil
     }
 
     /// A wake signal. A recovery when it ends a sleep, or when a `didWake`
@@ -85,13 +93,19 @@ public struct SupermuxWakePolicy: Equatable, Sendable {
         return Recovery(reason: reason, sleptSeconds: nil, rebuildsMainEndpoint: false)
     }
 
-    /// Red stub (review T1): not implemented yet.
-    public mutating func rebuildPostponed(at now: Date) {}
+    /// The wake's rebuild could not run (no fresh relay credential yet): the
+    /// next network change within ``postponedRebuildWindow`` of the wake runs it.
+    public mutating func rebuildPostponed(at now: Date) {
+        guard let wake = lastWakeRecoveryAt else { return }
+        postponedRebuildUntil = wake.addingTimeInterval(Self.postponedRebuildWindow)
+    }
 
     /// The network path changed. Nil while dark: the full wake recovers.
     /// Bursts are the caller's to debounce.
     public mutating func networkChanged(at now: Date) -> Recovery? {
         guard asleepSince == nil else { return nil }
-        return Recovery(reason: .networkChange, sleptSeconds: nil, rebuildsMainEndpoint: false)
+        let rebuilds = postponedRebuildUntil.map { now < $0 } ?? false
+        postponedRebuildUntil = nil
+        return Recovery(reason: .networkChange, sleptSeconds: nil, rebuildsMainEndpoint: rebuilds)
     }
 }
