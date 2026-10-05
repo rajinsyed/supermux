@@ -318,14 +318,14 @@ enum SupermuxDevicesSocketCommands {
     }
 
     /// `link {machine, action: "stop" | "restore" | "stall" | "status", busy?,
-    /// method?, seconds?, main_seconds?}`: holds a device link down (tearing
+    /// method?, seconds?, surface_id?, main_seconds?}`: holds a device link down (tearing
     /// down its client like a transport loss, but without the immediate
     /// redial) or dials it again, so E2E can drop the link under an in-flight
     /// request and watch availability change live. `busy: "<method>"` on a
     /// restore makes the loopback host answer the new connection's first
     /// `<method>` request after its sync fetch `server_busy`; `stall` makes it
-    /// hold its next `method` request for `seconds` (default 30) before
-    /// answering it, and with `main_seconds` also blocks the main thread that
+    /// hold its next `method` request (naming `surface_id`, when given) for
+    /// `seconds` (default 30) before answering it, and with `main_seconds` also blocks the main thread that
     /// long while the liveness probe after the missed deadline is answered
     /// (``SupermuxDeviceLoopbackHostAcceptor``). Every action answers the
     /// link's phase, the loopback connections admitted since launch (a redial
@@ -344,7 +344,8 @@ enum SupermuxDevicesSocketCommands {
         case "stall":
             SupermuxDeviceLoopbackHostAcceptor.stalledRequest = (
                 method: try required(params, "method"),
-                seconds: min(max(number(params, "seconds") ?? 30, 1), 600)
+                seconds: min(max(number(params, "seconds") ?? 30, 1), 600),
+                surfaceID: string(params, "surface_id").flatMap(UUID.init(uuidString:))
             )
             SupermuxDeviceLoopbackHostAcceptor.mainStallDuringNextLivenessProbe =
                 number(params, "main_seconds").map { min(max($0, 1), 60) }

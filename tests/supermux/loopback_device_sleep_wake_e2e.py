@@ -29,6 +29,14 @@ admissions (`connections_admitted` counts every reconnect).
   4. dial_in_redials_now     That Mac dials in: the waiting link dials at once.
   5. healthy_after           The link is connected, answers a request, and the
                              App Nap activity is held while it is.
+  6. close_grace_restarts_at_wake  A viewing Mac's sizing report outlives its closed
+                             connection by a 15 s grace (so a brief drop does not resize
+                             the terminal it views; `power.close_grace` defers one for a
+                             synthetic connection). Closed 10 s before a sleep, the report
+                             is still held 8 s after the wake and goes ~15 s after it: the
+                             grace starts again at a full wake, for the viewer's redial.
+                             RED (2026-10-06, review S1): it ran on a clock that counts the
+                             sleep, so it ended ~5 s after the wake.
 
 Writes a JSON report (default tests/supermux/artifacts/loopback_device_sleep_wake_e2e-<tag>.json)
 with the timeline of link states and admissions, and exits non-zero on any
@@ -55,6 +63,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 ARTIFACTS_DIR = REPO_ROOT / "tests" / "supermux" / "artifacts"
 ENDPOINT_ID = "e2e0000000000000000000000000000000000000000000000000000000000003"
 ADDRESSES = ["192.168.1.20:58465", "100.69.64.102:58465"]
+CLOSE_GRACE_S = 15.0
+CLOSE_GRACE_BEFORE_SLEEP_S = 10.0
 
 
 class PowerFailure(Exception):
@@ -307,6 +317,30 @@ class SleepWakeE2E:
         expect(activity.get("held") is True, f"no App Nap activity while a session is live: {activity}")
         return {"final": sample, "activity": activity}
 
+    def close_grace_restarts_at_wake(self) -> Dict[str, Any]:
+        connection = self.power("close_grace", action="defer").get("connection_id")
+        expect(bool(connection), "the close grace deferred nothing (harness problem)")
+        closed = time.monotonic()
+        time.sleep(CLOSE_GRACE_BEFORE_SLEEP_S)
+        self.power("simulate", event="will_sleep", announce=False)
+        self.power("simulate", event="did_wake", slept_s=30)
+        woke = time.monotonic()
+        time.sleep(max(0.0, CLOSE_GRACE_S + 3 - (woke - closed)))
+        held = connection in (self.power("close_grace", action="status").get("deferred") or [])
+        cleared_after: Optional[float] = None
+        while time.monotonic() - woke < CLOSE_GRACE_S + 10:
+            if connection not in (self.power("close_grace", action="status").get("deferred") or []):
+                cleared_after = round(time.monotonic() - woke, 1)
+                break
+            time.sleep(0.25)
+        result = {"closed_before_sleep_s": round(woke - closed, 1), "held_8s_after_wake": held,
+                  "cleared_after_wake_s": cleared_after}
+        self.facts["close_grace"] = result
+        expect(held, f"the grace ran out across the sleep, before the viewer could redial: {result}")
+        expect(cleared_after is not None and cleared_after >= CLOSE_GRACE_S - 1,
+               f"the deferred clear did not run a full grace after the wake: {result}")
+        return result
+
     def cleanup(self) -> None:
         if not self.machine:
             return
@@ -335,6 +369,7 @@ class SleepWakeE2E:
             self.step("peer_sleep_backs_off", self.peer_sleep_backs_off)
             self.step("dial_in_redials_now", self.dial_in_redials_now)
             self.step("healthy_after", self.healthy_after)
+            self.step("close_grace_restarts_at_wake", self.close_grace_restarts_at_wake)
             return True
         except PowerFailure:
             return False

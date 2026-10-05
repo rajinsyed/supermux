@@ -25,7 +25,8 @@ and the flood first print 12000 lines of ~100 columns (a full 10000-row replay i
 agent's long scrollback is), then a ticker prints one line a second (an agent's status line),
 and the flood prints ~600 KB/s while its control file exists (twice the link).
 
-Steps (D1, D3, D4 and D6 were red before the latency fixes; D2 and D5 are guards; the others check the harness):
+Steps (D1, D3, D4 and D6 were red before the latency fixes, D4b, D4c, D6b, D7 and D7b before the review's;
+D2 and D5 are guards; the others check the harness):
   setup / impairment_on        programs running, mirrors attached, link impaired
   baseline_echo                no flood: each key echoes within 1 s (RTT + processing); proves
                                the echo measurement and the impairment's round trip
@@ -52,6 +53,18 @@ Steps (D1, D3, D4 and D6 were red before the latency fixes; D2 and D5 are guards
                                every key reaches the program exactly once. RED: input typed while
                                the mirror is `.attaching` is dropped (DeviceTerminalInputRouter's
                                enabled gate; `terminal_input.stats` `dropped_while_detached`).
+  D4b outage_keeps_typed_order a key is on its way (1.5 s to the host) when a 4 s drop cuts the link, a
+                               second is typed while it is down, and the ECHO mirror's re-attach is
+                               held on the host past the 10 s hold window (`link stall` with
+                               `surface_id`): the program gets both keys in order, the first alone or
+                               neither, never the second without the first (Enter without its
+                               command). RED (2026-10-06, review S3): the hold timer dropped held keys
+                               only if the mirror was still detached, so the second key went out
+                               while the pipeline dropped the first as expired.
+  D4c held_keys_expire_on_live_link  a re-attach on a live link held 16 s on the host: a key typed at
+                               its start is dropped once it has waited the 10 s replay window, a key
+                               typed 12 s in is delivered. RED (review S4): every held key went out
+                               when the attach ended, however long it waited.
   D3 recovers_after_drop       a 2 s drop that cuts the connection, while the tickers print: the
                                link reconnects, within 60 s no unplanned redial, the host sends each
                                mirror pane at most one replay besides its quiet-output confirmations
@@ -83,6 +96,20 @@ Steps (D1, D3, D4 and D6 were red before the latency fixes; D2 and D5 are guards
                                RED (2026-10-06): the host sends the first reply in full after the
                                second (2 replies, 0 superseded; STREAM.md H3b). Upstream's retry also
                                gives up after three tries 2 s apart ("disconnected until Retry").
+  D6b slow_replay_settles      a forced full replay of a deep visible TICKER (~1.7 MB, ~6 s on the wire)
+                               with the mirrors' replay deadline at 3 s: the pane settles within 60 s
+                               and the host sends it at most 4 replies. RED (review S7): every retry
+                               waited the same 3 s while each reply took 6 s, so it never settled.
+  D7 shown_pane_echoes_before_history  a hidden mirror of a DEEP echo terminal (12000 lines of
+                               history) re-attaches with a full replay while hidden (its screen and
+                               100 rows); it is shown and typed into at once: every key echoes within
+                               the D1 bound (p95 1.5 s) and the deep history still arrives once the
+                               typing stops. RED (review S2): the history fetch ran the moment the
+                               pane was shown and held its output (the echo) for the whole ~1.7 MB.
+  D7b history_survives_drop    the same, but the link drops (2 s, cut) while the history is still
+                               owed: after the reconnect resumes the pane, the history arrives. RED
+                               (review S6): the drop forgot the owed history, so a resumed pane kept
+                               100 rows for good.
   D5 host_main_responsive      during the 30 s after the drop, a main-actor socket round trip
                                (`supermux.devices.link status`) stays under 250 ms. Full replays are
                                captured synchronously on the host's main thread (in the loopback the
@@ -148,6 +175,18 @@ D5_WINDOW_S = 30.0
 D5_MAX_BOUND_S = 0.25
 D6_DEADLINE_S = 3.0
 D6_HOLD_S = 9.0
+D4B_TO_HOST_MS = 1500
+D4B_DROP_S = 4.0
+D4B_STALL_S = 9.0
+D4C_STALL_S = 16.0
+D4C_SECOND_KEY_AT_S = 12.0
+REPLAY_WINDOW_S = 10.0
+D6B_SETTLE_S = 60.0
+D6B_MAX_REPLIES = 4
+D7_KEYS = "abcdefghij"
+D7_HISTORY_MARK = "deep 03000 "
+D7_HISTORY_WAIT_S = 90.0
+D7B_DROP_S = 2.0
 ECHO_PREFIX = "EK:"
 # On screen beside the ECHO terminal (a 2 x 3 grid of panes), and off screen.
 VISIBLE_TICKERS = ("tick_a", "tick_b", "tick_c", "tick_d", "tick_e")
@@ -174,6 +213,23 @@ with open(out, "ab", 0) as log:
             echo += bytes([byte])
             count += 1
         os.write(1, echo)
+'''
+
+DEEP_ECHO = r'''
+import binascii, os, sys, time, tty
+''' + "HISTORY_PLACEHOLDER" + r'''
+out, lines = sys.argv[1], int(sys.argv[2])
+history("deep", lines)
+fd = sys.stdin.fileno()
+tty.setraw(fd)
+os.write(1, ("DEEP-" + "READY\r\n").encode())
+with open(out, "ab", 0) as log:
+    while True:
+        data = os.read(fd, 4096)
+        if not data:
+            break
+        log.write(b"%.6f %s\n" % (time.time(), binascii.hexlify(data)))
+        os.write(1, b"\r\nDK:" + data)
 '''
 
 HISTORY = r'''
@@ -232,6 +288,9 @@ while True:
 '''
 
 
+DEEP_ECHO = DEEP_ECHO.replace("HISTORY_PLACEHOLDER", HISTORY)
+
+
 def percentile(values: List[float], fraction: float) -> Optional[float]:
     if not values:
         return None
@@ -269,6 +328,7 @@ class DegradedLinkE2E:
         self.mirrors: Dict[str, Dict[str, str]] = {}  # role -> workspace_id, panel_id
         self.workspaces: List[str] = []
         self.recorder_path = self.scratch / "echo.log"
+        self.deep_recorder_path = self.scratch / "deep.log"
         self.flood_control = self.scratch / "flood.on"
         self.echo_seen_at: List[float] = []
         self.echo_text = ""
@@ -897,6 +957,291 @@ class DegradedLinkE2E:
             raise Failure("; ".join(problems) + f": {json.dumps(result)}")
         return result
 
+    # -- held keys across a re-attach (review S3, S4) --------------------------
+
+    def stall_replay(self, role: str, seconds: float) -> None:
+        """The loopback host holds the next `mobile.terminal.replay` of `role`'s terminal."""
+        self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "stall",
+                                                 "method": "mobile.terminal.replay", "seconds": seconds,
+                                                 "surface_id": self.sources[role]["surface_id"]})
+
+    def wait_reattached(self, role: str, timeout_s: float) -> float:
+        """Waits until `role`'s pane left attached and is attached again; returns when."""
+        started = time.monotonic()
+        left = False
+        while time.monotonic() - started < timeout_s:
+            attached = bool(self.pane_states()[role].get("attached"))
+            if not attached:
+                left = True
+            elif left:
+                return time.monotonic()
+            time.sleep(0.25)
+        raise Failure(f"{role} was not attached again within {timeout_s:.0f} s")
+
+    def outage_keeps_typed_order(self) -> Dict[str, Any]:
+        """B1 is on its way when the link drops, B2 is typed while it is down, and the
+        re-attach ends past the hold window: B2 must never reach the program without
+        B1 before it (both in order, or B1 alone, or neither)."""
+        self.echo_focused()
+        time.sleep(1.0)
+        phase = Phase("d4b", len(self.recorder()))
+        self.stall_replay("echo", D4B_STALL_S)
+        self.impairment(to_host_ms=D4B_TO_HOST_MS)
+        self.type_key(phase, "m")
+        time.sleep(0.3)
+        dropped = self.impairment(drop_now_s=D4B_DROP_S, drop_cuts=True)
+        drop_started = time.monotonic()
+        self.impairment(rtt_ms=RTT_MS)
+        time.sleep(1.0)
+        self.type_key(phase, "n")
+        reattached = self.wait_reattached("echo", D4B_DROP_S + D4B_STALL_S + 40)
+        time.sleep(3.0)
+        self.poll_echo()
+        result = self.phase_result(phase)
+        summary = {"received": result["received"], "connections_cut": dropped.get("connections_cut"),
+                   "reattached_after_drop_s": round(reattached - drop_started, 1)}
+        self.facts["d4b"] = {**result, **summary}
+        if not dropped.get("connections_cut"):
+            raise Failure(f"the drop cut no connection (harness problem): {summary}")
+        if reattached - drop_started < REPLAY_WINDOW_S:
+            raise Failure(f"the re-attach ended inside the hold window (harness problem): {summary}")
+        if result["received"] not in ("", "m", "mn"):
+            raise Failure(f"keys typed around the outage arrived out of order or without the one before: {summary}")
+        return summary
+
+    def held_keys_expire_on_live_link(self) -> Dict[str, Any]:
+        """A re-attach on a live link that takes longer than the replay window: a key
+        held for longer than that is dropped, not typed when the attach ends; a key
+        typed late in it is delivered."""
+        self.echo_focused()
+        time.sleep(1.0)
+        phase = Phase("d4c", len(self.recorder()))
+        echo = self.mirrors["echo"]
+        self.stall_replay("echo", D4C_STALL_S)
+        self.sock.call("supermux.devices.terminal_close.replay",
+                       {"workspace_id": echo["workspace_id"], "panel_id": echo["panel_id"]})
+        started = time.monotonic()
+        time.sleep(0.3)
+        self.type_key(phase, "o")
+        time.sleep(max(0.0, D4C_SECOND_KEY_AT_S - (time.monotonic() - started)))
+        self.type_key(phase, "p")
+        reattached = self.wait_reattached("echo", D4C_STALL_S + 30)
+        time.sleep(3.0)
+        self.poll_echo()
+        result = self.phase_result(phase)
+        late = [k for k in result["keys"] if not k.get("dropped") and (k.get("to_program_ms") or 0) > REPLAY_WINDOW_S * 1000]
+        summary = {"received": result["received"], "reattached_after_s": round(reattached - started, 1),
+                   "delivered_late": late}
+        self.facts["d4c"] = {**result, **summary}
+        if reattached - started < D4C_STALL_S - 1:
+            raise Failure(f"the re-attach was not held (harness problem): {summary}")
+        if late:
+            raise Failure(f"keys held past the {REPLAY_WINDOW_S:.0f} s replay window were typed anyway: {summary}")
+        if "p" not in result["received"]:
+            raise Failure(f"a key typed {REPLAY_WINDOW_S:.0f} s before the attach ended was dropped: {summary}")
+        return summary
+
+    # -- a slow replay settles (review S7) ---------------------------------------
+
+    def slow_replay_settles(self) -> Dict[str, Any]:
+        """A full replay of a deep terminal takes ~6 s on the wire while the replay
+        deadline is 3 s: the mirror must settle (each retry may wait longer), not ask
+        again forever while every reply misses."""
+        role = "tick_a"
+        mirror = self.mirrors[role]
+        wait_for(f"{role} attached", lambda: self.pane_states()[role].get("attached"), self.timeout)
+        offset = self.log_offset()
+        self.sock.call("supermux.devices.terminal_stream.replay_deadline", {"seconds": D6_DEADLINE_S})
+        try:
+            self.sock.call("supermux.devices.terminal_close.replay",
+                           {"workspace_id": mirror["workspace_id"], "panel_id": mirror["panel_id"], "full": True})
+            started = time.monotonic()
+            settled: Optional[float] = None
+            left = False
+            while time.monotonic() - started < D6B_SETTLE_S:
+                attached = bool(self.pane_states()[role].get("attached"))
+                left = left or not attached
+                if left and attached:
+                    settled = time.monotonic() - started
+                    break
+                time.sleep(0.5)
+        finally:
+            self.sock.call("supermux.devices.terminal_stream.replay_deadline", {"seconds": None})
+        if settled is None:
+            wait_for(f"{role} attached after the deadline override", lambda: self.pane_states()[role].get("attached"),
+                     120, 1.0)
+        host = self.host_replays(self.log_since(offset))
+        sent = host["full_captures"][role] + host["resumes"][role] - host["superseded"][role]
+        result = {"settled_after_s": None if settled is None else round(settled, 1),
+                  "replay_missed_deadlines": host["replay_missed_deadlines"],
+                  "replies_captured": host["full_captures"][role] + host["resumes"][role],
+                  "replies_superseded": host["superseded"][role], "replies_sent": sent}
+        self.facts["d6b"] = result
+        if not host["replay_missed_deadlines"]:
+            raise Failure(f"the full replay never missed its deadline (harness problem?): {result}")
+        if settled is None:
+            raise Failure(f"the mirror did not settle within {D6B_SETTLE_S:.0f} s: {result}")
+        if sent > D6B_MAX_REPLIES:
+            raise Failure(f"the host sent the pane {sent} replies: {result}")
+        return result
+
+    # -- a shown pane echoes before its history arrives (review S2, S6) ---------
+
+    def deep_echo_text(self) -> str:
+        mirror = self.mirrors["deep"]
+        return self.read_text(mirror["workspace_id"], mirror["panel_id"])
+
+    def deep_has_history(self) -> bool:
+        mirror = self.mirrors["deep"]
+        return D7_HISTORY_MARK in self.read_text(mirror["workspace_id"], mirror["panel_id"], scrollback=True)
+
+    def deep_focused(self) -> None:
+        mirror = self.mirrors["deep"]
+        self.sock.call("workspace.select", {"workspace_id": mirror["workspace_id"]})
+        self.sock.call("surface.focus", {"workspace_id": mirror["workspace_id"], "surface_id": mirror["panel_id"]})
+        self.sock.call("debug.app.activate", {})
+
+        def focused() -> bool:
+            result = self.sock.call("debug.terminal.is_focused", {"surface_id": mirror["panel_id"]}) or {}
+            if not result.get("focused"):
+                self.sock.call("surface.focus", {"workspace_id": mirror["workspace_id"], "surface_id": mirror["panel_id"]})
+            return bool(result.get("focused"))
+
+        wait_for("the DEEP mirror to take keyboard focus", focused, self.timeout, 0.05)
+
+    def deep_comes_back_shallow(self) -> Dict[str, Any]:
+        """Hides the DEEP mirror, then re-attaches it with a full replay while hidden:
+        its screen and a short history, the rest owed for when it is shown."""
+        self.echo_focused()
+        time.sleep(3.0)  # hidden for 2 s turns background
+        mirror = self.mirrors["deep"]
+        before = self.stream_stats().get(mirror["panel_id"], {}).get("full_replays", 0)
+        self.sock.call("supermux.devices.terminal_close.replay",
+                       {"workspace_id": mirror["workspace_id"], "panel_id": mirror["panel_id"], "full": True})
+        wait_for("the DEEP mirror's shallow full replay",
+                 lambda: self.stream_stats().get(mirror["panel_id"], {}).get("full_replays", 0) > before
+                 and self.pane_states()["deep"].get("attached"), 60, 0.5)
+        if self.deep_has_history():
+            raise Failure("the hidden DEEP mirror's full replay carried its whole history (harness problem)")
+        return {"full_replays": before + 1}
+
+    def setup_deep(self) -> None:
+        if "deep" in self.mirrors:
+            return
+        (self.scratch / "deep_echo.py").write_text(DEEP_ECHO)
+        workspace_id, surface_id = self.create_source("deep")
+        self.sources["deep"] = {"workspace_id": workspace_id, "surface_id": surface_id}
+        self.run_in("deep", f"python3 {self.scratch / 'deep_echo.py'} {self.deep_recorder_path} {HISTORY_LINES}")
+        wait_for("DEEP-READY in its source", lambda: "DEEP-READY" in self.read_text(workspace_id, surface_id), 120, 1.0)
+        opened = self.sock.call("vm.workspace_open", {"id": self.machine, "workspace_id": workspace_id,
+                                                      "focus": False}, timeout_s=120) or {}
+        mirror_id = up(opened.get("workspace_id"))
+        if not mirror_id:
+            raise Failure(f"vm.workspace_open did not open a mirror of the DEEP terminal: {opened}")
+        self.workspaces.insert(0, mirror_id)
+        panel = wait_for("the DEEP mirror pane", lambda: self.mirror_panel_for(mirror_id, surface_id), self.timeout)
+        self.mirrors["deep"] = {"workspace_id": mirror_id, "panel_id": panel}
+        wait_for("the DEEP mirror's history", self.deep_has_history, 120, 1.0)
+
+    def deep_typed(self) -> List[Tuple[float, str]]:
+        try:
+            lines = self.deep_recorder_path.read_text().splitlines()
+        except FileNotFoundError:
+            return []
+        out: List[Tuple[float, str]] = []
+        for line in lines:
+            stamp, _, payload = line.partition(" ")
+            for byte in bytes.fromhex(payload.strip()):
+                out.append((float(stamp), chr(byte)))
+        return out
+
+    def shown_pane_echoes_before_history(self) -> Dict[str, Any]:
+        """A hidden mirror that came back with a short history is shown and typed into
+        at once: every key echoes within the D1 bound while the deep history comes
+        later, once the typing stops."""
+        self.setup_deep()
+        self.deep_comes_back_shallow()
+        received_before = len(self.deep_typed())
+        self.deep_focused()
+        shown_at = time.monotonic()
+        typed: List[Tuple[str, float]] = []
+        echoed_at: List[float] = []
+        connecting_samples = 0
+        for key in D7_KEYS:
+            typed.append((key, time.monotonic()))
+            self.sock.call("debug.shortcut.simulate", {"combo": key})
+            deadline = time.monotonic() + 0.3
+            while time.monotonic() < deadline:
+                count = sum(1 for line in self.deep_echo_text().splitlines() if line.strip().startswith("DK:"))
+                echoed_at.extend([time.monotonic()] * max(0, count - len(echoed_at)))
+                time.sleep(0.03)
+        wait_until = time.monotonic() + 15
+        while len(echoed_at) < len(D7_KEYS) and time.monotonic() < wait_until:
+            count = sum(1 for line in self.deep_echo_text().splitlines() if line.strip().startswith("DK:"))
+            echoed_at.extend([time.monotonic()] * max(0, count - len(echoed_at)))
+            if self.pane_states()["deep"].get("connecting"):
+                connecting_samples += 1
+            time.sleep(0.05)
+        echoes = [echoed_at[i] - typed[i][1] for i in range(min(len(typed), len(echoed_at)))]
+        history_after: Optional[float] = None
+        typing_ended = time.monotonic()
+        while time.monotonic() - typing_ended < D7_HISTORY_WAIT_S:
+            if self.pane_states()["deep"].get("connecting"):
+                connecting_samples += 1
+            if self.deep_has_history():
+                history_after = time.monotonic() - typing_ended
+                break
+            time.sleep(1.0)
+        received = "".join(c for _, c in self.deep_typed()[received_before:])
+        result = {"typed": D7_KEYS, "received": received, "echoed": len(echoed_at),
+                  "echo_ms": [ms(e) for e in echoes], "echo_p95_ms": ms(percentile(echoes, 0.95)),
+                  "history_after_typing_s": None if history_after is None else round(history_after, 1),
+                  "shown_for_s": round(time.monotonic() - shown_at, 1), "connecting_samples": connecting_samples}
+        self.facts["d7"] = result
+        problems = []
+        if received != D7_KEYS:
+            problems.append(f"the program received {received!r}")
+        if len(echoed_at) < len(D7_KEYS):
+            problems.append(f"{len(D7_KEYS) - len(echoed_at)} key(s) never echoed")
+        if result["echo_p95_ms"] is None or result["echo_p95_ms"] > D1_P95_BOUND_S * 1000:
+            problems.append(f"echo p95 {result['echo_p95_ms']} ms > {D1_P95_BOUND_S * 1000:.0f} ms")
+        if history_after is None:
+            problems.append(f"the deep history never arrived ({D7_HISTORY_WAIT_S:.0f} s after the typing)")
+        if problems:
+            raise Failure("; ".join(problems) + f": {json.dumps(result)}")
+        return result
+
+    def history_survives_drop(self) -> Dict[str, Any]:
+        """The history a shown pane still owes is not forgotten when the link drops
+        before it came: after the reconnect resumes the pane, the history arrives."""
+        self.setup_deep()
+        self.deep_comes_back_shallow()
+        self.deep_focused()
+        self.sock.call("debug.shortcut.simulate", {"combo": "z"})
+        time.sleep(0.5)
+        dropped = self.impairment(drop_now_s=D7B_DROP_S, drop_cuts=True)
+        drop_started = time.monotonic()
+        before = self.stream_stats().get(self.mirrors["deep"]["panel_id"], {})
+        reattached = self.wait_reattached("deep", 60)
+        history_after: Optional[float] = None
+        while time.monotonic() - drop_started < D7_HISTORY_WAIT_S:
+            if self.deep_has_history():
+                history_after = time.monotonic() - drop_started
+                break
+            time.sleep(1.0)
+        after = self.stream_stats().get(self.mirrors["deep"]["panel_id"], {})
+        result = {"connections_cut": dropped.get("connections_cut"),
+                  "reattached_after_drop_s": round(reattached - drop_started, 1),
+                  "resumes": int(after.get("resumes", 0)) - int(before.get("resumes", 0)),
+                  "full_replays": int(after.get("full_replays", 0)) - int(before.get("full_replays", 0)),
+                  "history_after_drop_s": None if history_after is None else round(history_after, 1)}
+        self.facts["d7b"] = result
+        if not dropped.get("connections_cut"):
+            raise Failure(f"the drop cut no connection (harness problem): {result}")
+        if history_after is None:
+            raise Failure(f"the owed history never arrived after the drop: {result}")
+        return result
+
     def pane_states(self) -> Dict[str, Dict[str, Any]]:
         states: Dict[str, Dict[str, Any]] = {}
         by_workspace: Dict[str, List[Dict[str, Any]]] = {}
@@ -976,9 +1321,14 @@ class DegradedLinkE2E:
                 self.step("D2_no_redial_under_flood", self.no_redial_under_flood)
                 self.step("flood_drained", self.flood_drained)
                 self.step("D4_typing_during_reattach", self.typing_during_reattach)
+                self.step("D4b_outage_keeps_typed_order", self.outage_keeps_typed_order)
+                self.step("D4c_held_keys_expire_on_live_link", self.held_keys_expire_on_live_link)
                 self.step("D3_recovers_after_drop", self.recovers_after_drop)
                 self.step("D5_host_main_responsive", self.host_main_responsive)
                 self.step("D6_late_replay_superseded", self.late_replay_superseded)
+                self.step("D6b_slow_replay_settles", self.slow_replay_settles)
+                self.step("D7_shown_pane_echoes_before_history", self.shown_pane_echoes_before_history)
+                self.step("D7b_history_survives_drop", self.history_survives_drop)
         except (OSError, ValueError) as error:
             self.steps.append({"name": "transport", "ok": False, "error": str(error)})
         finally:

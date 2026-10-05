@@ -241,6 +241,10 @@ final class SupermuxTerminalStream {
     /// Replay requests sent (full or resume), for `terminal_stream.stats`:
     /// more than the replies applied means some were asked again or lost.
     private(set) var replayRequests = 0
+
+    /// The next attach asks a full replay, as a grid change does
+    /// (`terminal_close.replay {full: true}`).
+    func debugNeedsFullReplay() { grid.needsFullReplay = true }
     #endif
 
     /// A replay request leaves now.

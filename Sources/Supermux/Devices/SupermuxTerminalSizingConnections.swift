@@ -130,6 +130,11 @@ enum SupermuxMacViewerCloseGrace {
         return true
     }
 
+    #if DEBUG
+    /// The closed connections whose clear waits now (`power.close_grace`).
+    static var deferredConnections: [UUID] { Array(deferred.keys) }
+    #endif
+
     private static func clear(connectionID: UUID, reason: String) {
         guard let clientIDs = deferred.removeValue(forKey: connectionID) else { return }
         #if DEBUG

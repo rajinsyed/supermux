@@ -1,5 +1,6 @@
 #if DEBUG
 import CmuxSurfaceCatalogModel
+import CmuxTerminalSizing
 import Foundation
 import SupermuxKit
 
@@ -18,6 +19,10 @@ import SupermuxKit
 ///   subscribed to it → `{}`.
 /// - `power.peer_dialed_in {machine}`: what an admitted session from that Mac
 ///   runs → `{}`.
+/// - `power.close_grace {action: defer|status}`: `defer` closes a synthetic
+///   connection holding a viewing Mac's sizing report, whose clear then
+///   waits ``SupermuxMacViewerCloseGrace/grace`` → `{connection_id}`;
+///   `status` → `{deferred: [connection_id]}`, the clears still waiting.
 /// - `power.status {machine?}` → `{dark, recoveries, last_recovery: {reason,
 ///   slept_s, rebuilds_main, main, lane_rebuilt, redialed, probed_now},
 ///   activity: {held, inbound, outbound}, peer: {asleep, wait_ms}}`.
@@ -47,6 +52,8 @@ enum SupermuxDevicePowerSocketCommands {
         case "peer_dialed_in":
             courtesy.peerDialedIn(try instance(params))
             return [:]
+        case "close_grace":
+            return try closeGrace(params)
         case "status":
             break
         case "reset":
@@ -71,6 +78,21 @@ enum SupermuxDevicePowerSocketCommands {
             await power.networkChanged().value
         default:
             throw HookError(message: "event must be will_sleep, did_wake, screens_did_wake or network_change")
+        }
+    }
+
+    private static func closeGrace(_ params: [String: Any]) throws -> [String: Any] {
+        switch params["action"] as? String {
+        case "defer":
+            let connectionID = UUID()
+            guard SupermuxMacViewerCloseGrace.defers(
+                deviceKind: .mac, clientID: "e2e-close-grace", connectionID: connectionID, reason: "e2e close grace"
+            ) else { throw HookError(message: "the close grace deferred nothing") }
+            return ["connection_id": connectionID.uuidString]
+        case "status":
+            return ["deferred": SupermuxMacViewerCloseGrace.deferredConnections.map(\.uuidString)]
+        default:
+            throw HookError(message: "action must be defer or status")
         }
     }
 
