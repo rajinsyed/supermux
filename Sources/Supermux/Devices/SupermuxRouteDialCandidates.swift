@@ -65,10 +65,12 @@ enum SupermuxRouteDialCandidates {
 /// Direct wins whenever it connects within 1.5 s; the relay is used only when
 /// no direct address answers. Where direct keeps losing on this network the
 /// race stops holding a relay that is ready first
-/// (``SupermuxDeviceRouteSwitcher/holdsRelayInRace(_:)``). With no relay
-/// credential (an internet outage; the `route-lane-without-relay` fence lets
-/// the dial through) only the lane can connect, so the LAN and Tailscale
-/// still work.
+/// (``SupermuxDeviceRouteSwitcher/holdsRelayInRace(_:)``). An expired or
+/// missing relay credential is refreshed inside the relay leg
+/// (``SupermuxIrxDirectFirstDial/relayLeg(credentials:dial:)``, the
+/// `route-lane-without-relay` fence), so the lane races at once: with the
+/// internet down only the lane can connect, and the LAN and Tailscale still
+/// work without waiting out the refresh.
 ///
 /// The lane is skipped in relay-only mode, with the kill switch off, while
 /// the link's switch policy holds direct off after a flap or skips it once
@@ -80,7 +82,7 @@ enum SupermuxDeviceDirectDial {
         instance: SurfaceDeviceInstanceID,
         endpointID: String,
         relayURL: String,
-        credentials: [IrxRelayCredential],
+        credentials: @escaping @Sendable () async throws -> [IrxRelayCredential],
         main: IrxEndpointSupervisor,
         allowsDirectPaths: Bool,
         journal: IrxJournal
@@ -110,10 +112,8 @@ enum SupermuxDeviceDirectDial {
             }
             let outcome = try await SupermuxIrxDirectFirstDial.race(
                 timing: holdsRelay ? .standard : .noRelayHold, direct: direct,
-                relay: {
-                    // No relay credential (an internet outage): only the lane can connect; upstream's error otherwise.
-                    guard !credentials.isEmpty else { throw DeviceLinkError.notConnected }
-                    return try await main.dial(address: relayAddress, credentials: credentials)
+                relay: SupermuxIrxDirectFirstDial.relayLeg(credentials: credentials) { credentials in
+                    try await main.dial(address: relayAddress, credentials: credentials)
                 },
                 discard: { await $0.close(code: .explicitRedial, origin: .local) })
             if lane != nil {

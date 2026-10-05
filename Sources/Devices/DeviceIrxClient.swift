@@ -316,20 +316,22 @@ actor DeviceIrxClient {
         let target = try intent.resolve(cache: cache, localIdentity: context.localDevice.descriptor.identity, now: now())
         let relay = target.descriptor.metadata.relayURLs.first { cache.directory?.relayURLs.contains($0) == true }
         guard let relay else { throw DeviceLinkError.notConnected }
-        var credentials = Self.relayCredentials(cache, at: now())
-        if credentials.isEmpty {
-            // SUPERMUX:begin route-lane-without-relay (upstream: `_ = try await context.control.refreshRelayCredentials()`)
-            // With no relay credential (an internet outage) the direct lane may still reach the peer on the LAN or Tailscale.
-            do { _ = try await context.control.refreshRelayCredentials() } catch where context.allowsDirectPaths {}
-            // SUPERMUX:end route-lane-without-relay
-            credentials = Self.relayCredentials(await context.control.snapshot().cache, at: now())
+        // SUPERMUX:begin route-lane-without-relay (upstream: `var credentials = Self.relayCredentials(cache, at: now())`, refreshed here with `_ = try await context.control.refreshRelayCredentials()` when empty, then `guard await context.isCurrent(), !credentials.isEmpty else { throw DeviceLinkError.notConnected }`)
+        // An expired or missing credential (after 30 min idle, an internet outage) is refreshed in the race's
+        // relay leg, so the direct lane, which may reach the peer on the LAN or Tailscale, never waits for it.
+        let supermuxCachedCredentials = Self.relayCredentials(cache, at: now())
+        let supermuxCredentials: @Sendable () async throws -> [IrxRelayCredential] = {
+            guard supermuxCachedCredentials.isEmpty else { return supermuxCachedCredentials }
+            _ = try await context.control.refreshRelayCredentials()
+            let fresh = Self.relayCredentials(await context.control.snapshot().cache, at: now())
+            guard await context.isCurrent(), !fresh.isEmpty else { throw DeviceLinkError.notConnected }
+            return fresh
         }
-        // SUPERMUX:begin route-lane-without-relay (upstream: `guard await context.isCurrent(), !credentials.isEmpty else { throw DeviceLinkError.notConnected }`; without a credential the race below has no relay leg)
-        guard await context.isCurrent(), !credentials.isEmpty || context.allowsDirectPaths else { throw DeviceLinkError.notConnected }
+        guard await context.isCurrent() else { throw DeviceLinkError.notConnected }
         // SUPERMUX:end route-lane-without-relay
         // SUPERMUX:begin route-dial-candidates (direct first: this Mac's direct lane at the peer's direct addresses races the relay dial below; upstream: `let address = try context.supervisor.dialAddress(peerEndpointIDHex: endpoint, relayURL: relay, directAddresses: [])` then `let connection = try await context.supervisor.dial(address: address, credentials: credentials)`)
         let (connection, supermuxLeg) = try await SupermuxDeviceDirectDial.connect(
-            instance: instance, endpointID: endpoint, relayURL: relay, credentials: credentials,
+            instance: instance, endpointID: endpoint, relayURL: relay, credentials: supermuxCredentials,
             main: context.supervisor, allowsDirectPaths: context.allowsDirectPaths, journal: journal)
         // A session on the lane never authorizes NAT traversal: no candidates, no health checks, no quarantine.
         let supermuxAuthorizesDirectPaths = context.allowsDirectPaths && supermuxLeg == .relay

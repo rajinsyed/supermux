@@ -93,6 +93,23 @@ public enum SupermuxIrxDirectFirstDial {
         }
     }
 
+    /// The relay leg of a dial whose relay credential may need a refresh
+    /// first (none during an internet outage; expired after 30 min idle):
+    /// `credentials` runs in the leg, beside the direct lane, so the lane
+    /// never waits an HTTPS round trip for it, nor the refresh's whole
+    /// timeout with the internet down and the LAN up. Cancelled while it
+    /// refreshes (direct won), the leg never dials.
+    public static func relayLeg<Credentials: Sendable, Value: Sendable>(
+        credentials: @escaping @Sendable () async throws -> Credentials,
+        dial: @escaping @Sendable (Credentials) async throws -> Value
+    ) -> @Sendable () async throws -> Value {
+        {
+            let fresh = try await credentials()
+            try Task.checkCancellation()
+            return try await dial(fresh)
+        }
+    }
+
     /// Runs every leg at once: the first value wins and the others are
     /// cancelled; a value one still produces is handed to `discard`. Throws
     /// the last failure when every leg fails, ``TimedOut`` when `deadline`
