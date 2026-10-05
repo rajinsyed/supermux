@@ -995,6 +995,9 @@ public final class MobileHostConnectionEventQueue: @unchecked Sendable {
         return nil
     }
 
+    /// The terminal this connection last typed into.
+    public func supermuxNoteInteractiveSurface(_ surfaceID: String) {}
+
     private func supermuxDropWatchedBacklogLocked(surfaceID: String) {
         guard let terminal = supermuxWatchedTerminals[surfaceID] else { return }
         for eventID in terminal.order.ids[terminal.order.head...] { _ = removeQueuedEventLocked(eventID) }

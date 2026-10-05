@@ -19,7 +19,11 @@ import Testing
 ///   viewer must see the gap when the terminal is shown again, even when it
 ///   printed nothing since;
 /// - a shown terminal, or a hidden one barely behind, gets paused;
-/// - the drain stops while watched bytes are still queued.
+/// - the drain stops while watched bytes are still queued;
+/// - (2026-10-05, D3: replies and events on one stream, each event write
+///   then a 1.7 MB replay reply) the echo of the terminal being typed in
+///   waits for every other shown terminal's turn, one reply each;
+/// - that terminal, printing a flood, starves the other shown ones.
 @Suite("Supermux watched terminal bytes: visible first, fair, hidden ones pause")
 struct SupermuxWatchedByteQueueTests {
     private let shown = UUID().uuidString
@@ -60,6 +64,15 @@ struct SupermuxWatchedByteQueueTests {
         for value in UInt8(1)...4 { bytes(queue, shown, value) }
         for value in UInt8(11)...12 { bytes(queue, other, value) }
         #expect(drain(queue) == [1, 11, 2, 12, 3, 4])
+    }
+
+    @Test("The terminal being typed in gets every other turn among shown terminals")
+    func typedTerminalEveryOtherTurn() {
+        let queue = makeQueue()
+        for value in UInt8(1)...3 { bytes(queue, other, value) }
+        for value in UInt8(100)...103 { bytes(queue, shown, value) }
+        queue.supermuxNoteInteractiveSurface(shown)
+        #expect(drain(queue) == [100, 1, 101, 2, 102, 3, 103])
     }
 
     @Test("Other events do not wait behind terminal bytes")
