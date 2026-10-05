@@ -13,16 +13,31 @@ import SupermuxMobileCore
 /// must not wait behind replays captured on the main thread. Only an
 /// Iroh-admitted session (a Mac peer or a phone of the same account) gets
 /// it; the addresses go nowhere else, never to the backend.
+///
+/// Two answers are refusals the asker reads by their code
+/// (``SupermuxRouteCandidateFetchSchedule/Answer``):
+/// - `not_ready` while the endpoint has no direct address yet (iroh fills
+///   them after its first network report, 1–3 s after binding). The asker
+///   keeps what it had and asks again in a minute; an empty list would have
+///   wiped it on an older asker.
+/// - `direct_off` when this host is forced to relay: the asker forgets this
+///   Mac's addresses, so no device dials it directly.
 enum SupermuxRouteCandidatesHost {
+    /// What this host says.
+    private enum Reply {
+        case answer(SupermuxRouteCandidatesDTO)
+        case refusal(code: String, message: String)
+    }
+
     private final class State: @unchecked Sendable {
         private let lock = NSLock()
         private var supervisor: IrxEndpointSupervisor?
-        private var debugServed: SupermuxRouteCandidatesDTO?
+        private var debugServed: Reply?
         private var served = 0
 
         var cachedSupervisor: IrxEndpointSupervisor? { lock.withLock { supervisor } }
         func cache(_ value: IrxEndpointSupervisor?) { lock.withLock { supervisor = value } }
-        var debugAnswer: SupermuxRouteCandidatesDTO? {
+        var debugReply: Reply? {
             get { lock.withLock { debugServed } }
             set { lock.withLock { debugServed = newValue } }
         }
@@ -42,7 +57,10 @@ enum SupermuxRouteCandidatesHost {
         guard case .irohAdmission = authorization else {
             return .failure(MobileHostRPCError(code: "forbidden", message: "Direct addresses are only shared over Iroh"))
         }
-        return .ok(await payload())
+        switch await reply() {
+        case .answer(let answer): return .ok(payload(answer))
+        case .refusal(let code, let message): return .failure(MobileHostRPCError(code: code, message: message))
+        }
     }
 
     /// The same answer from the `mobile.supermux.*` router (reached only by
@@ -51,33 +69,37 @@ enum SupermuxRouteCandidatesHost {
         guard let executionContext, case .irohAdmission = executionContext.authorization else {
             return .err(code: "forbidden", message: "Direct addresses are only shared over Iroh", data: nil)
         }
-        return .ok(await payload())
+        switch await reply() {
+        case .answer(let answer): return .ok(payload(answer))
+        case .refusal(let code, let message): return .err(code: code, message: message, data: nil)
+        }
     }
 
-    private nonisolated static func payload() async -> [String: Any] {
+    private nonisolated static func payload(_ answer: SupermuxRouteCandidatesDTO) -> [String: Any] {
+        ["endpoint_id": answer.endpointID ?? NSNull(), "addresses": answer.addresses]
+    }
+
+    private nonisolated static func reply() async -> Reply {
         state.countServed()
-        let answer = await currentAnswer()
-        return [
-            "endpoint_id": answer.endpointID ?? NSNull(),
-            "addresses": answer.addresses,
-        ]
-    }
-
-    private nonisolated static func currentAnswer() async -> SupermuxRouteCandidatesDTO {
         #if DEBUG
-        if let pinned = state.debugAnswer {
-            return SupermuxRouteCandidatesDTO(
-                endpointID: pinned.endpointID, addresses: SupermuxRouteCandidates.servable(pinned.addresses))
+        if let pinned = state.debugReply {
+            guard case .answer(let answer) = pinned else { return pinned }
+            return .answer(SupermuxRouteCandidatesDTO(
+                endpointID: answer.endpointID, addresses: SupermuxRouteCandidates.servable(answer.addresses)))
         }
         #endif
+        guard MobileHostIrxRuntime.pathMode != .relayOnly else {
+            return .refusal(code: SupermuxRouteCandidates.directOffErrorCode, message: "This Mac only uses the relay")
+        }
         // The runtime's supervisor is read on the main actor only when none
         // is cached or the cached one answers nothing (closed, replaced).
-        if let cached = state.cachedSupervisor, let answer = await answer(from: cached) { return answer }
+        if let cached = state.cachedSupervisor, let answer = await answer(from: cached) { return .answer(answer) }
         let current = await MainActor.run { MobileHostIrxRuntime.shared.endpointSupervisor }
         state.cache(current)
-        guard let current else { return SupermuxRouteCandidatesDTO(endpointID: nil, addresses: []) }
-        if let answer = await answer(from: current) { return answer }
-        return SupermuxRouteCandidatesDTO(endpointID: await current.identity().endpointIDHex, addresses: [])
+        // No endpoint at all (Iroh is off): nothing will come; an empty list.
+        guard let current else { return .answer(SupermuxRouteCandidatesDTO(endpointID: nil, addresses: [])) }
+        if let answer = await answer(from: current) { return .answer(answer) }
+        return .refusal(code: SupermuxRouteCandidates.notReadyErrorCode, message: "This Mac has no direct address yet")
     }
 
     private nonisolated static func answer(from supervisor: IrxEndpointSupervisor) async -> SupermuxRouteCandidatesDTO? {
@@ -90,7 +112,12 @@ enum SupermuxRouteCandidatesHost {
     /// Pins the answer (DEBUG driver `supermux.devices.route.candidates_serve`);
     /// nil serves the real endpoint again. The servable filter still applies.
     nonisolated static func pinAnswer(_ answer: SupermuxRouteCandidatesDTO?) {
-        state.debugAnswer = answer
+        state.debugReply = answer.map { .answer($0) }
+    }
+
+    /// Pins a refusal (`not_ready` or `direct_off`) instead (DEBUG driver).
+    nonisolated static func pinRefusal(code: String) {
+        state.debugReply = .refusal(code: code, message: "pinned by the DEBUG driver")
     }
 
     /// Answers served since launch (DEBUG driver).

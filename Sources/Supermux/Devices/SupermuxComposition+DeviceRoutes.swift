@@ -30,7 +30,8 @@ extension SupermuxComposition {
         store: routeCandidateStore,
         sessionEndpointID: { instance in
             await SupermuxDeviceRouteMonitor.outgoingConnection(to: instance)?.remoteEndpointIDHex
-        }
+        },
+        candidatesChanged: { instance in routeSwitcher.candidatesChanged(instance) }
     )
 
     /// This Mac's direct lane: the dial's direct leg and the route probes, used off the main actor.

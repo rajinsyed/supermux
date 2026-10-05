@@ -14,11 +14,13 @@ import SupermuxMobileCore
 ///   pins (or with `clear` unpins) the link's sampled route → `{route}`.
 /// - `route.sample {}`: one sampling pass now (also asks due candidates)
 ///   → `{routes: {machine: route}}`.
-/// - `route.candidates_serve {addresses?, endpoint_id?}`: this host answers
-///   `route.candidates` with these (the servable filter still applies);
-///   without `addresses` it serves its real endpoint again → `{pinned}`.
+/// - `route.candidates_serve {addresses?, endpoint_id?, refuse?}`: this host
+///   answers `route.candidates` with these (the servable filter still
+///   applies), or refuses with `refuse` (`not_ready`: no address yet;
+///   `direct_off`: relay-only, the asker forgets the peer); with neither it
+///   serves its real endpoint again → `{pinned}`.
 /// - `route.candidates_fetch {machine}`: asks that Mac for its addresses now
-///   → `{outcome}`.
+///   → `{outcome}` (`stored`, `empty`, `not_ready`, `direct_off`, `failed`, …).
 /// - `route.candidates {}`: the cache → `{file, peers: [{device_id, tag,
 ///   endpoint_id, dial_addresses, candidates}], fetches_stored, served_count}`.
 /// - `route.switch {machine, active?, lane?: open|blocked, reset?}`: the
@@ -30,7 +32,8 @@ import SupermuxMobileCore
 ///   hold_off_ms}, stats: {probes, probe_successes, checks, misses, upgrades,
 ///   fallbacks}}`.
 /// - `route.probe_now {reason?}`: the wake / network-change hook
-///   (``SupermuxDeviceRouteSwitcher/probeNow(reason:)``) → `{}`.
+///   (``SupermuxDeviceRouteSwitcher/probeNow(reason:)``: hold-off cleared,
+///   probe now) → `{}`.
 @MainActor
 enum SupermuxDeviceRouteSocketCommands {
     static let methodPrefix = "route."
@@ -51,7 +54,7 @@ enum SupermuxDeviceRouteSocketCommands {
         case "sample":
             await SupermuxComposition.deviceRouteMonitor.sampleNow()
             return ["routes": routes()]
-        case "candidates_serve": return serve(params)
+        case "candidates_serve": return try serve(params)
         case "candidates_fetch":
             let outcome = await SupermuxComposition.routeCandidateSync.fetch(try device(params))
             return ["outcome": outcome.rawValue]
@@ -84,7 +87,13 @@ enum SupermuxDeviceRouteSocketCommands {
         return ["route": SupermuxDevicesSocketPayloads.route(SupermuxComposition.deviceRoutes.route(for: device))]
     }
 
-    private static func serve(_ params: [String: Any]) -> [String: Any] {
+    private static func serve(_ params: [String: Any]) throws -> [String: Any] {
+        if let refusal = params["refuse"] as? String {
+            let codes = [SupermuxRouteCandidates.notReadyErrorCode, SupermuxRouteCandidates.directOffErrorCode]
+            guard codes.contains(refusal) else { throw HookError(message: "refuse must be not_ready or direct_off") }
+            SupermuxRouteCandidatesHost.pinRefusal(code: refusal)
+            return ["pinned": true]
+        }
         guard let addresses = params["addresses"] as? [String] else {
             SupermuxRouteCandidatesHost.pinAnswer(nil)
             return ["pinned": false]

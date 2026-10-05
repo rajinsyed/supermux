@@ -28,7 +28,9 @@ Direct addresses:
      cache file (0600, next to the projects file) holds exactly those.
  10. A reconnect asks again without being told to; the new answer replaces
      the old one (a DHCP change and a new port).
- 11. An empty answer clears the peer from the cache and its file.
+ 11. (Review T3/T12) An empty answer and a host with no address yet
+     (`not_ready`) keep the cached addresses; a host that turned direct off
+     (`direct_off`, relay-only) clears the peer from the cache and its file.
 
 What the user sees (the sidebar's Mac icon on a mirror row, `flat_chips`, and
 the Settings Remote Macs row, `remote_macs_settings`; the phone's wording):
@@ -393,15 +395,25 @@ class RouteE2E:
         return {"dial_addresses": peer["dial_addresses"], "fetches_stored": after["fetches_stored"],
                 "served_count": after["served_count"]}
 
-    def check_empty_answer_clears(self) -> Dict[str, Any]:
+    def check_empty_answer_keeps_direct_off_clears(self) -> Dict[str, Any]:
+        cached = (self.peer() or {}).get("dial_addresses")
+        expect(bool(cached), "nothing cached before the empty answers")
+        outcomes = {}
         self.serve([])
-        outcome = self.fetch()
-        expect(outcome == "stored", f"the empty answer was not taken: {outcome}")
-        expect(self.peer() is None, "an empty answer left the peer cached")
+        outcomes["empty"] = self.fetch()
+        self.client.call("supermux.devices.route.candidates_serve", {"refuse": "not_ready"})
+        outcomes["not_ready"] = self.fetch()
+        expect(outcomes == {"empty": "empty", "not_ready": "not_ready"}, f"outcomes: {outcomes}")
+        kept = (self.peer() or {}).get("dial_addresses")
+        expect(kept == cached, f"an answer that is not authoritative changed the cache: {cached} -> {kept}")
+        self.client.call("supermux.devices.route.candidates_serve", {"refuse": "direct_off"})
+        outcomes["direct_off"] = self.fetch()
+        expect(outcomes["direct_off"] == "direct_off", f"outcomes: {outcomes}")
+        expect(self.peer() is None, "a host that turned direct off left the peer cached")
         document = json.loads(Path(self.facts["cache_file"]).read_text())
         expect(not any(p["key"]["device_id"] == self.device_id for p in document.get("peers", [])),
                "the file still holds the peer")
-        return {}
+        return {"outcomes": outcomes, "kept": kept}
 
     def check_indicator_relay(self) -> Dict[str, Any]:
         settings = self.client.call("supermux.devices.remote_macs_settings", {}) or {}
@@ -520,7 +532,7 @@ class RouteE2E:
             self.step("host_answers_route_candidates", self.check_host_answers)
             self.step("candidates_filtered_and_persisted", self.check_filtered_and_persisted)
             self.step("reconnect_asks_again", self.check_reconnect_asks_again)
-            self.step("empty_answer_clears", self.check_empty_answer_clears)
+            self.step("empty_answer_keeps_direct_off_clears", self.check_empty_answer_keeps_direct_off_clears)
             self.step("indicator_relay", self.check_indicator_relay)
             self.step("indicator_direct", self.check_indicator_direct)
             self.step("indicator_disconnected", self.check_indicator_disconnected)
