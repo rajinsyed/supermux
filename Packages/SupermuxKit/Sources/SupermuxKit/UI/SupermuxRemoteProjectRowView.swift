@@ -38,6 +38,7 @@ struct SupermuxRemoteProjectRowView: View {
                     openPullRequest: { url in openPullRequest(url, workspace.id) },
                     mirrorMenu: { actions.mirrorMenu(workspace.id) }
                 )
+                .equatable()
             }
             if isExpanded {
                 ForEach(row.worktrees) { worktree in

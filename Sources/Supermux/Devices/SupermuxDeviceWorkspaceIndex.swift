@@ -132,6 +132,16 @@ final class SupermuxDeviceWorkspaceIndex {
         }
     }
 
+    /// Every unbound workspace that shows a device terminal: the workspaces a
+    /// pane joining or leaving can turn into a mirror or out of one, with no
+    /// device change (a mixed workspace closing its last local pane).
+    func unboundDeviceProjectingWorkspaces() -> [Workspace] {
+        liveWorkspaces().filter { workspace in
+            bindings.ref(forStableID: workspace.stableId) == nil
+                && catalog.projectionMachines(forWorkspace: workspace.id).contains(where: \.isDevice)
+        }
+    }
+
     // MARK: - Bindings
 
     /// Records that `workspace` mirrors `ref` (persisted; survives restart).

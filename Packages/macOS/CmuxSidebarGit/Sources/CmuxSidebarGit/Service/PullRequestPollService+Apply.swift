@@ -243,7 +243,10 @@ extension PullRequestPollService {
 
         if case .unsupportedRepository = resolution {
             workspacePullRequestLastTerminalStateRefreshAtByKey.removeValue(forKey: key)
-            workspacePullRequestNextPollAtByKey[key] = now.addingTimeInterval(Self.jitteredPollInterval(base: Self.backgroundPollInterval))
+            // SUPERMUX:begin pr-poll-off-screen-slowdown (upstream: `base: Self.backgroundPollInterval`)
+            let scale = max(1, host?.pullRequestPollIntervalScale() ?? 1)
+            workspacePullRequestNextPollAtByKey[key] = now.addingTimeInterval(Self.jitteredPollInterval(base: Self.backgroundPollInterval * scale))
+            // SUPERMUX:end pr-poll-off-screen-slowdown
             return
         }
 
@@ -251,7 +254,10 @@ extension PullRequestPollService {
         let baseInterval = (host?.isSelectedFocusedPanel(workspaceId: workspaceId, panelId: panelId) ?? false)
             ? Self.selectedPollInterval
             : Self.backgroundPollInterval
-        workspacePullRequestNextPollAtByKey[key] = now.addingTimeInterval(Self.jitteredPollInterval(base: baseInterval))
+        // SUPERMUX:begin pr-poll-off-screen-slowdown (upstream: `base: baseInterval`)
+        let scale = max(1, host?.pullRequestPollIntervalScale() ?? 1)
+        workspacePullRequestNextPollAtByKey[key] = now.addingTimeInterval(Self.jitteredPollInterval(base: baseInterval * scale))
+        // SUPERMUX:end pr-poll-off-screen-slowdown
     }
 
     // MARK: Tracking bookkeeping

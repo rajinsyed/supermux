@@ -4,7 +4,14 @@ import UniformTypeIdentifiers
 
 /// An indented live-workspace row nested under its project: selectable, with a
 /// selection highlight and a hover close button.
-struct SupermuxOpenWorkspaceRowView: View {
+///
+/// `Equatable` over its value inputs (hosts apply `.equatable()`), so a change
+/// to one workspace re-renders only that row, not every nested row. The
+/// closures are not compared: each one only forwards this row's id to the
+/// host's stable callbacks, so the ones kept from an earlier render act the
+/// same. Font scale, badge color, hover and the drag dim are dynamic
+/// properties, which re-render the row on their own.
+struct SupermuxOpenWorkspaceRowView: View, Equatable {
     let workspace: SupermuxOpenWorkspace
     let select: () -> Void
     let close: () -> Void
@@ -15,8 +22,12 @@ struct SupermuxOpenWorkspaceRowView: View {
     var rename: () -> Void = {}
     /// Starts a drag session, returning the reorder payload.
     var beginDrag: () -> NSItemProvider = { NSItemProvider() }
-    /// Accepts reorder drops from sibling workspace rows, if wired.
-    var dropDelegate: SupermuxWorkspaceDropDelegate?
+    /// The workspaces whose drags this row accepts as reorder drops (its
+    /// Mac's rows in the same project).
+    var siblingWorkspaceIds: Set<UUID> = []
+    /// Reorders `(draggedId, targetId)` in the host's tab order; `nil` leaves
+    /// the row without a drop target.
+    var reorder: ((UUID, UUID) -> Void)?
     /// Shared marker for the workspace being dragged. Read here (a leaf) so a
     /// drag-start write dims only this row in place; reading it in the parent
     /// `ForEach` would recreate the row and cancel the drag.
@@ -29,6 +40,10 @@ struct SupermuxOpenWorkspaceRowView: View {
     @Environment(\.supermuxSidebarFontScale) private var fontScale
     @Environment(\.supermuxUnreadBadgeFillColor) private var unreadBadgeFillColor
     @State private var isHovered = false
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.workspace == rhs.workspace && lhs.siblingWorkspaceIds == rhs.siblingWorkspaceIds
+    }
 
     var body: some View {
         HStack(spacing: 6) {
@@ -124,6 +139,19 @@ struct SupermuxOpenWorkspaceRowView: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(workspace.accessibilityLabel)
         .accessibilityAddTraits(workspace.isSelected ? [.isButton, .isSelected] : .isButton)
+    }
+
+    /// Accepts reorder drops from sibling workspace rows, when the host wired
+    /// reordering.
+    private var dropDelegate: SupermuxWorkspaceDropDelegate? {
+        reorder.map {
+            SupermuxWorkspaceDropDelegate(
+                targetWorkspaceId: workspace.id,
+                siblingWorkspaceIds: siblingWorkspaceIds,
+                draggingWorkspaceId: $draggingWorkspaceId,
+                reorder: $0
+            )
+        }
     }
 
     /// A device mirror's Mac icon (its name in the tooltip, dimmed while that

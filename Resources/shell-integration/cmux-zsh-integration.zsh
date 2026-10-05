@@ -2036,10 +2036,15 @@ _cmux_start_git_head_watch() {
         _CMUX_WATCHER_GUARD_COUNTDOWN=0
         while true; do
             _cmux_watcher_guard_tick "$watch_shell_pid" "$watch_shell_start" || break
-            _cmux_sleep_cs 100
+            # SUPERMUX:begin zsh-git-head-watch-cheap (upstream: `_cmux_sleep_cs 100` and `signature="$(_cmux_git_head_signature "$watch_head_path" 2>/dev/null || true)"`)
+            # Every running command (each agent, each dev server) keeps this
+            # loop: a 3 s tick (the "~3s" the prompt hook promises) and HEAD
+            # read in this shell, with no subshell fork per tick.
+            _cmux_sleep_cs 300
 
-            local signature
-            signature="$(_cmux_git_head_signature "$watch_head_path" 2>/dev/null || true)"
+            local signature=""
+            [[ -r "$watch_head_path" ]] && { IFS= read -r signature < "$watch_head_path" || signature=""; }
+            # SUPERMUX:end zsh-git-head-watch-cheap
             if [[ -n "$signature" && "$signature" != "$last_signature" ]]; then
                 last_signature="$signature"
                 _cmux_pr_cache_clear

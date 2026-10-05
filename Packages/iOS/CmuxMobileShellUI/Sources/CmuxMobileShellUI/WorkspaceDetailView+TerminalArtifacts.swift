@@ -32,6 +32,9 @@ extension WorkspaceDetailView {
         fontSize: MobileTerminalZoomPreference().resolvedFontSize,
         // SUPERMUX:end ios-terminal-default-zoom
         terminalPresentationIsActive: scenePhase == .active,
+        // SUPERMUX:begin sizing-hidden-terminal
+        terminalSurfaceIsShown: activeSurface == .terminal,
+        // SUPERMUX:end sizing-hidden-terminal
         // Do not let a terminal reattach steal focus while the
         // composer owns or intentionally withholds the keyboard.
         autoFocusOnWindowAttach: shouldAutoFocus,

@@ -1315,6 +1315,9 @@ final class SupermuxHarnessSessionController {
             turnCompletedSink?(frame)
         }
         emitPendingUserInputStateIfChanged()
+        // A keep-alive has no semantic payload and the page's reducer ignores
+        // it; forwarding it would only cost a page delivery.
+        if case .keepAlive? = line.frame { return }
         await eventSink?(["kind": "protocol", "line": line.object.rawValue])
     }
 

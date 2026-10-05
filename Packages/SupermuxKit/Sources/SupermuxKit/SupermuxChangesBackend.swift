@@ -55,5 +55,8 @@ public protocol SupermuxChangesBackend: Sendable {
     /// Identity of the full tracked diff (AI commit staleness guard).
     func trackedDiffDigest(repoPath: String) async -> String
     /// A signal per batch of repository changes, for as long as the stream is iterated.
+    /// Main-actor: the local watcher reads which directories to skip from
+    /// main-actor state (the registered projects) before it starts.
+    @MainActor
     func changeSignals(repoPath: String) -> AsyncStream<Void>
 }

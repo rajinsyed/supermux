@@ -24,6 +24,7 @@ import Testing
         // Agent launch
         "mobile.supermux.agent.options",
         "mobile.supermux.agent.start",
+        "mobile.supermux.agent.attachment.upload",
         // Changes
         "mobile.supermux.changes.watch",
         "mobile.supermux.changes.status",
@@ -81,7 +82,7 @@ import Testing
 
     @Test func allExposesEveryMethodExactlyOnce() {
         #expect(SupermuxMobileMethod.all.map(\.rawValue) == Self.expectedRawValues)
-        #expect(SupermuxMobileMethod.all.count == 60)
+        #expect(SupermuxMobileMethod.all.count == 61)
         #expect(Set(SupermuxMobileMethod.all).count == SupermuxMobileMethod.all.count)
     }
 

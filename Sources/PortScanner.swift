@@ -92,7 +92,13 @@ final class PortScanner: @unchecked Sendable {
     private let coalesceDelay: TimeInterval
     private static let panelMissingPortRetentionLimit = 2
     private static let minimumScansPerKick = panelMissingPortRetentionLimit + 1
-    private static let agentRescanInterval: TimeInterval = 2
+    // SUPERMUX:begin agent-port-rescan-slower (upstream: `agentRescanInterval: TimeInterval = 2`, no leeway)
+    // Each pass reads the whole process table twice and walks every agent
+    // process's open files; agents run all day, so every 2 s was constant
+    // work. A server an agent starts shows within ~5 s instead.
+    private static let agentRescanInterval: TimeInterval = 5
+    private static let agentRescanLeeway: DispatchTimeInterval = .seconds(1)
+    // SUPERMUX:end agent-port-rescan-slower
 
     // MARK: - Public API
 
@@ -777,10 +783,13 @@ final class PortScanner: @unchecked Sendable {
         guard agentScanTimer == nil else { return }
 
         let timer = DispatchSource.makeTimerSource(queue: queue)
+        // SUPERMUX:begin agent-port-rescan-slower
         timer.schedule(
             deadline: .now() + Self.agentRescanInterval,
-            repeating: Self.agentRescanInterval
+            repeating: Self.agentRescanInterval,
+            leeway: Self.agentRescanLeeway
         )
+        // SUPERMUX:end agent-port-rescan-slower
         timer.setEventHandler { [weak self] in
             self?.runTrackedAgentScan()
         }

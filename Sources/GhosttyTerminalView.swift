@@ -4242,6 +4242,13 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
     /// visibility rule knows when that signal is trustworthy (see
     /// `TerminalRendererWindowVisibility`). Weak: windows come and go.
     private static let windowsThatReportedVisible = NSHashTable<NSWindow>.weakObjects()
+    // SUPERMUX:begin renderer-key-window-honors-occlusion
+    /// Displays on which some window has reported `.visible`. A virtual display
+    /// never does, so a window moved to one is judged by the untrusted rule
+    /// (#991 would otherwise stop a key window there from presenting), while a
+    /// window moved to a known real display (an undock) keeps its trust.
+    private static var displaysThatReportedVisible = Set<UInt32>()
+    // SUPERMUX:end renderer-key-window-honors-occlusion
     private var lastScrollEventTime: CFTimeInterval = 0
     private let scrollSpeedAccumulator = TerminalScrollSpeedAccumulator()
     private var visibleInUI: Bool = true
@@ -9823,6 +9830,11 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             return
         }
         _ = rememberGhosttyMouseState(from: event)
+        // SUPERMUX:begin sizing-auto-local-input (a scroll on the pane is this Mac's user's activity: a wheel notch or a gesture's start, not its momentum)
+        if let surfaceID = terminalSurface?.id {
+            SupermuxTerminalSizingAuto.shared.macPaneScrolled(event, surfaceID: surfaceID)
+        }
+        // SUPERMUX:end sizing-auto-local-input
         postWheelScroll(requiresAuthoritativeResponse: true)
         lastScrollEventTime = CACurrentMediaTime()
         Self.focusLog("scrollWheel: surface=\(terminalSurface?.id.uuidString ?? "nil") firstResponder=\(String(describing: window?.firstResponder))")
@@ -9970,10 +9982,20 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         if occlusionVisible {
             Self.windowsThatReportedVisible.add(window)
         }
+        // SUPERMUX:begin renderer-key-window-honors-occlusion (upstream: `windowHasReportedVisible: Self.windowsThatReportedVisible.contains(window),`)
+        let displayID = window.screen?.displayID
+        if occlusionVisible, let displayID { Self.displaysThatReportedVisible.insert(displayID) }
+        // No screen (no display attached) and the built-in display are real;
+        // only another display must first have shown a window.
+        let occlusionIsTrusted = Self.windowsThatReportedVisible.contains(window)
+            && displayID.map { CGDisplayIsBuiltin($0) != 0 || Self.displaysThatReportedVisible.contains($0) } ?? true
+        // SUPERMUX:end renderer-key-window-honors-occlusion
         terminalSurface?.setRendererWindowVisible(
             TerminalRendererWindowVisibility(
                 occlusionVisible: occlusionVisible,
-                windowHasReportedVisible: Self.windowsThatReportedVisible.contains(window),
+                // SUPERMUX:begin renderer-key-window-honors-occlusion
+                windowHasReportedVisible: occlusionIsTrusted,
+                // SUPERMUX:end renderer-key-window-honors-occlusion
                 isWindowVisible: window.isVisible,
                 isMiniaturized: window.isMiniaturized,
                 isOnActiveSpace: window.isOnActiveSpace,

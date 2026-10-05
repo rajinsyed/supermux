@@ -20,13 +20,24 @@ struct SupermuxMirrorOwnership {
 
     /// The current ownership (reads the observable unified-projects model,
     /// so a SwiftUI body calling this re-renders when ownership changes).
+    ///
+    /// `isMirror` never reads the surface catalog: a SwiftUI body that did
+    /// would re-render on every catalog delta. A binding answers first, so a
+    /// mirror the opener just bound is a mirror on the very next render; an
+    /// unbound mirror (upstream's `vm.workspace_open`) comes from the model's
+    /// last pass, which follows that workspace's panes, so one that gains a
+    /// local pane stops being a mirror on the model's next pass.
     @MainActor
     static func current() -> SupermuxMirrorOwnership {
         let unified = SupermuxComposition.unifiedProjects
+        let index = SupermuxComposition.deviceWorkspaceIndex
+        let mirrorIDs = unified.mirrorWorkspaceIDs
         return SupermuxMirrorOwnership(
             owners: unified.mirrorOwners,
             hasRemoteOnlyProjects: unified.hasRemoteOnlyProjects,
-            isMirror: { SupermuxComposition.deviceWorkspaceIndex.isDeviceMirror($0) }
+            isMirror: { workspace in
+                index.boundRef(forLocal: workspace) != nil || mirrorIDs.contains(workspace.id)
+            }
         )
     }
 

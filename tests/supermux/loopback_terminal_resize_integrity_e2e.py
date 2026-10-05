@@ -24,8 +24,12 @@ terminals' render grids (`mobile.terminal.replay` on this control socket; see
                                     the mirror still equals the source
   4. dragged_window_replays_few_times
                                     20 grid steps 40 ms apart (a window dragged on the other
-                                    Mac) while output flows: at most 4 full replays, and the
-                                    mirror equals the source
+                                    Mac) while output flows: the drag reaches the PTY, costs at
+                                    most 6 full replays (one per 400 ms governor window plus the
+                                    leave, not one per step), and the mirror equals the source.
+                                    Until 2026-10-05 the budget was 4: the apply governor was
+                                    wedged by the previous step's clear, so the drag never
+                                    reached the PTY and only the output stream replayed
 
 Usage:
   CMUX_TAG=<tag> python3 tests/supermux/loopback_terminal_resize_integrity_e2e.py [--report PATH]
@@ -278,6 +282,13 @@ class ResizeIntegrityE2E:
             self.reported_clients.add(client)
         self.client.call("mobile.terminal.viewport", params)
 
+    def governor_applied(self) -> Optional[Dict[str, Any]]:
+        """The target the source's apply governor last put on the PTY (DEBUG driver)."""
+        reply = self.client.call(
+            "supermux.devices.terminal_sizing.governor", {"surface_id": self.facts["source_surface_id"]}
+        ) or {}
+        return (reply.get("governor") or {}).get("applied")
+
     def clear_viewports(self) -> None:
         for client in list(self.reported_clients):
             self.report_viewport(client, "phone", clear=True)
@@ -456,14 +467,19 @@ class ResizeIntegrityE2E:
             self.report_viewport("mac2", "mac", cols, 24)
             steps += 1
             time.sleep(0.04)
+        applied = self.governor_applied()
         self.clear_viewports()
         self.wait_text("the generator's end in the SOURCE", f["source_workspace_id"], f["source_surface_id"], done, 120)
         self.wait_text("the generator's end in the MIRROR", f["mirror_workspace_id"], f["mirror_surface_id"], done, 120)
         time.sleep(1.5)
         result = self.compare("drag")
         replays = int(self.pane_stats().get("full_replays", 0)) - before
-        result.update({"grid_steps": steps, "full_replays": replays})
-        if replays > 4:
+        result.update({"grid_steps": steps, "full_replays": replays, "governor_applied": applied})
+        # One of the drag's own grids (rows 24, cols 50-80) must be on the PTY, not an earlier step's cap.
+        applied = applied or {}
+        if applied.get("kind") != "cap" or applied.get("rows") != 24 or not 50 <= int(applied.get("cols", 0)) <= 80:
+            raise Failure(f"the drag never reached the PTY (governor applied {applied}): {result}")
+        if replays > 6:
             raise Failure(f"{replays} full replays for one drag of {steps} steps: {result}")
         return result
 

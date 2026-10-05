@@ -4,8 +4,9 @@ public import SupermuxMobileCore
 
 /// Other Macs' parts of a project that also exists on this Mac: rendered by
 /// that project's normal row (device-chipped worktrees, "Open on ▸",
-/// "Set Up on <Mac>…").
-public struct SupermuxProjectRemoteExtras {
+/// "Set Up on <Mac>…"). Equatable, so an unchanged project row skips its
+/// body (see ``SupermuxProjectRowView``).
+public struct SupermuxProjectRemoteExtras: Equatable, Sendable {
     /// The unified project (this Mac's copy plus the device copies).
     public let project: SupermuxUnifiedProject
     /// Unopened worktrees of the device copies (loaded on every refresh).

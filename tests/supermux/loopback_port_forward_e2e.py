@@ -42,7 +42,8 @@ forward must land on another local port.
                                         unlisted and that source's mirror hidden; shown and listed again,
                                         it is forwarded automatically
  8e. late_bind_is_attributed            a server binding 12 s after its command (past the terminal's port
-                                        scans) is still listed as S's within 15 s
+                                        scans) is still listed as S's within 15 s (the owner's +15 s
+                                        check, or its +25 s one when the server starts slowly)
   9. auto_off_keeps_manual              auto-forward off -> automatic forwards go, a manual one stays
  10. external_link_uses_local_port      a localhost:R link in M's terminal opened in the default
                                         browser -> http://localhost:L/... (C's `mirror.link_open`)
@@ -111,7 +112,9 @@ HELD_ABOVE_REMOTE = 3
 # The highest R step 1 takes: the held ports and the forward's candidates
 # (R+1 … R+50) must stay valid port numbers.
 MAX_REMOTE_PORT = 65_535 - 50
-# How long after a late server binds the owner may take to attribute it to its workspace.
+# How long after a late server binds the owner may take to attribute it to its workspace. The
+# owner checks 5, 15, 25, 45 and 120 s after the command starts, so the bind at about +12 s is
+# caught at +15 s, or at +25 s when the server starts slowly.
 LATE_BIND_ATTRIBUTION_S = 15.0
 # How long idle_owner_does_not_scan_listeners watches for listener checks.
 IDLE_CHECK_SECONDS = 10.0
@@ -824,9 +827,11 @@ class PortForwardE2E:
         """A server that binds after its terminal's port scans are over (a dev script
         doing other work first: here `sleep 12`, past the scans of the ~10 s after
         the command's kick) is still attributed to its workspace: the owner sees a
-        new loopback listener (it checks every few seconds while another Mac
-        follows its ports), scans its terminals again and pokes. Before, it was
-        never the workspace's port, only one of the owner's other ports."""
+        new loopback listener (while another Mac follows its ports it checks 5,
+        15, 25, 45 and 120 s after the latest command start), scans its terminals
+        again and pokes. Before, it was never the workspace's port, only one of
+        the owner's other ports. `attributed_after_command_seconds` says which
+        check caught it (about 16 for +15 s, 26 for +25 s)."""
         panes = (self.sock.call("pane.list", {"workspace_id": self.source_id}) or {}).get("panes") or []
         pane = (panes[0].get("id") or panes[0].get("pane_id")) if panes else None
         made = self.sock.call("surface.create", {"workspace_id": self.source_id, "pane_id": pane, "type": "terminal"}) or {}
@@ -837,6 +842,7 @@ class PortForwardE2E:
         port = free_port()
         command = f"sleep 12; python3 -m http.server {port} --bind 127.0.0.1 --directory {shlex.quote(str(self.www))}\n"
         self.sock.call("surface.send_text", {"workspace_id": self.source_id, "surface_id": terminal, "text": command})
+        sent = time.monotonic()
 
         def attributed() -> bool:
             listing = (self.tunnel("host_ports") or {}).get("ports") or {}
@@ -847,7 +853,9 @@ class PortForwardE2E:
             wait_for(f"the late server on {port}", lambda: accepts("127.0.0.1", port), 30)
             bound = time.monotonic()
             wait_for(f"the owner to list {port} as S's", attributed, LATE_BIND_ATTRIBUTION_S, interval_s=0.5)
-            return {"port": port, "attributed_after_bind_seconds": round(time.monotonic() - bound, 2)}
+            done = time.monotonic()
+            return {"port": port, "attributed_after_bind_seconds": round(done - bound, 2),
+                    "attributed_after_command_seconds": round(done - sent, 2)}
         finally:
             self.stop_owner_server(port) if accepts("127.0.0.1", port) else None
             try:

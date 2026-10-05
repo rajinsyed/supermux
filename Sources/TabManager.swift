@@ -339,6 +339,9 @@ class TabManager: ObservableObject {
     func selectedWorkspaceIdDidChange(from oldValue: UUID?) {
             guard selectedTabId != oldValue else { return }
             recordCloudWorkspaceSelection()
+            // SUPERMUX:begin sizing-auto-mac-selection (this Mac's user selecting a workspace: a phone that attaches to its terminals right after does not take them)
+            SupermuxTerminalSizingAuto.shared.macUserSelected(workspace: selectedWorkspace)
+            // SUPERMUX:end sizing-auto-mac-selection
             defer {
                 workspaceSwitchCoordinator.selectionDidCommit(
                     from: oldValue,
@@ -2878,6 +2881,9 @@ class TabManager: ObservableObject {
         if select {
             selectedTabId = workspace.id
         }
+        // SUPERMUX:begin tab-activity-workspace-moved (its working-tab spinners follow the new window)
+        SupermuxTabActivitySync.shared.workspaceMoved(workspace)
+        // SUPERMUX:end tab-activity-workspace-moved
     }
 
     // Keep closeTab as convenience alias

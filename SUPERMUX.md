@@ -55,6 +55,20 @@ anything.** It is the contract that keeps the fork mergeable with upstream cmux.
    so a prompt that would not fit inline is saved under the cmux state directory
    (`supermux-agent-prompts/<sha256>.txt`, pruned after 7 days) and the line reads it with
    `"$(command cat -- …)"` (`(command cat -- … | string collect)` on fish).
+   **Images** can be pasted, dropped or attached (paperclip) in the Mac sheet's prompt; they put the
+   sheet in Start Claude mode, which then needs text too. Formats Claude cannot read are converted
+   off the main thread (HEIC/RAW photos to JPEG, transparent images to PNG, others to PNG or JPEG
+   when the PNG would pass 32 MB), and Start waits for that. When an organization disables file
+   transfer, another Mac's sheet offers no attaching. At Start they are staged on the Mac that
+   runs Claude — copied on this Mac into `supermux-agent-attachments/<uuid>/` under the cmux state
+   directory (0700, pruned after 7 days), or uploaded to another Mac with
+   `agent.attachment.upload` (`supermux.agent_attachments.v1`, upstream's task-attachment store and
+   chunk contract, Mac-wide ticket; images share an operation up to its 10-file / 64 MiB limits, so
+   the launch line gets few `--add-dir`s) before `agent.start` gets their paths as
+   `attachment_paths`, each of which must be a file in an upload folder of that store. The
+   launch lists the paths after the prompt ("Attached images:") and passes their folders as
+   `--add-dir`, so Claude reads them without a permission prompt. The phone sheet has no attach UI
+   yet; the RPCs are phone-ready.
 
 9. **Remote Macs as first-class workspaces (Superset-style).** Every workspace on every one of the
    user's other Macs appears in the LEFT sidebar automatically, as a real local "mirror" workspace
@@ -78,7 +92,11 @@ anything.** It is the contract that keeps the fork mergeable with upstream cmux.
    instead of closing. The menu bar item offers Show Supermux / Hide Supermux and Turn Off Remote Host
    Mode (off shows the windows again); reopening the app, the global show/hide hotkey and a click on a
    notification also show them (the mode stays on). Keep Mac Awake (upstream's
-   menu bar item) keeps the Mac reachable. Needs a logged-in macOS session; a locked screen is fine.
+   menu bar item) keeps the Mac reachable. While the mode is on, auto-mirror opens no new mirrors of
+   the other Macs' workspaces (no one looks at them there, and each would stream from the Mac that
+   views this one); mirrors already open stay with their bindings, still close when their remote
+   workspace closes, and nothing is closed on the other Mac. Turning the mode off brings auto-mirror
+   back. Needs a logged-in macOS session; a locked screen is fine.
    Code: `Sources/Supermux/RemoteHost/`, touchpoints #830–#835 and #880,
    `tests/supermux/loopback_remote_host_mode_e2e.py`.
 
@@ -109,10 +127,10 @@ building a parallel system.
 | Mirror workspace behaviors (⌘G run, presets, Changes panel, file tools) | ✅ loopback-E2E | `Sources/Supermux/Mirrors/`, `SupermuxChangesBackend` (local / remote over `changes.*`), #572 |
 | Files panel in a mirror browses the other Mac (list, preview, Find, git colors, live refresh, file operations) | ✅ loopback-E2E | `SupermuxDeviceFileExplorerProvider` over `files.*` (`supermux.files_read.v1`), #675–#681, `tests/supermux/loopback_mirror_files_e2e.py` |
 | Clipboard in a mirror's terminals (a program's OSC 52 copy and the user's copies reach this Mac's clipboard; pasted images and dropped files upload to the owning Mac and paste its path) | ✅ loopback-E2E | `SupermuxTerminalClipboardWrites`, `SupermuxDeviceTerminalUpload` over `terminal.attachment.upload` (`supermux.terminal_attachments.v1`), #764–#773, `tests/supermux/loopback_terminal_clipboard_e2e.py` |
-| A mirror's terminals act like local ones (Cmd-click on a path opens the owning Mac's file in the read-only preview; Cmd+K and reset clear that Mac's terminal too; focus reports (mode 1004) reach its program; Ctrl+V of an image uploads it and pastes its path) | ✅ loopback-E2E | `SupermuxDeviceTerminalLinks` (over `supermux.files_read.v1`), `SupermuxDeviceTerminalActions` over `terminal.action` (`supermux.terminal_actions.v1`), #810–#818, `tests/supermux/loopback_terminal_polish_e2e.py` |
+| A mirror's terminals act like local ones (Cmd-click on a path opens the owning Mac's file in the read-only preview; Cmd+K and reset clear that Mac's terminal too; focus reports (mode 1004) reach its program, and a mirror pane counts as focused only while it is on screen, so a hidden mirror runs no display link on either Mac; Ctrl+V of an image uploads it and pastes its path) | ✅ loopback-E2E | `SupermuxDeviceTerminalLinks` (over `supermux.files_read.v1`), `SupermuxDeviceTerminalActions` over `terminal.action` (`supermux.terminal_actions.v1`), #810–#818, `tests/supermux/loopback_terminal_polish_e2e.py` |
 | A mirror's Simulator runs on the owning Mac (viewer tab streams it; nothing simulator-related runs here) | ✅ loopback-E2E (two real Macs not yet run) | `Sources/Supermux/RemoteSimulator/` (`SupermuxRemoteSimulators`, `SupermuxRemoteSimulatorPanel` over upstream's simulator stream v2 store), host `simulator.control` (`supermux.remote_simulator.v1`), #730–#734, #737–#739, `tests/supermux/loopback_mirror_simulator_e2e.py` |
 | Background tab sync (tabs added/closed/reordered on the owning Mac reach mirrors) | ✅ loopback-E2E | `SupermuxDeviceLayoutChangeObserver`, #595 |
-| A mirror streams its terminal like a local one (only mirrored terminals' bytes cross, never shed; a gap, re-anchor or reconnect resumes by byte position; full replays keep 10000 history rows; a remote grid change re-anchors on a replay pinned in stream order, so no byte is drawn into a grid it was not written for) | ✅ loopback-E2E (two real Macs not yet run) | `supermux.terminal_stream.v2`: `SupermuxTerminalStream` (viewer), `SupermuxTerminalStreamHost` (host), `SupermuxTerminalStreamGrid` (grid generations), #777–#783, #900–#906, `tests/supermux/loopback_terminal_streaming_e2e.py`, `loopback_terminal_resize_integrity_e2e.py` |
+| A mirror streams its terminal like a local one (only mirrored terminals' bytes cross, never shed; a gap, re-anchor or reconnect resumes by byte position, and a reconnect replays only terminals that printed while the link was down; full replays keep 10000 history rows; a remote grid change re-anchors on a replay pinned in stream order, so no byte is drawn into a grid it was not written for; a terminal whose mirrors have all been off screen for 2 s streams in ~500 ms batches until one is shown) | ✅ loopback-E2E (two real Macs not yet run) | `supermux.terminal_stream.v2`: `SupermuxTerminalStream` (viewer), `SupermuxTerminalStreamHost` (host), `SupermuxTerminalStreamGrid` (grid generations), #777–#783, #900–#906, #970–#978, `tests/supermux/loopback_terminal_streaming_e2e.py`, `loopback_terminal_resize_integrity_e2e.py` |
 | A mirror's browser opens the owning Mac's localhost; a mirror's own tabs keep its layout sync | ✅ loopback-E2E | `SupermuxDeviceBrowserRoute` + `SupermuxDeviceBrowserProxy` (#707), `SupermuxDeviceLayoutSurfaceFilter.localPanelIDs` (#706), `tests/supermux/loopback_mirror_browser_e2e.py`, `loopback_mirror_local_panels_e2e.py` |
 | Notification/push parity (no duplicate pushes, shared read state, presence-aware host, push setup shared between Macs) | ✅ loopback-E2E | #545–#550, `SupermuxDeviceNotification*`, `phone_push.status/share` |
 | Remote Macs settings card (Settings › Automation) | ✅ | `SupermuxRemoteMacsSettingsCard` (#596–#598) |
@@ -263,6 +281,8 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   window already holding that Mac's mirrors, survive restarts (bindings keyed by
   `Workspace.stableId`), close by themselves when the remote workspace closes, and are never
   re-exported by this Mac's mobile host (the loop guard; the phone talks to every Mac directly).
+  On a Mac in Remote Host Mode auto-mirror counts as off: it opens no new mirrors and leaves the
+  open ones in place.
 - **Closing a mirror** works like closing a local workspace: only this Mac's own confirmations
   (pinned, running process, the close settings, the batch "Close workspaces?"), no prompt of the
   fork's; then the mirror closes here at once and the real workspace closes on its Mac (with
@@ -286,7 +306,9 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   Bonsplit's own tab spinner (in the tab's text colour; the unread dot is unchanged), in workspaces,
   the Dock and mirrors (the other Mac sends `supermux_working_panel_ids`; an older Mac's mirror tabs
   show none). A working tab keeps spinning when it moves to another workspace, into the Dock, or
-  appears in a mirror after the agent started. A Claude Code question (AskUserQuestion) or plan
+  appears in a mirror after the agent started. While its window is off screen (fully covered,
+  minimized, the app hidden, a Remote Host Mode host) a tab holds its spinner off, and gets it back as
+  soon as the window shows again. A Claude Code question (AskUserQuestion) or plan
   approval (ExitPlanMode) shows needs input until the user answers it in the terminal, then the
   spinner comes back at once (#907–#913: the answered tool's PostToolUse resolves the wait); a tool
   permission prompt hands back to the spinner at the agent's next tool.
@@ -318,11 +340,12 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   binding bytes, which reach the PTY exactly; the mirror's own answers to terminal queries are
   dropped. A pending Ghostty key sequence stays local. An older Mac on either side keeps upstream's
   text path.
-- **A busy Mac is asked again** (#721): after a reconnect every mirrored terminal re-attaches at
-  once, and a Mac with many of them answers further requests `server_busy` (its per-connection
-  request quota is full; the request never ran). Every request to another Mac is sent again after
-  0.25, 0.5, 1, 2 and 4 s on the same connection, so the capability request (which keeps typing on
-  the key-forwarding path) and the tab closes held while offline still land.
+- **A busy Mac is asked again** (#721): after a reconnect every mirrored terminal re-attaches (those
+  on screen at once, hidden ones three at a time, #975), and a Mac with many of them answers further
+  requests `server_busy` (its per-connection request quota is full; the request never ran). Every
+  request to another Mac is sent again after 0.25, 0.5, 1, 2 and 4 s on the same connection, so the
+  capability request (which keeps typing on the key-forwarding path) and the tab closes held while
+  offline still land.
 - **A slow Mac is not a lost Mac** (#723): a request whose reply misses its deadline (20 s, unless
   the method's own is longer) no longer drops the link. This Mac first asks the other Mac's
   connection whether it still answers (`mobile.events.probe`, 10 s); only no answer redials. Otherwise
@@ -347,55 +370,96 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   then SIGKILL), and one still running when the app quits ends with the app
   (`SupermuxGitChildProcesses`: on `willTerminate`, every git child with its process group); before,
   those were left under launchd and ran for hours.
-- **Terminal size: Auto, one setting** (upstream's shared sizing, #633, #665–#669, #790–#797, #920–#924):
-  every terminal starts in Auto (upstream's `latest`, labelled Auto on the Mac and the phone): the
-  device you are viewing it from sets its grid. A phone opening a terminal, or returning to it, gets
-  a phone-sized grid even while the Mac window is on screen; typing, a paste, a focus click or
-  switching to the app with the terminal focused gives it back to the Mac; another Mac's mirror takes
-  it when it attaches, is shown again or types. Upstream's rule that a phone defers to a Mac pane on
-  screen is lifted in Auto by giving each phone without an override of its own `counts_override:
-  true` (cleared when the terminal leaves Auto; "Counts toward size" off on the phone stays off). A
-  viewport report that repeats the same grid is no activity (the phone sends one in answer to every
-  grid change, which would bounce the grid). Only this Mac's user's own input is the Mac pane's
+- **Terminal size: Auto, one setting** (upstream's shared sizing, #633, #665–#669, #790–#797, #920–#924,
+  #952–#969, #1011–#1032): every terminal starts in Auto (upstream's `latest`, labelled Auto on the Mac and
+  the phone): the device you are viewing it from sets its grid. A phone opening a terminal, or returning
+  to it, gets a phone-sized grid even while the Mac window is on screen; typing, a paste, a focus click, a
+  scroll (a wheel notch or a gesture's start, never its momentum) or switching to the app with the
+  terminal or its TextBox focused gives it back to the Mac (until 2026-10-05 a scroll and activation with
+  the TextBox focused were no activity, #956). Activity that decides nothing yet (a key on a Mac pane
+  marked off screen) is kept, so that pane is the newest once it counts again (#955). Size to My Window
+  on a local terminal puts the decided size on the PTY at once (until 2026-10-05 it only noted activity, so the uncap waited
+  the 3 s uncap window). The apply governor no longer wedges (#954; until 2026-10-05 a change staged
+  within 400 ms of an immediate apply left every later grid staged and never applied, so a phone's
+  keyboard or rotation grid, and the Mac's grid after the phone left, reached the PTY only after a
+  relaunch). Another Mac's mirror takes the grid when it attaches, is shown again or types, or when the
+  user picks Size to My Window on it or switches to the app with it focused (its report carries
+  `view_appeared`, activity in every mode; until 2026-10-05 both did nothing in Auto, #1030; the claim also
+  carries the counts lift when Size to My Window turns counting back on, so the two cannot arrive out of
+  order, and a mirror shown again after a reconnect lifts an automatic false the other Mac may have kept
+  across it, #631); a phone when
+  it types, over its input lane as over RPC (until 2026-10-05 lane typing, the phone's usual path, was
+  nobody's activity, #960–#963). A phone's claim lasts while it views: the replay a mounted phone sends
+  after a reconnect claims like its viewport report (until 2026-10-05 it expired after 5 s, #964), each
+  terminal on the phone's screen re-reports its viewport on a new connection (#1017–#1018), and a
+  connection closing drops only the reports it wrote last, so an old connection's late close never drops
+  what the phone's new connection just sent (#957–#959). A phone terminal hidden under a browser,
+  stream, Simulator or Mac-surface tab of its workspace does not count (the phone sends `counts_override:
+  false` and lifts it when the terminal tab shows again, which takes the grid back, #1014–#1016). A phone's
+  scene-phase leave (Control Center, the app switcher, a lock) clears with `transient: true` and waits
+  the 3 s uncap window, so a glance and return resizes nothing (also with another Mac's mirror or a
+  second phone attached) and a lock gives the grid to the Mac or the next viewer within 3 s; leaving the terminal and a connection close restore at once (until 2026-10-05 every glance
+  resized the terminal twice, #1027, #1032, #1011–#1012). A phone's clear goes to the Mac that holds its lease, so
+  switching the phone to another Mac releases the first (#1020–#1021). A phone someone disconnected types
+  nothing over its lane either and is told again on each connection (the `detached` refusal carries the
+  detachment and re-sends `mobile.terminal.detached` once the connection subscribes to it, #965–#966; the phone applies the refusal itself,
+  #1022–#1024), so a relaunched phone shows its Detached card and Reattach. Upstream's rule that a phone
+  defers to a Mac pane on screen is lifted in Auto by giving each phone without an override of its own
+  `counts_override: true` (cleared when the terminal leaves Auto; "Counts toward size" off on the phone
+  stays off). A viewport report that repeats the same grid is no activity (the phone sends one in answer
+  to every grid change, which would bounce the grid). Only this Mac's user's own input is the Mac pane's
   activity: a key, click or scroll the app dispatches from its event queue, a menu item they chose or a
-  drop on the terminal (`SupermuxLocalUserInput`, #920–#924; a Cloud terminal's relay too). A phone's keystrokes (over its input lane or RPC, a paste's
-  Return included), another Mac's input and a socket client's text (`cmux send`, an agent's
-  automation) delivered to the same terminal never are, so the grid no longer flashes between the
-  phone's and the Mac's size on every key. A pane merely coming on screen is no activity either: selecting a
-  workspace on the phone selects it on the Mac too. A phone that returns to a terminal it never left
-  (its view only left the window, so it keeps its viewport) flags its next report `view_appeared`,
-  which the host counts as starting to view (#881–#883; an older Mac ignores the flag and waits for the
-  next input or rotation). Not following: Cloud terminals keep upstream's rules (their host
-  decides). Until 2026-10-04 the default was Fit everyone; until 2026-10-03 Priority with this Mac
-  first, so a terminal opened from the phone did not fit the phone. Under Priority (this Mac first: its own pane for a local terminal, so a phone
-  defers to a Mac pane on screen) a mirror claims the other Mac's terminal when it is shown, first
-  attaches while shown, or reconnects, pushing once per connection and never in answer to that Mac's
-  size events, so of two viewing Macs the one that showed it last wins. The claim only puts this
-  Mac first in that terminal's Priority order; a mode, fixed size or order chosen on the terminal
-  (on either Mac or the phone) stays. The mode, fixed size and priority order chosen in the size
-  panel or the tab menu are one sticky choice per Mac (`supermux.terminalSizing.preference`; the
-  panel says "Applies to all terminals on this Mac."), applied to every local terminal, now and
-  after a relaunch, and to the terminal it was chosen on (on a mirror whose link is down, once it
-  attaches again). The same holds for a mode picked in the phone's size sheet (a
-  `mobile.terminal.size_policy.set` from a phone or iPad), and a mode picked on a mirror also
-  becomes the other Mac's setting for all its terminals: the mirror sends it once, on the pick, with
+  drop on the terminal (`SupermuxLocalUserInput`, #920–#924; a Cloud terminal's relay too). A phone's
+  keystrokes (over its input lane or RPC, a paste's Return included), another Mac's input and a socket
+  client's text (`cmux send`, an agent's automation) delivered to the same terminal never are, so the
+  grid no longer flashes between the phone's and the Mac's size on every key. A pane merely coming on
+  screen is no activity either: selecting a workspace on the phone selects it on the Mac too. The
+  reverse: an awake phone follows the Mac's selection, so a phone that attaches to or starts viewing a
+  terminal within 3 s of this Mac's user selecting it (a workspace, a tab or a pane, by their own input;
+  never a socket or the phone) leaves the Mac pane the owner, and typing on the phone still takes it
+  (until 2026-10-05 the phone took every terminal the Mac's user opened, #968–#969). Another Mac's
+  mirror attaching or coming on screen is held the same way, but its Size to My Window or activation
+  claim always wins (`SupermuxTerminalSizingAuto.viewersReported`). A phone that
+  returns to a terminal it never left (its view only left the window, so it keeps its viewport) flags
+  its next report `view_appeared`, which the host counts as starting to view; the flag stays pending
+  until a report carrying it is delivered (#881–#883; an older Mac ignores the flag and waits for the
+  next input or rotation). Not following: Cloud terminals keep upstream's rules (their host decides).
+  Until 2026-10-04 the default was Fit everyone; until 2026-10-03 Priority with this Mac first, so a
+  terminal opened from the phone did not fit the phone. Under Priority (this Mac first: its own pane for
+  a local terminal, so a phone defers to a Mac pane on screen) a mirror claims the other Mac's terminal
+  when it is shown, first attaches while shown, or reconnects, pushing once per connection and never in
+  answer to that Mac's size events, so of two viewing Macs the one that showed it last wins. The claim
+  only puts this Mac first in that terminal's Priority order; a mode, fixed size or order chosen on the
+  terminal (on either Mac or the phone) stays. The mode, fixed size and priority order chosen in the size
+  panel or the tab menu are one sticky choice per Mac (`supermux.terminalSizing.preference`; the panel
+  says "Applies to all terminals on this Mac."), applied to every local terminal, now and after a
+  relaunch, and to the terminal it was chosen on (on a mirror whose link is down, once it attaches
+  again). The same holds for a mode picked in the phone's size sheet (a
+  `mobile.terminal.size_policy.set` from a phone or iPad), and a mode picked on a mirror also becomes
+  the other Mac's setting for all its terminals: the mirror sends it once, on the pick, with
   `supermux_preference` to a Mac that advertises `supermux.terminal_sizing_preference.v1` (the panel
-  then says "Applies to all terminals on both Macs."; an older Mac keeps it on that terminal). A
-  setting that arrives is stored and never sent on, and nothing is sent on a show, a reconnect or a
-  size event, so two Macs cannot bounce it (until 2026-10-03 every mirror pushed the whole preference
-  when shown, on reconnect and on every change, so a Fit Everyone picked once on one Mac became the
-  mode of every terminal it mirrored on the other, again after each show, and any small pane shrank
-  them). Fixed keeps its size in the one setting (every terminal of the Mac gets that grid). Cloud
-  terminals, `terminal.size_policy.set` (socket, CLI), a mirror's claim, Size to My Window and the
-  counts overrides (Don't Resize from This Mac, a device's own "Counts toward size") stay per
-  terminal. A viewing Mac's pane counts up to 500x200 (a phone's, 300x120). A
-  pane that is not on screen (a tab never shown on its Mac, a mirror in a background workspace, a hidden
-  or fully covered window) does not count, so a tab opened from a mirror takes the mirror's size at
-  once; a mirror still off screen when its link reconnects keeps not counting (the other Mac forgets the
-  override with the connection, and the re-attach sends it again); a terminal that starts after its
-  grid was decided gets it when it becomes ready. A terminal's tab draws no avatar for the attached
-  Macs (#720); its context menu keeps Size to My Window, Terminal Size and Disconnect Others, and the
-  size panel lists who is attached.
+  then says "Applies to all terminals on both Macs."; an older Mac keeps it on that terminal). A setting
+  that arrives is stored and never sent on, and nothing is sent on a show, a reconnect or a size event,
+  so two Macs cannot bounce it (until 2026-10-03 every mirror pushed the whole preference when shown, on
+  reconnect and on every change, so a Fit Everyone picked once on one Mac became the mode of every
+  terminal it mirrored on the other, again after each show, and any small pane shrank them). Fixed keeps
+  its size in the one setting (every terminal of the Mac gets that grid); picked with no size yet (size
+  panel, tab menu, `terminal.size_policy.set mode=fixed`) it fixes this window's own grid (until
+  2026-10-05 the shared grid, which may be a phone's, #1028). Cloud terminals, `terminal.size_policy.set`
+  (socket, CLI), a mirror's claim, Size to My Window and the counts overrides (Don't Resize from This
+  Mac, a device's own "Counts toward size") stay per terminal. A viewing Mac's pane counts up to 500x200
+  (a phone's, 300x120). A pane that is not on screen (a tab never shown on its Mac, a mirror in a
+  background workspace, a hidden or fully covered window) does not count while someone else would size
+  the terminal, so a tab opened from a mirror takes the mirror's size at once; with nobody else counting
+  it does, so the last viewer leaving puts the terminal back on the pane's own grid at once (until
+  2026-10-05 it never counted, so the terminal stayed at the departed viewer's grid until a visibility
+  change). A mirror still off screen when its link reconnects keeps not counting (the other Mac forgets
+  the override with the connection, and the re-attach sends it again); after the other Mac relaunched the
+  mirror starts from that Mac's new state, since it drops the old host's state with the link (#1029), and
+  it is always its own participant, never another viewer's row on the same link (#1031). A terminal that
+  starts after its grid was decided gets it when it becomes ready. A terminal's tab draws no avatar for
+  the attached Macs (#720); its context menu keeps Size to My Window, Terminal Size and Disconnect
+  Others, and the size panel lists who is attached.
 - **A mirror uses this Mac's terminal appearance** (#650–#653): the owning Mac's replay carries no
   theme colors, so a mirror pane shares the window's (translucent) backdrop exactly like a local
   pane; only colors a program on the other Mac set itself (OSC 4/10/11/12) are mirrored, and its
@@ -520,7 +584,7 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   once it is; when the forward stops or moves it goes back through the alias, and every main-frame
   navigation (reload, link, redirect, back and forward) is routed the same way, so none lands on this
   Mac's own `localhost:3000`. A server that restarts comes back by itself: once a forward's port leaves
-  that Mac's listing this Mac asks it again after 2, 4, 8, 15, 30 and 60 s (a quick restart never
+  that Mac's listing this Mac asks it again after 3, 10, 30 and 60 s (a quick restart never
   changes that Mac's sidebar ports, which keep a port through two missed scans, so it sends no poke),
   and an open mirror tab on the alias of a port whose last try found it unlisted, not yet a workspace's
   (a restarted server that is only one of that Mac's other ports until its sidebar scan attributes it),
@@ -528,8 +592,9 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   once that Mac lists it as a workspace's (or you forwarded it). That Mac also notices a server binding
   after its terminal's port scans are over (a dev script doing other work first): for 2 minutes after one
   of its terminals starts a command, while another Mac follows its ports, it compares its loopback
-  listeners (every 4 s for the first 20 s after the command or a new listener, then less often, up to
-  30 s; never otherwise) and scans its terminals again when one appears; the attribution that follows
+  listeners (5, 15, 25, 45 and 120 s after the latest command start, even after the command exits; never
+  otherwise) and scans its terminals again when one appears, so such a server is its workspace's within
+  about 10 s when it binds in the first 25 s, up to 75 s later after that; the attribution that follows
   pokes. A page loaded as written (and its same-origin `localhost` iframes)
   calls that Mac's other ports with `fetch`, XHR, `WebSocket` and `EventSource` (#755): a port
   forwarded here on the same port goes to its
@@ -567,7 +632,7 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   other loopback listeners (asked with `include_other`); ports ≥ 1024 of a mirrored workspace are
   forwarded automatically, the other ones only by hand or for a mirror tab you open on them (#757). A
   connection refused for a listed port, and a forward whose port left the listing (followed by fetches
-  2 s to 60 s later), make this Mac ask for the listing again, since the other ports change without a
+  3 s to 30 s later), make this Mac ask for the listing again, since the other ports change without a
   poke. A forward listens on `127.0.0.1` and `::1` at the
   same port when it is free here, else the next free one (up to +50, then any), and a port in use
   here is never taken (every candidate is probed with a connect on both addresses, so a dual-stack
@@ -624,7 +689,12 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   owning Mac's device menu ("Simulators on <Mac>", choosing one boots it there), Home, App Switcher,
   Lock, rotate and the software keyboard, quality (Auto follows the tab's pixels; High, Balanced, Data
   Saver), Recover, and a type-text field. A dropped link resumes by itself; when the phone or another
-  Mac takes the stream the tab says so and waits for Show Here (no taking it back and forth).
+  Mac takes the stream while the tab streams, the tab says so and waits for Show Here (no taking it
+  back and forth). The tab streams only while it is on screen: a background tab or workspace stops the
+  stream at once, and a minimized, hidden or fully covered window (another Space, a locked display)
+  once it stays so for 1 s, so the owning Mac stops encoding. Showing it again resumes with a keyframe
+  and takes the stream back, even from the phone or another Mac that took it meanwhile (a stopped tab
+  never hears of that), so uncovering the window or waking its display moves the stream here.
   Closing the tab closes the owning Mac's Simulator tab (the device keeps running); the owning Mac
   closing it closes the tab; closing the mirror or its window closes only the viewer, and the next
   New Simulator reuses that Simulator tab there. A relaunch restores the viewer, which finds its
@@ -1009,9 +1079,12 @@ silently decide them. None of them is a bug to fix in-place; each needs a produc
    phone no longer refetches `mobile.workspace.list`; it consumes `mobile.sync.delta`. So the four
    additive §6 fields are only as fresh as whatever ticks the v2 host.
    `Sources/Supermux/SupermuxMobileActivityObserver.swift` (supermux-owned, no fence needed) now
-   ticks `MobileStateSyncHost.shared.broadcastIfSubscribed()` alongside its `workspace.updated`
-   emit, via an injectable `pokeStateSync` parameter, so activity and association changes
-   propagate. Unopened **worktree** PR badges are covered too, by
+   ticks the v2 host alongside its `workspace.updated` emit, via an injectable `pokeStateSync`
+   parameter, so activity and association changes propagate. It acts only when a workspace's
+   lifecycle-derived fields or the association actually changed (not on every agent hook), and
+   ticks through `SupermuxStateSyncTicker`, which it shares with
+   `SupermuxMobileSidebarStatusObserver`: sidebar status changes wait in one trailing 150 ms tick,
+   and an activity change ticks at once, absorbing it. Unopened **worktree** PR badges are covered too, by
    `SupermuxMobileWorktreesObserver` (`Sources/Supermux/SupermuxMobileObservers.swift`), which
    hashes `pullRequestsByWorktreePath`. **Remaining gap — narrower than it first looks:** there is
    no fork observer for branch-only or PR-only mutations on an **open `Workspace`**, so those
@@ -1035,7 +1108,8 @@ lands first. All three are verified by a successful
   now `@MainActor`, because upstream made `FileExplorerStore` main-actor-isolated. Both call sites
   in `Sources/FileExplorerView.swift` are already on the main actor.
 - `Sources/Supermux/SupermuxMobileActivityObserver.swift` — gained an injectable `pokeStateSync`
-  (default `MobileStateSyncHost.shared.broadcastIfSubscribed()`) called alongside its
+  (default `SupermuxStateSyncTicker.shared.requestNow()`, which ends in
+  `MobileStateSyncHost.shared.broadcastIfSubscribed()`) called alongside its
   `workspace.updated` emit; this is what keeps the fork's §6 fields fresh under state sync v2
   (see open decision 6 above). Its doc comment explains the rationale in place.
 

@@ -37,6 +37,8 @@ final class SupermuxDeviceStatusProjector {
     private let devices: SupermuxDevices
     private let index: SupermuxDeviceWorkspaceIndex
     private var statusByWorkspaceID: [UUID: SupermuxDeviceMirrorStatus] = [:]
+    /// What the last pass read, so a pass with nothing new does nothing.
+    private var lastInputs: Inputs?
 
     init(devices: SupermuxDevices, index: SupermuxDeviceWorkspaceIndex) {
         self.devices = devices
@@ -48,12 +50,18 @@ final class SupermuxDeviceStatusProjector {
         statusByWorkspaceID[workspaceID]
     }
 
-    /// Re-reads every mirror's record and applies what changed.
-    func refresh() {
+    /// Re-reads every mirror's record and applies what changed. Does nothing
+    /// unless `force` or a mirror, a device's link, records or projected tabs
+    /// changed since the last pass.
+    func refresh(force: Bool = false) {
+        let current = index.mirrors()
+        let inputs = Inputs(mirrors: current, devices: devices)
+        guard force || inputs != lastInputs else { return }
+        lastInputs = inputs
         var next: [UUID: SupermuxDeviceMirrorStatus] = [:]
         var overlayChanged: [UUID] = []
         var mirrors: [Workspace] = []
-        for mirror in index.mirrors() {
+        for mirror in current {
             let workspace = mirror.workspace
             let previous = statusByWorkspaceID[workspace.id]
             let status: SupermuxDeviceMirrorStatus
@@ -94,6 +102,37 @@ final class SupermuxDeviceStatusProjector {
         // After the store update, so every observer reads the new overlay.
         for id in overlayChanged {
             SupermuxWorkspaceLifecycleRelay.lifecycleDidChange.send(id)
+        }
+    }
+
+    /// What one pass reads: which local workspace mirrors which remote one,
+    /// and per device its link state, its records (by their stamp) and its
+    /// projected tabs (a tab moved into a mirror re-syncs its spinner).
+    private struct Inputs: Equatable {
+        struct Device: Equatable {
+            let device: SupermuxDevice
+            let records: SupermuxDevices.RecordsStamp?
+            let projectionVersion: UInt64
+        }
+
+        struct Mirror: Equatable {
+            let ref: SupermuxRemoteWorkspaceRef
+            let workspaceID: UUID
+        }
+
+        let devices: [Device]
+        let mirrors: [Mirror]
+
+        @MainActor
+        init(mirrors: [SupermuxDeviceMirror], devices: SupermuxDevices) {
+            self.devices = devices.devices.map { device in
+                Device(
+                    device: device,
+                    records: devices.recordsStamp(on: device.machine),
+                    projectionVersion: devices.catalog.projectionVersions[device.machine, default: 0]
+                )
+            }
+            self.mirrors = mirrors.map { Mirror(ref: $0.ref, workspaceID: $0.workspace.id) }
         }
     }
 

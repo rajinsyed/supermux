@@ -1,7 +1,9 @@
 internal import CMUXMobileCore
 internal import CmuxMobileDiagnostics
 internal import CmuxMobileRPC
-internal import CmuxMobileShellModel
+// SUPERMUX:begin sizing-hidden-terminal (public: a preparation carries a counts override change)
+public import CmuxMobileShellModel
+// SUPERMUX:end sizing-hidden-terminal
 internal import Foundation
 internal import OSLog
 
@@ -25,6 +27,11 @@ public struct MobileTerminalViewportPreparation: Sendable {
     /// unchanged. Older hosts ignore the key.
     public var viewAppeared = false
     // SUPERMUX:end sizing-auto-view-appeared
+    // SUPERMUX:begin sizing-hidden-terminal
+    /// The report's `counts_override` change: `false` while the terminal is
+    /// hidden under another tab, `null` once it is shown again.
+    public var countsOverride: MobileTerminalCountsOverrideChange = .unchanged
+    // SUPERMUX:end sizing-hidden-terminal
 }
 
 extension MobileShellComposite {
@@ -102,6 +109,9 @@ extension MobileShellComposite {
         // or a reordered stale piggyback could overwrite a newer dedicated
         // report after reconnect.
         let ownerKey = foregroundMacKey
+        // SUPERMUX:begin sizing-clear-lease-owner
+        supermuxViewportLeaseOwnersBySurfaceID[surfaceID] = ownerKey
+        // SUPERMUX:end sizing-clear-lease-owner
         let sequenceKey = MobileTerminalViewportSequenceKey(
             ownerKey: ownerKey,
             surfaceID: surfaceID
@@ -285,7 +295,8 @@ extension MobileShellComposite {
                 workspaceID: remoteWorkspaceID.rawValue,
                 surfaceID: surfaceID,
                 viewport: reportedGrid,
-                generation: requestGeneration
+                generation: requestGeneration,
+                countsOverride: preparation.countsOverride
             )
             if preparation.viewAppeared { viewportParams["view_appeared"] = true }
             let request = try MobileCoreRPCClient.requestData(
@@ -434,6 +445,9 @@ extension MobileShellComposite {
                 )
                 return nil
             }
+            // SUPERMUX:begin sizing-detached-rpc-error
+            let detached = supermuxApplyTerminalDetached(ifError: error, surfaceID: surfaceID)
+            // SUPERMUX:end sizing-detached-rpc-error
             let replayRequested = finishPrearmedTerminalViewportBarrierWithoutResize(
                 surfaceID: surfaceID,
                 token: prearmedReplayBarrierToken,
@@ -443,6 +457,20 @@ extension MobileShellComposite {
                 requestColdReplay: !replayRequested,
                 replayAlreadyRequested: replayRequested
             )
+            // SUPERMUX:begin sizing-detached-rpc-error
+            if detached {
+                // Answer like the detached branch above, so the mounted view
+                // does not enter its retry loop.
+                let heldGrid = effectiveViewportSizesBySurfaceID[surfaceID] ?? reportedGrid
+                reportedTerminalViewportSizesBySurfaceID[surfaceID] = reportedGrid
+                return (
+                    columns: heldGrid.columns,
+                    rows: heldGrid.rows,
+                    renderEpoch: nil,
+                    renderRevisionFloor: nil
+                )
+            }
+            // SUPERMUX:end sizing-detached-rpc-error
             terminalViewportLog.error("viewport report failed surface=\(surfaceID, privacy: .public) error=\(String(describing: error), privacy: .public)")
             recordAppEvent(
                 .terminalViewportReportFailed,
@@ -455,23 +483,30 @@ extension MobileShellComposite {
 
     /// Tell the Mac to drop this device's viewport pin for a surface (on
     /// detach). Fire-and-forget; the Mac also clears on connection close.
-    public func clearTerminalViewport(surfaceID: String) {
+    // SUPERMUX:begin sizing-soft-leave (`transient`: the scene left .active; the Mac may absorb the clear in its uncap window)
+    public func clearTerminalViewport(surfaceID: String, transient: Bool = false) {
+    // SUPERMUX:end sizing-soft-leave
         recordAppEvent(.terminalViewportClearStarted, correlationID: surfaceID)
         if sshOwnsSurface(surfaceID) {
             // Off screen: a cmux-tui terminal stops owning the shared grid.
             sshComputers.viewportReleased(surfaceID: surfaceID)
         }
+        // SUPERMUX:begin sizing-clear-lease-owner (the clear goes to the Mac that holds the lease)
+        let leaseOwnerKey = supermuxTakeViewportLeaseOwner(surfaceID: surfaceID)
         let sequenceKey = MobileTerminalViewportSequenceKey(
-            ownerKey: foregroundMacKey,
+            ownerKey: leaseOwnerKey,
             surfaceID: surfaceID
         )
+        // SUPERMUX:end sizing-clear-lease-owner
         terminalViewportPreparationGenerationsBySequenceKey.removeValue(
             forKey: sequenceKey
         )
         terminalViewportDeferredColdReplayGenerationsBySequenceKey.removeValue(
             forKey: sequenceKey
         )
-        let workspaceID = workspaceID(forTerminalID: surfaceID)
+        // SUPERMUX:begin sizing-clear-lease-owner
+        let workspaceID = supermuxViewportWorkspaceID(forTerminalID: surfaceID, ownerKey: leaseOwnerKey)
+        // SUPERMUX:end sizing-clear-lease-owner
         // A clear releases the presentation's full local viewport lease. Any
         // replay, input, or paste that races after this point must not carry
         // the released dimensions with the newer clear generation and re-pin
@@ -500,8 +535,10 @@ extension MobileShellComposite {
         viewportReportGenerationsBySequenceKey[sequenceKey] = clearGeneration
         effectiveViewportSizesBySurfaceID.removeValue(forKey: surfaceID)
         reportedTerminalViewportSizesBySurfaceID.removeValue(forKey: surfaceID)
-        guard let client = remoteClient,
+        // SUPERMUX:begin sizing-clear-lease-owner
+        guard let client = supermuxViewportClient(ownerKey: leaseOwnerKey),
               let workspaceID else {
+        // SUPERMUX:end sizing-clear-lease-owner
             recordAppEvent(
                 .terminalViewportClearFailed,
                 correlationID: surfaceID,
@@ -513,16 +550,23 @@ extension MobileShellComposite {
         let remoteWorkspaceID = remoteWorkspaceID(for: workspaceID)
         Task { @MainActor in
             do {
+                // SUPERMUX:begin sizing-soft-leave
+                var params: [String: Any] = [
+                    "workspace_id": remoteWorkspaceID.rawValue,
+                    "surface_id": surfaceID,
+                    "client_id": id,
+                    "clear": true,
+                    "viewport_generation": Int(clamping: clearGeneration),
+                ]
+                // A glance at Control Center or a quick lock: the phone is
+                // likely back within the Mac's uncap window. Older Macs
+                // ignore the key and uncap at once, as before.
+                if transient { params["transient"] = true }
                 let request = try MobileCoreRPCClient.requestData(
                     method: "mobile.terminal.viewport",
-                    params: [
-                        "workspace_id": remoteWorkspaceID.rawValue,
-                        "surface_id": surfaceID,
-                        "client_id": id,
-                        "clear": true,
-                        "viewport_generation": Int(clamping: clearGeneration),
-                    ]
+                    params: params
                 )
+                // SUPERMUX:end sizing-soft-leave
                 _ = try await client.sendRequest(request)
                 self.recordAppEvent(
                     .terminalViewportClearSucceeded,

@@ -47,6 +47,9 @@ extension TerminalController {
         reports: [String: MobileViewportReport],
         countsOverride: (clientID: String, value: Bool?)? = nil,
         immediate: Bool = false,
+        // SUPERMUX:begin sizing-soft-leave (`softLeave`: a phone's scene-phase leave, passed on to applyLocalSizing)
+        softLeave: Bool = false,
+        // SUPERMUX:end sizing-soft-leave
         reason: String
     ) -> (columns: Int, rows: Int)? {
         if let relay = cloudSizingRelaysBySurfaceID[surfaceID]?.value, relay.relaysPhones {
@@ -81,7 +84,11 @@ extension TerminalController {
         )
         // SUPERMUX:end sizing-auto
         localSizingHostsBySurfaceID[surfaceID] = host
-        return applyLocalSizing(surfaceID: surfaceID, previous: previous, immediate: immediate, reason: reason)
+        // SUPERMUX:begin sizing-soft-leave (upstream: no `softLeave` argument)
+        return applyLocalSizing(
+            surfaceID: surfaceID, previous: previous, immediate: immediate, softLeave: softLeave, reason: reason
+        )
+        // SUPERMUX:end sizing-soft-leave
     }
 
     /// The pre-shared-sizing rule, kept for manual-I/O mirrors whose remote
@@ -169,6 +176,9 @@ extension TerminalController {
         surfaceID: UUID,
         previous: TerminalSizingState?,
         immediate: Bool = false,
+        // SUPERMUX:begin sizing-soft-leave (`softLeave`: a phone's scene-phase leave waits the uncap window even with other viewers attached)
+        softLeave: Bool = false,
+        // SUPERMUX:end sizing-soft-leave
         reason: String
     ) -> (columns: Int, rows: Int)? {
         // SUPERMUX:begin sizing-mac-pane-recheck (a shown Mac pane still marked off screen counts again before the decision applies)
@@ -182,6 +192,9 @@ extension TerminalController {
                 surfaceID: surfaceID,
                 target: .cap(columns: size.cols, rows: size.rows),
                 immediate: immediate,
+                // SUPERMUX:begin sizing-soft-leave (a soft leave stages another viewer's grid with the uncap window)
+                softLeave: softLeave,
+                // SUPERMUX:end sizing-soft-leave
                 reason: reason
             )
         case .uncapped:
@@ -195,6 +208,10 @@ extension TerminalController {
                     immediate: immediate,
                     reason: reason
                 )
+            // SUPERMUX:begin sizing-soft-leave (a soft leave with other viewers still attached stages the uncap too, so the phone's return within the window resizes nothing; upstream: the teardown below restores at once)
+            } else if softLeave {
+                governMobileViewportTarget(surfaceID: surfaceID, target: .uncapped, reason: reason)
+            // SUPERMUX:end sizing-soft-leave
             } else if let governor = mobileViewportApplyGovernorsBySurfaceID[surfaceID] {
                 // Ownership moved back to this Mac while phones stay attached:
                 // restore the pane now instead of after the uncap window.
@@ -234,20 +251,28 @@ extension TerminalController {
         guard SupermuxTerminalSizingAuto.shared.isMacPaneActivity else { return }
         // SUPERMUX:end sizing-auto-local-input
         let previous = host.state
-        guard host.noteActivity(host.macParticipantID) else { return }
+        // SUPERMUX:begin sizing-keep-activity (store the activity even when it decides nothing: the Mac pane not counting now is the newest once it counts again; upstream: `guard host.noteActivity(host.macParticipantID) else { return }` before the write-back)
+        let changed = host.noteActivity(host.macParticipantID)
         localSizingHostsBySurfaceID[surfaceID] = host
+        guard changed else { return }
+        // SUPERMUX:end sizing-keep-activity
         applyLocalSizing(surfaceID: surfaceID, previous: previous, reason: "mac.activity")
     }
 
-    private func noteMobileSizingActivity(surfaceID: UUID, clientID: String) {
+    // SUPERMUX:begin sizing-lane-input (internal: a keystroke on the phone's IRX input lane is its activity too; upstream: `private`)
+    func noteMobileSizingActivity(surfaceID: UUID, clientID: String) {
+    // SUPERMUX:end sizing-lane-input
         if let relay = cloudSizingRelaysBySurfaceID[surfaceID]?.value, relay.relaysPhones {
             relay.relayPhoneActivity(clientID: clientID)
             return
         }
         guard var host = localSizingHostsBySurfaceID[surfaceID] else { return }
         let previous = host.state
-        guard host.noteActivity(LocalTerminalSizingHost.phoneParticipantID(clientID: clientID)) else { return }
+        // SUPERMUX:begin sizing-keep-activity (store the phone's activity even when it decides nothing; upstream: `guard host.noteActivity(...) else { return }` before the write-back)
+        let changed = host.noteActivity(LocalTerminalSizingHost.phoneParticipantID(clientID: clientID))
         localSizingHostsBySurfaceID[surfaceID] = host
+        guard changed else { return }
+        // SUPERMUX:end sizing-keep-activity
         applyLocalSizing(surfaceID: surfaceID, previous: previous, reason: "mobile.activity")
     }
 
@@ -427,7 +452,9 @@ extension TerminalController {
         return .err(
             code: "detached",
             message: "This device was disconnected from the terminal. Reattach to continue.",
-            data: ["surface_id": surfaceID.uuidString]
+            // SUPERMUX:begin sizing-detach-reannounce (the detachment itself, and once per connection `mobile.terminal.detached` again; upstream: `data: ["surface_id": surfaceID.uuidString]`)
+            data: supermuxDetachedErrorData(surfaceID: surfaceID, clientID: clientID)
+            // SUPERMUX:end sizing-detach-reannounce
         )
     }
 
@@ -489,6 +516,9 @@ extension TerminalController {
         // SUPERMUX:begin sizing-auto (an override set by hand is the user's, never Auto's)
         SupermuxTerminalSizingAuto.shared.userSetCounts(participantID: participantID, surfaceID: surfaceID)
         // SUPERMUX:end sizing-auto
+        // SUPERMUX:begin sizing-user-mac-counts (a Mac pane override set by hand is the user's, never the off-screen mark)
+        if participantID == host.macParticipantID { SupermuxTerminalSizingVisibility.shared.userSetMacCounts(surfaceID) }
+        // SUPERMUX:end sizing-user-mac-counts
         host.setCountsOverride(participantID, value)
         localSizingHostsBySurfaceID[surfaceID] = host
         applyLocalSizing(surfaceID: surfaceID, previous: previous, reason: "terminal.size_counts.set")
@@ -524,8 +554,8 @@ extension TerminalController {
     }
 
     func localSizingNoteSelfActivity(surfaceID: UUID) {
-        // SUPERMUX:begin sizing-auto-local-input (Size to Me is this Mac's user's choice, from any entry point; upstream: `noteLocalTerminalSizingActivity(surfaceID: surfaceID)`)
-        SupermuxTerminalSizingAuto.shared.noteMacAction(surfaceID: surfaceID)
+        // SUPERMUX:begin sizing-auto-local-input (Size to Me is this Mac's user's choice, from any entry point, and puts the decided size on the PTY now; upstream: `noteLocalTerminalSizingActivity(surfaceID: surfaceID)`)
+        SupermuxTerminalSizingAuto.shared.sizeToMe(surfaceID: surfaceID)
         // SUPERMUX:end sizing-auto-local-input
     }
 
@@ -699,7 +729,9 @@ extension TerminalController {
             guard let mode = TerminalSizingMode(rawValue: rawMode) else {
                 return .err(code: "invalid_params", message: "Unknown mode \(rawMode)", data: nil)
             }
-            policy = policy.withMode(mode, fallbackFixed: snapshot.state.size)
+            // SUPERMUX:begin sizing-fixed-seed (Fixed without a size fixes this window's own grid, not the shared grid that may be a phone's; upstream: `fallbackFixed: snapshot.state.size`)
+            policy = policy.withMode(mode, fallbackFixed: SupermuxTerminalSizingDefaults.fixedSeed(snapshot))
+            // SUPERMUX:end sizing-fixed-seed
         }
         if let cols = v2Int(params, "fixed_cols"), let rows = v2Int(params, "fixed_rows") {
             let requested = TerminalSizingPolicy(mode: policy.mode, priority: policy.priority, fixed: TerminalGridSize(cols: cols, rows: rows))

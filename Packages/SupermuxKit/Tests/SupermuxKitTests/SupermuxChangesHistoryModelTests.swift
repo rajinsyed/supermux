@@ -149,7 +149,7 @@ import SupermuxKit
         func setAhead(_ ahead: Int) { self.ahead = ahead }
 
         func logCalls() -> [[String]] {
-            calls.filter { $0.first(where: { !$0.hasPrefix("-") }) == "log" }
+            calls.filter { gitSubcommand(of: $0) == "log" }
         }
         func logCallCount() -> Int { logCalls().count }
 
@@ -165,7 +165,7 @@ import SupermuxKit
         private func handle(arguments: [String]) -> CommandResult {
             calls.append(arguments)
             // Skip global flags (`--no-optional-locks`) to find the subcommand.
-            switch arguments.first(where: { !$0.hasPrefix("-") }) {
+            switch gitSubcommand(of: arguments) {
             case "status":
                 var stdout = "# branch.head main\u{0}"
                 if hasUpstream {

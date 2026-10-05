@@ -129,6 +129,7 @@ struct SupermuxRemoteProjectCommands {
         for (key, value) in optional {
             if let value = value.flatMap(Self.nonEmpty) { params[key] = value }
         }
+        if !request.attachmentPaths.isEmpty { params["attachment_paths"] = request.attachmentPaths }
         let result = try await devices.request(.agentStart, params: params, on: machine)
         Task { await remoteProjects.refreshWorktrees(on: machine, projectID: location.projectID) }
         return try Self.workspaceRef(in: result, on: machine)

@@ -166,9 +166,20 @@ final class SupermuxTerminalSizingDefaults {
         }
         var next = preference
         next.mode = mode
-        if mode == .fixed, next.fixed == nil { next.fixed = snapshot.state.size }
+        if mode == .fixed, next.fixed == nil { next.fixed = Self.fixedSeed(snapshot) }
         choose(next, surfaceID: surfaceID)
         return true
+    }
+
+    /// The grid Fixed takes when no fixed size was chosen yet: this window's
+    /// own (the Mac pane, or this Mac's mirror pane), not the shared grid,
+    /// which may be a phone's. The shared grid when this view has no row
+    /// (its view is disconnected). Clamped to the largest fixed grid, which a
+    /// full-screen pane on a big display can exceed.
+    static func fixedSeed(_ snapshot: TerminalSharingSnapshot) -> TerminalGridSize {
+        let seed = snapshot.selfParticipant?.participant.viewport ?? snapshot.state.size
+        let limit = TerminalSizingPolicy.maximumFixedSize
+        return TerminalGridSize(cols: min(seed.cols, limit.cols), rows: min(seed.rows, limit.rows))
     }
 
     /// The size panel's fixed-size editor.

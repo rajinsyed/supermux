@@ -8,6 +8,10 @@ import SupermuxKit
 /// none of its own. Activity comes only from the snapshot, whose resolver reads
 /// the status projection: it shows no live activity for an offline Mac, while
 /// the record still holds the last synced value.
+///
+/// The record's branch and PR come from ``SupermuxUnifiedProjectsModel/mirrorRemoteFields``
+/// (observable, reassigned only on a real change), not from the device's
+/// records, so the sidebar body never follows ``SupermuxDevices/revision``.
 @MainActor
 enum SupermuxMirrorRowSnapshot {
     static func snapshot(
@@ -25,9 +29,8 @@ enum SupermuxMirrorRowSnapshot {
             includePullRequest: includePullRequest,
             unreadCount: unreadCount
         )
-        let index = SupermuxComposition.deviceWorkspaceIndex
-        guard let ref = index.ref(forLocal: workspace) else { return base }
-        let record = index.record(for: ref)
+        guard let ref = SupermuxComposition.deviceWorkspaceIndex.ref(forLocal: workspace) else { return base }
+        let remoteFields = SupermuxComposition.unifiedProjects.mirrorRemoteFields[workspace.id]
         let device = SupermuxComposition.devices.device(for: ref.machine)
         let remote = SupermuxComposition.remoteProjects.device(ref.machine)
         return SupermuxOpenWorkspace(
@@ -37,11 +40,11 @@ enum SupermuxMirrorRowSnapshot {
             // directory keeps it from hiding a same-path LOCAL worktree row.
             directory: "",
             isSelected: base.isSelected,
-            branch: base.branch ?? record?.supermuxBranch,
+            branch: base.branch ?? remoteFields?.branch,
             projectId: projectId,
             activity: base.activity,
             isRunning: remote?.isRunning(remoteWorkspaceID: ref.workspaceID) ?? false,
-            pullRequest: base.pullRequest ?? (includePullRequest ? pullRequest(record?.supermuxPullRequest) : nil),
+            pullRequest: base.pullRequest ?? (includePullRequest ? pullRequest(remoteFields?.pullRequest) : nil),
             unreadCount: base.unreadCount,
             device: SupermuxProjectDevice(
                 machineID: ref.machineID,

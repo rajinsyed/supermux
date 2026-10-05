@@ -34,6 +34,9 @@ final class MobileTerminalRenderObserver {
     private var runtimeSurfaceGenerationsBySurfaceID: [UUID: UInt64] = [:]
     private var reconciledSurfaceTopologyGeneration: UInt64?
     private var deviceTerminalGrids = DeviceTerminalGridPublisher()
+    // SUPERMUX:begin device-grid-global-sample-floor
+    private var deferredGridSampleTask: Task<Void, Never>?
+    // SUPERMUX:end device-grid-global-sample-floor
     private var cachedTerminalTheme: TerminalTheme = .monokai
     private var hasLoadedTerminalTheme = false
     private var terminalThemeRevision: UInt64 = 0
@@ -116,6 +119,10 @@ final class MobileTerminalRenderObserver {
 
     func stop() {
         deviceTerminalGrids.reset()
+        // SUPERMUX:begin device-grid-global-sample-floor
+        deferredGridSampleTask?.cancel()
+        deferredGridSampleTask = nil
+        // SUPERMUX:end device-grid-global-sample-floor
         for observer in observers {
             NotificationCenter.default.removeObserver(observer)
         }
@@ -262,7 +269,8 @@ final class MobileTerminalRenderObserver {
         pendingThemeSurfaceIDs.removeAll()
 
         if shouldEmitUpdatedEvents, shouldEmitGlobal {
-            MobileHostService.emitEvent(topic: "terminal.updated", payload: [:])
+            // SUPERMUX:begin terminal-updated-no-global-ping (no client decodes a surface-less `terminal.updated`: another Mac's mirror needs `surface_id`, the phone does not subscribe; it went out on every Ghostty tick. upstream: `MobileHostService.emitEvent(topic: "terminal.updated", payload: [:])`)
+            // SUPERMUX:end terminal-updated-no-global-ping
         } else if shouldEmitUpdatedEvents {
             for surfaceID in surfaceIDs {
                 // The effective grid rides along so a raw-byte subscriber (another
@@ -296,6 +304,9 @@ final class MobileTerminalRenderObserver {
                     MobileHostService.emitEvent(topic: DeviceTerminalGridPublisher.eventTopic,
                         payload: ["surface_id": id.uuidString, "columns": grid.columns, "rows": grid.rows])
                 })
+            // SUPERMUX:begin device-grid-global-sample-floor
+            if let deadline = deviceTerminalGrids.deferredGlobalSampleDeadline { scheduleDeferredGridSample(at: deadline) }
+            // SUPERMUX:end device-grid-global-sample-floor
         } else {
             deviceTerminalGrids.reset()
         }
@@ -326,6 +337,21 @@ final class MobileTerminalRenderObserver {
             )
         }
     }
+
+    // SUPERMUX:begin device-grid-global-sample-floor
+    /// A global tick inside the grid publisher's sample interval was skipped;
+    /// replay it as one tick once the interval has passed (`deadline`), so a
+    /// resize seen only by that tick still reaches the other Mac's mirror.
+    private func scheduleDeferredGridSample(at deadline: ContinuousClock.Instant) {
+        guard deferredGridSampleTask == nil else { return }
+        deferredGridSampleTask = Task { @MainActor [weak self] in
+            try? await ContinuousClock().sleep(until: deadline, tolerance: .milliseconds(100))
+            guard let self, !Task.isCancelled else { return }
+            self.deferredGridSampleTask = nil
+            self.enqueueTerminalUpdate(surfaceID: nil)
+        }
+    }
+    // SUPERMUX:end device-grid-global-sample-floor
 
     private func currentRenderGridAnchors() -> [MobileTerminalRenderGridFrame.Anchor] {
         let activeAnchors = MobileTerminalRenderGridAnchorRegistry.shared.activeAnchors()
