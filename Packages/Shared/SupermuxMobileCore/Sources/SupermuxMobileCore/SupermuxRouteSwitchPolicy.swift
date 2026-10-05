@@ -113,6 +113,19 @@ public struct SupermuxRouteSwitchPolicy: Equatable, Sendable {
         holdOffUntil.map { now >= $0 } ?? true
     }
 
+    // Red stubs (review findings T4, T5, T7, T8, T13, H3): not implemented yet.
+    public static let recoveryWindow: TimeInterval = 30
+    public static let lostRacesBeforeNoHold = 2
+    public private(set) var lostRaces = 0
+    public var holdsRelayInRace: Bool { true }
+    public mutating func networkChanged(at now: Date) { probeSoon(at: now) }
+    public mutating func upgradeStarted(at now: Date) {}
+    public mutating func directAdmissionFailed() {}
+    public mutating func dialUsesDirect(at now: Date) -> Bool { allowsDirect(at: now) }
+    public mutating func raceFinished(directWon: Bool) {}
+    public mutating func candidatesChanged(at now: Date) {}
+    public mutating func observe(_ path: Path, hasCandidates: Bool, at now: Date) -> Action { observe(path, at: now) }
+
     /// The live session's path, sampled about once a second.
     public mutating func observe(_ path: Path, at now: Date) -> Action {
         guard let startedAt else { return .none }

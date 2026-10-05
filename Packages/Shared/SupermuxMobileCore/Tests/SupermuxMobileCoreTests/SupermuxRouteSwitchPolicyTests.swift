@@ -35,6 +35,22 @@ import Testing
 ///     skips the wait after a fall back.
 /// 13. Under a path that is up 7 s and down 4 s for ten minutes, more than four
 ///     reconnects land in any minute.
+///
+/// Review findings (2026-10-06), written before the fixes:
+/// 14. (T4) A wake or a network change keeps the hold-off of a flap that the
+///     old network caused, so direct stays off up to 10 min on the new one.
+/// 15. (T4) The direct session dying because the network changed counts as a
+///     flap and holds direct off 30 s, although the change was the cause.
+/// 16. (T5) A recovery while the link is down is forgotten: the session that
+///     starts right after it waits the 10 s cadence for its first probe.
+/// 17. (T8) A move the owner could not make (its redial did nothing) is later
+///     counted as a flap, or blocks the next move for 30 s.
+/// 18. (T7) A direct-lane handshake whose admission then fails makes the next
+///     dial race the lane again, so a link can loop without the relay.
+/// 19. (T13) Where direct cannot work (cellular or a hotel without Tailscale)
+///     every dial holds a ready relay connection up to the 1.5 s direct deadline.
+/// 20. (H3) A relayed session whose peer's direct addresses are unknown is
+///     probed (a failure each time), and new addresses wait out the cadence.
 struct SupermuxRouteSwitchPolicyTests {
     typealias Policy = SupermuxRouteSwitchPolicy
     private let t0 = Date(timeIntervalSince1970: 1_000)
@@ -87,6 +103,7 @@ struct SupermuxRouteSwitchPolicyTests {
         #expect(policy.observe(.relay, at: at(10)) == .probe)
         #expect(policy.probeFinished(session: policy.session, succeeded: true, at: at(10.2)) == .upgrade)
         #expect(policy.probeFailures == 0)
+        policy.upgradeStarted(at: at(10.2))
         // The planned redial lands direct; later that session is lost and the
         // natural redial lands on the relay (its direct leg failed then).
         policy.sessionEnded()
@@ -112,6 +129,7 @@ struct SupermuxRouteSwitchPolicyTests {
         var policy = relayed()
         _ = policy.observe(.relay, at: at(10))
         #expect(policy.probeFinished(session: policy.session, succeeded: true, at: at(10)) == .upgrade)
+        policy.upgradeStarted(at: at(10))
         policy.sessionEnded()
         policy.sessionStarted(at: at(11))
         #expect(policy.observe(.relay, at: at(11)) == .none)
@@ -294,6 +312,7 @@ struct SupermuxRouteSwitchPolicyTests {
             if let out = probe, now >= out.at + 1 {
                 probe = nil
                 if policy.probeFinished(session: out.session, succeeded: isUp(out.at), at: at(now), jitter: draw()) == .upgrade {
+                    policy.upgradeStarted(at: at(now))
                     reconnects.append(now)
                     policy.sessionEnded()
                     redialAt = now + 1
@@ -320,5 +339,147 @@ struct SupermuxRouteSwitchPolicyTests {
         #expect(reconnects.count >= 4, "the path must actually flap the link: \(reconnects)")
         #expect(worst <= 4, "reconnects at \(reconnects)")
         #expect(reconnects.count <= 14, "ten minutes of flapping: \(reconnects)")
+    }
+
+    // MARK: - Review findings
+
+    /// A direct session that misses two liveness checks at `seconds`.
+    private func fallBack(_ policy: inout Policy, at seconds: TimeInterval) -> Policy.Action {
+        var last = Policy.Action.none
+        for _ in 0..<2 {
+            _ = policy.observe(.direct(backedUp: false), at: at(seconds))
+            last = policy.livenessChecked(session: policy.session, answered: false, at: at(seconds))
+        }
+        return last
+    }
+
+    @Test("14. a network change or wake clears the hold-off and the flap count")
+    func networkChangeClearsHoldOff() {
+        var policy = Policy()
+        var now: TimeInterval = 0
+        for _ in 1...3 {
+            policy.sessionStarted(at: at(now))
+            #expect(fallBack(&policy, at: now + 5) == .fallBack)
+            policy.sessionEnded()
+            now += 5
+        }
+        #expect(policy.flaps == 3)
+        #expect(!policy.allowsDirect(at: at(now + 60)), "two minutes held after three flaps")
+        policy.sessionStarted(at: at(now + 1))
+        _ = policy.observe(.relay, at: at(now + 1))
+        policy.networkChanged(at: at(now + 2))
+        #expect(policy.flaps == 0)
+        #expect(policy.holdOffUntil == nil)
+        #expect(policy.allowsDirect(at: at(now + 2)))
+        #expect(policy.observe(.relay, at: at(now + 2)) == .probe, "probed at the next sample")
+    }
+
+    @Test("15. the first fall back within 30 s of a network change is not a flap; the next one is")
+    func fallBackRightAfterNetworkChangeIsNotAFlap() {
+        var policy = Policy()
+        policy.sessionStarted(at: at(0))
+        _ = policy.observe(.direct(backedUp: false), at: at(0))
+        _ = policy.livenessChecked(session: policy.session, answered: true, at: at(0))
+        policy.networkChanged(at: at(100))
+        #expect(fallBack(&policy, at: 106) == .fallBack, "the old path died with the change")
+        #expect(policy.flaps == 0)
+        #expect(policy.allowsDirect(at: at(106)), "the redial races direct on the new network")
+        policy.sessionEnded()
+        policy.sessionStarted(at: at(107))
+        #expect(fallBack(&policy, at: 115) == .fallBack)
+        #expect(policy.flaps == 1, "a second fall back is the new path flapping")
+        #expect(!policy.allowsDirect(at: at(115)))
+
+        var late = Policy()
+        late.sessionStarted(at: at(0))
+        late.networkChanged(at: at(0))
+        #expect(fallBack(&late, at: 31) == .fallBack)
+        #expect(late.flaps == 1, "a fall back after the window counts")
+    }
+
+    @Test("16. a session that starts within 30 s of a recovery probes at its first sample")
+    func recoveryWhileDownProbesTheNextSession() {
+        var policy = Policy()
+        policy.sessionStarted(at: at(0))
+        policy.sessionEnded()
+        policy.networkChanged(at: at(100))
+        policy.sessionStarted(at: at(103))
+        #expect(policy.observe(.relay, at: at(103)) == .probe, "not the 10 s cadence")
+        _ = policy.probeFinished(session: policy.session, succeeded: false, at: at(104), jitter: 0.5)
+        policy.sessionEnded()
+        policy.sessionStarted(at: at(105))
+        #expect(policy.observe(.relay, at: at(105)) == .none, "one session per recovery")
+
+        var foreground = Policy()
+        foreground.probeSoon(at: at(0))
+        foreground.sessionStarted(at: at(20))
+        #expect(foreground.observe(.relay, at: at(20)) == .probe)
+
+        var stale = Policy()
+        stale.networkChanged(at: at(0))
+        stale.sessionStarted(at: at(31))
+        #expect(stale.observe(.relay, at: at(31)) == .none, "a recovery 31 s ago is old news")
+    }
+
+    @Test("17. a move counts only once its redial happened")
+    func unmadeMoveIsNotAFlap() {
+        var policy = relayed()
+        _ = policy.observe(.relay, at: at(10))
+        #expect(policy.probeFinished(session: policy.session, succeeded: true, at: at(10), jitter: 0.5) == .upgrade)
+        // The owner's redial did nothing (a directory precondition): the session stays on the relay.
+        #expect(policy.observe(.relay, at: at(11)) == .none)
+        #expect(policy.flaps == 0, "nothing moved, nothing flapped")
+        #expect(policy.allowsDirect(at: at(11)))
+        #expect(policy.observe(.relay, at: at(20)) == .probe)
+        #expect(policy.probeFinished(session: policy.session, succeeded: true, at: at(20), jitter: 0.5) == .upgrade,
+                "an unmade move does not start the 30 s spacing")
+    }
+
+    @Test("18. a direct-lane admission that failed sends the next dial to the relay alone, once")
+    func failedDirectAdmissionSkipsTheLaneOnce() {
+        var policy = Policy()
+        var dials: [Bool] = []
+        dials.append(policy.dialUsesDirect(at: at(0)))
+        policy.directAdmissionFailed()
+        dials.append(policy.dialUsesDirect(at: at(1)))
+        dials.append(policy.dialUsesDirect(at: at(2)))
+        #expect(dials == [true, false, true], "the dial after the failure skips the lane, only once")
+        policy.directAdmissionFailed()
+        policy.sessionStarted(at: at(3))
+        _ = fallBack(&policy, at: 4)
+        let afterBoth = [policy.dialUsesDirect(at: at(5)), policy.dialUsesDirect(at: at(6))]
+        #expect(afterBoth == [false, false], "a skip and a hold-off both keep the lane out")
+    }
+
+    @Test("19. after two lost races on this network the race stops holding a ready relay")
+    func lostRacesStopHoldingTheRelay() {
+        var policy = Policy()
+        #expect(policy.holdsRelayInRace)
+        policy.raceFinished(directWon: false)
+        #expect(policy.holdsRelayInRace, "one lost race proves little")
+        policy.raceFinished(directWon: false)
+        #expect(!policy.holdsRelayInRace)
+        policy.networkChanged(at: at(0))
+        #expect(policy.holdsRelayInRace, "a new network gets the full direct deadline again")
+        policy.raceFinished(directWon: false)
+        policy.raceFinished(directWon: false)
+        policy.raceFinished(directWon: true)
+        #expect(policy.holdsRelayInRace, "a direct win resets it")
+        policy.raceFinished(directWon: false)
+        policy.raceFinished(directWon: false)
+        policy.sessionStarted(at: at(1))
+        _ = policy.observe(.relay, at: at(11))
+        _ = policy.probeFinished(session: policy.session, succeeded: true, at: at(11), jitter: 0.5)
+        #expect(policy.holdsRelayInRace, "a direct handshake that works restores it for the move")
+    }
+
+    @Test("20. no probe without direct addresses, and no failure counted; new addresses probe at once")
+    func noCandidatesNoProbe() {
+        var policy = relayed()
+        #expect(policy.observe(.relay, hasCandidates: false, at: at(10)) == .none)
+        #expect(policy.observe(.relay, hasCandidates: false, at: at(40)) == .none)
+        #expect(policy.probeFailures == 0)
+        policy.candidatesChanged(at: at(41))
+        #expect(policy.observe(.relay, hasCandidates: true, at: at(41)) == .probe)
     }
 }
