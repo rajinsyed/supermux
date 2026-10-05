@@ -109,6 +109,9 @@ extension MobileShellComposite {
         // or a reordered stale piggyback could overwrite a newer dedicated
         // report after reconnect.
         let ownerKey = foregroundMacKey
+        // SUPERMUX:begin sizing-clear-lease-owner
+        supermuxViewportLeaseOwnersBySurfaceID[surfaceID] = ownerKey
+        // SUPERMUX:end sizing-clear-lease-owner
         let sequenceKey = MobileTerminalViewportSequenceKey(
             ownerKey: ownerKey,
             surfaceID: surfaceID
@@ -471,17 +474,22 @@ extension MobileShellComposite {
             // Off screen: a cmux-tui terminal stops owning the shared grid.
             sshComputers.viewportReleased(surfaceID: surfaceID)
         }
+        // SUPERMUX:begin sizing-clear-lease-owner (the clear goes to the Mac that holds the lease)
+        let leaseOwnerKey = supermuxTakeViewportLeaseOwner(surfaceID: surfaceID)
         let sequenceKey = MobileTerminalViewportSequenceKey(
-            ownerKey: foregroundMacKey,
+            ownerKey: leaseOwnerKey,
             surfaceID: surfaceID
         )
+        // SUPERMUX:end sizing-clear-lease-owner
         terminalViewportPreparationGenerationsBySequenceKey.removeValue(
             forKey: sequenceKey
         )
         terminalViewportDeferredColdReplayGenerationsBySequenceKey.removeValue(
             forKey: sequenceKey
         )
-        let workspaceID = workspaceID(forTerminalID: surfaceID)
+        // SUPERMUX:begin sizing-clear-lease-owner
+        let workspaceID = supermuxViewportWorkspaceID(forTerminalID: surfaceID, ownerKey: leaseOwnerKey)
+        // SUPERMUX:end sizing-clear-lease-owner
         // A clear releases the presentation's full local viewport lease. Any
         // replay, input, or paste that races after this point must not carry
         // the released dimensions with the newer clear generation and re-pin
@@ -510,8 +518,10 @@ extension MobileShellComposite {
         viewportReportGenerationsBySequenceKey[sequenceKey] = clearGeneration
         effectiveViewportSizesBySurfaceID.removeValue(forKey: surfaceID)
         reportedTerminalViewportSizesBySurfaceID.removeValue(forKey: surfaceID)
-        guard let client = remoteClient,
+        // SUPERMUX:begin sizing-clear-lease-owner
+        guard let client = supermuxViewportClient(ownerKey: leaseOwnerKey),
               let workspaceID else {
+        // SUPERMUX:end sizing-clear-lease-owner
             recordAppEvent(
                 .terminalViewportClearFailed,
                 correlationID: surfaceID,

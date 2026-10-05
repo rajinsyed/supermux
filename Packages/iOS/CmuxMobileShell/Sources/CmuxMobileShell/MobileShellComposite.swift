@@ -1744,6 +1744,11 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
     /// Shared sizing state per terminal surface (size state, self participant,
     /// attachment). See `MobileShellComposite+TerminalSizing.swift`.
     var terminalSizingBySurfaceID: [String: MobileTerminalSizingSurface] = [:]
+    // SUPERMUX:begin sizing-clear-lease-owner
+    /// The Mac each surface's viewport lease was reported to, so its clear
+    /// goes to that Mac even after the phone switched to another one.
+    @ObservationIgnored var supermuxViewportLeaseOwnersBySurfaceID: [String: MacPairingKey] = [:]
+    // SUPERMUX:end sizing-clear-lease-owner
     /// Monotonic viewport fences scoped to the Mac app instance that consumes
     /// them. Warm Iroh focus swaps keep both peer connections alive, so their
     /// counters must survive independently for the signed-in account lifetime.
