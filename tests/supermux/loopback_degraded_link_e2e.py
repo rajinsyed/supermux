@@ -17,10 +17,10 @@ it), plus a one-shot 2 s drop that cuts the connection. The loopback is ONE orde
 per direction (events ride the control stream, as on a Tailscale route); QUIC stream priority is
 covered by SupermuxIrxPriorityStarvationTests in CmuxIrxTransport.
 
-Setup (impairment off): six mirrors of six source terminals, all opened with
-`vm.workspace_open` (auto-mirror off). The selected mirror shows three panes: the ECHO terminal (a
+Setup (impairment off): eight mirrors of eight source terminals, all opened with
+`vm.workspace_open` (auto-mirror off). The selected mirror shows six panes: the ECHO terminal (a
 raw-mode program that logs every byte it reads with its arrival time and echoes it back as
-"EK:" lines) and two TICKERs; three more mirrors are hidden: two TICKERs and the FLOOD. Tickers
+"EK:" lines) and five TICKERs; two more mirrors are hidden: a TICKER and the FLOOD. Tickers
 and the flood first print 12000 lines of ~100 columns (a full 10000-row replay is MBs, as an
 agent's long scrollback is), then a ticker prints one line a second (an agent's status line),
 and the flood prints ~600 KB/s while its control file exists (twice the link).
@@ -53,23 +53,25 @@ Steps (D1, D3 and D4 are red today; D2 and D5 are guards; the others check the h
                                the mirror is `.attaching` is dropped (DeviceTerminalInputRouter's
                                enabled gate; `terminal_input.stats` `dropped_while_detached`).
   D3 recovers_after_drop       a 2 s drop that cuts the connection, while the tickers print: the
-                               link reconnects, within 60 s no unplanned redial, each mirror pane
-                               asks for at most one replay besides its quiet-output confirmations
-                               (`replay_requests - replay_confirmations <= 1`), the ECHO mirror echoes
-                               a key within 8 s of the drop's end, and no pane is left detached on
-                               a connected link ("disconnected until Retry"). RED (2026-10-05): the
-                               host drops this Mac's viewport reports with the connection
-                               (`mobile.viewport.clear`), so each visible terminal resizes to its
-                               own pane and back on the re-attach; that moves its grid generation,
-                               so even the idle ECHO terminal gets a full replay, and the tickers
-                               (they printed while no one was subscribed) too: five 10000-row
-                               replays share the 300 KB/s link. Each visible pane asks three times
-                               (a `viewport_transition` answer, the full replay, then a second
-                               attach whose resume waits ~12 s behind the other terminals' full
-                               replays in the host's writer); typing is dropped that whole time and
-                               the ECHO mirror first echoes ~20 s after the drop ended. A deadline
-                               miss, a probe failure and a redial follow only when the replays take
-                               over 20 s (more or larger terminals than here).
+                               link reconnects, within 60 s no unplanned redial, the host sends each
+                               mirror pane at most one replay besides its quiet-output confirmations
+                               (full captures + resumes from its DEBUG log, minus the pane's
+                               `replay_confirmations`), the ECHO mirror echoes a key within 8 s of
+                               the drop's end, and no pane is left detached on a connected link
+                               ("disconnected until Retry"). RED (2026-10-05): the host drops this
+                               Mac's viewport reports with the connection (`mobile.viewport.clear`),
+                               so each visible terminal resizes to its own pane and back on the
+                               re-attach (first answer `viewport_transition`); the grid generation
+                               moves, so even the idle ECHO terminal needs a full replay, and every
+                               TICKER does (it printed while no one was subscribed). Seven 10000-row
+                               replays (~1.7 MB each) leave one after another through the host's
+                               writer at 300 KB/s; the small ECHO replay, asked last, waits behind
+                               them, misses the 20 s deadline and is asked again while the host
+                               still sends the first (no cancel), as are other late ones; typing is
+                               dropped the whole time (~30 keys) and the ECHO mirror first echoes
+                               ~40 s after the drop ended. The liveness probe after the missed
+                               deadlines still got through in 10 s here, so no redial; with more
+                               terminals it does not, and the link redials into the same storm.
   D5 host_main_responsive      during the 30 s after the drop, a main-actor socket round trip
                                (`supermux.devices.link status`) stays under 250 ms. Full replays are
                                captured synchronously on the host's main thread (in the loopback the
@@ -134,6 +136,10 @@ D3_PROBE_KEYS = "abcdefghijklmnopqrstuvwxyz0123456789"
 D5_WINDOW_S = 30.0
 D5_MAX_BOUND_S = 0.25
 ECHO_PREFIX = "EK:"
+# On screen beside the ECHO terminal (a 2 x 3 grid of panes), and off screen.
+VISIBLE_TICKERS = ("tick_a", "tick_b", "tick_c", "tick_d", "tick_e")
+HIDDEN_TICKERS = ("tick_f",)
+TICKERS = VISIBLE_TICKERS + HIDDEN_TICKERS
 
 ECHO = r'''
 import binascii, os, sys, time, tty
@@ -330,7 +336,11 @@ class DegradedLinkE2E:
         roles = {self.sources[role]["surface_id"][:8].upper(): role for role in self.sources}
         full: Dict[str, int] = {role: 0 for role in self.sources}
         resumed: Dict[str, int] = {role: 0 for role in self.sources}
+        pending: Dict[str, int] = {role: 0 for role in self.sources}
         for line in lines:
+            match = re.search(r"mobile\.terminal\.replay VIEWPORT_PENDING surface=([0-9A-Fa-f]{8}) ", line)
+            if match and match.group(1).upper() in roles:
+                pending[roles[match.group(1).upper()]] += 1
             match = re.search(r"mobile\.terminal\.replay surface=([0-9A-Fa-f]{8}) renderGrid=", line)
             if match and match.group(1).upper() in roles:
                 full[roles[match.group(1).upper()]] += 1
@@ -340,7 +350,9 @@ class DegradedLinkE2E:
         return {
             "full_captures": full,
             "resumes": resumed,
+            "viewport_transition_answers": pending,
             "missed_deadlines": sum("missed its reply deadline" in line for line in lines),
+            "replay_missed_deadlines": sum("mobile.terminal.replay missed its reply deadline" in line for line in lines),
             "input_batches_dropped": sum("supermux.inputPipeline dropped" in line for line in lines),
             "connections_admitted": sum("supermux.loopback host admitted connection" in line for line in lines),
             "resume_refusals": sum("supermux.terminal.resume REFUSED" in line for line in lines),
@@ -498,25 +510,27 @@ class DegradedLinkE2E:
         if self.auto_mirror_was:
             self.sock.call("supermux.devices.set_auto_mirror", {"enabled": False})
 
-        # The visible mirror's source: ECHO beside two TICKERs. Three hidden ones.
+        # The visible mirror's source: ECHO and five TICKERs in two columns of
+        # three. A hidden TICKER and the FLOOD in workspaces of their own.
         visible, echo = self.create_source("visible")
         tick_a = self.split(visible, echo, "right")
-        tick_b = self.split(visible, tick_a, "down")
-        self.sources = {
-            "echo": {"workspace_id": visible, "surface_id": echo},
-            "tick_a": {"workspace_id": visible, "surface_id": tick_a},
-            "tick_b": {"workspace_id": visible, "surface_id": tick_b},
-        }
-        for role in ("tick_c", "tick_d", "flood"):
+        tick_b = self.split(visible, echo, "down")
+        tick_c = self.split(visible, tick_a, "down")
+        tick_d = self.split(visible, tick_b, "down")
+        tick_e = self.split(visible, tick_c, "down")
+        self.sources = {"echo": {"workspace_id": visible, "surface_id": echo}}
+        for role, surface in zip(VISIBLE_TICKERS, (tick_a, tick_b, tick_c, tick_d, tick_e)):
+            self.sources[role] = {"workspace_id": visible, "surface_id": surface}
+        for role in HIDDEN_TICKERS + ("flood",):
             workspace_id, surface_id = self.create_source(role)
             self.sources[role] = {"workspace_id": workspace_id, "surface_id": surface_id}
 
         self.run_in("echo", f"python3 {self.scratch / 'echo.py'} {self.recorder_path}")
-        for role in ("tick_a", "tick_b", "tick_c", "tick_d"):
+        for role in TICKERS:
             self.run_in(role, f"python3 {self.scratch / 'ticker.py'} {role} {HISTORY_LINES}")
         self.run_in("flood", f"python3 {self.scratch / 'flood.py'} flood {HISTORY_LINES} {self.flood_control} "
                              f"{FLOOD_BYTES_PER_SECOND}")
-        for role in ("tick_a", "tick_b", "tick_c", "tick_d", "flood"):
+        for role in TICKERS + ("flood",):
             source = self.sources[role]
             wait_for(f"{role}'s history in its source", lambda s=source, r=role: f"HISTORY-DONE-{r}" in
                      self.read_text(s["workspace_id"], s["surface_id"], scrollback=True), 120, 1.0)
@@ -540,7 +554,7 @@ class DegradedLinkE2E:
                              lambda m=mirror_id, s=source: self.mirror_panel_for(m, s["surface_id"]), self.timeout)
             self.mirrors[role] = {"workspace_id": mirror_id, "panel_id": panel}
         self.echo_focused()
-        for role in ("tick_a", "tick_b", "tick_c", "tick_d", "flood"):
+        for role in TICKERS + ("flood",):
             mirror = self.mirrors[role]
             wait_for(f"{role}'s history in its mirror", lambda m=mirror, r=role: f"HISTORY-DONE-{r}" in
                      self.read_text(m["workspace_id"], m["panel_id"], scrollback=True), 120, 1.0)
@@ -767,7 +781,10 @@ class DegradedLinkE2E:
             delta = {key: int(a.get(key, 0)) - int(b.get(key, 0))
                      for key in ("replay_requests", "full_replays", "resumes", "replay_confirmations", "gaps",
                                  "grid_resyncs")}
-            delta["asks_beyond_one"] = delta["replay_requests"] - delta["replay_confirmations"] - 1
+            # Replies the host captured and sent for this pane (full or resumed), past the
+            # one re-attach and its quiet-output confirmations: duplicates.
+            delta["host_replies"] = host["full_captures"][role] + host["resumes"][role]
+            delta["extra_replies"] = delta["host_replies"] - delta["replay_confirmations"] - 1
             per_pane[role] = delta
         redials = (window_end["admitted"] or 0) - (before["admitted"] or 0)
         first_echo_s = None if first_echo_at is None else round(first_echo_at - drop_ends_wall, 2)
@@ -792,9 +809,9 @@ class DegradedLinkE2E:
             problems.append("the link never reconnected")
         if result["unplanned_redials"]:
             problems.append(f"{result['unplanned_redials']} unplanned redial(s)")
-        extra = {role: d["asks_beyond_one"] for role, d in per_pane.items() if d["asks_beyond_one"] > 0}
+        extra = {role: d["extra_replies"] for role, d in per_pane.items() if d["extra_replies"] > 0}
         if extra:
-            problems.append(f"panes asked for more than one replay: {extra}")
+            problems.append(f"the host sent panes more than one replay: {extra}")
         if first_echo_s is None or first_echo_s > D3_ECHO_BOUND_S:
             problems.append(f"the ECHO mirror echoed {first_echo_s} s after the drop ended (bound {D3_ECHO_BOUND_S} s)")
         stuck = [role for role, pane in final_panes.items() if not pane.get("attached")]

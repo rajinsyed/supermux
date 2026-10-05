@@ -586,7 +586,7 @@ CMUX_E2E_SUITES="loopback_terminal_input_pipeline_e2e" CMUX_TAG=<tag> tests/supe
 
 ## Degraded link E2E (slow relay)
 
-`tests/supermux/loopback_degraded_link_e2e.py` runs six mirrors over a link like a far relay, the field case of
+`tests/supermux/loopback_degraded_link_e2e.py` runs eight mirrors (six on screen) over a link like a far relay, the field case of
 2026-10-05 (a 240–400 ms relay, ~45 reconnects an hour, remote terminals "awfully delayed"). The DEBUG driver
 `supermux.devices.link_impairment` (`SupermuxDeviceLoopbackImpairment`, applied by every device-link
 `SupermuxDeviceLoopbackPipe`, both directions alike) takes `rtt_ms` (or `to_host_ms` / `to_viewer_ms`),
@@ -607,10 +607,12 @@ direction, so QUIC stream priority (the field's probe starvation) is covered by
 `SupermuxIrxPriorityStarvationTests` in CmuxIrxTransport, which puts a shaped UDP relay
 (`SupermuxShapedUDPLink`) between two real Iroh endpoints.
 
-Red on the test commit: D1 echo p50 4.5 s, p95 10.8 s (input reaches the host in ~160 ms; the echo waits
-behind the flood's backlog in the host's per-connection event queue); D4 5 of 10 keys dropped; D3 the ECHO
-mirror first echoed 20 s after the drop, each visible pane asked three times. D2 and D5 are green in the
-loopback (see the suite's docstring).
+Red on the test commit: D1 echo p50 4.7 s, p95 11.3 s (input reaches the host in ~160 ms; the echo waits
+behind the flood's backlog in the host's per-connection event queue); D4 5 of 10 keys dropped while the mirror
+re-attached; D3 seven full replays after the drop (the host's `mobile.viewport.clear` on disconnect resizes every
+visible terminal, so even the idle one needs a full replay), three missed the 20 s deadline and were asked again
+while the host still sent them, ~30 keys dropped, the ECHO mirror first echoed ~40 s after the drop. D2 and D5
+are green in the loopback (see the suite's docstring).
 
 ```bash
 CMUX_E2E_SUITES="loopback_degraded_link_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
