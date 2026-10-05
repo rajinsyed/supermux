@@ -2,7 +2,8 @@ import AppKit
 import ImageIO
 import SwiftUI
 
-/// A small, downscaled preview of one image file (decoded once, by ImageIO).
+/// A small, downscaled preview of one image file (decoded once, by ImageIO,
+/// off the main actor: an attached image may be up to 32 MB).
 struct SupermuxPromptAttachmentThumbnail: View {
     let fileURL: URL
     @State private var image: NSImage?
@@ -19,10 +20,23 @@ struct SupermuxPromptAttachmentThumbnail: View {
                     .foregroundStyle(.tertiary)
             }
         }
-        .onAppear { image = image ?? Self.thumbnail(of: fileURL) }
+        .task(id: fileURL) {
+            guard image == nil else { return }
+            let url = fileURL
+            let decoded = await Task.detached(priority: .userInitiated) { Self.thumbnail(of: url) }.value
+            if let cgImage = decoded?.cgImage {
+                image = NSImage(cgImage: cgImage, size: .zero)
+            }
+        }
     }
 
-    private static func thumbnail(of url: URL) -> NSImage? {
+    /// A decoded thumbnail handed back from the decoding task; a `CGImage`
+    /// is immutable, so passing it across actors is safe.
+    private struct Decoded: @unchecked Sendable {
+        let cgImage: CGImage
+    }
+
+    private nonisolated static func thumbnail(of url: URL) -> Decoded? {
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
@@ -30,6 +44,6 @@ struct SupermuxPromptAttachmentThumbnail: View {
         ]
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
-        return NSImage(cgImage: cgImage, size: .zero)
+        return Decoded(cgImage: cgImage)
     }
 }

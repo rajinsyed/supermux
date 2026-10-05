@@ -64,27 +64,33 @@ final class SupermuxPromptNSTextView: NSTextView {
 
     // MARK: - Drop
 
+    /// Every image type `NSImage` reads, so a drop is delivered for any image
+    /// data ``SupermuxPromptImageImporter/holdsImages(_:)`` accepts.
     override var acceptableDragTypes: [NSPasteboard.PasteboardType] {
-        super.acceptableDragTypes + [.png, .tiff]
+        super.acceptableDragTypes + NSImage.imageTypes.map(NSPasteboard.PasteboardType.init(rawValue:))
     }
 
+    /// Whether the current drag carries images, read once when it enters.
+    private var dragHoldsImages = false
+
     override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
-        takesImages(sender) ? .copy : super.draggingEntered(sender)
+        dragHoldsImages = SupermuxPromptImageImporter.holdsImages(sender.draggingPasteboard)
+        return takesImages ? .copy : super.draggingEntered(sender)
     }
 
     override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
-        takesImages(sender) ? .copy : super.draggingUpdated(sender)
+        takesImages ? .copy : super.draggingUpdated(sender)
     }
 
     override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
-        guard takesImages(sender), let files = importer.imageFiles(from: sender.draggingPasteboard) else {
+        guard takesImages, let files = importer.imageFiles(from: sender.draggingPasteboard) else {
             return super.performDragOperation(sender)
         }
         onImages?(files)
         return true
     }
 
-    private func takesImages(_ sender: any NSDraggingInfo) -> Bool {
-        isEditable && acceptsImages && SupermuxPromptImageImporter.holdsImages(sender.draggingPasteboard)
+    private var takesImages: Bool {
+        isEditable && acceptsImages && dragHoldsImages
     }
 }

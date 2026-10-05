@@ -14,13 +14,14 @@ extension SupermuxNewWorktreeSheetModel {
     /// image, is over 32 MB, or would pass the limit of
     /// ``SupermuxAgentAttachmentLimits/maximumAttachments`` is left out and
     /// the first such problem is shown; the others are still added. A file
-    /// already attached is not added twice.
+    /// already attached is not added twice. A symlink is attached as the file
+    /// it points to.
     /// - Parameter files: Image files on this Mac.
     public func addAttachments(_ files: [URL]) {
         guard phase == .idle else { return }
         var problem: SupermuxAgentAttachmentError?
-        for file in files {
-            if attachments.contains(where: { $0.fileURL.standardizedFileURL == file.standardizedFileURL }) { continue }
+        for file in files.map({ $0.standardizedFileURL.resolvingSymlinksInPath() }) {
+            if attachments.contains(where: { $0.fileURL == file }) { continue }
             if let refusal = Self.refusal(for: file, attachedCount: attachments.count) {
                 problem = problem ?? refusal
                 continue

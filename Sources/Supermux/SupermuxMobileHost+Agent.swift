@@ -170,20 +170,24 @@ extension TerminalController {
     }
 
     /// The files `attachment_paths` names (symlinks resolved), or `nil` when
-    /// one is not a regular file inside this Mac's attachment store or there
-    /// are more than the attachment limit. Each folder becomes Claude's
-    /// `--add-dir`, so nothing else on this Mac may be named.
+    /// one is not a regular file directly inside one upload operation's
+    /// folder of this Mac's attachment store, or there are more than the
+    /// attachment limit. Each folder becomes Claude's `--add-dir`, so nothing
+    /// else on this Mac may be named — not the store itself, which holds
+    /// every other upload.
     private func supermuxAttachmentPaths(_ value: Any?) -> [String]? {
         guard let value else { return [] }
         guard let raw = value as? [Any], raw.count <= SupermuxAgentAttachmentLimits.maximumAttachments else { return nil }
         let store = MobileTaskAttachmentStore.defaultRootURL(
             homeDirectory: FileManager.default.homeDirectoryForCurrentUser
-        ).resolvingSymlinksInPath().path + "/"
+        ).resolvingSymlinksInPath().path
         var paths: [String] = []
         for item in raw {
             guard let path = item as? String, path.hasPrefix("/") else { return nil }
             let resolved = URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath()
-            guard resolved.path.hasPrefix(store),
+            let operationFolder = resolved.deletingLastPathComponent()
+            guard operationFolder.deletingLastPathComponent().path == store,
+                  UUID(uuidString: operationFolder.lastPathComponent) != nil,
                   (try? resolved.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true else { return nil }
             paths.append(resolved.path)
         }

@@ -34,14 +34,16 @@ public struct SupermuxAgentAttachmentStore: Sendable {
             withIntermediateDirectories: true,
             attributes: [.posixPermissions: 0o700]
         )
-        let launchName = UUID().uuidString.lowercased()
-        prune(keeping: launchName, fileManager: fileManager)
-        let folder = rootDirectory.appendingPathComponent(launchName, isDirectory: true)
+        prune(fileManager: fileManager)
+        let folder = rootDirectory.appendingPathComponent(UUID().uuidString.lowercased(), isDirectory: true)
         try fileManager.createDirectory(at: folder, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
         var used: Set<String> = []
         return try files.map { file in
-            let destination = folder.appendingPathComponent(Self.uniqueName(file.lastPathComponent, used: &used))
-            try fileManager.copyItem(at: file, to: destination)
+            // copyItem copies a symlink as a link (and the chmod below would
+            // then change its target): copy the file it points to.
+            let source = file.resolvingSymlinksInPath()
+            let destination = folder.appendingPathComponent(Self.uniqueName(source.lastPathComponent, used: &used))
+            try fileManager.copyItem(at: source, to: destination)
             try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: destination.path)
             return destination.path
         }
@@ -62,7 +64,7 @@ public struct SupermuxAgentAttachmentStore: Sendable {
     }
 
     /// Removes launch folders past ``retentionInterval``; nothing else.
-    private func prune(keeping current: String, fileManager: FileManager) {
+    private func prune(fileManager: FileManager) {
         let cutoff = Date(timeIntervalSinceNow: -Self.retentionInterval)
         let keys: Set<URLResourceKey> = [.isDirectoryKey, .contentModificationDateKey]
         let entries = (try? fileManager.contentsOfDirectory(
@@ -70,7 +72,7 @@ public struct SupermuxAgentAttachmentStore: Sendable {
             includingPropertiesForKeys: Array(keys),
             options: [.skipsHiddenFiles]
         )) ?? []
-        for entry in entries where entry.lastPathComponent != current {
+        for entry in entries {
             guard let values = try? entry.resourceValues(forKeys: keys),
                   values.isDirectory == true,
                   let modified = values.contentModificationDate,

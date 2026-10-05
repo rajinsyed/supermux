@@ -5,11 +5,12 @@ public import SupermuxMobileCore
 /// that runs Claude, in `agent.attachment.upload` chunks, and returns their
 /// paths there for `agent.start`'s `attachment_paths`.
 ///
-/// Each file is its own upload operation (`operation_id`), so the host's
-/// per-operation total (64 MiB) never refuses a set the sheet accepted
-/// (10 × 32 MiB); each lands in a folder of its own there, made readable to
-/// Claude with `--add-dir`. The chunk contract is upstream's
-/// `mobile.task.attachment.upload`; `send` performs one call.
+/// Files share an upload operation (`operation_id`) until the next one would
+/// pass its 64 MiB total, so the host never refuses a set the sheet accepted
+/// (10 × 32 MiB), and few operations means few folders there: each becomes
+/// one `--add-dir`, and every one of them must fit the launch line (see
+/// ``SupermuxAgentLaunchCommand/maxInputUTF8Length``). The chunk contract is
+/// upstream's `mobile.task.attachment.upload`; `send` performs one call.
 ///
 /// ```swift
 /// let uploader = SupermuxAgentAttachmentUploader { params in
@@ -42,9 +43,20 @@ public struct SupermuxAgentAttachmentUploader {
     ///   the error `send` threw.
     public func upload(_ files: [URL]) async throws -> [String] {
         var paths: [String] = []
+        var operationID = UUID()
+        var operationBytes = 0
+        var operationFiles = 0
         for file in files {
             let data = try await Self.read(file)
-            paths.append(try await upload(data, named: file.lastPathComponent, operationID: UUID()))
+            if operationFiles == SupermuxAgentAttachmentLimits.maximumAttachments
+                || operationBytes + data.count > SupermuxAgentAttachmentLimits.maximumOperationBytes {
+                operationID = UUID()
+                operationBytes = 0
+                operationFiles = 0
+            }
+            operationBytes += data.count
+            operationFiles += 1
+            paths.append(try await upload(data, named: file.lastPathComponent, operationID: operationID))
         }
         return paths
     }
