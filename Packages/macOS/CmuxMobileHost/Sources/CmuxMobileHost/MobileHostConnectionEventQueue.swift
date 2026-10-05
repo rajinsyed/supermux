@@ -235,6 +235,11 @@ public final class MobileHostConnectionEventQueue: @unchecked Sendable {
     /// Paused hidden terminals and the newest chunk each was refused since.
     private var supermuxPausedNewest: [String: SupermuxHeldChunk] = [:]
     // SUPERMUX:end terminal-stream-fair-queue
+    // SUPERMUX:begin render-grid-watch
+    /// The terminals whose render-grid frames this connection's phone shows;
+    /// nil sends every terminal's (upstream).
+    private var supermuxRenderGridSurfaceIDs: Set<String>?
+    // SUPERMUX:end render-grid-watch
     // SUPERMUX:begin terminal-stream-byte-demand
     /// The watched terminals this connection has off screen
     /// (`background_surface_ids`), reported with the rest of its ask to
@@ -299,6 +304,12 @@ public final class MobileHostConnectionEventQueue: @unchecked Sendable {
             return watched
         }
         // SUPERMUX:end terminal-stream-watch
+        // SUPERMUX:begin render-grid-watch (frames of terminals the phone does not show)
+        if topic == MobileHostEventTopicPolicy().renderGridTopic, supermuxRefusesRenderGridLocked(coalesceKey: coalesceKey) {
+            lock.unlock()
+            return .rejected
+        }
+        // SUPERMUX:end render-grid-watch
         // A Mac grid is an absolute snapshot, so the new frame supersedes the
         // queued one and may use its room. The old entry leaves only once the
         // new frame is admitted at the back like any other grid frame, so a
@@ -672,6 +683,9 @@ public final class MobileHostConnectionEventQueue: @unchecked Sendable {
         supermuxServeOrder.removeAll()
         supermuxPausedNewest.removeAll()
         // SUPERMUX:end terminal-stream-fair-queue
+        // SUPERMUX:begin render-grid-watch
+        supermuxRenderGridSurfaceIDs = nil
+        // SUPERMUX:end render-grid-watch
         // SUPERMUX:begin terminal-stream-byte-demand
         supermuxBackgroundByteSurfaceIDs.removeAll()
         supermuxReportByteDemandLocked()
@@ -1020,7 +1034,23 @@ public final class MobileHostConnectionEventQueue: @unchecked Sendable {
     // SUPERMUX:begin render-grid-watch
 
     /// Limits this connection's `terminal.render_grid` to `surfaceIDs` (nil:
-    /// every terminal, upstream's delivery).
-    public func supermuxShowRenderGrid(surfaceIDs: Set<String>?) {}
+    /// every terminal, upstream's delivery), the terminals its phone shows
+    /// (``SupermuxRenderGridWatchState``).
+    public func supermuxShowRenderGrid(surfaceIDs: Set<String>?) {
+        lock.lock()
+        supermuxRenderGridSurfaceIDs = surfaceIDs.map { Set($0.map { $0.uppercased() }) }
+        lock.unlock()
+    }
+
+    /// Whether a render-grid frame of `coalesceKey` is refused because the
+    /// phone does not show that terminal. Its chain is broken from here, so
+    /// only a full frame readmits it once shown (the caller asks for one);
+    /// no resync is asked now, which would only make frames to refuse.
+    private func supermuxRefusesRenderGridLocked(coalesceKey: String?) -> Bool {
+        guard let shown = supermuxRenderGridSurfaceIDs, let coalesceKey,
+              !shown.contains(coalesceKey.uppercased()) else { return false }
+        poisonedRenderGridSurfaceIDs.insert(coalesceKey)
+        return true
+    }
     // SUPERMUX:end render-grid-watch
 }

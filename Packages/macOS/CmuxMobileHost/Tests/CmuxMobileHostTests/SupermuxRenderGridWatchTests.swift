@@ -103,7 +103,8 @@ struct SupermuxRenderGridWatchTests {
         var state = SupermuxRenderGridWatchState()
         _ = state.replayServed(surfaceID: hiddenID, connectionID: phone, isOpen: open)
         let changes = state.reportsChanged([.init(surfaceID: shownID, connectionID: phone)], isOpen: open)
-        #expect(changes == [.init(connectionID: phone, surfaceIDs: [shownID, hiddenID], joined: [shownID, hiddenID])])
+        // Unlimited until now, it got every frame: nothing joined.
+        #expect(changes == [.init(connectionID: phone, surfaceIDs: [shownID, hiddenID], joined: [])])
     }
 
     @Test("A replay adds its terminal; clearing that terminal's report removes it")
@@ -136,8 +137,8 @@ struct SupermuxRenderGridWatchTests {
         ]
         let changes = state.reportsChanged(reports, isOpen: open)
         #expect(Set(changes) == [
-            .init(connectionID: phone, surfaceIDs: [shownID], joined: [shownID]),
-            .init(connectionID: otherPhone, surfaceIDs: [hiddenID], joined: [hiddenID]),
+            .init(connectionID: phone, surfaceIDs: [shownID], joined: []),
+            .init(connectionID: otherPhone, surfaceIDs: [hiddenID], joined: []),
         ])
         #expect(state.reportsChanged(reports, isOpen: open).isEmpty)
         #expect(state.replayServed(surfaceID: shownID, connectionID: phone, isOpen: open).isEmpty)

@@ -285,7 +285,12 @@ class TerminalController {
     /// this window (relay round trips inflate that gap to seconds) to cancel
     /// the clear+re-apply resize flap (issue 13474).
     private static let mobileViewportUncapApplyStabilityWindow: Duration = .seconds(3)
-    var mobileViewportReportsBySurfaceID: [UUID: [String: MobileViewportReport]] = [:]; private var mobileViewportGenerationsBySurfaceID: [UUID: [String: UInt64]] = [:]
+    // SUPERMUX:begin render-grid-watch (every change tells phone connections which terminals they show; upstream: one line declaring both maps, no observer)
+    var mobileViewportReportsBySurfaceID: [UUID: [String: MobileViewportReport]] = [:] {
+        didSet { SupermuxMobileRenderGridWatch.reportsChanged(mobileViewportReportsBySurfaceID) }
+    }
+    private var mobileViewportGenerationsBySurfaceID: [UUID: [String: UInt64]] = [:]
+    // SUPERMUX:end render-grid-watch
     private var mobileTerminalPasteInFlightSurfaceIDs: Set<UUID> = []
     private var mobileViewportReportCleanupTimersBySurfaceID: [UUID: DispatchSourceTimer] = [:]
     var mobileViewportApplyGovernorsBySurfaceID: [UUID: MobileViewportApplyGovernor] = [:]
@@ -15777,6 +15782,9 @@ class TerminalController {
                 data: nil
             )
         }
+        // SUPERMUX:begin render-grid-watch (a phone's mount starts with a replay: its frames go to that connection from here on)
+        SupermuxMobileRenderGridWatch.replayServed(surfaceID: surfaceId)
+        // SUPERMUX:end render-grid-watch
         // SUPERMUX:begin terminal-stream-resume
         // Count every PTY read the parser may already show before a capture
         // takes the byte position (SupermuxTerminalTeeInbox).

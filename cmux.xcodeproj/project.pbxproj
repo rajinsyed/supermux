@@ -3663,6 +3663,7 @@
 		50BE000200000000000000C8 /* SupermuxMobileHost+Worktrees.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000200000000000000C7 /* SupermuxMobileHost+Worktrees.swift */; };
 		50BE000200000000000000BA /* SupermuxMobileObservers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000200000000000000B9 /* SupermuxMobileObservers.swift */; };
 		50BE000200000000000000CB /* SupermuxMobileObserversTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000200000000000000CC /* SupermuxMobileObserversTests.swift */; };
+		0934B77FE76EBDC409D7B5FC /* SupermuxMobileRenderGridWatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E2F1EADDD9EA9390CFCD045 /* SupermuxMobileRenderGridWatch.swift */; };
 		50BE000200000000000000D8 /* SupermuxMobileRunObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000200000000000000D7 /* SupermuxMobileRunObserver.swift */; };
 		50BE000200000000000000DA /* SupermuxMobileRunObserverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000200000000000000D9 /* SupermuxMobileRunObserverTests.swift */; };
 		50BE000200000000000000DD /* SupermuxMobileSelectionSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000200000000000000DE /* SupermuxMobileSelectionSync.swift */; };
@@ -8293,6 +8294,7 @@
 		50BE000200000000000000C7 /* SupermuxMobileHost+Worktrees.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SupermuxMobileHost+Worktrees.swift"; sourceTree = "<group>"; };
 		50BE000200000000000000B9 /* SupermuxMobileObservers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxMobileObservers.swift; sourceTree = "<group>"; };
 		50BE000200000000000000CC /* SupermuxMobileObserversTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxMobileObserversTests.swift; sourceTree = "<group>"; };
+		3E2F1EADDD9EA9390CFCD045 /* SupermuxMobileRenderGridWatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxMobileRenderGridWatch.swift; sourceTree = "<group>"; };
 		50BE000200000000000000D7 /* SupermuxMobileRunObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxMobileRunObserver.swift; sourceTree = "<group>"; };
 		50BE000200000000000000D9 /* SupermuxMobileRunObserverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxMobileRunObserverTests.swift; sourceTree = "<group>"; };
 		50BE000200000000000000DE /* SupermuxMobileSelectionSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxMobileSelectionSync.swift; sourceTree = "<group>"; };
@@ -9900,6 +9902,7 @@
 				82109E75F263564CA246A669 /* SupermuxTerminalSizingConnections.swift */,
 				723619E0CF7AACB728508F65 /* SupermuxDeviceLinkImpairmentSocketCommands.swift */,
 				2E3BADEBF7FEE6341A720521 /* SupermuxDeviceLoopbackImpairment.swift */,
+				3E2F1EADDD9EA9390CFCD045 /* SupermuxMobileRenderGridWatch.swift */,
 			);
 			name = Supermux;
 			path = Supermux;
@@ -17041,6 +17044,7 @@
 				50BE000200000000000000E2 /* SupermuxMobileHost+Usage.swift in Sources */,
 				50BE000200000000000000C8 /* SupermuxMobileHost+Worktrees.swift in Sources */,
 				50BE000200000000000000BA /* SupermuxMobileObservers.swift in Sources */,
+				0934B77FE76EBDC409D7B5FC /* SupermuxMobileRenderGridWatch.swift in Sources */,
 				50BE000200000000000000D8 /* SupermuxMobileRunObserver.swift in Sources */,
 				50BE000200000000000000DD /* SupermuxMobileSelectionSync.swift in Sources */,
 				50BE00050000000000000006 /* SupermuxMobileSidebarStatusObserver.swift in Sources */,
