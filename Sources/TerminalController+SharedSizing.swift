@@ -242,7 +242,9 @@ extension TerminalController {
         applyLocalSizing(surfaceID: surfaceID, previous: previous, reason: "mac.activity")
     }
 
-    private func noteMobileSizingActivity(surfaceID: UUID, clientID: String) {
+    // SUPERMUX:begin sizing-lane-input (internal: a keystroke on the phone's IRX input lane is its activity too; upstream: `private`)
+    func noteMobileSizingActivity(surfaceID: UUID, clientID: String) {
+    // SUPERMUX:end sizing-lane-input
         if let relay = cloudSizingRelaysBySurfaceID[surfaceID]?.value, relay.relaysPhones {
             relay.relayPhoneActivity(clientID: clientID)
             return

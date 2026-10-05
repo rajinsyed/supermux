@@ -349,6 +349,11 @@ enum MobileHostIrxTerminalLaneServer {
             else {
                 return .close(MobileHostTerminalInputApplier.unavailable(input.delivery))
             }
+            // SUPERMUX:begin sizing-lane-input (a phone someone disconnected types nothing; anyone else's keystroke is its sizing activity)
+            guard TerminalController.shared.supermuxAdmitLaneInput(surfaceID: surfaceID) else {
+                return .close(MobileHostTerminalInputApplier.unavailable(input.delivery))
+            }
+            // SUPERMUX:end sizing-lane-input
             let result = MobileTerminalByteTee.shared.performMobileInput(
                 surfaceID: surfaceID,
                 sequence: input.sequence,
@@ -393,13 +398,15 @@ enum MobileHostIrxTerminalLaneServer {
 extension MobileHostIrxTerminalLaneServer {
     /// Delivers `text` as one input frame the way a lane bound to
     /// `surfaceID` does (`terminal_sizing.lane_input`). `controlConnectionID`
-    /// is the phone's control connection, which carries its client id; the
-    /// lane does not know it yet, so typing on the lane is nobody's sizing
-    /// activity and skips the detach gate.
+    /// is the phone's control connection, which carries its client id: the
+    /// lane runs with it as the runtime's lane loop does.
     ///
     /// - Returns: false when the lane refused the frame and would close.
     static func debugDeliverInput(text: String, surfaceID: UUID, controlConnectionID: UUID) async -> Bool {
-        switch await deliverInput(MobileTerminalInputFrame(text: text), surfaceID: surfaceID) {
+        let outcome = await SupermuxMobileConnectionContext.$controlConnectionID.withValue(controlConnectionID) {
+            await deliverInput(MobileTerminalInputFrame(text: text), surfaceID: surfaceID)
+        }
+        switch outcome {
         case .continue: return true
         case .close: return false
         }
