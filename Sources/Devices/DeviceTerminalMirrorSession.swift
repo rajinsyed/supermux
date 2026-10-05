@@ -161,7 +161,13 @@ final class DeviceTerminalMirrorSession {
             remoteWorkspaceID: remoteWorkspaceID, remoteSurfaceID: remoteSurfaceID,
             events: link.terminalEvents,
             isConnected: { link.isConnected },
-            requestData: { method, params in try await link.requestData(method, params: params) },
+            // SUPERMUX:begin terminal-replay-deadline (a replay gets its own deadline; upstream: `try await link.requestData(method, params: params)`)
+            requestData: { method, params in
+                try await link.requestData(
+                    method, params: params, timeoutNanoseconds: SupermuxTerminalStream.deadline(forMethod: method)
+                )
+            },
+            // SUPERMUX:end terminal-replay-deadline
             // SUPERMUX:begin device-mirror-input-batch (upstream's viewer argument gains a trailing comma)
             viewer: RemoteMacTerminalViewer(
                 clientID: link.clientID,

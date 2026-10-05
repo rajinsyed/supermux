@@ -25,7 +25,7 @@ and the flood first print 12000 lines of ~100 columns (a full 10000-row replay i
 agent's long scrollback is), then a ticker prints one line a second (an agent's status line),
 and the flood prints ~600 KB/s while its control file exists (twice the link).
 
-Steps (D1, D3 and D4 are red today; D2 and D5 are guards; the others check the harness):
+Steps (D1, D3, D4 and D6 were red before the latency fixes; D2 and D5 are guards; the others check the harness):
   setup / impairment_on        programs running, mirrors attached, link impaired
   baseline_echo                no flood: each key echoes within 1 s (RTT + processing); proves
                                the echo measurement and the impairment's round trip
@@ -55,7 +55,8 @@ Steps (D1, D3 and D4 are red today; D2 and D5 are guards; the others check the h
   D3 recovers_after_drop       a 2 s drop that cuts the connection, while the tickers print: the
                                link reconnects, within 60 s no unplanned redial, the host sends each
                                mirror pane at most one replay besides its quiet-output confirmations
-                               (full captures + resumes from its DEBUG log, minus the pane's
+                               (full captures + resumes from its DEBUG log, minus replies it swapped
+                               for `superseded` before they left, minus the pane's
                                `replay_confirmations`), the ECHO mirror echoes a key within 8 s of
                                the drop's end, and no pane is left detached on a connected link
                                ("disconnected until Retry"). RED (2026-10-05): the host drops this
@@ -72,6 +73,16 @@ Steps (D1, D3 and D4 are red today; D2 and D5 are guards; the others check the h
                                ~40 s after the drop ended. The liveness probe after the missed
                                deadlines still got through in 10 s here, so no redial; with more
                                terminals it does not, and the link redials into the same storm.
+  D6 late_replay_superseded    the ECHO mirror re-attaches while the host holds its replay request
+                               9 s (`supermux.devices.link stall`) and the mirrors' replay deadline is
+                               3 s (`terminal_stream.replay_deadline`): the request misses it on a live
+                               link, the mirror asks again, and the host turns the first reply, still
+                               held, into a small `superseded` error (its DEBUG log), so it sends the
+                               pane one reply; the pane is attached again before the first reply
+                               would have been answered and never sits detached on the live link.
+                               RED (2026-10-06): the host sends the first reply in full after the
+                               second (2 replies, 0 superseded; STREAM.md H3b). Upstream's retry also
+                               gives up after three tries 2 s apart ("disconnected until Retry").
   D5 host_main_responsive      during the 30 s after the drop, a main-actor socket round trip
                                (`supermux.devices.link status`) stays under 250 ms. Full replays are
                                captured synchronously on the host's main thread (in the loopback the
@@ -135,6 +146,8 @@ D3_ECHO_BOUND_S = 8.0
 D3_PROBE_KEYS = "abcdefghijklmnopqrstuvwxyz0123456789"
 D5_WINDOW_S = 30.0
 D5_MAX_BOUND_S = 0.25
+D6_DEADLINE_S = 3.0
+D6_HOLD_S = 9.0
 ECHO_PREFIX = "EK:"
 # On screen beside the ECHO terminal (a 2 x 3 grid of panes), and off screen.
 VISIBLE_TICKERS = ("tick_a", "tick_b", "tick_c", "tick_d", "tick_e")
@@ -337,7 +350,13 @@ class DegradedLinkE2E:
         full: Dict[str, int] = {role: 0 for role in self.sources}
         resumed: Dict[str, int] = {role: 0 for role in self.sources}
         pending: Dict[str, int] = {role: 0 for role in self.sources}
+        superseded: Dict[str, int] = {role: 0 for role in self.sources}
         for line in lines:
+            # A reply captured but swapped for a small `superseded` error before it left
+            # (a newer request of the same pane arrived): never sent.
+            match = re.search(r"supermux\.terminal\.replay SUPERSEDED surface=([0-9A-Fa-f]{8})", line)
+            if match and match.group(1).upper() in roles:
+                superseded[roles[match.group(1).upper()]] += 1
             match = re.search(r"mobile\.terminal\.replay VIEWPORT_PENDING surface=([0-9A-Fa-f]{8}) ", line)
             if match and match.group(1).upper() in roles:
                 pending[roles[match.group(1).upper()]] += 1
@@ -350,6 +369,7 @@ class DegradedLinkE2E:
         return {
             "full_captures": full,
             "resumes": resumed,
+            "superseded": superseded,
             "viewport_transition_answers": pending,
             "missed_deadlines": sum("missed its reply deadline" in line for line in lines),
             "replay_missed_deadlines": sum("mobile.terminal.replay missed its reply deadline" in line for line in lines),
@@ -781,9 +801,10 @@ class DegradedLinkE2E:
             delta = {key: int(a.get(key, 0)) - int(b.get(key, 0))
                      for key in ("replay_requests", "full_replays", "resumes", "replay_confirmations", "gaps",
                                  "grid_resyncs")}
-            # Replies the host captured and sent for this pane (full or resumed), past the
-            # one re-attach and its quiet-output confirmations: duplicates.
-            delta["host_replies"] = host["full_captures"][role] + host["resumes"][role]
+            # Replies the host captured and sent for this pane (full or resumed, minus those
+            # it swapped for `superseded` before they left), past the one re-attach and its
+            # quiet-output confirmations: duplicates.
+            delta["host_replies"] = host["full_captures"][role] + host["resumes"][role] - host["superseded"][role]
             delta["extra_replies"] = delta["host_replies"] - delta["replay_confirmations"] - 1
             per_pane[role] = delta
         redials = (window_end["admitted"] or 0) - (before["admitted"] or 0)
@@ -821,6 +842,60 @@ class DegradedLinkE2E:
             raise Failure("; ".join(problems) + f": {json.dumps({k: result[k] for k in ('reconnected_after_s', 'redials_in_window', 'first_echo_after_drop_end_s', 'per_pane')})}")
         return {k: result[k] for k in ("reconnected_after_s", "redials_in_window", "first_echo_after_drop_end_s",
                                        "per_pane")}
+
+    def late_replay_superseded(self) -> Dict[str, Any]:
+        echo = self.mirrors["echo"]
+        wait_for("the ECHO mirror to be attached", lambda: self.pane_states()["echo"].get("attached"), self.timeout)
+        offset = self.log_offset()
+        self.sock.call("supermux.devices.terminal_stream.replay_deadline", {"seconds": D6_DEADLINE_S})
+        timeline: List[Dict[str, Any]] = []
+        reattached_after: Optional[float] = None
+        detached_s = 0.0
+        try:
+            self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "stall",
+                                                     "method": "mobile.terminal.replay", "seconds": D6_HOLD_S})
+            self.sock.call("supermux.devices.terminal_close.replay",
+                           {"workspace_id": echo["workspace_id"], "panel_id": echo["panel_id"]})
+            started = time.monotonic()
+            left = False
+            last = started
+            while time.monotonic() - started < D6_HOLD_S + 10:
+                now = time.monotonic()
+                pane = self.pane_states()["echo"]
+                state = "attached" if pane.get("attached") else ("connecting" if pane.get("connecting") else "detached")
+                if not timeline or timeline[-1]["state"] != state:
+                    timeline.append({"after_s": round(now - started, 2), "state": state})
+                if state == "detached":
+                    detached_s += now - last
+                last = now
+                if state != "attached":
+                    left = True
+                elif left and reattached_after is None:
+                    reattached_after = round(now - started, 2)
+                if reattached_after is not None and now - started > D6_HOLD_S + 2:
+                    break  # the held first request has been answered too
+                time.sleep(0.25)
+        finally:
+            self.sock.call("supermux.devices.terminal_stream.replay_deadline", {"seconds": None})
+        host = self.host_replays(self.log_since(offset))
+        sent = host["full_captures"]["echo"] + host["resumes"]["echo"] - host["superseded"]["echo"]
+        result = {"timeline": timeline, "reattached_after_s": reattached_after, "detached_s": round(detached_s, 2),
+                  "replay_missed_deadlines": host["replay_missed_deadlines"],
+                  "echo_replies_captured": host["full_captures"]["echo"] + host["resumes"]["echo"],
+                  "echo_replies_superseded": host["superseded"]["echo"], "echo_replies_sent": sent}
+        self.facts["d6"] = result
+        problems = []
+        if not host["replay_missed_deadlines"]:
+            problems.append("the held replay never missed its deadline (harness problem?)")
+        if reattached_after is None or reattached_after >= D6_HOLD_S:
+            problems.append(f"the pane was not attached again before the held reply ({reattached_after} s)")
+        if sent != 1:
+            problems.append(f"the host sent the pane {sent} replies (superseded {host['superseded']['echo']})")
+        if detached_s > 0:
+            problems.append(f"the pane sat detached on the live link for {detached_s:.1f} s")
+        if problems:
+            raise Failure("; ".join(problems) + f": {json.dumps(result)}")
+        return result
 
     def pane_states(self) -> Dict[str, Dict[str, Any]]:
         states: Dict[str, Dict[str, Any]] = {}
@@ -873,6 +948,10 @@ class DegradedLinkE2E:
             self.impairment(reset=True)
         except Failure as error:
             self.facts.setdefault("cleanup_errors", []).append(str(error))
+        try:
+            self.sock.call("supermux.devices.terminal_stream.replay_deadline", {"seconds": None})
+        except Failure as error:
+            self.facts.setdefault("cleanup_errors", []).append(str(error))
         if self.keep:
             return
         for workspace_id in self.workspaces:
@@ -899,6 +978,7 @@ class DegradedLinkE2E:
                 self.step("D4_typing_during_reattach", self.typing_during_reattach)
                 self.step("D3_recovers_after_drop", self.recovers_after_drop)
                 self.step("D5_host_main_responsive", self.host_main_responsive)
+                self.step("D6_late_replay_superseded", self.late_replay_superseded)
         except (OSError, ValueError) as error:
             self.steps.append({"name": "transport", "ok": False, "error": str(error)})
         finally:

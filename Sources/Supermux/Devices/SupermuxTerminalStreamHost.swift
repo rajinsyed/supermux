@@ -424,5 +424,8 @@ final class SupermuxTerminalByteCoalescer {
 /// (`supermux.devices.terminal_stream.pretend_old_host`).
 enum SupermuxTerminalStreamDebug {
     nonisolated(unsafe) static var pretendsOldHost = false
+    /// The mirrors' replay deadline in seconds, when a suite set one
+    /// (`supermux.devices.terminal_stream.replay_deadline`).
+    nonisolated(unsafe) static var replayDeadlineSeconds: Double?
 }
 #endif

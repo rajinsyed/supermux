@@ -363,6 +363,18 @@ final class SupermuxTerminalStream {
         return params
     }
 
+    // MARK: Replay deadline
+
+    /// The deadline of a mirror request: a suite's replay deadline
+    /// (`terminal_stream.replay_deadline`), else the link's.
+    nonisolated static func deadline(forMethod method: String) -> UInt64? {
+        guard method == "mobile.terminal.replay" else { return nil }
+        #if DEBUG
+        if let seconds = SupermuxTerminalStreamDebug.replayDeadlineSeconds { return UInt64(seconds * 1_000_000_000) }
+        #endif
+        return nil
+    }
+
     func noteReply(_ reply: Reply) {
         epoch = reply.epoch
         if reply.resumed == nil {
