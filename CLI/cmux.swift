@@ -2748,7 +2748,18 @@ final class ClaudeHookSessionStore {
         // rewriting the same bytes cost a full write and woke every watcher
         // of the store's folder on every tool call of every agent. The
         // encoder sorts keys, so the same state always encodes the same.
-        if fileManager.contents(atPath: statePath) == data { return }
+        if fileManager.contents(atPath: statePath) == data {
+            if let deadline, Date.now >= deadline {
+                throw CLIError(message: "Claude hook state deadline exceeded: \(statePath)")
+            }
+            // Keep the 0600 the write path enforces; chmod only when it differs,
+            // since a metadata change would wake the same watchers.
+            let permissions = (try? fileManager.attributesOfItem(atPath: statePath)[.posixPermissions]) as? NSNumber
+            if permissions?.int16Value != 0o600 {
+                try? fileManager.setAttributes([.posixPermissions: NSNumber(value: Int16(0o600))], ofItemAtPath: statePath)
+            }
+            return
+        }
         // SUPERMUX:end hook-store-unchanged-skip
         let tempURL = parentURL.appendingPathComponent(".\(stateURL.lastPathComponent).\(UUID().uuidString).tmp")
         guard fileManager.createFile(atPath: tempURL.path, contents: data, attributes: [

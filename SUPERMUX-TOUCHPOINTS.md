@@ -16,7 +16,7 @@ Rules for adding a touchpoint:
 - Numbering: the highest number in use is **783** (remote terminal streaming, #777–#783; #764–#776 are
   reserved for open PRs #74/#75). The remote-workspaces work (#517–#599) left
 - Numbering: the highest number in use is **818**. The remote-workspaces work (#517–#599) left
-- Numbering: the highest number in use is **1010** (#970–#978: hidden mirrors stream in batches and reconnects resume quiet terminals; #979: a moved workspace's spinners follow its window; #980–#981: fewer process censuses; #982–#992 and #996–#998: cmux-wide battery fixes (993–995 unassigned); #1010: the mobile observers' shared state-sync ticker; 999–1009 are unassigned). Before that **924** (#920–#924: only this Mac's own input hands an Auto grid to the Mac pane). #907–#913: answering a Claude question or plan brings the working indicator back. Before that **906** (#900–#906: a streaming mirror re-anchors when the other Mac's grid changes). Before that **883** (#880–#883: Remote Host Mode's hotkey and notification shows, Auto's `view_appeared` report; #850–#879 are held by another open branch). The remote-workspaces work (#517–#599) left
+- Numbering: the highest number in use is **1010** (#970–#978: hidden mirrors stream in batches and reconnects resume quiet terminals; #979: a moved workspace's spinners follow its window; #980–#981: fewer process censuses; #982–#994, #996 and #998: cmux-wide battery fixes (995 unassigned; #997, a slower hang-watchdog heartbeat, was retired before merge); #1010: the mobile observers' shared state-sync ticker; 999–1009 are unassigned). Before that **924** (#920–#924: only this Mac's own input hands an Auto grid to the Mac pane). #907–#913: answering a Claude question or plan brings the working indicator back. Before that **906** (#900–#906: a streaming mirror re-anchors when the other Mac's grid changes). Before that **883** (#880–#883: Remote Host Mode's hotkey and notification shows, Auto's `view_appeared` report; #850–#879 are held by another open branch). The remote-workspaces work (#517–#599) left
   unassigned gaps it may still grow into: **523–524, 527–529, 539–544, 558–559, 562–569,
   578–579 and 588–589** (never assigned, not retired); #600–#601 came from the 2026-10-01 upstream merge; #620–#622 and
   #630–#639 are the remote-workspaces feedback round (602–619 and 623–629 unassigned). The second
@@ -817,14 +817,14 @@ Rules for adding a touchpoint:
 | 986 | `Resources/shell-integration/cmux-zsh-integration.zsh` | `zsh-git-head-watch-cheap` | The git HEAD watcher loop ticks every 3 s (`_cmux_sleep_cs 300`, upstream 100) and reads HEAD with `read` in the watcher shell instead of `$(_cmux_git_head_signature …)`, so a running command's watcher no longer forks a subshell every second. |
 | 987 | `Packages/macOS/CmuxGit/Sources/CmuxGit/Parsing/GitMetadataService+WatchPaths.swift` | `git-dirty-large-repo-throttle` | `eventCoalescingInterval` is 3 s for a repository past the direct-check entry limit (whose dirty check launches `git status`), the upstream throttles otherwise. |
 | 988 | `Packages/macOS/CmuxSidebarGit/Sources/CmuxSidebarGit/Hosting/SidebarGitHosting.swift` | `pr-poll-off-screen-slowdown` | Adds `pullRequestPollIntervalScale()` to `SidebarGitHosting`, with a default of 1. |
-| 989 | `Packages/macOS/CmuxSidebarGit/Sources/CmuxSidebarGit/Service/PullRequestPollService+Apply.swift` | `pr-poll-off-screen-slowdown` | The next pull-request poll multiplies its base interval by the host's scale (at least 1). |
+| 989 | `Packages/macOS/CmuxSidebarGit/Sources/CmuxSidebarGit/Service/PullRequestPollService+Apply.swift` | `pr-poll-off-screen-slowdown` | Two fences: the next pull-request poll multiplies its base interval by the host's scale (at least 1), and so does the unsupported-repository fallback (upstream: `base: Self.backgroundPollInterval`). |
 | 990 | `Sources/TabManager+SidebarGitHosting.swift` | `pr-poll-off-screen-slowdown` | `import SupermuxKit` and `pullRequestPollIntervalScale()`: 5 while the TabManager's window is off screen (`SupermuxWindowVisibility.windowIsOnScreen`) and nothing subscribes to `mobile.sync.delta` (no phone or Mac follows this Mac's state, whose mirrors show its PR status), else 1. |
 | 991 | `Packages/macOS/CmuxTerminal/Sources/CmuxTerminal/Surface/TerminalRendererWindowVisibility.swift` | `renderer-key-window-honors-occlusion` | `isVisible` checks the occlusion verdict before the key window: a window that has reported `.visible` follows occlusion even while key (a locked or sleeping display), and the key window counts only while occlusion is untrusted. |
 | 992 | `Packages/macOS/CmuxTerminal/Tests/CmuxTerminalTests/TerminalRendererWindowVisibilityTests.swift` | `renderer-key-window-honors-occlusion` | `keyWindowAlwaysPresents` becomes `keyWindowPresentsUntilOcclusionIsTrusted` (a key window with trusted hidden occlusion does not present). |
-| 993 | `Sources/Mobile/MobileTerminalRenderObserver.swift` | `device-grid-global-sample-floor` | Three fences: the `deferredGridSampleTask` property and its cancel in `stop()`, the `scheduleDeferredGridSample()` call after `deviceTerminalGrids.refresh`, and that method, which replays one global tick a second later when #998 skipped a global sample, so a grid change seen only by the skipped tick is still published. |
+| 993 | `Sources/Mobile/MobileTerminalRenderObserver.swift` | `device-grid-global-sample-floor` | Three fences: the `deferredGridSampleTask` property and its cancel in `stop()`, the `scheduleDeferredGridSample(at:)` call after `deviceTerminalGrids.refresh`, and that method, which replays one global tick at the publisher's `deferredGlobalSampleDeadline` when #998 skipped a global sample, so a grid change seen only by the skipped tick is still published. |
+| 994 | `Sources/GhosttyTerminalView.swift` | `renderer-key-window-honors-occlusion` | In `windowDidChangeScreen`, before `applyRendererWindowVisibility`: `Self.windowsThatReportedVisible.remove(window)`, so occlusion trusted on the old display is not trusted on the new one until it reports `.visible` there (a virtual display never does, and #991 would otherwise stop a key window moved there from presenting). |
 | 996 | `Sources/PortScanner.swift` | `agent-port-rescan-slower` | `agentRescanInterval` is 5 s with 1 s leeway (upstream 2 s, no leeway). |
-| 997 | `Sources/MainThreadHangWatchdog.swift` | `hang-watchdog-slower-heartbeat` | Default `heartbeatInterval` 2 s and timer leeway 500 ms (upstream 1 s and 100 ms); the 8 s stall threshold is unchanged. |
-| 998 | `Packages/macOS/CmuxMobileHost/Sources/CmuxMobileHost/DeviceTerminalGridPublisher.swift` | `device-grid-global-sample-floor` | A global tick samples every terminal's grid at most once a second (and always on a topology change); terminals the tick names are always sampled. `hasDeferredGlobalSample` reports a skipped global sample. `reset()` clears both. |
+| 998 | `Packages/macOS/CmuxMobileHost/Sources/CmuxMobileHost/DeviceTerminalGridPublisher.swift` | `device-grid-global-sample-floor` | A global tick samples every terminal's grid at most once a second, and always the first global tick after a topology change (`topologyNeedsFullSample`, kept until that sample); terminals the tick names are always sampled. `deferredGlobalSampleDeadline` says when a skipped global sample may run. `reset()` clears all three. |
 | 1010 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/SupermuxStateSyncTicker.swift` (`50BE10100000000000000001` file ref, `…02` build file) into the cmux target: the file reference, the `Supermux` group child after `SupermuxMobileSidebarStatusObserver.swift`, the build file and the target's Sources phase entry |
 
 ## How to re-apply
@@ -6947,23 +6947,25 @@ Measured with `tests/supermux/stress_worktrees_energy.py` and `sample`: on an id
 (`ProcessDetectedResumeIndexes.load`, maximum census age 5 s) and the agent index's hook-store reloads (5 s floor) were
 the largest remaining CPU users, each a census of every process with KERN_PROCARGS2 plus hook and transcript file scans.
 - **#980**: re-apply the four fences in `SessionAutosaveCoordinator` (constant, property, the `finish` call site,
-  `currentResumeIndexes(for:)`); only complete results are reused, and a changed TTY binding set always reloads.
+  `currentResumeIndexes(for:)`); only the process census is reused (up to 30 s while the TTY binding set is unchanged,
+  else upstream's 5 s), and hook stores are read every tick.
 - **#981**: re-apply `minHookStoreReloadInterval` and use it (not `minEventReloadInterval`) in `handleHookStoreChange`'s
   immediate check and deferred timer.
 
-### 982–992, 996–998. cmux-wide battery fixes found by sampling and by three upstream audits
+### 982–994, 996, 998. cmux-wide battery fixes found by sampling and by three upstream audits
 
 Measured with `tests/supermux/stress_worktrees_energy.py` plus `sample`, and traced by audits of the agent-hook path,
 the upstream pollers and the Ghostty integration (2026-10-05). Re-apply each fence as its registry row says:
 - **#982** CLI hook store: skip an unchanged rewrite. **#983** CLI inbox poller: 2 s for a minute, then 6 s.
-- **#984** agent PID reports refresh tracked ports only on a change. **#985** a repeated lifecycle report relays nothing.
+- **#984** agent PID reports refresh tracked ports at once on a change, else at most every 5 s with one trailing refresh. **#985** a repeated lifecycle report relays nothing.
 - **#986** zsh HEAD watcher: 3 s tick, HEAD read without a subshell (`tests/test_issue_15066_zsh_watcher_sleep.py`,
   `tests/test_shell_git_branch_stale_cwd.py` still pass).
 - **#987** large-repository dirty checks coalesce at 3 s. **#988–#990** pull requests poll 5× less often while their
-  window is off screen.
-- **#991–#992** the renderer follows a trusted occlusion verdict even for the key window (locked or sleeping display).
-- **#996** agent port rescans every 5 s. **#997** hang watchdog beats every 2 s. **#998** global ticks sample every
-  terminal's grid at most once a second.
+  window is off screen and nothing follows this Mac's state.
+- **#991–#992, #994** the renderer follows a trusted occlusion verdict even for the key window (locked or sleeping
+  display); a screen change drops that trust until the new display reports `.visible`.
+- **#996** agent port rescans every 5 s. **#993, #998** global ticks sample every terminal's grid at most once a
+  second, and a skipped one is replayed at the deadline.
 
 ### 1010. The fork's mobile observers tick state sync only on a real change, through one shared ticker — `cmux.xcodeproj/project.pbxproj` (unfenced)
 

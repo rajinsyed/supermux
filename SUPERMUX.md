@@ -529,7 +529,7 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   once it is; when the forward stops or moves it goes back through the alias, and every main-frame
   navigation (reload, link, redirect, back and forward) is routed the same way, so none lands on this
   Mac's own `localhost:3000`. A server that restarts comes back by itself: once a forward's port leaves
-  that Mac's listing this Mac asks it again after 3, 10 and 30 s (a quick restart never
+  that Mac's listing this Mac asks it again after 3, 10, 30 and 60 s (a quick restart never
   changes that Mac's sidebar ports, which keep a port through two missed scans, so it sends no poke),
   and an open mirror tab on the alias of a port whose last try found it unlisted, not yet a workspace's
   (a restarted server that is only one of that Mac's other ports until its sidebar scan attributes it),
@@ -537,7 +537,7 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   once that Mac lists it as a workspace's (or you forwarded it). That Mac also notices a server binding
   after its terminal's port scans are over (a dev script doing other work first): for 2 minutes after one
   of its terminals starts a command, while another Mac follows its ports, it compares its loopback
-  listeners (5, 15, 25, 45 and 120 s after the latest command start, also once the command exited; never
+  listeners (5, 15, 25, 45 and 120 s after the latest command start, even after the command exits; never
   otherwise) and scans its terminals again when one appears, so such a server is its workspace's within
   about 10 s when it binds in the first 25 s, up to 75 s later after that; the attribution that follows
   pokes. A page loaded as written (and its same-origin `localhost` iframes)

@@ -27,12 +27,14 @@ extension TerminalController {
     /// on a headless Mac), and took 31 s here. The projects are known as soon
     /// as the projects file is read, so a call waits for the load at most
     /// ``supermuxProjectsLookupBound`` instead of missing its caller's reply
-    /// deadline; `nil` when even the file is not read by then. Once the
-    /// projects are known it answers at once, without arming the bound's
-    /// task and timer on every call.
+    /// deadline; `nil` when even the file is not read by then. A call while
+    /// the first load's config imports still run waits for them too (within
+    /// the bound), so `action.run` never runs a command they are replacing.
+    /// Once the whole load finished it answers at once, without arming the
+    /// bound's task and timer on every call.
     func supermuxLoadedProjectsModel() async -> SupermuxProjectsModel? {
         let model = SupermuxComposition.projectsModel
-        if model.hasLoaded { return model }
+        if model.hasFinishedLoading { return model }
         _ = await SupermuxBoundedAwait(timeout: Self.supermuxProjectsLookupBound).value { await model.loadIfNeeded() }
         return model.hasLoaded ? model : nil
     }

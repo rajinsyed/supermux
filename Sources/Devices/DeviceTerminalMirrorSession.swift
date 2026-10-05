@@ -501,7 +501,9 @@ final class DeviceTerminalMirrorSession {
                 guard let self, self.phase != .stopped else { return }
                 self.supermuxQueuedAttach = nil
                 self.scheduleAttach()
-                await self.attachTask?.value
+                // A retry queued by the attach (`replayNeeded`) is a new
+                // attachTask, set before the old one ends: it keeps the slot too.
+                while let task = self.attachTask { await task.value }
             }
         }
     }

@@ -178,9 +178,14 @@ extension Workspace {
         return didChange
     }
     // SUPERMUX:begin agent-pid-ports-on-change
-    /// Each workspace's hook-driven agent port refreshes: when the last one
-    /// ran and whether a trailing one is scheduled.
-    @MainActor private static var hookPortRefreshes: [UUID: (lastAt: TimeInterval, trailingScheduled: Bool)] = [:]
+    /// A workspace's hook-driven agent port refreshes: when the last one ran
+    /// and whether a trailing one is scheduled.
+    private final class HookPortRefreshState {
+        var lastAt: TimeInterval = -.infinity
+        var trailingScheduled = false
+    }
+    /// Weak keys, so a closed workspace's entry goes with it.
+    @MainActor private static let hookPortRefreshes = NSMapTable<Workspace, HookPortRefreshState>.weakToStrongObjects()
     private static let hookPortRefreshInterval: TimeInterval = 5
 
     /// Refreshes the agent ports for a hook report at most every 5 s; a
@@ -188,20 +193,22 @@ extension Workspace {
     /// agent started between two hooks is still found while the periodic
     /// rescan is paused (cmux inactive).
     @MainActor private func refreshTrackedAgentPortsForUnchangedReport() {
+        let state = Self.hookPortRefreshes.object(forKey: self) ?? HookPortRefreshState()
+        Self.hookPortRefreshes.setObject(state, forKey: self)
         let now = ProcessInfo.processInfo.systemUptime
-        let state = Self.hookPortRefreshes[id] ?? (lastAt: -.infinity, trailingScheduled: false)
         let wait = state.lastAt + Self.hookPortRefreshInterval - now
         if wait <= 0 {
-            Self.hookPortRefreshes[id] = (now, state.trailingScheduled)
+            state.lastAt = now
             refreshTrackedAgentPorts()
             return
         }
         guard !state.trailingScheduled else { return }
-        Self.hookPortRefreshes[id] = (state.lastAt, true)
+        state.trailingScheduled = true
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(wait), tolerance: .milliseconds(500))
+            state.trailingScheduled = false
             guard let self else { return }
-            Self.hookPortRefreshes[self.id] = (ProcessInfo.processInfo.systemUptime, false)
+            state.lastAt = ProcessInfo.processInfo.systemUptime
             self.refreshTrackedAgentPorts()
         }
     }

@@ -71,7 +71,7 @@ final class SupermuxDeviceMirrorCoordinator {
     private var eventsTask: Task<Void, Never>?
     private var revisionTask: Task<Void, Never>?
     private var localPanesTask: Task<Void, Never>?
-    /// The unbound mirrors as of the last local pane change.
+    /// The unbound mirrors as of the last local pane change or pass.
     private var lastUnboundMirrorIDs: Set<UUID> = []
     private var openQueue: [SupermuxRemoteWorkspaceRef] = []
     private var openTask: Task<Void, Never>?
@@ -263,7 +263,15 @@ final class SupermuxDeviceMirrorCoordinator {
     /// devices revision bumps, so its followers and the next pass see the
     /// new mirror set. Any other local churn runs no pass.
     private func localPanesDidChange() {
-        let unbound = Set(index.mirrors().filter { !$0.isBound }.map(\.workspace.id))
+        noteUnboundMirrors(in: index.mirrors())
+    }
+
+    /// Bumps the devices revision when the unbound mirrors differ from the
+    /// last ones seen. Every pass also notes them: an unbound mirror appears
+    /// (or goes) through a device change too, and a baseline only local pane
+    /// changes kept would miss the next local change that undoes it.
+    private func noteUnboundMirrors(in mirrors: [SupermuxDeviceMirror]) {
+        let unbound = Set(mirrors.filter { !$0.isBound }.map(\.workspace.id))
         guard unbound != lastUnboundMirrorIDs else { return }
         lastUnboundMirrorIDs = unbound
         devices.scheduleRefresh()
@@ -353,6 +361,7 @@ final class SupermuxDeviceMirrorCoordinator {
             )
         }
         let liveMirrors = index.mirrors()
+        noteUnboundMirrors(in: liveMirrors)
         autoOpened.formIntersection(liveMirrors.map(\.workspace.id))
         let mirrors = liveMirrors.map { mirror in
             SupermuxMirrorReconciler.Mirror(

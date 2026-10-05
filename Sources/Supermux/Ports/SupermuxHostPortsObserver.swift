@@ -56,6 +56,12 @@ final class SupermuxHostPortsObserver {
         }
         let managers = SupermuxMobileSidebarStatusObserver.allTabManagers()
         let live = Set(managers.map(ObjectIdentifier.init))
+        // A window that opens or closes starts the workspaces over: one that
+        // reopens restores its workspaces as new objects with the same IDs.
+        if live != Set(tabsCancellables.keys) {
+            workspaceCancellables.removeAll()
+            lastWorkspaceIDs = nil
+        }
         tabsCancellables = tabsCancellables.filter { live.contains($0.key) }
         for manager in managers where tabsCancellables[ObjectIdentifier(manager)] == nil {
             tabsCancellables[ObjectIdentifier(manager)] = manager.tabsPublisher

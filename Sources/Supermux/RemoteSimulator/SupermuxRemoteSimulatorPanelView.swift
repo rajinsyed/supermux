@@ -334,8 +334,12 @@ private struct SupermuxRemoteSimulatorWindowVisibility: NSViewRepresentable {
             center.removeObserver(self)
             guard let newWindow else { return }
             let selector = #selector(windowVisibilityMayHaveChanged(_:))
+            // Key changes too: until occlusion has reported `.visible` once (a
+            // virtual or headless display), the key window counts as on screen.
             for name in [
                 NSWindow.didChangeOcclusionStateNotification,
+                NSWindow.didBecomeKeyNotification,
+                NSWindow.didResignKeyNotification,
                 NSWindow.didMiniaturizeNotification,
                 NSWindow.didDeminiaturizeNotification,
             ] {

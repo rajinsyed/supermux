@@ -65,9 +65,15 @@ public final class SupermuxWindowVisibility: ObservableObject {
         }
     }
 
-    /// Windows whose occlusion state has reported `.visible` at least once.
-    /// Weak, so a closed window drops out on its own.
-    private static let windowsThatReportedVisible = NSHashTable<NSWindow>.weakObjects()
+    /// Windows whose occlusion state has reported `.visible`, with the
+    /// display they reported it on. Weak, so a closed window drops out on its
+    /// own. A window moved to another display (a virtual one may never raise
+    /// `.visible`) is untrusted until it reports there.
+    private static let displayWhereWindowReportedVisible = NSMapTable<NSWindow, NSNumber>.weakToStrongObjects()
+
+    private static func displayID(of window: NSWindow) -> NSNumber {
+        window.screen?.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber ?? 0
+    }
 
     /// The same rule as cmux's `TerminalRendererWindowVisibility`, plus the
     /// app not hidden. `occlusionState` decides on a real display (covered,
@@ -82,11 +88,12 @@ public final class SupermuxWindowVisibility: ObservableObject {
         guard let window, !NSApplication.shared.isHidden,
               window.isVisible, !window.isMiniaturized else { return false }
         if window.occlusionState.contains(.visible) {
-            windowsThatReportedVisible.add(window)
+            displayWhereWindowReportedVisible.setObject(displayID(of: window), forKey: window)
             return true
         }
-        // Occlusion has been trustworthy for this window: honor its verdict.
-        if windowsThatReportedVisible.contains(window) { return false }
+        // Occlusion has been trustworthy for this window on this display:
+        // honor its verdict.
+        if displayWhereWindowReportedVisible.object(forKey: window) == displayID(of: window) { return false }
         return window.isKeyWindow || (trustingActiveSpace && window.isOnActiveSpace)
     }
 }

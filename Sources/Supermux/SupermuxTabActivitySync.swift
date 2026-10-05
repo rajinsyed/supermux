@@ -19,9 +19,10 @@ import SupermuxKit
 /// tab projected after its overlay arrived spins at once. The
 /// changed workspaces are synced together on the next main-actor turn (after
 /// the mutation that fired the relay has finished), walking each one's panels
-/// once; Bonsplit's `updateTab` writes only a value that changed. A tab that
-/// upstream rebuilds (respawn, session restore) gets its spinner back on the
-/// next lifecycle event. A workspace moved to another window is synced with
+/// once; Bonsplit's `updateTab` writes only a value that changed. A spinning
+/// tab that upstream rebuilds (respawn, session restore) gets its spinner
+/// back within about 2 s: the spinner sweep sees the old tab gone and syncs
+/// its workspace (``hasSpinningTab()``). A workspace moved to another window is synced with
 /// its Dock (``workspaceMoved(_:)``). Dock tabs are synced per panel
 /// (``syncDock(_:panelId:)``) when their lifecycle changes
 /// (`dock-tab-agent-working`) and when a tab moves into the Dock
@@ -50,10 +51,14 @@ final class SupermuxTabActivitySync {
     /// move creates a new tab); it is a few bytes and tab ids are never
     /// reused.
     private var heldOffScreenTabIDs: Set<TabID> = []
-    /// Tabs this type set spinning, with their controller, so the spinner
-    /// frame-rate sweep keeps going while one of them can be remounted.
+    /// Tabs this type set spinning, with their controller and workspace, so
+    /// the spinner frame-rate sweep keeps going while one of them can be
+    /// remounted, and a spinning tab that upstream rebuilt is synced again.
     private var spinningTabs: [TabID: SpinningTab] = [:]
-    private struct SpinningTab { weak var controller: BonsplitController? }
+    private struct SpinningTab {
+        weak var controller: BonsplitController?
+        let workspaceID: UUID?
+    }
 
     /// Starts following the relay and main-window visibility; later calls do
     /// nothing.
@@ -136,7 +141,8 @@ final class SupermuxTabActivitySync {
         for (panelID, panel) in workspace.panels where panel.panelType == .terminal || panel.panelType == .claudeHarness {
             guard let tab = workspace.surfaceIdFromPanelId(panelID) else { continue }
             let activity = SupermuxWorkspaceActivityResolver.activity(forPanel: panelID, in: workspace)
-            setWorking(activity == .working, tab: tab, in: workspace.bonsplitController, windowOnScreen: windowOnScreen)
+            setWorking(activity == .working, tab: tab, in: workspace.bonsplitController,
+                       windowOnScreen: windowOnScreen, workspaceID: workspace.id)
         }
     }
 
@@ -178,7 +184,10 @@ final class SupermuxTabActivitySync {
     /// sidebar's amber) would be applied here once Bonsplit can take one.
     /// `windowOnScreen` matters only for a working tab: off screen its
     /// spinner is held off until the window shows again.
-    func setWorking(_ isWorking: Bool, tab: TabID, in controller: BonsplitController, windowOnScreen: Bool) {
+    func setWorking(
+        _ isWorking: Bool, tab: TabID, in controller: BonsplitController, windowOnScreen: Bool,
+        workspaceID: UUID? = nil
+    ) {
         if isWorking && !windowOnScreen {
             heldOffScreenTabIDs.insert(tab)
         } else {
@@ -186,8 +195,12 @@ final class SupermuxTabActivitySync {
         }
         let spins = isWorking && windowOnScreen
         if spins {
-            spinningTabs[tab] = SpinningTab(controller: controller)
-            SupermuxTabSpinnerFrameRate.capSoon()
+            // The quick pass is for a spinner that just started; the sweep
+            // catches remounts of one already spinning.
+            let entry = SpinningTab(controller: controller, workspaceID: workspaceID)
+            if spinningTabs.updateValue(entry, forKey: tab) == nil {
+                SupermuxTabSpinnerFrameRate.capSoon()
+            }
         } else {
             spinningTabs[tab] = nil
         }
@@ -207,9 +220,15 @@ final class SupermuxTabActivitySync {
 
     /// Whether any tab this type set spinning still spins, mounted or not
     /// (a workspace you left is unmounted and remounts when you come back).
-    /// Forgets tabs that were closed or stopped spinning.
+    /// Forgets tabs that were closed or stopped spinning, and syncs their
+    /// workspace again: an unchanged lifecycle report no longer fires the
+    /// relay, so a tab that upstream rebuilt (respawn) would otherwise wait
+    /// for the next lifecycle change to spin.
     func hasSpinningTab() -> Bool {
-        spinningTabs = spinningTabs.filter { id, entry in entry.controller?.tab(id)?.isLoading == true }
+        for (id, entry) in spinningTabs where entry.controller?.tab(id)?.isLoading != true {
+            spinningTabs[id] = nil
+            if let workspaceID = entry.workspaceID { schedule(workspaceID: workspaceID) }
+        }
         return !spinningTabs.isEmpty
     }
 
@@ -278,9 +297,13 @@ enum SupermuxTabSpinnerFrameRate {
     private static func startSweep() {
         guard sweep == nil else { return }
         sweep = Task { @MainActor in
-            repeat {
+            while true {
                 try? await Task.sleep(for: .seconds(2), tolerance: .milliseconds(500))
-            } while capAll() > 0 || SupermuxTabActivitySync.shared.hasSpinningTab()
+                let anyRunning = capAll() > 0
+                // Asked on every pass, since it also forgets closed tabs.
+                let anyWorking = SupermuxTabActivitySync.shared.hasSpinningTab()
+                if !anyRunning && !anyWorking { break }
+            }
             sweep = nil
         }
     }

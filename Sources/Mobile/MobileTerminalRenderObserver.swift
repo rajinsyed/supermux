@@ -305,7 +305,7 @@ final class MobileTerminalRenderObserver {
                         payload: ["surface_id": id.uuidString, "columns": grid.columns, "rows": grid.rows])
                 })
             // SUPERMUX:begin device-grid-global-sample-floor
-            if deviceTerminalGrids.hasDeferredGlobalSample { scheduleDeferredGridSample() }
+            if let deadline = deviceTerminalGrids.deferredGlobalSampleDeadline { scheduleDeferredGridSample(at: deadline) }
             // SUPERMUX:end device-grid-global-sample-floor
         } else {
             deviceTerminalGrids.reset()
@@ -340,12 +340,12 @@ final class MobileTerminalRenderObserver {
 
     // SUPERMUX:begin device-grid-global-sample-floor
     /// A global tick inside the grid publisher's sample interval was skipped;
-    /// replay it as one tick once the interval has passed, so a resize seen
-    /// only by that tick still reaches the other Mac's mirror.
-    private func scheduleDeferredGridSample() {
+    /// replay it as one tick once the interval has passed (`deadline`), so a
+    /// resize seen only by that tick still reaches the other Mac's mirror.
+    private func scheduleDeferredGridSample(at deadline: ContinuousClock.Instant) {
         guard deferredGridSampleTask == nil else { return }
         deferredGridSampleTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: DeviceTerminalGridPublisher.globalSampleInterval, tolerance: .milliseconds(250))
+            try? await ContinuousClock().sleep(until: deadline, tolerance: .milliseconds(100))
             guard let self, !Task.isCancelled else { return }
             self.deferredGridSampleTask = nil
             self.enqueueTerminalUpdate(surfaceID: nil)

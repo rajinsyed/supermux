@@ -9985,6 +9985,12 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
     private func windowDidChangeScreen(_ notification: Notification) {
         guard let window else { return }
         guard let object = notification.object as? NSWindow, window == object else { return }
+        // SUPERMUX:begin renderer-key-window-honors-occlusion
+        // Occlusion trusted on the old display says nothing about the new one
+        // (a virtual display never raises `.visible`); trust it again only
+        // once it reports there, so a key window moved there keeps presenting.
+        Self.windowsThatReportedVisible.remove(window)
+        // SUPERMUX:end renderer-key-window-honors-occlusion
         applyRendererWindowVisibility(for: window)
         guard let screen = window.screen else { return }
         guard let surface = terminalSurface?.surface else { return }

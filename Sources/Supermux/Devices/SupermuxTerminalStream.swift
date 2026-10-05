@@ -621,13 +621,15 @@ final class SupermuxTerminalStreamWatch {
     /// A send that failed on a connection that stays up (a busy host, a missed
     /// deadline) goes out again shortly: a background change alone has no
     /// other path that sends it again, and a shown pane would keep getting
-    /// its bytes in background batches.
+    /// its bytes in background batches. A connection's first send retries
+    /// too, or the host would keep sending every terminal's bytes. Only a
+    /// send that ran fails here, so the host supports the method.
     private func retryAfterFailure(on connection: UInt64) {
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(2))
             guard let self, self.connection == connection, self.failedConnection == connection else { return }
             self.failedConnection = nil
-            self.syncIfAcked()
+            _ = self.sync()
         }
     }
 }
