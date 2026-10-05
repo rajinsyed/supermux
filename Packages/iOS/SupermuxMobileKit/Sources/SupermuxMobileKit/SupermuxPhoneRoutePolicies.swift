@@ -20,9 +20,11 @@ public import SupermuxMobileCore
 ///   still answers. A direct-lane session has no relay path, so it is checked even
 ///   while iroh reports no selected path.
 /// - **Network.** ``networkSettled(on:at:)`` tells a real network change
-///   (the phone's interfaces or addresses differ) from a foreground or a path
-///   update that changed nothing. Only a real change clears a flap's
-///   hold-off; either one probes relayed sessions soon.
+///   (the phone's networks differ: ``SupermuxLocalInterface/networkFingerprint(_:)``)
+///   from a foreground or a path update that changed nothing, whatever came
+///   and went on the same network (a link-local address, AWDL, an IPsec
+///   tunnel, a rotated temporary IPv6 address). Only a real change clears a
+///   flap's hold-off; either one probes relayed sessions soon.
 public struct SupermuxPhoneRoutePolicies: Sendable {
     /// What the runtime does for one Mac now.
     public enum Step: Equatable, Sendable {
@@ -73,7 +75,8 @@ public struct SupermuxPhoneRoutePolicies: Sendable {
     private var adopted: Set<String> = []
     /// The lane each followed Mac's admitted session went out on.
     public private(set) var lanes: [String: SupermuxDialLane] = [:]
-    private var interfaces: Set<SupermuxLocalInterface>?
+    /// The networks the phone was last judged on.
+    private var network: Set<String>?
     private var lastRecoveryAt: Date?
 
     public init() {}
@@ -188,16 +191,18 @@ public struct SupermuxPhoneRoutePolicies: Sendable {
     // MARK: - Network and addresses
 
     /// The phone's network settled (after a path update or a foreground) on
-    /// `interfaces`. A real change gives direct a fresh chance on every Mac
-    /// (``SupermuxRouteSwitchPolicy/networkChanged(at:)``: hold-off, flaps and
-    /// lost races clear); anything else only probes relayed sessions soon
-    /// (``SupermuxRouteSwitchPolicy/probeSoon(at:)``), and a hold-off holds.
+    /// `interfaces`. A real change (another network:
+    /// ``SupermuxLocalInterface/networkFingerprint(_:)`` differs) gives direct
+    /// a fresh chance on every Mac (``SupermuxRouteSwitchPolicy/networkChanged(at:)``:
+    /// hold-off, flaps and lost races clear); anything else only probes
+    /// relayed sessions soon (``SupermuxRouteSwitchPolicy/probeSoon(at:)``),
+    /// and a hold-off holds.
     /// - Returns: Whether the network really changed.
     @discardableResult
     public mutating func networkSettled(on interfaces: [SupermuxLocalInterface], at now: Date) -> Bool {
-        let current = Set(interfaces)
-        let previous = self.interfaces
-        self.interfaces = current
+        let current = SupermuxLocalInterface.networkFingerprint(interfaces)
+        let previous = network
+        network = current
         guard let previous, previous != current else {
             for mac in Array(policies.keys) { policies[mac]?.probeSoon(at: now) }
             return false
