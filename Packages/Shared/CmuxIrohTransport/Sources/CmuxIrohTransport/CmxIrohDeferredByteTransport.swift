@@ -177,3 +177,16 @@ actor CmxIrohDeferredByteTransport:
         return await observing.isTransportClosed()
     }
 }
+
+// SUPERMUX:begin transport-peer-liveness
+extension CmxIrohDeferredByteTransport: SupermuxByteTransportPeerActivity {
+    /// Forwards to the activated transport; one that cannot tell answers false.
+    func supermuxPeerShowsLife(
+        since start: ContinuousClock.Instant,
+        probeDeadline: Duration?
+    ) async -> Bool {
+        guard !closed, let peer = transport as? any SupermuxByteTransportPeerActivity else { return false }
+        return await peer.supermuxPeerShowsLife(since: start, probeDeadline: probeDeadline)
+    }
+}
+// SUPERMUX:end transport-peer-liveness

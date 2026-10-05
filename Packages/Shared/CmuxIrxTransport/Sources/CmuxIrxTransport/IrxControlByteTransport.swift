@@ -610,3 +610,21 @@ extension IrxControlByteTransport: CmxByteTransportLivenessObserving {
         return await connection.isConnectionClosed()
     }
 }
+
+// SUPERMUX:begin transport-peer-liveness
+extension IrxControlByteTransport: SupermuxByteTransportPeerActivity {
+    /// Bytes from the host's application layer on any lane of the connection
+    /// (control, events, keepalive pongs) since `start`; otherwise, given a
+    /// deadline, an answered keepalive probe, which goes at the top send
+    /// priority (``SupermuxIrxStreamPriority``) so no output holds it.
+    public func supermuxPeerShowsLife(
+        since start: ContinuousClock.Instant,
+        probeDeadline: Duration?
+    ) async -> Bool {
+        guard !isClosed, let (connection, _) = pair else { return false }
+        if await connection.applicationSilenceEvidence(since: start) == .activity { return true }
+        guard let probeDeadline else { return false }
+        return await connection.probeLiveness(deadline: probeDeadline)
+    }
+}
+// SUPERMUX:end transport-peer-liveness

@@ -872,6 +872,11 @@ Rules for adding a touchpoint:
 | 1010 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/SupermuxStateSyncTicker.swift` (`50BE10100000000000000001` file ref, `…02` build file) into the cmux target: the file reference, the `Supermux` group child after `SupermuxMobileSidebarStatusObserver.swift`, the build file and the target's Sources phase entry |
 | 1033 | `Packages/Shared/CmuxIrxTransport/Sources/CmuxIrxTransport/IrxConnection.swift` | `irx-stream-priority` | Two fences. `openLane` sets the new stream's send priority from `SupermuxIrxStreamPriority.priority(for: descriptor.lane)` before it writes the descriptor; `acceptLane` sets it on the accepted stream right after reading the descriptor. Keepalive lanes go at 1000, control and control-repair lanes at 100 (the focused surface's own); every other lane keeps its default, which its owner may still set (the artifact router's −10). Upstream: every bidirectional lane at 0, below terminal output (100 and 50) |
 | 1034 | `Packages/Shared/CmuxIrxTransport/Sources/CmuxIrxTransport/SupermuxIrxStreamPriority.swift` | `irx-stream-priority` | Whole new file (fenced top to bottom): the send-priority ladder (`keepalive` 1000, `control` = `IrxSurfaceEventLanes.Configuration().focusedPriority`) and `priority(for:)` |
+| 1035 | `Packages/Shared/CMUXMobileCore/Sources/CMUXMobileCore/SupermuxByteTransportPeerActivity.swift` | `transport-peer-liveness` | Whole new file (fenced top to bottom): the public protocol `SupermuxByteTransportPeerActivity: CmxByteTransport` with `supermuxPeerShowsLife(since:probeDeadline:) async -> Bool` |
+| 1036 | `Packages/Shared/CmuxIrxTransport/Sources/CmuxIrxTransport/IrxControlByteTransport.swift` | `transport-peer-liveness` | One fenced extension at the end of the file: `IrxControlByteTransport` conforms; true when the admitted connection's `applicationSilenceEvidence(since:)` is `.activity`, else (given a deadline) the result of `probeLiveness(deadline:)`; false when closed or not established |
+| 1037 | `Packages/Shared/CmuxIrohTransport/Sources/CmuxIrohTransport/CmxIrohDeferredByteTransport.swift` | `transport-peer-liveness` | One fenced extension at the end of the file: the deferred wrapper conforms by forwarding to its activated transport (false when closed or the transport cannot tell). In this file because `transport` and `closed` are private |
+| 1038 | `Packages/iOS/CmuxMobileRPC/Sources/CmuxMobileRPC/MobileCoreRPCClient+SupermuxPeerActivity.swift` | `transport-peer-liveness` | Whole new file (fenced top to bottom): `MobileCoreRPCClient.supermuxPeerShowsLife(since:probeDeadline:)` (public) through `MobileCoreRPCSession`'s installed transport; false when none is installed or it does not conform |
+| 1039 | `Packages/Shared/CmuxIrxTransport/Tests/CmuxIrxTransportTests/SupermuxIrxPeerActivityTests.swift` | `transport-peer-liveness` | **Whole-file fork test inside an upstream package.** Output on another lane proves life while control never answers; an idle host answering a keepalive is alive and its older bytes alone are not; a silent host is not; a closed connection is not |
 
 ## How to re-apply
 
@@ -7339,3 +7344,35 @@ all output and control at least at the focused surface's priority.
 Verify: `swift test --package-path Packages/Shared/CmuxIrxTransport --filter SupermuxIrxPriorityStarvationTests`
 (two Iroh endpoints through a 300 KB/s, 50 ms, 64 KB-queue UDP link; red at `ef19138e3ed`: keepalive unanswered
 after 2.005 s, control request unanswered after 8 s; green: both answered within 2 s).
+
+### 1035–1039. A device link is judged dead only when its connection shows no life — `transport-peer-liveness`
+
+After a request missed its 20 s reply deadline, the device link asked the other Mac whether it still answered
+with a `mobile.events.probe` on the control stream (#723). On a congested relay the request was late because the
+control stream sat behind bulk (replays, and before #1033 every terminal's output), and the probe waited behind
+the same bulk, so a link that carried bytes the whole time was declared lost at about 30 s and redialed, about 45
+times an hour. Now `SupermuxDeviceLinkEvents.supermuxHostAnswers` (Supermux-owned) keeps the link on the first of:
+the other Mac's bytes on any stream of the connection in the last 10 s, or its answer to a transport keepalive
+within 5 s (`supermuxPeerShowsLife`, which goes at the top send priority); the old probe within 10 s; bytes that
+arrived while that probe waited. A link is dead only with none of them. Transports that cannot tell (Tailscale,
+the DEBUG loopback) answer false and go straight to the probe, as before.
+
+The evidence is `IrxConnection`'s own: `applicationSilenceEvidence(since:)` counts only application reads on
+any stream (control, events, keepalive pongs; QUIC ACKs and transport keep-alives do not count), and
+`probeLiveness` needs the other Mac's application layer to write a pong.
+
+Failure modes considered: a host whose control stream is wedged but other lanes deliver stays connected (by
+design: the RPC session's own silent-timeout teardown, which looks at control-stream deliveries only, still
+condemns a control stream silent for two whole deadlines, and its control-stream repair consults the same
+connection evidence); a keepalive probe that fails is inconclusive, never proof (the old probe still runs);
+bytes from before the window do not count; a closed connection is never alive; the probe shares the client
+keepalive loop's in-flight probe instead of opening a second one. A dead link is now declared up to 5 s later
+than before (5 s keepalive, then the 10 s probe).
+
+Re-apply after an upstream merge: keep the protocol file and the three conformances (`IrxControlByteTransport`,
+`CmxIrohDeferredByteTransport`, the RPC client/session accessor). If upstream adds its own connection-level
+liveness query to `CmxByteTransport`, call that from `supermuxHostAnswers` instead and retire these fences.
+
+Verify: `swift test --package-path Packages/Shared/CmuxIrxTransport --filter SupermuxIrxPeerActivityTests`
+(4 tests); the loopback cannot exercise it (one ordered stream, no conformance), so `loopback_device_smoke`
+steps 11–13 keep proving the probe path.
