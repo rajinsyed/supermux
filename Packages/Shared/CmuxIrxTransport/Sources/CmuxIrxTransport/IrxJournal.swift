@@ -147,6 +147,22 @@ public final class IrxJournal: @unchecked Sendable {
         return Array(ring.suffix(count))
     }
 
+    // SUPERMUX:begin irx-journal-link-history
+    /// The components whose events tell a device link's story: which path it
+    /// uses, when it connected, waited or dropped, and the Macs' sleep. They
+    /// are rare, so they get their own ring: the shared ``ringCapacity``
+    /// holds about half an hour of keepalive, engine and terminal-trace
+    /// events, and `cmux iroh-diag` must still show a night's reconnects.
+    public static let supermuxLinkHistoryComponents: Set<String> = ["route", "device-link", "power", "connection"]
+    /// The link history's size; the oldest event drops past it.
+    public static let supermuxLinkHistoryCapacity = 512
+
+    /// The newest link-history events, oldest first.
+    public func supermuxLinkHistory(_ count: Int = supermuxLinkHistoryCapacity) -> [IrxJournalEvent] {
+        []
+    }
+    // SUPERMUX:end irx-journal-link-history
+
     public static func render(_ entry: IrxJournalEvent) -> String {
         var object: [String: Any] = [
             "ts": isoTimestamp(entry.wallTime),

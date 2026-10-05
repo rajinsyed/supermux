@@ -30,6 +30,19 @@ Direct addresses:
      the old one (a DHCP change and a new port).
  11. An empty answer clears the peer from the cache and its file.
 
+What the user sees (the sidebar's Mac icon on a mirror row, `flat_chips`, and
+the Settings Remote Macs row, `remote_macs_settings`; the phone's wording):
+ 12. Relayed through Tokyo, the icon's tooltip reads "On <Mac> — Relay · Tokyo ·
+     241 ms" and it carries the amber dot; the Remote Macs row reads the same
+     route, flagged relayed.
+ 13. Over Tailscale it reads "Direct · Tailscale · 8 ms" with no dot; a direct
+     LAN path without an RTT yet reads "Direct · LAN".
+ 14. A link that drops shows its status, never its last route, and no dot;
+     once it reconnects its route is back.
+ 15. `cmux iroh-diag` (a Release verb) ends with the remote Mac links: each
+     connected link's route now, the link-history events (the route changes
+     above among them) and the journal's counters.
+
 Writes a JSON report (default tests/supermux/artifacts/loopback_device_route_e2e-<tag>.json)
 and exits non-zero on any failed check. Stdlib only.
 
@@ -43,6 +56,7 @@ import argparse
 import json
 import os
 import re
+import select
 import socket
 import stat
 import sys
@@ -114,6 +128,25 @@ class SocketClient:
         raise RouteFailure(f"{method}: {error.get('code', 'error')}: {error.get('message', 'unknown error')}")
 
 
+def v1_command(path: str, command: str, timeout_s: float = 10.0) -> str:
+    """One v1 text command on its own connection; a multi-line reply ends when the socket goes quiet."""
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+        sock.settimeout(timeout_s)
+        sock.connect(path)
+        sock.sendall((command + "\n").encode())
+        data = b""
+        while True:
+            if b"\n" in data:
+                ready, _, _ = select.select([sock], [], [], 0.5)
+                if not ready:
+                    break
+            chunk = sock.recv(65536)
+            if not chunk:
+                break
+            data += chunk
+        return data.decode("utf-8", errors="replace")
+
+
 def socket_path_for_tag(tag: str) -> str:
     slug = re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", tag.strip().lower())).strip("-")
     return f"/tmp/cmux-debug-{slug}.sock"
@@ -148,6 +181,10 @@ class RouteE2E:
         self.machine = ""
         self.device_id = ""
         self.tag = ""
+        self.mac_name = ""
+        self.mirror_id = ""
+        self.created: List[str] = []
+        self.initial_auto_mirror: Optional[bool] = None
 
     # -- reads ---------------------------------------------------------------
 
@@ -185,6 +222,40 @@ class RouteE2E:
 
     def fetch(self) -> str:
         return str(self.client.call("supermux.devices.route.candidates_fetch", {"machine": self.machine}).get("outcome"))
+
+    def settings_row(self) -> Dict[str, Any]:
+        macs = (self.client.call("supermux.devices.remote_macs_settings", {}) or {}).get("macs") or []
+        row = next((m for m in macs if m.get("machine") == self.machine), None)
+        expect(row is not None, "the Remote Macs card does not list the loopback Mac")
+        return row
+
+    def chip(self) -> Optional[Dict[str, Any]]:
+        chips = (self.client.call("supermux.devices.flat_chips", {}) or {}).get("chips") or []
+        return next((c for c in chips if str(c.get("workspace_id", "")).upper() == self.mirror_id), None)
+
+    def indicator(self) -> Dict[str, Any]:
+        chip = self.chip()
+        expect(chip is not None, f"no flat-row chip for the mirror {self.mirror_id}")
+        row = self.settings_row()
+        return {
+            "help": chip.get("help"), "chip_route": chip.get("route"), "relayed": chip.get("relayed"),
+            "dimmed": chip.get("dimmed"), "settings_route": row.get("route"),
+            "settings_relayed": row.get("route_is_relayed"), "settings_link": row.get("link"),
+        }
+
+    def expect_indicator(self, route_text: Optional[str], relayed: bool) -> Dict[str, Any]:
+        def matches() -> Optional[Dict[str, Any]]:
+            seen = self.indicator()
+            help_text = f"On {self.mac_name} — {route_text}" if route_text else None
+            ok = (seen["chip_route"] == route_text and seen["settings_route"] == route_text
+                  and seen["relayed"] is relayed and seen["settings_relayed"] is relayed
+                  and (help_text is None or seen["help"] == help_text))
+            self.facts["last_indicator"] = seen
+            return seen if ok else None
+        try:
+            return wait_for(f"the icon and the Remote Macs row to read {route_text!r}, relayed={relayed}", matches, 10)
+        except RouteFailure as error:
+            raise RouteFailure(f"{error}; last seen {self.facts.get('last_indicator')}")
 
     # -- steps ---------------------------------------------------------------
 
@@ -332,7 +403,103 @@ class RouteE2E:
                "the file still holds the peer")
         return {}
 
+    def check_indicator_relay(self) -> Dict[str, Any]:
+        settings = self.client.call("supermux.devices.remote_macs_settings", {}) or {}
+        self.initial_auto_mirror = bool(settings.get("auto_mirror"))
+        if not self.initial_auto_mirror:
+            self.client.call("supermux.devices.remote_macs_settings_set", {"setting": "auto_mirror", "enabled": True})
+        self.mac_name = str(self.settings_row().get("name"))
+        title = f"route-indicator-{int(time.time())}"
+        created = self.client.call("workspace.create", {"title": title, "focus": False}) or {}
+        source = str(created.get("workspace_id") or created.get("created_workspace_id") or "").upper()
+        expect(bool(source), f"workspace.create returned no id: {created}")
+        self.created.append(source)
+
+        def mirror() -> Optional[str]:
+            rows = (self.client.call("supermux.devices.bindings", {}) or {}).get("mirrors") or []
+            found = next((m for m in rows if m.get("machine") == self.machine
+                          and str(m.get("remote_workspace_id", "")).upper() == source), None)
+            return str(found.get("workspace_id", "")).upper() if found else None
+
+        self.mirror_id = wait_for("a mirror of the new workspace", mirror, 30)
+        wait_for("the mirror's flat-row chip", self.chip, 20)
+        self.pin(kind="relay", relay_id="apne1", rtt_ms=241)
+        seen = self.expect_indicator("Relay · Tokyo · 241 ms", True)
+        expect(seen["settings_link"] == "connected" and not seen["dimmed"], f"a connected Mac reads {seen}")
+        return {"mac_name": self.mac_name, "mirror": self.mirror_id, "seen": seen}
+
+    def check_indicator_direct(self) -> Dict[str, Any]:
+        self.pin(kind="direct", scope="tailscale", rtt_ms=8)
+        tailscale = self.expect_indicator("Direct · Tailscale · 8 ms", False)
+        self.pin(kind="direct", scope="lan")
+        lan = self.expect_indicator("Direct · LAN", False)
+        return {"tailscale": tailscale, "lan_without_rtt": lan}
+
+    def check_indicator_disconnected(self) -> Dict[str, Any]:
+        self.pin(kind="relay", relay_id="apne1", rtt_ms=241)
+        self.expect_indicator("Relay · Tokyo · 241 ms", True)
+        self.link("stop")
+        wait_for("the link to drop", lambda: (self.loopback() or {}).get("link_state") != "connected", 20)
+
+        def status_only() -> Optional[Dict[str, Any]]:
+            seen = self.indicator()
+            ok = (seen["chip_route"] is None and seen["settings_route"] is None and seen["relayed"] is False
+                  and seen["settings_relayed"] is False and seen["settings_link"] in ("connecting", "offline")
+                  and str(seen["help"]).startswith(f"On {self.mac_name} — ")
+                  and "Relay" not in str(seen["help"]) and seen["dimmed"] is True)
+            self.facts["last_indicator"] = seen
+            return seen if ok else None
+
+        try:
+            down = wait_for("the icon and the row to show the status, not the route", status_only, 10)
+        except RouteFailure as error:
+            raise RouteFailure(f"{error}; last seen {self.facts.get('last_indicator')}")
+        self.link("restore")
+        wait_for("the link to reconnect", lambda: (self.loopback() or {}).get("link_state") == "connected", 30)
+        back = self.expect_indicator("Relay · Tokyo · 241 ms", True)
+        return {"while_down": down, "after_reconnect": back}
+
+    def check_iroh_diag_shows_links(self) -> Dict[str, Any]:
+        text = v1_command(self.client.path, "iroh_diag")
+        expect("Remote Mac links" in text, f"iroh_diag has no remote Mac links section: {text[-600:]}")
+        section = text[text.index("Remote Mac links"):]
+        device = self.device_id[:8]
+        routes = [json.loads(line) for line in section.splitlines() if line.startswith("{") and '"kind"' in line
+                  and '"event"' not in line]
+        now = next((r for r in routes if r.get("device") == device), None)
+        expect(now is not None and now.get("kind") == "relay" and now.get("relay_id") == "apne1"
+               and now.get("place") == "Tokyo" and now.get("rtt_ms") == 241, f"route now: {routes}")
+        events = [json.loads(line) for line in section.splitlines() if line.startswith("{") and '"event"' in line]
+        changed = [e for e in events if e.get("component") == "route" and e.get("event") == "changed"
+                   and e.get("a_device") == device]
+        expect(any(e.get("a_relay_id") == "apne1" for e in changed), f"no route change to apne1 among {changed[-5:]}")
+        expect(any(e.get("a_scope") == "tailscale" for e in changed), "no route change to Tailscale")
+        links = [e for e in events if e.get("component") == "device-link" and e.get("a_device") == device]
+        expect(any(e.get("event") == "connected" for e in links), "no device-link connected event")
+        expect(not any(e.get("component") in ("keepalive", "engine", "terminal-trace") for e in events),
+               "chatty components leaked into the link history")
+        counters_line = next((line for line in section.splitlines() if line.startswith("{") and '"changed"' in line
+                              and '"event"' not in line and '"kind"' not in line), None)
+        expect(counters_line is not None, "no counters line")
+        counters = json.loads(counters_line)
+        return {"route_now": now, "route_changes": len(changed), "link_events": len(events),
+                "counters_changed": counters.get("changed"), "chars": len(text)}
+
     def cleanup(self) -> None:
+        for workspace_id in self.created:
+            try:
+                rows = (self.client.call("supermux.devices.bindings", {}) or {}).get("mirrors") or []
+                for mirror in rows:
+                    if str(mirror.get("remote_workspace_id", "")).upper() == workspace_id:
+                        self.client.call("workspace.close", {"workspace_id": mirror.get("workspace_id"), "force": True})
+                self.client.call("workspace.close", {"workspace_id": workspace_id, "force": True})
+            except RouteFailure as error:
+                self.facts.setdefault("cleanup_errors", []).append(str(error))
+        if self.initial_auto_mirror is False:
+            try:
+                self.client.call("supermux.devices.remote_macs_settings_set", {"setting": "auto_mirror", "enabled": False})
+            except RouteFailure as error:
+                self.facts.setdefault("cleanup_errors", []).append(str(error))
         for call in (lambda: self.serve(None), lambda: self.pin(kind="clear")):
             try:
                 if self.machine:
@@ -353,6 +520,10 @@ class RouteE2E:
             self.step("candidates_filtered_and_persisted", self.check_filtered_and_persisted)
             self.step("reconnect_asks_again", self.check_reconnect_asks_again)
             self.step("empty_answer_clears", self.check_empty_answer_clears)
+            self.step("indicator_relay", self.check_indicator_relay)
+            self.step("indicator_direct", self.check_indicator_direct)
+            self.step("indicator_disconnected", self.check_indicator_disconnected)
+            self.step("iroh_diag_shows_links", self.check_iroh_diag_shows_links)
             return True
         except RouteFailure:
             return False

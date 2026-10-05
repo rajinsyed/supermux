@@ -1,4 +1,5 @@
 public import Foundation
+public import SupermuxMobileCore
 
 /// How a "which Mac" chip looks, from what is known about that Mac's link.
 ///
@@ -22,11 +23,14 @@ public enum SupermuxDeviceChipState: Equatable, Sendable {
         public let name: String
         public let machineID: String
         public let state: SupermuxDeviceChipState
+        /// Its link's route while connected (direct or relay, and where).
+        public let route: SupermuxLinkRoute?
 
-        public init(name: String, machineID: String, state: SupermuxDeviceChipState) {
+        public init(name: String, machineID: String, state: SupermuxDeviceChipState, route: SupermuxLinkRoute? = nil) {
             self.name = name
             self.machineID = machineID
             self.state = state
+            self.route = route
         }
     }
 
@@ -44,5 +48,11 @@ public enum SupermuxDeviceChipState: Equatable, Sendable {
         let matches = devices.filter { $0.name == wanted || $0.machineID == wanted }
         if matches.isEmpty || matches.contains(where: { $0.state == .online }) { return .online }
         return matches.contains { $0.state == .connecting } ? .connecting : .offline
+    }
+
+    /// The route the chip of the Mac named `name` shows: a connected
+    /// same-named Mac's; nil when none is connected or none has a route.
+    public static func resolveRoute(name: String, among devices: [Candidate]) -> SupermuxLinkRoute? {
+        nil
     }
 }

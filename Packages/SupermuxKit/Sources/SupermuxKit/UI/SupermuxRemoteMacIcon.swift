@@ -1,3 +1,4 @@
+public import SupermuxMobileCore
 public import SwiftUI
 
 /// The small "Mac + cloud" glyph that marks a row living on another Mac
@@ -55,6 +56,19 @@ public struct SupermuxRemoteMacIcon: View {
         case .offline:
             return String(localized: "supermux.devices.chip.offline", defaultValue: "On \(name) — Offline")
         }
+    }
+
+    /// The tooltip and VoiceOver label with the link's route: "On <Mac> —
+    /// Relay · Tokyo · 241 ms" while connected with one, else as
+    /// ``helpText(name:state:)``.
+    public static func helpText(name: String, state: SupermuxDeviceChipState, route: SupermuxLinkRoute?) -> String {
+        helpText(name: name, state: state)
+    }
+
+    /// Whether the icon carries the amber dot: only while a connected Mac's
+    /// link goes through a relay.
+    public static func showsRelayDot(state: SupermuxDeviceChipState, route: SupermuxLinkRoute?) -> Bool {
+        false
     }
 
     /// The link state a project device's icon shows.
