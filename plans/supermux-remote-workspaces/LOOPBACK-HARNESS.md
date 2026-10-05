@@ -584,6 +584,39 @@ fix: 255–283 ms per key (≈ the 250 ms one-way delay), 551 ms total, up to 7 
 CMUX_E2E_SUITES="loopback_terminal_input_pipeline_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
 ```
 
+## Degraded link E2E (slow relay)
+
+`tests/supermux/loopback_degraded_link_e2e.py` runs six mirrors over a link like a far relay, the field case of
+2026-10-05 (a 240–400 ms relay, ~45 reconnects an hour, remote terminals "awfully delayed"). The DEBUG driver
+`supermux.devices.link_impairment` (`SupermuxDeviceLoopbackImpairment`, applied by every device-link
+`SupermuxDeviceLoopbackPipe`, both directions alike) takes `rtt_ms` (or `to_host_ms` / `to_viewer_ms`),
+`bytes_per_second` (0 lifts the cap), `queue_bytes` (the send buffer before a write waits, default 64 KB, about
+the bandwidth-delay product, so the app's own queues hold the backlog), `drop_every_s` / `drop_for_s` (scheduled
+drops), `drop_cuts` (a drop also closes the live connection, so the link redials; default true), `drop_now_s` (one
+drop now), `reset` and `reset_stats`. It answers the settings, whether a drop is on, the drops and connections cut,
+and per direction the bytes delivered, queued now and at most, and the writes that waited for room. Bytes leave
+in 16 KB chunks at the capped rate, travel the one-way delay, and wait out a drop. `terminal_stream.stats` now
+also counts each pane's `replay_requests`, and `terminal_input.stats` the key batches a mirror dropped because
+it was not attached (`dropped_while_detached`).
+
+At 300 ms and 300 KB/s: D1 echo under a hidden flood (p95 ≤ 1.5 s, every key exactly once), D2 no redial
+under 60 s of flood, D4 typing during a re-attach arrives exactly once, D3 a 2 s cut drop recovers (no
+unplanned redial, at most one replay per pane besides confirmations, an echo within 8 s, no pane left
+detached), D5 the main thread stays under 250 ms during the reconnect. The loopback is one ordered stream per
+direction, so QUIC stream priority (the field's probe starvation) is covered by
+`SupermuxIrxPriorityStarvationTests` in CmuxIrxTransport, which puts a shaped UDP relay
+(`SupermuxShapedUDPLink`) between two real Iroh endpoints.
+
+Red on the test commit: D1 echo p50 4.5 s, p95 10.8 s (input reaches the host in ~160 ms; the echo waits
+behind the flood's backlog in the host's per-connection event queue); D4 5 of 10 keys dropped; D3 the ECHO
+mirror first echoed 20 s after the drop, each visible pane asked three times. D2 and D5 are green in the
+loopback (see the suite's docstring).
+
+```bash
+CMUX_E2E_SUITES="loopback_degraded_link_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
+swift test --package-path Packages/Shared/CmuxIrxTransport --filter SupermuxIrxPriorityStarvationTests
+```
+
 ## Terminal size policy E2E
 
 `tests/supermux/loopback_terminal_sizing_policy_e2e.py` (touchpoints #665–#670) checks that a

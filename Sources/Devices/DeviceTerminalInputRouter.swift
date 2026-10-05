@@ -79,7 +79,12 @@ final class DeviceTerminalInputRouter: @unchecked Sendable {
     func enqueue(_ input: TerminalManualInput) {
         guard let item = SupermuxDeviceTerminalInput.batchItem(for: input) else { return }
         queue.async { [self] in
-            guard !invalidated, enabled else { return }
+            guard !invalidated, enabled else {
+                #if DEBUG
+                if !invalidated { SupermuxTerminalInputDebug.inputDroppedWhileDetached() }
+                #endif
+                return
+            }
             guard pending.append(item) else {
                 onFailure(InputError.queueFull)
                 return

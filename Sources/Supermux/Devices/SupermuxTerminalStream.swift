@@ -220,8 +220,17 @@ final class SupermuxTerminalStream {
         if attaching { bytesDuringAttach = true }
     }
 
+    #if DEBUG
+    /// Replay requests sent (full or resume), for `terminal_stream.stats`:
+    /// more than the replies applied means some were asked again or lost.
+    private(set) var replayRequests = 0
+    #endif
+
     /// A replay request leaves now.
     func replayRequested() {
+        #if DEBUG
+        replayRequests += 1
+        #endif
         bytesDuringAttach = false
         let window = background ? Self.backgroundOutputRaceWindow : Self.outputRaceWindow
         requestRacedOutput = lastBytesAt.map { ContinuousClock.now - $0 < window } ?? false
@@ -657,6 +666,7 @@ extension SupermuxTerminalStreamWatch {
                 "gaps": stream?.gaps ?? 0,
                 "grid_resyncs": stream?.gridResyncs ?? 0,
                 "replay_confirmations": stream?.confirmations ?? 0,
+                "replay_requests": stream?.replayRequests ?? 0,
             ]
         }
         let background = acked?.connection == connection ? acked?.watched.background : nil

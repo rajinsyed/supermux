@@ -3527,9 +3527,11 @@
 		50BE000C0000000000000002 /* SupermuxDeviceLayoutChangeObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000C0000000000000001 /* SupermuxDeviceLayoutChangeObserver.swift */; };
 		50BE00050000000000000018 /* SupermuxDeviceLayoutSurfaceFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00050000000000000017 /* SupermuxDeviceLayoutSurfaceFilter.swift */; };
 		50BE0004000000000000000E /* SupermuxDeviceLinkEvents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE0004000000000000000D /* SupermuxDeviceLinkEvents.swift */; };
+		AA07364302ED5D4A842C5C41 /* SupermuxDeviceLinkImpairmentSocketCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 723619E0CF7AACB728508F65 /* SupermuxDeviceLinkImpairmentSocketCommands.swift */; };
 		50BE0008000000000000000C /* SupermuxDeviceLoopbackHarness.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE0008000000000000000B /* SupermuxDeviceLoopbackHarness.swift */; };
 		50BE00080000000000000008 /* SupermuxDeviceLoopbackHostAcceptor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00080000000000000007 /* SupermuxDeviceLoopbackHostAcceptor.swift */; };
 		50BE0008000000000000000A /* SupermuxDeviceLoopbackIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00080000000000000009 /* SupermuxDeviceLoopbackIdentity.swift */; };
+		9658963258E4B954CCAA8151 /* SupermuxDeviceLoopbackImpairment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E3BADEBF7FEE6341A720521 /* SupermuxDeviceLoopbackImpairment.swift */; };
 		50BE00080000000000000002 /* SupermuxDeviceLoopbackPipe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00080000000000000001 /* SupermuxDeviceLoopbackPipe.swift */; };
 		50BE00080000000000000004 /* SupermuxDeviceLoopbackTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00080000000000000003 /* SupermuxDeviceLoopbackTransport.swift */; };
 		50BE00080000000000000006 /* SupermuxDeviceLoopbackTransportFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE00080000000000000005 /* SupermuxDeviceLoopbackTransportFactory.swift */; };
@@ -8158,9 +8160,11 @@
 		50BE000C0000000000000001 /* SupermuxDeviceLayoutChangeObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceLayoutChangeObserver.swift; sourceTree = "<group>"; };
 		50BE00050000000000000017 /* SupermuxDeviceLayoutSurfaceFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceLayoutSurfaceFilter.swift; sourceTree = "<group>"; };
 		50BE0004000000000000000D /* SupermuxDeviceLinkEvents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceLinkEvents.swift; sourceTree = "<group>"; };
+		723619E0CF7AACB728508F65 /* SupermuxDeviceLinkImpairmentSocketCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceLinkImpairmentSocketCommands.swift; sourceTree = "<group>"; };
 		50BE0008000000000000000B /* SupermuxDeviceLoopbackHarness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceLoopbackHarness.swift; sourceTree = "<group>"; };
 		50BE00080000000000000007 /* SupermuxDeviceLoopbackHostAcceptor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceLoopbackHostAcceptor.swift; sourceTree = "<group>"; };
 		50BE00080000000000000009 /* SupermuxDeviceLoopbackIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceLoopbackIdentity.swift; sourceTree = "<group>"; };
+		2E3BADEBF7FEE6341A720521 /* SupermuxDeviceLoopbackImpairment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceLoopbackImpairment.swift; sourceTree = "<group>"; };
 		50BE00080000000000000001 /* SupermuxDeviceLoopbackPipe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceLoopbackPipe.swift; sourceTree = "<group>"; };
 		50BE00080000000000000003 /* SupermuxDeviceLoopbackTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceLoopbackTransport.swift; sourceTree = "<group>"; };
 		50BE00080000000000000005 /* SupermuxDeviceLoopbackTransportFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Devices/SupermuxDeviceLoopbackTransportFactory.swift; sourceTree = "<group>"; };
@@ -9894,6 +9898,8 @@
 				50BE0005000000000000001D /* SupermuxDevicesSocketPayloads+MirrorStatus.swift */,
 				47BDB4A9CEAC687DCDAF901D /* SupermuxTerminalSizingRecoveryDrivers.swift */,
 				82109E75F263564CA246A669 /* SupermuxTerminalSizingConnections.swift */,
+				723619E0CF7AACB728508F65 /* SupermuxDeviceLinkImpairmentSocketCommands.swift */,
+				2E3BADEBF7FEE6341A720521 /* SupermuxDeviceLoopbackImpairment.swift */,
 			);
 			name = Supermux;
 			path = Supermux;
@@ -16908,9 +16914,11 @@
 				50BE000C0000000000000002 /* SupermuxDeviceLayoutChangeObserver.swift in Sources */,
 				50BE00050000000000000018 /* SupermuxDeviceLayoutSurfaceFilter.swift in Sources */,
 				50BE0004000000000000000E /* SupermuxDeviceLinkEvents.swift in Sources */,
+				AA07364302ED5D4A842C5C41 /* SupermuxDeviceLinkImpairmentSocketCommands.swift in Sources */,
 				50BE0008000000000000000C /* SupermuxDeviceLoopbackHarness.swift in Sources */,
 				50BE00080000000000000008 /* SupermuxDeviceLoopbackHostAcceptor.swift in Sources */,
 				50BE0008000000000000000A /* SupermuxDeviceLoopbackIdentity.swift in Sources */,
+				9658963258E4B954CCAA8151 /* SupermuxDeviceLoopbackImpairment.swift in Sources */,
 				50BE00080000000000000002 /* SupermuxDeviceLoopbackPipe.swift in Sources */,
 				50BE00080000000000000004 /* SupermuxDeviceLoopbackTransport.swift in Sources */,
 				50BE00080000000000000006 /* SupermuxDeviceLoopbackTransportFactory.swift in Sources */,
