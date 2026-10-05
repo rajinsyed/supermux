@@ -234,8 +234,11 @@ extension TerminalController {
         guard SupermuxTerminalSizingAuto.shared.isMacPaneActivity else { return }
         // SUPERMUX:end sizing-auto-local-input
         let previous = host.state
-        guard host.noteActivity(host.macParticipantID) else { return }
+        // SUPERMUX:begin sizing-keep-activity (store the activity even when it decides nothing: the Mac pane not counting now is the newest once it counts again; upstream: `guard host.noteActivity(host.macParticipantID) else { return }` before the write-back)
+        let changed = host.noteActivity(host.macParticipantID)
         localSizingHostsBySurfaceID[surfaceID] = host
+        guard changed else { return }
+        // SUPERMUX:end sizing-keep-activity
         applyLocalSizing(surfaceID: surfaceID, previous: previous, reason: "mac.activity")
     }
 
@@ -246,8 +249,11 @@ extension TerminalController {
         }
         guard var host = localSizingHostsBySurfaceID[surfaceID] else { return }
         let previous = host.state
-        guard host.noteActivity(LocalTerminalSizingHost.phoneParticipantID(clientID: clientID)) else { return }
+        // SUPERMUX:begin sizing-keep-activity (store the phone's activity even when it decides nothing; upstream: `guard host.noteActivity(...) else { return }` before the write-back)
+        let changed = host.noteActivity(LocalTerminalSizingHost.phoneParticipantID(clientID: clientID))
         localSizingHostsBySurfaceID[surfaceID] = host
+        guard changed else { return }
+        // SUPERMUX:end sizing-keep-activity
         applyLocalSizing(surfaceID: surfaceID, previous: previous, reason: "mobile.activity")
     }
 
