@@ -94,7 +94,8 @@ struct SupermuxPeerSleepTests {
     @Test("7. the sleeper dialing in clears the notice and dials it back at once")
     func dialInWakesTheLink() {
         var sleep = announced()
-        #expect(sleep.dialedIn(at: at(900)))
+        let dialsBack1 = sleep.dialedIn(at: at(900))
+        #expect(dialsBack1)
         #expect(!sleep.isAsleep)
         #expect(sleep.wait(after: .seconds(1)) == .seconds(1))
     }
@@ -102,11 +103,15 @@ struct SupermuxPeerSleepTests {
     @Test("8. dial-ins dial back at most once per spacing")
     func dialInsAreSpaced() {
         var sleep = announced()
-        #expect(sleep.dialedIn(at: at(100)))
-        #expect(!sleep.dialedIn(at: at(100 + Sleep.nudgeSpacing - 1)))
-        #expect(sleep.dialedIn(at: at(100 + Sleep.nudgeSpacing)))
+        let dialsBack2 = sleep.dialedIn(at: at(100))
+        #expect(dialsBack2)
+        let dialsBack3 = sleep.dialedIn(at: at(100 + Sleep.nudgeSpacing - 1))
+        #expect(!dialsBack3)
+        let dialsBack4 = sleep.dialedIn(at: at(100 + Sleep.nudgeSpacing))
+        #expect(dialsBack4)
         var quiet = Sleep()
-        #expect(quiet.dialedIn(at: at(5)), "a dial-in without a notice may still dial a waiting link back")
+        let dialsBack5 = quiet.dialedIn(at: at(5))
+        #expect(dialsBack5, "a dial-in without a notice may still dial a waiting link back")
     }
 
     @Test("9. a repeated notice counts from the newest; a dial-in much later is allowed")
@@ -121,8 +126,10 @@ struct SupermuxPeerSleepTests {
         sleep.disconnected(at: at(400 + Sleep.provenAwakeLifetime))
         #expect(!sleep.isAsleep)
         var later = announced()
-        #expect(later.dialedIn(at: at(10)))
+        let dialsBack6 = later.dialedIn(at: at(10))
+        #expect(dialsBack6)
         later.announced(at: at(20))
-        #expect(later.dialedIn(at: at(20 + 3_600)))
+        let dialsBack7 = later.dialedIn(at: at(20 + 3_600))
+        #expect(dialsBack7)
     }
 }

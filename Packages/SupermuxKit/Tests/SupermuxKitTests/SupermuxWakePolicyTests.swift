@@ -56,15 +56,18 @@ struct SupermuxWakePolicyTests {
     @Test("2. a sleep of a minute or more rebuilds the main endpoint")
     func longSleepRebuildsTheEndpoint() {
         var policy = asleep()
-        #expect(policy.woke(.wake, at: at(60))?.rebuildsMainEndpoint == true)
+        let recovery1 = policy.woke(.wake, at: at(60))
+        #expect(recovery1?.rebuildsMainEndpoint == true)
         var night = asleep()
-        #expect(night.woke(.wake, at: at(8 * 3600)) == .init(reason: .wake, sleptSeconds: 8 * 3600, rebuildsMainEndpoint: true))
+        let recovery2 = night.woke(.wake, at: at(8 * 3600))
+        #expect(recovery2 == .init(reason: .wake, sleptSeconds: 8 * 3600, rebuildsMainEndpoint: true))
     }
 
     @Test("3. the sleep is the wall-clock gap; a clock set backwards is an unknown sleep, never a rebuild")
     func wallClockMeasuresTheSleep() {
         var policy = asleep(at: 100)
-        #expect(policy.woke(.wake, at: at(100 + 3_600))?.sleptSeconds == 3_600)
+        let recovery3 = policy.woke(.wake, at: at(100 + 3_600))
+        #expect(recovery3?.sleptSeconds == 3_600)
         var skewed = asleep(at: 100)
         let recovery = skewed.woke(.wake, at: at(40))
         #expect(recovery == .init(reason: .wake, sleptSeconds: nil, rebuildsMainEndpoint: false))
@@ -73,20 +76,28 @@ struct SupermuxWakePolicyTests {
     @Test("4. didWake and the screens waking after it are one recovery")
     func oneWakeRecoversOnce() {
         var policy = asleep()
-        #expect(policy.woke(.wake, at: at(300)) != nil)
-        #expect(policy.woke(.screensWake, at: at(301)) == nil)
-        #expect(policy.woke(.wake, at: at(305)) == nil, "a repeated didWake of the same wake")
+        let recovery4 = policy.woke(.wake, at: at(300))
+        #expect(recovery4 != nil)
+        let recovery5 = policy.woke(.screensWake, at: at(301))
+        #expect(recovery5 == nil)
+        let recovery6 = policy.woke(.wake, at: at(305))
+        #expect(recovery6 == nil, "a repeated didWake of the same wake")
         var screensFirst = asleep()
-        #expect(screensFirst.woke(.screensWake, at: at(300))?.rebuildsMainEndpoint == true)
-        #expect(screensFirst.woke(.wake, at: at(300.5)) == nil)
+        let recovery7 = screensFirst.woke(.screensWake, at: at(300))
+        #expect(recovery7?.rebuildsMainEndpoint == true)
+        let recovery8 = screensFirst.woke(.wake, at: at(300.5))
+        #expect(recovery8 == nil)
     }
 
     @Test("5. a didWake with no willSleep seen recovers without a rebuild")
     func unknownSleepNeverRebuilds() {
         var policy = Policy()
-        #expect(policy.woke(.wake, at: at(10)) == .init(reason: .wake, sleptSeconds: nil, rebuildsMainEndpoint: false))
-        #expect(policy.woke(.wake, at: at(11)) == nil, "the same wake again")
-        #expect(policy.woke(.wake, at: at(600)) != nil, "a later wake recovers again")
+        let recovery9 = policy.woke(.wake, at: at(10))
+        #expect(recovery9 == .init(reason: .wake, sleptSeconds: nil, rebuildsMainEndpoint: false))
+        let recovery10 = policy.woke(.wake, at: at(11))
+        #expect(recovery10 == nil, "the same wake again")
+        let recovery11 = policy.woke(.wake, at: at(600))
+        #expect(recovery11 != nil, "a later wake recovers again")
     }
 
     @Test("6. between willSleep and a full wake the Mac is dark, however long the process runs")
@@ -96,7 +107,8 @@ struct SupermuxWakePolicyTests {
         policy.willSleep(at: at(0))
         #expect(policy.isDark)
         // DarkWakes post nothing; time alone never ends the dark state.
-        #expect(policy.networkChanged(at: at(40)) == nil)
+        let recovery12 = policy.networkChanged(at: at(40))
+        #expect(recovery12 == nil)
         #expect(policy.isDark)
         _ = policy.woke(.wake, at: at(3_000))
         #expect(!policy.isDark)
@@ -106,30 +118,38 @@ struct SupermuxWakePolicyTests {
     func reSleepKeepsTheSleepClock() {
         var policy = asleep(at: 0)
         policy.willSleep(at: at(7_000))
-        #expect(policy.woke(.wake, at: at(7_030))?.sleptSeconds == 7_030)
+        let recovery13 = policy.woke(.wake, at: at(7_030))
+        #expect(recovery13?.sleptSeconds == 7_030)
     }
 
     @Test("8. a network change while dark does nothing; the full wake recovers")
     func networkChangeWhileDarkIsIgnored() {
         var policy = asleep()
-        #expect(policy.networkChanged(at: at(1)) == nil)
-        #expect(policy.networkChanged(at: at(500)) == nil)
-        #expect(policy.woke(.wake, at: at(900))?.rebuildsMainEndpoint == true)
+        let recovery14 = policy.networkChanged(at: at(1))
+        #expect(recovery14 == nil)
+        let recovery15 = policy.networkChanged(at: at(500))
+        #expect(recovery15 == nil)
+        let recovery16 = policy.woke(.wake, at: at(900))
+        #expect(recovery16?.rebuildsMainEndpoint == true)
     }
 
     @Test("9. the screens waking without a system sleep is not a recovery")
     func displayWakeAloneIsNotARecovery() {
         var policy = Policy()
-        #expect(policy.woke(.screensWake, at: at(10)) == nil)
-        #expect(policy.woke(.displayAwake, at: at(20)) == nil)
+        let recovery17 = policy.woke(.screensWake, at: at(10))
+        #expect(recovery17 == nil)
+        let recovery18 = policy.woke(.displayAwake, at: at(20))
+        #expect(recovery18 == nil)
         #expect(!policy.isDark)
     }
 
     @Test("10. a network change while awake recovers without a rebuild")
     func networkChangeWhileAwakeRecovers() {
         var policy = Policy()
-        #expect(policy.networkChanged(at: at(10)) == .init(reason: .networkChange, sleptSeconds: nil, rebuildsMainEndpoint: false))
-        #expect(policy.networkChanged(at: at(11)) != nil, "a later change is a new path; the caller debounces bursts")
+        let recovery19 = policy.networkChanged(at: at(10))
+        #expect(recovery19 == .init(reason: .networkChange, sleptSeconds: nil, rebuildsMainEndpoint: false))
+        let recovery20 = policy.networkChanged(at: at(11))
+        #expect(recovery20 != nil, "a later change is a new path; the caller debounces bursts")
     }
 
     @Test("11. an awake display ends a dark state whose wake notification was lost")
