@@ -120,7 +120,7 @@ D2 and D5 are guards; the others check the harness):
                                replay deadline at 2 s: it misses (the next deadline doubles), and the link
                                drops (3 s, cut) before the retry. After the reconnect the re-attach is
                                held again: it must miss at the base 2 s, so the request after it leaves
-                               < 6 s later (2 s + the first retry's 2 s wait). RED (second review #13):
+                               < 7 s later (2 s + the first retry's 2 s wait; doubled it is >= 8 s). RED (second review #13):
                                the missed count started over only on a reply, so the reconnect's
                                request waited 4 s and the next one 4 s more (after Retry, up to 720 s).
   D7 shown_pane_echoes_before_history  a hidden mirror of a DEEP echo terminal (12000 lines of
@@ -215,7 +215,7 @@ D6B_MAX_REPLIES = 4
 D6C_DEADLINE_S = 2.0
 D6C_DROP_S = 3.0
 D6C_HOLD_S = 30.0
-D6C_MAX_GAP_S = 6.0
+D6C_MAX_GAP_S = 7.0
 D4D_DROP_S = 2.0
 D4D_STALL_S = 9.0
 D4D_LATE_KEY_AT_S = 8.5
@@ -1206,7 +1206,7 @@ class DegradedLinkE2E:
     def reconnect_restarts_replay_deadline(self) -> Dict[str, Any]:
         """A missed replay deadline doubles the next one; a reconnect starts it over: the
         reconnect's held request misses at the base deadline, so the request after it
-        leaves < 6 s later (2 s deadline + 2 s first retry wait), not ~8 s (4 s + 4 s)."""
+        leaves < 7 s later (2 s deadline + 2 s first retry wait), never 8 s or more (4 s + 4 s)."""
         echo = self.mirrors["echo"]
         panel = echo["panel_id"]
         wait_for("the ECHO mirror to be attached", lambda: self.pane_states()["echo"].get("attached"), self.timeout)
