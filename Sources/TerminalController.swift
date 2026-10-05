@@ -15957,6 +15957,9 @@ class TerminalController {
                 reportedGrid = clearMobileViewportReport(
                     surfaceID: terminalTarget.surfaceID,
                     clientID: clientID, generation: v2Int(params, "viewport_generation").flatMap { $0 >= 0 ? UInt64($0) : nil }, requireGeneration: true,
+                    // SUPERMUX:begin sizing-soft-leave (a phone's scene-phase leave, `transient: true`, is soft: a glance and return resizes nothing)
+                    immediate: v2Bool(params, "transient") != true,
+                    // SUPERMUX:end sizing-soft-leave
                     reason: "mobile.terminal.viewport.clear"
                 )
             } else {
@@ -16634,11 +16637,14 @@ class TerminalController {
     /// macOS border reflects only the devices still attached. Every caller is
     /// an explicit leave, so the new size applies without the governor's
     /// stability window.
+    // SUPERMUX:begin sizing-soft-leave (`immediate`: false for a phone's scene-phase leave, which waits the governor's uncap window; upstream: no parameter, always immediate)
     func clearMobileViewportReport(
         surfaceID: UUID,
         clientID: String, generation: UInt64? = nil, requireGeneration: Bool = false,
+        immediate: Bool = true,
         reason: String
     ) -> (columns: Int, rows: Int)? {
+    // SUPERMUX:end sizing-soft-leave
         if requireGeneration, let generation { if let existingGeneration = mobileViewportReportsBySurfaceID[surfaceID]?[clientID]?.generation ?? mobileViewportGenerationsBySurfaceID[surfaceID]?[clientID], existingGeneration > generation { return nil }; mobileViewportGenerationsBySurfaceID[surfaceID, default: [:]][clientID] = generation }
         else if requireGeneration, (mobileViewportReportsBySurfaceID[surfaceID]?[clientID]?.generation ?? mobileViewportGenerationsBySurfaceID[surfaceID]?[clientID]) != nil { return nil }
         else if var generations = mobileViewportGenerationsBySurfaceID[surfaceID] { generations.removeValue(forKey: clientID); mobileViewportGenerationsBySurfaceID[surfaceID] = generations.isEmpty ? nil : generations }
@@ -16648,12 +16654,16 @@ class TerminalController {
             mobileViewportReportsBySurfaceID[surfaceID] = nil
             mobileViewportReportCleanupTimersBySurfaceID[surfaceID]?.cancel()
             mobileViewportReportCleanupTimersBySurfaceID[surfaceID] = nil
-            _ = resolveSharedSizing(surfaceID: surfaceID, reports: [:], immediate: true, reason: reason)
+            // SUPERMUX:begin sizing-soft-leave (upstream: `immediate: true`)
+            _ = resolveSharedSizing(surfaceID: surfaceID, reports: [:], immediate: immediate, reason: reason)
+            // SUPERMUX:end sizing-soft-leave
             return nil
         }
         mobileViewportReportsBySurfaceID[surfaceID] = reports
         scheduleMobileViewportReportCleanup(surfaceID: surfaceID, reports: reports)
-        return resolveSharedSizing(surfaceID: surfaceID, reports: reports, immediate: true, reason: reason)
+        // SUPERMUX:begin sizing-soft-leave (upstream: `immediate: true`)
+        return resolveSharedSizing(surfaceID: surfaceID, reports: reports, immediate: immediate, reason: reason)
+        // SUPERMUX:end sizing-soft-leave
     }
 
     /// Drop every viewport report owned by the given client IDs across all
