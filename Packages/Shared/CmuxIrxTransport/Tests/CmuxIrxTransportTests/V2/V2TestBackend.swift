@@ -13,6 +13,11 @@ actor V2TestBackend {
     var socketObserved: CheckedContinuation<V2TestSocket, Never>?
     let directoryRules: [String]?
     let directoryPageRules: [[String]?]?
+    // SUPERMUX:begin v2-directory-refresh-floor
+    /// The permission TTL every socket's plain directory replies carry (upstream: 3600).
+    var supermuxDirectoryPermissionTTL = 3600
+    func supermuxSetDirectoryPermissionTTL(_ seconds: Int) { supermuxDirectoryPermissionTTL = seconds }
+    // SUPERMUX:end v2-directory-refresh-floor
 
     init(now: Int, enrolled: Bool = false, holdRegistration: Bool = false, directoryRules: [String]? = nil, directoryPageRules: [[String]?]? = nil) {
         self.now = now
@@ -31,6 +36,9 @@ actor V2TestBackend {
         handshakes.append(setup)
         authorizations.append(request.value(forHTTPHeaderField: "Authorization") ?? "")
         let socket = V2TestSocket(device: setup.device, now: now, directoryRules: directoryRules, directoryPageRules: directoryPageRules)
+        // SUPERMUX:begin v2-directory-refresh-floor
+        await socket.supermuxSetDirectoryPermissionTTL(supermuxDirectoryPermissionTTL)
+        // SUPERMUX:end v2-directory-refresh-floor
         if holdRegistration { await socket.holdRegistration() }
         sockets.append(socket)
         socketObserved?.resume(returning: socket)
