@@ -351,7 +351,7 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   every terminal starts in Auto (upstream's `latest`, labelled Auto on the Mac and the phone): the
   device you are viewing it from sets its grid. A phone opening a terminal, or returning to it, gets
   a phone-sized grid even while the Mac window is on screen; typing, a paste, a focus click or
-  switching to the app with the terminal focused gives it back to the Mac; another Mac's mirror takes
+  switching to the app with the terminal (or its TextBox) focused gives it back to the Mac; another Mac's mirror takes
   it when it attaches, is shown again or types. Upstream's rule that a phone defers to a Mac pane on
   screen is lifted in Auto by giving each phone without an override of its own `counts_override:
   true` (cleared when the terminal leaves Auto; "Counts toward size" off on the phone stays off). A

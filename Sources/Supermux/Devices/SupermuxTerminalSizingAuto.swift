@@ -31,9 +31,10 @@ import Foundation
 ///   to every grid change, which would hand the grid back and forth.
 ///
 /// On the Mac, typing, a paste and a focus click were already activity;
-/// this class adds the app becoming active with a terminal focused. A pane
-/// merely coming on screen is not: selecting a workspace on the phone
-/// selects it on the Mac too, and would take the grid from the phone.
+/// this class adds the app becoming active with a terminal (or its TextBox)
+/// focused. A pane merely coming on screen is not: selecting a workspace on
+/// the phone selects it on the Mac too, and would take the grid from the
+/// phone.
 ///
 /// Only this Mac's user is the Mac pane's activity (``isMacPaneActivity``).
 /// Every terminal input path runs the pane's explicit-input hook: a phone's
@@ -207,11 +208,21 @@ final class SupermuxTerminalSizingAuto {
     /// The user switched to this app: the terminal focused in its key window
     /// is where they are now.
     private func focusedTerminalActivated() {
-        guard let view = NSApp.keyWindow?.firstResponder as? GhosttyNSView,
-              let surfaceID = view.terminalSurface?.id else { return }
+        guard let window = NSApp.keyWindow, let surfaceID = Self.focusedTerminalID(in: window) else { return }
         #if DEBUG
         macActivations += 1
         #endif
         noteMacAction(surfaceID: surfaceID)
+    }
+
+    /// The terminal that holds the window's focus: its surface view or a view
+    /// hosted in it (the find field), or its TextBox, which is laid out
+    /// beside the hosted surface view, so only its panel knows it.
+    private static func focusedTerminalID(in window: NSWindow) -> UUID? {
+        guard let responder = window.firstResponder else { return nil }
+        if let id = responder.cmuxTerminalFocusOwningGhosttyView()?.terminalSurface?.id { return id }
+        guard let panel = AppDelegate.shared?.contextForMainWindow(window)?.tabManager.selectedTerminalPanel,
+              panel.ownedFocusIntent(for: responder, in: window) != nil else { return nil }
+        return panel.id
     }
 }
