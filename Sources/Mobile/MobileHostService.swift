@@ -977,6 +977,11 @@ final class MobileHostService {
                 return true
             },
             handleRequest: { request in
+                // SUPERMUX:begin route-candidates-off-main (this Mac's direct addresses, answered before the main-actor dispatch and the peer handler's main hop)
+                if let result = await SupermuxRouteCandidatesHost.answer(request, authorization: authorization) {
+                    return result
+                }
+                // SUPERMUX:end route-candidates-off-main
                 if let result = await peerRequestHandler?(request) { return result }
                 if request.method == "mobile.host.status" {
                     return await Self.connectionStatusResult(

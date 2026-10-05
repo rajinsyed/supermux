@@ -141,6 +141,10 @@ enum SupermuxMobileCapabilities {
             // size mode picked on another Mac's mirror becomes this Mac's
             // setting for all its terminals.
             SupermuxMobileCapability.terminalSizingPreferenceV1.rawValue,
+            // route.candidates is served (over Iroh only): another of the
+            // user's devices learns this Mac's LAN and Tailscale addresses and
+            // dials it directly instead of starting on a relay.
+            SupermuxMobileCapability.routeCandidatesV1.rawValue,
         ]
     }
 }

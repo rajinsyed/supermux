@@ -322,7 +322,12 @@ actor DeviceIrxClient {
             credentials = Self.relayCredentials(await context.control.snapshot().cache, at: now())
         }
         guard await context.isCurrent(), !credentials.isEmpty else { throw DeviceLinkError.notConnected }
-        let address = try context.supervisor.dialAddress(peerEndpointIDHex: endpoint, relayURL: relay, directAddresses: [])
+        // SUPERMUX:begin route-dial-candidates (the peer's direct addresses, so the dial can start on the LAN or Tailscale; upstream: `directAddresses: []`)
+        let supermuxDirect = await SupermuxRouteDialCandidates.addresses(
+            for: instance, endpointID: endpoint, allowsDirectPaths: context.allowsDirectPaths, journal: journal)
+        let address = try context.supervisor.dialAddress(
+            peerEndpointIDHex: endpoint, relayURL: relay, directAddresses: supermuxDirect)
+        // SUPERMUX:end route-dial-candidates
         let connection = try await context.supervisor.dial(address: address, credentials: credentials)
         do {
             guard await context.isCurrent() else { throw DeviceLinkError.notConnected }

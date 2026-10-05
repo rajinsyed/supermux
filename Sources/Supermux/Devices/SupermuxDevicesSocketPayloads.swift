@@ -23,6 +23,7 @@ struct SupermuxDevicesSocketPayloads {
             "has_fetched_records": device.hasFetchedRecords,
             "is_loopback": device.isLoopback,
             "capabilities": capabilities.map { Array($0).sorted() } ?? NSNull(),
+            "route": Self.route(SupermuxComposition.deviceRoutes.route(for: device)),
             "record_count": records.count,
             "records": records.map { record($0, on: device.machine) },
         ]
