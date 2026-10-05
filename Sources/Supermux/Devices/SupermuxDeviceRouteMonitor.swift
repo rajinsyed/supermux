@@ -58,7 +58,8 @@ final class SupermuxDeviceRouteMonitor {
         guard loop == nil else { return }
         loop = Task { [weak self] in
             while !Task.isCancelled {
-                await self?.sampleNow()
+                guard let monitor = self else { return }
+                await monitor.sampleNow()
                 let interval = SupermuxAppInUse.now() ? Self.activeInterval : Self.idleInterval
                 try? await Task.sleep(for: interval)
             }
