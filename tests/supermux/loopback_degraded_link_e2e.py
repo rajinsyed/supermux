@@ -68,10 +68,12 @@ D2 and D5 are guards; the others check the harness):
                                its start is dropped once it has waited the 10 s replay window, a key
                                typed 12 s in is delivered. RED (review S4): every held key went out
                                when the attach ended, however long it waited.
-  D4d keys_after_link_back_survive_late_replay  a 2 s drop (cut), and the re-attach's replay held 14 s on
-                               the host, so it lands ~16 s after the drop: a key typed during the
-                               outage is dropped (its hold ran out), a key typed 8.5 s after the drop,
-                               once the link is back, is delivered when the re-attach resumes. RED
+  D4d keys_after_link_back_survive_late_replay  a 2 s drop (cut), and the re-attach's replay held 9 s on
+                               the host, so it lands ~12.5 s after the drop: past the outage's 10 s
+                               hold, inside the host's 15 s grid grace for this Mac (so it resumes,
+                               as in D4b). A key typed during the outage is dropped (its hold ran
+                               out), a key typed 8.5 s after the drop, once the link is back, is
+                               delivered when the re-attach resumes. RED
                                (second review #2): the outage's hold ran out 10 s after the drop and
                                dropped every held key, the ones typed after the link came back too.
   D4e first_keys_after_wake  willSleep (simulated) takes the link down; the Mac stays dark 11 s (a
@@ -215,7 +217,7 @@ D6C_DROP_S = 3.0
 D6C_HOLD_S = 30.0
 D6C_MAX_GAP_S = 6.0
 D4D_DROP_S = 2.0
-D4D_STALL_S = 14.0
+D4D_STALL_S = 9.0
 D4D_LATE_KEY_AT_S = 8.5
 D4E_DARK_S = 11.0
 D7C_WINDOW_S = 60.0
@@ -1117,6 +1119,9 @@ class DegradedLinkE2E:
             raise Failure(f"the link was not back before the late key (harness problem): {summary}")
         if reattached - drop_started < REPLAY_WINDOW_S + 1:
             raise Failure(f"the re-attach ended inside the outage's hold (harness problem): {summary}")
+        if reattached - drop_started > 15.0:
+            raise Failure(f"the re-attach ended past the host's 15 s grid grace, so it could not resume "
+                          f"(harness problem): {summary}")
         if result["received"] != "r":
             raise Failure(f"expected only the key typed after the link came back: {summary}")
         return summary
