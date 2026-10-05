@@ -116,9 +116,22 @@ Steps (fix, what it proves; why it fails today):
                                       this Mac's mirror of it, from Auto and from Fit everyone: the
                                       mirror (`mobile:mac-…`) owns within 2 s. Today the mirror sends
                                       nothing (Fit everyone only switches to Auto).
+                                      from_counts_off_lift_late: the user turned the mirror's counting
+                                      off; a phone owns; Size to My Window with its counts lift held back
+                                      800 ms (`hold_counts_lift`, as the link or the other Mac's request
+                                      tasks can reorder it): the mirror owns within 2.5 s. Today the
+                                      claim (one generation higher) lands first and the late lift is
+                                      fenced off, so the mirror never counts.
   R13 mirror_activation               (F14) the phone owns the source terminal; the user switches to
                                       the app with the mirror focused (`activate`): the mirror owns
                                       within 2 s. Today a mirror has no local host, so nothing happens.
+  R19 mirror_claim_after_mac_selection
+                                      (F9 guard, mirrors) the source terminal moves to a second
+                                      window; this Mac's user selects it there (`local_select`) while
+                                      the mirror stays on screen in the first; Size to My Window on the
+                                      mirror right after: the mirror owns within 2 s and keeps it for
+                                      3 s. Today the 3 s Mac-selection rule notes the source pane after
+                                      the mirror's explicit claim, so the source pane keeps the grid.
   R11 mirror_generation_reset         (F12) runs last (it resets every host): the mirror is hidden;
                                       the link drops; this Mac's sizing hosts start over as a relaunch
                                       does (`reset_hosts`); the link comes back: the hidden mirror's
@@ -1041,12 +1054,43 @@ class SizingRecoveryE2E(SizingPolicyE2E):
             return {"decided": self.within("Size to My Window on the mirror (from Fit everyone) to give it the grid",
                                            self.source_surface, self.owned_by(MIRROR_PREFIX), 2)}
 
+        def mirror_counts_override(surface_id: str) -> Optional[bool]:
+            return (self.row(self.state(surface_id), MIRROR_PREFIX) or {}).get("counts_override")
+
+        def from_counts_off_lift_late() -> Dict[str, Any]:
+            # The user turned "Counts toward size" off on the mirror (Don't Resize from This Mac).
+            self.set_mode(self.source_surface, "latest")
+            self.within("Auto", self.source_surface, self.expect_mode("latest"), 3)
+            mirror_id = self.row(self.state(self.source_surface), MIRROR_PREFIX)["id"]
+            self.sock.call("terminal.size_counts.set",
+                           {"surface_id": self.mirror_surface, "participant_id": mirror_id, "counts": False})
+            for surface, where in ((self.source_surface, "the source terminal"),
+                                   (self.mirror_surface, "the mirror's size panel")):
+                wait_for(f"{where} to show the mirror's counts off",
+                         lambda surface=surface: mirror_counts_override(surface) is False, 5)
+            self.phone_takes(self.source_id, self.source_surface, late_phone)
+            # Size to My Window sends the lift and then its claim; the lift arrives late.
+            held = self.note("hold_counts_lift", self.sock.call(SIZING + "hold_counts_lift", {"ms": 800}) or {})
+            self.size_to_me(self.mirror_surface)
+            decided = self.within("Size to My Window on a mirror whose counts were off to give it the grid "
+                                  "(its counts lift landed after the claim)",
+                                  self.source_surface, self.owned_by(MIRROR_PREFIX), 2.5)
+            return {"held": held, "decided": decided,
+                    "mirror_counts_override": mirror_counts_override(self.source_surface)}
+
+        late_phone = self.client("r12-late")
         try:
             self.check("from_auto", from_auto)
             self.check("from_fit_everyone", from_fit_everyone)
+            self.check("from_counts_off_lift_late", from_counts_off_lift_late)
         finally:
             self.leave(self.source_id, self.source_surface, phone)
+            self.leave(self.source_id, self.source_surface, late_phone)
             self.set_mode(self.source_surface, "latest")
+            if mirror_counts_override(self.source_surface) is False:
+                mirror_id = self.row(self.state(self.source_surface), MIRROR_PREFIX)["id"]
+                self.sock.call("terminal.size_counts.set",
+                               {"surface_id": self.mirror_surface, "participant_id": mirror_id, "counts": None})
         return {}
 
     def r13_mirror_activation(self) -> Dict[str, Any]:
@@ -1061,6 +1105,36 @@ class SizingRecoveryE2E(SizingPolicyE2E):
         finally:
             self.leave(self.source_id, self.source_surface, phone)
         return {"activated": activated, "decided": decided}
+
+    def r19_mirror_claim_after_mac_selection(self) -> Dict[str, Any]:
+        """This Mac's user selects the source terminal in a second window while its mirror stays
+        on screen in the first; Size to My Window on the mirror within 3 s still takes the grid."""
+        self.ensure_mirror()
+        main = (self.sock.call("window.current", {}) or {}).get("window_id")
+        second = (self.sock.call("window.create", {}) or {}).get("window_id")
+        if not main or not second:
+            raise Failure(f"harness: no second window (current {main}, created {second})")
+        try:
+            self.sock.call("workspace.move_to_window", {"workspace_id": self.source_id, "window_id": second})
+            selected = self.note("local_select", self.sock.call(
+                SIZING + "local_select", {"workspace_id": self.source_id, "surface_id": self.source_surface}) or {})
+            chosen_at = time.monotonic()
+            self.size_to_me(self.mirror_surface)
+            claimed_after = round(time.monotonic() - chosen_at, 2)
+            self.snap("Size to My Window on the mirror after this Mac's user selected the source", self.source_surface)
+            shown = self.within("the mirror (first window) and the source pane (second window) to count",
+                                self.source_surface,
+                                lambda state: (self.mirror_counts(True)(state), self.mac_counts(True)(state)), 3)
+            decided = self.within("the mirror's Size to My Window to win over this Mac's selection 3 s window",
+                                  self.source_surface, self.owned_by(MIRROR_PREFIX), 2)
+            held = self.keeps("the mirror keeps the grid past this Mac's selection window",
+                              self.source_surface, self.owned_by(MIRROR_PREFIX), 3.0)
+            return {"selected": selected, "claimed_after_s": claimed_after, "shown": shown,
+                    "decided": decided, **held}
+        finally:
+            self.sock.call("workspace.move_to_window", {"workspace_id": self.source_id, "window_id": main})
+            self.sock.call("window.close", {"window_id": second, "force": True})
+            self.select(self.mirror_id)
 
     def r11_mirror_generation_reset(self) -> Dict[str, Any]:
         self.ensure_mirror()
@@ -1117,6 +1191,7 @@ class SizingRecoveryE2E(SizingPolicyE2E):
             ("R18_composite_return", self.r18_composite_return),
             ("R12_mirror_size_to_me", self.r12_mirror_size_to_me),
             ("R13_mirror_activation", self.r13_mirror_activation),
+            ("R19_mirror_claim_after_mac_selection", self.r19_mirror_claim_after_mac_selection),
             # Last: it resets every sizing host of this app.
             ("R11_mirror_generation_reset", self.r11_mirror_generation_reset),
         ]

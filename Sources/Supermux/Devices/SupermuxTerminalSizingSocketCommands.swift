@@ -37,7 +37,7 @@ import Foundation
 ///
 /// The sizing recovery drivers (`governor`, `reset_hosts`, `local_scroll`,
 /// `activate`, `local_select`, `connection_request`, `connection_close`,
-/// `lane_input`) live in ``SupermuxTerminalSizingRecoveryDrivers``.
+/// `lane_input`, `hold_counts_lift`) live in ``SupermuxTerminalSizingRecoveryDrivers``.
 @MainActor
 enum SupermuxTerminalSizingSocketCommands {
     static let methodPrefix = "terminal_sizing."

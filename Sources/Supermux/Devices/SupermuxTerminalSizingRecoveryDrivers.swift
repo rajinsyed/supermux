@@ -49,11 +49,16 @@ import Foundation
 ///   input frame through the lane's own delivery function. The lane's
 ///   control connection is `connection_id`, which carries `client_id`.
 ///   `delivered` is false when the lane refused the frame and closed.
+/// - `hold_counts_lift {ms}` — the next counts lift a device mirror on this
+///   Mac sends (`counts_override: null`, Size to My Window's first request
+///   when the user had turned counting off) leaves `ms` later, as one the
+///   link or the other Mac's request tasks delivered late: it lands after
+///   the claim that follows it. One-shot.
 @MainActor
 enum SupermuxTerminalSizingRecoveryDrivers {
     static let methods: Set<String> = [
         "governor", "reset_hosts", "local_scroll", "activate", "local_select",
-        "connection_request", "connection_close", "lane_input",
+        "connection_request", "connection_close", "lane_input", "hold_counts_lift",
     ]
 
     static func handle(_ name: String, params: [String: Any]) async throws -> [String: Any] {
@@ -66,6 +71,7 @@ enum SupermuxTerminalSizingRecoveryDrivers {
         case "connection_request": return try await connectionRequest(params)
         case "connection_close": return try connectionClose(params)
         case "lane_input": return try await laneInput(params)
+        case "hold_counts_lift": return try holdCountsLift(params)
         default: throw invalid("unknown terminal_sizing method \(name)")
         }
     }
@@ -286,6 +292,25 @@ enum SupermuxTerminalSizingRecoveryDrivers {
             "surface_id": target.surfaceID.uuidString, "client_id": clientID,
             "connection_id": connectionID.uuidString, "delivered": delivered,
         ]
+    }
+
+    // MARK: - A late counts lift
+
+    /// How long the next device mirror counts lift waits before it is sent.
+    private static var countsLiftHold: UInt64?
+
+    private static func holdCountsLift(_ params: [String: Any]) throws -> [String: Any] {
+        guard let ms = params["ms"] as? Int, ms > 0, ms <= 5000 else {
+            throw invalid("ms must be 1...5000")
+        }
+        countsLiftHold = UInt64(ms) * 1_000_000
+        return ["held_ms": ms]
+    }
+
+    /// The hold for the counts lift being sent now, once.
+    static func takeCountsLiftHold() -> UInt64? {
+        defer { countsLiftHold = nil }
+        return countsLiftHold
     }
 
     // MARK: - Helpers

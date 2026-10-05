@@ -984,6 +984,19 @@ extension DeviceTerminalMirrorSession: TerminalSharingSurfaceControlling {
               let report = viewer.countsParams(value) else { return false }
         // SUPERMUX:begin device-mirror-hidden-counts
         supermuxUserChoseCounts()
+        #if DEBUG
+        // The recovery E2E delivers a lift late (`terminal_sizing.hold_counts_lift`).
+        if value == nil, let hold = SupermuxTerminalSizingRecoveryDrivers.takeCountsLiftHold() {
+            var params = report
+            params.merge(surfaceParams) { current, _ in current }
+            let requestData = requestData
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: hold)
+                _ = try? await requestData("mobile.terminal.viewport", params)
+            }
+            return true
+        }
+        #endif
         // SUPERMUX:end device-mirror-hidden-counts
         sendSizing("mobile.terminal.viewport", report)
         return true
