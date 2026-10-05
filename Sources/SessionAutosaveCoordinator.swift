@@ -29,6 +29,16 @@ final class SessionAutosaveCoordinator {
     private let onTimerTick: @MainActor () -> Void
 
     private static let typingQuietPeriod: TimeInterval = 0.65
+    // SUPERMUX:begin autosave-resume-indexes-reuse (a tick reuses a recent process census)
+    /// How old a process census an autosave tick may reuse while its
+    /// terminals are the same as the last tick's. The census reads every
+    /// process on the Mac with its arguments and environment, which on a Mac
+    /// running many agents cost more than everything else an idle cmux does.
+    /// Hook stores are still read fresh every tick, so a new agent session is
+    /// indexed at once; only process-only evidence can lag this long. A
+    /// terminal added or removed keeps upstream's 5 s bound.
+    private static let unchangedTerminalsCensusMaximumAge: TimeInterval = 30
+    // SUPERMUX:end autosave-resume-indexes-reuse
 
     private var timer: DispatchSourceTimer?
     private struct ActiveAttempt {
@@ -39,6 +49,9 @@ final class SessionAutosaveCoordinator {
     private var deferredRetryTask: Task<Void, Never>?
     private var activeAttempt: ActiveAttempt?
     private var processDetectedSaveGeneration: UInt64 = 0
+    // SUPERMUX:begin autosave-resume-indexes-reuse
+    private var lastTickTTYDeviceBindings: [SurfaceResumeBindingIndex.PanelKey: Int64]?
+    // SUPERMUX:end autosave-resume-indexes-reuse
     private var lastFingerprint: Int?
     private var lastPersistedAt = Date.distantPast
     private(set) var lastTypingActivityAt: TimeInterval = 0
@@ -255,9 +268,9 @@ final class SessionAutosaveCoordinator {
         let loadStart = ProcessInfo.processInfo.systemUptime
 #endif
         let ttyDeviceBindings = currentTTYDeviceBindings()
-        let resumeIndexes = await ProcessDetectedResumeIndexes.load(
-            ttyDeviceBindings: ttyDeviceBindings
-        )
+        // SUPERMUX:begin autosave-resume-indexes-reuse (upstream: `let resumeIndexes = await ProcessDetectedResumeIndexes.load(ttyDeviceBindings: ttyDeviceBindings)`)
+        let resumeIndexes = await currentResumeIndexes(for: ttyDeviceBindings)
+        // SUPERMUX:end autosave-resume-indexes-reuse
 #if DEBUG
         loadMs = (ProcessInfo.processInfo.systemUptime - loadStart) * 1000.0
         let fingerprintStart = ProcessInfo.processInfo.systemUptime
@@ -313,6 +326,24 @@ final class SessionAutosaveCoordinator {
             fingerprint: autosaveFingerprint
         )
     }
+
+    // SUPERMUX:begin autosave-resume-indexes-reuse
+    /// The process-detected resume indexes for this tick, read from a census
+    /// up to 30 s old while the terminals are unchanged, else up to 5 s old.
+    private func currentResumeIndexes(
+        for ttyDeviceBindings: [SurfaceResumeBindingIndex.PanelKey: Int64]
+    ) async -> ProcessDetectedResumeIndexes {
+        let terminalsUnchanged = lastTickTTYDeviceBindings == ttyDeviceBindings
+        lastTickTTYDeviceBindings = ttyDeviceBindings
+        guard terminalsUnchanged else {
+            return await ProcessDetectedResumeIndexes.load(ttyDeviceBindings: ttyDeviceBindings)
+        }
+        return await ProcessDetectedResumeIndexes.loadOnWorker(
+            maximumSnapshotAge: Self.unchangedTerminalsCensusMaximumAge,
+            ttyDeviceBindings: ttyDeviceBindings
+        )
+    }
+    // SUPERMUX:end autosave-resume-indexes-reuse
 
     private func remainingTypingQuietPeriod(
         nowUptime: TimeInterval = ProcessInfo.processInfo.systemUptime

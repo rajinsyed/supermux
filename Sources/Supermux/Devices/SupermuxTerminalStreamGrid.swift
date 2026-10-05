@@ -25,13 +25,14 @@ import SupermuxMobileCore
 enum SupermuxTerminalGridGeneration {
     private static var observed: [UUID: (columns: Int, rows: Int, changes: UInt64)] = [:]
 
+    /// Runs for every coalesced PTY read, so the terminal is looked up once.
     static func current(surfaceID: UUID) -> UInt64? {
         guard let model = GhosttyApp.terminalSurfaceRegistry.terminalSurface(id: surfaceID) else {
             observed[surfaceID] = nil
             return nil
         }
         var changes = observed[surfaceID]?.changes ?? 0
-        if let grid = requestedGrid(surfaceID: surfaceID) {
+        if let grid = requestedGrid(of: model) {
             if let seen = observed[surfaceID], seen.columns != grid.columns || seen.rows != grid.rows {
                 changes &+= 1
             }
@@ -42,8 +43,11 @@ enum SupermuxTerminalGridGeneration {
 
     /// The grid last asked of the PTY (which Ghostty's parser may not hold yet).
     static func requestedGrid(surfaceID: UUID) -> (columns: Int, rows: Int)? {
-        guard let surface = GhosttyApp.terminalSurfaceRegistry.terminalSurface(id: surfaceID)?
-            .liveSurfaceForGhosttyAccess(reason: "supermuxRequestedGrid") else { return nil }
+        GhosttyApp.terminalSurfaceRegistry.terminalSurface(id: surfaceID).flatMap(requestedGrid(of:))
+    }
+
+    private static func requestedGrid(of model: TerminalSurface) -> (columns: Int, rows: Int)? {
+        guard let surface = model.liveSurfaceForGhosttyAccess(reason: "supermuxRequestedGrid") else { return nil }
         let size = ghostty_surface_size(surface)
         return (max(Int(size.columns), 1), max(Int(size.rows), 1))
     }

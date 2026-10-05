@@ -40,12 +40,16 @@ final class SupermuxMirrorChangesSource {
     }
 
     /// The Changes model for a mirror (remote backend + remote AI commit).
+    /// It reads nothing yet: the panel's `startObserving()` does the first
+    /// status read once it is on screen, and the socket's transient model
+    /// settles itself, so a read here was a second round trip to the other Mac
+    /// on every mirror switch.
     static func makeModel(for target: SupermuxMirrorTarget, devices: SupermuxDevices) -> SupermuxChangesModel {
         let backend = SupermuxRemoteChangesBackend(
             transport: SupermuxDeviceChangesTransport(target: target, devices: devices)
         )
         let model = SupermuxChangesModel(backend: backend, commitGenerator: SupermuxRemoteCommitMessenger(backend: backend))
-        model.setDirectory(target.remoteDirectory ?? "/")
+        model.setDirectory(target.remoteDirectory ?? "/", refresh: false)
         return model
     }
 

@@ -201,8 +201,9 @@ extension SupermuxChangesModel {
     ///
     /// Fetch failures are swallowed (offline, no remote, missing credential);
     /// they never set ``lastError``, which is reserved for user-initiated
-    /// mutations such as push/pull. Driven by the panel on appear, on directory
-    /// change, on a slow timer, and from the manual refresh button — never from
+    /// mutations such as push/pull. Driven by the panel shortly after a
+    /// directory change, on a slow timer while visible (see
+    /// ``autoFetchDelay(interval:)``), and from the manual refresh button — never from
     /// the file-system watcher, so the fetch's own writes under `.git` cannot
     /// trigger another fetch.
     ///
@@ -218,8 +219,12 @@ extension SupermuxChangesModel {
     /// refresh after the fetch runs regardless of this fetch's own outcome: a
     /// sibling window or worktree sharing the remote may have advanced the
     /// tracking refs meanwhile, and the local `git status` picks that up.
+    ///
+    /// A cancelled caller (the panel's auto-fetch task, cancelled because the
+    /// panel went off screen or switched workspaces) starts no fetch.
     public func fetchAndRefresh() async {
         await refresh()
+        guard !Task.isCancelled else { return }
         // No fetch for a non-repository (it would just spawn a failing `git
         // fetch` on every tick) or while a user mutation owns the model.
         guard directory != nil, snapshot.isRepository, !isWorking else { return }
@@ -228,10 +233,12 @@ extension SupermuxChangesModel {
         // the timer. `drainActiveFetch` also catches a fetch that replaces the
         // handle mid-drain, so two fetches never overlap on the same remote.
         await drainActiveFetch()
-        // Re-check after the await: a mutation may have begun or the workspace
-        // may have become a non-repository while we waited.
-        guard let directory, snapshot.isRepository, !isWorking else { return }
+        // Re-check after the await: the caller may have been cancelled, a
+        // mutation may have begun, or the workspace may have become a
+        // non-repository while we waited.
+        guard !Task.isCancelled, let directory, snapshot.isRepository, !isWorking else { return }
         let generation = directoryGeneration
+        lastFetch = (directory: directory, startedAt: ContinuousClock.now)
         let task = Task { await service.fetch(repoPath: directory) }
         activeFetchTask = task
         // Clear only if a later fetch has not replaced us (`Task` is Equatable by
@@ -241,5 +248,15 @@ extension SupermuxChangesModel {
         // Drop the follow-up if the user switched workspaces during the fetch.
         guard generation == directoryGeneration else { return }
         await refresh()
+    }
+
+    /// How long the panel's auto-fetch should wait before fetching
+    /// ``directory``: what is left of `interval` since this model last fetched
+    /// it, or `nil` when it has not fetched this directory yet.
+    /// - Parameter interval: The auto-fetch cadence.
+    public func autoFetchDelay(interval: Duration) -> Duration? {
+        guard let lastFetch, lastFetch.directory == directory else { return nil }
+        let elapsed = ContinuousClock.now - lastFetch.startedAt
+        return max(.zero, interval - elapsed)
     }
 }

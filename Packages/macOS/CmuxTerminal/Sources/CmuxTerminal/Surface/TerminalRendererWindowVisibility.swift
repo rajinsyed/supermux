@@ -35,9 +35,16 @@ public struct TerminalRendererWindowVisibility: Sendable {
     }
 
     public var isVisible: Bool {
-        if occlusionVisible || isKeyWindow { return true }
+        // SUPERMUX:begin renderer-key-window-honors-occlusion (upstream: a key window always presents, before the occlusion verdict)
+        // A locked or sleeping display keeps the window key while dropping
+        // `.visible`, so the key exception kept every visible terminal
+        // drawing, its display link running, for as long as nobody looked.
+        // The key window still counts while occlusion is untrusted.
+        if occlusionVisible { return true }
         // Occlusion has been trustworthy for this window: honor its verdict.
         if windowHasReportedVisible { return false }
+        if isKeyWindow { return true }
+        // SUPERMUX:end renderer-key-window-honors-occlusion
         return isWindowVisible && !isMiniaturized && isOnActiveSpace
     }
 }

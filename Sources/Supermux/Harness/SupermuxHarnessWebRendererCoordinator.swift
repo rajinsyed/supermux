@@ -38,6 +38,14 @@ final class SupermuxHarnessWebRendererCoordinator: NSObject, WKNavigationDelegat
     private var presentationRevision: UInt64 = 1
     private var deliveredPresentationRevision: UInt64 = 0
     nonisolated private static let deliveryRetryIntervalNanoseconds: UInt64 = 33_000_000
+    // A visible pane streams at about 30 Hz in small batches so the transcript
+    // stays smooth. A hidden pane only keeps its reducer current for the next
+    // reveal: about three deliveries a second, in batches large enough (still
+    // under the 8 MB envelope cap) to outpace the CLI, so its backlog never
+    // backpressures the process.
+    nonisolated private static let hiddenEventFlushDelayNanoseconds: UInt64 = 300_000_000
+    nonisolated private static let visibleMaximumEventsPerDelivery = 64
+    nonisolated private static let hiddenMaximumEventsPerDelivery = 1_024
     nonisolated private static let shellRecoveryDelayNanoseconds: UInt64 = 100_000_000
     nonisolated private static let maximumConsecutiveShellRecoveryAttempts = 3
 
@@ -61,6 +69,16 @@ final class SupermuxHarnessWebRendererCoordinator: NSObject, WKNavigationDelegat
 
     private var isPresentationCommitted: Bool {
         isPresentationVisible && deliveredPresentationRevision == presentationRevision
+    }
+
+    private var eventFlushDelayNanoseconds: UInt64 {
+        isPresentationVisible ? Self.deliveryRetryIntervalNanoseconds : Self.hiddenEventFlushDelayNanoseconds
+    }
+
+    /// Small batches only matter once the transcript is on screen; until a
+    /// reveal commits, its targetSequence catch-up drains in hidden-size batches.
+    private var maximumEventsPerDelivery: Int {
+        isPresentationCommitted ? Self.visibleMaximumEventsPerDelivery : Self.hiddenMaximumEventsPerDelivery
     }
 
     func bind(
@@ -528,19 +546,29 @@ final class SupermuxHarnessWebRendererCoordinator: NSObject, WKNavigationDelegat
         }
     }
 
-    private func scheduleEventFlush() {
+    private func scheduleEventFlush(afterNanoseconds delay: UInt64? = nil) {
         guard !isClosed,
               eventFlushTask == nil,
               activeEventDeliveryID == nil,
               eventTransport.pendingEventCount > 0 else {
             return
         }
+        let delay = delay ?? eventFlushDelayNanoseconds
         eventFlushTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: Self.deliveryRetryIntervalNanoseconds)
+            try? await Task.sleep(nanoseconds: delay)
             guard !Task.isCancelled, let self else { return }
             self.eventFlushTask = nil
             self.flushPendingEvents()
         }
+    }
+
+    /// A hidden pane's flush may be sleeping out its long delay. A reveal
+    /// delivers the backlog on the next main-actor turn instead (not inside
+    /// the SwiftUI update that reported it), so the catch-up starts at once.
+    private func flushPendingEventsForReveal() {
+        eventFlushTask?.cancel()
+        eventFlushTask = nil
+        scheduleEventFlush(afterNanoseconds: 0)
     }
 
     private func flushPendingEvents() {
@@ -550,7 +578,7 @@ final class SupermuxHarnessWebRendererCoordinator: NSObject, WKNavigationDelegat
               let webView,
               hasFinishedNavigation,
               isPresentationVisible || deliveredPresentationRevision == presentationRevision,
-              let envelope = eventTransport.nextEnvelope(),
+              let envelope = eventTransport.nextEnvelope(maximumEventCount: maximumEventsPerDelivery),
               let data = envelope.encodedData,
               let json = String(data: data, encoding: .utf8) else {
             return
@@ -606,7 +634,9 @@ final class SupermuxHarnessWebRendererCoordinator: NSObject, WKNavigationDelegat
         presentationRevision &+= 1
         hasCompletedVisiblePaintFlush = false
         setHostCompositorPresentationVisible(false)
-        if !visible {
+        if visible {
+            flushPendingEventsForReveal()
+        } else {
             unfocus()
         }
         schedulePresentationDelivery()

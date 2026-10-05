@@ -28,10 +28,14 @@ struct TerminalRendererWindowVisibilityTests {
         #expect(visible())
     }
 
-    @Test func keyWindowAlwaysPresents() {
-        #expect(visible(reported: true, key: true))
+    // SUPERMUX:begin renderer-key-window-honors-occlusion (upstream: `keyWindowAlwaysPresents` expected a key window to present after occlusion said hidden)
+    @Test func keyWindowPresentsUntilOcclusionIsTrusted() {
         #expect(visible(onScreen: false, key: true))
+        #expect(visible(occlusion: true, reported: true, key: true))
+        // A locked or sleeping display: still key, occlusion trusted and hidden.
+        #expect(!visible(reported: true, key: true))
     }
+    // SUPERMUX:end renderer-key-window-honors-occlusion
 
     @Test func occlusionVerdictWinsOnceTheWindowHasReportedVisible() {
         #expect(visible(occlusion: true, reported: true))

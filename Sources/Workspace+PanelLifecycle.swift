@@ -177,6 +177,42 @@ extension Workspace {
         }
         return didChange
     }
+    // SUPERMUX:begin agent-pid-ports-on-change
+    /// A workspace's hook-driven agent port refreshes: when the last one ran
+    /// and whether a trailing one is scheduled.
+    private final class HookPortRefreshState {
+        var lastAt: TimeInterval = -.infinity
+        var trailingScheduled = false
+    }
+    /// Weak keys, so a closed workspace's entry goes with it.
+    @MainActor private static let hookPortRefreshes = NSMapTable<Workspace, HookPortRefreshState>.weakToStrongObjects()
+    private static let hookPortRefreshInterval: TimeInterval = 5
+
+    /// Refreshes the agent ports for a hook report at most every 5 s; a
+    /// report sooner than that gets one trailing refresh, so a server an
+    /// agent started between two hooks is still found while the periodic
+    /// rescan is paused (cmux inactive).
+    @MainActor private func refreshTrackedAgentPortsForUnchangedReport() {
+        let state = Self.hookPortRefreshes.object(forKey: self) ?? HookPortRefreshState()
+        Self.hookPortRefreshes.setObject(state, forKey: self)
+        let now = ProcessInfo.processInfo.systemUptime
+        let wait = state.lastAt + Self.hookPortRefreshInterval - now
+        if wait <= 0 {
+            state.lastAt = now
+            refreshTrackedAgentPorts()
+            return
+        }
+        guard !state.trailingScheduled else { return }
+        state.trailingScheduled = true
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(wait), tolerance: .milliseconds(500))
+            state.trailingScheduled = false
+            guard let self else { return }
+            state.lastAt = ProcessInfo.processInfo.systemUptime
+            self.refreshTrackedAgentPorts()
+        }
+    }
+    // SUPERMUX:end agent-pid-ports-on-change
     @discardableResult
     func recordAgentPID(key: String, pid: pid_t, panelId: UUID?, refreshPorts: Bool = true) -> Bool {
         let previous = (
@@ -210,7 +246,18 @@ extension Workspace {
                 AgentHibernationController.shared.recordAgentProcessChange(workspaceId: id, panelId: changedPanelId)
             }
         }
-        if refreshPorts { refreshTrackedAgentPorts() }
+        // SUPERMUX:begin agent-pid-ports-on-change (upstream: `if refreshPorts { refreshTrackedAgentPorts() }`)
+        // Every agent hook re-reports its PID. Changed roots (PID, process or
+        // pane) refresh at once; an unchanged report refreshes at most every
+        // 5 s, with a trailing refresh for one that came sooner.
+        let agentRootsMayHaveChanged = previous.pid != pid || previous.panelId != panelId
+            || previous.identity != processIdentity || didClearOtherStructuredAgentRuntime
+        if refreshPorts, agentRootsMayHaveChanged {
+            refreshTrackedAgentPorts()
+        } else if refreshPorts {
+            refreshTrackedAgentPortsForUnchangedReport()
+        }
+        // SUPERMUX:end agent-pid-ports-on-change
         for changedPanelID in Set([previous.panelId, panelId].compactMap { $0 }) {
             syncTerminalTabAgentIconAsset(forPanelId: changedPanelID)
         }

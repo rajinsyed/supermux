@@ -16,7 +16,7 @@ Rules for adding a touchpoint:
 - Numbering: the highest number in use is **783** (remote terminal streaming, #777–#783; #764–#776 are
   reserved for open PRs #74/#75). The remote-workspaces work (#517–#599) left
 - Numbering: the highest number in use is **818**. The remote-workspaces work (#517–#599) left
-- Numbering: the highest number in use is **924** (#920–#924: only this Mac's own input hands an Auto grid to the Mac pane). #907–#913: answering a Claude question or plan brings the working indicator back. Before that **906** (#900–#906: a streaming mirror re-anchors when the other Mac's grid changes). Before that **883** (#880–#883: Remote Host Mode's hotkey and notification shows, Auto's `view_appeared` report; #850–#879 are held by another open branch). The remote-workspaces work (#517–#599) left
+- Numbering: the highest number in use is **1010** (#970–#978: hidden mirrors stream in batches and reconnects resume quiet terminals; #979: a moved workspace's spinners follow its window; #980–#981: fewer process censuses; #982–#994, #996 and #998: cmux-wide battery fixes (995 unassigned; #997, a slower hang-watchdog heartbeat, was retired before merge); #1010: the mobile observers' shared state-sync ticker; 999–1009 are unassigned). Before that **924** (#920–#924: only this Mac's own input hands an Auto grid to the Mac pane). #907–#913: answering a Claude question or plan brings the working indicator back. Before that **906** (#900–#906: a streaming mirror re-anchors when the other Mac's grid changes). Before that **883** (#880–#883: Remote Host Mode's hotkey and notification shows, Auto's `view_appeared` report; #850–#879 are held by another open branch). The remote-workspaces work (#517–#599) left
   unassigned gaps it may still grow into: **523–524, 527–529, 539–544, 558–559, 562–569,
   578–579 and 588–589** (never assigned, not retired); #600–#601 came from the 2026-10-01 upstream merge; #620–#622 and
   #630–#639 are the remote-workspaces feedback round (602–619 and 623–629 unassigned). The second
@@ -119,7 +119,7 @@ Rules for adding a touchpoint:
 | 53 | `ios/Config/cmux.entitlements` | `unfenced` | Strips `com.apple.developer.applesignin`, `aps-environment`, `com.apple.developer.usernotifications.time-sensitive`, upstream's App Group (`group.dev.cmux.ios`, re-stripped after the 2026-09-30 merge) and, since the 2026-10-04 merge, upstream's Cloud VPN `com.apple.developer.networking.networkextension` (`packet-tunnel-provider`) so automatic signing can provision a personal Apple team that lacks those capabilities (comments are unsafe to fence around a plist-key removal). The phone dogfood command also points the notification extension here (`SUPERMUX_NSE_CODE_SIGN_ENTITLEMENTS`), and that extension signs against the wildcard team profile, which cannot carry App Groups or Network Extensions. Upstream's separate `CloudVPN.appex` keeps its own `Config/CloudVPN.entitlements`; dogfood builds cannot start the Cloud VPN. Known divergence since the 2026-09-30 upstream merge: upstream's `ios/tests/tagged-device-entitlements.test.mjs` ("tagged Debug API-key signing can retry without the App Group") expects `aps-environment` in this file and fails against the fork |
 | 54 | `ios/cmux-ios.xcodeproj/project.pbxproj` | `unfenced` | Wires `LocalConfig.plist` into the iOS app's Copy Bundle Resources phase (build file `FCAB1004…`, file ref `FCAB101B…`) so the app can read it from the bundle |
 | 55 | `ios/cmux/Resources/LocalConfig.plist` | `unfenced` | New supermux-owned resource; sets `AuthEnvironment=production`, read by upstream's `MobileAuthComposition.authOverrides` LocalConfig override table (which replaced the retired #52 fence at the v0.64.19 merge). Not an upstream modification — registered so the check guards its existence (the pbxproj entry in #54 references it) |
-| 56 | `Sources/Workspace+AgentLifecycle.swift` | `workspace-agent-lifecycle-observation` | One fenced line at the top of `recordAgentLifecycleChange(panelId:)` — the single choke point every agent-lifecycle set/clear routes through — calls `SupermuxWorkspaceLifecycleRelay.workspaceDidChangeAgentLifecycle(self)` (relay lives in supermux-owned `Sources/Supermux/SupermuxWorkspaceActivityResolver.swift`), making lifecycle-only mutations observable: cmux's sidebar publishers carry no lifecycle field, so without it the supermux activity indicators went stale on socket `set_agent_lifecycle`, hibernation clears, and feed-attention conclusion. Placed before the `AgentHibernationController` call, whose tracking gate drops events when disabled. **Upstream (0.64.x) extracted the lifecycle code out of `Workspace.swift` into `Workspace+AgentLifecycle.swift`; the fence moved with it** |
+| 56 | `Sources/Workspace+AgentLifecycle.swift` | `workspace-agent-lifecycle-observation` | One fenced line at the top of `recordAgentLifecycleChange(panelId:)` — the single choke point every agent-lifecycle set/clear routes through — calls `SupermuxWorkspaceLifecycleRelay.workspaceDidChangeAgentLifecycle(self)` (only when `relaysToSupermux`, which `setAgentLifecycle` passes as false for an unchanged value, #985) (relay lives in supermux-owned `Sources/Supermux/SupermuxWorkspaceActivityResolver.swift`), making lifecycle-only mutations observable: cmux's sidebar publishers carry no lifecycle field, so without it the supermux activity indicators went stale on socket `set_agent_lifecycle`, hibernation clears, and feed-attention conclusion. Placed before the `AgentHibernationController` call, whose tracking gate drops events when disabled. **Upstream (0.64.x) extracted the lifecycle code out of `Workspace.swift` into `Workspace+AgentLifecycle.swift`; the fence moved with it** |
 | 57 | `Sources/Workspace.swift` | `keep-window-on-last-close` | Remote-tmux close-button fallback: the last workspace of the last window closes into the empty home (`closeWorkspace(self, recordHistory: false, allowEmptyingWindow: true)`) instead of falling through to a replacement local shell in the dead mirror; the multi-window discard branch stays upstream |
 | 58 | `Sources/AppDelegate.swift` | `new-workspace-standalone` | `unregisterMainWindow` prunes the association store against the union of every remaining window's workspace ids on whole-window teardown (which skips the per-workspace close path); durable directory links live in the projects model and survive, so a revived closed window re-nests by directory. Since the 2026-09-30 upstream merge the retained set is the union of `mainWindowContexts` and upstream's `recoverableMainWindowRoutes()` tab managers' workspace ids (orphaned routes whose workspaces are still live), and the anchor is upstream's `closingTabManager` |
 | 59 | `Sources/TerminalController.swift` | `keep-window-on-last-close` | The socket `close_workspace` command routes through `closeWorkspace(tab, allowEmptyingWindow: true)` and replies OK only when the workspace actually left `tabs` (upstream `closeTab` silently no-ops on a window's last workspace while replying OK). At the 2026-10-01 upstream merge upstream added a `--force` token and a `workspaceNeedsConfirmCloseForClose` confirmation ("retry with --force"); that check stays upstream's and sits just before the fence |
@@ -798,6 +798,34 @@ Rules for adding a touchpoint:
 | 911 | `tests/test_claude_wrapper_hooks.py` | `claude-answer-hook` | `generated_claude_hook_settings()`'s expected `PostToolUse` list gains `queued("post-tool-use", matcher="AskUserQuestion\|ExitPlanMode")` after the `PushNotification` group |
 | 912 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `CLI/CMUXCLI+SupermuxClaudeAnswerHook.swift` (`50BE00910000000000000002` file ref, `…01` build file) into the `cmux-cli` target: the file reference, the CLI group child after `CMUXCLI+ClaudePushNotificationHook.swift`, the build file and the target's Sources phase entry |
 | 913 | `Packages/macOS/CMUXAgentLaunch/Tests/CMUXAgentLaunchTests/AgentHookDeliveryPolicyTests.swift` | `claude-answer-hook` | In `decisionAndAuxiliaryBoundaries`, upstream's `#expect(!…(agent: "claude", subcommand: "post-tool-use"))` becomes the positive expectation (#909), plus a negative one for `future-agent` so the boundary stays tested |
+| 970 | `Sources/Mobile/MobileTerminalByteTee.swift` | `terminal-stream-resume` | Changes #779's continuity fences to per terminal: `SurfaceState` keeps only `supermuxStreamEpoch` (`supermuxSkipGeneration` is gone), the no-subscriber early return in `append` calls `SupermuxTerminalStreamContinuity.noteSkipped(surfaceID: surfaceID)` (records the terminal in a lock-protected set), and `publishFromMain` calls `supermuxContinuousEpoch(state, surfaceID: surfaceID)`, which gives a new epoch only to a terminal the tee skipped. `dropSurface` forgets a closed terminal's skip mark (`takeSkipped`), so the set never keeps closed terminals. A reconnect resumes every terminal that stayed quiet; only those that printed meanwhile replay |
+| 971 | `Packages/macOS/CmuxMobileHost/Sources/CmuxMobileHost/SupermuxTerminalByteDemand.swift` | `terminal-stream-byte-demand` | Whole new file (fenced top to bottom). `SupermuxTerminalByteDemand.shared`: every event queue subscribed to `terminal.bytes` reports its ask (watched set or every terminal, background set); `delivery(surfaceID:)` answers `.foreground` (someone watches it on screen, or a connection takes every terminal), `.background` (every watcher has it off screen) or `.unwatched`, under one lock with no allocation, for `SupermuxTerminalByteCoalescer` (`Sources/Supermux/Devices/SupermuxTerminalStreamHost.swift`) |
+| 972 | `Packages/macOS/CmuxMobileHost/Sources/CmuxMobileHost/MobileHostConnectionEventQueue.swift` | `terminal-stream-byte-demand`, `terminal-stream-watch` | Four `terminal-stream-byte-demand` fences: the `supermuxBackgroundByteSurfaceIDs` property after #777's state block, `supermuxReportByteDemandLocked()` after `updateSubscribedTopics` sets the topics, the reset and report in `close()` after #777's reset, and the helper after #777's helpers (reports to #971 while open and subscribed to `terminal.bytes`, else removes the connection). In #777's `terminal-stream-watch` helpers, `supermuxWatchTerminalBytes(surfaceIDs:background:)` gains the defaulted `background` set (kept to a subset of the watched one) and reports the ask |
+| 973 | `Sources/Mobile/MobileTerminalRenderObserver.swift` | `terminal-updated-no-global-ping` | In `flushTerminalUpdates`, the global branch no longer emits the surface-less `terminal.updated {}` (upstream sent it on every Ghostty tick; another Mac's device link needs `surface_id` and drops it, the phone does not subscribe). The branch stays, so the per-surface events are suppressed in a global tick exactly as upstream's |
+| 974 | `Sources/Devices/DeviceTerminalMirrorSession.swift` | `terminal-stream-show-hook` | Two fences. At the end of `supermuxSetHidden` (inside #631's `device-mirror-hidden-counts` fence): a shown pane's queued re-attach goes now (#975) and `supermuxStreamVisibilityChanged()`. That method (after `supermuxRecheckGrid`) tells `SupermuxTerminalStream` the pane's visibility (a hidden pane's replay confirmation waits for its show; hidden 2 s, its terminal is named background in the watch) and, shown, re-anchors when the mirror is behind the host's grid (a confirmation that waited for the show re-arms its quiet wait inside the stream) |
+| 975 | `Sources/Devices/DeviceTerminalMirrorSession.swift` | `terminal-stream-attach-limiter` | Three fences: the `supermuxQueuedAttach` property after #781's `supermuxStream`; `.linkReconnected` calls `supermuxAttachAfterReconnect()` in place of upstream's `scheduleAttach()`; the two methods before `scheduleAttach`. A mirror on screen re-attaches at once, a hidden one through `SupermuxTerminalAttachLimiter` (`Sources/Supermux/Devices/`, at most 3 in flight, utility priority, slot held until the attach returns); shown while it waits, it attaches at once |
+| 976 | `Sources/Devices/DeviceTerminalMirrorSession.swift` | `terminal-stream-replay-sizing`, `terminal-stream-viewer` | Four `terminal-stream-replay-sizing` fences: `Replay.supermuxSizing`; `decodeReplay(_:)` decodes the body through a new `decodeReplay(object:)` (upstream's body, unchanged, after the fence) and sets the sizing from the dictionary it parsed (`SupermuxTerminalStream.replaySizing(in:)`); the call site passes `replay.supermuxSizing`; `receiveReplaySizing` takes the decoded `MobileTerminalReplaySizing?` instead of the reply `Data`. In #781's resumed-reply branch (`terminal-stream-viewer`), the `Replay` gains `supermuxSizing: supermuxReply.sizing`. The main actor no longer runs a JSON decode over the whole (multi-MB) reply |
+| 977 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/Devices/SupermuxTerminalAttachLimiter.swift` (`50BE09700000000000000001` file ref, `…02` build file) into the cmux target: the build file, the file reference, the Supermux group child before `SupermuxTerminalStream.swift`, the Sources phase entry |
+| 978 | `Sources/TerminalController.swift` | `terminal-stream-resume` | Changes #780's first fence in `v2MobileTerminalReplay`: after the resume branch (so a full replay only), `SupermuxTerminalByteCoalescer.shared.flushBatch(surfaceID: surfaceId)` sends what an off-screen terminal's ~500 ms batch holds before the capture, so the output that raced the capture reaches the viewer during its attach and the replay is confirmed (`SupermuxTerminalStream.fullReplayApplied`) |
+| 979 | `Sources/TabManager.swift` | `tab-activity-workspace-moved` | At the end of `attachWorkspace`, calls `SupermuxTabActivitySync.shared.workspaceMoved(workspace)`, so a workspace moved in from another window (socket, CLI, drag) re-syncs its working-tab spinners against its new window's visibility instead of keeping the old window's held-off or spinning state until its agent's next lifecycle event. |
+| 980 | `Sources/SessionAutosaveCoordinator.swift` | `autosave-resume-indexes-reuse` | Four fences: `unchangedTerminalsCensusMaximumAge` (30 s), the `lastTickTTYDeviceBindings` property, the `finish` call site (upstream: `let resumeIndexes = await ProcessDetectedResumeIndexes.load(ttyDeviceBindings: ttyDeviceBindings)`) and `currentResumeIndexes(for:)`. While the TTY binding set is the same as the last tick's, an autosave tick builds its process-detected resume indexes from a process census up to 30 s old (`loadOnWorker(maximumSnapshotAge: 30, …)`); otherwise it calls upstream's `load` (5 s bound). Hook stores and transcripts are still read every tick. |
+| 981 | `Sources/SharedLiveAgentIndex.swift` | `agent-index-hook-reload-floor` | Three fences: `minHookStoreReloadInterval` (30 s) and its two uses in `handleHookStoreChange` (upstream: `Self.minEventReloadInterval`, 5 s, also used by fork validation, which keeps it). A hook-store change starts a reload at most every 30 s; explicit refreshes are unchanged. |
+| 982 | `CLI/cmux.swift` | `hook-store-unchanged-skip` | In `saveUnlocked`, after the encode: returns when the file already holds exactly these bytes, so a hook that only read the Claude hook store (or rewrote a value it already had) no longer rewrites it and wakes every watcher of its folder. |
+| 983 | `CLI/CMUXCLI+AgentMessages.swift` | `agent-inbox-poll-backoff` | `runClaudeInboxWait` records `startedAt` and sleeps `agentInboxPollInterval(idleFor:failing:)` (upstream: `Self.agentInboxPollInterval`, 2 s): 2 s for the first minute and while the app does not answer, 6 s after, so idle Claude sessions stop making a socket connection every 2 s each. |
+| 984 | `Sources/Workspace+PanelLifecycle.swift` | `agent-pid-ports-on-change` | Two fences: the static `hookPortRefreshes` state with `refreshTrackedAgentPortsForUnchangedReport()`, and in `recordAgentPID` the gate on `refreshTrackedAgentPorts()` (upstream: on every report, i.e. every agent hook). Changed roots (PID, process identity, pane, or another structured runtime cleared) refresh at once; an unchanged report refreshes at most every 5 s per workspace, with one trailing refresh for a report that came sooner (the tracked-agent rescan timer pauses while cmux is inactive). |
+| 985 | `Sources/Workspace+AgentLifecycle.swift` | `workspace-agent-lifecycle-unchanged` | `setAgentLifecycle` notes whether the value changed and passes it as `relaysToSupermux` to `recordAgentLifecycleChange(panelId:relaysToSupermux:)` (default true); #56's relay fires only then. The hibernation activity stamp is recorded as before. |
+| 986 | `Resources/shell-integration/cmux-zsh-integration.zsh` | `zsh-git-head-watch-cheap` | The git HEAD watcher loop ticks every 3 s (`_cmux_sleep_cs 300`, upstream 100) and reads HEAD with `read` in the watcher shell instead of `$(_cmux_git_head_signature …)`, so a running command's watcher no longer forks a subshell every second. |
+| 987 | `Packages/macOS/CmuxGit/Sources/CmuxGit/Parsing/GitMetadataService+WatchPaths.swift` | `git-dirty-large-repo-throttle` | `eventCoalescingInterval` is 3 s for a repository past the direct-check entry limit (whose dirty check launches `git status`), the upstream throttles otherwise. |
+| 988 | `Packages/macOS/CmuxSidebarGit/Sources/CmuxSidebarGit/Hosting/SidebarGitHosting.swift` | `pr-poll-off-screen-slowdown` | Adds `pullRequestPollIntervalScale()` to `SidebarGitHosting`, with a default of 1. |
+| 989 | `Packages/macOS/CmuxSidebarGit/Sources/CmuxSidebarGit/Service/PullRequestPollService+Apply.swift` | `pr-poll-off-screen-slowdown` | Two fences: the next pull-request poll multiplies its base interval by the host's scale (at least 1), and so does the unsupported-repository fallback (upstream: `base: Self.backgroundPollInterval`). |
+| 990 | `Sources/TabManager+SidebarGitHosting.swift` | `pr-poll-off-screen-slowdown` | `import SupermuxKit` and `pullRequestPollIntervalScale()`: 5 while the TabManager's window is off screen (`SupermuxWindowVisibility.windowIsOnScreen`) and nothing subscribes to `mobile.sync.delta` (no phone or Mac follows this Mac's state, whose mirrors show its PR status), else 1. |
+| 991 | `Packages/macOS/CmuxTerminal/Sources/CmuxTerminal/Surface/TerminalRendererWindowVisibility.swift` | `renderer-key-window-honors-occlusion` | `isVisible` checks the occlusion verdict before the key window: a window that has reported `.visible` follows occlusion even while key (a locked or sleeping display), and the key window counts only while occlusion is untrusted. |
+| 992 | `Packages/macOS/CmuxTerminal/Tests/CmuxTerminalTests/TerminalRendererWindowVisibilityTests.swift` | `renderer-key-window-honors-occlusion` | `keyWindowAlwaysPresents` becomes `keyWindowPresentsUntilOcclusionIsTrusted` (a key window with trusted hidden occlusion does not present). |
+| 993 | `Sources/Mobile/MobileTerminalRenderObserver.swift` | `device-grid-global-sample-floor` | Three fences: the `deferredGridSampleTask` property and its cancel in `stop()`, the `scheduleDeferredGridSample(at:)` call after `deviceTerminalGrids.refresh`, and that method, which replays one global tick at the publisher's `deferredGlobalSampleDeadline` when #998 skipped a global sample, so a grid change seen only by the skipped tick is still published. |
+| 994 | `Sources/GhosttyTerminalView.swift` | `renderer-key-window-honors-occlusion` | Three fences: the static `displaysThatReportedVisible` (display IDs on which some window reported `.visible`), and in `applyRendererWindowVisibility` the display-aware trust (upstream: `windowHasReportedVisible: Self.windowsThatReportedVisible.contains(window),`). Occlusion is trusted only for a window that reported `.visible` and sits on such a display, the built-in display or no screen, so a key window moved to a virtual display (never `.visible`) keeps presenting under #991, while an undock to a known real display keeps occluded windows off. |
+| 996 | `Sources/PortScanner.swift` | `agent-port-rescan-slower` | `agentRescanInterval` is 5 s with 1 s leeway (upstream 2 s, no leeway). |
+| 998 | `Packages/macOS/CmuxMobileHost/Sources/CmuxMobileHost/DeviceTerminalGridPublisher.swift` | `device-grid-global-sample-floor` | A global tick samples every terminal's grid at most once a second, and always the first global tick after a topology change (`topologyNeedsFullSample`, kept until that sample); terminals the tick names are always sampled. `deferredGlobalSampleDeadline` says when a skipped global sample may run. `reset()` clears all three. |
+| 1010 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/SupermuxStateSyncTicker.swift` (`50BE10100000000000000001` file ref, `…02` build file) into the cmux target: the file reference, the `Supermux` group child after `SupermuxMobileSidebarStatusObserver.swift`, the build file and the target's Sources phase entry |
 
 ## How to re-apply
 
@@ -3051,9 +3079,12 @@ out of `Workspace.swift` into this extension file; the fence moved with it), ins
 
 ```swift
 // SUPERMUX:begin workspace-agent-lifecycle-observation
-SupermuxWorkspaceLifecycleRelay.workspaceDidChangeAgentLifecycle(self)
+if relaysToSupermux { SupermuxWorkspaceLifecycleRelay.workspaceDidChangeAgentLifecycle(self) }
 // SUPERMUX:end workspace-agent-lifecycle-observation
 ```
+
+(Since #985 the function takes `relaysToSupermux: Bool = true`; `setAgentLifecycle` passes false for a
+report that repeats the panel's current value.)
 
 (+3 lines; must precede the `AgentHibernationController.shared.recordAgentLifecycleChange` call,
 whose tracking gate drops events when hibernation is disabled.) The relay lives in supermux-owned
@@ -6856,3 +6887,106 @@ Re-apply after an upstream merge:
 - **#942**: keep the defaulted parameter so every other caller still probes.
 
 Verify: `swift test --package-path Packages/iOS/CmuxMobileShell --filter foregroundAfterHostIdleTimeoutRedialsWithoutProbingTheDeadSession`.
+
+### 970–978. Hidden mirrors stream in batches, reconnects resume quiet terminals — `terminal-stream-resume`, `terminal-stream-byte-demand`, `terminal-stream-watch`, `terminal-updated-no-global-ping`, `terminal-stream-show-hook`, `terminal-stream-attach-limiter`, `terminal-stream-replay-sizing`
+
+Measured on a 24-worktree loopback DEBUG build (`tests/supermux/stress_worktrees_energy.py`, baseline
+`stress_worktrees_energy-perfaudit-baseline.json`): with agents busy, a viewer mirroring them used 38.5% CPU
+against 14.7% for the same agents viewed locally, because every hidden mirror streamed and parsed each redraw
+at foreground cadence and the host encoded every terminal's PTY reads before the watch filter refused them.
+Every reconnect re-sent all 24 mirrors as full 10,000-row replays (the tee's continuity flag was global), all
+at once, and each reply's sizing was decoded a second time on the main actor. A replay confirmation polled
+at 10 Hz and chained full replays on a terminal printing every second; the host sent an empty
+`terminal.updated` on every Ghostty tick. Now:
+
+- **Background tier.** A mirror whose pane has been off screen for 2 s names its terminal in the watch's
+  `background_surface_ids` (`SupermuxTerminalStreamWatch`; it leaves at once on show). The host
+  (#971/#972) sends a terminal every watcher has off screen, while no connection takes every terminal's
+  bytes (a phone on raw bytes, an older Mac), in ~500 ms batches up to 256 KB (`SupermuxTerminalByteCoalescer`,
+  one `DispatchSourceTimer` with 100 ms leeway); never across a grid generation, and a terminal back on
+  screen sends its batch before anything newer. Every byte still crosses, in order. A terminal no
+  connection watches is not encoded at all (its tail is still recorded, its grid generation still probed).
+- **Per-terminal continuity (#970).** Only a terminal that printed while the tee recorded nothing gets a new
+  epoch, so a reconnect resumes the quiet ones with no bytes.
+- **Reconnect limiter (#975).** Hidden mirrors re-attach at most 3 at a time, at utility priority; on-screen
+  ones at once.
+- **Replay sizing off the main actor (#976).**
+- **Confirmation backoff** (`SupermuxTerminalStream`, no touchpoint): a deadline wait instead of the poll;
+  consecutive confirmations of one anchor wait 400 ms × 2^k (at most 8 s), stop after 3, and after the
+  first only when output came right before the request; a hidden pane's waits for its show, then for
+  quiet output (#974; a brief hide leaves an armed one armed). A full replay sends the terminal's batch
+  before its capture (#978), and a background mirror looks 750 ms back for output that raced its
+  request, so batching does not hide a raced capture.
+- **No global `terminal.updated` ping (#973).**
+
+Re-apply after an upstream merge:
+- **#970**: the three `terminal-stream-resume` lines in `MobileTerminalByteTee.swift` take the surface id.
+- **#971/#972**: keep the report in `updateSubscribedTopics` and `close()`; if upstream filters
+  `terminal.bytes` per surface itself, report its filter instead.
+- **#973**: drop the fence if upstream stops emitting the global ping or gives it a consumer.
+- **#974/#975/#976**: as in the rows; `decodeReplay(object:)` holds upstream's body unchanged.
+- **#977**: re-add the four entries listed in the #977 row.
+- **#978**: keep the flush after the resume branch and before the capture.
+
+Verify: `CMUX_E2E_SUITES="loopback_terminal_streaming_e2e loopback_terminal_resize_integrity_e2e
+loopback_terminal_input_pipeline_e2e loopback_terminal_sizing_policy_e2e" CMUX_TAG=<tag>
+tests/supermux/run_all_loopback_e2e.sh`, then the stress harness's `busy_mirrored` (DEBUG log
+`mobile.emit topic=terminal.bytes` about 2/s per hidden pane, `terminal_stream.stats`
+`bytes_received_by_surface` still growing for every pane, `terminal.updated` emits about 0/s) and a link
+stop/restore with half the agents printing (`full_replays` grows by at most the printing terminals).
+
+### 979. A moved workspace's working-tab spinners follow its new window — `tab-activity-workspace-moved`
+
+`TabManager.attachWorkspace` ends with one fenced call, `SupermuxTabActivitySync.shared.workspaceMoved(workspace)`,
+which schedules that workspace's spinner sync (the same coalesced pass a lifecycle change runs). Re-apply: put the
+call back as the last statement of `attachWorkspace`.
+
+### 980–981. Idle and busy Macs take far fewer process censuses — `autosave-resume-indexes-reuse`, `agent-index-hook-reload-floor`
+
+Measured with `tests/supermux/stress_worktrees_energy.py` and `sample`: on an idle tagged build the 8 s session autosave
+(`ProcessDetectedResumeIndexes.load`, maximum census age 5 s) and the agent index's hook-store reloads (5 s floor) were
+the largest remaining CPU users, each a census of every process with KERN_PROCARGS2 plus hook and transcript file scans.
+- **#980**: re-apply the four fences in `SessionAutosaveCoordinator` (constant, property, the `finish` call site,
+  `currentResumeIndexes(for:)`); only the process census is reused (up to 30 s while the TTY binding set is unchanged,
+  else upstream's 5 s), and hook stores are read every tick.
+- **#981**: re-apply `minHookStoreReloadInterval` and use it (not `minEventReloadInterval`) in `handleHookStoreChange`'s
+  immediate check and deferred timer.
+
+### 982–994, 996, 998. cmux-wide battery fixes found by sampling and by three upstream audits
+
+Measured with `tests/supermux/stress_worktrees_energy.py` plus `sample`, and traced by audits of the agent-hook path,
+the upstream pollers and the Ghostty integration (2026-10-05). Re-apply each fence as its registry row says:
+- **#982** CLI hook store: skip an unchanged rewrite. **#983** CLI inbox poller: 2 s for a minute, then 6 s.
+- **#984** agent PID reports refresh tracked ports at once on a change, else at most every 5 s with one trailing refresh. **#985** a repeated lifecycle report relays nothing.
+- **#986** zsh HEAD watcher: 3 s tick, HEAD read without a subshell (`tests/test_issue_15066_zsh_watcher_sleep.py`,
+  `tests/test_shell_git_branch_stale_cwd.py` still pass).
+- **#987** large-repository dirty checks coalesce at 3 s. **#988–#990** pull requests poll 5× less often while their
+  window is off screen and nothing follows this Mac's state.
+- **#991–#992, #994** the renderer follows a trusted occlusion verdict even for the key window (locked or sleeping
+  display); trust also needs a display that has reported `.visible`, so a virtual display falls back to the key window.
+- **#996** agent port rescans every 5 s. **#993, #998** global ticks sample every terminal's grid at most once a
+  second (the first global tick after a topology change always does), and a skipped one is replayed at the deadline.
+
+### 1010. The fork's mobile observers tick state sync only on a real change, through one shared ticker — `cmux.xcodeproj/project.pbxproj` (unfenced)
+
+Before, every agent hook (each `PreToolUse`) relayed a lifecycle event, and `SupermuxMobileActivityObserver`
+answered each one with an unconditional `workspace.updated` emit and a full `MobileStateSyncHost` rebuild, even
+when nothing the record carries had changed; a device mirror's overlay updates on a viewer did the same, although
+mirrors are never exported. `SupermuxMobileSidebarStatusObserver` ticked the same rebuild on its own 250 ms window.
+Now both fork observers share one ticker (`Sources/Supermux/SupermuxStateSyncTicker.swift`): the sidebar status
+observer requests a trailing tick (150 ms with 50 ms tolerance, nothing scheduled while no client subscribes to
+`mobile.sync.delta`), and the activity observer, already coalesced by its 80 ms pass, ticks at once and absorbs a
+pending request. The activity observer signs each relayed workspace (`activity(for:)`, `activityByAgentKey(for:)`,
+`supermuxWorkingPanelIDs()`), skips mirrors and closed workspaces, and emits only when a signature or the association
+hash changed; `workspace.updated` goes out at most once per second (the first change at once, later ones trailing).
+It does nothing while neither `workspace.updated` nor `mobile.sync.delta` has a subscriber, and runs one forced pass
+when the first one subscribes. The sidebar status observer skips a mirror's metadata changes. The lifecycle relay and
+`SupermuxTabActivitySync` are unchanged.
+
+Re-apply after an upstream merge: re-add the four entries listed in the #1010 row.
+
+Verify: `CMUX_E2E_SUITES="loopback_agent_activity_e2e loopback_sidebar_rows_e2e loopback_notifications_e2e
+loopback_agent_answer_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`. While 24 workspaces repeat
+`cmux claude-hook pre-tool-use` with an unchanged phase (the stress harness's hook loop,
+`tests/supermux/stress_worktrees_energy.py`), the host DEBUG log's `mobile.emit topic=workspace.updated` lines
+per second fall to about zero.

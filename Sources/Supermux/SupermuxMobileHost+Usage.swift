@@ -10,8 +10,9 @@ import SupermuxMobileCore
 /// ``SupermuxMobileUsagePayloadBuilder``.
 ///
 /// The request asks the model to refresh before answering, which matters when
-/// no Mac window has a sidebar mounted: the model's poll loop is view-driven,
-/// so without this the phone would sit on `loading` forever.
+/// no Mac window showing the sidebar is on screen (a headless Remote Host Mode
+/// host): the model's poll loop is view-driven and pauses then, so without
+/// this the phone would sit on `loading` or stale data.
 ///
 /// Rate limiting: `refresh()` is the unforced entry point, so it obeys the
 /// model's hard floor (`minimumRefreshInterval`, 30 s) and its in-flight

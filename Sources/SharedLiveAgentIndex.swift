@@ -131,6 +131,15 @@ final class SharedLiveAgentIndex {
     // Floor between event-driven reloads so chatty hook stores cannot keep the
     // measured ~350ms-1.8s loader running at near-continuous duty cycle.
     private static let minEventReloadInterval: TimeInterval = 5.0
+    // SUPERMUX:begin agent-index-hook-reload-floor (hook-store changes reload at most every 30 s)
+    // Floor for reloads a hook-store change starts on its own. Agents write
+    // their hook stores on every tool call, so with many agents the store is
+    // never quiet and a 5 s floor kept a full process census plus a hook and
+    // transcript scan running every 5 s. Paths that need a fresh index ask for
+    // one explicitly (ownership refresh, stale-cache refresh), so background
+    // freshness can wait longer.
+    private static let minHookStoreReloadInterval: TimeInterval = 30.0
+    // SUPERMUX:end agent-index-hook-reload-floor
     // An ownership-sensitive restore waits for one scan that started after its
     // request. The deadline keeps an uncooperative loader from holding a
     // restored terminal behind admission indefinitely.
@@ -2495,12 +2504,16 @@ final class SharedLiveAgentIndex {
             return
         }
         let elapsed = loadedAt.map { dateProvider().timeIntervalSince($0) } ?? .infinity
-        if elapsed >= Self.minEventReloadInterval {
+        // SUPERMUX:begin agent-index-hook-reload-floor (upstream: `Self.minEventReloadInterval` here and in the timer below)
+        if elapsed >= Self.minHookStoreReloadInterval {
+        // SUPERMUX:end agent-index-hook-reload-floor
             startReload()
         } else if deferredReloadTimer == nil {
             // DispatchSourceTimer coalesces hook-store event bursts without Task.sleep in runtime code.
             let timer = DispatchSource.makeTimerSource(queue: watchQueue)
-            timer.schedule(deadline: .now() + (Self.minEventReloadInterval - elapsed))
+            // SUPERMUX:begin agent-index-hook-reload-floor
+            timer.schedule(deadline: .now() + (Self.minHookStoreReloadInterval - elapsed), leeway: .seconds(1))
+            // SUPERMUX:end agent-index-hook-reload-floor
             timer.setEventHandler { [weak self] in
                 Task { @MainActor in
                     guard let self else { return }

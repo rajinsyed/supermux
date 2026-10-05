@@ -68,6 +68,11 @@ extension TerminalController {
     /// snapshot as a `SupermuxChangesStatusDTO` payload (branch, upstream,
     /// ahead/behind, staged/unstaged/untracked arrays, stash_count), plus
     /// whether this Mac can write commit messages (`ai_commit_configured`).
+    /// With `include_unpushed_count: true` (another Mac's panel, which shows
+    /// the count on every refresh) a branch without an upstream also reports
+    /// `unpushed_count`: one `rev-list` here instead of that Mac pulling a
+    /// whole history page (several git reads) just to count. The phone never
+    /// asks, so its reads cost nothing extra.
     @MainActor
     func v2SupermuxChangesStatus(params: [String: Any]) async -> V2CallResult {
         let target: (workspaceId: String, directory: String)
@@ -75,14 +80,22 @@ extension TerminalController {
         case let .failure(error): return error
         case let .success(resolved): target = resolved
         }
-        let snapshot = await Self.supermuxMobileChangesService.status(repoPath: target.directory)
+        let service = Self.supermuxMobileChangesService
+        let snapshot = await service.status(repoPath: target.directory)
+        var unpushedCount: Int?
+        if params["include_unpushed_count"] as? Bool == true,
+           snapshot.isRepository,
+           snapshot.upstreamBranch == nil {
+            unpushedCount = await service.unpushedCountWithoutUpstream(repoPath: target.directory)
+        }
         let aiCommitConfigured = await SupermuxComposition.aiCommitMessenger.isConfigured()
         do {
             return .ok(try SupermuxMobileChangesPayloadBuilder().status(
                 workspaceId: target.workspaceId,
                 snapshot: snapshot,
                 root: target.directory,
-                aiCommitConfigured: aiCommitConfigured
+                aiCommitConfigured: aiCommitConfigured,
+                unpushedCount: unpushedCount
             ))
         } catch {
             return .err(code: "unavailable", message: "Failed to encode changes status", data: nil)

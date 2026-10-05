@@ -132,8 +132,11 @@ enum SupermuxDeviceMirrorSocketCommands {
         let plan = coordinator.lastPlan
         return [
             "auto_mirror": SupermuxComposition.devicesSettings.autoMirror,
+            // The setting as passes apply it (off in Remote Host Mode).
+            "auto_mirror_effective": coordinator.effectiveAutoMirror,
             "ready": SupermuxDeviceMirrorCoordinator.appIsReady(),
             "reconcile_count": coordinator.reconcileCount,
+            "plan_count": coordinator.planCount,
             "is_opening": coordinator.isOpening,
             "busy": coordinator.busyRefs.sorted { $0.description < $1.description }.map(refPayload),
             "last_plan": [

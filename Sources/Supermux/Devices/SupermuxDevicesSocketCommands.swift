@@ -187,6 +187,7 @@ enum SupermuxDevicesSocketCommands {
         }
         return [
             "revision": devices.revision,
+            "local_catalog_revision": devices.localCatalogRevision,
             "auto_mirror": SupermuxComposition.devicesSettings.autoMirror,
             "auto_mirror_state": SupermuxDeviceMirrorSocketCommands.coordinatorState(SupermuxComposition.deviceMirrorCoordinator),
             "devices": entries,
