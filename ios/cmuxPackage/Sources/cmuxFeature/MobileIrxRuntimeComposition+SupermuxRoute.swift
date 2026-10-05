@@ -17,7 +17,8 @@ public import SupermuxMobileKit
 ///   ``supermuxRecordRouteCandidates(_:macDeviceID:instanceTag:)`` keeps
 ///   them in a local file, never sent anywhere. A direct path a session
 ///   used is learned too. Dials and probes use only the ones the phone can
-///   reach from its interfaces now.
+///   reach from its interfaces now. Sign-out forgets them all, and a write
+///   it overtook is undone (``supermuxRouteAddressEpoch``).
 /// - **Race.** An automatic dial with reachable addresses races the
 ///   direct-only endpoint (the Direct method's, relay disabled, same
 ///   identity), one handshake per address, against the automatic dial with
@@ -67,6 +68,7 @@ extension MobileIrxRuntimeComposition: SupermuxPhoneRouteRuntime {
         macDeviceID: String,
         instanceTag: String?
     ) async -> SupermuxRouteCandidateFetchSchedule.Answer {
+        let epoch = supermuxRouteAddressEpoch
         guard let record = supermuxMacRecord(macDeviceID: macDeviceID, instanceTag: instanceTag) else { return .failed }
         let endpointID = record.descriptor.endpointID
         // Filed under the endpoint the directory names for this Mac; dials
@@ -76,7 +78,8 @@ extension MobileIrxRuntimeComposition: SupermuxPhoneRouteRuntime {
         let key = Self.supermuxRoutePeerKey(record)
         let before = await supermuxRouteCandidates.dialAddresses(for: key)
         // An empty answer (a Mac before its first network report) keeps what the phone had.
-        let stored = await supermuxRouteCandidates.recordFetched(answer.addresses, for: key)
+        let stored = await supermuxRecordFetched(answer.addresses, for: key, epoch: epoch)
+        guard epoch == supermuxRouteAddressEpoch else { return .failed }
         let after = await supermuxRouteCandidates.dialAddresses(for: key)
         journal.record("supermux-route", "candidates", [
             "peer": String(endpointID.prefix(12)), "count": String(after.count), "answer": stored ? "stored" : "empty",
@@ -287,6 +290,7 @@ extension MobileIrxRuntimeComposition: SupermuxPhoneRouteRuntime {
 
     /// Feeds one Mac's live session to its policy and starts what it asks for.
     private func supermuxRouteStep(peerHex: String, now: Date) async {
+        let epoch = supermuxRouteAddressEpoch
         let engine = enginesByPeer[peerHex]
         let session = await engine?.currentSession()
         let sample = session?.connection.supermuxSelectedPathSample()
@@ -294,7 +298,7 @@ extension MobileIrxRuntimeComposition: SupermuxPhoneRouteRuntime {
         if let sample, !sample.isRelay, let record {
             // Every phone session is outgoing, so its direct path is one the
             // Mac accepts dials on; the store keeps only servable addresses.
-            await supermuxRouteCandidates.learn(sample.remoteAddress, for: Self.supermuxRoutePeerKey(record))
+            await supermuxLearn(sample.remoteAddress, for: Self.supermuxRoutePeerKey(record), epoch: epoch)
         }
         var hasCandidates = false
         if sample?.isRelay == true, let record {
@@ -406,7 +410,9 @@ extension MobileIrxRuntimeComposition: SupermuxPhoneRouteRuntime {
     /// app's alone (0700), excluded from backups and, on the device,
     /// protected until first unlock (files made in it inherit both), like the
     /// Iroh local-path store's. The first builds kept the file beside the
-    /// Iroh state with neither; that copy is removed.
+    /// Iroh state with neither: its addresses move in once (so the first
+    /// dial to each Mac after the update still races direct), never over a
+    /// newer file, and the old copy is removed.
     nonisolated static func supermuxRouteCandidatesFile(stateDirectory: URL) -> URL {
         let files = FileManager()
         let directory = stateDirectory.appendingPathComponent("supermux-route", isDirectory: true)
@@ -420,8 +426,17 @@ extension MobileIrxRuntimeComposition: SupermuxPhoneRouteRuntime {
         values.isExcludedFromBackup = true
         var excluded = directory
         try? excluded.setResourceValues(values)
-        try? files.removeItem(at: stateDirectory.appendingPathComponent("supermux-route-candidates.json"))
-        return directory.appendingPathComponent("candidates.json")
+        let file = directory.appendingPathComponent("candidates.json")
+        let legacy = stateDirectory.appendingPathComponent("supermux-route-candidates.json")
+        if files.fileExists(atPath: legacy.path) {
+            if !files.fileExists(atPath: file.path), let data = try? Data(contentsOf: legacy) {
+                // Written anew inside the directory, so the copy takes its protection.
+                try? data.write(to: file, options: [.atomic])
+                try? files.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+            }
+            try? files.removeItem(at: legacy)
+        }
+        return file
     }
 
     /// The runtime was detached without keeping its sessions (a sign-out, an
@@ -433,9 +448,42 @@ extension MobileIrxRuntimeComposition: SupermuxPhoneRouteRuntime {
         supermuxNetworkDebounce.cancel()
         supermuxRoutePolicies.reset()
         guard forgetAddresses else { return }
+        // Before the first await: a write still out sees it and undoes itself.
+        supermuxRouteAddressEpoch &+= 1
         for peer in await supermuxRouteCandidates.peers() {
             await supermuxRouteCandidates.forget(peer.key)
         }
+    }
+
+    /// Records a Mac's handed-over addresses, decided in address `epoch`.
+    /// A sign-out that came first skips the write; one that came while it
+    /// was out undoes it (``supermuxAddressWriteStands(for:epoch:)``).
+    /// - Returns: Whether the addresses are stored.
+    @discardableResult
+    func supermuxRecordFetched(_ addresses: [String], for key: SupermuxRoutePeerKey, epoch: UInt64) async -> Bool {
+        guard epoch == supermuxRouteAddressEpoch else { return false }
+        let stored = await supermuxRouteCandidates.recordFetched(addresses, for: key)
+        return await supermuxAddressWriteStands(for: key, epoch: epoch) && stored
+    }
+
+    /// Records a direct path a session used, decided in address `epoch`,
+    /// under the same rule as ``supermuxRecordFetched(_:for:epoch:)``.
+    func supermuxLearn(_ address: String, for key: SupermuxRoutePeerKey, epoch: UInt64) async {
+        guard epoch == supermuxRouteAddressEpoch else { return }
+        await supermuxRouteCandidates.learn(address, for: key)
+        await supermuxAddressWriteStands(for: key, epoch: epoch)
+    }
+
+    /// Whether a write for `key` decided in address `epoch` stands: one a
+    /// sign-out overtook (it forgot every address while the write was out)
+    /// is undone, so the signed-out account's addresses never come back. A
+    /// sign-in right behind that sign-out may lose this Mac's first
+    /// addresses too; its next fetch or learned path brings them back.
+    @discardableResult
+    private func supermuxAddressWriteStands(for key: SupermuxRoutePeerKey, epoch: UInt64) async -> Bool {
+        guard epoch != supermuxRouteAddressEpoch else { return true }
+        await supermuxRouteCandidates.forget(key)
+        return false
     }
 
     // MARK: - Directory

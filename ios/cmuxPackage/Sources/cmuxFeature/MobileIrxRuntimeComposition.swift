@@ -77,6 +77,9 @@ public actor MobileIrxRuntimeComposition {
     // SUPERMUX:begin phone-route-direct-race (MobileIrxRuntimeComposition+SupermuxRoute.swift)
     /// Each Mac's direct addresses (handed over or learned), on this phone only.
     let supermuxRouteCandidates: SupermuxRouteCandidateStore
+    /// Counts the sign-outs that forgot every address: a write to the
+    /// address store decided before one is undone.
+    var supermuxRouteAddressEpoch: UInt64 = 0
     /// Each Mac's switch policy (shared with the Mac), the lane its session
     /// went out on, and the network the phone was last on.
     var supermuxRoutePolicies = SupermuxPhoneRoutePolicies()
