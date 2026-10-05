@@ -1,3 +1,4 @@
+// SUPERMUX:begin irx-stream-priority (whole-file fork test: terminal output must not starve keepalive and control — see SUPERMUX-TOUCHPOINTS.md)
 import CMUXMobileCore
 import Foundation
 import IrohLib
@@ -269,3 +270,4 @@ private final class TaskBag: @unchecked Sendable {
         for task in all { task.cancel() }
     }
 }
+// SUPERMUX:end irx-stream-priority

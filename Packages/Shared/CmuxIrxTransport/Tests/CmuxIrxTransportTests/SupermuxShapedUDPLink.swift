@@ -1,3 +1,4 @@
+// SUPERMUX:begin irx-shaped-udp-link (whole-file fork test helper: a shaped UDP relay for live QUIC tests — see SUPERMUX-TOUCHPOINTS.md)
 import Darwin
 import Foundation
 
@@ -211,3 +212,4 @@ final class SupermuxShapedUDPLink: @unchecked Sendable {
         return (fd, UInt16(bigEndian: address.sin_port))
     }
 }
+// SUPERMUX:end irx-shaped-udp-link
