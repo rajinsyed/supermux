@@ -13,6 +13,9 @@ import Testing
 /// 3. A host that turned direct off is asked again within the minute.
 /// 4. Two asks run at once.
 /// 5. A new connection does not ask at once.
+/// 6. (Second review #14) A host that has no address yet (`not_ready`: iroh
+///    fills them 1–3 s after it binds) is asked again only after a minute, so
+///    a fresh link races without direct addresses for that long.
 @Suite struct SupermuxRouteCandidateFetchScheduleTests {
     typealias Schedule = SupermuxRouteCandidateFetchSchedule
     private let t0 = Date(timeIntervalSince1970: 1_000)
@@ -30,7 +33,7 @@ import Testing
         schedule.finished(.stored, at: at(1))
         #expect(!schedule.isDue(at: at(500)))
         #expect(schedule.isDue(at: at(601)))
-        for answer in [Schedule.Answer.notReady, .empty, .failed] {
+        for answer in [Schedule.Answer.empty, .failed] {
             var kept = Schedule()
             kept.started(at: at(0))
             kept.finished(answer, at: at(0.5))
@@ -78,5 +81,18 @@ import Testing
         #expect(Schedule.Answer(errorCode: SupermuxRouteCandidates.directOffErrorCode) == .directOff)
         #expect(Schedule.Answer(errorCode: "forbidden") == .failed)
         #expect(Schedule.Answer(errorCode: nil) == .failed)
+    }
+
+    @Test("6. a host that is not ready yet is asked again within seconds")
+    func notReadyRetriesSoon() {
+        var schedule = Schedule()
+        schedule.started(at: at(0))
+        schedule.finished(.notReady, at: at(0.5))
+        #expect(!schedule.isDue(at: at(4)))
+        #expect(schedule.isDue(at: at(5)), "iroh fills its addresses 1-3 s after binding")
+        schedule.started(at: at(5))
+        schedule.finished(.failed, at: at(5.5))
+        #expect(!schedule.isDue(at: at(30)), "a failure after it waits the minute")
+        #expect(schedule.isDue(at: at(65)))
     }
 }

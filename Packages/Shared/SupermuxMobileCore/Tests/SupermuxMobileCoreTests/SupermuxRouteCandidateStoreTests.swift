@@ -30,6 +30,11 @@ import Testing
 ///    instead of reading as an empty cache.
 /// 9. Device and endpoint ids compared case-sensitively.
 /// 10. An unbounded number of peers.
+/// 11. (Second review #15) The cap comes before the reachability filter: a
+///     peer with many LAN addresses this device cannot reach (VM bridges, ULA
+///     prefixes) pushes its Tailscale address past 16, and the dial has none
+///     left. Served addresses rank private IPv4, then Tailscale, then ULA,
+///     then global IPv6, so ULA prefixes cannot push Tailscale out either.
 @Suite struct SupermuxRouteCandidateStoreTests {
     private final class Clock: @unchecked Sendable {
         private let lock = NSLock()
@@ -62,8 +67,9 @@ import Testing
             "[2001:db8:1::5]:58465", "[fd12:3456::1]:58465",
         ])
         #expect(served == [
-            "192.168.1.196:58465", "[fd12:3456::1]:58465",
+            "192.168.1.196:58465",
             "100.69.64.102:58465", "[fd7a:115c:a1e0::9]:58465",
+            "[fd12:3456::1]:58465",
             "[2001:db8:1::5]:58465",
         ])
     }
@@ -221,5 +227,23 @@ import Testing
         let peers = await store.peers()
         #expect(peers.count == SupermuxRouteCandidateStore.maximumPeers)
         #expect(!peers.contains { $0.key.deviceID == "device-0" })
+    }
+
+    @Test func tailscaleIsNeverCappedOutByOtherLANAddresses() async {
+        let ula = (1...20).map { "[fd00:\(String($0, radix: 16))::1]:58465" }
+        #expect(SupermuxRouteCandidates.servable(ula + ["100.69.64.102:58465"]).contains("100.69.64.102:58465"),
+                "a host with many ULA prefixes still serves its Tailscale address")
+        let store = store()
+        let bridges = (1...16).map { "10.211.\($0).2:58465" }
+        await store.recordFetched(bridges, for: key)
+        await store.learn("100.69.64.102:58465", for: key)
+        let cached = await store.dialAddresses(for: key)
+        #expect(cached.contains("100.69.64.102:58465"), "the cache hands every fresh address to the filter")
+        let homeWithTailscale = [
+            SupermuxLocalInterface(name: "en0", address: "192.168.1.20", prefixLength: 24, isPointToPoint: false)!,
+            SupermuxLocalInterface(name: "utun4", address: "100.70.0.9", prefixLength: 32, isPointToPoint: true)!,
+        ]
+        let dialed = SupermuxRouteCandidates.reachable(cached, from: homeWithTailscale).prefix(SupermuxRouteCandidates.limit)
+        #expect(dialed.contains("100.69.64.102:58465"), "Tailscale goes before LAN guesses on other subnets")
     }
 }

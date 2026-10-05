@@ -38,6 +38,11 @@ import Testing
 /// 14. (Review T10a) A probe handshake that connects right at the deadline
 ///     is neither returned nor closed: a leaked connection on the host.
 /// 15. Every handshake failing leaves the leg hanging instead of failing it.
+/// 16. (Second review #6) The relay's credential is refreshed before the race
+///     starts: with the internet down and the LAN up the lane waits out the
+///     refresh's whole timeout, and after 30 min idle every dial waits an
+///     HTTPS round trip. The refresh belongs to the relay leg, beside the
+///     lane; a relay leg cancelled while it refreshes never dials.
 ///
 /// On live iroh endpoints (the "relay" leg is a second endpoint of the same
 /// identity behind a link with 120 ms each way; the "direct" leg is the lane
@@ -284,6 +289,40 @@ struct SupermuxIrxDirectFirstDialTests {
                      { try await Task.sleep(for: .milliseconds(30)); throw Named(name: "second") }],
                 discard: { (_: Int) in })
         }
+    }
+
+    @Test("16. the relay's credential refresh runs in the relay leg: the lane never waits for it", .timeLimit(.minutes(1)))
+    func credentialRefreshRunsBesideTheLane() async throws {
+        let refresh = FakeLeg(.hang)
+        let dials = Recorder()
+        let started = ContinuousClock.now
+        let outcome = try await SupermuxIrxDirectFirstDial.race(
+            timing: .init(headStart: .milliseconds(20), directDeadline: .seconds(1)),
+            direct: { try await FakeLeg(.value(1, after: .milliseconds(100))).run() },
+            relay: SupermuxIrxDirectFirstDial.relayLeg(
+                credentials: { try await refresh.run() },
+                dial: { credentials in dials.append(credentials); return 2 }),
+            discard: { _ in })
+        #expect(outcome.value == 1 && outcome.leg == .direct)
+        #expect(started.duration(to: .now) < .milliseconds(600), "an internet outage does not hold the LAN")
+        try await waitUntil { refresh.calls == 1 && refresh.cancelled }
+        #expect(dials.values.isEmpty)
+    }
+
+    @Test("16. a relay leg cancelled while its credential refreshes never dials", .timeLimit(.minutes(1)))
+    func cancelledRelayLegNeverDials() async throws {
+        let refresh = FakeLeg(.ignoresCancel(7, after: .milliseconds(150)))
+        let dials = Recorder()
+        let leg = SupermuxIrxDirectFirstDial.relayLeg(
+            credentials: { try await refresh.run() },
+            dial: { credentials in dials.append(credentials); return credentials })
+        let task = Task { try await leg() }
+        try await waitUntil { refresh.calls == 1 }
+        task.cancel()
+        await #expect(throws: CancellationError.self) { _ = try await task.value }
+        try await Task.sleep(for: .milliseconds(250))
+        #expect(dials.values.isEmpty)
+        #expect(try await SupermuxIrxDirectFirstDial.relayLeg(credentials: { 3 }, dial: { $0 * 2 })() == 6)
     }
 
     // MARK: - Live endpoints

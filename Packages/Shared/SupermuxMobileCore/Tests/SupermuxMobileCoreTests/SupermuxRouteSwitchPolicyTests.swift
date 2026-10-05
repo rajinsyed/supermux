@@ -51,6 +51,11 @@ import Testing
 ///     every dial holds a ready relay connection up to the 1.5 s direct deadline.
 /// 20. (H3) A relayed session whose peer's direct addresses are unknown is
 ///     probed (a failure each time), and new addresses wait out the cadence.
+///
+/// Second review (2026-10-06), written before the fix:
+/// 21. (#9) A network change (or new addresses) while a probe is out is
+///     lost: the probe's answer, from the old network, sets the next probe
+///     10 s out.
 struct SupermuxRouteSwitchPolicyTests {
     typealias Policy = SupermuxRouteSwitchPolicy
     private let t0 = Date(timeIntervalSince1970: 1_000)
@@ -481,5 +486,27 @@ struct SupermuxRouteSwitchPolicyTests {
         #expect(policy.probeFailures == 0)
         policy.candidatesChanged(at: at(41))
         #expect(policy.observe(.relay, hasCandidates: true, at: at(41)) == .probe)
+    }
+
+    @Test("21. a network change or new addresses while a probe is out: the next probe goes right after it")
+    func probeSoonDuringAProbe() {
+        var policy = relayed()
+        #expect(policy.observe(.relay, at: at(10)) == .probe)
+        policy.networkChanged(at: at(10.5))
+        #expect(policy.probeFinished(session: policy.session, succeeded: false, at: at(11), jitter: 0.5) == .none)
+        #expect(policy.observe(.relay, at: at(11)) == .probe, "the change came after this probe left")
+
+        var addresses = relayed()
+        #expect(addresses.observe(.relay, at: at(10)) == .probe)
+        addresses.candidatesChanged(at: at(10.5))
+        _ = addresses.probeFinished(session: addresses.session, succeeded: false, at: at(11), jitter: 0.5)
+        #expect(addresses.observe(.relay, at: at(11)) == .probe, "the new addresses were not in this probe")
+
+        var quiet = relayed()
+        #expect(quiet.observe(.relay, at: at(10)) == .probe)
+        _ = quiet.probeFinished(session: quiet.session, succeeded: false, at: at(11), jitter: 0.5)
+        #expect(quiet.observe(.relay, at: at(12)) == .none, "without a change the cadence holds")
+        #expect(quiet.observe(.relay, at: at(19)) == .none)
+        #expect(quiet.observe(.relay, at: at(21)) == .probe)
     }
 }

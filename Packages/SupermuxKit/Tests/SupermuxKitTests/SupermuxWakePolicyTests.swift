@@ -33,6 +33,12 @@ import Testing
 /// 10. A network change while awake does not recover (Tailscale up, a new LAN).
 /// 11. A stuck dark state (a lost wake notification) can never be left: a
 ///     display that is awake ends it.
+/// 13. (Second review #4) The Wi-Fi coming back 2–4 s after the wake, while
+///     the wake's rebuild still waits for a credential, is a network change
+///     without a rebuild: the postponement was recorded only once the wait
+///     ended, so the change that would have run it came first.
+/// 14. (Second review #4) Credentials that arrive after the wake gave up on
+///     them never run the rebuild.
 struct SupermuxWakePolicyTests {
     typealias Policy = SupermuxWakePolicy
     private let t0 = Date(timeIntervalSince1970: 1_000)
@@ -168,16 +174,54 @@ struct SupermuxWakePolicyTests {
         policy.willSleep(at: at(0))
         let wake = policy.woke(.wake, at: at(8 * 3600))
         #expect(wake?.rebuildsMainEndpoint == true)
-        policy.rebuildPostponed(at: at(8 * 3600 + 5))
+        policy.rebuildFinished(keptEndpoint: true)
         let network = policy.networkChanged(at: at(8 * 3600 + 12))
         #expect(network?.rebuildsMainEndpoint == true, "the Wi-Fi came back: rebuild now")
-        #expect(policy.networkChanged(at: at(8 * 3600 + 14))?.rebuildsMainEndpoint == false, "once")
+        policy.rebuildFinished(keptEndpoint: false)
+        #expect(policy.networkChanged(at: at(8 * 3600 + 14))?.rebuildsMainEndpoint == false, "once it ran")
 
         var late = Policy()
         late.willSleep(at: at(0))
         _ = late.woke(.wake, at: at(3600))
-        late.rebuildPostponed(at: at(3605))
+        late.rebuildFinished(keptEndpoint: true)
         #expect(late.networkChanged(at: at(3636))?.rebuildsMainEndpoint == false,
                 "sessions may be live again 30 s after the wake")
+    }
+
+    @Test("13. a network change while the wake's rebuild still waits for a credential wants the rebuild too")
+    func networkChangeDuringTheWakesRebuild() {
+        var policy = Policy()
+        policy.willSleep(at: at(0))
+        _ = policy.woke(.wake, at: at(8 * 3600))
+        let network = policy.networkChanged(at: at(8 * 3600 + 3))
+        #expect(network?.rebuildsMainEndpoint == true, "the Wi-Fi came back inside the wake's wait")
+        policy.rebuildFinished(keptEndpoint: true)
+        #expect(policy.networkChanged(at: at(8 * 3600 + 6))?.rebuildsMainEndpoint == true,
+                "kept again: the next change in the window still tries")
+    }
+
+    @Test("14. credentials that arrive within 30 s of the wake run a rebuild it kept; not after, not twice")
+    func credentialsRunAKeptRebuild() {
+        var policy = Policy()
+        #expect(policy.credentialsReceived(at: at(10)) == nil, "no wake, no rebuild")
+        policy.willSleep(at: at(0))
+        _ = policy.woke(.wake, at: at(8 * 3600))
+        policy.rebuildFinished(keptEndpoint: true)
+        let credentials = policy.credentialsReceived(at: at(8 * 3600 + 20))
+        #expect(credentials == .init(reason: .credentials, sleptSeconds: nil, rebuildsMainEndpoint: true))
+        policy.rebuildFinished(keptEndpoint: false)
+        #expect(policy.credentialsReceived(at: at(8 * 3600 + 21)) == nil, "it ran")
+
+        var late = Policy()
+        late.willSleep(at: at(0))
+        _ = late.woke(.wake, at: at(3600))
+        late.rebuildFinished(keptEndpoint: true)
+        #expect(late.credentialsReceived(at: at(3631)) == nil)
+
+        var asleep = Policy()
+        asleep.willSleep(at: at(0))
+        _ = asleep.woke(.wake, at: at(3600))
+        asleep.willSleep(at: at(3610))
+        #expect(asleep.credentialsReceived(at: at(3615)) == nil, "back to sleep: the next wake decides")
     }
 }
