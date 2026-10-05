@@ -17,6 +17,9 @@ import Testing
 /// 5. The strip hides when the Projects block is folded, so the route is
 ///    invisible exactly when the list is shortest.
 /// 6. The strip's Macs reorder when another Mac becomes the foreground.
+/// 7. A Mac's line vanishes while it reconnects, and comes back after: the
+///    list jumps twice and the user cannot tell the Mac is reconnecting
+///    (review finding I10).
 @MainActor
 @Suite struct SupermuxProjectsRouteStripTests {
     private let wait = TestWait()
@@ -78,6 +81,18 @@ import Testing
         let one = strip(layout([group(studio, route: lan, projectID: "a"), group(macBook, route: nil, projectID: "b")]))
         #expect(one?.map(\.displayName) == ["Studio"])
         #expect(strip(layout([group(studio, route: nil, projectID: "a")])) == nil)
+    }
+
+    @Test func aReconnectingMacKeepsItsLineAndShowsItsStatus() {
+        let reconnecting = SupermuxMacInfo(
+            macDeviceID: "mac-book", instanceTag: "default", displayName: "MacBook",
+            colorIndex: 0, status: .reconnecting, isForeground: false)
+        let macs = strip(layout([group(studio, route: lan, projectID: "a"), group(reconnecting, route: tokyo, projectID: "b")]))
+        #expect(macs?.map(\.displayName) == ["MacBook", "Studio"], "the reconnecting Mac's line vanished")
+        #expect(macs?.first?.route == nil)
+        #expect(macs?.first?.status == .reconnecting)
+        let alone = strip(layout([group(reconnecting, route: nil, projectID: "b")]))
+        #expect(alone?.map(\.status) == [.reconnecting])
     }
 
     @Test func theStripStaysWhenTheBlockIsFolded() {
