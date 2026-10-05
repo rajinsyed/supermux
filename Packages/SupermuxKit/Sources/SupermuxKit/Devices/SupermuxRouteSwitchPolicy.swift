@@ -64,6 +64,9 @@ public struct SupermuxRouteSwitchPolicy: Equatable, Sendable {
     public static let stableDirectLifetime: TimeInterval = SupermuxDeviceLinkSession.provenLifetime
     /// Probe waits are spread by up to this fraction either way, so links do not probe in step.
     public static let jitterFraction = 0.2
+    /// How long a link waits between leaving its session for a better path and
+    /// dialing again, so the old session has released its slot.
+    public static let plannedRedialSettle: Duration = .milliseconds(300)
 
     /// The live session's number (each start bumps it); answers carry it so
     /// an answer about an ended session is ignored.

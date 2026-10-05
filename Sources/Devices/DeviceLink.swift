@@ -175,6 +175,31 @@ final class DeviceLink {
     }
     // SUPERMUX:end device-link-unproven-session-backoff
 
+    // SUPERMUX:begin route-switch
+    /// Moves the live link onto a better path: a direct handshake to the other
+    /// Mac answered while this link sat on the relay. One planned redial after
+    /// a short settle (so the old session has released its slot); the dial's
+    /// race then lands on direct (`Sources/Supermux/Devices/SupermuxDeviceRouteSwitcher.swift`).
+    func supermuxPlannedRedial() {
+        guard phase == .connected else { return }
+        deviceLinkLog.info("device link planned redial \(self.instance.wireValue, privacy: .private(mask: .hash))")
+        transition(applyPolicy(.supermuxPlannedRedial))
+        onChange?()
+    }
+
+    /// The direct path under the live session stopped answering, and the
+    /// session has no relay path to fail over to. Reconnects as a liveness
+    /// failure does (``supermuxReportUnresponsive(_:)``: never at once, the
+    /// backoff of a session that proved nothing continues), but shows no
+    /// failure; the dial skips the direct lane for a while and lands on the relay.
+    func supermuxReportDirectPathLost() {
+        guard phase == .connected else { return }
+        deviceLinkLog.info("device link direct path lost \(self.instance.wireValue, privacy: .private(mask: .hash))")
+        transition(applyPolicy(.supermuxUnresponsive))
+        onChange?()
+    }
+    // SUPERMUX:end route-switch
+
     private func applyPolicy(_ event: DeviceLinkReconnectPolicy.Event) -> Phase {
         policy.apply(event, now: runtime.now())
     }

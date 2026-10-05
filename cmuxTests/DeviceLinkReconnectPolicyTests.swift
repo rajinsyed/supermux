@@ -87,6 +87,25 @@ struct DeviceLinkReconnectPolicyTests {
     }
     // SUPERMUX:end device-link-unproven-session-backoff
 
+    // SUPERMUX:begin route-switch
+    @Test("A planned redial leaves a live link after a short settle and dials attempt 1; nothing else moves")
+    func plannedRedialSettlesThenDialsAfresh() {
+        var policy = DeviceLinkReconnectPolicy()
+        _ = policy.apply(.directory(dialable: true))
+        _ = policy.apply(.connectFailed(failure(.transient, "x")))
+        _ = policy.apply(.waitElapsed)
+        #expect(policy.apply(.connectSucceeded, now: connectedAt) == .connected)
+        #expect(policy.apply(.supermuxPlannedRedial, now: connectedAt) == .waiting(
+            attempt: 0, delay: SupermuxRouteSwitchPolicy.plannedRedialSettle))
+        #expect(policy.apply(.waitElapsed) == .connecting(attempt: 1), "a move is not a failure: the streak starts over")
+        #expect(policy.apply(.supermuxPlannedRedial) == .connecting(attempt: 1), "only a live link moves")
+        _ = policy.apply(.connectSucceeded, now: connectedAt)
+        let outdated = DeviceLinkFailure.controlPlaneOutdated()
+        _ = policy.apply(.directory(dialable: true, precondition: outdated))
+        #expect(policy.apply(.supermuxPlannedRedial) == .connected, "a precondition would block the redial, so the link stays")
+    }
+    // SUPERMUX:end route-switch
+
     @Test("A below-link cancellation during a dial enters the reconnect policy")
     func interruptedConnectRetries() {
         var policy = DeviceLinkReconnectPolicy()

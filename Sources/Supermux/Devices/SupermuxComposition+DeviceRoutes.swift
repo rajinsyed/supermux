@@ -2,8 +2,8 @@ import Foundation
 import SupermuxKit
 import SupermuxMobileCore
 
-/// App-wide instances for the route each remote Mac's link uses and the
-/// direct addresses this Mac dials them at.
+/// App-wide instances for the route each remote Mac's link uses, the
+/// direct addresses this Mac dials them at, and the direct lane it dials on.
 @MainActor
 extension SupermuxComposition {
     /// Each connected Mac's published route (direct LAN / Tailscale /
@@ -21,6 +21,16 @@ extension SupermuxComposition {
         sessionEndpointID: { instance in
             await SupermuxDeviceRouteMonitor.outgoingConnection(to: instance)?.remoteEndpointIDHex
         }
+    )
+
+    /// This Mac's direct lane: the dial's direct leg and the route probes, used off the main actor.
+    nonisolated static let directLane = SupermuxDeviceDirectLane(journal: MobileHostIrxRuntime.journal)
+
+    /// Moves each link between the direct lane and the relay.
+    static let routeSwitcher = SupermuxDeviceRouteSwitcher(
+        devices: devices,
+        journal: MobileHostIrxRuntime.journal,
+        session: { device in await SupermuxDeviceRouteSwitcher.liveSession(for: device) }
     )
 
     /// Samples each connected link's path into ``deviceRoutes``.

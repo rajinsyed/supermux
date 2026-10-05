@@ -21,6 +21,16 @@ import SupermuxMobileCore
 ///   → `{outcome}`.
 /// - `route.candidates {}`: the cache → `{file, peers: [{device_id, tag,
 ///   endpoint_id, dial_addresses, candidates}], fetches_stored, served_count}`.
+/// - `route.switch {machine, active?, lane?: open|blocked, reset?}`: the
+///   simulated network under the loopback link (``SupermuxRouteSwitchSimulation``);
+///   `reset` forgets the link's switch policy, counters and landings; turning
+///   it off unpins the route → the status below.
+/// - `route.switch_status {machine}` → `{active, lane_open, landings: [{at_ms,
+///   direct}], policy: {session, flaps, probe_failures, allows_direct,
+///   hold_off_ms}, stats: {probes, probe_successes, checks, misses, upgrades,
+///   fallbacks}}`.
+/// - `route.probe_now {reason?}`: the wake / network-change hook
+///   (``SupermuxDeviceRouteSwitcher/probeNow(reason:)``) → `{}`.
 @MainActor
 enum SupermuxDeviceRouteSocketCommands {
     static let methodPrefix = "route."
@@ -46,6 +56,11 @@ enum SupermuxDeviceRouteSocketCommands {
             let outcome = await SupermuxComposition.routeCandidateSync.fetch(try device(params))
             return ["outcome": outcome.rawValue]
         case "candidates": return await candidates()
+        case "switch": return try simulate(params)
+        case "switch_status": return switchStatus(try device(params))
+        case "probe_now":
+            SupermuxComposition.routeSwitcher.probeNow(reason: params["reason"] as? String ?? "debug")
+            return [:]
         default: throw HookError(message: "unknown route method \(name)")
         }
     }
@@ -96,6 +111,55 @@ enum SupermuxDeviceRouteSocketCommands {
             "peers": peers,
             "fetches_stored": SupermuxComposition.routeCandidateSync.storedCount,
             "served_count": SupermuxRouteCandidatesHost.servedCount,
+        ]
+    }
+
+    private static func simulate(_ params: [String: Any]) throws -> [String: Any] {
+        let device = try device(params)
+        guard device.isLoopback else { throw HookError(message: "only the loopback link can be simulated") }
+        let simulation = SupermuxRouteSwitchSimulation.shared
+        if params["reset"] as? Bool == true {
+            SupermuxComposition.routeSwitcher.reset(device.instance)
+            simulation.clearLandings()
+        }
+        switch params["lane"] as? String {
+        case "open": simulation.laneOpen = true
+        case "blocked": simulation.laneOpen = false
+        case nil: break
+        default: throw HookError(message: "lane must be open or blocked")
+        }
+        if let active = params["active"] as? Bool {
+            simulation.activate(active)
+            if !active {
+                SupermuxComposition.routeSwitcher.reset(device.instance)
+                SupermuxComposition.deviceRouteMonitor.pin(nil, for: device.instance)
+            }
+        }
+        return switchStatus(device)
+    }
+
+    private static func switchStatus(_ device: SupermuxDevice) -> [String: Any] {
+        let simulation = SupermuxRouteSwitchSimulation.shared
+        let switcher = SupermuxComposition.routeSwitcher
+        let stats = switcher.stats[device.instance] ?? SupermuxDeviceRouteSwitcher.Stats()
+        var policy: [String: Any] = ["allows_direct": switcher.allowsDirect(device.instance)]
+        if let current = switcher.policy(for: device.instance) {
+            policy["session"] = current.session
+            policy["flaps"] = current.flaps
+            policy["probe_failures"] = current.probeFailures
+            policy["hold_off_ms"] = current.holdOffUntil.map { max(0, Int($0.timeIntervalSinceNow * 1_000)) } ?? 0
+        }
+        return [
+            "active": simulation.isActive,
+            "lane_open": simulation.laneOpen,
+            "landings": simulation.landings.map {
+                ["at_ms": Int($0.at.timeIntervalSince1970 * 1_000), "direct": $0.direct] as [String: Any]
+            },
+            "policy": policy,
+            "stats": [
+                "probes": stats.probes, "probe_successes": stats.probeSuccesses, "checks": stats.checks,
+                "misses": stats.misses, "upgrades": stats.upgrades, "fallbacks": stats.fallbacks,
+            ],
         ]
     }
 

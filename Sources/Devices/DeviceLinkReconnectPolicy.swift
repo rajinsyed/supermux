@@ -51,6 +51,11 @@ struct DeviceLinkReconnectPolicy: Equatable, Sendable {
         /// liveness check after it found no sign of life. Never redials at once.
         case supermuxUnresponsive
         // SUPERMUX:end device-link-unproven-session-backoff
+        // SUPERMUX:begin route-switch
+        /// Move a live link onto a better path (the direct lane answered): not
+        /// a failure, so one short settle and the next dial is attempt 1.
+        case supermuxPlannedRedial
+        // SUPERMUX:end route-switch
     }
 
     static let delays: [Duration] = [.seconds(1), .seconds(2), .seconds(5), .seconds(10), .seconds(30)]
@@ -160,6 +165,14 @@ struct DeviceLinkReconnectPolicy: Equatable, Sendable {
                 phase = .waiting(attempt: attempt, delay: delay)
             }
             // SUPERMUX:end device-link-unproven-session-backoff
+        // SUPERMUX:begin route-switch
+        case .supermuxPlannedRedial:
+            guard phase == .connected, isDialable, directoryPrecondition == nil else { return phase }
+            supermuxSession = nil
+            connectedSince = nil
+            // The settle lets the old session release its slot; `waitElapsed` dials attempt 1.
+            phase = .waiting(attempt: 0, delay: SupermuxRouteSwitchPolicy.plannedRedialSettle)
+        // SUPERMUX:end route-switch
         case .waitElapsed:
             guard case .waiting(let attempt, _) = phase else { return phase }
             phase = isDialable ? .connecting(attempt: attempt + 1) : .idle

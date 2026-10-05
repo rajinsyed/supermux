@@ -60,6 +60,7 @@ enum SupermuxDevicesGlue {
         SupermuxProjectsGlue.activateIfNeeded()
         SupermuxPortsGlue.activateIfNeeded()
         SupermuxComposition.deviceRouteMonitor.start()
+        SupermuxComposition.routeSwitcher.start()
         projectRemotesTask = Task { @MainActor in
             let model = SupermuxComposition.projectsModel
             await model.loadIfNeeded()

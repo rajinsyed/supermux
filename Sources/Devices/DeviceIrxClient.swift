@@ -322,13 +322,13 @@ actor DeviceIrxClient {
             credentials = Self.relayCredentials(await context.control.snapshot().cache, at: now())
         }
         guard await context.isCurrent(), !credentials.isEmpty else { throw DeviceLinkError.notConnected }
-        // SUPERMUX:begin route-dial-candidates (the peer's direct addresses, so the dial can start on the LAN or Tailscale; upstream: `directAddresses: []`)
-        let supermuxDirect = await SupermuxRouteDialCandidates.addresses(
-            for: instance, endpointID: endpoint, allowsDirectPaths: context.allowsDirectPaths, journal: journal)
-        let address = try context.supervisor.dialAddress(
-            peerEndpointIDHex: endpoint, relayURL: relay, directAddresses: supermuxDirect)
+        // SUPERMUX:begin route-dial-candidates (direct first: this Mac's direct lane at the peer's direct addresses races the relay dial below; upstream: `let address = try context.supervisor.dialAddress(peerEndpointIDHex: endpoint, relayURL: relay, directAddresses: [])` then `let connection = try await context.supervisor.dial(address: address, credentials: credentials)`)
+        let (connection, supermuxLeg) = try await SupermuxDeviceDirectDial.connect(
+            instance: instance, endpointID: endpoint, relayURL: relay, credentials: credentials,
+            main: context.supervisor, allowsDirectPaths: context.allowsDirectPaths, journal: journal)
+        // A session on the lane never authorizes NAT traversal: no candidates, no health checks, no quarantine.
+        let supermuxAuthorizesDirectPaths = context.allowsDirectPaths && supermuxLeg == .relay
         // SUPERMUX:end route-dial-candidates
-        let connection = try await context.supervisor.dial(address: address, credentials: credentials)
         do {
             guard await context.isCurrent() else { throw DeviceLinkError.notConnected }
             // Post-admit binding recheck. On the direct-path lane it runs
@@ -345,9 +345,13 @@ actor DeviceIrxClient {
             }
             let (admit, control) = try await IrxAdmission().performClient(
                 connection: connection, journal: journal,
-                authorizesDirectPaths: context.allowsDirectPaths,
+                // SUPERMUX:begin route-dial-candidates (upstream: `authorizesDirectPaths: context.allowsDirectPaths,`)
+                authorizesDirectPaths: supermuxAuthorizesDirectPaths,
+                // SUPERMUX:end route-dial-candidates
                 preAuthorization: recheckBinding)
-            if !context.allowsDirectPaths { try await recheckBinding() }
+            // SUPERMUX:begin route-dial-candidates (upstream: `if !context.allowsDirectPaths { … }`)
+            if !supermuxAuthorizesDirectPaths { try await recheckBinding() }
+            // SUPERMUX:end route-dial-candidates
             await connection.raiseRemoteStreamCredit(bi: 0, uni: 4)
             return IrxClientSession(connection: connection, admit: admit, control: control, establishedAt: now())
         } catch {
