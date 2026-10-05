@@ -10,6 +10,23 @@ extension SupermuxNewWorktreeSheetModel {
         phase == .idle && showsPromptEditor && target?.supportsPromptAttachments == true
     }
 
+    /// Converts the images Claude cannot read (HEIC, TIFF, …) off the main
+    /// actor, then adds them like ``addAttachments(_:)``. The file picker and
+    /// the socket's `fill` use it, as a paste or drop does.
+    /// - Parameter files: Image files on this Mac.
+    public func attachImages(_ files: [URL]) async {
+        await importImages(.files(files))
+    }
+
+    /// Converts a paste, drop or pick (``SupermuxPromptImageImporter``), then
+    /// adds its files; ``canCreate`` stays false meanwhile.
+    func importImages(_ source: SupermuxPromptImageSource, using importer: SupermuxPromptImageImporter = .init()) async {
+        guard phase == .idle else { return }
+        pendingImageImports += 1
+        defer { pendingImageImports -= 1 }
+        addAttachments(await importer.files(for: source))
+    }
+
     /// Adds image files in order. A file that is not a PNG, JPEG, GIF or WebP
     /// image, is over 32 MB, or would pass the limit of
     /// ``SupermuxAgentAttachmentLimits/maximumAttachments`` is left out and

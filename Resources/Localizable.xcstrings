@@ -640698,55 +640698,55 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "“%@” is larger than 32 MB."
+            "value": "“%1$@” is larger than %2$@."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "„%@“ ist größer als 32 MB."
+            "value": "„%1$@“ ist größer als %2$@."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "« %@ » dépasse 32 Mo."
+            "value": "« %1$@ » dépasse %2$@."
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "«%@» أكبر من 32 ميغابايت."
+            "value": "«%1$@» أكبر من %2$@."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "«%@» supera los 32 MB."
+            "value": "«%1$@» supera los %2$@."
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "「%@」超過 32 MB。"
+            "value": "「%1$@」超過 %2$@。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "“%@”超过 32 MB。"
+            "value": "“%1$@”超过 %2$@。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "‘%@’이(가) 32MB보다 큽니다."
+            "value": "‘%1$@’이(가) %2$@보다 큽니다."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "「%@」は 32 MB を超えています。"
+            "value": "「%1$@」は %2$@ を超えています。"
           }
         }
       }
@@ -640757,55 +640757,55 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "You can attach up to 10 images."
+            "value": "You can attach up to %lld images."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sie können bis zu 10 Bilder anhängen."
+            "value": "Sie können bis zu %lld Bilder anhängen."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Vous pouvez joindre jusqu’à 10 images."
+            "value": "Vous pouvez joindre jusqu’à %lld images."
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "يمكنك إرفاق 10 صور كحد أقصى."
+            "value": "يمكنك إرفاق %lld صور كحد أقصى."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Puedes adjuntar hasta 10 imágenes."
+            "value": "Puedes adjuntar hasta %lld imágenes."
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "最多可附加 10 張影像。"
+            "value": "最多可附加 %lld 張影像。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "最多可附加 10 张图片。"
+            "value": "最多可附加 %lld 张图片。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "이미지는 최대 10개까지 첨부할 수 있습니다."
+            "value": "이미지는 최대 %lld개까지 첨부할 수 있습니다."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "添付できる画像は 10 枚までです。"
+            "value": "添付できる画像は %lld 枚までです。"
           }
         }
       }

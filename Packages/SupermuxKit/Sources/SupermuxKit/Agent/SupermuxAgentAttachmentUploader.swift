@@ -10,7 +10,8 @@ public import SupermuxMobileCore
 /// (10 × 32 MiB), and few operations means few folders there: each becomes
 /// one `--add-dir`, and every one of them must fit the launch line (see
 /// ``SupermuxAgentLaunchCommand/maxInputUTF8Length``). The chunk contract is
-/// upstream's `mobile.task.attachment.upload`; `send` performs one call.
+/// upstream's `mobile.task.attachment.upload`; `send` performs one call, so
+/// files pasted into another Mac's terminal reuse it with that method.
 ///
 /// ```swift
 /// let uploader = SupermuxAgentAttachmentUploader { params in

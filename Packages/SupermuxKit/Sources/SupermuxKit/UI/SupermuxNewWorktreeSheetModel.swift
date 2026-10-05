@@ -45,6 +45,9 @@ public final class SupermuxNewWorktreeSheetModel {
     public var prompt = ""
     /// Images attached to the prompt (``addAttachments(_:)``), in order.
     public internal(set) var attachments: [SupermuxPromptAttachment] = []
+    /// Pastes, drops or picks still being converted (``attachImages(_:)``);
+    /// Start waits for them, so no image is left behind.
+    public internal(set) var pendingImageImports = 0
     public var workspaceName = ""
     public var branchInput = ""
 
@@ -191,11 +194,13 @@ public final class SupermuxNewWorktreeSheetModel {
     }
 
     /// Whether the primary button is enabled: a reachable target, not
-    /// mid-create, and text for Claude when images are attached.
+    /// mid-create, no image still converting, and text for Claude when
+    /// images are attached.
     /// The branch list is optional (an untouched picker defers to the service
     /// default), so a failed or slow branch read never blocks creating.
     public var canCreate: Bool {
-        phase == .idle && target != nil && selectedEntry?.canCreate == true && (!hasPrompt || hasPromptText)
+        phase == .idle && pendingImageImports == 0 && target != nil && selectedEntry?.canCreate == true
+            && (!hasPrompt || hasPromptText)
     }
 
     /// The target's configured default starting branch.

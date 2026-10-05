@@ -154,7 +154,7 @@ public struct SupermuxNewWorktreeSheet: View {
         }
         .fileImporter(isPresented: $showsImagePicker, allowedContentTypes: [.image], allowsMultipleSelection: true) { result in
             guard case let .success(files) = result else { return }
-            sheet.addAttachments(SupermuxPromptImageImporter().attachable(files))
+            Task { await sheet.attachImages(files) }
         }
         // Loads the selected Mac's branches and Claude options, again after
         // every device switch and when that Mac (re)connects.
@@ -206,7 +206,7 @@ public struct SupermuxNewWorktreeSheet: View {
                     isEditable: sheet.phase == .idle,
                     acceptsImages: sheet.canAttachImages,
                     focusOnAppear: true,
-                    onImages: { files in sheet.addAttachments(files) }
+                    onImages: { images in Task { await sheet.importImages(images) } }
                 )
             }
             .frame(minHeight: sheet.attachments.isEmpty ? 56 : 44, maxHeight: 160)

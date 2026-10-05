@@ -14,7 +14,8 @@ import SupermuxKit
 /// `open {project_id, preferred_device?, window_id?}` → session state,
 /// `select {session_id, entry_id}`, `load {session_id}`,
 /// `fill {session_id, prompt?, workspace_name?, branch_name?, base_branch?, command?, attachments?}`
-/// (`attachments`: image file paths, added as a paste or drop adds them),
+/// (`attachments`: image file paths, converted and added as the file picker
+/// adds them; it answers once they are attached),
 /// `remove_attachment {session_id, index}`,
 /// `submit {session_id, <fill fields>, await_open?, stop_link_after_seconds?}`,
 /// `state {session_id}`, `close {session_id}`, `last_device {set?}` (the one
@@ -60,7 +61,7 @@ enum SupermuxNewWorktreeSocketCommands {
             return state(try session(params))
         case "fill":
             let session = try session(params)
-            fill(session.model, params)
+            await fill(session.model, params)
             return state(session)
         case "remove_attachment":
             let session = try session(params)
@@ -123,7 +124,7 @@ enum SupermuxNewWorktreeSocketCommands {
     }
 
     /// Types into the sheet's fields (the ones given), as the user would.
-    private static func fill(_ model: SupermuxNewWorktreeSheetModel, _ params: [String: Any]) {
+    private static func fill(_ model: SupermuxNewWorktreeSheetModel, _ params: [String: Any]) async {
         if let prompt = params["prompt"] as? String { model.prompt = prompt }
         if let name = params["workspace_name"] as? String { model.workspaceName = name }
         if let branch = params["branch_name"] as? String { model.branchInput = branch }
@@ -133,7 +134,7 @@ enum SupermuxNewWorktreeSocketCommands {
         }
         if let command = params["command"] as? String { model.selectCommand(command) }
         if let paths = params["attachments"] as? [String] {
-            model.addAttachments(paths.map { URL(fileURLWithPath: $0) })
+            await model.attachImages(paths.map { URL(fileURLWithPath: $0) })
         }
     }
 
@@ -144,7 +145,7 @@ enum SupermuxNewWorktreeSocketCommands {
     private static func submit(_ params: [String: Any], payloads: SupermuxDevicesSocketPayloads) async throws -> [String: Any] {
         let session = try session(params)
         let model = session.model
-        fill(model, params)
+        await fill(model, params)
         var finished = false
         guard let task = model.submit(onFinished: { finished = true }) else {
             throw invalid("Create is disabled for the selected Mac (can_create is false)")

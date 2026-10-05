@@ -419,11 +419,14 @@ changes no selection. Because the loopback's two Macs share one window list, sel
 per workspace (`workspace.list`), and the sheet path checks the source workspace is not selected
 while its mirror is. `--only a,b` runs a subset of steps.
 
-Steps 14–16 cover prompt images: an image attached without text keeps Start disabled (and a
-non-image is refused); Start Claude with an image on the Loopback Mac uploads it
-(`agent.attachment.upload`) and the echoed launch names its path in `~/.cache/cmux/task-attachments`
-with matching bytes and its folder as `--add-dir`; on This Mac it is a private copy under
-`~/.local/state/cmux/supermux-agent-attachments`.
+Steps 14–18 cover prompt images: an image attached without text keeps Start disabled (and a
+non-image is refused); Start Claude with 10 images on the Loopback Mac uploads them
+(`agent.attachment.upload`) in one operation and the echoed launch names all their paths in one
+folder of `~/.cache/cmux/task-attachments` with matching bytes and that folder as the one
+`--add-dir`; on This Mac each is a private copy under
+`~/.local/state/cmux/supermux-agent-attachments`; `agent.start` refuses paths outside an upload
+folder of the store (including a file directly in it); a HEIC attaches as a JPEG, an opaque TIFF
+as a PNG, and a symlink as the file it points to.
 
 ```bash
 open -g --env SUPERMUX_DEBUG_LOOPBACK_DEVICE=1 --env SUPERMUX_PROJECTS_FILE=/tmp/<tag>/projects.json "<App path>"

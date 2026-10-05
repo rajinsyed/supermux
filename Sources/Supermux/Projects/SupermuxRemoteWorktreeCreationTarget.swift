@@ -190,10 +190,13 @@ final class SupermuxRemoteWorktreeCreationTarget: SupermuxWorktreeCreationTarget
         return line.utf8.count + 1 > SupermuxAgentLaunchCommand.maxInputUTF8Length ? nil : line
     }
 
-    /// Shown until that Mac's capabilities are known; staging then checks
-    /// them, so an older Mac fails with an update hint before anything is sent.
+    /// Never when the organization disables file transfer (images would have
+    /// to be sent). Otherwise shown until that Mac's capabilities are known;
+    /// staging then checks them, so an older Mac fails with an update hint
+    /// before anything is sent.
     var supportsPromptAttachments: Bool {
-        devices.cachedHostCapabilities(on: machine)
+        guard ManagedFileTransferPolicy.isEnabled else { return false }
+        return devices.cachedHostCapabilities(on: machine)
             .map { $0.contains(SupermuxMobileCapability.agentAttachmentsV1.rawValue) } ?? true
     }
 

@@ -1,4 +1,5 @@
 public import Foundation
+import SupermuxMobileCore
 
 /// Why an image could not be attached to a Start Claude prompt, or not sent
 /// to the Mac that runs Claude.
@@ -24,15 +25,19 @@ public enum SupermuxAgentAttachmentError: Error, Equatable, Sendable, LocalizedE
                 defaultValue: "“\(name)” isn’t a PNG, JPEG, GIF or WebP image."
             )
         case .tooLarge(let name):
+            let limit = ByteCountFormatter.string(
+                fromByteCount: Int64(SupermuxAgentAttachmentLimits.maximumFileBytes),
+                countStyle: .memory
+            )
             return String(
                 localized: "supermux.agent.attachment.tooLarge",
-                defaultValue: "“\(name)” is larger than 32 MB."
+                defaultValue: "“\(name)” is larger than \(limit)."
             )
         case .tooMany:
-            // The limit is SupermuxAgentAttachmentLimits.maximumAttachments.
+            let limit = SupermuxAgentAttachmentLimits.maximumAttachments
             return String(
                 localized: "supermux.agent.attachment.tooMany",
-                defaultValue: "You can attach up to 10 images."
+                defaultValue: "You can attach up to \(limit) images."
             )
         case .unreadable(let name):
             return String(

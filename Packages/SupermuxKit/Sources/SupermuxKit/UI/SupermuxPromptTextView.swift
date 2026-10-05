@@ -16,7 +16,7 @@ struct SupermuxPromptTextView: NSViewRepresentable {
     /// a plain-text view).
     var acceptsImages: Bool
     var focusOnAppear: Bool
-    var onImages: ([URL]) -> Void
+    var onImages: (SupermuxPromptImageSource) -> Void
 
     /// Insets that put the first character where the sheet's placeholder is.
     static let textInset = NSSize(width: 4, height: 8)
@@ -68,21 +68,25 @@ struct SupermuxPromptTextView: NSViewRepresentable {
         update(textView, coordinator: context.coordinator)
     }
 
-    /// The text's height at the current width, for the sheet's frame to clamp.
+    /// The text's height at the proposed width (the view's own width before
+    /// SwiftUI proposes one), for the sheet's frame to clamp.
     func sizeThatFits(_ proposal: ProposedViewSize, nsView scrollView: NSScrollView, context: Context) -> CGSize? {
-        guard let textView = scrollView.documentView as? NSTextView,
-              let layout = textView.layoutManager,
-              let container = textView.textContainer else { return nil }
-        layout.ensureLayout(for: container)
-        let height = layout.usedRect(for: container).height + textView.textContainerInset.height * 2
-        return CGSize(width: proposal.width ?? scrollView.frame.width, height: ceil(height))
+        guard let textView = scrollView.documentView as? NSTextView else { return nil }
+        let proposed = proposal.width.flatMap { $0.isFinite && $0 > 0 ? $0 : nil }
+        let width = proposed ?? scrollView.frame.width
+        let textHeight = context.coordinator.measuredHeight(
+            of: textView.string,
+            font: textView.font,
+            width: width - Self.textInset.width * 2
+        )
+        return CGSize(width: width, height: ceil(textHeight + Self.textInset.height * 2))
     }
 
     private func update(_ textView: SupermuxPromptNSTextView, coordinator: Coordinator) {
         textView.isEditable = isEditable
         textView.isSelectable = true
         textView.acceptsImages = acceptsImages
-        textView.onImages = { files in coordinator.parent.onImages(files) }
+        textView.onImages = { images in coordinator.parent.onImages(images) }
         // Focus can change while SwiftUI is placing the view (focus on
         // appear); the binding is written after that pass.
         textView.onFocusChange = { focused in
@@ -102,13 +106,32 @@ struct SupermuxPromptTextView: NSViewRepresentable {
         }
     }
 
-    /// Pushes typed text into the binding.
+    /// Pushes typed text into the binding, and measures it.
     @MainActor
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: SupermuxPromptTextView
+        // Lays the text out at any width without touching the view, whose
+        // own width is still zero before its first layout.
+        private let measureStorage = NSTextStorage()
+        private let measureLayout = NSLayoutManager()
+        private let measureContainer = NSTextContainer()
 
         init(parent: SupermuxPromptTextView) {
             self.parent = parent
+            super.init()
+            measureStorage.addLayoutManager(measureLayout)
+            measureLayout.addTextContainer(measureContainer)
+        }
+
+        /// The laid-out height of `text` in a text container `width` wide.
+        func measuredHeight(of text: String, font: NSFont?, width: CGFloat) -> CGFloat {
+            if measureStorage.string != text {
+                let font = font ?? .systemFont(ofSize: 13)
+                measureStorage.setAttributedString(NSAttributedString(string: text, attributes: [.font: font]))
+            }
+            measureContainer.size = NSSize(width: max(width, 1), height: .greatestFiniteMagnitude)
+            measureLayout.ensureLayout(for: measureContainer)
+            return measureLayout.usedRect(for: measureContainer).height
         }
 
         func textDidChange(_ notification: Notification) {
