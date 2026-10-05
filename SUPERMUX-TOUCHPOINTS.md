@@ -16,7 +16,7 @@ Rules for adding a touchpoint:
 - Numbering: the highest number in use is **783** (remote terminal streaming, #777–#783; #764–#776 are
   reserved for open PRs #74/#75). The remote-workspaces work (#517–#599) left
 - Numbering: the highest number in use is **818**. The remote-workspaces work (#517–#599) left
-- Numbering: the highest number in use is **1080** (#1078–#1080: which path a remote Mac's link uses, shown on this Mac, and the link history `cmux iroh-diag` keeps: `irx-journal-link-history`, `iroh-diag-links`). Before that **1077** (#1071–#1077: sleep, wake and network changes between Macs: `v2-directory-refresh-floor`, `device-dark-wake-gate`, `device-sleep-courtesy`; #1065–#1070: always direct between Macs, the direct lane and moving a link between it and the relay: `route-direct-lane`, `route-switch`, `route-dial-candidates` reworked, and the unfenced test helper `SupermuxShapedUDPLink.swift`; #1060–#1064: route visibility and the direct-address exchange: `irx-route-sample`, `route-candidates-off-main`, `route-dial-candidates`; #1052–#1059: remote terminal latency, re-attach and resume: `device-mirror-reattach-input`, `sizing-mac-close-grace`, `terminal-stream-tee-grace`, `terminal-replay-deadline`, `terminal-replay-supersede`; #1043–#1051: remote terminal latency, the host's output path: `terminal-stream-fair-queue`, `render-grid-watch`, `host-writer-bulk-yields`; #1033–#1042: remote terminal latency, transport priorities and liveness: `irx-stream-priority`, `transport-peer-liveness`, `device-link-unproven-session-backoff`; #1100–#1129 are reserved for the phone side of the same work). Before that **1032** (#999–#1002: terminal sizing's review fixes: a hand-set Mac pane false, the writer of a clear's generation fence, a report from a closed connection, the legacy dialect's lanes; #1027–#1032: terminal sizing's soft leave, Fixed seed and mirror claims; #1011–#1026: the phone side of terminal sizing: a soft scene-phase leave, a terminal hidden under another tab, a re-report on reconnect, a clear to the Mac holding the lease, a `detached` refusal; both ranges were #970–#975 and #990–#1005 on their branch until #92 took those numbers, so commit messages there use the old ones; #952–#969: the Mac side of terminal sizing: the recovery E2E drivers, the apply governor no longer wedges, activity that decides nothing is kept, scroll and TextBox activation, a connection close clears only its own reports, lane input is the phone's activity, a replay's claim is sticky, a detached phone is told again, a phone following this Mac's selection does not take the grid; #925–#951 are assigned on main: the iOS project, the irx transport, the phone's startup and reconnects, the right sidebar's mode bar; #1003–#1009 are unassigned). Before that **1010** (#970–#978: hidden mirrors stream in batches and reconnects resume quiet terminals; #979: a moved workspace's spinners follow its window; #980–#981: fewer process censuses; #982–#994, #996 and #998: cmux-wide battery fixes (995 unassigned; #997, a slower hang-watchdog heartbeat, was retired before merge); #1010: the mobile observers' shared state-sync ticker; 999–1009 are unassigned). Before that **924** (#920–#924: only this Mac's own input hands an Auto grid to the Mac pane). #907–#913: answering a Claude question or plan brings the working indicator back. Before that **906** (#900–#906: a streaming mirror re-anchors when the other Mac's grid changes). Before that **883** (#880–#883: Remote Host Mode's hotkey and notification shows, Auto's `view_appeared` report; #850–#879 are held by another open branch). The remote-workspaces work (#517–#599) left
+- Numbering: the highest number in use is **1117** (#1100–#1117: the phone side of the remote-terminal latency and routing work: #1100–#1109 `terminal-lane-retry`, `agent-feed-retry-backoff`, `render-grid-sink-first`; #1110–#1117 the iPhone's per-Mac route and direct-first dial, `phone-route-direct-race`; 1081–1099 and 1118–1129 are unassigned). Before that **1080** (#1078–#1080: which path a remote Mac's link uses, shown on this Mac, and the link history `cmux iroh-diag` keeps: `irx-journal-link-history`, `iroh-diag-links`). Before that **1077** (#1071–#1077: sleep, wake and network changes between Macs: `v2-directory-refresh-floor`, `device-dark-wake-gate`, `device-sleep-courtesy`; #1065–#1070: always direct between Macs, the direct lane and moving a link between it and the relay: `route-direct-lane`, `route-switch`, `route-dial-candidates` reworked, and the unfenced test helper `SupermuxShapedUDPLink.swift`; #1060–#1064: route visibility and the direct-address exchange: `irx-route-sample`, `route-candidates-off-main`, `route-dial-candidates`; #1052–#1059: remote terminal latency, re-attach and resume: `device-mirror-reattach-input`, `sizing-mac-close-grace`, `terminal-stream-tee-grace`, `terminal-replay-deadline`, `terminal-replay-supersede`; #1043–#1051: remote terminal latency, the host's output path: `terminal-stream-fair-queue`, `render-grid-watch`, `host-writer-bulk-yields`; #1033–#1042: remote terminal latency, transport priorities and liveness: `irx-stream-priority`, `transport-peer-liveness`, `device-link-unproven-session-backoff`; #1100–#1129 were reserved for the phone side of the same work). Before that **1032** (#999–#1002: terminal sizing's review fixes: a hand-set Mac pane false, the writer of a clear's generation fence, a report from a closed connection, the legacy dialect's lanes; #1027–#1032: terminal sizing's soft leave, Fixed seed and mirror claims; #1011–#1026: the phone side of terminal sizing: a soft scene-phase leave, a terminal hidden under another tab, a re-report on reconnect, a clear to the Mac holding the lease, a `detached` refusal; both ranges were #970–#975 and #990–#1005 on their branch until #92 took those numbers, so commit messages there use the old ones; #952–#969: the Mac side of terminal sizing: the recovery E2E drivers, the apply governor no longer wedges, activity that decides nothing is kept, scroll and TextBox activation, a connection close clears only its own reports, lane input is the phone's activity, a replay's claim is sticky, a detached phone is told again, a phone following this Mac's selection does not take the grid; #925–#951 are assigned on main: the iOS project, the irx transport, the phone's startup and reconnects, the right sidebar's mode bar; #1003–#1009 are unassigned). Before that **1010** (#970–#978: hidden mirrors stream in batches and reconnects resume quiet terminals; #979: a moved workspace's spinners follow its window; #980–#981: fewer process censuses; #982–#994, #996 and #998: cmux-wide battery fixes (995 unassigned; #997, a slower hang-watchdog heartbeat, was retired before merge); #1010: the mobile observers' shared state-sync ticker; 999–1009 are unassigned). Before that **924** (#920–#924: only this Mac's own input hands an Auto grid to the Mac pane). #907–#913: answering a Claude question or plan brings the working indicator back. Before that **906** (#900–#906: a streaming mirror re-anchors when the other Mac's grid changes). Before that **883** (#880–#883: Remote Host Mode's hotkey and notification shows, Auto's `view_appeared` report; #850–#879 are held by another open branch). The remote-workspaces work (#517–#599) left
   unassigned gaps it may still grow into: **523–524, 527–529, 539–544, 558–559, 562–569,
   578–579 and 588–589** (never assigned, not retired); #600–#601 came from the 2026-10-01 upstream merge; #620–#622 and
   #630–#639 are the remote-workspaces feedback round (602–619 and 623–629 unassigned). The second
@@ -918,8 +918,131 @@ Rules for adding a touchpoint:
 | 1078 | `Packages/Shared/CmuxIrxTransport/Sources/CmuxIrxTransport/IrxJournal.swift` | `irx-journal-link-history` | Three fences. The stored `supermuxLinkRing` after `ring`; in `record`, after the shared ring's trim, an event whose component is in `supermuxLinkHistoryComponents` (`route`, `device-link`, `power`, `connection`) is appended there too, trimmed to `supermuxLinkHistoryCapacity` (512); after `tail(_:)`, the two statics and `supermuxLinkHistory(_:)` (newest events, oldest first, under the journal's lock). The shared 512-event ring holds about half an hour of keepalive, engine and terminal-trace events, so route and reconnect events never survived to a report |
 | 1079 | `Packages/Shared/CmuxIrxTransport/Tests/CmuxIrxTransportTests/IrxJournalTests.swift` | `irx-journal-link-history` | One fence at the end of the suite: `linkEventsSurviveAFloodOfChattyEvents` (four link events survive 1,536 keepalive/engine/control-plane events and 100 terminal traces that evict them from the shared ring) and `linkHistoryIsBoundedOldestFirstAndRedacted` |
 | 1080 | `Sources/TerminalController.swift` | `iroh-diag-links` | One fence in `irohDiagText()` after upstream's export: `export += "\n" + SupermuxLinkDiagnosticsReport.text()`, the remote Mac links section (each link's route now from `SupermuxDeviceRoutes.offMainRoutes`, the #1078 link history, the journal's counters, the journal path), read off the main actor like upstream's report |
+| 1100 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileTerminalLaneCoordinator.swift` | `terminal-lane-retry` | Eleven fences. `Entry` gains `var waitingToRetry = false`; `private static let maximumOpenAttempts = 3` is replaced by stored `retryDelay`/`retrySleep`/`retryObserver`, which `init` takes as defaulted parameters (`SupermuxTerminalLaneRetryDelay`, `Task.sleep`, nil); `ensure` calls `retryNow(key:entry:)` for an entry sleeping out a retry delay; `sendInput`'s catch calls `prepareToReopen` (upstream: `fail`, which parked the lane); `run` loops `while !Task.isCancelled` (upstream: `openAttempt < Self.maximumOpenAttempts`), resets `openAttempt = 0` when a frame is accepted with `outputReady`, classifies the caught error, and ends each pass with `waitToRetry` (upstream: `openAttempt += 1`, then `markFailed` after the loop); the new `waitToRetry`/`retryNow` helpers. `fail(key:id:lane:)` is now unused but left in place |
+| 1101 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/SupermuxTerminalLaneRetry.swift` | `terminal-lane-retry` | Whole new file (fenced top to bottom): `SupermuxTerminalLaneRetryDelay` (250 ms × 2ⁿ, ±20 %, 5 s cap), `SupermuxTerminalLaneRetryEvent`, and `MobileShellComposite.terminalLaneRetryObserver(diagnosticLog:)` (a `retryScheduled` diagnostic event plus an os_log notice, category `mobile-terminal-lane`) |
+| 1102 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite.swift` | `terminal-lane-retry` | In `init`, the `MobileTerminalLaneCoordinator(...)` call passes `retryObserver: Self.terminalLaneRetryObserver(diagnosticLog: diagnosticLog)` |
+| 1103 | `Packages/iOS/CmuxMobileShell/Tests/CmuxMobileShellTests/SupermuxTerminalLaneRetryTests.swift` | `terminal-lane-retry` | **Whole-file fork test inside an upstream package.** Four lane ends after a baseline reopen every time; a failed send reopens; refused opens keep retrying past three; backoff sequence and reset; delay policy; `ensure` cuts a retry delay short |
+| 1104 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite+AgentFeed.swift` | `agent-feed-retry-backoff` | Eight fences. `scheduleAgentFeedRefresh`'s loop counts consecutive failed fetches and, after one, awaits `supermuxAgentFeedRetryWait(afterFailures:)` (break when it returns false); `fetchAgentFeed` becomes `@discardableResult … async -> Bool` (true once `feed.list` answered, including the stale-client return after a reply; false in the catch) |
+| 1105 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/SupermuxAgentFeedRetry.swift` | `agent-feed-retry-backoff` | Whole new file (fenced top to bottom): `supermuxAgentFeedMaximumFailedAttempts = 3` and `supermuxAgentFeedRetryWait(afterFailures:)` (1 s, then 2 s on `controlPlaneSchedulingClock`) |
+| 1106 | `Packages/iOS/CmuxMobileShell/Tests/CmuxMobileShellTests/SupermuxAgentFeedRetryTests.swift` | `agent-feed-retry-backoff` | **Whole-file fork test inside an upstream package.** A refresh against a Mac whose dial fails instantly makes at most 2 attempts in 300 ms, and 3 in all before it waits for the next trigger (sleeps 1 s and 2 s) |
+| 1107 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite.swift` | `render-grid-sink-first` | In `handleTerminalRenderGridEvent`, the decode-then-sink guard (upstream: wrapper decode, then bare decode, then `hasTerminalOutputSink`) becomes: `SupermuxRenderGridPayloadPeek.read(json)`, `hasTerminalOutputSink(surfaceID: peek.frameSurfaceID)`, then `peek.decodeFrame(json)` once and the original sink check on the decoded frame |
+| 1108 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/SupermuxRenderGridPayloadPeek.swift` | `render-grid-sink-first` | Whole new file (fenced top to bottom): a `Decodable` that reads only `surface_id` (bare) or `render_grid.surface_id` (wrapped) and decodes the frame once in the form it found |
+| 1109 | `Packages/iOS/CmuxMobileShell/Tests/CmuxMobileShellTests/SupermuxRenderGridPayloadPeekTests.swift` | `render-grid-sink-first` | **Whole-file fork test inside an upstream package.** Bare and wrapped payloads name their terminal and decode once; malformed payloads drop; the peek is far cheaper than the decode it skips |
+| 1110 | `ios/cmuxPackage/Package.swift` | `phone-route-direct-race` | Three fences. The package dependencies gain `../../Packages/iOS/SupermuxMobileKit` and `../../Packages/Shared/SupermuxMobileCore`; the `cmuxFeature` target gains `"SupermuxMobileKit"` and `"SupermuxMobileCore"`; the `cmuxFeatureTests` target gains `"SupermuxMobileKit"` (its `SupermuxPhoneDialRaceTests` names `SupermuxDialLane`) |
+| 1111 | `ios/cmuxPackage/Sources/cmuxFeature/MobileIrxRuntimeComposition.swift` | `phone-route-direct-race` | Three fences. Imports `SupermuxMobileCore` and `SupermuxMobileKit`; stored state after `admittedSessionCount`: `let supermuxRouteCandidates: SupermuxRouteCandidateStore`, `supermuxRouteSchedules: [String: SupermuxRouteUpgradeSchedule]`, `supermuxLaneByPeer: [String: SupermuxDialLane]`, `supermuxRouteChecks: Set<String>`, `supermuxSkipRaceOnce: Set<String>`, `supermuxLastNetworkChange: ContinuousClock.Instant?`, `supermuxRouteLoop: Task<Void, Never>?`; `init` ends with `supermuxRouteCandidates = SupermuxRouteCandidateStore(fileURL: configuration.stateDirectory/supermux-route-candidates.json)` |
+| 1112 | `ios/cmuxPackage/Sources/cmuxFeature/MobileIrxRuntimeComposition+Dial.swift` | `phone-route-direct-race` | Four fences, all inside `dialOnce` (itself inside the `mobile-irx-cached-dial-authority` fence). `let connection = try await supervisor.dial(address:credentials:)` becomes `let dialed = try await supermuxDial(peerHex:record:intent:privateAddresses: direct) { try await supervisor.dial(address: address, credentials: dialCredentials) }` and `let connection = dialed.connection`; after upstream's `authorizesDirectPaths` line, `if dialed.lane == .direct { authorizesDirectPaths = false }`; after `activeDialIntentByPeer[peerHex] = intent`, `supermuxSessionAdmitted(peerHex:intent:dialed:)`; in the admission `catch`, after the close, `supermuxAdmissionFailed(peerHex:lane: dialed.lane)` |
+| 1113 | `ios/cmuxPackage/Sources/cmuxFeature/MobileIrxRuntimeComposition+Lifecycle.swift` | `phone-route-direct-race` | One fence at the end of `notifyNetworkChange()` (runs on every reachability update and every foreground): `supermuxRouteNetworkChanged()` |
+| 1114 | `ios/cmuxPackage/Sources/cmuxFeature/MobileIrxRuntimeComposition+SupermuxRoute.swift` | `phone-route-direct-race` | Whole new file (fenced top to bottom): `MobileIrxRuntimeComposition: SupermuxPhoneRouteRuntime` (`supermuxLinkPaths()`, `supermuxRecordRouteCandidates(_:macDeviceID:instanceTag:)`); the dial race (`supermuxDial`, `static supermuxRace(direct:automatic:discard:)` = CmuxIrxTransport's `SupermuxIrxDirectFirstDial.race(timing: .standard, …)` with the leg mapped to `SupermuxDialLane`, `supermuxSessionAdmitted`, `supermuxAdmissionFailed`, `supermuxDirectLane()`, the same direct-only `IrxEndpointSupervisor` construction as the Direct method's); the 2 s prober loop (probe via `SupermuxIrxDirectFirstDial.probe` with a 1.5 s deadline, learn LAN/Tailscale paths, planned redial via `engine.ensureSession(explicit: true, trigger: "supermux-route-*")`, silent direct-lane fallback); `supermuxRouteNetworkChanged()` |
+| 1115 | `ios/cmux/AppCompositionRoot.swift` | `phone-route-direct-race` | Three fences: `import SupermuxMobileKit`; `let supermuxRoutes: SupermuxPhoneRouteModel` after `irx`; `self.supermuxRoutes = SupermuxPhoneRouteModel(runtime: irx)` after `self.irx = irx` |
+| 1116 | `ios/cmux/cmuxApp.swift` | `phone-route-direct-race` | Two fences: `import SupermuxMobileKit`; in `rootScene`, `.environment(Self.root.supermuxRoutes)` after the `scrollInteractionReporter` environment |
+| 1117 | `ios/cmuxPackage/Tests/cmuxFeatureTests/SupermuxPhoneDialRaceTests.swift` | `phone-route-direct-race` | **Whole-file fork test inside an upstream package** (fenced top to bottom). Drives `MobileIrxRuntimeComposition.supermuxRace` at the phone's real timing: relay ready at 300 ms and direct at 900 ms picks direct and closes the relay; a direct leg that never answers picks the relay at the 1.5 s deadline (not before, not after); direct at once never dials the relay; direct failing fast uses the relay at once |
 
 ## How to re-apply
+
+### 1110–1117. The iPhone shows each Mac's route and dials it direct first — `phone-route-direct-race`
+
+From the user's "in the app it should show which it's using, direct or relay, and where" and "it should always use
+direct, whether via Tailscale or local direct" (W8 and W8b of the latency work's `ROUTING-DESIGN.md`). Fork-package
+files (`Packages/iOS/SupermuxMobileKit`, `Packages/iOS/SupermuxMobileUI`) carry no fences and need no rows.
+
+- **Display.** `SupermuxPhoneRouteModel` (SupermuxMobileKit, built in `AppCompositionRoot`, carried down as an
+  `@Observable` environment object) samples each Mac session's selected path every 2 s while the app is active and the
+  workspace list is mounted (the Projects section driver runs it), classifies it with `SupermuxLinkRouteClassifier`
+  (SupermuxMobileCore, shared with the Mac), and publishes through `SupermuxLinkRoutePublishing`. The iPhone's merged
+  Projects list has no per-Mac headers, so the route shows as one line per connected Mac right under the PROJECTS
+  caption (`SupermuxProjectsTableRowValue.macRoutes`, accessibility id `SupermuxMacRouteLine`; `Direct · LAN · 6 ms`,
+  `Direct · Tailscale · 8 ms`, `Relay · Tokyo · 241 ms`, orange when relayed, `SupermuxLinkRouteCaption`); the SwiftUI
+  list's per-Mac header shows the same words.
+- **Addresses.** The route model asks every Mac advertising `supermux.route_candidates.v1` for
+  `mobile.supermux.route.candidates` once per connection, every 10 min and a minute after a failure;
+  `supermuxRecordRouteCandidates` files the answer under the directory's endpoint id for that Mac (a mismatching
+  `endpoint_id` is dropped) in `<Iroh state dir>/supermux-route-candidates.json`. The selected LAN/Tailscale path of
+  any session is learned. Nothing is sent to the backend.
+- **Race.** An Automatic-method dial with addresses on hand races the direct-only endpoint against the automatic dial
+  with the Mac's own race, `SupermuxIrxDirectFirstDial.race` (CmuxIrxTransport, `route-direct-lane`), through
+  `MobileIrxRuntimeComposition.supermuxRace`: direct starts at once, the automatic dial 250 ms later or as soon as
+  direct fails, and **direct wins whenever it connects within 1.5 s, even when the relay is ready first** (the relay
+  connection is held, then closed before admission; the host admits once). Past 1.5 s the direct leg is cancelled and
+  the relay is used. The journal's `supermux-route/dial-race` event carries the race's per-leg fields (`direct`,
+  `relay`: `ok <ms>`, `failed <ms>`, `timeout`, `cancelled`; `winner`). The phone had its own first-success race
+  (`SupermuxDialRace` in SupermuxMobileKit) until 2026-10-06; it is deleted, so there is one race for both platforms.
+  A direct-lane session never authorizes NAT traversal. A failed direct-lane admission makes the next dial skip the
+  race. Relay-only mode and the Direct/Tailscale methods are unchanged; dials under the warmed cached identity
+  (before the live identity exists) do not race.
+- **Prober and fallback.** While active, a relayed automatic session is probed (one direct handshake,
+  `SupermuxIrxDirectFirstDial.probe` with the Mac route switcher's 1.5 s deadline, never admitted) on
+  `SupermuxRouteUpgradeSchedule` (10 s ±20 %, 30 s after 5 misses, at once on network change, foreground or new
+  addresses; network changes within 3 s count once). A probe that works triggers one planned redial
+  (`engine.ensureSession(explicit: true, trigger: "supermux-route-*")`, at most one per 30 s, none within 30 s after a
+  fallback). A direct-lane session silent for two keepalive cycles (`applicationSilenceEvidence`), or missing two
+  liveness probes 1 s after a network change, is redialed; the race then picks the relay. Journal events:
+  `supermux-route/{candidates, dial-race, probe, redial, direct-admission-failed}`.
+
+Failure modes the tests pin: the relay ready at 300 ms and direct at 900 ms must pick direct and close the relay (the
+W8 race picked the relay, fixed by W8b); a direct leg that never answers picks the relay at the 1.5 s deadline, not
+before and not after; direct at once never dials the relay; direct failing fast uses the relay at once (#1117); the
+probe spacing, the slower spacing after misses, a prompt probe on a network change or new addresses, and at most one
+move per 30 s and none for 30 s after a fallback (`SupermuxRouteUpgradeScheduleTests`); the candidates asked once per
+connection, every 10 min, a minute after a failure (`SupermuxPhoneRouteModelTests`); the caption's words in every
+locale, one line per connected Mac (`SupermuxLinkRouteCaptionTests`, `SupermuxProjectsRouteStripTests`).
+
+Re-apply after an upstream merge: if upstream rewrites the composition's `dialOnce` or `notifyNetworkChange`, keep
+#1112's four call sites (the race around `supervisor.dial`, no NAT traversal on a direct-lane session, the admitted
+and admission-failed hooks) and #1113's one; #1111's stored state and the store's `init`; #1110's package
+dependencies and both targets' products (`cmuxFeatureTests` too: #1117 names `SupermuxDialLane`); #1115/#1116 the
+model and its environment. #1114 and #1117 are whole fork files.
+
+Verify: `xcodebuild test -workspace ios/cmux.xcworkspace -scheme <a scheme with cmuxFeatureTests> -destination
+'platform=iOS Simulator,name=iPhone 18 Pro' -only-testing:cmuxFeatureTests/SupermuxPhoneDialRaceTests` (red at
+`61e77314781`: 2 of 4 fail, the relay won at ~0.3 s; green: 4 pass; `cmux-ios -testPlan cmux`:
+on 2026-10-06 pre-existing compile errors in `CmuxMobileTerminalTests` kept it from building, and the `cmuxFeature`
+scheme has no test action);
+`swift test --package-path Packages/iOS/SupermuxMobileKit --filter 'SupermuxRouteUpgradeScheduleTests|SupermuxPhoneRouteModelTests'`;
+`swift test --package-path Packages/iOS/SupermuxMobileUI --filter 'SupermuxLinkRouteCaptionTests|SupermuxProjectsRouteStripTests|LocalizableCatalogTests'`;
+`swift test --package-path Packages/Shared/CmuxIrxTransport --filter SupermuxIrxDirectFirstDialTests` (the shared race).
+
+### 1100–1109. Remote terminal latency, phone side — `terminal-lane-retry`, `agent-feed-retry-backoff`, `render-grid-sink-first`
+
+Found while fixing "remote terminals are awfully delayed, worse after a reconnect" (2026-10-05). Field evidence is in
+the latency work's `FIELD-EVIDENCE.md` §6 and `STREAM.md` H4/H5. No wire changes.
+
+- **#1100–#1103 `terminal-lane-retry`.** The phone's per-terminal input (or output) lane is never parked while its
+  terminal stays mounted (until 2026-10-06 three failed opens, or one failed send, parked it on the RPC fallback until
+  a reconnect, a route change or a remount). A lane that delivered its baseline resets the attempt count. Consecutive
+  failures wait 250 ms × 2ⁿ (±20 %, 5 s cap). A failed send closes the lane and the run reopens it. A fresh `ensure`
+  (reconnect, route change, remount) starts a lane that is sleeping out its delay again at once, under a new entry id,
+  so the sleeping run cannot touch it. Every reopen is a `retryScheduled` diagnostic event (surface alias, the delay
+  in `ms`, attempt in `a`, failure kind in `b`, empty for a clean end) and an os_log notice (category
+  `mobile-terminal-lane`). If upstream rewrites `run`, keep three properties: no attempt cap, reset on a baseline, a
+  delay before every reopen.
+- **#1104–#1106 `agent-feed-retry-backoff`.** The resume dial storm (1,291 instant dial failures to one Mac in
+  120 ms) was the agent feed's refresh loop: a failed `feed.list` re-armed the pending flag and the `repeat` fetched
+  again at once, while the peer engine failed every dial fast during its redial cooldown. After a failure the loop
+  now waits 1 s, then 2 s, and stops after 3 failed attempts; the next trigger (`feed.changed`, a new connection, a
+  pull to refresh) fetches again. Upstream's notification feed already caps its loop; if upstream fixes the agent
+  feed the same way, retire these fences.
+- **#1107–#1109 `render-grid-sink-first`.** The phone reads a render-grid frame's `surface_id` before decoding it
+  and drops frames for terminals with no mounted sink. Upstream decoded every frame twice (wrapper, then bare) on
+  the main actor first. If upstream changes the payload shape, keep the peek in step with
+  `MobileTerminalRenderGridEvent` (wrapped) and `MobileTerminalRenderGridFrame` (bare). The host half (a phone gets
+  frames only for the terminals it shows) is #1045–#1048.
+
+Known limits (not done): the SupermuxMobileKit stores (Projects, Worktrees, Run, Changes) judge "stream was healthy"
+by `Date()`, so after a long suspension the first resubscribe skips its backoff (one extra dial per store per
+resume, not a loop); `IrxPeerEngine`'s cooldown fast-fail answers any caller at once, so a future loop that retries
+on failure can storm the same way (a guard in `MobileCoreRPCSession.ensureConnected` would bound all callers, but
+that session is shared with the Mac); `MobileTerminalInputSender` still abandons a stream after 3 RPC failures and
+the typed input is lost (STREAM 1d: loss, not latency); the render-grid liveness watchdog (9 s of silence, 3 s
+probe, two failures) can false-fire on a congested relay because its probe rides the control stream (STREAM P9.6).
+
+Re-apply after an upstream merge: #1100's eleven fences in `MobileTerminalLaneCoordinator` (the entry flag, the stored
+retry closures and their `init` parameters, `ensure`'s early retry, `sendInput`'s reopen, `run`'s loop, reset,
+classification and wait, the two helpers) and #1102's observer argument; #1104's eight fences in
+`scheduleAgentFeedRefresh` and `fetchAgentFeed`; #1107's guard in `handleTerminalRenderGridEvent`. #1101, #1103,
+#1105, #1106, #1108 and #1109 are whole fork files.
+
+Verify: `swift test --package-path Packages/iOS/CmuxMobileShell --filter 'SupermuxTerminalLaneRetryTests|SupermuxAgentFeedRetryTests|SupermuxRenderGridPayloadPeekTests'`
+(12 tests in 3 suites; red at `b124601a4c6` and `5654e263b4b`).
 
 ### 1078–1080. Which path a remote Mac's link uses, on this Mac, and the link history `cmux iroh-diag` keeps — `irx-journal-link-history`, `iroh-diag-links`
 
@@ -7798,7 +7921,7 @@ Now:
   relay path) it checks liveness and after two misses reports the path lost, which redials like a liveness failure
   (L1's backoff applies) with the lane held off, so it lands on the relay;
 - flaps (a fall back, or a move that lands on the relay) hold direct off for 30 s, doubling to 10 min; two minutes
-  direct reset it. `probeNow(reason:)` is the wake / network-change hook (not wired yet).
+  direct reset it. `probeNow(reason:)` is the wake / network-change hook (wired by #1071–#1077's `SupermuxSystemPower`).
 
 Failure modes considered: both legs admitted (one session superseded); relay first wins while direct answers;
 blackholed or stale addresses hold the dial; the relay waits a head start for nothing; a leaked loser or late
@@ -7810,7 +7933,7 @@ on a new session; probing a peer with no session (waking a lid-closed laptop); p
 Known limits: the host authorizes NAT traversal on every admitted session, so its per-peer state for this Mac can
 also list the lane's socket and try it on its own outgoing session to this Mac while that one is on the relay
 (a few seconds of path probing; it settles once both Macs' links are on their lanes); a move re-attaches the link's
-mirrors (L3 made it cheap); the Tailscale-to-LAN move and the wake hooks are not done.
+mirrors (L3 made it cheap); the Tailscale-to-LAN move is not done (the wake hooks came with #1071–#1077).
 
 Re-apply after an upstream merge: keep #1064's three fences in `dial`, #1067's methods after `supermuxReportUnresponsive`
 and #1068's event and case; #1065, #1066 and #1070 are whole fork files.
