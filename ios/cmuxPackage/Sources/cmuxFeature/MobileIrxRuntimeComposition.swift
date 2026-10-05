@@ -98,7 +98,7 @@ public actor MobileIrxRuntimeComposition {
             journalFileURL: configuration.stateDirectory.appendingPathComponent("iroh-v2-journal.jsonl"))
         // SUPERMUX:begin phone-route-direct-race
         supermuxRouteCandidates = SupermuxRouteCandidateStore(
-            fileURL: configuration.stateDirectory.appendingPathComponent("supermux-route-candidates.json"))
+            fileURL: Self.supermuxRouteCandidatesFile(stateDirectory: configuration.stateDirectory))
         // SUPERMUX:end phone-route-direct-race
     }
 

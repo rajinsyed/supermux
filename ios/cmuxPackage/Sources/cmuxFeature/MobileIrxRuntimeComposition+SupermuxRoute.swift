@@ -180,10 +180,12 @@ extension MobileIrxRuntimeComposition: SupermuxPhoneRouteRuntime {
     }
 
     /// The direct-only endpoint, built on first use with this installation's
-    /// identity (the same construction as the Direct method's). Nil in
-    /// relay-only mode and before the live identity is known.
+    /// identity (the same construction as the Direct method's): the live
+    /// one, or at launch the warmed cached one, so a launch dial races too
+    /// (sign-in for that account keeps the lane and its sessions). Nil in
+    /// relay-only mode and before either identity is known.
     func supermuxDirectLane() -> IrxEndpointSupervisor? {
-        guard !forceRelayOnly, let identity else { return nil }
+        guard !forceRelayOnly, let identity = identity ?? preparedCachedRuntime?.identity else { return nil }
         if let directEndpointSupervisor { return directEndpointSupervisor }
         let lane = IrxEndpointSupervisor(configuration: IrxEndpointConfiguration(
             identity: identity, pathMode: .directOnly, initialRemoteBiStreams: 0,
@@ -339,6 +341,45 @@ extension MobileIrxRuntimeComposition: SupermuxPhoneRouteRuntime {
         let changed = supermuxRoutePolicies.networkSettled(on: SupermuxLocalInterface.current(), at: Date())
         journal.record("supermux-route", "network-settled", ["changed": String(changed)])
         supermuxStartRouteLoopIfNeeded()
+    }
+
+    // MARK: - State
+
+    /// The file each Mac's direct addresses are kept in:
+    /// `<Iroh state>/supermux-route/candidates.json`. Its directory is the
+    /// app's alone (0700), excluded from backups and, on the device,
+    /// protected until first unlock (files made in it inherit both), like the
+    /// Iroh local-path store's. The first builds kept the file beside the
+    /// Iroh state with neither; that copy is removed.
+    nonisolated static func supermuxRouteCandidatesFile(stateDirectory: URL) -> URL {
+        let files = FileManager()
+        let directory = stateDirectory.appendingPathComponent("supermux-route", isDirectory: true)
+        try? files.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        try? files.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+        #if os(iOS)
+        try? files.setAttributes(
+            [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: directory.path)
+        #endif
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        var excluded = directory
+        try? excluded.setResourceValues(values)
+        try? files.removeItem(at: stateDirectory.appendingPathComponent("supermux-route-candidates.json"))
+        return directory.appendingPathComponent("candidates.json")
+    }
+
+    /// The runtime was detached without keeping its sessions (a sign-out, an
+    /// account or team change): every Mac's route state goes with it, and on
+    /// sign-out the cached direct addresses too.
+    func supermuxResetRouteState(forgetAddresses: Bool) async {
+        supermuxRouteLoop?.cancel()
+        supermuxRouteLoop = nil
+        supermuxNetworkDebounce.cancel()
+        supermuxRoutePolicies.reset()
+        guard forgetAddresses else { return }
+        for peer in await supermuxRouteCandidates.peers() {
+            await supermuxRouteCandidates.forget(peer.key)
+        }
     }
 
     // MARK: - Directory

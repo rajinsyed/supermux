@@ -519,13 +519,19 @@ extension MobileIrxRuntimeComposition {
         }
         let oldControl = control
         let oldSupervisor = endpointSupervisor ?? (preservePrepared ? nil : preparedCachedRuntime?.supervisor)
-        let oldDirectSupervisor = directEndpointSupervisor
+        // SUPERMUX:begin phone-route-direct-race (sign-in for the warmed account keeps the direct lane a launch dial raced on, with the sessions on it; upstream: `let oldDirectSupervisor = directEndpointSupervisor`)
+        let supermuxKeptDirectLane = preservePrepared ? directEndpointSupervisor : nil
+        let oldDirectSupervisor = preservePrepared ? nil : directEndpointSupervisor
+        // SUPERMUX:end phone-route-direct-race
         // SUPERMUX:begin mobile-irx-cached-dial-authority
         // Sign-in finishing for the account and team the runtime warmed for
         // keeps the sessions its launch dials already admitted.
         let oldEngines = preservePrepared ? [] : Array(enginesByPeer.values)
         // SUPERMUX:end mobile-irx-cached-dial-authority
         control = nil; endpointSupervisor = nil; directEndpointSupervisor = nil
+        // SUPERMUX:begin phone-route-direct-race
+        directEndpointSupervisor = supermuxKeptDirectLane
+        // SUPERMUX:end phone-route-direct-race
         if !preservePrepared {
             identity = nil; cache = nil; preparedCachedRuntime = nil
         }
@@ -544,6 +550,9 @@ extension MobileIrxRuntimeComposition {
         if !preservePrepared {
             await MainActor.run { self.macListAuthState.clear() }
         }
+        // SUPERMUX:begin phone-route-direct-race (the detached account's per-Mac route state goes with its sessions; a sign-out forgets its Macs' direct addresses too)
+        if !preservePrepared { await supermuxResetRouteState(forgetAddresses: activeScope == nil) }
+        // SUPERMUX:end phone-route-direct-race
         return DetachedRuntime(
             control: oldControl,
             endpointSupervisor: oldSupervisor,
