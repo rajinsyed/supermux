@@ -33,6 +33,11 @@ import Testing
 ///     direct then fails.
 /// 12. (Review T13) Where direct cannot work, a race that should not hold a
 ///     ready relay connection still holds it until the direct deadline.
+/// 13. The lane's handshakes (one per address): a second value reaching the
+///     race, or a loser left running after the first one connected.
+/// 14. (Review T10a) A probe handshake that connects right at the deadline
+///     is neither returned nor closed: a leaked connection on the host.
+/// 15. Every handshake failing leaves the leg hanging instead of failing it.
 ///
 /// On live iroh endpoints (the "relay" leg is a second endpoint of the same
 /// identity behind a link with 120 ms each way; the "direct" leg is the lane
@@ -241,6 +246,44 @@ struct SupermuxIrxDirectFirstDialTests {
         await #expect(throws: CancellationError.self) { _ = try await dial.value }
         try await waitUntil { relay.cancelled && direct.cancelled }
         try await waitUntil { discards.values == [1] }
+    }
+
+    @Test("13. the lane's handshakes: the first value wins, the others are cancelled, a late one is closed",
+          .timeLimit(.minutes(1)))
+    func firstHandshakeWins() async throws {
+        let slow = FakeLeg(.ignoresCancel(2, after: .milliseconds(150)))
+        let hung = FakeLeg(.hang)
+        let discards = Recorder()
+        let value = try await SupermuxIrxDirectFirstDial.firstValue(
+            of: [{ try await FakeLeg(.value(1, after: .milliseconds(20))).run() },
+                 { try await slow.run() }, { try await hung.run() }],
+            discard: { discards.append($0) })
+        #expect(value == 1)
+        try await waitUntil { hung.cancelled && slow.cancelled }
+        try await waitUntil { discards.values == [2] }
+    }
+
+    @Test("14. a handshake that connects after the probe's deadline is closed, not leaked", .timeLimit(.minutes(1)))
+    func lateHandshakeAfterDeadlineIsClosed() async throws {
+        let late = FakeLeg(.ignoresCancel(7, after: .milliseconds(120)))
+        let discards = Recorder()
+        let started = ContinuousClock.now
+        await #expect(throws: SupermuxIrxDirectFirstDial.TimedOut.self) {
+            _ = try await SupermuxIrxDirectFirstDial.firstValue(
+                of: [{ try await late.run() }], deadline: .milliseconds(40), discard: { discards.append($0) })
+        }
+        #expect(started.duration(to: .now) < .milliseconds(110), "the deadline answers at once")
+        try await waitUntil { discards.values == [7] }
+    }
+
+    @Test("15. every handshake failing fails the leg with the last failure", .timeLimit(.minutes(1)))
+    func allHandshakesFail() async throws {
+        await #expect(throws: Named(name: "second")) {
+            _ = try await SupermuxIrxDirectFirstDial.firstValue(
+                of: [{ throw Named(name: "first") },
+                     { try await Task.sleep(for: .milliseconds(30)); throw Named(name: "second") }],
+                discard: { (_: Int) in })
+        }
     }
 
     // MARK: - Live endpoints

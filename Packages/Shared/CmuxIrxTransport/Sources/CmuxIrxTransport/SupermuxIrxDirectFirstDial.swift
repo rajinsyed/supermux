@@ -17,9 +17,15 @@ public enum SupermuxIrxDialLeg: String, Sendable {
 /// The lane starts at once; the relay after ``Timing/headStart``, or as soon
 /// as the lane fails. Direct wins whenever it connects before
 /// ``Timing/directDeadline``: a relay connection that is ready first is held
-/// until then. Exactly one connection comes out; the other leg is cancelled,
-/// and a connection it still produces is closed before anything is sent on
-/// it, so the host admits one session.
+/// until then (unless ``Timing/holdsRelay`` is off). Exactly one connection
+/// comes out; the other leg is cancelled, and a connection it still produces
+/// is closed before anything is sent on it, so the host admits one session.
+///
+/// The lane dials each of the peer's addresses as its own handshake, all at
+/// once (``laneLeg(lane:peerEndpointIDHex:addresses:)``): a wrong address
+/// that another endpoint answers (a VM bridge address reaching this device's
+/// own host, a stale address reaching another cmux host) fails its key check
+/// alone instead of sinking the handshake to the right one.
 ///
 /// The lane never authorizes NAT traversal, so iroh never health-checks its
 /// path and never builds the 5–300 s block it keeps for a stalled direct path
@@ -31,13 +37,21 @@ public enum SupermuxIrxDirectFirstDial {
         public var headStart: Duration
         /// How long the lane may take before the relay is used.
         public var directDeadline: Duration
+        /// Whether a relay connection that is ready first waits for direct
+        /// until ``directDeadline``. Off where direct keeps losing (the
+        /// caller's switch policy says so): direct still gets its head start.
+        public var holdsRelay: Bool
 
-        public init(headStart: Duration, directDeadline: Duration) {
+        public init(headStart: Duration, directDeadline: Duration, holdsRelay: Bool = true) {
             self.headStart = headStart
             self.directDeadline = directDeadline
+            self.holdsRelay = holdsRelay
         }
 
         public static let standard = Timing(headStart: .milliseconds(250), directDeadline: .milliseconds(1500))
+        /// ``standard`` without holding a ready relay connection.
+        public static let noRelayHold = Timing(
+            headStart: .milliseconds(250), directDeadline: .milliseconds(1500), holdsRelay: false)
     }
 
     /// The winning value, its leg, and what each leg did (for the journal).
@@ -48,6 +62,9 @@ public enum SupermuxIrxDirectFirstDial {
         /// `held`, `not-started` or `cancelled`.
         public let journalFields: [String: String]
     }
+
+    /// No address answered within a probe's deadline.
+    struct TimedOut: Error {}
 
     /// How long a direct session may be quiet before ``answers(_:quietFor:probeDeadline:)`` probes it.
     public static let quietBeforeProbe: Duration = .seconds(2)
@@ -74,6 +91,54 @@ public enum SupermuxIrxDirectFirstDial {
         }
     }
 
+    /// Runs every leg at once: the first value wins and the others are
+    /// cancelled; a value one still produces is handed to `discard`. Throws
+    /// the last failure when every leg fails, ``TimedOut`` when `deadline`
+    /// passes first, and `CancellationError` when the caller is cancelled.
+    static func firstValue<Value: Sendable>(
+        of legs: [@Sendable () async throws -> Value],
+        deadline: Duration? = nil,
+        discard: @escaping @Sendable (Value) async -> Void
+    ) async throws -> Value {
+        let fanOut = SupermuxIrxFirstValue(legs: legs, discard: discard)
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                fanOut.start(continuation, deadline: deadline)
+            }
+        } onCancel: {
+            fanOut.cancel()
+        }
+    }
+
+    /// The direct leg of a race: one handshake per address on `lane`, all at
+    /// once; the first to connect is the leg's value, the others are
+    /// cancelled or closed before anything is sent on them. Nil without an
+    /// address or a parsable endpoint id.
+    public static func laneLeg(
+        lane: IrxEndpointSupervisor,
+        peerEndpointIDHex: String,
+        addresses: [String]
+    ) -> (@Sendable () async throws -> IrxConnection)? {
+        guard let id = try? EndpointId.fromString(s: peerEndpointIDHex) else { return nil }
+        return laneLeg(lane: lane, id: id, addresses: addresses)
+    }
+
+    private static func laneLeg(
+        lane: IrxEndpointSupervisor, id: EndpointId, addresses: [String]
+    ) -> (@Sendable () async throws -> IrxConnection)? {
+        guard !addresses.isEmpty else { return nil }
+        let legs = handshakes(lane: lane, id: id, addresses: addresses)
+        return { try await firstValue(of: legs, discard: { close($0, reason: "supermux-dial-race-lost") }) }
+    }
+
+    private static func handshakes(
+        lane: IrxEndpointSupervisor, id: EndpointId, addresses: [String]
+    ) -> [@Sendable () async throws -> IrxConnection] {
+        addresses.map { address in
+            { try await lane.dial(address: EndpointAddr(id: id, relayUrl: nil, addresses: [address]), credentials: []) }
+        }
+    }
+
     /// Dials a peer direct-first: `lane` at `directAddresses` (skipped when
     /// either is missing) against `main` at `relayAddress`.
     public static func dial(
@@ -84,11 +149,7 @@ public enum SupermuxIrxDirectFirstDial {
         credentials: [IrxRelayCredential],
         timing: Timing = .standard
     ) async throws -> Outcome<IrxConnection> {
-        var direct: (@Sendable () async throws -> IrxConnection)?
-        if let lane, !directAddresses.isEmpty {
-            let laneAddress = EndpointAddr(id: relayAddress.id(), relayUrl: nil, addresses: directAddresses)
-            direct = { try await lane.dial(address: laneAddress, credentials: []) }
-        }
+        let direct = lane.flatMap { laneLeg(lane: $0, id: relayAddress.id(), addresses: directAddresses) }
         return try await race(
             timing: timing, direct: direct,
             relay: { try await main.dial(address: relayAddress, credentials: credentials) },
@@ -96,32 +157,21 @@ public enum SupermuxIrxDirectFirstDial {
     }
 
     /// A direct handshake on `lane` that is never admitted: how long it took
-    /// to reach the peer at one of `addresses`, or nil when none answered
-    /// within `deadline`. The connection is closed right away; the host sees
-    /// a connection that never sent its hello and drops it.
+    /// to reach the peer at one of `addresses` (each its own handshake, as in
+    /// a dial), or nil when none answered within `deadline`. The connection
+    /// is closed right away, and so is one that answers after the deadline;
+    /// the host sees a connection that never sent its hello and drops it.
     public static func probe(
         lane: IrxEndpointSupervisor,
         peerEndpointIDHex: String,
         addresses: [String],
         deadline: Duration
     ) async -> Duration? {
-        guard !addresses.isEmpty,
-              let address = try? lane.dialAddress(
-                peerEndpointIDHex: peerEndpointIDHex, relayURL: nil, directAddresses: addresses) else { return nil }
+        guard !addresses.isEmpty, let id = try? EndpointId.fromString(s: peerEndpointIDHex) else { return nil }
         let started = ContinuousClock.now
-        let abandoned = IrxAbandonedHandshake()
-        let result = try? await withIrxDeadlineResult(deadline) { () -> IrxConnection? in
-            let connection = try await lane.dial(address: address, credentials: [])
-            guard !abandoned.isSet else {
-                close(connection, reason: "supermux-route-probe")
-                return nil
-            }
-            return connection
-        }
-        guard case .operation(let connection?) = result else {
-            abandoned.set()
-            return nil
-        }
+        guard let connection = try? await firstValue(
+            of: handshakes(lane: lane, id: id, addresses: addresses), deadline: deadline,
+            discard: { close($0, reason: "supermux-route-probe") }) else { return nil }
         close(connection, reason: "supermux-route-probe")
         return started.duration(to: .now)
     }
@@ -179,11 +229,12 @@ struct SupermuxIrxDialRaceState<Value: Sendable> {
 
     private var direct: Direct
     private var relay: Relay = .notStarted
+    private let holdsRelay: Bool
     private(set) var decided = false
 
     init(hasDirect: Bool, holdsRelay: Bool = true) {
-        // Red stub (review T13): `holdsRelay` is not implemented yet.
         direct = hasDirect ? .pending : .absent
+        self.holdsRelay = holdsRelay
     }
 
     /// What to do before any event.
@@ -219,6 +270,11 @@ struct SupermuxIrxDialRaceState<Value: Sendable> {
         case .relaySucceeded(let value):
             guard !decided else { return [.discard(value)] }
             if case .pending = direct {
+                guard holdsRelay else {
+                    direct = .failed(timedOut: false)
+                    relay = .done
+                    return [.cancelDirect] + finish(.success((value, .relay)))
+                }
                 relay = .held(value)
                 return []
             }
@@ -295,7 +351,7 @@ private final class SupermuxIrxDialRaceDriver<Value: Sendable>: @unchecked Senda
         self.relay = relay
         self.discard = discard
         self.sleep = sleep
-        state = SupermuxIrxDialRaceState(hasDirect: direct != nil)
+        state = SupermuxIrxDialRaceState(hasDirect: direct != nil, holdsRelay: timing.holdsRelay)
         fields = ["direct": direct == nil ? "none" : "pending", "relay": "not-started"]
     }
 
@@ -427,6 +483,92 @@ private final class SupermuxIrxDialRaceDriver<Value: Sendable>: @unchecked Senda
 
     private static func milliseconds(_ duration: Duration) -> Int64 {
         duration.components.seconds * 1_000 + duration.components.attoseconds / 1_000_000_000_000_000
+    }
+}
+/// Runs ``SupermuxIrxDirectFirstDial/firstValue(of:deadline:discard:)``:
+/// one task per leg; the first outcome that decides (a value, every leg
+/// failing, the deadline, a cancel) is the only one the caller sees, and a
+/// value that comes after it is discarded.
+private final class SupermuxIrxFirstValue<Value: Sendable>: @unchecked Sendable {
+    private let legs: [@Sendable () async throws -> Value]
+    private let discard: @Sendable (Value) async -> Void
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Value, any Error>?
+    private var outcome: Result<Value, any Error>?
+    private var failures = 0
+    private var tasks: [Task<Void, Never>] = []
+
+    init(legs: [@Sendable () async throws -> Value], discard: @escaping @Sendable (Value) async -> Void) {
+        self.legs = legs
+        self.discard = discard
+    }
+
+    func start(_ continuation: CheckedContinuation<Value, any Error>, deadline: Duration?) {
+        lock.withLock {
+            self.continuation = continuation
+            // A cancel that came first has already decided.
+            guard outcome == nil else { return }
+            if legs.isEmpty { outcome = .failure(SupermuxIrxDirectFirstDial.TimedOut()) }
+            for leg in legs {
+                tasks.append(Task { self.finished(await Self.run(leg)) })
+            }
+            if let deadline {
+                tasks.append(Task {
+                    guard (try? await Task.sleep(for: deadline)) != nil else { return }
+                    self.decide(.failure(SupermuxIrxDirectFirstDial.TimedOut()))
+                })
+            }
+        }
+        resumeIfDecided()
+    }
+
+    func cancel() {
+        decide(.failure(CancellationError()))
+    }
+
+    private func finished(_ result: Result<Value, any Error>) {
+        switch result {
+        case .success(let value):
+            guard decide(.success(value)) else {
+                let discard = discard
+                Task { await discard(value) }
+                return
+            }
+        case .failure(let error):
+            let allFailed = lock.withLock { () -> Bool in
+                failures += 1
+                return failures == legs.count
+            }
+            if allFailed { decide(.failure(error)) }
+        }
+    }
+
+    /// Records `result` unless something decided first; whether it did.
+    @discardableResult
+    private func decide(_ result: Result<Value, any Error>) -> Bool {
+        let losers = lock.withLock { () -> [Task<Void, Never>]? in
+            guard outcome == nil else { return nil }
+            outcome = result
+            return tasks
+        }
+        guard let losers else { return false }
+        for task in losers { task.cancel() }
+        resumeIfDecided()
+        return true
+    }
+
+    private func resumeIfDecided() {
+        let ready = lock.withLock { () -> (CheckedContinuation<Value, any Error>, Result<Value, any Error>)? in
+            guard let continuation, let outcome else { return nil }
+            self.continuation = nil
+            return (continuation, outcome)
+        }
+        guard let (continuation, outcome) = ready else { return }
+        continuation.resume(with: outcome)
+    }
+
+    private static func run(_ leg: @Sendable () async throws -> Value) async -> Result<Value, any Error> {
+        do { return .success(try await leg()) } catch { return .failure(error) }
     }
 }
 // SUPERMUX:end route-direct-lane
