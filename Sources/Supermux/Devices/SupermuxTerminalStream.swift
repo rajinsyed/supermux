@@ -219,7 +219,9 @@ final class SupermuxTerminalStream {
     /// whole transfer), and the pane the user just looked at is the one
     /// they are about to type in. A keystroke moves the wait on. The re-capture
     /// itself keeps the pane attached (the session's live re-capture): output
-    /// is drawn as it comes and again over the new screen.
+    /// is drawn as it comes and again over the new screen. A pane that still
+    /// owes its history waits at most ``maximumHistoryWait``: one that is
+    /// never quiet, or always typed in, gets it anyway (second review #5).
     private var lastBytesAt: ContinuousClock.Instant?
     private var bytesDuringAttach = false
     private var requestRacedOutput = false
@@ -252,6 +254,9 @@ final class SupermuxTerminalStream {
     /// When the pane was last shown.
     private var shownAt: ContinuousClock.Instant?
     static let maximumConfirmationQuiet: Duration = .seconds(8)
+    /// How long a pane that owes its history waits for quiet output and no
+    /// typing before it is fetched anyway.
+    static let maximumHistoryWait: Duration = .seconds(20)
     static let maximumConfirmationsInRow = 3
     static let confirmationTolerance: Duration = .milliseconds(100)
 
@@ -305,9 +310,15 @@ final class SupermuxTerminalStream {
     private func armConfirmation() {
         cancelConfirmation()
         let quiet = min(Self.outputQuiet * (1 << confirmationsInRow), Self.maximumConfirmationQuiet)
+        // A confirmation of a raced capture waits for quiet as long as it takes.
+        let giveUpAt = historyIsShallow ? ContinuousClock.now + Self.maximumHistoryWait : nil
         confirmationTask = Task { [weak self] in
             // Each byte moves the deadline; the task wakes only at deadlines.
-            while let deadline = self?.quietDeadline(after: quiet) {
+            while var deadline = self?.quietDeadline(after: quiet) {
+                if let giveUpAt {
+                    guard ContinuousClock.now < giveUpAt else { break }
+                    deadline = min(deadline, giveUpAt)
+                }
                 do {
                     try await Task.sleep(until: deadline, tolerance: Self.confirmationTolerance, clock: .continuous)
                 } catch {
