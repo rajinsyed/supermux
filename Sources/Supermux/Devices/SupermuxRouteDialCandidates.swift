@@ -9,8 +9,9 @@ import SupermuxMobileCore
 /// earlier outgoing sessions to it used
 /// (``SupermuxComposition/routeCandidateStore``), less those this Mac cannot
 /// reach from its interfaces now (``SupermuxRouteCandidates/reachable(_:from:)``:
-/// its own addresses, LAN on a subnet it is not on, Tailscale with its tunnel
-/// down, global IPv6 with none of its own).
+/// its own addresses, LAN with no private network up here, Tailscale with its
+/// tunnel down, global IPv6 with none of its own), at most 16, picked after
+/// that filter.
 ///
 /// They go to the direct lane only, never to the shared host endpoint: there
 /// iroh sends a new dial's first packets to the path its per-peer state
@@ -27,10 +28,13 @@ enum SupermuxRouteDialCandidates {
         UserDefaults.standard.object(forKey: enabledDefaultsKey) as? Bool ?? true
     }
 
-    /// The addresses of `key` this Mac can reach now, and how many were cached.
+    /// The addresses of `key` this Mac can reach now (at most
+    /// ``SupermuxRouteCandidates/limit``, picked after the filter), and how
+    /// many were cached.
     static func reachable(for key: SupermuxRoutePeerKey) async -> (addresses: [String], cached: Int) {
         let cached = await SupermuxComposition.routeCandidateStore.dialAddresses(for: key)
-        return (SupermuxRouteCandidates.reachable(cached, from: SupermuxLocalInterface.current()), cached.count)
+        let reachable = SupermuxRouteCandidates.reachable(cached, from: SupermuxLocalInterface.current())
+        return (Array(reachable.prefix(SupermuxRouteCandidates.limit)), cached.count)
     }
 
     /// The addresses for a dial to `instance` at `endpointID`.

@@ -146,14 +146,17 @@ public actor SupermuxRouteCandidateStore {
         update(key, candidates: candidates)
     }
 
-    /// The addresses to dial the peer at: handed over first, then learned
-    /// (most recent first), at most ``SupermuxRouteCandidates/limit``.
+    /// Every fresh address of the peer: handed over first, then learned (most
+    /// recent first). Not capped: a dial keeps those this device can reach
+    /// (``SupermuxRouteCandidates/reachable(_:from:)``) and takes the first
+    /// ``SupermuxRouteCandidates/limit`` of those, so unreachable ones never
+    /// push a reachable one out.
     public func dialAddresses(for key: SupermuxRoutePeerKey) -> [String] {
         loadIfNeeded()
         let fresh = (peersByKey[key]?.candidates ?? []).filter(isFresh)
         let fetched = fresh.filter { $0.source == .fetched }
         let learned = fresh.filter { $0.source == .learned }.sorted { $0.lastOK > $1.lastOK }
-        return (fetched + learned).prefix(SupermuxRouteCandidates.limit).map(\.address)
+        return (fetched + learned).map(\.address)
     }
 
     /// Every cached peer with its unexpired addresses, most recent first.

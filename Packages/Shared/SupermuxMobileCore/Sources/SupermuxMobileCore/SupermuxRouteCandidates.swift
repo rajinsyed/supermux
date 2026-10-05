@@ -14,8 +14,9 @@ public enum SupermuxRouteCandidates {
     public static let limit = 16
 
     /// The servable addresses among `addresses`, respelled canonically,
-    /// without duplicates, LAN first, then Tailscale, then global IPv6, at
-    /// most ``limit``.
+    /// without duplicates, private IPv4 first, then Tailscale, then ULA, then
+    /// global IPv6, at most ``limit`` (a host's many ULA prefixes never push
+    /// its Tailscale address out).
     /// - Parameter addresses: Socket addresses as iroh lists them.
     /// - Returns: The addresses to hand over (or keep from a fetch).
     public static func servable(_ addresses: [String]) -> [String] {
@@ -31,12 +32,12 @@ public enum SupermuxRouteCandidates {
         return ordered.prefix(limit).map(\.element.description)
     }
 
-    /// LAN 0, Tailscale 1, global IPv6 2; nil for an address not served.
+    /// Private IPv4 0, Tailscale 1, ULA 2, global IPv6 3; nil for an address not served.
     private static func rank(_ address: SupermuxSocketAddress) -> Int? {
         switch address.routeScope {
-        case .lan: 0
+        case .lan: address.family == .ipv4 ? 0 : 2
         case .tailscale: 1
-        case .internet: address.isGlobalIPv6 ? 2 : nil
+        case .internet: address.isGlobalIPv6 ? 3 : nil
         }
     }
 }
