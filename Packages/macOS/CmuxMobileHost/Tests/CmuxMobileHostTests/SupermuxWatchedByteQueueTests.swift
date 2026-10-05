@@ -24,6 +24,13 @@ import Testing
 ///   then a 1.7 MB replay reply) the echo of the terminal being typed in
 ///   waits for every other shown terminal's turn, one reply each;
 /// - that terminal, printing a flood, starves the other shown ones.
+/// - (2026-10-06, review S5) a paused hidden terminal stays frozen once its
+///   pane is shown when the viewer's watch never reaches the host (its
+///   retries ran out behind replays): input typed into a terminal proves
+///   it is on screen there, so it must bring a paused terminal back (its
+///   newest chunk first, the drain claimed) and take a background one out
+///   of the batches, until the connection's next watch says otherwise;
+/// - typing into a shown terminal queues a chunk of its own.
 @Suite("Supermux watched terminal bytes: visible first, fair, hidden ones pause")
 struct SupermuxWatchedByteQueueTests {
     private let shown = UUID().uuidString
@@ -151,6 +158,40 @@ struct SupermuxWatchedByteQueueTests {
         let patient = makeQueue(maximumAge: .seconds(60))
         for value in UInt8(1)...3 { #expect(bytes(patient, hidden, value).admitted) }
         #expect(drain(patient) == [1, 2, 3])
+    }
+
+    @Test("Typing into a paused hidden terminal brings it back: its newest chunk first, then its bytes")
+    func typingResumesPaused() {
+        let queue = makeQueue(maximumAge: .zero)
+        bytes(queue, hidden, 1)
+        bytes(queue, hidden, 2)
+        #expect(drain(queue) == [])
+        #expect(!queue.finishDrain())
+        queue.supermuxNoteInteractiveSurface(hidden)
+        #expect(queue.claimDrains() == [.shared])
+        #expect(bytes(queue, hidden, 3).admitted)
+        #expect(drain(queue) == [2, 3])
+    }
+
+    @Test("Typing into a background terminal shows it for this connection until its next watch")
+    func typingShowsBackground() {
+        let queue = makeQueue()
+        for value in UInt8(1)...2 { bytes(queue, hidden, value) }
+        for value in UInt8(100)...102 { bytes(queue, shown, value) }
+        queue.supermuxNoteInteractiveSurface(hidden)
+        #expect(drain(queue) == [1, 100, 2, 101, 102])
+        queue.supermuxWatchTerminalBytes(surfaceIDs: [shown, other, hidden], background: [hidden])
+        for value in UInt8(3)...4 { bytes(queue, hidden, value) }
+        for value in UInt8(103)...104 { bytes(queue, shown, value) }
+        #expect(drain(queue) == [103, 104, 3, 4])
+    }
+
+    @Test("Typing into a shown terminal queues nothing")
+    func typingShownQueuesNothing() {
+        let queue = makeQueue(maximumAge: .zero)
+        queue.supermuxNoteInteractiveSurface(shown)
+        #expect(queue.claimDrains().isEmpty)
+        #expect(drain(queue) == [])
     }
 
     @Test("Closing forgets paused terminals")
