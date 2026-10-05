@@ -16530,6 +16530,9 @@ class TerminalController {
         surfaceID: UUID,
         target: MobileViewportApplyGovernor.Target,
         immediate: Bool = false,
+        // SUPERMUX:begin sizing-soft-leave (`softLeave`: a staged change waits the uncap window, cap or not)
+        softLeave: Bool = false,
+        // SUPERMUX:end sizing-soft-leave
         reason: String
     ) -> (columns: Int, rows: Int)? {
         var governor = mobileViewportApplyGovernorsBySurfaceID[surfaceID] ?? MobileViewportApplyGovernor()
@@ -16554,7 +16557,11 @@ class TerminalController {
             if scheduleFlush {
                 scheduleMobileViewportGovernorFlush(
                     surfaceID: surfaceID,
-                    window: Self.mobileViewportStabilityWindow(for: target),
+                    // SUPERMUX:begin sizing-soft-leave (upstream: `window: Self.mobileViewportStabilityWindow(for: target),`)
+                    window: softLeave
+                        ? Self.mobileViewportUncapApplyStabilityWindow
+                        : Self.mobileViewportStabilityWindow(for: target),
+                    // SUPERMUX:end sizing-soft-leave
                     reason: reason
                 )
             }
@@ -16655,14 +16662,18 @@ class TerminalController {
             mobileViewportReportCleanupTimersBySurfaceID[surfaceID]?.cancel()
             mobileViewportReportCleanupTimersBySurfaceID[surfaceID] = nil
             // SUPERMUX:begin sizing-soft-leave (upstream: `immediate: true`)
-            _ = resolveSharedSizing(surfaceID: surfaceID, reports: [:], immediate: immediate, reason: reason)
+            _ = resolveSharedSizing(
+                surfaceID: surfaceID, reports: [:], immediate: immediate, softLeave: !immediate, reason: reason
+            )
             // SUPERMUX:end sizing-soft-leave
             return nil
         }
         mobileViewportReportsBySurfaceID[surfaceID] = reports
         scheduleMobileViewportReportCleanup(surfaceID: surfaceID, reports: reports)
-        // SUPERMUX:begin sizing-soft-leave (upstream: `immediate: true`)
-        return resolveSharedSizing(surfaceID: surfaceID, reports: reports, immediate: immediate, reason: reason)
+        // SUPERMUX:begin sizing-soft-leave (upstream: `immediate: true`; a soft leave keeps other viewers' changes behind the uncap window)
+        return resolveSharedSizing(
+            surfaceID: surfaceID, reports: reports, immediate: immediate, softLeave: !immediate, reason: reason
+        )
         // SUPERMUX:end sizing-soft-leave
     }
 

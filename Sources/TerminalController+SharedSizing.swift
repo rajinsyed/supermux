@@ -47,6 +47,9 @@ extension TerminalController {
         reports: [String: MobileViewportReport],
         countsOverride: (clientID: String, value: Bool?)? = nil,
         immediate: Bool = false,
+        // SUPERMUX:begin sizing-soft-leave (`softLeave`: a phone's scene-phase leave, passed on to applyLocalSizing)
+        softLeave: Bool = false,
+        // SUPERMUX:end sizing-soft-leave
         reason: String
     ) -> (columns: Int, rows: Int)? {
         if let relay = cloudSizingRelaysBySurfaceID[surfaceID]?.value, relay.relaysPhones {
@@ -81,7 +84,11 @@ extension TerminalController {
         )
         // SUPERMUX:end sizing-auto
         localSizingHostsBySurfaceID[surfaceID] = host
-        return applyLocalSizing(surfaceID: surfaceID, previous: previous, immediate: immediate, reason: reason)
+        // SUPERMUX:begin sizing-soft-leave (upstream: no `softLeave` argument)
+        return applyLocalSizing(
+            surfaceID: surfaceID, previous: previous, immediate: immediate, softLeave: softLeave, reason: reason
+        )
+        // SUPERMUX:end sizing-soft-leave
     }
 
     /// The pre-shared-sizing rule, kept for manual-I/O mirrors whose remote
@@ -169,6 +176,9 @@ extension TerminalController {
         surfaceID: UUID,
         previous: TerminalSizingState?,
         immediate: Bool = false,
+        // SUPERMUX:begin sizing-soft-leave (`softLeave`: a phone's scene-phase leave waits the uncap window even with other viewers attached)
+        softLeave: Bool = false,
+        // SUPERMUX:end sizing-soft-leave
         reason: String
     ) -> (columns: Int, rows: Int)? {
         // SUPERMUX:begin sizing-mac-pane-recheck (a shown Mac pane still marked off screen counts again before the decision applies)
@@ -182,6 +192,9 @@ extension TerminalController {
                 surfaceID: surfaceID,
                 target: .cap(columns: size.cols, rows: size.rows),
                 immediate: immediate,
+                // SUPERMUX:begin sizing-soft-leave (a soft leave stages another viewer's grid with the uncap window)
+                softLeave: softLeave,
+                // SUPERMUX:end sizing-soft-leave
                 reason: reason
             )
         case .uncapped:
@@ -195,6 +208,10 @@ extension TerminalController {
                     immediate: immediate,
                     reason: reason
                 )
+            // SUPERMUX:begin sizing-soft-leave (a soft leave with other viewers still attached stages the uncap too, so the phone's return within the window resizes nothing; upstream: the teardown below restores at once)
+            } else if softLeave {
+                governMobileViewportTarget(surfaceID: surfaceID, target: .uncapped, reason: reason)
+            // SUPERMUX:end sizing-soft-leave
             } else if let governor = mobileViewportApplyGovernorsBySurfaceID[surfaceID] {
                 // Ownership moved back to this Mac while phones stay attached:
                 // restore the pane now instead of after the uncap window.

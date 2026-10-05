@@ -371,9 +371,9 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   stream, Simulator or Mac-surface tab of its workspace does not count (the phone sends `counts_override:
   false` and lifts it when the terminal tab shows again, which takes the grid back, #993–#995). A phone's
   scene-phase leave (Control Center, the app switcher, a lock) clears with `transient: true` and waits
-  the 3 s uncap window, so a glance and return resizes nothing and a lock gives the Mac its grid within
-  3 s; leaving the terminal and a connection close restore at once (until 2026-10-05 every glance
-  resized the terminal twice, #970, #990–#991). A phone's clear goes to the Mac that holds its lease, so
+  the 3 s uncap window, so a glance and return resizes nothing (also with another Mac's mirror or a
+  second phone attached) and a lock gives the grid to the Mac or the next viewer within 3 s; leaving the terminal and a connection close restore at once (until 2026-10-05 every glance
+  resized the terminal twice, #970, #975, #990–#991). A phone's clear goes to the Mac that holds its lease, so
   switching the phone to another Mac releases the first (#999–#1000). A phone someone disconnected types
   nothing over its lane either and is told again on each connection (the `detached` refusal carries the
   detachment and re-sends `mobile.terminal.detached`, #965–#966; the phone applies the refusal itself,
