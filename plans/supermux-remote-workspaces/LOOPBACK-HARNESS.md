@@ -614,6 +614,18 @@ visible terminal, so even the idle one needs a full replay), three missed the 20
 while the host still sent them, ~30 keys dropped, the ECHO mirror first echoed ~40 s after the drop. D2 and D5
 are green in the loopback (see the suite's docstring).
 
+D6 holds the ECHO mirror's replay request 9 s on the host (`supermux.devices.link stall`) with the mirrors'
+replay deadline at 3 s (DEBUG `supermux.devices.terminal_stream.replay_deadline {seconds}`; null restores the 90 s
+default): the mirror must ask again on the live link, the host must send the pane one reply (the held one swapped
+for a small `superseded` error, logged as `supermux.terminal.replay SUPERSEDED`), and the pane must be attached
+again before the held reply, never detached. Red on its test commit: two replies, none superseded.
+`loopback_device_smoke` step 13 sets the 20 s deadline it was written for the same way.
+
+After the re-attach fixes (touchpoints #1052–#1059) every step passes: D3's ECHO mirror echoes ~3 s after the drop,
+every visible terminal and the hidden ticker resume (the viewing Mac's viewport is kept 15 s past its connection's
+close, the byte tee records 120 s past the last mirror), the hidden FLOOD gets a short replay (its history comes
+once it is shown), no replay misses its deadline and no key is dropped.
+
 ```bash
 CMUX_E2E_SUITES="loopback_degraded_link_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
 swift test --package-path Packages/Shared/CmuxIrxTransport --filter SupermuxIrxPriorityStarvationTests
