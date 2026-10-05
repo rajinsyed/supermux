@@ -40,6 +40,7 @@ final class SupermuxShapedUDPLink: @unchecked Sendable {
     private var toClient = Direction()
     private let lock = NSLock()
     private var running = true
+    private var dropsEverything = false
     private var thread: Thread?
 
     init(hostPort: UInt16, shape: Shape) throws {
@@ -61,6 +62,13 @@ final class SupermuxShapedUDPLink: @unchecked Sendable {
 
     /// Datagrams the bounded queue dropped toward the client.
     var droppedToClient: Int { lock.withLock { toClient.dropped } }
+
+    /// While true the path is cut: every datagram either way is dropped, as
+    /// on a blocked or vanished network path. QUIC sees silence, not a close.
+    var blocked: Bool {
+        get { lock.withLock { dropsEverything } }
+        set { lock.withLock { dropsEverything = newValue } }
+    }
 
     /// Ends the relay; its thread polls in short slices and closes the sockets itself.
     func stop() {
@@ -106,6 +114,7 @@ final class SupermuxShapedUDPLink: @unchecked Sendable {
             guard count > 0 else { return }
             let data = Array(buffer[0..<count])
             lock.withLock {
+                guard !dropsEverything else { return }
                 if towardHost {
                     clientAddress = source
                     Self.admit(data, into: &toHost, shape: shape)
