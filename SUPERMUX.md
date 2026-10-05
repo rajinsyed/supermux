@@ -370,7 +370,7 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   LAN, Tailscale and global IPv6 addresses over the admitted session (`route.candidates`, answered
   off the main actor, Iroh sessions only; never sent to the backend); the viewer caches them with
   the direct paths its sessions used (`supermux-route-candidates.json` beside the projects file, 7
-  days). Not done yet: the UI, wake handling.
+  days). Not done yet: the UI.
   E2E: `tests/supermux/loopback_device_route_e2e.py` (the loopback device's route is pinned by a
   DEBUG driver; it has no Iroh path).
 - **Always direct between Macs** (#1064–#1070; design: `ROUTING-DESIGN.md` W5, W6): each Mac dials the
@@ -384,12 +384,33 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   admitted) and on success redials once (`DeviceLink.supermuxPlannedRedial`, a 300 ms settle); a lane
   session that misses two liveness checks redials as a liveness failure would, with the lane held off,
   so it lands on the relay in seconds. A flapping path holds direct off 30 s, doubling to 10 min.
-  `probeNow(reason:)` is the hook for wake and network changes (not wired yet).
+  `probeNow(reason:)` runs on every wake and network change (next bullet).
   `supermux.route.dialCandidates = false` turns the lane off (upstream's relay dial). Journal
   (`/tmp/cmux-irx-journal-mac-<tag>.jsonl`, category `route`): `dial-race`, `probe`, `upgrade`,
   `liveness-miss`, `fallback`, `lane-created`, `lane-rebuilt`. E2E:
   `tests/supermux/loopback_device_route_switch_e2e.py` (a simulated network under the loopback link,
   `supermux.devices.route.switch`).
+- **Sleep, wake and network changes between Macs** (#1071–#1077; design: `ROUTING-DESIGN.md` W7):
+  `SupermuxSystemPower` (policy: `SupermuxWakePolicy`, SupermuxKit). On willSleep a Mac tells the Macs
+  viewing it it is going to sleep, takes its own links down at once, and is dark until a full wake
+  (didWake, the screens waking, or a display found awake twice should a wake notification be lost):
+  while dark no link dials, so a lid-closed laptop never dials out of its DarkWakes (macOS posts no
+  wake for them). A full wake recovers once, the sleep measured on the wall clock (iroh's clock stops
+  in sleep): after a minute or more the main endpoint is closed and bound again (every session on it is
+  dead by then; kept while no relay credential is live), iroh is told the network changed, the route
+  switcher probes direct now and rebuilds the idle direct lane, and links waiting in a backoff dial at
+  once. A network change (interfaces, IPv4 addresses, Tailscale's `utun`; debounced 1 s) recovers the
+  same way while awake, without the rebuild or redials. The notice is the event
+  `supermux.device.sleeping` (`SupermuxDeviceSleepCourtesy`, policy `SupermuxPeerSleep`; additive, an
+  older Mac never subscribes): a link that hears it drops its session and waits at least 5 min between
+  dials, until that Mac dials in (its waiting link then dials back at once, at most every 15 s) or a
+  session started after the notice stays up 2 min. `SupermuxRemoteSessionActivity` holds a
+  `ProcessInfo` activity (`.userInitiatedAllowingIdleSystemSleep`) while any phone or Mac session is
+  live, so App Nap never throttles one. The control plane's directory refreshes are at least 30 s apart
+  unless the ticket was just renewed (#1071; the field saw 485 in 31 s). Journal category `power`:
+  `will-sleep`, `recovered {reason, slept_s, main, lane_rebuilt, redialed}`, `dark-ended`,
+  `peer-sleeping`, `peer-dialed-in`. E2E: `tests/supermux/loopback_device_sleep_wake_e2e.py` (DEBUG
+  `supermux.devices.power.*` drivers run the real handlers; a test cannot sleep macOS).
 - **Terminal size: Auto, one setting** (upstream's shared sizing, #633, #665–#669, #790–#797, #920–#924,
   #952–#969, #1011–#1032): every terminal starts in Auto (upstream's `latest`, labelled Auto on the Mac and
   the phone): the device you are viewing it from sets its grid. A phone opening a terminal, or returning

@@ -1,3 +1,4 @@
+// SUPERMUX:begin v2-directory-refresh-floor (the directory refresh does not loop near the ticket's renewal — see SUPERMUX-TOUCHPOINTS.md)
 import Foundation
 import Testing
 @testable import CmuxIrxTransport
@@ -90,3 +91,4 @@ import Testing
                 "a directory refreshed beside the ticket may have raced it: one more goes at once")
     }
 }
+// SUPERMUX:end v2-directory-refresh-floor
