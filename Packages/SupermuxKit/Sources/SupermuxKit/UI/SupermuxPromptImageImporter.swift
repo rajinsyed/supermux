@@ -54,9 +54,10 @@ struct SupermuxPromptImageImporter: Sendable {
         guard holdsImages(pasteboard) else { return nil }
         let files = fileURLs(in: pasteboard)
         if !files.isEmpty { return .files(files) }
-        // Bitmap data as written; anything else NSImage reads (PDF, …) as TIFF.
+        // Data ImageIO decodes as written; anything else NSImage reads (PDF,
+        // SVG, …) as TIFF.
         for type in pasteboard.types ?? [] {
-            guard let uti = UTType(type.rawValue), uti.conforms(to: .image),
+            guard let uti = UTType(type.rawValue), uti.conforms(to: .image), isDecodable(uti),
                   let data = pasteboard.data(forType: type) else { continue }
             return .data(data, uti)
         }
@@ -89,7 +90,9 @@ struct SupermuxPromptImageImporter: Sendable {
         files.map { file in
             guard !Self.isClaudeFormat(file.pathExtension),
                   let type = UTType(filenameExtension: file.pathExtension), type.conforms(to: .image),
-                  let source = CGImageSourceCreateWithURL(file as CFURL, nil),
+                  let source = Self.isDecodable(type)
+                      ? CGImageSourceCreateWithURL(file as CFURL, nil)
+                      : Self.rendered(NSImage(contentsOf: file)),
                   let converted = convert(source, type: type, stem: file.deletingPathExtension().lastPathComponent)
             else { return file }
             return converted
@@ -103,8 +106,10 @@ struct SupermuxPromptImageImporter: Sendable {
         if let ext = type.preferredFilenameExtension, Self.isClaudeFormat(ext) {
             return write(data, stem: stem, extension: ext)
         }
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
-        return convert(source, type: type, stem: stem)
+        let source = Self.isDecodable(type)
+            ? CGImageSourceCreateWithData(data as CFData, nil)
+            : Self.rendered(NSImage(data: data))
+        return source.flatMap { convert($0, type: type, stem: stem) }
     }
 
     /// Re-encodes the first image of `source` (of format `type`) upright, as
@@ -141,6 +146,17 @@ struct SupermuxPromptImageImporter: Sendable {
             kCGImageSourceThumbnailMaxPixelSize: max(width, height),
         ]
         return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+    }
+
+    /// Whether ImageIO decodes `type` (it does not decode SVG or PDF).
+    private static func isDecodable(_ type: UTType) -> Bool {
+        (CGImageSourceCopyTypeIdentifiers() as? [String] ?? []).contains(type.identifier)
+    }
+
+    /// An image only `NSImage` reads (SVG, PDF), rendered as TIFF for ImageIO.
+    private static func rendered(_ image: NSImage?) -> CGImageSource? {
+        guard let tiff = image?.tiffRepresentation else { return nil }
+        return CGImageSourceCreateWithData(tiff as CFData, nil)
     }
 
     private static func encode(_ image: CGImage, as format: UTType) -> Data? {

@@ -426,7 +426,7 @@ folder of `~/.cache/cmux/task-attachments` with matching bytes and that folder a
 `--add-dir`; on This Mac each is a private copy under
 `~/.local/state/cmux/supermux-agent-attachments`; `agent.start` refuses paths outside an upload
 folder of the store (including a file directly in it); a HEIC attaches as a JPEG, an opaque TIFF
-as a PNG, and a symlink as the file it points to.
+and an SVG as a PNG, and a symlink as the file it points to.
 
 ```bash
 open -g --env SUPERMUX_DEBUG_LOOPBACK_DEVICE=1 --env SUPERMUX_PROJECTS_FILE=/tmp/<tag>/projects.json "<App path>"

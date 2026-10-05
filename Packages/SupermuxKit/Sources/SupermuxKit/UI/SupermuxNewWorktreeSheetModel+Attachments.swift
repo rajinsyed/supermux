@@ -24,7 +24,13 @@ extension SupermuxNewWorktreeSheetModel {
         guard phase == .idle else { return }
         pendingImageImports += 1
         defer { pendingImageImports -= 1 }
-        addAttachments(await importer.files(for: source))
+        let files = await importer.files(for: source)
+        if files.isEmpty, case .data = source {
+            // Pasted or dropped image data that could not be written as a file.
+            errorMessage = SupermuxAgentAttachmentError.unreadable("pasted-image").localizedDescription
+            return
+        }
+        addAttachments(files)
     }
 
     /// Adds image files in order. A file that is not a PNG, JPEG, GIF or WebP

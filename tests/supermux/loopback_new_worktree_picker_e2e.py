@@ -83,9 +83,10 @@ Steps:
      in the store whose --add-dir would be the whole store) is rejected
      before git runs, so no caller can make Claude read another folder
      without asking.
- 18. prompt_images_convert_and_follow_links: a HEIC photo attaches as a JPEG
-     and an opaque TIFF as a PNG (both upright copies of the image), and a
-     symlink to an image attaches as the file it points to.
+ 18. prompt_images_convert_and_follow_links: a HEIC photo attaches as a JPEG,
+     an opaque TIFF as a PNG (both copies of the image at its size), an SVG
+     (which only NSImage reads) as a PNG, and a symlink to an image as the
+     file it points to.
 
 `--only a,b` runs just those steps (after 1-2) and records each result.
 
@@ -951,23 +952,28 @@ class PickerE2E:
         for fmt, out in (("heic", heic), ("tiff", tiff)):
             subprocess.run(["sips", "-s", "format", fmt, str(png), "--out", str(out)],
                            check=True, capture_output=True, timeout=60)
+        svg = self.root / f"img-{self.nonce}-drawing.svg"
+        svg.write_text('<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8">'
+                       '<rect width="8" height="8" fill="#336699"/></svg>', encoding="utf-8")
         link = self.root / f"img-{self.nonce}-link.png"
         link.symlink_to(png)
         session = self.open_session(preferred_device=THIS_MAC)["session_id"]
         self.call("load", {"session_id": session}, timeout_s=180)
-        state = self.call("fill", {"session_id": session, "attachments": [str(heic), str(tiff), str(link)]})
+        state = self.call("fill", {"session_id": session, "attachments": [str(heic), str(tiff), str(svg), str(link)]})
         attached = state.get("attachments") or []
         self.call("close", {"session_id": session})
-        if state.get("error_message") or len(attached) != 3:
-            raise SmokeFailure(f"the HEIC, TIFF and symlink did not all attach: {state}")
-        photo, scan, linked = (Path(path) for path in attached)
-        for converted in (photo, scan):
+        if state.get("error_message") or len(attached) != 4:
+            raise SmokeFailure(f"the HEIC, TIFF, SVG and symlink did not all attach: {state}")
+        photo, scan, drawing, linked = (Path(path) for path in attached)
+        for converted in (photo, scan, drawing):
             if converted.parent not in self.image_folders:
                 self.image_folders.append(converted.parent)
         if photo.suffix not in (".jpg", ".jpeg") or not photo.read_bytes().startswith(b"\xff\xd8\xff"):
             raise SmokeFailure(f"the HEIC photo did not convert to a JPEG: {photo}")
         if scan.suffix != ".png" or not scan.read_bytes().startswith(b"\x89PNG"):
             raise SmokeFailure(f"the opaque TIFF did not convert to a PNG: {scan}")
+        if drawing.suffix != ".png" or not drawing.read_bytes().startswith(b"\x89PNG"):
+            raise SmokeFailure(f"the SVG did not render to a PNG: {drawing}")
         dimensions = [subprocess.run(["sips", "-g", "pixelWidth", "-g", "pixelHeight", str(p)],
                                      check=True, capture_output=True, text=True, timeout=60).stdout.split()[-3::2]
                       for p in (photo, scan)]
@@ -975,7 +981,7 @@ class PickerE2E:
             raise SmokeFailure(f"a converted image changed size: {dimensions}")
         if real_paths([str(linked)]) != [os.path.realpath(png)] or linked.name != png.name:
             raise SmokeFailure(f"the symlink did not attach as the file it points to: {linked}")
-        return {"photo": photo.name, "scan": scan.name, "linked": str(linked)}
+        return {"photo": photo.name, "scan": scan.name, "drawing": drawing.name, "linked": str(linked)}
 
     # -- cleanup -------------------------------------------------------------
 
