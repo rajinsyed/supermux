@@ -870,6 +870,8 @@ Rules for adding a touchpoint:
 | 996 | `Sources/PortScanner.swift` | `agent-port-rescan-slower` | `agentRescanInterval` is 5 s with 1 s leeway (upstream 2 s, no leeway). |
 | 998 | `Packages/macOS/CmuxMobileHost/Sources/CmuxMobileHost/DeviceTerminalGridPublisher.swift` | `device-grid-global-sample-floor` | A global tick samples every terminal's grid at most once a second, and always the first global tick after a topology change (`topologyNeedsFullSample`, kept until that sample); terminals the tick names are always sampled. `deferredGlobalSampleDeadline` says when a skipped global sample may run. `reset()` clears all three. |
 | 1010 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/SupermuxStateSyncTicker.swift` (`50BE10100000000000000001` file ref, `…02` build file) into the cmux target: the file reference, the `Supermux` group child after `SupermuxMobileSidebarStatusObserver.swift`, the build file and the target's Sources phase entry |
+| 1033 | `Packages/Shared/CmuxIrxTransport/Sources/CmuxIrxTransport/IrxConnection.swift` | `irx-stream-priority` | Two fences. `openLane` sets the new stream's send priority from `SupermuxIrxStreamPriority.priority(for: descriptor.lane)` before it writes the descriptor; `acceptLane` sets it on the accepted stream right after reading the descriptor. Keepalive lanes go at 1000, control and control-repair lanes at 100 (the focused surface's own); every other lane keeps its default, which its owner may still set (the artifact router's −10). Upstream: every bidirectional lane at 0, below terminal output (100 and 50) |
+| 1034 | `Packages/Shared/CmuxIrxTransport/Sources/CmuxIrxTransport/SupermuxIrxStreamPriority.swift` | `irx-stream-priority` | Whole new file (fenced top to bottom): the send-priority ladder (`keepalive` 1000, `control` = `IrxSurfaceEventLanes.Configuration().focusedPriority`) and `priority(for:)` |
 
 ## How to re-apply
 
@@ -7305,3 +7307,35 @@ loopback_agent_answer_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
 `cmux claude-hook pre-tool-use` with an unchanged phase (the stress harness's hook loop,
 `tests/supermux/stress_worktrees_energy.py`), the host DEBUG log's `mobile.emit topic=workspace.updated` lines
 per second fall to about zero.
+
+### 1033–1034. Keepalive and request replies are never starved by terminal output — `irx-stream-priority`
+
+Found while fixing "remote terminals are awfully delayed, worse after a sleep" (2026-10-05). noq sends a
+strictly higher-priority stream's buffered data first. The host wrote terminal output at 100 (focused surface)
+and 50 (every other surface, and the shared events lane every Mac mirror uses), while the keepalive pong and
+every control reply (replays, request answers, the liveness probe's answer) stayed at the default 0. On a relay
+(240–400 ms, capacity-bound) each packet the congestion window allowed carried output: pings missed from a
+session's first one, replies hit their 20 s deadline, the liveness probe after them missed too, and the viewer
+redialed a link that carried bytes the whole time (132 sessions in under 3 h, median life 30.8 s).
+
+The ladder, highest first: keepalive 1000 (a few bytes every 5 s, so it cannot starve anything); control and
+its replacement stream 100, equal to the focused surface, so noq's default send fairness takes turns packet by
+packet between request replies and the focused terminal's output; background output 50; artifacts −10.
+Control is not strictly above focused output because a multi-MB replay on the control stream would then hold
+the focused terminal's echo for seconds; not strictly below, because a focused terminal printing without pause
+would then starve every reply and the probe.
+
+Failure modes considered: replays on the control stream now go ahead of background output (50), so on a
+saturated link a Mac mirror's shared events lane waits while re-attach replays drain (bounded by the replay
+bytes; the re-attach work shrinks them); `setPriority` crosses an iroh-ffi lock that waits for an in-flight
+write on the same stream, so it runs before the first write on a fresh stream and never waits; a lane kind not
+in the ladder keeps its default; priority is local send scheduling, so older peers are unaffected (no wire
+change). Both ends apply it (the phone's and a viewer Mac's pings and requests too).
+
+Re-apply after an upstream merge: keep the call in `openLane` before the descriptor write and the call in
+`acceptLane` right after the descriptor read. If upstream sets lane priorities itself, keep keepalive above
+all output and control at least at the focused surface's priority.
+
+Verify: `swift test --package-path Packages/Shared/CmuxIrxTransport --filter SupermuxIrxPriorityStarvationTests`
+(two Iroh endpoints through a 300 KB/s, 50 ms, 64 KB-queue UDP link; red at `ef19138e3ed`: keepalive unanswered
+after 2.005 s, control request unanswered after 8 s; green: both answered within 2 s).

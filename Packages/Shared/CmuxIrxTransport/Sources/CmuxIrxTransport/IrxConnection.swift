@@ -328,6 +328,12 @@ public actor IrxConnection {
         let stream = try await connection.openBi()
         let writer = IrxStreamWriter(stream.send())
         let reader = IrxStreamReader(stream.recv(), activity: inboundActivity)
+        // SUPERMUX:begin irx-stream-priority
+        // Before the descriptor, so the lane's first bytes already go at its priority.
+        if let priority = SupermuxIrxStreamPriority.priority(for: descriptor.lane) {
+            try? await writer.setPriority(priority)
+        }
+        // SUPERMUX:end irx-stream-priority
         try await writer.writeControlFrame(descriptor)
         return IrxLaneStream(descriptor: descriptor, writer: writer, reader: reader)
     }
@@ -350,6 +356,12 @@ public actor IrxConnection {
                 let writer = IrxStreamWriter(stream.send())
                 do {
                     if let descriptor = try await reader.readControlFrame(IrxLaneDescriptor.self) {
+                        // SUPERMUX:begin irx-stream-priority
+                        // Nothing has been written on the accepted stream yet.
+                        if let priority = SupermuxIrxStreamPriority.priority(for: descriptor.lane) {
+                            try? await writer.setPriority(priority)
+                        }
+                        // SUPERMUX:end irx-stream-priority
                         return IrxLaneStream(descriptor: descriptor, writer: writer, reader: reader)
                     }
                 } catch {
