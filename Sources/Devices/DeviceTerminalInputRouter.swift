@@ -156,8 +156,9 @@ final class DeviceTerminalInputRouter: @unchecked Sendable {
                 drainTask?.cancel()
                 return
             }
+            // Keys set aside while the link was down wait under the mirror's own hold.
             guard !supermuxHolding else {
-                if !pending.isEmpty || !supermuxHeldWhileDown.isEmpty { supermuxStartHoldClock() }
+                if !pending.isEmpty { supermuxStartHoldClock() }
                 return
             }
             supermuxHeldSince = nil
@@ -168,6 +169,8 @@ final class DeviceTerminalInputRouter: @unchecked Sendable {
     }
 
     /// The link is back: the keys held so far were typed while it was down.
+    /// They wait under the mirror's hold from the drop; keys typed from now
+    /// on start the clock again.
     func supermuxSetAsideHeldInput() {
         queue.async { [self] in
             for item in pending.items where !supermuxHeldWhileDown.append(item) {
@@ -175,6 +178,19 @@ final class DeviceTerminalInputRouter: @unchecked Sendable {
                 break
             }
             pending.removeAll()
+            supermuxHeldSince = nil
+        }
+    }
+
+    /// The mirror's hold from the drop ran out while it re-attaches: the
+    /// keys set aside while the link was down go; the ones typed since it
+    /// came back stay, under their own clock.
+    func supermuxDropSetAsideInput() {
+        queue.async { [self] in
+            #if DEBUG
+            for _ in supermuxHeldWhileDown.items { SupermuxTerminalInputDebug.inputDroppedWhileDetached() }
+            #endif
+            supermuxHeldWhileDown.removeAll()
         }
     }
 

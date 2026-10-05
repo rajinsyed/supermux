@@ -28,7 +28,10 @@ import SupermuxKit
 ///   idle direct lane is rebound, and links waiting in a backoff dial at
 ///   once. Dials wait for the rebuild, at most 5 s. A viewing Mac's sizing
 ///   report kept past its connection's close waits a whole grace again
-///   (``SupermuxMacViewerCloseGrace``), so that Mac's redial comes first.
+///   (``SupermuxMacViewerCloseGrace``), so that Mac's redial comes first, and
+///   a mirror holding typing while its link is down holds a whole window
+///   again (``SupermuxMirrorInputHold``), so the first keys after the wake
+///   wait for the redial.
 /// - **A network change** (interfaces or IPv4 addresses, Tailscale's `utun`
 ///   too, debounced 1 s) recovers the same way while awake, without the
 ///   rebuild (unless the wake's has not run yet) or the redials.
@@ -136,6 +139,7 @@ final class SupermuxSystemPower {
     func woke(_ reason: SupermuxWakePolicy.Reason, at now: Date = Date()) -> Task<Void, Never>? {
         guard let recovery = policy.woke(reason, at: now) else { return nil }
         SupermuxMacViewerCloseGrace.restartAfterWake()
+        SupermuxMirrorInputHold.restartAfterWake()
         displayTask?.cancel()
         displayTask = nil
         let token = recovery.rebuildsMainEndpoint ? beginRebuild() : nil

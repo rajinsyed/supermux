@@ -83,9 +83,9 @@ final class DeviceTerminalMirrorSession {
     /// down go to the terminal only if the re-attach resumes it.
     private var supermuxLinkLostSinceAttach = false
     /// Typing waits while the link is down, for at most
-    /// ``SupermuxTerminalInputPipeline/replayWindow``.
+    /// ``SupermuxTerminalInputPipeline/replayWindow`` of awake time.
     private var supermuxHoldsWhileDown = false
-    private var supermuxHoldWhileDownExpiry: Task<Void, Never>?
+    private var supermuxHoldWhileDownExpiry: SupermuxMirrorInputHold?
     // SUPERMUX:end device-mirror-reattach-input
     private(set) var assignedGrid: (columns: Int, rows: Int)?
     var onAttached: (@MainActor () -> Void)?
@@ -654,33 +654,47 @@ final class DeviceTerminalMirrorSession {
     }
 
     /// The link dropped under an attached mirror: typing waits for it, at
-    /// most ``SupermuxTerminalInputPipeline/replayWindow`` from the first
-    /// drop (a link that drops again while it re-attaches does not start it
-    /// over), then is dropped (keystrokes must not land long after they were
-    /// typed).
+    /// most ``SupermuxTerminalInputPipeline/replayWindow`` of awake time from
+    /// the first drop (a link that drops again while it re-attaches does not
+    /// start it over; a full wake does, ``SupermuxMirrorInputHold``), then is
+    /// dropped (keystrokes must not land long after they were typed).
     private func supermuxHoldWhileDown() {
         supermuxLinkLostSinceAttach = true
         guard !supermuxHoldsWhileDown else { return }
         supermuxHoldsWhileDown = true
         supermuxHoldWhileDownExpiry?.cancel()
-        supermuxHoldWhileDownExpiry = Task { [weak self] in
-            try? await Task.sleep(for: SupermuxTerminalInputPipeline.replayWindow)
-            guard let self, !Task.isCancelled else { return }
-            self.supermuxHoldWhileDownExpired()
-        }
+        let hold = SupermuxMirrorInputHold(
+            onWake: { [weak self] in self?.supermuxHoldRestartedAtWake() },
+            onExpired: { [weak self] in self?.supermuxHoldWhileDownExpired() })
+        supermuxHoldWhileDownExpiry = hold
+        hold.start()
     }
 
-    /// The hold from the drop ran out, whatever the phase (a re-attach may
-    /// still be on its way): every key typed so far goes, held, set apart,
-    /// and what the pipeline still holds from before the drop, so nothing
-    /// typed later lands without what came before it (an Enter without its
-    /// command). A mirror still detached takes no keys from now on.
+    /// The hold from the drop ran out. Still detached: every key typed so
+    /// far goes, and the mirror takes no keys from now on. Re-attaching (the
+    /// link is back): only the keys typed while it was down go; the ones
+    /// typed since stay under the router's own clock, and go out if the
+    /// re-attach resumes the terminal. Either way what the pipeline still
+    /// holds from before the drop goes, and with it whatever was typed after
+    /// it, so nothing lands without what came before it (an Enter without
+    /// its command).
     private func supermuxHoldWhileDownExpired() {
         supermuxHoldsWhileDown = false
         supermuxHoldWhileDownExpiry = nil
-        inputRouter.supermuxDropHeldInput()
+        if phase == .detached {
+            inputRouter.supermuxDropHeldInput()
+        } else {
+            inputRouter.supermuxDropSetAsideInput()
+        }
         supermuxInputPipeline.expireStalled()
         if phase == .detached { supermuxUpdateInput(live: false) }
+    }
+
+    /// A full wake while the link is down: what was held from before the
+    /// sleep goes; the hold runs a whole window from now.
+    private func supermuxHoldRestartedAtWake() {
+        inputRouter.supermuxDropHeldInput()
+        supermuxInputPipeline.expireStalled()
     }
 
     /// A replay answered this attach. After a lost link, keys typed while it
