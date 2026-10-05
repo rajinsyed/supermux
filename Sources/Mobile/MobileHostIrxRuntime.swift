@@ -1004,6 +1004,14 @@ final class MobileHostIrxRuntime: MobileHostPairingRuntime {
             await irx.close(code: .revoked, origin: .local)
             return
         }
+        // SUPERMUX:begin device-sleep-courtesy
+        // Another Mac dialed in, so it is awake: this Mac's link to it, if
+        // waiting (maybe on that Mac's "going to sleep" notice), dials at once.
+        if isMac {
+            SupermuxComposition.sleepCourtesy.peerDialedIn(
+                endpointIDHex: peer.endpointIDHex, deviceID: peer.deviceID, tag: peer.tag)
+        }
+        // SUPERMUX:end device-sleep-courtesy
         // Automatic path mode: authorize NAT traversal so the admitted session
         // can upgrade to a direct/LAN path make-before-break.
         if !Self.forceRelayOnly {

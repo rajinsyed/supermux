@@ -13,10 +13,16 @@ import SupermuxMobileCore
 enum SupermuxDeviceLinkEvents {
     /// The `supermux.*` topics each device link subscribes to, on top of
     /// upstream's `DeviceLink.eventTopics`. The host accepts any topic set.
+    /// The other Mac's "going to sleep" notice (``SupermuxDeviceSleepCourtesy``) is one of them.
     nonisolated static let topics: Set<String> = Set(SupermuxMobileTopic.allCases.map(\.rawValue))
+        .union([SupermuxDeviceSleepCourtesy.topic])
 
     /// A `supermux.*` envelope arrived on the link for `instance`.
     static func receive(instance: SurfaceDeviceInstanceID, topic: String, payload: Data?) {
+        if topic == SupermuxDeviceSleepCourtesy.topic {
+            SupermuxComposition.sleepCourtesy.received(from: instance)
+            return
+        }
         SupermuxComposition.devices.receive(topic: topic, payload: payload, from: instance)
     }
 

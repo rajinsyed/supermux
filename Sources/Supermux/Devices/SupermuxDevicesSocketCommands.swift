@@ -36,7 +36,8 @@ import SupermuxKit
 /// (``SupermuxTerminalClipboardSocketCommands``), the `terminal_input.*` input latency
 /// drivers (``SupermuxTerminalInputSocketCommands``), the `link_impairment` loopback link
 /// impairment (``SupermuxDeviceLinkImpairmentSocketCommands``), the `route.*` link route and
-/// direct-address drivers (``SupermuxDeviceRouteSocketCommands``), and the `new_worktree.*` New Worktree
+/// direct-address drivers (``SupermuxDeviceRouteSocketCommands``), the `power.*` sleep / wake drivers
+/// (``SupermuxDevicePowerSocketCommands``), and the `new_worktree.*` New Worktree
 /// sheet drivers (`SupermuxNewWorktreeSocketCommands`). `list` reports each device's `route`.
 @MainActor
 enum SupermuxDevicesSocketCommands {
@@ -121,6 +122,7 @@ enum SupermuxDevicesSocketCommands {
             case let name where SupermuxDeviceMirrorCloseSocketCommands.handles(name): result = try SupermuxDeviceMirrorCloseSocketCommands.handle(name, params)
             case let name where SupermuxDeviceTunnelSocketCommands.handles(name): result = try await SupermuxDeviceTunnelSocketCommands.handle(name, params)
             case let name where SupermuxDeviceRouteSocketCommands.handles(name): result = try await SupermuxDeviceRouteSocketCommands.handle(name, params)
+            case let name where SupermuxDevicePowerSocketCommands.handles(name): result = try await SupermuxDevicePowerSocketCommands.handle(name, params)
             case let name where SupermuxTerminalSizingSocketCommands.handles(name):
                 result = try await SupermuxTerminalSizingSocketCommands.handle(name, params: params)
             case let name where SupermuxPortMenusSocketCommands.handles(name): result = try await SupermuxPortMenusSocketCommands.handle(name, params)

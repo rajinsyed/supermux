@@ -200,6 +200,19 @@ final class DeviceLink {
     }
     // SUPERMUX:end route-switch
 
+    // SUPERMUX:begin device-sleep-courtesy
+    /// The other Mac said it is going to sleep: drop the session now, before
+    /// it stops answering, and reconnect as after a liveness failure (never at
+    /// once). Its waits then last until that Mac shows it is awake
+    /// (`Sources/Supermux/Devices/SupermuxDeviceSleepCourtesy.swift`).
+    func supermuxPeerGoingToSleep() {
+        guard phase == .connected else { return }
+        deviceLinkLog.info("device link peer going to sleep \(self.instance.wireValue, privacy: .private(mask: .hash))")
+        transition(applyPolicy(.supermuxUnresponsive))
+        onChange?()
+    }
+    // SUPERMUX:end device-sleep-courtesy
+
     private func applyPolicy(_ event: DeviceLinkReconnectPolicy.Event) -> Phase {
         policy.apply(event, now: runtime.now())
     }
@@ -317,9 +330,13 @@ final class DeviceLink {
             // shape `CloudMachineLink` and the presence heartbeat use.
             waitTask = Task { [weak self] in
                 guard let self else { return }
+                // SUPERMUX:begin device-sleep-courtesy
+                // A Mac that said it is going to sleep is dialed again only after a long wait.
+                let supermuxWait = SupermuxComposition.sleepCourtesy.redialWait(for: self.instance, after: delay)
+                // SUPERMUX:end device-sleep-courtesy
                 // SUPERMUX:begin device-link-unproven-session-backoff
                 // Spread by ±20 % so links that failed together do not dial in step.
-                let delay = SupermuxDeviceLinkBackoff.jittered(delay)
+                let delay = SupermuxDeviceLinkBackoff.jittered(supermuxWait)
                 // SUPERMUX:end device-link-unproven-session-backoff
                 guard (try? await self.clock.sleep(for: delay)) != nil else { return }
                 self.transition(self.applyPolicy(.waitElapsed))
@@ -357,6 +374,12 @@ final class DeviceLink {
         let record = self.record
         connectTask = Task { [weak self] in
             guard let self else { return }
+            // SUPERMUX:begin device-dark-wake-gate
+            // No dial while this Mac is dark (from willSleep to a full wake, so
+            // never out of a DarkWake) or its main endpoint is being rebuilt
+            // after a long sleep (Sources/Supermux/Devices/SupermuxSystemPower.swift).
+            guard await SupermuxSystemPower.waitUntilAwake(), generation == self.generation else { return }
+            // SUPERMUX:end device-dark-wake-gate
             do {
                 let (client, events) = try await self.makeConnectedClient(record: record)
                 guard !Task.isCancelled, generation == self.generation else {
