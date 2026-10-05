@@ -516,6 +516,9 @@ extension TerminalController {
         // SUPERMUX:begin sizing-auto (an override set by hand is the user's, never Auto's)
         SupermuxTerminalSizingAuto.shared.userSetCounts(participantID: participantID, surfaceID: surfaceID)
         // SUPERMUX:end sizing-auto
+        // SUPERMUX:begin sizing-user-mac-counts (a Mac pane override set by hand is the user's, never the off-screen mark)
+        if participantID == host.macParticipantID { SupermuxTerminalSizingVisibility.shared.userSetMacCounts(surfaceID) }
+        // SUPERMUX:end sizing-user-mac-counts
         host.setCountsOverride(participantID, value)
         localSizingHostsBySurfaceID[surfaceID] = host
         applyLocalSizing(surfaceID: surfaceID, previous: previous, reason: "terminal.size_counts.set")

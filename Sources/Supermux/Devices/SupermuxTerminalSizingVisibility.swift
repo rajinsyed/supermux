@@ -187,6 +187,17 @@ final class SupermuxTerminalSizingVisibility {
         hiddenHosts.contains(surfaceID)
     }
 
+    /// Someone set the Mac pane's counts override by hand (the size panel,
+    /// `terminal.size_counts.set`; `sizing-user-mac-counts`): it is theirs,
+    /// so it is neither this class's mark to lift nor a released pane's.
+    /// Before, a hand-set false on a pane already marked looked like the mark
+    /// and was lifted once nobody else counted. This class's own mark goes
+    /// through the same setter (`refreshHost`) and records itself right after.
+    func userSetMacCounts(_ surfaceID: UUID) {
+        hiddenHosts.remove(surfaceID)
+        releasedHosts.remove(surfaceID)
+    }
+
     /// Whether someone other than the Mac pane would size the terminal if
     /// the pane stopped counting: it has a viewport and is not opted out.
     private static func othersWouldCount(_ host: LocalTerminalSizingHost) -> Bool {
