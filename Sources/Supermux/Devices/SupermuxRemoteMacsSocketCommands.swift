@@ -12,8 +12,13 @@ import SupermuxKit
 ///   or `{action: show_hidden}` — the card's own actions.
 /// - `flat_chips {}` — for every device mirror, the Mac its flat-row icon
 ///   names, the state it renders (`online` / `connecting` / `offline`), and
-///   what is drawn: `style: "icon"`, `symbol`, `help` (the tooltip) and
-///   `placement` (`branch_line`, or `title_line` when the row draws none).
+///   what is drawn: `style: "icon"`, `symbol`, `help` (the tooltip, with the
+///   link's route while connected), `route` (its words, or null), `relayed`
+///   (the amber dot) and `placement` (`branch_line`, or `title_line` when the
+///   row draws none).
+///
+/// Each Mac in `remote_macs_settings` carries its row's `route` (the words,
+/// null unless connected with one) and `route_is_relayed`.
 @MainActor
 enum SupermuxRemoteMacsSocketCommands {
     static let methods: Set<String> = ["remote_macs_settings", "remote_macs_settings_set", "flat_chips"]
@@ -47,6 +52,8 @@ enum SupermuxRemoteMacsSocketCommands {
                     "name": mac.name,
                     "link": mac.link.rawValue,
                     "detail": mac.detail ?? NSNull(),
+                    "route": mac.route?.label ?? NSNull(),
+                    "route_is_relayed": mac.route?.isRelayed ?? false,
                     "workspace_count": mac.workspaceCount,
                     "ports": mac.ports.map { port -> [String: Any] in
                         [
@@ -89,6 +96,7 @@ enum SupermuxRemoteMacsSocketCommands {
             guard let label = CloudWorkspaceSidebarPresentation.deviceLabel(workspace: mirror.workspace) else { return nil }
             let name = SupermuxFlatRowDeviceChip.macName(fromDeviceWorkspaceLabel: label)
             let state = SupermuxFlatRowDeviceChip.state(ofMacNamed: name, devices: devices)
+            let route = SupermuxFlatRowDeviceChip.route(ofMacNamed: name, devices: devices)
             let snapshot = SidebarWorkspaceSnapshotFactory(
                 workspace: mirror.workspace,
                 settings: settings,
@@ -102,7 +110,7 @@ enum SupermuxRemoteMacsSocketCommands {
                 "chip_state": String(describing: state),
                 "placement": SupermuxProjectsSocketPayloads.flatDeviceIconPlacement(snapshot, settings: settings),
             ]
-            chip.merge(SupermuxProjectsSocketPayloads.deviceIcon(name: name, state: state)) { current, _ in current }
+            chip.merge(SupermuxProjectsSocketPayloads.deviceIcon(name: name, state: state, route: route)) { current, _ in current }
             return chip
         }
         return ["chips": chips]

@@ -3,26 +3,31 @@ import CmuxSurfaceCatalogModel
 import Foundation
 import Observation
 import SupermuxKit
+import SupermuxMobileCore
 
 /// App side of the Settings "Remote Macs" card (`SupermuxRemoteMacsSettingsCard`
 /// in `CmuxSettingsUI`): builds the card's snapshot from the device facade,
+/// each connected Mac's route (``SupermuxDeviceRoutes``),
 /// ``SupermuxDevicesSettings``, the "Hide Here" set and the port forwards
 /// (``SupermuxPortForwards``), and applies the card's actions. The socket (`supermux.devices.remote_macs_settings*`) drives the
 /// same actions, so E2E tests exercise the card's exact write path.
 @MainActor
 final class SupermuxRemoteMacsSettingsFeed {
     private let devices: SupermuxDevices
+    private let routes: SupermuxDeviceRoutes
     private let settings: SupermuxDevicesSettings
     private let hidden: SupermuxHiddenRemoteWorkspaces
     private let forwards: SupermuxPortForwards
 
     init(
         devices: SupermuxDevices,
+        routes: SupermuxDeviceRoutes,
         settings: SupermuxDevicesSettings,
         hidden: SupermuxHiddenRemoteWorkspaces,
         forwards: SupermuxPortForwards
     ) {
         self.devices = devices
+        self.routes = routes
         self.settings = settings
         self.hidden = hidden
         self.forwards = forwards
@@ -80,6 +85,7 @@ final class SupermuxRemoteMacsSettingsFeed {
                     name: device.displayName,
                     link: Self.link(device.linkState),
                     detail: device.linkDetail,
+                    route: routes.route(for: device).map(Self.route),
                     workspaceCount: device.hasFetchedRecords ? devices.records(on: device.machine).count : 0,
                     ports: ports(of: device.machine),
                     portsNote: device.isConnected
@@ -112,8 +118,10 @@ final class SupermuxRemoteMacsSettingsFeed {
     }
 
     /// The current snapshot, then one whenever it changes: any device or
-    /// record change (`devices.revision`), any port forward change, or any
-    /// defaults write (the settings and the hidden set live in `UserDefaults`).
+    /// record change (`devices.revision`), any published route (kept apart
+    /// from the revision, which re-reconciles mirrors), any port forward
+    /// change, or any defaults write (the settings and the hidden set live in
+    /// `UserDefaults`).
     func updates() -> AsyncStream<SupermuxRemoteMacsSettingsSnapshot> {
         let (stream, continuation) = AsyncStream.makeStream(
             of: SupermuxRemoteMacsSettingsSnapshot.self,
@@ -135,6 +143,7 @@ final class SupermuxRemoteMacsSettingsFeed {
         private var last: SupermuxRemoteMacsSettingsSnapshot?
         private var observer: (any NSObjectProtocol)?
         private var revisions: Task<Void, Never>?
+        private var routeChanges: Task<Void, Never>?
         private var portChanges: Task<Void, Never>?
 
         init(feed: SupermuxRemoteMacsSettingsFeed, continuation: AsyncStream<SupermuxRemoteMacsSettingsSnapshot>.Continuation) {
@@ -148,6 +157,13 @@ final class SupermuxRemoteMacsSettingsFeed {
                 while !Task.isCancelled {
                     guard let devices = self?.feed?.devices else { return }
                     await Self.nextRevision(of: devices)
+                    self?.emit()
+                }
+            }
+            routeChanges = Task { @MainActor [weak self] in
+                while !Task.isCancelled {
+                    guard let routes = self?.feed?.routes else { return }
+                    await Self.nextChange(of: routes)
                     self?.emit()
                 }
             }
@@ -168,6 +184,8 @@ final class SupermuxRemoteMacsSettingsFeed {
         func stop() {
             revisions?.cancel()
             revisions = nil
+            routeChanges?.cancel()
+            routeChanges = nil
             portChanges?.cancel()
             portChanges = nil
             if let observer { NotificationCenter.default.removeObserver(observer) }
@@ -186,6 +204,12 @@ final class SupermuxRemoteMacsSettingsFeed {
             }
         }
 
+        private static func nextChange(of routes: SupermuxDeviceRoutes) async {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                withObservationTracking { _ = routes.routes } onChange: { continuation.resume() }
+            }
+        }
+
         private static func nextChange(of forwards: SupermuxPortForwards) async {
             await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
                 withObservationTracking {
@@ -195,6 +219,14 @@ final class SupermuxRemoteMacsSettingsFeed {
                 } onChange: { continuation.resume() }
             }
         }
+    }
+
+    /// A connected Mac's route as its row says it.
+    private static func route(_ route: SupermuxLinkRoute) -> SupermuxRemoteMacsSettingsSnapshot.Mac.Route {
+        SupermuxRemoteMacsSettingsSnapshot.Mac.Route(
+            label: SupermuxLinkRouteText.text(for: route),
+            isRelayed: SupermuxLinkRouteText.isWarning(route)
+        )
     }
 
     private static func link(_ state: SupermuxDeviceLinkState) -> SupermuxRemoteMacsSettingsSnapshot.Mac.Link {
@@ -211,6 +243,7 @@ extension SupermuxComposition {
     /// The Settings "Remote Macs" card's app side.
     static let remoteMacsSettings = SupermuxRemoteMacsSettingsFeed(
         devices: devices,
+        routes: deviceRoutes,
         settings: devicesSettings,
         hidden: hiddenRemoteWorkspaces,
         forwards: portForwards

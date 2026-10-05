@@ -475,7 +475,8 @@ class RouteE2E:
         expect(any(e.get("a_relay_id") == "apne1" for e in changed), f"no route change to apne1 among {changed[-5:]}")
         expect(any(e.get("a_scope") == "tailscale" for e in changed), "no route change to Tailscale")
         links = [e for e in events if e.get("component") == "device-link" and e.get("a_device") == device]
-        expect(any(e.get("event") == "connected" for e in links), "no device-link connected event")
+        expect(any(e.get("event") == "connected" for e in links),
+               f"no device-link connected event among {[(e.get('component'), e.get('event')) for e in events][-12:]}")
         expect(not any(e.get("component") in ("keepalive", "engine", "terminal-trace") for e in events),
                "chatty components leaked into the link history")
         counters_line = next((line for line in section.splitlines() if line.startswith("{") and '"changed"' in line

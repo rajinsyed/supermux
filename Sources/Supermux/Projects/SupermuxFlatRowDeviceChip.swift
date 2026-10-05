@@ -1,4 +1,5 @@
 import SupermuxKit
+import SupermuxMobileCore
 import SwiftUI
 
 /// The Mac icon on a flat sidebar row that mirrors another Mac's workspace
@@ -9,9 +10,12 @@ import SwiftUI
 /// icon-only badge it shows whatever the branch/directory detail setting.
 /// The Mac name comes from the row snapshot's existing `deviceWorkspaceLabel`;
 /// the icon looks that Mac's link up in the device facade and dims while it is
-/// offline or connecting. Only this small view observes the facade, so a link
-/// change re-renders the icon, not the row. (The type keeps its old "chip"
-/// name, which the touchpoint and its callers use.)
+/// offline or connecting, and while it is connected takes its route from
+/// ``SupermuxComposition/deviceRoutes`` (the tooltip's "Relay · Tokyo ·
+/// 241 ms", the amber dot while relayed). Only this small view observes the
+/// facade and the route store, so a link or route change re-renders the icon,
+/// not the row. (The type keeps its old "chip" name, which the touchpoint and
+/// its callers use.)
 struct SupermuxFlatRowDeviceChip: View {
     let deviceWorkspaceLabel: String
     /// The glyph's point size: the neighboring branch glyph's or badge's.
@@ -21,9 +25,11 @@ struct SupermuxFlatRowDeviceChip: View {
 
     var body: some View {
         let name = Self.macName(fromDeviceWorkspaceLabel: deviceWorkspaceLabel)
+        let candidates = Self.candidates(SupermuxComposition.devices.devices)
         SupermuxRemoteMacIcon(
             name: name,
-            state: Self.state(ofMacNamed: name, devices: SupermuxComposition.devices.devices),
+            state: SupermuxDeviceChipState.resolve(name: name, among: candidates),
+            route: SupermuxDeviceChipState.resolveRoute(name: name, among: candidates),
             pointSize: pointSize,
             tint: tint
         )
@@ -49,13 +55,25 @@ struct SupermuxFlatRowDeviceChip: View {
 
     /// The chip state of the Mac a flat row names.
     static func state(ofMacNamed name: String, devices: [SupermuxDevice]) -> SupermuxDeviceChipState {
-        SupermuxDeviceChipState.resolve(name: name, among: devices.map { device in
+        SupermuxDeviceChipState.resolve(name: name, among: candidates(devices))
+    }
+
+    /// The route of the Mac a flat row names, while it is connected.
+    static func route(ofMacNamed name: String, devices: [SupermuxDevice]) -> SupermuxLinkRoute? {
+        SupermuxDeviceChipState.resolveRoute(name: name, among: candidates(devices))
+    }
+
+    /// The known devices as the chip lookup needs them, each with its
+    /// published route (``SupermuxDeviceRoutes/route(for:)``: nil unless connected).
+    private static func candidates(_ devices: [SupermuxDevice]) -> [SupermuxDeviceChipState.Candidate] {
+        devices.map { device in
             SupermuxDeviceChipState.Candidate(
                 name: device.displayName,
                 machineID: device.machine.rawValue,
-                state: chipState(device.linkState)
+                state: chipState(device.linkState),
+                route: SupermuxComposition.deviceRoutes.route(for: device)
             )
-        })
+        }
     }
 
     private static func chipState(_ link: SupermuxDeviceLinkState) -> SupermuxDeviceChipState {

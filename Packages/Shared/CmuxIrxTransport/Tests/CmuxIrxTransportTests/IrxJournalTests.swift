@@ -35,6 +35,7 @@ import Testing
         #expect(journal.counterSnapshot()["terminal_trace_dropped"] == 1)
     }
 
+    // SUPERMUX:begin irx-journal-link-history
     // MARK: - The link history `cmux iroh-diag` shows
     //
     // Failure modes, listed before the code:
@@ -83,4 +84,5 @@ import Testing
         let newest = journal.supermuxLinkHistory(3)
         #expect(newest.map { $0.attributes["seq"] } == [String(total - 3), String(total - 2), String(total - 1)])
     }
+    // SUPERMUX:end irx-journal-link-history
 }

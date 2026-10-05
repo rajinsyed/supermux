@@ -401,6 +401,13 @@ final class SupermuxTerminalStream {
         } else {
             resumes += 1
         }
+        // Journaled in every build: its counters (`replay-full`,
+        // `replay-resumed`) go into `cmux iroh-diag`, so a field report shows
+        // whether reconnects resumed or re-sent whole screens.
+        MobileHostIrxRuntime.journal.record("terminal-stream", reply.resumed == nil ? "replay-full" : "replay-resumed", [
+            "device": String(watch.instance.deviceID.prefix(8)),
+            "tag": watch.instance.tag,
+        ])
     }
 
     /// The host's latest grid, as its grid events report it.

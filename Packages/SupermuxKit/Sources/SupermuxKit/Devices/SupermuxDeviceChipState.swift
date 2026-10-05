@@ -53,6 +53,10 @@ public enum SupermuxDeviceChipState: Equatable, Sendable {
     /// The route the chip of the Mac named `name` shows: a connected
     /// same-named Mac's; nil when none is connected or none has a route.
     public static func resolveRoute(name: String, among devices: [Candidate]) -> SupermuxLinkRoute? {
-        nil
+        let wanted = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !wanted.isEmpty else { return nil }
+        return devices.first { device in
+            (device.name == wanted || device.machineID == wanted) && device.state == .online && device.route != nil
+        }?.route
     }
 }

@@ -52,6 +52,9 @@ public final class IrxJournal: @unchecked Sendable {
     private let startedAt = DispatchTime.now()
     private var fileHandle: FileHandle?
     private var ring: [IrxJournalEvent] = []
+    // SUPERMUX:begin irx-journal-link-history
+    private var supermuxLinkRing: [IrxJournalEvent] = []
+    // SUPERMUX:end irx-journal-link-history
     private var counters: [String: Int] = [:]
     private var terminalTraceWindowInitialized = false
     private var terminalTraceWindowStartMs: UInt64 = 0
@@ -126,6 +129,14 @@ public final class IrxJournal: @unchecked Sendable {
         if ring.count > Self.ringCapacity {
             ring.removeFirst(ring.count - Self.ringCapacity)
         }
+        // SUPERMUX:begin irx-journal-link-history
+        if Self.supermuxLinkHistoryComponents.contains(component) {
+            supermuxLinkRing.append(entry)
+            if supermuxLinkRing.count > Self.supermuxLinkHistoryCapacity {
+                supermuxLinkRing.removeFirst(supermuxLinkRing.count - Self.supermuxLinkHistoryCapacity)
+            }
+        }
+        // SUPERMUX:end irx-journal-link-history
         if let fileHandle {
             try? fileHandle.write(contentsOf: Data((rendered + "\n").utf8))
         }
@@ -159,7 +170,9 @@ public final class IrxJournal: @unchecked Sendable {
 
     /// The newest link-history events, oldest first.
     public func supermuxLinkHistory(_ count: Int = supermuxLinkHistoryCapacity) -> [IrxJournalEvent] {
-        []
+        lock.lock()
+        defer { lock.unlock() }
+        return Array(supermuxLinkRing.suffix(count))
     }
     // SUPERMUX:end irx-journal-link-history
 

@@ -259,9 +259,10 @@ public struct SupermuxRemoteMacsSettingsCard: View {
 
 /// One known Mac in the Remote Macs card, laid out like a row of the
 /// Settings › Devices list (``ComputersSettingsRow``): its name, then its
-/// link state and how many of its workspaces this Mac sees (or why the link
-/// is down), and while connected its forwarded ports, with a Ports… menu
-/// while it can forward or a forward is still pending.
+/// link state, while connected which path the link uses ("Relay · Tokyo ·
+/// 241 ms", amber while relayed), and how many of its workspaces this Mac sees
+/// (or why the link is down), and while connected its forwarded ports, with a
+/// Ports… menu while it can forward or a forward is still pending.
 private struct SupermuxRemoteMacRow: View {
     let mac: SupermuxRemoteMacsSettingsSnapshot.Mac
     let remote: SupermuxRemoteMacsSettingsActions
@@ -284,6 +285,13 @@ private struct SupermuxRemoteMacRow: View {
                         .frame(width: 6, height: 6)
                         .accessibilityHidden(true)
                     Text(linkText)
+                    if let route = mac.route {
+                        Text(verbatim: "·")
+                        Text(route.label)
+                            .foregroundStyle(route.isRelayed ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.secondary))
+                            .lineLimit(1)
+                            .accessibilityIdentifier("SupermuxRemoteMacRoute")
+                    }
                     Text(verbatim: "·")
                     Text(detail).lineLimit(2)
                 }

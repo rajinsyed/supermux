@@ -1,8 +1,9 @@
 import Foundation
 
 /// SUPERMUX — what the Remote Macs settings card shows: the fork's four
-/// remote-Mac preferences, every Mac the fork knows with its link state and
-/// its ports, and how many remote workspaces are hidden with "Hide Here".
+/// remote-Mac preferences, every Mac the fork knows with its link state, its
+/// route while connected and its ports, and how many remote workspaces are
+/// hidden with "Hide Here".
 ///
 /// Built app-side (`SupermuxRemoteMacsSettingsFeed`) from the device facade,
 /// `SupermuxDevicesSettings` and the hidden set; this package only renders it.
@@ -52,12 +53,28 @@ public struct SupermuxRemoteMacsSettingsSnapshot: Equatable, Sendable {
             case offline
         }
 
+        /// Which path a connected Mac's link uses, as the row says it.
+        public struct Route: Equatable, Sendable {
+            /// The localized words: `Direct · LAN · 6 ms`, `Relay · Tokyo · 241 ms`.
+            public let label: String
+            /// Whether it goes through a relay (the row tints it amber).
+            public let isRelayed: Bool
+
+            public init(label: String, isRelayed: Bool) {
+                self.label = label
+                self.isRelayed = isRelayed
+            }
+        }
+
         /// The catalog machine id (`device:<uuid>@<tag>`).
         public let id: String
         public let name: String
         public let link: Link
         /// Why the Mac is offline or still connecting, when known.
         public let detail: String?
+        /// Its link's route while connected; nil otherwise (the row then
+        /// shows its status).
+        public let route: Route?
         /// Its synced workspaces (0 until the link has fetched them).
         public let workspaceCount: Int
         /// Its listed and forwarded ports.
@@ -79,6 +96,7 @@ public struct SupermuxRemoteMacsSettingsSnapshot: Equatable, Sendable {
             name: String,
             link: Link,
             detail: String?,
+            route: Route? = nil,
             workspaceCount: Int,
             ports: [Port] = [],
             portsNote: String? = nil
@@ -87,6 +105,7 @@ public struct SupermuxRemoteMacsSettingsSnapshot: Equatable, Sendable {
             self.name = name
             self.link = link
             self.detail = detail
+            self.route = route
             self.workspaceCount = workspaceCount
             self.ports = ports
             self.portsNote = portsNote

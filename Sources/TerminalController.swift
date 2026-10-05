@@ -11907,6 +11907,9 @@ class TerminalController {
             // command off the main thread, so the wait cannot self-deadlock.
             let report = await MobileHostDiagnostics.log.snapshot()
             export = String(decoding: report.humanReadableExport(), as: UTF8.self)
+            // SUPERMUX:begin iroh-diag-links
+            export += "\n" + SupermuxLinkDiagnosticsReport.text()
+            // SUPERMUX:end iroh-diag-links
             semaphore.signal()
         }
         semaphore.wait()

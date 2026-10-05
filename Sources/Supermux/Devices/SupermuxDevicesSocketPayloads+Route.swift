@@ -6,7 +6,7 @@ extension SupermuxDevicesSocketPayloads {
     /// scope: lan|tailscale|internet|null, relay_id, place, city, region,
     /// place_confidence: confirmed|best_effort|unknown|null, rtt_ms, since_ms}`,
     /// or null while the link has none (not connected, no path selected).
-    static func route(_ route: SupermuxLinkRoute?) -> Any {
+    nonisolated static func route(_ route: SupermuxLinkRoute?) -> Any {
         guard let route else { return NSNull() }
         let place = route.relayPlace
         return [

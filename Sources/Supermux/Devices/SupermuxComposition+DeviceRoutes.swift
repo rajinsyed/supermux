@@ -1,3 +1,4 @@
+import CmuxSurfaceCatalogModel
 import Foundation
 import SupermuxKit
 import SupermuxMobileCore
@@ -8,7 +9,16 @@ import SupermuxMobileCore
 extension SupermuxComposition {
     /// Each connected Mac's published route (direct LAN / Tailscale /
     /// Internet, or a relay's place, with iroh's RTT): what UI shows.
-    static let deviceRoutes = SupermuxDeviceRoutes(journal: MobileHostIrxRuntime.journal)
+    /// Nonisolated so `cmux iroh-diag` reaches its ``SupermuxDeviceRoutes/offMainRoutes``
+    /// without the main actor; everything else on it is main-actor isolated.
+    nonisolated static let deviceRoutes = SupermuxDeviceRoutes(journal: MobileHostIrxRuntime.journal)
+
+    /// ``deviceRoutes`` by catalog machine id, for the SupermuxKit views that
+    /// show a Mac's route (the Mac icon on a nested row, the presets bar's
+    /// host mark, the Changes strip); nil while that Mac is not connected.
+    static let linkRouteLookup = SupermuxLinkRouteLookup { machineID in
+        devices.device(for: SurfaceMachineID(rawValue: machineID)).flatMap { deviceRoutes.route(for: $0) }
+    }
 
     /// Other devices' direct addresses, read by the dialer off the main actor.
     nonisolated static let routeCandidateStore = SupermuxRouteCandidateStore(
