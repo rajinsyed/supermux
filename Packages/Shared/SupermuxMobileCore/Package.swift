@@ -14,9 +14,15 @@ let package = Package(
             targets: ["SupermuxMobileCore"]
         ),
     ],
+    dependencies: [
+        // CmxTailscalePeerAddress: the exact Tailscale peer ranges the route
+        // classifier checks before LAN.
+        .package(path: "../CMUXMobileCore"),
+    ],
     targets: [
         .target(
             name: "SupermuxMobileCore",
+            dependencies: ["CMUXMobileCore"],
             resources: [.process("Resources")],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
