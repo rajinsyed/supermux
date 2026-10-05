@@ -253,6 +253,7 @@ private struct SupermuxPresetsBarHostMark: View {
             }
             .compositingGroup()
             .help(help)
+            .accessibilityElement(children: .ignore)
             .accessibilityLabel(help)
     }
 }

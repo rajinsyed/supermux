@@ -1,10 +1,13 @@
+import SupermuxMobileCore
 public import SwiftUI
 
 /// A one-line "On <Mac>" strip above a panel whose content lives on another
 /// Mac (a device mirror's Changes panel), so it is never mistaken for this
-/// Mac's repository. While that Mac is connected its trailing end says which
-/// path the link uses ("Relay · Tokyo · 241 ms", amber while relayed), looked
-/// up by `machineID` in ``EnvironmentValues/supermuxLinkRoutes``.
+/// Mac's repository. While that Mac is connected it also says which path the
+/// link uses ("Relay · Tokyo · 241 ms", amber while relayed), looked up by
+/// `machineID` in ``EnvironmentValues/supermuxLinkRoutes``: at the strip's
+/// trailing end when both fit, else on a second line (the right sidebar is
+/// often narrower than a Mac's name and its route together).
 public struct SupermuxRemoteHostBanner: View {
     private let title: String
     private let isConnected: Bool
@@ -25,20 +28,30 @@ public struct SupermuxRemoteHostBanner: View {
 
     public var body: some View {
         let route = isConnected ? machineID.flatMap { routes.route(forMachineID: $0) } : nil
-        HStack(spacing: 6) {
-            Image(systemName: isConnected ? "desktopcomputer" : "desktopcomputer.trianglebadge.exclamationmark")
-                .font(.system(size: 11, weight: .medium))
-            Text(title)
-                .font(.system(size: 11, weight: .medium))
-                .lineLimit(1)
-                .truncationMode(.middle)
-            Spacer(minLength: 0)
+        Group {
             if let route {
-                Text(SupermuxLinkRouteText.text(for: route))
-                    .font(.system(size: 10))
-                    .foregroundStyle(SupermuxLinkRouteText.isWarning(route) ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.tertiary))
-                    .lineLimit(1)
-                    .layoutPriority(-1)
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 6) {
+                        icon
+                        titleText.fixedSize()
+                        Spacer(minLength: 8)
+                        routeText(route).fixedSize()
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            icon
+                            titleText
+                            Spacer(minLength: 0)
+                        }
+                        routeText(route)
+                    }
+                }
+            } else {
+                HStack(spacing: 6) {
+                    icon
+                    titleText
+                    Spacer(minLength: 0)
+                }
             }
         }
         .foregroundStyle(.secondary)
@@ -47,5 +60,24 @@ public struct SupermuxRemoteHostBanner: View {
         .padding(.vertical, 5)
         .background(Color.secondary.opacity(0.08))
         .accessibilityElement(children: .combine)
+    }
+
+    private var icon: some View {
+        Image(systemName: isConnected ? "desktopcomputer" : "desktopcomputer.trianglebadge.exclamationmark")
+            .font(.system(size: 11, weight: .medium))
+    }
+
+    private var titleText: some View {
+        Text(title)
+            .font(.system(size: 11, weight: .medium))
+            .lineLimit(1)
+            .truncationMode(.middle)
+    }
+
+    private func routeText(_ route: SupermuxLinkRoute) -> some View {
+        Text(SupermuxLinkRouteText.text(for: route))
+            .font(.system(size: 10))
+            .foregroundStyle(SupermuxLinkRouteText.isWarning(route) ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.tertiary))
+            .lineLimit(1)
     }
 }
