@@ -350,6 +350,9 @@ final class DeviceTerminalMirrorSession {
 
     func retry() {
         guard phase != .stopped else { return }
+        // SUPERMUX:begin device-mirror-replay-timed-out (Retry asks with the base replay deadline again)
+        supermuxResetTimedOutReplays()
+        // SUPERMUX:end device-mirror-replay-timed-out
         scheduleAttach()
     }
 
@@ -465,6 +468,9 @@ final class DeviceTerminalMirrorSession {
             // SUPERMUX:begin device-mirror-reattach-input (what was typed while the link was down waits for the re-attach's verdict)
             if supermuxLinkLostSinceAttach { inputRouter.supermuxSetAsideHeldInput() }
             // SUPERMUX:end device-mirror-reattach-input
+            // SUPERMUX:begin device-mirror-replay-timed-out (a new connection asks with the base replay deadline again)
+            supermuxResetTimedOutReplays()
+            // SUPERMUX:end device-mirror-replay-timed-out
             // SUPERMUX:begin terminal-stream-attach-limiter (a hidden mirror waits its turn; upstream: `scheduleAttach()`)
             supermuxAttachAfterReconnect()
             // SUPERMUX:end terminal-stream-attach-limiter
@@ -795,8 +801,7 @@ final class DeviceTerminalMirrorSession {
             // SUPERMUX:end device-mirror-reattach-input
             viewportTransitionRetries = 0
             // SUPERMUX:begin device-mirror-replay-timed-out
-            supermuxTimedOutRetries = 0
-            supermuxStream?.timedOutReplays = 0
+            supermuxResetTimedOutReplays()
             // SUPERMUX:end device-mirror-replay-timed-out
             // SUPERMUX:begin terminal-stream-replay-sizing (decoded off the main actor with the replay; upstream: `receiveReplaySizing(response)`)
             receiveReplaySizing(replay.supermuxSizing)
@@ -922,6 +927,16 @@ final class DeviceTerminalMirrorSession {
             phase = .detached
         }
     }
+
+    // SUPERMUX:begin device-mirror-replay-timed-out
+    /// The next replay asks with the base deadline again: after a reply, a
+    /// reconnect or Retry (a count only a reply reset left Retry at 8 times
+    /// the deadline, 720 s; second review #13).
+    private func supermuxResetTimedOutReplays() {
+        supermuxTimedOutRetries = 0
+        supermuxStream?.timedOutReplays = 0
+    }
+    // SUPERMUX:end device-mirror-replay-timed-out
 
     private static func isViewportTransition(_ error: Error) -> Bool {
         String(describing: error).contains("viewport_transition")
