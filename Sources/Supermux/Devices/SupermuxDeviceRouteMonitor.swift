@@ -24,6 +24,8 @@ final class SupermuxDeviceRouteMonitor {
     static let activeInterval: Duration = .seconds(2)
     /// The sample interval otherwise.
     static let idleInterval: Duration = .seconds(30)
+    /// How long one read of this Mac's interfaces serves the direct links' samples.
+    static let interfacesLifetime: Duration = .seconds(1)
 
     /// One outgoing session's selected path and the endpoint it reached.
     struct LinkPath {
@@ -39,6 +41,7 @@ final class SupermuxDeviceRouteMonitor {
     private var loop: Task<Void, Never>?
     private var events: Task<Void, Never>?
     private var overrides: [SurfaceDeviceInstanceID: SupermuxLinkRoute] = [:]
+    private var interfaces: (readAt: ContinuousClock.Instant, value: [SupermuxLocalInterface])?
 
     init(
         devices: SupermuxDevices,
@@ -107,11 +110,20 @@ final class SupermuxDeviceRouteMonitor {
         let sample = current.sample
         let route = SupermuxLinkRouteClassifier.classify(
             isRelay: sample.isRelay, remoteAddress: sample.remoteAddress, rttMs: sample.rttMs, now: Date(),
-            localInterfaces: sample.isRelay ? [] : SupermuxLocalInterface.current())
+            localInterfaces: sample.isRelay ? [] : localInterfaces())
         routes.apply(route, for: instance)
         guard !sample.isRelay else { return }
         let key = SupermuxRoutePeerKey(deviceID: instance.deviceID, tag: instance.tag, endpointID: current.endpointID)
         await store.learn(sample.remoteAddress, for: key)
+    }
+
+    /// This Mac's interfaces, read at most once per ``interfacesLifetime``
+    /// (one `getifaddrs` per pass, not one per direct link).
+    private func localInterfaces() -> [SupermuxLocalInterface] {
+        if let interfaces, interfaces.readAt.duration(to: .now) < Self.interfacesLifetime { return interfaces.value }
+        let value = SupermuxLocalInterface.current()
+        interfaces = (.now, value)
+        return value
     }
 
     // MARK: - DEBUG pins

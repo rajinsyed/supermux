@@ -92,8 +92,12 @@ actor SupermuxDeviceDirectLane {
         }
         // A dial may have started while the sessions were looked at.
         guard inFlight == 0, self.supervisor === supervisor else { return false }
+        // Let go of before it closes: a dial that starts meanwhile makes a
+        // fresh lane instead of starting on the one closing.
+        self.supervisor = nil
+        endpointID = nil
         sessions = []
-        await supervisor.close()
+        await supervisor.deactivate()
         journal.record("route", "lane-rebuilt", ["reason": reason])
         return true
     }
