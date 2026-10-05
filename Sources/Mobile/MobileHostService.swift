@@ -1184,6 +1184,9 @@ final class MobileHostService {
         if !clientIDs.isEmpty {
             TerminalController.shared.clearMobileViewportReports(
                 clientIDs: clientIDs,
+                // SUPERMUX:begin sizing-connection-scoped-clear (only the reports this connection wrote last)
+                connectionID: id,
+                // SUPERMUX:end sizing-connection-scoped-clear
                 reason: "mobile.connection.closed"
             )
         }

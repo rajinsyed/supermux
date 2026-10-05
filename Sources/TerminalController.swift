@@ -266,6 +266,9 @@ class TerminalController {
         /// and expire on the TTL so a client that only ever typed once does
         /// not pin the grid forever.
         var sticky: Bool = false
+        // SUPERMUX:begin sizing-report-connection (the phone connection that last wrote this report; nil from the control socket)
+        var connectionID: UUID? = nil
+        // SUPERMUX:end sizing-report-connection
     }
     private static let mobileViewportReportTTL: TimeInterval = 5
     /// Stability window for a governed cap-to-cap grid change: long enough to
@@ -15039,6 +15042,14 @@ class TerminalController {
         _ request: MobileHostRPCRequest,
         executionContext: MobileHostRPCExecutionContext? = nil
     ) async -> MobileHostRPCResult {
+        // SUPERMUX:begin sizing-report-connection (the request runs with its connection as the task's phone connection, which stamps the viewport reports it writes)
+        if let connectionID = executionContext?.connectionID,
+           SupermuxMobileConnectionContext.controlConnectionID != connectionID {
+            return await SupermuxMobileConnectionContext.$controlConnectionID.withValue(connectionID) {
+                await mobileHostHandleRPC(request, executionContext: executionContext)
+            }
+        }
+        // SUPERMUX:end sizing-report-connection
         // The mobile data-plane RPC speaks `MobileHostRPCRequest` /
         // `MobileHostRPCResult` and dispatches directly to the app-side
         // `v2Mobile*` bodies. It deliberately does NOT route through the v2
@@ -16486,6 +16497,9 @@ class TerminalController {
             deviceID: v2String(params, "device_id").map { String($0.prefix(64)) } ?? reports[clientID]?.deviceID,
             sticky: reportIsSticky
         )
+        // SUPERMUX:begin sizing-report-connection (restamped on every write: a connection's close clears only what it wrote last)
+        reports[clientID]?.connectionID = SupermuxMobileConnectionContext.controlConnectionID
+        // SUPERMUX:end sizing-report-connection
         mobileViewportReportsBySurfaceID[terminalPanel.id] = reports
         scheduleMobileViewportReportCleanup(surfaceID: terminalPanel.id, reports: reports)
         return resolveSharedSizing(
@@ -16643,10 +16657,17 @@ class TerminalController {
     /// surfaces. Called when a mobile connection closes so a disconnected
     /// device stops pinning the grid even though it never sent an explicit
     /// clear. Sticky reports rely on this signal instead of the TTL.
-    func clearMobileViewportReports(clientIDs: Set<String>, reason: String) {
+    // SUPERMUX:begin sizing-connection-scoped-clear (`connectionID`: the closing connection; upstream: `(clientIDs: Set<String>, reason: String)`)
+    func clearMobileViewportReports(clientIDs: Set<String>, connectionID: UUID? = nil, reason: String) {
+    // SUPERMUX:end sizing-connection-scoped-clear
         guard !clientIDs.isEmpty else { return }
         for surfaceID in Set(mobileViewportReportsBySurfaceID.keys).union(mobileViewportGenerationsBySurfaceID.keys) {
             for clientID in clientIDs {
+                // SUPERMUX:begin sizing-connection-scoped-clear (a report another connection wrote last stays, with its generation fence)
+                if let connectionID,
+                   let writer = mobileViewportReportsBySurfaceID[surfaceID]?[clientID]?.connectionID,
+                   writer != connectionID { continue }
+                // SUPERMUX:end sizing-connection-scoped-clear
                 _ = clearMobileViewportReport(surfaceID: surfaceID, clientID: clientID, reason: reason)
             }
         }
