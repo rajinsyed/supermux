@@ -32,9 +32,9 @@ import Foundation
 ///
 /// On the Mac, typing, a paste and a focus click were already activity;
 /// this class adds the app becoming active with a terminal (or its TextBox)
-/// focused. A pane merely coming on screen is not: selecting a workspace on
-/// the phone selects it on the Mac too, and would take the grid from the
-/// phone.
+/// focused, and a scroll on the pane. A pane merely coming on screen is
+/// not: selecting a workspace on the phone selects it on the Mac too, and
+/// would take the grid from the phone.
 ///
 /// Only this Mac's user is the Mac pane's activity (``isMacPaneActivity``).
 /// Every terminal input path runs the pane's explicit-input hook: a phone's
@@ -224,5 +224,13 @@ final class SupermuxTerminalSizingAuto {
         guard let panel = AppDelegate.shared?.contextForMainWindow(window)?.tabManager.selectedTerminalPanel,
               panel.ownedFocusIntent(for: responder, in: window) != nil else { return nil }
         return panel.id
+    }
+
+    /// A scroll on a Mac pane is its user's activity, as typing is: a wheel
+    /// notch or the start of a gesture, never the momentum after it, which
+    /// keeps arriving after the user let go.
+    func macPaneScrolled(_ event: NSEvent, surfaceID: UUID) {
+        guard event.momentumPhase.isEmpty, event.phase.isEmpty || event.phase == .began else { return }
+        TerminalController.shared.noteLocalTerminalSizingActivity(surfaceID: surfaceID)
     }
 }
