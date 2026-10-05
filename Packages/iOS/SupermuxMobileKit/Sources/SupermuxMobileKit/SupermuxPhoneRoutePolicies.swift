@@ -24,7 +24,10 @@ public import SupermuxMobileCore
 ///   from a foreground or a path update that changed nothing, whatever came
 ///   and went on the same network (a link-local address, AWDL, an IPsec
 ///   tunnel, a rotated temporary IPv6 address). Only a real change clears a
-///   flap's hold-off; either one probes relayed sessions soon.
+///   flap's hold-off; either one probes relayed sessions soon. A dial judges
+///   a changed network first (``judgeNetworkForDial(on:at:)``), so a
+///   foreground's dial, which comes before the settled judgement, never runs
+///   on the old network's hold-off.
 public struct SupermuxPhoneRoutePolicies: Sendable {
     /// What the runtime does for one Mac now.
     public enum Step: Equatable, Sendable {
@@ -200,16 +203,23 @@ public struct SupermuxPhoneRoutePolicies: Sendable {
     /// - Returns: Whether the network really changed.
     @discardableResult
     public mutating func networkSettled(on interfaces: [SupermuxLocalInterface], at now: Date) -> Bool {
-        let current = SupermuxLocalInterface.networkFingerprint(interfaces)
-        let previous = network
-        network = current
-        guard let previous, previous != current else {
+        guard recordNetwork(interfaces, at: now) else {
             for mac in Array(policies.keys) { policies[mac]?.probeSoon(at: now) }
             return false
         }
-        lastRecoveryAt = now
-        for mac in Array(policies.keys) { policies[mac]?.networkChanged(at: now) }
         return true
+    }
+
+    /// A dial is about to start with the phone on `interfaces`: a network
+    /// that changed since it was last judged is judged now, as
+    /// ``networkSettled(on:at:)`` would a second later, so the dial runs on
+    /// the fresh judgement (a foreground's dial comes before the settled
+    /// judgement of its path updates). The same network changes nothing;
+    /// probing soon is the settled judgement's.
+    /// - Returns: Whether the network really changed.
+    @discardableResult
+    public mutating func judgeNetworkForDial(on interfaces: [SupermuxLocalInterface], at now: Date) -> Bool {
+        recordNetwork(interfaces, at: now)
     }
 
     /// `mac` handed over new direct addresses: a relayed session probes them now.
@@ -248,6 +258,19 @@ public struct SupermuxPhoneRoutePolicies: Sendable {
     }
 
     // MARK: - State
+
+    /// Records the networks the phone is on; a real change (not the first
+    /// look) gives direct a fresh chance on every Mac.
+    /// - Returns: Whether the network really changed.
+    private mutating func recordNetwork(_ interfaces: [SupermuxLocalInterface], at now: Date) -> Bool {
+        let current = SupermuxLocalInterface.networkFingerprint(interfaces)
+        let previous = network
+        network = current
+        guard let previous, previous != current else { return false }
+        lastRecoveryAt = now
+        for mac in Array(policies.keys) { policies[mac]?.networkChanged(at: now) }
+        return true
+    }
 
     private func path(of mac: String, sample: Sample?) -> SupermuxRouteSwitchPolicy.Path? {
         // A direct-lane session has no relay path, whatever iroh reports now.

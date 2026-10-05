@@ -99,7 +99,10 @@ extension MobileIrxRuntimeComposition: SupermuxPhoneRouteRuntime {
     /// Dials a Mac for `dialOnce`. An automatic dial races the direct lane
     /// against `automatic` when the Mac's policy allows it and the phone can
     /// reach one of the Mac's direct addresses; every other dial is
-    /// `automatic` alone.
+    /// `automatic` alone. A network that changed since it was last judged is
+    /// judged first: a foreground's dial comes before the settled judgement
+    /// of its path updates and would otherwise run on the old network's
+    /// hold-off, land on the relay and move seconds later.
     /// - Parameters:
     ///   - peerHex: The Mac's endpoint id.
     ///   - record: Its directory record.
@@ -115,9 +118,13 @@ extension MobileIrxRuntimeComposition: SupermuxPhoneRouteRuntime {
         automatic: @escaping @Sendable () async throws -> IrxConnection
     ) async throws -> (connection: IrxConnection, lane: SupermuxDialLane) {
         guard case .automatic = intent, !forceRelayOnly else { return (try await automatic(), .automatic) }
+        let interfaces = SupermuxLocalInterface.current()
+        if supermuxRoutePolicies.judgeNetworkForDial(on: interfaces, at: Date()) {
+            journal.record("supermux-route", "network-settled", ["changed": "true", "by": "dial"])
+        }
         let plan = supermuxRoutePolicies.dialPlan(for: peerHex, at: Date())
         let addresses = plan.racesDirect
-            ? await supermuxDirectAddresses(record: record, privateAddresses: privateAddresses) : []
+            ? await supermuxDirectAddresses(record: record, privateAddresses: privateAddresses, interfaces: interfaces) : []
         guard let lane = plan.racesDirect ? supermuxDirectLane() : nil,
               let direct = SupermuxIrxDirectFirstDial.laneLeg(lane: lane, peerEndpointIDHex: peerHex, addresses: addresses)
         else {
@@ -194,12 +201,16 @@ extension MobileIrxRuntimeComposition: SupermuxPhoneRouteRuntime {
         return lane
     }
 
-    /// The Mac's direct addresses the phone can reach now (its handed-over
-    /// and learned ones, then `privateAddresses`).
-    private func supermuxDirectAddresses(record: V2DeviceRecord, privateAddresses: [String] = []) async -> [String] {
+    /// The Mac's direct addresses the phone can reach from `interfaces`
+    /// (its handed-over and learned ones, then `privateAddresses`).
+    private func supermuxDirectAddresses(
+        record: V2DeviceRecord,
+        privateAddresses: [String] = [],
+        interfaces: [SupermuxLocalInterface] = SupermuxLocalInterface.current()
+    ) async -> [String] {
         let stored = await supermuxRouteCandidates.dialAddresses(for: Self.supermuxRoutePeerKey(record))
         return SupermuxPhoneRoutePolicies.directAddresses(
-            stored: stored, privateAddresses: privateAddresses, interfaces: SupermuxLocalInterface.current())
+            stored: stored, privateAddresses: privateAddresses, interfaces: interfaces)
     }
 
     // MARK: - Prober
