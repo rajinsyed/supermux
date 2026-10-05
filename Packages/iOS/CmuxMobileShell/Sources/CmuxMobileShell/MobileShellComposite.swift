@@ -1328,8 +1328,19 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
                 cancelRemoteOperationTasks()
                 resetTerminalOutputTracking()
             }
+            // SUPERMUX:begin sizing-reconnect-report
+            if remoteClient != nil, remoteClient !== oldValue {
+                supermuxRemoteClientGeneration &+= 1
+            }
+            // SUPERMUX:end sizing-reconnect-report
         }
     }
+    // SUPERMUX:begin sizing-reconnect-report
+    /// Bumped whenever a new Mac connection is adopted. The Mac dropped this
+    /// phone's viewport reports with the old connection, so every mounted
+    /// terminal observes this and sends a fresh dedicated report.
+    public private(set) var supermuxRemoteClientGeneration: UInt64 = 0
+    // SUPERMUX:end sizing-reconnect-report
     /// Whether legacy connected-but-clientless shells use local iOS workspace creation.
     public var usesLocalWorkspaceCreationFallback: Bool {
         remoteClient == nil && connectionState == .connected

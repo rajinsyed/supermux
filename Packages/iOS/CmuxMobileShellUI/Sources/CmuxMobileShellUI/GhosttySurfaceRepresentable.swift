@@ -142,6 +142,9 @@ struct GhosttySurfaceRepresentable: UIViewControllerRepresentable {
         // Stamp the shell-level id so id-scoped registry lookups (the
         // "View as Text" capture) resolve this exact terminal.
         view.hostSurfaceID = surfaceID
+        // SUPERMUX:begin sizing-reconnect-report
+        context.coordinator.appliedRemoteClientGeneration = store.supermuxRemoteClientGeneration
+        // SUPERMUX:end sizing-reconnect-report
         context.coordinator.attach(surfaceView: view)
         view.seedThemeParityPreviewIfRequested()
         // Mount the composer band immediately if the composer was already open when
@@ -181,6 +184,9 @@ struct GhosttySurfaceRepresentable: UIViewControllerRepresentable {
         // SUPERMUX:begin sizing-hidden-terminal
         context.coordinator.supermuxSetTerminalSurfaceShown(terminalSurfaceIsShown)
         // SUPERMUX:end sizing-hidden-terminal
+        // SUPERMUX:begin sizing-reconnect-report
+        context.coordinator.supermuxRemoteClientChanged(to: store.supermuxRemoteClientGeneration)
+        // SUPERMUX:end sizing-reconnect-report
         guard let surfaceView = (uiView as? GhosttySurfaceHostView)?.surfaceView else { return }
         surfaceView.terminalWorkPopulation = terminalWorkPopulation
         surfaceView.autoFocusOnWindowAttach = autoFocusOnWindowAttach
@@ -400,6 +406,10 @@ struct GhosttySurfaceRepresentable: UIViewControllerRepresentable {
         /// report carries `counts_override: null`.
         var countsRestorePending = false
         // SUPERMUX:end sizing-hidden-terminal
+        // SUPERMUX:begin sizing-reconnect-report
+        /// The store's remote-client generation this mount last reported for.
+        var appliedRemoteClientGeneration: UInt64 = 0
+        // SUPERMUX:end sizing-reconnect-report
         private var composerMounted = false
         private var activeViewportPolicy: MobileTerminalOutputViewportPolicy = .natural
         /// Shared by the legacy and verified apply paths: an alternating
@@ -592,6 +602,11 @@ struct GhosttySurfaceRepresentable: UIViewControllerRepresentable {
                         MobileDebugLog.anchormux(
                             "zoom.viewport.noEffective grid=\(report.columns)x\(report.rows)"
                         )
+                        // SUPERMUX:begin sizing-reconnect-report
+                        // No Mac to answer: keep the retry budget. The next
+                        // connection re-reports (supermuxRemoteClientChanged).
+                        if self.store?.supermuxTerminalViewportOffline == true { return }
+                        // SUPERMUX:end sizing-reconnect-report
                         self.scheduleViewportReportRetry(
                             surfaceView: surfaceView,
                             reason: "rpc_no_effective"
@@ -1313,6 +1328,24 @@ struct GhosttySurfaceRepresentable: UIViewControllerRepresentable {
                 // SUPERMUX:end sizing-soft-leave
             }
         }
+
+        // SUPERMUX:begin sizing-reconnect-report
+        /// A new Mac connection was adopted. The Mac dropped this phone's
+        /// sticky report with the old one, and the replay piggyback that
+        /// re-registers it is not sticky, so an on-screen terminal sends a
+        /// fresh dedicated report with a fresh retry budget.
+        /// - Parameter generation: The store's remote-client generation.
+        func supermuxRemoteClientChanged(to generation: UInt64) {
+            guard generation != appliedRemoteClientGeneration else { return }
+            appliedRemoteClientGeneration = generation
+            guard terminalPresentationIsActive,
+                  viewportReportScheduler != nil,
+                  let surfaceView,
+                  surfaceView.window != nil else { return }
+            cancelViewportReportRetry(resetBackoff: true)
+            surfaceView.requestViewportReportForMount()
+        }
+        // SUPERMUX:end sizing-reconnect-report
 
         // SUPERMUX:begin sizing-soft-leave
         /// A terminal view that only left the window keeps its viewport lease,
