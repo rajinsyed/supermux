@@ -22,6 +22,13 @@ import Testing
 /// 4. Sign-in finishing for the account the runtime warmed for shuts down
 ///    the direct lane a launch dial raced on, dropping its sessions; or keeps
 ///    it for another account.
+/// 5. The update to the private address file deletes the old one unread
+///    (second review #16): after the update, the first dial to each Mac has
+///    no address and skips the direct lane. Or a later launch overwrites
+///    newer addresses with the old file's.
+/// 6. An address write already past its guard when sign-out forgets every
+///    address (a handed-over answer, a learned path) brings the signed-out
+///    account's addresses back (second review #16).
 @Suite(.timeLimit(.minutes(1)))
 struct SupermuxPhoneRouteStateTests {
     private let mac = String(repeating: "b", count: 64)
@@ -77,6 +84,50 @@ struct SupermuxPhoneRouteStateTests {
         #expect(await other.directEndpointSupervisor == nil)
     }
 
+    @Test("5. the old address file is moved into the private directory once")
+    func theOldAddressFileIsMigratedOnce() async throws {
+        let stateDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cmux-supermux-route-tests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: stateDirectory, withIntermediateDirectories: true)
+        let legacy = stateDirectory.appendingPathComponent("supermux-route-candidates.json")
+        let key = SupermuxRoutePeerKey(deviceID: "mac-device", tag: "default", endpointID: mac)
+        // What the first builds kept beside the Iroh state.
+        await SupermuxRouteCandidateStore(fileURL: legacy).recordFetched(["192.168.1.5:58465"], for: key)
+        #expect(FileManager.default.fileExists(atPath: legacy.path))
+
+        let updated = await makeComposition(stateDirectory: stateDirectory)
+        let store = await updated.supermuxRouteCandidates
+        #expect(await store.dialAddresses(for: key) == ["192.168.1.5:58465"],
+                "the update dropped the old file's addresses")
+        #expect(!FileManager.default.fileExists(atPath: legacy.path), "the old, backed-up file is still there")
+
+        // Once: a copy of the old file that turns up again never overwrites newer addresses.
+        await store.recordFetched(["192.168.1.7:58465"], for: key)
+        await SupermuxRouteCandidateStore(fileURL: legacy).recordFetched(["192.168.1.5:58465"], for: key)
+        let relaunched = await makeComposition(stateDirectory: stateDirectory)
+        #expect(await relaunched.supermuxRouteCandidates.dialAddresses(for: key) == ["192.168.1.7:58465"])
+        #expect(!FileManager.default.fileExists(atPath: legacy.path))
+    }
+
+    @Test("6. an address write a sign-out overtook does not bring the signed-out account's addresses back")
+    func aWriteASignOutOvertookIsUndone() async throws {
+        let composition = await makeComposition()
+        let key = SupermuxRoutePeerKey(deviceID: "mac-device", tag: "default", endpointID: mac)
+        let store = await composition.supermuxRouteCandidates
+        // Both writes passed their guards before the sign-out.
+        let decided = await composition.supermuxRouteAddressEpoch
+        await composition.handleSignOut(ifCurrent: nil)
+        await composition.supermuxRecordFetched(["192.168.1.5:58465"], for: key, epoch: decided)
+        await composition.supermuxLearn("192.168.1.6:58465", for: key, epoch: decided)
+        #expect(await store.dialAddresses(for: key).isEmpty, "a write from before the sign-out stored its addresses")
+
+        // Writes decided after the sign-out (the next account's) stand.
+        let current = await composition.supermuxRouteAddressEpoch
+        await composition.supermuxRecordFetched(["192.168.1.5:58465"], for: key, epoch: current)
+        await composition.supermuxLearn("192.168.1.6:58465", for: key, epoch: current)
+        #expect(await store.dialAddresses(for: key) == ["192.168.1.5:58465", "192.168.1.6:58465"])
+    }
+
     // MARK: - Helpers
 
     private func scope(user: String, team: String, generation: UInt64) -> AuthenticatedTeamScope {
@@ -86,7 +137,7 @@ struct SupermuxPhoneRouteStateTests {
     }
 
     @MainActor
-    private func makeComposition() -> MobileIrxRuntimeComposition {
+    private func makeComposition(stateDirectory: URL? = nil) -> MobileIrxRuntimeComposition {
         MobileIrxRuntimeComposition(
             configuration: MobileIrohV2Configuration(
                 baseURL: URL(string: "https://example.test")!,
@@ -96,7 +147,7 @@ struct SupermuxPhoneRouteStateTests {
                 buildTag: "test",
                 appVersion: "1.0",
                 displayName: "Test",
-                stateDirectory: FileManager.default.temporaryDirectory
+                stateDirectory: stateDirectory ?? FileManager.default.temporaryDirectory
                     .appendingPathComponent("cmux-supermux-route-tests-\(UUID().uuidString)")
             ),
             macListAuthState: MobileMacListAuthState()

@@ -25,13 +25,24 @@ import Testing
 /// 8. A Mac whose session ended is still probed or checked.
 /// 9. A session that starts right after a network change waits out its
 ///    probe interval on the relay.
-/// 10. The phone dials addresses it cannot reach from its own interfaces: a
-///     LAN on a subnet it is not on, Tailscale with no tunnel up, one of its
-///     own addresses; or a duplicate twice.
+/// 10. The phone dials addresses it cannot reach from its own interfaces:
+///     a LAN address from cellular alone, Tailscale with no tunnel up, one of
+///     its own addresses; or a duplicate twice. Or it drops paths that work
+///     (second review #7): a LAN address on a routed second subnet, the
+///     user's own Private Addresses (theirs to judge: only the phone's own
+///     address is left out); or the cap pushes Tailscale out behind LAN
+///     guesses.
 /// 11. Sign-out keeps the signed-out account's Macs' route state.
 /// 12. A session is admitted (and followed) before the engine adopts it; a
 ///     look in between finds no engine session and stops following the new
 ///     session for good, so it is never probed or checked.
+/// 13. A foreground counts as a network change because something that comes
+///     and goes on the same network differs (second review #1): a link-local
+///     address, AWDL or an IPsec tunnel, a rotated temporary IPv6 address.
+///     Each foreground then clears the hold-off, flaps and lost races.
+/// 14. The foreground's dial runs before the network is judged (second
+///     review #10): back on another network, it still skips direct on the
+///     old network's hold-off, lands on the relay and upgrades seconds later.
 @Suite struct SupermuxPhoneRoutePoliciesTests {
     private let mac = "aa11bb22"
     private let start = Date(timeIntervalSince1970: 1_000_000)
@@ -218,19 +229,35 @@ import Testing
         #expect(step == .probe(session: 2))
     }
 
-    @Test("10. only addresses the phone can reach are dialed")
+    @Test("10. only addresses the phone can reach are dialed; Private Addresses lose only its own")
     func onlyReachableAddressesAreDialed() {
         let stored = ["192.168.1.5:58465", "10.9.9.9:58465", "100.101.1.2:58465", "192.168.1.20:58465"]
-        let privateAddresses = ["192.168.1.5:58465", "192.168.1.6:58465"]
+        let privateAddresses = ["192.168.1.5:58465", "192.168.1.6:58465", "192.168.1.20:58465"]
+        // On Wi-Fi: its own subnet first, then a routed second subnet; never
+        // Tailscale without its tunnel, its own address, or a duplicate.
         #expect(SupermuxPhoneRoutePolicies.directAddresses(
             stored: stored, privateAddresses: privateAddresses, interfaces: homeWiFi)
-            == ["192.168.1.5:58465", "192.168.1.6:58465"])
+            == ["192.168.1.5:58465", "10.9.9.9:58465", "192.168.1.6:58465"])
+        // Cellular alone reaches none of the Mac's LAN or Tailscale addresses,
         #expect(SupermuxPhoneRoutePolicies.directAddresses(
-            stored: stored, privateAddresses: privateAddresses, interfaces: cellular).isEmpty)
+            stored: stored, privateAddresses: [], interfaces: cellular).isEmpty)
+        // but the user's Private Addresses are dialed whatever the phone is
+        // on (a VPN the phone cannot see may reach them), less its own.
+        #expect(SupermuxPhoneRoutePolicies.directAddresses(
+            stored: stored, privateAddresses: ["192.168.1.6:58465", "10.0.0.3:58465"], interfaces: cellular)
+            == ["192.168.1.6:58465"])
+        // Tailscale up: Tailscale ranks before another subnet's LAN; the
+        // phone's own Tailscale address is never dialed.
         let tailscale = homeWiFi + [Self.interface("utun4", "100.70.0.9", 32, p2p: true)]
         #expect(SupermuxPhoneRoutePolicies.directAddresses(
-            stored: stored, privateAddresses: [], interfaces: tailscale)
-            == ["192.168.1.5:58465", "100.101.1.2:58465"])
+            stored: stored, privateAddresses: ["100.70.0.9:58465"], interfaces: tailscale)
+            == ["192.168.1.5:58465", "100.101.1.2:58465", "10.9.9.9:58465"])
+        // The cap keeps the best 16: LAN guesses never push Tailscale out.
+        let guesses = (1...20).map { "10.9.9.\($0):58465" }
+        let capped = SupermuxPhoneRoutePolicies.directAddresses(
+            stored: guesses + ["100.101.1.2:58465"], privateAddresses: [], interfaces: tailscale)
+        #expect(capped.count == SupermuxRouteCandidates.limit)
+        #expect(capped.first == "100.101.1.2:58465")
     }
 
     @Test("11. sign-out forgets every Mac")
@@ -243,5 +270,60 @@ import Testing
         #expect(policies.followedMacs.isEmpty)
         #expect(policies.lanes.isEmpty)
         #expect(dial.racesDirect, "the signed-out account's hold-off survived")
+    }
+
+    @Test("13. a foreground on the same network is no change, whatever comes and goes on it")
+    func aForegroundOnTheSameNetworkIsNoChange() {
+        let home = [
+            Self.interface("en0", "192.168.1.20", 24),
+            Self.interface("en0", "fe80::1c2a:3bff:fe4d:5e6f", 64),
+            Self.interface("en0", "2001:db8:1:2::1a", 64),
+            Self.interface("en0", "2001:db8:1:2:a1b2:c3d4:e5f6:1", 64),
+        ]
+        // The same Wi-Fi a minute later: the temporary IPv6 rotated, AWDL
+        // and an IPsec tunnel came up, a link-local address changed.
+        let foreground = [
+            Self.interface("en0", "192.168.1.20", 24),
+            Self.interface("en0", "fe80::9999:3bff:fe4d:1", 64),
+            Self.interface("en0", "2001:db8:1:2::1a", 64),
+            Self.interface("en0", "2001:db8:1:2:7777:8888:9999:2", 64),
+            Self.interface("awdl0", "fe80::abcd:1", 64),
+            Self.interface("llw0", "fe80::abcd:1", 64),
+            Self.interface("ipsec0", "2607:fb90:1:2::5", 64, p2p: true),
+        ]
+        var policies = SupermuxPhoneRoutePolicies()
+        policies.networkSettled(on: home, at: at(-10))
+        let action = fallBack(&policies, session: "s1", at: 0)
+        let changed = policies.networkSettled(on: foreground, at: at(5))
+        let dial = policies.dialPlan(for: mac, at: at(6))
+        // A new /64 is a new network.
+        let renumbered = home.dropLast(2) + [Self.interface("en0", "2001:db8:1:3::1a", 64)]
+        let moved = policies.networkSettled(on: Array(renumbered), at: at(7))
+        #expect(action == .fallBack)
+        #expect(!changed, "a foreground on the same Wi-Fi counted as a network change")
+        #expect(!dial.racesDirect, "a foreground on the same Wi-Fi cleared the hold-off")
+        #expect(moved)
+    }
+
+    @Test("14. a dial right after a network change runs on the fresh judgement")
+    func aDialJudgesAChangedNetworkFirst() {
+        var policies = SupermuxPhoneRoutePolicies()
+        policies.networkSettled(on: homeWiFi, at: at(-10))
+        let action = fallBack(&policies, session: "s1", at: 0)
+        // A dial on the same network keeps the hold-off.
+        let sameNetwork = policies.judgeNetworkForDial(on: homeWiFi, at: at(3))
+        let held = policies.dialPlan(for: mac, at: at(3))
+        // A foreground on another network: its dial comes before the
+        // trailing judgement of the path updates.
+        let moved = policies.judgeNetworkForDial(on: cellular, at: at(4))
+        let dial = policies.dialPlan(for: mac, at: at(4))
+        // That judgement, a second later, finds nothing new.
+        let settled = policies.networkSettled(on: cellular, at: at(5))
+        #expect(action == .fallBack)
+        #expect(!sameNetwork && !held.racesDirect)
+        #expect(moved)
+        #expect(dial.racesDirect, "the foreground's dial ran on the old network's hold-off")
+        #expect(!settled)
+        #expect(policies.isUrgent(at: at(5)))
     }
 }
