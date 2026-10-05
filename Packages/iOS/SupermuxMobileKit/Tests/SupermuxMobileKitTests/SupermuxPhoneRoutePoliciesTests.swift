@@ -29,6 +29,9 @@ import Testing
 ///     LAN on a subnet it is not on, Tailscale with no tunnel up, one of its
 ///     own addresses; or a duplicate twice.
 /// 11. Sign-out keeps the signed-out account's Macs' route state.
+/// 12. A session is admitted (and followed) before the engine adopts it; a
+///     look in between finds no engine session and stops following the new
+///     session for good, so it is never probed or checked.
 @Suite struct SupermuxPhoneRoutePoliciesTests {
     private let mac = "aa11bb22"
     private let start = Date(timeIntervalSince1970: 1_000_000)
@@ -176,6 +179,7 @@ import Testing
         var policies = SupermuxPhoneRoutePolicies()
         policies.sessionAdmitted(for: mac, sessionID: "s1", lane: .direct, at: at(0), jitter: 0.5)
         let followed = policies.followedMacs
+        _ = policies.observe(mac, sessionID: "s1", sample: direct, hasCandidates: true, at: at(0))
         let ended = policies.observe(mac, sessionID: nil, sample: nil, hasCandidates: true, at: at(1))
         let stale = policies.observe(mac, sessionID: "s1", sample: direct, hasCandidates: true, at: at(2))
         #expect(followed == [mac])
@@ -187,10 +191,25 @@ import Testing
         #expect(policies.followedMacs.isEmpty)
     }
 
+    @Test("12. a session admitted before the engine adopts it stays followed")
+    func admittedSessionIsFollowedBeforeTheEngineAdoptsIt() {
+        var policies = SupermuxPhoneRoutePolicies()
+        policies.sessionAdmitted(for: mac, sessionID: "s1", lane: .direct, at: at(0), jitter: 0.5)
+        // The engine has not adopted the admitted session yet.
+        let beforeAdoption = policies.observe(mac, sessionID: nil, sample: nil, hasCandidates: true, at: at(0))
+        let adopted = policies.observe(mac, sessionID: "s1", sample: nil, hasCandidates: true, at: at(2))
+        let ended = policies.observe(mac, sessionID: nil, sample: nil, hasCandidates: true, at: at(4))
+        #expect(beforeAdoption == .none)
+        #expect(adopted == .checkLiveness(session: 1), "the admitted session stopped being followed before it was adopted")
+        #expect(ended == .none)
+        #expect(policies.followedMacs.isEmpty)
+    }
+
     @Test("9. a session that starts right after a network change probes at once")
     func sessionAfterANetworkChangeProbesAtOnce() {
         var policies = SupermuxPhoneRoutePolicies()
         policies.sessionAdmitted(for: mac, sessionID: "s1", lane: .automatic, at: at(0), jitter: 0.5)
+        _ = policies.observe(mac, sessionID: "s1", sample: relay, hasCandidates: true, at: at(0))
         _ = policies.observe(mac, sessionID: nil, sample: nil, hasCandidates: true, at: at(1))
         policies.networkSettled(on: homeWiFi, at: at(1))
         policies.networkSettled(on: cellular, at: at(2))
