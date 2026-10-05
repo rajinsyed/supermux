@@ -70,8 +70,8 @@ public final class SupermuxWindowVisibility: ObservableObject {
     private static let windowsThatReportedVisible = NSHashTable<NSWindow>.weakObjects()
     /// Displays on which some window has reported `.visible`. A virtual
     /// display never does, so a window moved to one falls back to the
-    /// untrusted rule; one moved to a known real display (an undock) keeps
-    /// its trust.
+    /// untrusted rule; one moved to the built-in display or another known
+    /// real display (an undock) keeps its trust.
     private static var displaysThatReportedVisible = Set<NSNumber>()
 
     private static func displayID(of window: NSWindow) -> NSNumber? {
@@ -97,10 +97,12 @@ public final class SupermuxWindowVisibility: ObservableObject {
             return true
         }
         // Occlusion has been trustworthy for this window and its display:
-        // honor its verdict.
-        if windowsThatReportedVisible.contains(window), let display, displaysThatReportedVisible.contains(display) {
-            return false
-        }
+        // honor its verdict. No screen (no display attached) and the built-in
+        // display are real; only another display must first have shown a window.
+        let displayIsTrusted = display.map {
+            CGDisplayIsBuiltin(CGDirectDisplayID($0.uint32Value)) != 0 || displaysThatReportedVisible.contains($0)
+        } ?? true
+        if windowsThatReportedVisible.contains(window), displayIsTrusted { return false }
         return window.isKeyWindow || (trustingActiveSpace && window.isOnActiveSpace)
     }
 }

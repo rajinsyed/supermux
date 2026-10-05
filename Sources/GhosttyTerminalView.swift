@@ -9980,8 +9980,10 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
         // SUPERMUX:begin renderer-key-window-honors-occlusion (upstream: `windowHasReportedVisible: Self.windowsThatReportedVisible.contains(window),`)
         let displayID = window.screen?.displayID
         if occlusionVisible, let displayID { Self.displaysThatReportedVisible.insert(displayID) }
+        // No screen (no display attached) and the built-in display are real;
+        // only another display must first have shown a window.
         let occlusionIsTrusted = Self.windowsThatReportedVisible.contains(window)
-            && displayID.map { Self.displaysThatReportedVisible.contains($0) } ?? false
+            && displayID.map { CGDisplayIsBuiltin($0) != 0 || Self.displaysThatReportedVisible.contains($0) } ?? true
         // SUPERMUX:end renderer-key-window-honors-occlusion
         terminalSurface?.setRendererWindowVisible(
             TerminalRendererWindowVisibility(
