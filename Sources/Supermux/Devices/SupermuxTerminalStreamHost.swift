@@ -46,6 +46,11 @@ enum SupermuxTerminalStreamHost {
     /// Replay reply keys.
     nonisolated static let epochKey = "supermux_stream_epoch"
     nonisolated static let resumedKey = "supermux_resumed"
+    /// Replay reply key: this host turns an older reply of the same pane
+    /// into `superseded` when the pane asks again
+    /// (``SupermuxTerminalReplaySupersession``), so the viewer may keep
+    /// asking after missed deadlines without duplicating replies.
+    nonisolated static let supersedesKey = "supermux_supersedes"
     /// `terminal.bytes` and replay key: the grid generation (v2).
     nonisolated static let gridGenerationKey = "supermux_grid_gen"
 
@@ -137,6 +142,7 @@ extension TerminalController {
             SupermuxTerminalStreamHost.resumedKey: true,
             SupermuxTerminalStreamHost.epochKey: epoch,
             SupermuxTerminalStreamHost.gridGenerationKey: viewerGeneration,
+            SupermuxTerminalStreamHost.supersedesKey: params[SupermuxTerminalStreamHost.replayOwnerParam] != nil,
         ]
     }
 
@@ -151,6 +157,9 @@ extension TerminalController {
         if SupermuxTerminalStreamDebug.pretendsOldHost { return }
         #endif
         payload[SupermuxTerminalStreamHost.epochKey] = MobileTerminalByteTee.shared.supermuxStreamEpoch(surfaceID: surfaceID)
+        if params[SupermuxTerminalStreamHost.replayOwnerParam] != nil {
+            payload[SupermuxTerminalStreamHost.supersedesKey] = true
+        }
         if let columns = (payload["columns"] as? NSNumber)?.intValue,
            let rows = (payload["rows"] as? NSNumber)?.intValue,
            let requested = SupermuxTerminalGridGeneration.requestedGrid(surfaceID: surfaceID),

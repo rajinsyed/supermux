@@ -163,14 +163,17 @@ final class DeviceTerminalMirrorSession {
     // SUPERMUX:end sizing-one-setting
 
     convenience init(link: DeviceLink, remoteWorkspaceID: String, remoteSurfaceID: UUID) {
+        // SUPERMUX:begin terminal-stream-viewer (made first: the replay deadline is the stream's)
+        let supermuxStream = SupermuxTerminalStream(link: link, surfaceID: remoteSurfaceID)
+        // SUPERMUX:end terminal-stream-viewer
         self.init(
             remoteWorkspaceID: remoteWorkspaceID, remoteSurfaceID: remoteSurfaceID,
             events: link.terminalEvents,
             isConnected: { link.isConnected },
-            // SUPERMUX:begin terminal-replay-deadline (a replay's reply is MBs on a slow link: it gets its own, longer deadline; upstream: `try await link.requestData(method, params: params)`)
+            // SUPERMUX:begin terminal-replay-deadline (a replay's reply is MBs on a slow link: it gets its own, longer deadline, longer again after each one that missed it; upstream: `try await link.requestData(method, params: params)`)
             requestData: { method, params in
                 try await link.requestData(
-                    method, params: params, timeoutNanoseconds: SupermuxTerminalStream.deadline(forMethod: method)
+                    method, params: params, timeoutNanoseconds: supermuxStream.deadline(forMethod: method)
                 )
             },
             // SUPERMUX:end terminal-replay-deadline
@@ -190,10 +193,10 @@ final class DeviceTerminalMirrorSession {
             // SUPERMUX:end terminal-input-pipeline
         )
         // SUPERMUX:begin terminal-stream-viewer
-        supermuxStream = SupermuxTerminalStream(link: link, surfaceID: remoteSurfaceID)
+        self.supermuxStream = supermuxStream
         // SUPERMUX:end terminal-stream-viewer
         // SUPERMUX:begin terminal-stream-grid-viewer (a re-capture waits out the pane's typing)
-        supermuxStream?.lastInputAt = { [weak supermuxInputPipeline] in supermuxInputPipeline?.lastInputAt }
+        supermuxStream.lastInputAt = { [weak supermuxInputPipeline] in supermuxInputPipeline?.lastInputAt }
         // SUPERMUX:end terminal-stream-grid-viewer
         // SUPERMUX:begin sizing-one-setting
         supermuxHostTakesSizingPreference = { [instance = link.instance] in
@@ -793,6 +796,7 @@ final class DeviceTerminalMirrorSession {
             viewportTransitionRetries = 0
             // SUPERMUX:begin device-mirror-replay-timed-out
             supermuxTimedOutRetries = 0
+            supermuxStream?.timedOutReplays = 0
             // SUPERMUX:end device-mirror-replay-timed-out
             // SUPERMUX:begin terminal-stream-replay-sizing (decoded off the main actor with the replay; upstream: `receiveReplaySizing(response)`)
             receiveReplaySizing(replay.supermuxSizing)
@@ -884,12 +888,15 @@ final class DeviceTerminalMirrorSession {
             // The replay missed its deadline but the link stayed up (a slow Mac is
             // not a lost Mac): ask again, as the reconnect used to, instead of
             // staying detached on a connected link. Each retry waits longer
-            // (2 s doubling to 30 s) and there is no limit while the link stays
-            // up (it showed "Mac disconnected" until Retry after three). The
-            // host drops the older reply if it still waits there
-            // (SupermuxTerminalReplaySupersession).
-            if SupermuxDeviceLinkEvents.isMissedDeadline(error), isConnected() {
+            // (2 s doubling to 30 s) and gets a longer deadline (doubling, up to
+            // 8 times), and there is no limit while the link stays up to a host
+            // that drops the older reply if it still waits there
+            // (SupermuxTerminalReplaySupersession); an older host gets
+            // upstream's three, then "Mac disconnected" until Retry.
+            if SupermuxDeviceLinkEvents.isMissedDeadline(error), isConnected(),
+               supermuxStream?.retriesMissedReplay(attempt: supermuxTimedOutRetries + 1) ?? true {
                 supermuxTimedOutRetries += 1
+                supermuxStream?.timedOutReplays = supermuxTimedOutRetries
                 replayNeeded = true
                 try? await Task.sleep(nanoseconds: SupermuxTerminalStream.replayRetryDelayNanoseconds(attempt: supermuxTimedOutRetries))
                 return

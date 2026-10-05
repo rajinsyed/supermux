@@ -416,15 +416,34 @@ final class SupermuxTerminalStream {
     /// took ~40 s), so the link's 20 s missed the late ones, and each was
     /// asked for again while the host still sent the first (STREAM.md H3b).
     nonisolated static let replayDeadlineNanoseconds: UInt64 = 90_000_000_000
+    /// Retries after missed deadlines to a host that does not supersede
+    /// (each would add a whole reply): upstream's three.
+    static let retriesWithoutSuperseding = 3
+
+    /// Replays of this mirror that missed their deadline in a row (the
+    /// session's count): each retry waits twice as long, up to 8 times the
+    /// deadline, so a reply that takes longer than the deadline on a very
+    /// slow link is waited out instead of asked again forever.
+    var timedOutReplays = 0
 
     /// The deadline of a mirror request: a replay's own (a suite may set it,
-    /// `terminal_stream.replay_deadline`), else the link's.
-    nonisolated static func deadline(forMethod method: String) -> UInt64? {
+    /// `terminal_stream.replay_deadline`), doubled per replay in a row that
+    /// missed it; nil (the link's) for every other method.
+    func deadline(forMethod method: String) -> UInt64? {
         guard method == "mobile.terminal.replay" else { return nil }
+        var base = Self.replayDeadlineNanoseconds
         #if DEBUG
-        if let seconds = SupermuxTerminalStreamDebug.replayDeadlineSeconds { return UInt64(seconds * 1_000_000_000) }
+        if let seconds = SupermuxTerminalStreamDebug.replayDeadlineSeconds { base = UInt64(seconds * 1_000_000_000) }
         #endif
-        return replayDeadlineNanoseconds
+        return base << UInt64(min(timedOutReplays, 3))
+    }
+
+    /// Whether a replay that missed its deadline on a live link is asked
+    /// again (`attempt`, from 1): always to a host that supersedes the older
+    /// reply (learned from its replies), else at most
+    /// ``retriesWithoutSuperseding`` times, as upstream did.
+    func retriesMissedReplay(attempt: Int) -> Bool {
+        watch.hostSupersedesReplays || attempt <= Self.retriesWithoutSuperseding
     }
 
     /// The wait before asking again after the `attempt`-th replay in a row
@@ -436,6 +455,7 @@ final class SupermuxTerminalStream {
 
     func noteReply(_ reply: Reply) {
         epoch = reply.epoch
+        if reply.supersedes { watch.hostSupersedesReplays = true }
         if reply.resumed == nil {
             fullReplays += 1
             historyIsShallow = requestIsShallow
@@ -521,10 +541,13 @@ final class SupermuxTerminalStream {
         var gridGeneration: UInt64?
         /// A resumed reply's sizing fields (a full replay's come with its decode).
         var sizing: MobileTerminalReplaySizing?
+        /// The host supersedes an older reply of the pane (`supermux_supersedes`).
+        var supersedes = false
     }
 
     private nonisolated static let resumedMarker = Data("\"\(SupermuxTerminalStreamHost.resumedKey)\":true".utf8)
     private nonisolated static let epochMarker = Data("\"\(SupermuxTerminalStreamHost.epochKey)\":\"".utf8)
+    private nonisolated static let supersedesMarker = Data("\"\(SupermuxTerminalStreamHost.supersedesKey)\":true".utf8)
 
     /// Reads a replay reply off the main actor. A full replay (often MBs of
     /// grid) is only scanned for its epoch, never parsed a second time.
@@ -532,16 +555,12 @@ final class SupermuxTerminalStream {
     @concurrent
     #endif
     nonisolated static func decodeReply(_ data: Data) async -> Reply {
-        guard data.range(of: resumedMarker) != nil else {
-            return Reply(epoch: scannedEpoch(data), gridGeneration: SupermuxTerminalGridTracker.generation(inBytesPayload: data))
-        }
+        guard data.range(of: resumedMarker) != nil else { return scannedReply(data) }
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               object[SupermuxTerminalStreamHost.resumedKey] as? Bool == true,
               let sequence = (object["seq"] as? NSNumber)?.uint64Value,
               let encoded = object["data_b64"] as? String,
-              let bytes = Data(base64Encoded: encoded) else {
-            return Reply(epoch: scannedEpoch(data), gridGeneration: SupermuxTerminalGridTracker.generation(inBytesPayload: data))
-        }
+              let bytes = Data(base64Encoded: encoded) else { return scannedReply(data) }
         return Reply(
             epoch: object[SupermuxTerminalStreamHost.epochKey] as? String,
             resumed: Reply.Resumed(
@@ -551,7 +570,17 @@ final class SupermuxTerminalStream {
                 rows: (object["rows"] as? NSNumber)?.intValue
             ),
             gridGeneration: (object[SupermuxTerminalStreamHost.gridGenerationKey] as? NSNumber)?.uint64Value,
-            sizing: replaySizing(in: object)
+            sizing: replaySizing(in: object),
+            supersedes: object[SupermuxTerminalStreamHost.supersedesKey] as? Bool == true
+        )
+    }
+
+    /// A full replay's reply, scanned rather than parsed.
+    private nonisolated static func scannedReply(_ data: Data) -> Reply {
+        Reply(
+            epoch: scannedEpoch(data),
+            gridGeneration: SupermuxTerminalGridTracker.generation(inBytesPayload: data),
+            supersedes: data.range(of: supersedesMarker) != nil
         )
     }
 
@@ -611,6 +640,9 @@ final class SupermuxTerminalStreamWatch {
     private var counts: [UUID: Int] = [:]
     private var backgroundCounts: [UUID: Int] = [:]
     private var acked: (connection: UInt64, watched: Watched)?
+    /// The other Mac supersedes a pane's older replay reply when it asks
+    /// again (seen in a reply of any mirror on this link).
+    var hostSupersedesReplays = false
     private var failedConnection: UInt64?
     /// Sends that failed in a row; retries stop at ``maximumRetries`` (a host
     /// that always rejects the call, such as a workspace-scoped ticket),
