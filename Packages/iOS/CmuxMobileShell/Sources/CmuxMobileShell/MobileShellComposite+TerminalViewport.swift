@@ -1,7 +1,9 @@
 internal import CMUXMobileCore
 internal import CmuxMobileDiagnostics
 internal import CmuxMobileRPC
-internal import CmuxMobileShellModel
+// SUPERMUX:begin sizing-hidden-terminal (public: a preparation carries a counts override change)
+public import CmuxMobileShellModel
+// SUPERMUX:end sizing-hidden-terminal
 internal import Foundation
 internal import OSLog
 
@@ -25,6 +27,11 @@ public struct MobileTerminalViewportPreparation: Sendable {
     /// unchanged. Older hosts ignore the key.
     public var viewAppeared = false
     // SUPERMUX:end sizing-auto-view-appeared
+    // SUPERMUX:begin sizing-hidden-terminal
+    /// The report's `counts_override` change: `false` while the terminal is
+    /// hidden under another tab, `null` once it is shown again.
+    public var countsOverride: MobileTerminalCountsOverrideChange = .unchanged
+    // SUPERMUX:end sizing-hidden-terminal
 }
 
 extension MobileShellComposite {
@@ -285,7 +292,8 @@ extension MobileShellComposite {
                 workspaceID: remoteWorkspaceID.rawValue,
                 surfaceID: surfaceID,
                 viewport: reportedGrid,
-                generation: requestGeneration
+                generation: requestGeneration,
+                countsOverride: preparation.countsOverride
             )
             if preparation.viewAppeared { viewportParams["view_appeared"] = true }
             let request = try MobileCoreRPCClient.requestData(

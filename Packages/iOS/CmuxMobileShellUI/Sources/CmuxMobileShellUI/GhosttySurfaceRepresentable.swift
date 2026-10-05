@@ -24,6 +24,12 @@ struct GhosttySurfaceRepresentable: UIViewControllerRepresentable {
     let terminalWorkPopulation: TerminalWorkContext
     let fontSize: Float32
     let terminalPresentationIsActive: Bool
+    // SUPERMUX:begin sizing-hidden-terminal
+    /// Whether the terminal is the workspace's shown tab. A terminal under a
+    /// browser, stream, Simulator or Mac-surface tab stays mounted (opacity 0)
+    /// but must not size the Mac terminal.
+    var terminalSurfaceIsShown: Bool = true
+    // SUPERMUX:end sizing-hidden-terminal
     /// Whether the mounted surface should grab the keyboard when it attaches to
     /// a window. Driven by the host's autofocus-suppression state so chrome
     /// actions (create workspace/terminal, switch terminal) do not pop the
@@ -172,6 +178,9 @@ struct GhosttySurfaceRepresentable: UIViewControllerRepresentable {
         // state write, so it is safe in `updateUIViewController`.
         context.coordinator.setTerminalPresentationActive(terminalPresentationIsActive)
         context.coordinator.attemptPendingOutputConsumerRecoveryPresentation()
+        // SUPERMUX:begin sizing-hidden-terminal
+        context.coordinator.supermuxSetTerminalSurfaceShown(terminalSurfaceIsShown)
+        // SUPERMUX:end sizing-hidden-terminal
         guard let surfaceView = (uiView as? GhosttySurfaceHostView)?.surfaceView else { return }
         surfaceView.terminalWorkPopulation = terminalWorkPopulation
         surfaceView.autoFocusOnWindowAttach = autoFocusOnWindowAttach
@@ -381,6 +390,16 @@ struct GhosttySurfaceRepresentable: UIViewControllerRepresentable {
         /// that carried it reached the Mac.
         var viewAppearedReportPending = false
         // SUPERMUX:end sizing-auto-view-appeared
+        // SUPERMUX:begin sizing-hidden-terminal
+        /// Whether the terminal is the workspace's shown tab.
+        var terminalSurfaceShown = true
+        /// The phone set `counts_override: false` because the terminal is
+        /// hidden under another tab; every report carries it until shown.
+        var phoneHidesCounts = false
+        /// Shown again after the phone hid its counts: the next delivered
+        /// report carries `counts_override: null`.
+        var countsRestorePending = false
+        // SUPERMUX:end sizing-hidden-terminal
         private var composerMounted = false
         private var activeViewportPolicy: MobileTerminalOutputViewportPolicy = .natural
         /// Shared by the legacy and verified apply paths: an alternating

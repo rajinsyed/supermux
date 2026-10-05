@@ -20,13 +20,17 @@ extension GhosttySurfaceRepresentable.Coordinator {
         report: TerminalViewportReportScheduler.Report,
         store: CMUXMobileShellStore
     ) -> MobileTerminalViewportPreparation? {
-        guard viewAppearedReportPending else { return preparation }
+        // A hidden terminal is not being viewed: its report never claims it.
+        let viewAppeared = viewAppearedReportPending && terminalSurfaceShown
+        let countsOverride = pendingCountsOverrideChange
+        guard viewAppeared || countsOverride != .unchanged else { return preparation }
         var flagged = preparation ?? store.prepareTerminalViewport(
             surfaceID: surfaceID,
             columns: report.columns,
             rows: report.rows
         )
-        flagged?.viewAppeared = true
+        flagged?.viewAppeared = viewAppeared
+        flagged?.countsOverride = countsOverride
         return flagged
     }
 
@@ -36,6 +40,47 @@ extension GhosttySurfaceRepresentable.Coordinator {
     /// - Parameter preparation: The delivered report's preparation.
     func supermuxViewportReportDelivered(_ preparation: MobileTerminalViewportPreparation) {
         if preparation.viewAppeared { viewAppearedReportPending = false }
+        if preparation.countsOverride == .clear { countsRestorePending = false }
+    }
+
+    // MARK: Hidden under another tab
+
+    /// The workspace detail shows this terminal, or hides it (still mounted)
+    /// under a browser, stream, Simulator or Mac-surface tab.
+    ///
+    /// While hidden the phone does not count toward the size: its reports
+    /// carry `counts_override: false`, unless the user already turned "Counts
+    /// toward size" off. Shown again, the next report clears the override the
+    /// phone set and says `view_appeared`, so the viewing phone takes the grid
+    /// back. The viewport lease and the output stream are untouched.
+    /// - Parameter shown: Whether the terminal is the shown tab.
+    func supermuxSetTerminalSurfaceShown(_ shown: Bool) {
+        guard shown != terminalSurfaceShown else { return }
+        terminalSurfaceShown = shown
+        if shown {
+            if phoneHidesCounts {
+                phoneHidesCounts = false
+                countsRestorePending = true
+            }
+            viewAppearedReportPending = true
+        } else {
+            // A `false` the phone set and has not cleared yet is its own.
+            let userTurnedCountsOff = !countsRestorePending
+                && store?.terminalSizingPresentation(for: surfaceID)?
+                    .selfParticipant?.participant.countsOverride == false
+            countsRestorePending = false
+            guard !userTurnedCountsOff else { return }
+            phoneHidesCounts = true
+        }
+        guard viewportReportScheduler != nil else { return }
+        surfaceView?.requestViewportReportForMount()
+    }
+
+    /// The `counts_override` change this mount's next report carries.
+    private var pendingCountsOverrideChange: MobileTerminalCountsOverrideChange {
+        if phoneHidesCounts { return .set(false) }
+        if countsRestorePending { return .clear }
+        return .unchanged
     }
 }
 #endif
