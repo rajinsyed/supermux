@@ -377,8 +377,9 @@ struct GhosttySurfaceRepresentable: UIViewControllerRepresentable {
         /// Set when the surface joins a window; the next viewport report sent
         /// says so (`view_appeared`), so the Mac's Auto mode hands the grid to
         /// this phone even though a view that only left the window kept its
-        /// viewport lease and reports the same size.
-        private var viewAppearedReportPending = false
+        /// viewport lease and reports the same size. Cleared only once a report
+        /// that carried it reached the Mac.
+        var viewAppearedReportPending = false
         // SUPERMUX:end sizing-auto-view-appeared
         private var composerMounted = false
         private var activeViewportPolicy: MobileTerminalOutputViewportPolicy = .natural
@@ -543,22 +544,15 @@ struct GhosttySurfaceRepresentable: UIViewControllerRepresentable {
                             reportID: report.id
                         )
                     // SUPERMUX:begin sizing-auto-view-appeared
-                    var preparation = self.preparedViewportReportsByReportID.removeValue(
-                        forKey: report.id
+                    let preparation = self.supermuxFlagViewportReport(
+                        self.preparedViewportReportsByReportID.removeValue(forKey: report.id),
+                        report: report,
+                        store: store
                     )
-                    if self.viewAppearedReportPending {
-                        preparation = preparation ?? store.prepareTerminalViewport(
-                            surfaceID: self.surfaceID,
-                            columns: report.columns,
-                            rows: report.rows
-                        )
-                        if preparation != nil {
-                            preparation?.viewAppeared = true
-                            self.viewAppearedReportPending = false
-                        }
-                    }
                     if let preparation {
-                        return await store.updatePreparedTerminalViewport(preparation)
+                        let granted = await store.updatePreparedTerminalViewport(preparation)
+                        if granted != nil { self.supermuxViewportReportDelivered(preparation) }
+                        return granted
                     }
                     // SUPERMUX:end sizing-auto-view-appeared
                     return await store.updateTerminalViewport(
