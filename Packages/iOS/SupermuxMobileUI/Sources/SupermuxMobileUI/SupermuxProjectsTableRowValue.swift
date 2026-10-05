@@ -63,6 +63,9 @@ public enum SupermuxProjectsTableRowValue: Equatable, Sendable {
     case newWorktree(projectRowID: String, isPreparing: Bool)
     /// An expanded project with nothing under it.
     case notice
+    /// One caption line per connected Mac: its name and the route the
+    /// phone's session to it uses (`Direct · LAN · 6 ms`).
+    case macRoutes([SupermuxProjectsMacHeader])
 
     /// The id of the row's swipe tray (``SupermuxSidebarSwipeRow``), or
     /// `nil` for rows without one. The one place this id is spelled.
@@ -72,7 +75,7 @@ public enum SupermuxProjectsTableRowValue: Equatable, Sendable {
             "project:\(project.key)"
         case .worktree(let worktree):
             "worktree:\(worktree.projectRowID):\(worktree.worktree.id)"
-        case .header, .loading, .empty, .worktreeLoading, .newWorktree, .notice:
+        case .header, .loading, .empty, .worktreeLoading, .newWorktree, .notice, .macRoutes:
             nil
         }
     }
@@ -98,6 +101,8 @@ public enum SupermuxProjectsTableRowValue: Equatable, Sendable {
             "newWorktree"
         case .notice:
             "notice"
+        case .macRoutes(let macs):
+            "macRoutes:\(macs.count)"
         }
     }
 }
