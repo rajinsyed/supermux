@@ -398,10 +398,14 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   terminal's frames went to every phone, whose one 256-event buffer then shed the focused terminal's).
   On the viewer: keys typed while a mirror re-attaches on a live link are held in order and sent once it
   is attached, or dropped once the first has waited 10 s; a key in flight when the link drops and keys
-  typed while it is down are held together for 10 s from the drop (then every key typed so far is
-  dropped, whatever the phase), go first after a resume, and are dropped after a full reply, which may
-  be a restarted Mac's new shell, with any typed since the link came back (until 2026-10-06 every key
-  typed during a re-attach was dropped: `qwertyuiop` arrived as `yuiop`). Reconnecting is cheap: a
+  typed while it is down are held together for 10 s of awake time from the drop (started over at a full
+  wake, after dropping what was held from before the sleep, so the first keys after a wake wait for the
+  redial; `SupermuxMirrorInputHold`), go first after a resume, and are dropped after a full reply, which
+  may be a restarted Mac's new shell, with any typed since the link came back. When that hold runs out
+  while the mirror is still detached every key typed so far goes; once the link is back only the keys
+  typed while it was down go, and keys typed since wait under their own 10 s (until 2026-10-06 every
+  key typed during a re-attach was dropped: `qwertyuiop` arrived as `yuiop`; later that day the hold
+  dropped keys typed after the link came back, and ran out while the Mac slept). Reconnecting is cheap: a
   viewing Mac's viewport reports outlive its connection by 15 s of awake time, started over at a full
   wake (a phone's still clear at once), so a quick redial keeps every grid and idle terminals resume
   (until 2026-10-06 they cleared at once, every terminal resized twice and came back as a 10000-row
@@ -409,11 +413,13 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   for 120 s after the last mirror left, so printing terminals resume from their byte position (until
   2026-10-06 it stopped and moved their stream epoch, forcing a full replay of each); a hidden mirror
   that attached before re-attaches with its screen and 100 rows of history, the rest arriving once the
-  pane has been shown 3 s with nothing typed into it for 3 s, re-captured while the pane stays attached
-  (output keeps drawing) and still owed after a lost link (`SupermuxTerminalStream`; until 2026-10-06
+  pane has been shown 3 s with nothing typed into it for 3 s, or 20 s after the show however busy the
+  pane is, re-captured while the pane stays attached (output keeps drawing) and still owed after a lost
+  link (`SupermuxTerminalStream`; until 2026-10-06
   10000 rows, ~1.7 MB that held every shown pane's output ~6 s at 300 KB/s; a first attach and a shown
   mirror keep 10000). A replay has its own 90 s deadline, is asked again with backoff on a live link ("A
-  slow Mac is not a lost Mac"), and each mirror pane names itself on its replays
+  slow Mac is not a lost Mac"; the doubled deadline of a reply that missed starts over at a reconnect or
+  Retry), and each mirror pane names itself on its replays
   (`supermux_replay_owner`), so the host turns an older reply of the same pane and terminal that has not
   reached the wire into a small `superseded` error (until 2026-10-06 the host sent every reply in full).
   Known limit: showing a pane that resizes its terminal on the other Mac re-anchors with the whole
@@ -495,11 +501,19 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   the relay only when no address answers, and exactly one connection is admitted. The lane dials each
   address as its own handshake (one wrong address, answered by another endpoint, cannot sink the right
   one), and only addresses this Mac can reach now (`SupermuxRouteCandidates.reachable`,
-  SupermuxMobileCore: never its own, LAN only on a shared Wi-Fi/wired subnet, Tailscale only with its
-  tunnel up, global IPv6 only with its own); a dial without a relay credential still runs the lane.
+  SupermuxMobileCore: never its own; LAN while this Mac is on a private network of that family, Wi-Fi,
+  wired or a tunnel but never cellular alone, or Tailscale is up, so a routed second subnet, WireGuard
+  and Tailscale subnet routes work; Tailscale only with its tunnel up; global IPv6 only with its own;
+  until 2026-10-06 LAN needed a shared Wi-Fi/wired subnet), at most 16 picked after that filter
+  (own-subnet LAN, Tailscale, other LAN, global IPv6; until then the cache's first 16 were filtered, so
+  VM-bridge and ULA addresses could push Tailscale out). An expired or missing relay credential is
+  refreshed inside the relay leg (`SupermuxIrxDirectFirstDial.relayLeg`), so the lane races at once:
+  with the internet down and the LAN up it no longer waits out the refresh, and after 30 min idle no
+  dial waits an HTTPS round trip first.
   `SupermuxDeviceRouteSwitcher` (policy: `SupermuxRouteSwitchPolicy`, SupermuxMobileCore, shared with
   the phone) looks at each link every second: on the relay, with a reachable address, it tries a lane
-  handshake every ~10 s (30 s after five misses; never admitted; at once when new addresses arrive) and
+  handshake every ~10 s (30 s after five misses; never admitted; at once when new addresses arrive or
+  the network changes, and again right after a probe that was out when they did) and
   on success redials once (`DeviceLink.supermuxPlannedRedial`, a 300 ms settle); a lane session that
   misses two liveness checks (after a keepalive interval of quiet, at once within 10 s of a network
   change) redials as a liveness failure would, with the lane held off, so it lands on the relay in
@@ -511,9 +525,9 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   (`/tmp/cmux-irx-journal-mac-<tag>.jsonl`, category `route`): `dial-candidates`, `dial-race`,
   `upgrade`, `upgrade-not-made`, `liveness-miss`, `fallback`, `direct-admission-failed`, `lane-created`,
   `lane-rebuilt`, `lane-deactivated`; probes are `route-probe/probe`, kept out of the link history. A
-  host answers `route.candidates` with `not_ready` until iroh's first network report and `direct_off`
-  when relay-only; an empty or not-ready answer keeps the cached addresses
-  (`SupermuxRouteCandidateFetchSchedule`, SupermuxMobileCore). E2E:
+  host answers `route.candidates` with `not_ready` until iroh's first network report (asked again after
+  5 s, until 2026-10-06 a minute) and `direct_off` when relay-only; an empty or not-ready answer keeps
+  the cached addresses (`SupermuxRouteCandidateFetchSchedule`, SupermuxMobileCore). E2E:
   `tests/supermux/loopback_device_route_switch_e2e.py` (a simulated network under the loopback link,
   `supermux.devices.route.switch`). The iPhone does the same for an Automatic-method dial, under the
   same policy (#1110–#1120; until 2026-10-06 it offered iroh only the relay and the user's Private
@@ -548,9 +562,11 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   links inside them). A full wake recovers once, the sleep measured on the wall clock (iroh's clock
   stops in sleep, and until 2026-10-06 nothing told it, so direct took up to minutes after a wake):
   after a minute or more the main endpoint is closed and bound again (every session on it is dead by
-  then; expired relay credentials, always the case after a night, are refreshed first within the dials'
-  5 s wait, `SupermuxMainEndpointRebuild`; without fresh ones the next network change within 30 s
-  rebuilds), iroh is told the network changed, the route switcher gives direct a fresh chance, the idle
+  then; expired relay credentials, always the case after a night, are refreshed first for at most 4 s,
+  a second under the dials' 5 s wait, `SupermuxMainEndpointRebuild`; without fresh ones the rebuild
+  stays wanted for 30 s from the wake, and a network change or fresh credentials in that time run it,
+  one rebuild at a time; until 2026-10-06 only a network change after the 5 s wait did, so the Wi-Fi
+  coming back inside it was missed), iroh is told the network changed, the route switcher gives direct a fresh chance, the idle
   direct lane is rebound (only while no dial or probe holds it), and links waiting in a backoff dial at
   once. A network change (interfaces, IPv4 addresses, Tailscale's `utun`; debounced 1 s) recovers the
   same way while awake, without the rebuild or redials. The notice is the event `supermux.device.sleeping`
