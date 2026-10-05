@@ -85,6 +85,7 @@ import Testing
     @Test("7. this device's interfaces: no loopback, prefixes in range")
     func currentInterfaces() {
         let interfaces = SupermuxLocalInterface.current()
+        print("this device's interfaces: \(interfaces)")
         #expect(!interfaces.isEmpty, "a test machine has at least one network address")
         for entry in interfaces {
             #expect(!entry.address.hasPrefix("127.") && entry.address != "::1", "\(entry)")

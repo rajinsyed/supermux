@@ -10,7 +10,14 @@ import Foundation
 /// then and, when one answers, redials once to land direct (``Action/upgrade``);
 /// a direct session with no relay path beside it that stops answering redials
 /// at once to land on the relay (``Action/fallBack``). A path that flaps is
-/// kept off direct for longer each time, so reconnects stay bounded.
+/// kept off direct for longer each time (30 s, doubling to 10 min; two
+/// minutes direct starts it over), so reconnects stay bounded.
+///
+/// A wake or a real network change (``networkChanged(at:)``) gives direct a
+/// fresh chance: the hold-off and the flap count clear, a relayed session
+/// probes at its next sample (a session that starts within
+/// ``recoveryWindow`` too), and the first fall back within that window is
+/// not a flap, since the old path dying is the change itself.
 ///
 /// Pure state, one per link: the owner feeds it the live session's path about
 /// once a second and the answers to the probes and checks it asked for, and
@@ -20,11 +27,14 @@ import Foundation
 ///
 /// ```swift
 /// policy.sessionStarted(at: now)
-/// switch policy.observe(.relay, at: now) {
+/// switch policy.observe(.relay, hasCandidates: true, at: now) {
 /// case .probe: probeDirect()       // then policy.probeFinished(session:succeeded:at:)
-/// case .upgrade, .fallBack: break  // only from the answers
+/// case .checkLiveness: check()     // then policy.livenessChecked(session:answered:at:)
 /// default: break
 /// }
+/// // A probe that answered returns .upgrade: redial, then policy.upgradeStarted(at:).
+/// // Before each dial: policy.dialUsesDirect(at:) and policy.holdsRelayInRace;
+/// // after a race that tried direct: policy.raceFinished(directWon:).
 /// ```
 public struct SupermuxRouteSwitchPolicy: Equatable, Sendable {
     /// The path a link's live session uses, as its connection reports it.
@@ -44,7 +54,8 @@ public struct SupermuxRouteSwitchPolicy: Equatable, Sendable {
         /// Check the direct session still answers, then report it with
         /// ``SupermuxRouteSwitchPolicy/livenessChecked(session:answered:at:)``.
         case checkLiveness
-        /// Redial once; the race lands on direct.
+        /// Redial once; the race lands on direct. Report the redial with
+        /// ``SupermuxRouteSwitchPolicy/upgradeStarted(at:)`` once it happened.
         case upgrade
         /// The direct session stopped answering: redial; the race skips direct.
         case fallBack
@@ -66,6 +77,12 @@ public struct SupermuxRouteSwitchPolicy: Equatable, Sendable {
     public static let stableDirectLifetime: TimeInterval = 120
     /// Probe waits are spread by up to this fraction either way, so links do not probe in step.
     public static let jitterFraction = 0.2
+    /// After a wake or network change: a session starting this soon probes at
+    /// its first sample, and the first fall back this soon is not a flap.
+    public static let recoveryWindow: TimeInterval = 30
+    /// Races in a row that direct lost on this network before a dial stops
+    /// holding a ready relay connection for direct (see ``holdsRelayInRace``).
+    public static let lostRacesBeforeNoHold = 2
 
     /// The live session's number (each start bumps it); answers carry it so
     /// an answer about an ended session is ignored.
@@ -76,6 +93,8 @@ public struct SupermuxRouteSwitchPolicy: Equatable, Sendable {
     public private(set) var flaps = 0
     /// Direct is not used (no probe, no direct leg in a dial) before this.
     public private(set) var holdOffUntil: Date?
+    /// Races in a row, since the last network change, whose direct leg lost.
+    public private(set) var lostRaces = 0
 
     private var startedAt: Date?
     private var path: Path?
@@ -85,10 +104,19 @@ public struct SupermuxRouteSwitchPolicy: Equatable, Sendable {
     private var misses = 0
     private var lastUpgradeAt: Date?
     private var upgradePending = false
+    /// A session starting before this probes at its first sample (a recovery came while none was live).
+    private var probeSoonUntil: Date?
+    /// A fall back before this is not a flap (once): the network just changed.
+    private var flapGraceUntil: Date?
+    private var skipsDirectOnce = false
 
     public init() {}
 
+    // MARK: - Sessions
+
     /// The link connected; `jitter` (0…1) spreads the first probe's wait.
+    /// Within ``recoveryWindow`` of a wake or network change it probes at
+    /// its first sample instead.
     public mutating func sessionStarted(at now: Date, jitter: Double = 0.5) {
         session &+= 1
         startedAt = now
@@ -96,7 +124,12 @@ public struct SupermuxRouteSwitchPolicy: Equatable, Sendable {
         probing = false
         checking = false
         misses = 0
-        nextProbeAt = now.addingTimeInterval(Self.interval(Self.probeInterval, jitter: jitter))
+        if let until = probeSoonUntil, now < until {
+            nextProbeAt = now
+        } else {
+            nextProbeAt = now.addingTimeInterval(Self.interval(Self.probeInterval, jitter: jitter))
+        }
+        probeSoonUntil = nil
     }
 
     /// The link's session ended.
@@ -108,26 +141,49 @@ public struct SupermuxRouteSwitchPolicy: Equatable, Sendable {
         misses = 0
     }
 
+    // MARK: - Dials
+
     /// Whether a dial may use the direct lane now.
     public func allowsDirect(at now: Date) -> Bool {
         holdOffUntil.map { now >= $0 } ?? true
     }
 
-    // Red stubs (review findings T4, T5, T7, T8, T13, H3): not implemented yet.
-    public static let recoveryWindow: TimeInterval = 30
-    public static let lostRacesBeforeNoHold = 2
-    public private(set) var lostRaces = 0
-    public var holdsRelayInRace: Bool { true }
-    public mutating func networkChanged(at now: Date) { probeSoon(at: now) }
-    public mutating func upgradeStarted(at now: Date) {}
-    public mutating func directAdmissionFailed() {}
-    public mutating func dialUsesDirect(at now: Date) -> Bool { allowsDirect(at: now) }
-    public mutating func raceFinished(directWon: Bool) {}
-    public mutating func candidatesChanged(at now: Date) {}
-    public mutating func observe(_ path: Path, hasCandidates: Bool, at now: Date) -> Action { observe(path, at: now) }
+    /// Whether the dial starting now races the direct lane: not while direct
+    /// is held off, and not once right after a direct-lane admission failed.
+    public mutating func dialUsesDirect(at now: Date) -> Bool {
+        if skipsDirectOnce {
+            skipsDirectOnce = false
+            return false
+        }
+        return allowsDirect(at: now)
+    }
 
-    /// The live session's path, sampled about once a second.
-    public mutating func observe(_ path: Path, at now: Date) -> Action {
+    /// A session dialed on the direct lane failed its admission: the next dial
+    /// skips the lane once, so a lane whose handshakes work but whose sessions
+    /// do not can never keep the link off the relay.
+    public mutating func directAdmissionFailed() {
+        skipsDirectOnce = true
+    }
+
+    /// Whether the dial's race holds a relay connection that is ready first
+    /// until direct's deadline. False after ``lostRacesBeforeNoHold`` lost
+    /// races on this network (cellular or a hotel without Tailscale): direct
+    /// still gets its head start, but no dial waits 1.5 s for it.
+    public var holdsRelayInRace: Bool {
+        lostRaces < Self.lostRacesBeforeNoHold
+    }
+
+    /// A dial that raced the direct lane finished; whether direct won.
+    public mutating func raceFinished(directWon: Bool) {
+        lostRaces = directWon ? 0 : lostRaces + 1
+    }
+
+    // MARK: - Samples and answers
+
+    /// The live session's path, sampled about once a second. `hasCandidates`:
+    /// whether the peer's direct addresses (as this device can reach them)
+    /// are known; without any a relayed session is not probed.
+    public mutating func observe(_ path: Path, hasCandidates: Bool = true, at now: Date) -> Action {
         guard let startedAt else { return .none }
         self.path = path
         switch path {
@@ -137,7 +193,7 @@ public struct SupermuxRouteSwitchPolicy: Equatable, Sendable {
                 upgradePending = false
                 recordFlap(at: now)
             }
-            guard !probing, allowsDirect(at: now), let due = nextProbeAt, now >= due else { return .none }
+            guard hasCandidates, !probing, allowsDirect(at: now), let due = nextProbeAt, now >= due else { return .none }
             probing = true
             return .probe
         case .direct(let backedUp):
@@ -159,18 +215,24 @@ public struct SupermuxRouteSwitchPolicy: Equatable, Sendable {
         probing = false
         if succeeded {
             probeFailures = 0
+            // Direct works on this network now: the move's race holds the relay for it.
+            lostRaces = 0
             let spaced = lastUpgradeAt.map { now.timeIntervalSince($0) >= Self.minimumUpgradeInterval } ?? true
-            if path == .relay, allowsDirect(at: now), spaced {
-                lastUpgradeAt = now
-                upgradePending = true
-                return .upgrade
-            }
-        } else {
-            probeFailures += 1
+            nextProbeAt = now.addingTimeInterval(Self.interval(Self.probeInterval, jitter: jitter))
+            if path == .relay, allowsDirect(at: now), spaced { return .upgrade }
+            return .none
         }
+        probeFailures += 1
         let base = probeFailures >= Self.failuresBeforeSlowProbing ? Self.slowProbeInterval : Self.probeInterval
         nextProbeAt = now.addingTimeInterval(Self.interval(base, jitter: jitter))
         return .none
+    }
+
+    /// The owner redialed for an ``Action/upgrade``. Only a move that happened
+    /// spaces the next one and counts as a flap should it land on the relay.
+    public mutating func upgradeStarted(at now: Date) {
+        lastUpgradeAt = now
+        upgradePending = true
     }
 
     /// The answer to a ``Action/checkLiveness`` started during `session`.
@@ -188,13 +250,41 @@ public struct SupermuxRouteSwitchPolicy: Equatable, Sendable {
         return .fallBack
     }
 
-    /// Wake or a network change: probe a relayed link at its next sample
-    /// instead of waiting out the cadence. The wait after a flap still holds.
+    // MARK: - Recoveries
+
+    /// This device woke or its network really changed (its interfaces or
+    /// addresses): whatever kept direct off may be gone. The hold-off, the
+    /// flap count and the lost races clear; a relayed session probes at its
+    /// next sample, or the next session within ``recoveryWindow``; and the
+    /// first fall back within that window is not a flap.
+    public mutating func networkChanged(at now: Date) {
+        flaps = 0
+        holdOffUntil = nil
+        lostRaces = 0
+        flapGraceUntil = now.addingTimeInterval(Self.recoveryWindow)
+        probeSoon(at: now)
+    }
+
+    /// Probe a relayed session at its next sample, or the next session if it
+    /// starts within ``recoveryWindow`` (the app came to the foreground). A
+    /// hold-off after a flap still holds.
     public mutating func probeSoon(at now: Date) {
-        guard startedAt != nil else { return }
         probeFailures = 0
+        if startedAt != nil {
+            nextProbeAt = now
+        } else {
+            probeSoonUntil = now.addingTimeInterval(Self.recoveryWindow)
+        }
+    }
+
+    /// The peer handed over new direct addresses: a relayed session probes at
+    /// its next sample.
+    public mutating func candidatesChanged(at now: Date) {
+        guard startedAt != nil else { return }
         nextProbeAt = now
     }
+
+    // MARK: - Arithmetic
 
     /// How long direct is not tried after `flaps` consecutive flaps.
     public static func holdOff(afterFlaps flaps: Int) -> TimeInterval {
@@ -210,6 +300,10 @@ public struct SupermuxRouteSwitchPolicy: Equatable, Sendable {
     }
 
     private mutating func recordFlap(at now: Date) {
+        if let until = flapGraceUntil, now < until {
+            flapGraceUntil = nil
+            return
+        }
         flaps += 1
         holdOffUntil = now.addingTimeInterval(Self.holdOff(afterFlaps: flaps))
     }

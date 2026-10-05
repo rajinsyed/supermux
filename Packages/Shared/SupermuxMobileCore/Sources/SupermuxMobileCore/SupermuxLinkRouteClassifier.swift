@@ -6,7 +6,8 @@ import Foundation
 /// (`https://apne1.relay.cmux.dev/`) or the socket address (`192.168.1.5:58465`).
 /// A direct path is Tailscale, LAN or Internet by its address
 /// (``SupermuxSocketAddress/routeScope``); one that does not parse counts as
-/// Internet, never LAN. A relay is named by its host's first label.
+/// Internet, never LAN. A global IPv6 address inside one of this device's
+/// Wi-Fi or wired subnets is the LAN. A relay is named by its host's first label.
 public enum SupermuxLinkRouteClassifier {
     /// Classifies one selected path.
     /// - Parameters:
@@ -14,11 +15,16 @@ public enum SupermuxLinkRouteClassifier {
     ///   - remoteAddress: The relay URL, or the peer's socket address.
     ///   - rttMs: iroh's round trip on the path, in milliseconds.
     ///   - now: The route's start, should it be a new kind.
+    ///   - localInterfaces: This device's interfaces (``SupermuxLocalInterface/current()``);
+    ///     none leaves a global IPv6 path on the Internet.
     /// - Returns: The route.
-    public static func classify(isRelay: Bool, remoteAddress: String, rttMs: UInt64?, now: Date) -> SupermuxLinkRoute {
+    public static func classify(
+        isRelay: Bool, remoteAddress: String, rttMs: UInt64?, now: Date,
+        localInterfaces: [SupermuxLocalInterface] = []
+    ) -> SupermuxLinkRoute {
         let kind: SupermuxLinkRoute.Kind = isRelay
             ? .relay(id: relayID(fromURL: remoteAddress))
-            : .direct(SupermuxSocketAddress(remoteAddress)?.routeScope ?? .internet)
+            : .direct(SupermuxSocketAddress(remoteAddress)?.routeScope(from: localInterfaces) ?? .internet)
         return SupermuxLinkRoute(kind: kind, rttMs: rttMs.map { Int(clamping: $0) }, since: now)
     }
 

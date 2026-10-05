@@ -21,7 +21,8 @@ public struct SupermuxSocketAddress: Hashable, Sendable, CustomStringConvertible
     public let port: UInt16
     /// The address family.
     public let family: Family
-    private let bytes: [UInt8]
+    /// The address's bytes (4 or 16), network order.
+    let bytes: [UInt8]
 
     /// Parses `a.b.c.d:port` or `[v6]:port` (with an optional `%zone`).
     /// Returns nil for anything else, a port of 0 and a non-canonical IPv4
