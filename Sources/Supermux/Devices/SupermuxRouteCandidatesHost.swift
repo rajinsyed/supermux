@@ -47,13 +47,19 @@ enum SupermuxRouteCandidatesHost {
 
     private static let state = State()
 
+    /// Whether ``answer(_:authorization:)`` takes `request`: checked before
+    /// awaiting it, since every request of every connection passes here.
+    nonisolated static func answers(_ request: MobileHostRPCRequest) -> Bool {
+        request.method == SupermuxMobileMethod.routeCandidates.rawValue
+    }
+
     /// The answer for an Iroh-admitted session, before the main-actor
     /// dispatch; nil for every other method.
     nonisolated static func answer(
         _ request: MobileHostRPCRequest,
         authorization: MobileHostConnectionAuthorizationContext
     ) async -> MobileHostRPCResult? {
-        guard request.method == SupermuxMobileMethod.routeCandidates.rawValue else { return nil }
+        guard answers(request) else { return nil }
         guard case .irohAdmission = authorization else {
             return .failure(MobileHostRPCError(code: "forbidden", message: "Direct addresses are only shared over Iroh"))
         }

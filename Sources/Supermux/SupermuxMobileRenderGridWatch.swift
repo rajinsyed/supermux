@@ -15,12 +15,21 @@ import Foundation
 /// and each connection's event queue refuses the other terminals' frames.
 /// A terminal that joins a set gets a full frame (its next delta would
 /// build on frames the phone skipped).
+///
+/// Only connections subscribed to `terminal.render_grid` take part: another
+/// Mac's mirror writes sticky reports and asks replays too, but reads
+/// `terminal.bytes`, so counting it asked every phone for full frames of the
+/// terminals it re-attached (review S9).
 @MainActor
 enum SupermuxMobileRenderGridWatch {
     private static var state = SupermuxRenderGridWatchState()
+    /// The sticky reports the state last heard about.
+    private static var lastReports = Set<SupermuxRenderGridWatchState.Report>()
 
     /// The viewport reports changed (any write, clear or expiry). Only the
-    /// sticky reports a phone connection wrote count.
+    /// sticky reports a render-grid connection wrote count. Runs on every
+    /// report write, a phone's keystroke with viewport fields included, so
+    /// a write that changed no sticky report stops at the comparison.
     static func reportsChanged(_ reportsBySurfaceID: [UUID: [String: TerminalController.MobileViewportReport]]) {
         var reports = Set<SupermuxRenderGridWatchState.Report>()
         for (surfaceID, reportsByClient) in reportsBySurfaceID {
@@ -29,18 +38,27 @@ enum SupermuxMobileRenderGridWatch {
                 reports.insert(.init(surfaceID: surfaceID, connectionID: connectionID))
             }
         }
-        apply(state.reportsChanged(reports, isOpen: isOpen))
+        guard reports != lastReports else { return }
+        lastReports = reports
+        apply(state.reportsChanged(reports.filter { takesRenderGrid($0.connectionID) }, isOpen: isOpen))
     }
 
     /// A replay of `surfaceID` is served on the running request's phone
     /// connection, before its capture: the frames after it must reach it.
     static func replayServed(surfaceID: UUID) {
-        guard let connectionID = SupermuxMobileConnectionContext.controlConnectionID else { return }
+        guard let connectionID = SupermuxMobileConnectionContext.controlConnectionID,
+              takesRenderGrid(connectionID) else { return }
         apply(state.replayServed(surfaceID: surfaceID, connectionID: connectionID, isOpen: isOpen))
     }
 
     private static func isOpen(_ connectionID: UUID) -> Bool {
         MobileHostConnectionRegistry.shared.connection(id: connectionID) != nil
+    }
+
+    /// Whether `connectionID` is open and subscribed to render-grid frames.
+    private static func takesRenderGrid(_ connectionID: UUID) -> Bool {
+        MobileHostConnectionRegistry.shared.connection(id: connectionID)?.eventQueue
+            .isSubscribed(topic: MobileHostEventTopicPolicy().renderGridTopic) == true
     }
 
     private static func apply(_ changes: [SupermuxRenderGridWatchState.Change]) {
