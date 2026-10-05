@@ -191,6 +191,7 @@ D7_KEYS = "abcdefghij"
 D7_HISTORY_MARK = "deep 03000 "
 D7_HISTORY_WAIT_S = 90.0
 D7B_DROP_S = 2.0
+DEEP_GRID = {"cols": 99, "rows": 35}
 ECHO_PREFIX = "EK:"
 # On screen beside the ECHO terminal (a 2 x 3 grid of panes), and off screen.
 VISIBLE_TICKERS = ("tick_a", "tick_b", "tick_c", "tick_d", "tick_e")
@@ -333,6 +334,7 @@ class DegradedLinkE2E:
         self.workspaces: List[str] = []
         self.recorder_path = self.scratch / "echo.log"
         self.deep_recorder_path = self.scratch / "deep.log"
+        self.park_workspace: Optional[str] = None
         self.flood_control = self.scratch / "flood.on"
         self.echo_seen_at: List[float] = []
         self.echo_text = ""
@@ -1095,8 +1097,12 @@ class DegradedLinkE2E:
     # -- a shown pane echoes before its history arrives (review S2, S6) ---------
 
     def deep_echo_text(self) -> str:
+        """The DEEP mirror's last 60 lines, scrollback included (the echo lines may
+        sit right above the screen's top once the program's prompt scrolls)."""
         mirror = self.mirrors["deep"]
-        return self.read_text(mirror["workspace_id"], mirror["panel_id"])
+        result = self.sock.call("surface.read_text", {"workspace_id": mirror["workspace_id"],
+                                                      "surface_id": mirror["panel_id"], "lines": 60}) or {}
+        return str(result.get("text") or "")
 
     def deep_has_history(self) -> bool:
         mirror = self.mirrors["deep"]
@@ -1116,11 +1122,19 @@ class DegradedLinkE2E:
 
         wait_for("the DEEP mirror to take keyboard focus", focused, self.timeout, 0.05)
 
+    def park(self) -> None:
+        """Selects a local workspace with no mirrors: every mirror is hidden, and
+        showing the DEEP one later hides no other mirror at the same moment."""
+        if not self.park_workspace:
+            self.park_workspace, _ = self.create_source("park")
+        self.sock.call("workspace.select", {"workspace_id": self.park_workspace})
+        self.sock.call("debug.app.activate", {})
+
     def deep_comes_back_shallow(self) -> Dict[str, Any]:
         """Hides the DEEP mirror, then re-attaches it with a full replay while hidden:
         its screen and a short history, the rest owed for when it is shown."""
-        self.echo_focused()
-        time.sleep(3.0)  # hidden for 2 s turns background
+        self.park()
+        time.sleep(4.0)  # hidden for 2 s turns background; the other mirrors settle hidden
         mirror = self.mirrors["deep"]
         before = self.stream_stats().get(mirror["panel_id"], {}).get("full_replays", 0)
         self.sock.call("supermux.devices.terminal_close.replay",
@@ -1153,6 +1167,15 @@ class DegradedLinkE2E:
         self.workspaces.insert(0, mirror_id)
         panel = wait_for("the DEEP mirror pane", lambda: self.mirror_panel_for(mirror_id, surface_id), self.timeout)
         self.mirrors["deep"] = {"workspace_id": mirror_id, "panel_id": panel}
+        # A fixed grid: showing or hiding its mirror never resizes it, so the
+        # show re-anchors nothing and D7 measures only the owed history.
+        reply = self.sock.call("supermux.devices.request", {
+            "machine": self.machine, "method": "mobile.terminal.size_policy.set", "timeout_seconds": 20,
+            "params": {"workspace_id": workspace_id, "surface_id": surface_id,
+                       "policy": {"mode": "fixed", "priority": [], "fixed": DEEP_GRID}},
+        }, timeout_s=30) or {}
+        if "result" not in reply:
+            raise Failure(f"the DEEP terminal's fixed grid was refused: {reply}")
         wait_for("the DEEP mirror's history", self.deep_has_history, 120, 1.0)
 
     def deep_typed(self) -> List[Tuple[float, str]]:
@@ -1240,10 +1263,8 @@ class DegradedLinkE2E:
         self.setup_deep()
         self.deep_comes_back_shallow()
         self.deep_focused()
-        # Showing it may resize its terminal on the host (this Mac's pane counts
-        # again), which re-anchors it: let that settle so the drop's re-attach
-        # can resume. A key keeps the owed history waiting (3 s without typing).
-        time.sleep(2.5)
+        # A key keeps the owed history waiting (3 s without typing).
+        time.sleep(1.0)
         self.sock.call("debug.shortcut.simulate", {"combo": "z"})
         time.sleep(0.5)
         if self.deep_has_history():
