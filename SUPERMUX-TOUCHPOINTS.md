@@ -16,7 +16,7 @@ Rules for adding a touchpoint:
 - Numbering: the highest number in use is **783** (remote terminal streaming, #777–#783; #764–#776 are
   reserved for open PRs #74/#75). The remote-workspaces work (#517–#599) left
 - Numbering: the highest number in use is **818**. The remote-workspaces work (#517–#599) left
-- Numbering: the highest number in use is **967** (#957–#967: a phone's connection behind sizing: a connection close clears only its own reports, lane input is the phone's activity, a replay's claim is sticky, a detached phone is told again; #990–#1019 are reserved for the sizing fix's iOS rows). Before that **956** (#956: a scroll on the Mac pane is its activity; #955: activity that decides nothing is kept). Before that **954** (#954: the apply governor no longer wedges after an immediate apply; #950–#953 are earlier). Before that **924** (#920–#924: only this Mac's own input hands an Auto grid to the Mac pane). #907–#913: answering a Claude question or plan brings the working indicator back. Before that **906** (#900–#906: a streaming mirror re-anchors when the other Mac's grid changes). Before that **883** (#880–#883: Remote Host Mode's hotkey and notification shows, Auto's `view_appeared` report; #850–#879 are held by another open branch). The remote-workspaces work (#517–#599) left
+- Numbering: the highest number in use is **971** (#968–#971: a phone following this Mac's selection does not take the grid, a scene-phase leave is soft, Fixed seeds from this window). Before that **967** (#957–#967: a phone's connection behind sizing: a connection close clears only its own reports, lane input is the phone's activity, a replay's claim is sticky, a detached phone is told again; #990–#1019 are reserved for the sizing fix's iOS rows). Before that **956** (#956: a scroll on the Mac pane is its activity; #955: activity that decides nothing is kept). Before that **954** (#954: the apply governor no longer wedges after an immediate apply; #950–#953 are earlier). Before that **924** (#920–#924: only this Mac's own input hands an Auto grid to the Mac pane). #907–#913: answering a Claude question or plan brings the working indicator back. Before that **906** (#900–#906: a streaming mirror re-anchors when the other Mac's grid changes). Before that **883** (#880–#883: Remote Host Mode's hotkey and notification shows, Auto's `view_appeared` report; #850–#879 are held by another open branch). The remote-workspaces work (#517–#599) left
   unassigned gaps it may still grow into: **523–524, 527–529, 539–544, 558–559, 562–569,
   578–579 and 588–589** (never assigned, not retired); #600–#601 came from the 2026-10-01 upstream merge; #620–#622 and
   #630–#639 are the remote-workspaces feedback round (602–619 and 623–629 unassigned). The second
@@ -778,6 +778,10 @@ Rules for adding a touchpoint:
 | 965 | `Sources/TerminalController+SharedSizing.swift` | `sizing-detach-reannounce` | In `mobileClientDetachedError`, the error's data is `supermuxDetachedErrorData(surfaceID:clientID:)` (upstream: `["surface_id": surfaceID.uuidString]`): the detachment payload (`surface_id`, `reason`, `by`, `at`, `TerminalSizingWireCoder.detachedPayload`), and on the first refusal of that phone and terminal on a connection, `emitMobileDetached` again (`SupermuxMobileDetachAnnouncements`). The Mac keeps a Disconnect for the terminal's life while the phone keeps it in memory, so a relaunched phone was refused with no Detached card |
 | 966 | `Sources/Mobile/MobileHostService.swift` | `sizing-detach-reannounce` | In `removeConnection`, after the viewport clear: `SupermuxMobileDetachAnnouncements.connectionClosed(id)`, so the phone's next connection is told again (#965) |
 | 967 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/Devices/SupermuxTerminalSizingConnections.swift` (the phone connection behind sizing: #957, #960, #965) into the cmux target (ids `4BD4A7D6AB34C53AEE61F1F5`/`82109E75F263564CA246A669` from `scripts/wire-app-sources.py`, four entries, `Devices/…` path in the Supermux group) |
+| 968 | `Sources/TabManager.swift` | `sizing-auto-mac-selection` | In `selectedWorkspaceIdDidChange`, after the unchanged guard and `recordCloudWorkspaceSelection()`: `SupermuxTerminalSizingAuto.shared.macUserSelected(workspace: selectedWorkspace)`. Inside a dispatch of this Mac's user's input (`SupermuxLocalUserInput.isHandling`) it records each pane's selected panel of the new workspace with the time; any other selection (socket, automation, the phone's selection sync, session restore) returns after one flag read. `viewersReported` then notes the Mac pane's activity after a phone's attach or start of viewing within 3 s, so a phone that only followed the Mac's selection does not take the grid |
+| 969 | `Sources/Workspace.swift` | `sizing-auto-mac-selection` | At the top of `applyTabSelection`, after the mirror-mutation guard: `SupermuxTerminalSizingAuto.shared.macUserSelected(panelID: panelIdFromSurfaceId(tabId))`, the tab-selection and pane-focus counterpart of #968 (`didSelectTab` and `focusPanel` both land here) |
+| 970 | `Sources/TerminalController.swift` | `sizing-soft-leave` | Four fences. `clearMobileViewportReport` gains `immediate: Bool = true` before `reason` (upstream: no parameter) and passes it to both of its `resolveSharedSizing` calls (upstream: `immediate: true`). In `v2MobileTerminalViewport`'s clear branch the call passes `immediate: v2Bool(params, "transient") != true`: a phone's scene-phase leave (`transient: true`) goes through the governor's uncap window, so a glance (Control Center, the app switcher) followed by the phone's return with the same viewport resizes nothing, and a leave with no return restores the Mac's grid within the 3 s window. Every other clear (back navigation, dismantle, a connection close, a disconnect) still applies at once |
+| 971 | `Sources/TerminalController+SharedSizing.swift` | `sizing-fixed-seed` | In `v2TerminalSizePolicySet`, the `mode` branch passes `fallbackFixed: SupermuxTerminalSizingDefaults.fixedSeed(snapshot)` (upstream: `snapshot.state.size`): `terminal.size_policy.set mode=fixed` with no fixed grid yet fixes this window's own grid (the snapshot's self participant's viewport: the Mac pane, or this Mac's mirror pane), not the shared grid, which may be a phone's. The size panel and tab menu seed the same way in `SupermuxTerminalSizingDefaults.userChoseMode` |
 | 810 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the remote-terminal polish into the cmux target, four entries each (build file, file reference, Supermux group child, Sources phase) next to #764's `SupermuxDeviceTerminalUpload.swift`: `Devices/SupermuxDeviceTerminalLinks.swift` (`50BE001B0200000000000001`/`…02`, a Cmd-click on a path in another Mac's terminal), `Devices/SupermuxDeviceTerminalActions.swift` (`…03`/`…04`, forwarded Cmd+K/reset, focus and Ctrl+V of an image) and `SupermuxMobileHost+TerminalActions.swift` (`…05`/`…06`, the host's `terminal.action`) |
 | 811 | `Sources/Workspace+TerminalLinkOpening.swift` | `device-terminal-file-link` | First thing in `deferRemoteTerminalFileLinkOpen`: `SupermuxDeviceTerminalLinks.open(rawValue, panelID:in:)` claims a file path clicked in another Mac's terminal and opens that Mac's file in the mirror's read-only preview (upstream refused it: only SSH terminals resolved a remote path) |
 | 812 | `Sources/DockSplitStore+TerminalLinkOpening.swift` | `device-terminal-file-link` | Adds `deferRemoteTerminalFileLinkOpen` to the Dock's link container (upstream relies on the protocol's `false` default): the same `SupermuxDeviceTerminalLinks.open` for another Mac's terminal moved into the Dock |
@@ -6982,3 +6986,35 @@ Re-apply after an upstream merge:
 Verify: steps R14, R15 and R16 of
 `CMUX_E2E_SUITES="loopback_terminal_sizing_recovery_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`,
 and `loopback_terminal_sizing_policy_e2e` (every mirror report rides the device link's connection).
+
+### 968–971. This Mac's selection, a soft leave and the Fixed seed — `sizing-auto-mac-selection`, `sizing-soft-leave`, `sizing-fixed-seed`
+
+Found while fixing the 2026-10-05 reports (a terminal stuck at the phone's size, and "a lot of sizing bugs like
+this"):
+
+- **An awake phone took every tab the Mac's user switched to** (#968–#969). The phone follows the Mac's
+  selection: its terminal view remounts on the pushed tab and attaches, and attaching is activity, so in Auto the
+  phone took the grid of the terminal the user had just opened on the Mac. The Mac's user selecting a workspace, a
+  tab or a pane (inside `SupermuxLocalUserInput`'s dispatch only) is recorded per panel, and a phone that attaches
+  or starts viewing within 3 s is followed by the Mac pane's activity in `SupermuxTerminalSizingAuto.viewersReported`.
+  A socket, automation or phone selection records nothing. The pane's activity is noted when it counts, or while
+  the Visibility layer still marks it off screen (it decides once the pane shows); never against a hand-set
+  override.
+- **Every Control Center glance resized the terminal twice** (#970). The phone clears its viewport when its scene
+  leaves `.active` and reports again on return; the clear restored the Mac's grid at once and the return capped it
+  again. A clear with `transient: true` (sent by phones for scene-phase leaves) now waits the governor's uncap
+  window, which the return cancels. Older phones send no flag and keep the immediate restore.
+- **Fixed seeded from the shared grid** (#971). Picking Fixed while a phone owned the grid fixed every terminal at
+  the phone's size.
+
+Re-apply after an upstream merge:
+- **#968**: keep the call in the selection's synchronous didChange path, not in the async focus pass after it
+  (that runs outside the user's input dispatch). If upstream adds its own "user selected" signal, use it.
+- **#969**: keep it before `applyTabSelectionNow`'s loop; a call per request is enough.
+- **#970**: if upstream adds its own soft-leave flag or parameter, map `transient` onto it. Keep the default
+  immediate: every other caller is an explicit leave.
+- **#971**: drop if upstream seeds Fixed from the caller's own viewport.
+
+Verify: steps R9, R10 and R17 of
+`CMUX_E2E_SUITES="loopback_terminal_sizing_recovery_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`,
+and `loopback_terminal_sizing_policy_e2e` (its Auto and Fixed steps).

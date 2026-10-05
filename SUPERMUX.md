@@ -370,7 +370,13 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   Return included), another Mac's input and a socket client's text (`cmux send`, an agent's
   automation) delivered to the same terminal never are, so the grid no longer flashes between the
   phone's and the Mac's size on every key. A pane merely coming on screen is no activity either: selecting a
-  workspace on the phone selects it on the Mac too. A phone that returns to a terminal it never left
+  workspace on the phone selects it on the Mac too. The reverse: an awake phone follows the Mac's
+  selection, so a phone that attaches to or starts viewing a terminal within 3 s of this Mac's user
+  selecting it (a workspace, a tab or a pane, by their own input; never a socket or the phone) leaves
+  the Mac pane the owner, and typing on the phone still takes it (#968–#969). A phone's scene-phase
+  leave (Control Center, the app switcher, a lock) clears with `transient: true` and waits the 3 s
+  uncap window, so a glance and return resizes nothing and a lock gives the Mac its grid within 3 s;
+  any other clear restores at once (#970). A phone that returns to a terminal it never left
   (its view only left the window, so it keeps its viewport) flags its next report `view_appeared`,
   which the host counts as starting to view (#881–#883; an older Mac ignores the flag and waits for the
   next input or rotation). Not following: Cloud terminals keep upstream's rules (their host
@@ -393,7 +399,9 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   size event, so two Macs cannot bounce it (until 2026-10-03 every mirror pushed the whole preference
   when shown, on reconnect and on every change, so a Fit Everyone picked once on one Mac became the
   mode of every terminal it mirrored on the other, again after each show, and any small pane shrank
-  them). Fixed keeps its size in the one setting (every terminal of the Mac gets that grid). Cloud
+  them). Fixed keeps its size in the one setting (every terminal of the Mac gets that grid); picked
+  with no size yet (size panel, tab menu, `terminal.size_policy.set mode=fixed`) it fixes this
+  window's own grid, not the shared grid that may be a phone's (#971). Cloud
   terminals, `terminal.size_policy.set` (socket, CLI), a mirror's claim, Size to My Window and the
   counts overrides (Don't Resize from This Mac, a device's own "Counts toward size") stay per
   terminal. A viewing Mac's pane counts up to 500x200 (a phone's, 300x120). A
