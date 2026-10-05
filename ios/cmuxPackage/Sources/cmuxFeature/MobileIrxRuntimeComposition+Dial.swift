@@ -182,14 +182,10 @@ extension MobileIrxRuntimeComposition {
         guard let supervisor = selectedSupervisor, let cache, !cache.authorityRevoked else {
             throw CompositionError.notSignedIn
         }
-        var credentials = Self.credentials(cache)
-        if case .automatic = intent, !credentials.contains(where: { $0.isUsable(at: Date()) }), let control {
-            credentials = try await control.refreshRelayCredentials().map {
-                IrxRelayCredential(relayURL: $0.relayURL, token: $0.token,
-                    expiresAt: Date(timeIntervalSince1970: Double($0.expiresAt)),
-                    refreshAfter: Date(timeIntervalSince1970: Double($0.refreshAfter)))
-            }
-        }
+        // SUPERMUX:begin phone-route-direct-race (an expired relay credential is refreshed in the race's relay leg, beside the direct lane; upstream refreshed it here, before the dial: `var credentials = Self.credentials(cache)`, then `if case .automatic = intent, !credentials.contains(where: { $0.isUsable(at: Date()) }), let control { credentials = try await control.refreshRelayCredentials().map { IrxRelayCredential(…) } }`)
+        let credentials = Self.credentials(cache)
+        let refresh = supermuxCredentialRefresh(intent: intent, authority: authority)
+        // SUPERMUX:end phone-route-direct-race
         try await assertDialAuthority(authority)
         let relay: String?
         var direct: [String]
@@ -220,11 +216,12 @@ extension MobileIrxRuntimeComposition {
         }
         try await assertDialAuthority(authority)
         let address = try supervisor.dialAddress(peerEndpointIDHex: peerHex, relayURL: relay, directAddresses: direct)
-        // SUPERMUX:begin phone-route-direct-race (an automatic dial races the direct lane first; upstream: `let connection = try await supervisor.dial(address: address, credentials: credentials)`)
-        let dialCredentials = credentials
-        let dialed = try await supermuxDial(peerHex: peerHex, record: record, intent: intent, privateAddresses: direct) {
-            try await supervisor.dial(address: address, credentials: dialCredentials)
+        // SUPERMUX:begin phone-route-direct-race (an automatic dial races the direct lane first; its relay leg refreshes an expired relay credential; upstream: `let connection = try await supervisor.dial(address: address, credentials: credentials)`)
+        let relayLeg = Self.supermuxRelayLeg(cached: credentials, refresh: refresh) { fresh in
+            try await supervisor.dial(address: address, credentials: fresh)
         }
+        let dialed = try await supermuxDial(
+            peerHex: peerHex, record: record, intent: intent, privateAddresses: direct, automatic: relayLeg)
         let connection = dialed.connection
         // SUPERMUX:end phone-route-direct-race
         do {

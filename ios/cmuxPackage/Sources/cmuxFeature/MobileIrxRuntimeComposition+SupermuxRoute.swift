@@ -151,6 +151,51 @@ extension MobileIrxRuntimeComposition: SupermuxPhoneRouteRuntime {
         return (result.value, result.lane)
     }
 
+    /// The automatic dial as the race's relay leg: with no usable cached
+    /// relay credential (none during an internet outage; expired after
+    /// 30 min idle) it refreshes them first, inside the leg
+    /// (``SupermuxIrxDirectFirstDial/relayLeg(credentials:dial:)``), so the
+    /// direct lane races at once instead of waiting an HTTPS round trip, and
+    /// a refresh that fails with the internet down fails only the relay leg.
+    /// A leg cancelled while it refreshes (direct won) never dials.
+    /// - Parameters:
+    ///   - cached: The cached credentials.
+    ///   - refresh: Mints fresh ones; nil where the dial may not refresh
+    ///     (the Direct method, no control service).
+    ///   - dial: The automatic endpoint's dial, with the credentials to use.
+    /// - Returns: The leg; nothing runs until it is called.
+    static func supermuxRelayLeg<Value: Sendable>(
+        cached: [IrxRelayCredential],
+        refresh: (@Sendable () async throws -> [IrxRelayCredential])?,
+        dial: @escaping @Sendable ([IrxRelayCredential]) async throws -> Value
+    ) -> @Sendable () async throws -> Value {
+        SupermuxIrxDirectFirstDial.relayLeg(
+            credentials: {
+                guard let refresh, !cached.contains(where: { $0.isUsable(at: Date()) }) else { return cached }
+                return try await refresh()
+            },
+            dial: dial)
+    }
+
+    /// How a dial with `intent` refreshes an expired relay credential:
+    /// through the control service, re-checking `authority` after the
+    /// round trip (as upstream did before its dial). Nil for the Direct
+    /// method and without a control service.
+    func supermuxCredentialRefresh(
+        intent: DialIntent, authority: DialAuthority
+    ) -> (@Sendable () async throws -> [IrxRelayCredential])? {
+        guard case .automatic = intent, let control else { return nil }
+        return {
+            let fresh = try await control.refreshRelayCredentials().map {
+                IrxRelayCredential(relayURL: $0.relayURL, token: $0.token,
+                    expiresAt: Date(timeIntervalSince1970: Double($0.expiresAt)),
+                    refreshAfter: Date(timeIntervalSince1970: Double($0.refreshAfter)))
+            }
+            try await self.assertDialAuthority(authority)
+            return fresh
+        }
+    }
+
     /// The phone's dial race, which is the Mac's (``SupermuxIrxDirectFirstDial``).
     /// `direct` starts at once; `automatic` after 250 ms, or as soon as
     /// `direct` fails. Direct wins whenever it connects within 1.5 s, even
