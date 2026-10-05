@@ -52,8 +52,10 @@ final class DeviceTerminalMirrorSession {
             // SUPERMUX:begin terminal-stream-grid-viewer (a grid re-anchor on a live link keeps input flowing and the pane connected; upstream: `inputRouter.setEnabled(phase == .attached)` and `attachment.update(connected: phase == .attached, connecting: phase == .attaching)`)
             if phase != .attaching { supermuxGridResyncing = false }
             let supermuxLive = phase == .attached || supermuxGridResyncing
-            inputRouter.setEnabled(supermuxLive)
             // SUPERMUX:end terminal-stream-grid-viewer
+            // SUPERMUX:begin device-mirror-reattach-input (typing during a re-attach is held, not dropped; was `inputRouter.setEnabled(supermuxLive)`)
+            supermuxUpdateInput(live: supermuxLive)
+            // SUPERMUX:end device-mirror-reattach-input
             // SUPERMUX:begin terminal-input-pipeline
             supermuxInputPipeline.setEnabled(supermuxLive)
             // SUPERMUX:end terminal-input-pipeline
@@ -67,6 +69,18 @@ final class DeviceTerminalMirrorSession {
     /// changed: the link is up, so typing keeps going to the terminal.
     private var supermuxGridResyncing = false
     // SUPERMUX:end terminal-stream-grid-viewer
+    // SUPERMUX:begin device-mirror-reattach-input
+    /// An attach stuck once: every later attach is a re-attach, which holds
+    /// typing instead of dropping it.
+    private var supermuxHasAttached = false
+    /// The link dropped since the last attach stuck: keys typed while it was
+    /// down go to the terminal only if the re-attach resumes it.
+    private var supermuxLinkLostSinceAttach = false
+    /// Typing waits while the link is down, for at most
+    /// ``SupermuxTerminalInputPipeline/replayWindow``.
+    private var supermuxHoldsWhileDown = false
+    private var supermuxHoldWhileDownExpiry: Task<Void, Never>?
+    // SUPERMUX:end device-mirror-reattach-input
     private(set) var assignedGrid: (columns: Int, rows: Int)?
     var onAttached: (@MainActor () -> Void)?
     /// The reserved pane's early input, held until an attach sticks. Losing
@@ -289,6 +303,10 @@ final class DeviceTerminalMirrorSession {
         // SUPERMUX:begin terminal-stream-viewer
         supermuxStream?.stop()
         // SUPERMUX:end terminal-stream-viewer
+        // SUPERMUX:begin device-mirror-reattach-input
+        supermuxHoldWhileDownExpiry?.cancel()
+        supermuxHoldWhileDownExpiry = nil
+        // SUPERMUX:end device-mirror-reattach-input
         inputRouter.invalidate()
         // SUPERMUX:begin terminal-input-pipeline
         supermuxInputPipeline.invalidate()
@@ -414,6 +432,9 @@ final class DeviceTerminalMirrorSession {
                 linkDropped()
             }
         case .linkReconnected:
+            // SUPERMUX:begin device-mirror-reattach-input (what was typed while the link was down waits for the re-attach's verdict)
+            if supermuxLinkLostSinceAttach { inputRouter.supermuxSetAsideHeldInput() }
+            // SUPERMUX:end device-mirror-reattach-input
             // SUPERMUX:begin terminal-stream-attach-limiter (a hidden mirror waits its turn; upstream: `scheduleAttach()`)
             supermuxAttachAfterReconnect()
             // SUPERMUX:end terminal-stream-attach-limiter
@@ -436,6 +457,9 @@ final class DeviceTerminalMirrorSession {
         supermuxGridResyncing = false
         supermuxStream?.linkLost()
         // SUPERMUX:end terminal-stream-grid-viewer
+        // SUPERMUX:begin device-mirror-reattach-input (typing waits a short while for the link instead of being dropped)
+        if supermuxHasAttached, phase == .attached || phase == .attaching { supermuxHoldWhileDown() }
+        // SUPERMUX:end device-mirror-reattach-input
         adoptedRelay?.discard()
         if phase == .attached || phase == .attaching { phase = .detached }
         // SUPERMUX:begin device-mirror-sizing-claim (the next attach is a reconnect: push the claim again)
@@ -534,6 +558,57 @@ final class DeviceTerminalMirrorSession {
         scheduleAttach()
     }
     // SUPERMUX:end terminal-stream-attach-limiter
+    // SUPERMUX:begin device-mirror-reattach-input
+
+    /// Typing reaches the router's queue unless the mirror can vouch for no
+    /// terminal: attached (or re-anchoring its grid) it goes out at once;
+    /// re-attaching, or briefly without its link, it waits in order and goes
+    /// out once the mirror is attached again (STREAM.md P6). Upstream dropped
+    /// it, so every reconnect, gap or replay retry lost what was typed. The
+    /// first attach, a failed one and a link down for longer than the
+    /// pipeline's replay window still drop it, as upstream does. Held keys
+    /// go through the router once, so the input pipeline's exactly-once
+    /// identity covers them like any other batch.
+    private func supermuxUpdateInput(live: Bool) {
+        let holds: Bool
+        switch phase {
+        case .attaching: holds = supermuxHasAttached
+        case .detached: holds = supermuxHoldsWhileDown
+        case .idle, .attached, .stopped: holds = false
+        }
+        inputRouter.supermuxSetInput(accepting: live || holds, holding: !live && holds)
+    }
+
+    /// The link dropped under an attached mirror: typing waits for it, at
+    /// most ``SupermuxTerminalInputPipeline/replayWindow``, then is dropped
+    /// (keystrokes must not land long after they were typed).
+    private func supermuxHoldWhileDown() {
+        supermuxLinkLostSinceAttach = true
+        supermuxHoldsWhileDown = true
+        supermuxHoldWhileDownExpiry?.cancel()
+        supermuxHoldWhileDownExpiry = Task { [weak self] in
+            try? await Task.sleep(for: SupermuxTerminalInputPipeline.replayWindow)
+            guard let self, !Task.isCancelled else { return }
+            self.supermuxHoldsWhileDown = false
+            if self.phase == .detached { self.supermuxUpdateInput(live: false) }
+        }
+    }
+
+    /// A replay answered this attach. After a lost link, keys typed while it
+    /// was down go to the terminal only when the reply resumed it: the same
+    /// host process continues the same byte stream. A full replay may come
+    /// from a restarted Mac that restored the terminal under the same id
+    /// with a new shell, so they are dropped then. Keys typed since the link
+    /// came back go either way.
+    private func supermuxReplyArrived(resumed: Bool) {
+        if supermuxLinkLostSinceAttach { inputRouter.supermuxSettleHeldInput(deliver: resumed) }
+        supermuxLinkLostSinceAttach = false
+        supermuxHoldsWhileDown = false
+        supermuxHoldWhileDownExpiry?.cancel()
+        supermuxHoldWhileDownExpiry = nil
+        supermuxHasAttached = true
+    }
+    // SUPERMUX:end device-mirror-reattach-input
 
     /// Single-flight replay of the source screen, followed by sequenced live bytes.
     private func scheduleAttach() {
@@ -626,6 +701,9 @@ final class DeviceTerminalMirrorSession {
             // SUPERMUX:begin terminal-stream-viewer
             supermuxStream?.noteReply(supermuxReply)
             // SUPERMUX:end terminal-stream-viewer
+            // SUPERMUX:begin device-mirror-reattach-input
+            supermuxReplyArrived(resumed: replay.supermuxResumed)
+            // SUPERMUX:end device-mirror-reattach-input
             viewportTransitionRetries = 0
             // SUPERMUX:begin device-mirror-replay-timed-out
             supermuxTimedOutRetries = 0

@@ -47,6 +47,15 @@ final class DeviceTerminalInputRouter: @unchecked Sendable {
     /// one-at-a-time way below.
     private let pipelined: (@Sendable (SupermuxTerminalInputBatch) async -> Bool)?
     // SUPERMUX:end terminal-input-pipeline
+    // SUPERMUX:begin device-mirror-reattach-input
+    /// Set while the mirror re-attaches, or its link is briefly down: keys
+    /// stay in `pending`, in order, and go out once it is attached again.
+    private var supermuxHolding = false
+    /// Keys held while the link was down, set apart once it is back: the
+    /// mirror sends them only when its re-attach proves the terminal is the
+    /// one they were typed for (``supermuxSettleHeldInput(deliver:)``).
+    private var supermuxHeldWhileDown = SupermuxTerminalInputBatch()
+    // SUPERMUX:end device-mirror-reattach-input
     // SUPERMUX:begin device-mirror-input-batch
 
     convenience init(
@@ -90,7 +99,9 @@ final class DeviceTerminalInputRouter: @unchecked Sendable {
                 return
             }
     // SUPERMUX:end device-mirror-input-batch
-            guard !draining else { return }
+            // SUPERMUX:begin device-mirror-reattach-input (held keys wait for the attach; upstream: `guard !draining else { return }`)
+            guard !draining, !supermuxHolding else { return }
+            // SUPERMUX:end device-mirror-reattach-input
             draining = true
             drainTask = Task { await self.drain() }
         }
@@ -115,11 +126,73 @@ final class DeviceTerminalInputRouter: @unchecked Sendable {
             drainTask = nil
         }
     }
+    // SUPERMUX:begin device-mirror-reattach-input
+
+    /// Whether keys are taken at all (`accepting`; not taken, they are
+    /// dropped, as upstream's `setEnabled(false)` drops them) and, taken,
+    /// whether they wait (`holding`) instead of going out. Releasing a hold
+    /// sends what it kept, in order.
+    func supermuxSetInput(accepting: Bool, holding: Bool) {
+        queue.async { [self] in
+            enabled = accepting
+            supermuxHolding = accepting && holding
+            guard accepting else {
+                #if DEBUG
+                for _ in 0..<(pending.items.count + supermuxHeldWhileDown.items.count) {
+                    SupermuxTerminalInputDebug.inputDroppedWhileDetached()
+                }
+                #endif
+                pending.removeAll()
+                supermuxHeldWhileDown.removeAll()
+                drainTask?.cancel()
+                return
+            }
+            guard !supermuxHolding, !invalidated, !pending.isEmpty, !draining else { return }
+            draining = true
+            drainTask = Task { await self.drain() }
+        }
+    }
+
+    /// The link is back: the keys held so far were typed while it was down.
+    func supermuxSetAsideHeldInput() {
+        queue.async { [self] in
+            for item in pending.items where !supermuxHeldWhileDown.append(item) {
+                onFailure(InputError.queueFull)
+                break
+            }
+            pending.removeAll()
+        }
+    }
+
+    /// The re-attach after a lost link is answered: the keys set aside while
+    /// the link was down go before the ones typed since (`deliver`), or are
+    /// dropped.
+    func supermuxSettleHeldInput(deliver: Bool) {
+        queue.async { [self] in
+            defer { supermuxHeldWhileDown.removeAll() }
+            guard deliver else {
+                #if DEBUG
+                for _ in supermuxHeldWhileDown.items { SupermuxTerminalInputDebug.inputDroppedWhileDetached() }
+                #endif
+                return
+            }
+            guard !supermuxHeldWhileDown.isEmpty else { return }
+            var merged = supermuxHeldWhileDown
+            for item in pending.items where !merged.append(item) {
+                onFailure(InputError.queueFull)
+                break
+            }
+            pending = merged
+        }
+    }
+    // SUPERMUX:end device-mirror-reattach-input
 
     // SUPERMUX:begin device-mirror-input-batch
     private func takePending() -> SupermuxTerminalInputBatch? {
         queue.sync {
-            guard !invalidated, enabled, !pending.isEmpty else {
+            // SUPERMUX:begin device-mirror-reattach-input (upstream: `guard !invalidated, enabled, !pending.isEmpty else {`)
+            guard !invalidated, enabled, !supermuxHolding, !pending.isEmpty else {
+            // SUPERMUX:end device-mirror-reattach-input
                 draining = false
                 drainTask = nil
                 return nil
