@@ -37,7 +37,7 @@ public struct SupermuxProjectsMacHeader: Equatable, Sendable {
         self.customColor = mac.customColor
         self.status = mac.status
         self.isForeground = mac.isForeground
-        self.route = route
+        self.route = mac.status == .connected ? route : nil
     }
 }
 

@@ -2,9 +2,12 @@ import SupermuxMobileKit
 import SwiftUI
 
 /// The label over one Mac's projects when several Macs have projects: the
-/// Mac's color, its name, and — only when its link is not healthy — a short
-/// status. Styled like a grouped-list section header (a quiet caption that
-/// labels the rows below it), a notch below the section's own "PROJECTS".
+/// Mac's color, its name, and a short status: the route the phone's session
+/// uses while connected (`Direct · LAN · 6 ms`, tinted orange through a
+/// relay), else the link's trouble. Styled like a grouped-list section
+/// header (a quiet caption that labels the rows below it), a notch below the
+/// section's own "PROJECTS". The iPhone's merged list shows the same line
+/// per Mac under PROJECTS.
 struct SupermuxProjectsMacHeaderRow: View {
     let header: SupermuxProjectsMacHeader
 
@@ -19,7 +22,13 @@ struct SupermuxProjectsMacHeaderRow: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
-            if let status = statusText {
+            if let route = header.route {
+                Text(SupermuxLinkRouteCaption.text(for: route))
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(SupermuxLinkRouteCaption.isWarning(route)
+                        ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.tertiary))
+                    .lineLimit(1)
+            } else if let status = statusText {
                 Text(status)
                     .font(.caption2)
                     .foregroundStyle(.tertiary)

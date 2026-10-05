@@ -217,7 +217,7 @@ public final class SupermuxProjectsSectionModel {
             )
         }
         return SupermuxProjectsMacGroupSnapshot(
-            header: SupermuxProjectsMacHeader(mac: session.mac),
+            header: SupermuxProjectsMacHeader(mac: session.mac, route: routesByPairingID[session.pairingID]),
             hasLoaded: store.hasLoaded,
             rows: rows,
             showsPresets: store.showsPresets,
@@ -232,7 +232,10 @@ public final class SupermuxProjectsSectionModel {
     /// Feeds each Mac's route into the section's headers. Called from the
     /// driver's event handlers, never a view body.
     /// - Parameter routes: The routes by pairing id.
-    public func updateRoutes(_ routes: [String: SupermuxLinkRoute]) {}
+    public func updateRoutes(_ routes: [String: SupermuxLinkRoute]) {
+        guard routes != routesByPairingID else { return }
+        routesByPairingID = routes
+    }
 
     // MARK: Workspaces
 

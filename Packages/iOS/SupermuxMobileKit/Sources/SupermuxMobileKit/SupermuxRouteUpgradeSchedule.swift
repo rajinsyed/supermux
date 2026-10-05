@@ -45,11 +45,14 @@ public struct SupermuxRouteUpgradeSchedule: Equatable, Sendable {
     ///   - hasCandidates: Whether the Mac's direct addresses are known.
     ///   - now: The current time.
     public func probeDue(onRelay: Bool, hasCandidates: Bool, now: Date) -> Bool {
-        false
+        guard onRelay, hasCandidates, !isProbing else { return false }
+        return nextProbeAt.map { now >= $0 } ?? true
     }
 
     /// A probe started.
-    public mutating func probeStarted() {}
+    public mutating func probeStarted() {
+        isProbing = true
+    }
 
     /// A probe finished.
     /// - Parameters:
@@ -58,7 +61,28 @@ public struct SupermuxRouteUpgradeSchedule: Equatable, Sendable {
     ///   - jitter: A number in -1...1 that spreads the next interval.
     /// - Returns: Whether to move the session now (one planned redial).
     public mutating func probeFinished(succeeded: Bool, now: Date, jitter: Double) -> Bool {
-        false
+        isProbing = false
+        guard succeeded else {
+            consecutiveFailures += 1
+            let interval = consecutiveFailures >= Self.failuresBeforeSlowing ? Self.slowProbeInterval : Self.probeInterval
+            let spread = 1 + Self.jitterFraction * min(1, max(-1, jitter))
+            nextProbeAt = now.addingTimeInterval(interval * spread)
+            return false
+        }
+        consecutiveFailures = 0
+        if let holdEnd, now < holdEnd {
+            nextProbeAt = holdEnd
+            return false
+        }
+        lastSwitchAt = now
+        nextProbeAt = now.addingTimeInterval(Self.probeInterval)
+        return true
+    }
+
+    /// The end of the current hold on moves: after the last move, and after
+    /// the last fallback.
+    private var holdEnd: Date? {
+        [lastSwitchAt, lastFallbackAt].compactMap { $0 }.max()?.addingTimeInterval(Self.switchHold)
     }
 
     /// A session to the Mac was admitted.
@@ -67,11 +91,27 @@ public struct SupermuxRouteUpgradeSchedule: Equatable, Sendable {
     ///   - directTried: Whether its dial raced the direct lane (and lost,
     ///     when `direct` is false).
     ///   - now: The current time.
-    public mutating func sessionAdmitted(direct: Bool, directTried: Bool, now: Date) {}
+    public mutating func sessionAdmitted(direct: Bool, directTried: Bool, now: Date) {
+        if direct {
+            consecutiveFailures = 0
+            nextProbeAt = nil
+        } else {
+            if lastAdmittedDirect == true { lastFallbackAt = now }
+            // The dial just tried the direct lane and lost: give it one interval.
+            if directTried { nextProbeAt = now.addingTimeInterval(Self.probeInterval) }
+        }
+        lastAdmittedDirect = direct
+    }
 
     /// The phone's network changed: probe at once, at the normal pace.
-    public mutating func networkChanged() {}
+    public mutating func networkChanged() {
+        consecutiveFailures = 0
+        nextProbeAt = nil
+        lastFallbackAt = nil
+    }
 
     /// The Mac handed over new direct addresses: probe at once.
-    public mutating func candidatesChanged() {}
+    public mutating func candidatesChanged() {
+        nextProbeAt = nil
+    }
 }

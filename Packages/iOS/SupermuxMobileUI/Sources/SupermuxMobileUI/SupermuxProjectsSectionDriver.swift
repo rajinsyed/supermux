@@ -1,4 +1,5 @@
 public import CmuxMobileShellModel
+import SupermuxMobileCore
 public import SupermuxMobileKit
 public import SwiftUI
 
@@ -66,6 +67,10 @@ private struct SupermuxProjectsSectionDriver: ViewModifier {
     #if DEBUG
     @Environment(\.supermuxProjectsPreviewMacs) private var previewMacs
     #endif
+    /// The phone's per-Mac routes, injected at the app's composition root;
+    /// absent in previews and on the Mac.
+    @Environment(SupermuxPhoneRouteModel.self) private var routes: SupermuxPhoneRouteModel?
+    @Environment(\.scenePhase) private var scenePhase
 
     func body(content: Content) -> some View {
         let runnable = seams.filter { $0.status != .unavailable }
@@ -106,10 +111,23 @@ private struct SupermuxProjectsSectionDriver: ViewModifier {
         }
         let selectWorkspace = selectWorkspace
         let resolveWorkspace = resolveWorkspace
+        let routes = routes
+        let routeMacs = seams.filter { $0.status == .connected }.map(SupermuxPhoneRouteMac.init(seam:))
+        let routeKey = SupermuxRouteTaskKey(
+            macs: Set(routeMacs.map(\.identity)), isActive: scenePhase == .active)
         return content
             .task(id: sessionKeys) {
                 model.updateMacs(macs)
                 await runSessions()
+            }
+            // Routes are sampled only while the app is active and the list is
+            // mounted; the captions are on this list.
+            .task(id: routeKey) {
+                guard let routes, routeKey.isActive else { return }
+                await routes.run(macs: routeMacs)
+            }
+            .onChange(of: routes?.routes ?? [:], initial: true) { _, routes in
+                model.updateRoutes(routes)
             }
             // Names, colors, status and order change without restarting sessions.
             .onChange(of: macs, initial: true) { _, macs in
@@ -148,6 +166,13 @@ private struct SupermuxProjectsSectionDriver: ViewModifier {
             // the stable wrapper above the `List`, never inside a lazy row.
             .modifier(SupermuxProjectsSectionNavigation(model: model))
     }
+}
+
+/// What restarts the route model's sampling: the connected Macs' connections
+/// and whether the app is active.
+private struct SupermuxRouteTaskKey: Hashable {
+    let macs: Set<SupermuxPhoneRouteMac.Identity>
+    let isActive: Bool
 }
 
 /// Hashable identity for one Mac's connection session: the pairing, the RPC

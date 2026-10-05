@@ -51,6 +51,129 @@ public struct SupermuxDialRace: Sendable {
         fallback: (@Sendable () async throws -> Value)?,
         discard: @escaping @Sendable (Value) async -> Void
     ) async throws -> (value: Value, lane: SupermuxDialLane) {
-        throw Failure.directTimedOut
+        let referee = SupermuxDialRaceReferee<Value>(fallback: fallback, discard: discard)
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                Task {
+                    await referee.start(
+                        continuation, direct: direct, headStart: headStart, directDeadline: directDeadline)
+                }
+            }
+        } onCancel: {
+            Task { await referee.cancel() }
+        }
+    }
+}
+
+/// Decides one ``SupermuxDialRace``. The legs run as unstructured tasks so
+/// the race returns as soon as it is decided; a leg that finishes later is
+/// discarded here.
+private actor SupermuxDialRaceReferee<Value: Sendable> {
+    private enum Leg {
+        case notStarted, running, failed(any Error)
+    }
+
+    private let fallbackDial: (@Sendable () async throws -> Value)?
+    private let discard: @Sendable (Value) async -> Void
+    private var continuation: CheckedContinuation<(value: Value, lane: SupermuxDialLane), any Error>?
+    private var decided = false
+    private var directLeg = Leg.notStarted
+    private var fallbackLeg = Leg.notStarted
+    private var tasks: [Task<Void, Never>] = []
+
+    init(fallback: (@Sendable () async throws -> Value)?, discard: @escaping @Sendable (Value) async -> Void) {
+        fallbackDial = fallback
+        self.discard = discard
+    }
+
+    func start(
+        _ continuation: CheckedContinuation<(value: Value, lane: SupermuxDialLane), any Error>,
+        direct: @escaping @Sendable () async throws -> Value,
+        headStart: Duration,
+        directDeadline: Duration
+    ) {
+        guard !decided else {
+            continuation.resume(throwing: CancellationError())
+            return
+        }
+        self.continuation = continuation
+        directLeg = .running
+        tasks.append(Task {
+            do {
+                let value = try await direct()
+                await self.succeeded(value, lane: .direct)
+            } catch {
+                await self.directFailed(error)
+            }
+        })
+        tasks.append(Task {
+            try? await Task.sleep(for: directDeadline)
+            guard !Task.isCancelled else { return }
+            await self.directFailed(SupermuxDialRace.Failure.directTimedOut)
+        })
+        if fallbackDial != nil {
+            tasks.append(Task {
+                try? await Task.sleep(for: headStart)
+                guard !Task.isCancelled else { return }
+                await self.startFallback()
+            })
+        }
+    }
+
+    func cancel() {
+        finish(.failure(CancellationError()))
+    }
+
+    private func startFallback() {
+        guard !decided, case .notStarted = fallbackLeg, let fallbackDial else { return }
+        fallbackLeg = .running
+        tasks.append(Task {
+            do {
+                let value = try await fallbackDial()
+                await self.succeeded(value, lane: .automatic)
+            } catch {
+                await self.fallbackFailed(error)
+            }
+        })
+    }
+
+    private func succeeded(_ value: Value, lane: SupermuxDialLane) async {
+        guard !decided else {
+            await discard(value)
+            return
+        }
+        finish(.success((value, lane)))
+    }
+
+    private func directFailed(_ error: any Error) {
+        guard !decided, case .running = directLeg else { return }
+        directLeg = .failed(error)
+        switch fallbackLeg {
+        case .notStarted where fallbackDial != nil:
+            startFallback()
+        case .notStarted:
+            finish(.failure(error))
+        case let .failed(fallbackError):
+            finish(.failure(fallbackError))
+        case .running:
+            break
+        }
+    }
+
+    private func fallbackFailed(_ error: any Error) {
+        guard !decided else { return }
+        fallbackLeg = .failed(error)
+        if case .failed = directLeg { finish(.failure(error)) }
+    }
+
+    private func finish(_ result: Result<(value: Value, lane: SupermuxDialLane), any Error>) {
+        guard !decided else { return }
+        decided = true
+        // The losing leg is cancelled; if it still produces a connection,
+        // `succeeded` discards it.
+        for task in tasks { task.cancel() }
+        tasks.removeAll()
+        continuation?.resume(with: result)
+        continuation = nil
     }
 }
