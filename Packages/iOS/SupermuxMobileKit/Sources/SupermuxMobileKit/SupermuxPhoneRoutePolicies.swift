@@ -14,9 +14,10 @@ public import SupermuxMobileCore
 ///   and ``admissionFailed(for:lane:)`` report back.
 /// - **Sessions.** ``sessionAdmitted(for:sessionID:lane:at:jitter:)`` starts
 ///   following an automatic session. ``observe(_:sessionID:sample:hasCandidates:at:)``,
-///   about every 2 s, stops following it once the engine no longer has it and
-///   says when to probe the direct lane or check that a direct session still
-///   answers. A direct-lane session has no relay path, so it is checked even
+///   about every 2 s, stops following it once the engine, having had it, no
+///   longer does (an admission comes before the engine adopts the session),
+///   and says when to probe the direct lane or check that a direct session
+///   still answers. A direct-lane session has no relay path, so it is checked even
 ///   while iroh reports no selected path.
 /// - **Network.** ``networkSettled(on:at:)`` tells a real network change
 ///   (the phone's interfaces or addresses differ) from a foreground or a path
@@ -68,6 +69,8 @@ public struct SupermuxPhoneRoutePolicies: Sendable {
     private var policies: [String: SupermuxRouteSwitchPolicy] = [:]
     /// The admitted session each followed Mac's policy is about.
     private var sessions: [String: String] = [:]
+    /// Followed Macs whose admitted session the engine has had.
+    private var adopted: Set<String> = []
     /// The lane each followed Mac's admitted session went out on.
     public private(set) var lanes: [String: SupermuxDialLane] = [:]
     private var interfaces: Set<SupermuxLocalInterface>?
@@ -108,6 +111,7 @@ public struct SupermuxPhoneRoutePolicies: Sendable {
             return
         }
         sessions[mac] = sessionID
+        adopted.remove(mac)
         lanes[mac] = lane
         update(mac) { $0.sessionStarted(at: now, jitter: jitter) }
     }
@@ -135,11 +139,14 @@ public struct SupermuxPhoneRoutePolicies: Sendable {
     ) -> Step {
         guard let followed = sessions[mac] else { return .none }
         guard let sessionID else {
-            sessionEnded(mac)
+            // Before the engine adopts the admitted session it has none.
+            if adopted.contains(mac) { sessionEnded(mac) }
             return .none
         }
         // A newer session is being admitted; its admission restarts the policy.
-        guard sessionID == followed, let path = path(of: mac, sample: sample) else { return .none }
+        guard sessionID == followed else { return .none }
+        adopted.insert(mac)
+        guard let path = path(of: mac, sample: sample) else { return .none }
         return update(mac) { policy in
             let number = policy.session
             switch policy.observe(path, hasCandidates: hasCandidates, at: now) {
@@ -209,6 +216,7 @@ public struct SupermuxPhoneRoutePolicies: Sendable {
     public mutating func reset() {
         policies = [:]
         sessions = [:]
+        adopted = []
         lanes = [:]
     }
 
@@ -238,6 +246,7 @@ public struct SupermuxPhoneRoutePolicies: Sendable {
 
     private mutating func sessionEnded(_ mac: String) {
         sessions[mac] = nil
+        adopted.remove(mac)
         lanes[mac] = nil
         policies[mac]?.sessionEnded()
     }
