@@ -222,6 +222,12 @@ public final class MobileHostConnectionEventQueue: @unchecked Sendable {
     /// were dropped (the viewer resumes it from its byte position).
     public private(set) var supermuxWatchedByteResyncCount = 0
     // SUPERMUX:end terminal-stream-watch
+    // SUPERMUX:begin terminal-stream-fair-queue
+    /// How long a hidden terminal's oldest queued bytes may wait before it pauses.
+    var supermuxBackgroundByteMaximumAge: Duration = .seconds(8)
+    /// Times a hidden terminal fell that far behind and paused.
+    public private(set) var supermuxWatchedBytePauseCount = 0
+    // SUPERMUX:end terminal-stream-fair-queue
     // SUPERMUX:begin terminal-stream-byte-demand
     /// The watched terminals this connection has off screen
     /// (`background_surface_ids`), reported with the rest of its ask to
