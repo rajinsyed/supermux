@@ -412,6 +412,9 @@ final class DeviceTerminalMirrorSession {
                 // re-anchor on a fresh replay instead of rendering a hole.
                 // SUPERMUX:begin terminal-stream-viewer (a streaming host resumes from `expected` instead)
                 supermuxStream?.noteGap()
+                #if DEBUG
+                cmuxDebugLog("supermux.terminal.mirror gap surface=\(remoteSurfaceID.uuidString.prefix(8)) seq=\(sequence) expected=\(expected)")
+                #endif
                 // SUPERMUX:end terminal-stream-viewer
                 scheduleAttach()
                 return
@@ -527,6 +530,9 @@ final class DeviceTerminalMirrorSession {
     /// position, as a re-attach's held bytes are.
     private func supermuxRecaptureLive() {
         guard phase == .attached else { return }
+        #if DEBUG
+        cmuxDebugLog("supermux.terminal.mirror recapture surface=\(remoteSurfaceID.uuidString.prefix(8))")
+        #endif
         supermuxLiveRecapture = true
         attachingBytes.removeAll(keepingCapacity: true)
         attachingByteCount = 0

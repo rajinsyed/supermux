@@ -1179,18 +1179,28 @@ class DegradedLinkE2E:
         typed: List[Tuple[str, float]] = []
         echoed_at: List[float] = []
         connecting_samples = 0
+        received_bytes: List[Tuple[float, int]] = []
+        deep_source = self.sources["deep"]["surface_id"]
+
+        def poll() -> None:
+            count = sum(1 for line in self.deep_echo_text().splitlines() if line.strip().startswith("DK:"))
+            echoed_at.extend([time.monotonic()] * max(0, count - len(echoed_at)))
+            stats = self.sock.call("supermux.devices.terminal_stream.stats", {"machine": self.machine}) or {}
+            by_surface = {up(k): v for k, v in (stats.get("bytes_received_by_surface") or {}).items()}
+            received = int(by_surface.get(deep_source, 0))
+            if not received_bytes or received_bytes[-1][1] != received:
+                received_bytes.append((round(time.monotonic() - shown_at, 2), received))
+
         for key in D7_KEYS:
             typed.append((key, time.monotonic()))
             self.sock.call("debug.shortcut.simulate", {"combo": key})
             deadline = time.monotonic() + 0.3
             while time.monotonic() < deadline:
-                count = sum(1 for line in self.deep_echo_text().splitlines() if line.strip().startswith("DK:"))
-                echoed_at.extend([time.monotonic()] * max(0, count - len(echoed_at)))
+                poll()
                 time.sleep(0.03)
         wait_until = time.monotonic() + 15
         while len(echoed_at) < len(D7_KEYS) and time.monotonic() < wait_until:
-            count = sum(1 for line in self.deep_echo_text().splitlines() if line.strip().startswith("DK:"))
-            echoed_at.extend([time.monotonic()] * max(0, count - len(echoed_at)))
+            poll()
             if self.pane_states()["deep"].get("connecting"):
                 connecting_samples += 1
             time.sleep(0.05)
@@ -1209,7 +1219,8 @@ class DegradedLinkE2E:
                   "echo_ms": [ms(e) for e in echoes], "echo_p95_ms": ms(percentile(echoes, 0.95)),
                   "history_after_typing_s": None if history_after is None else round(history_after, 1),
                   "shown_for_s": round(time.monotonic() - shown_at, 1), "connecting_samples": connecting_samples}
-        self.facts["d7"] = result
+        self.facts["d7"] = {**result, "bytes_received_after_show": received_bytes[:80],
+                            "typed_after_show_s": [round(at - shown_at, 2) for _, at in typed]}
         problems = []
         if received != D7_KEYS:
             problems.append(f"the program received {received!r}")
@@ -1229,11 +1240,17 @@ class DegradedLinkE2E:
         self.setup_deep()
         self.deep_comes_back_shallow()
         self.deep_focused()
+        # Showing it may resize its terminal on the host (this Mac's pane counts
+        # again), which re-anchors it: let that settle so the drop's re-attach
+        # can resume. A key keeps the owed history waiting (3 s without typing).
+        time.sleep(2.5)
         self.sock.call("debug.shortcut.simulate", {"combo": "z"})
         time.sleep(0.5)
+        if self.deep_has_history():
+            raise Failure("the owed history came before the drop (harness problem)")
+        before = self.stream_stats().get(self.mirrors["deep"]["panel_id"], {})
         dropped = self.impairment(drop_now_s=D7B_DROP_S, drop_cuts=True)
         drop_started = time.monotonic()
-        before = self.stream_stats().get(self.mirrors["deep"]["panel_id"], {})
         reattached = self.wait_reattached("deep", 60)
         history_after: Optional[float] = None
         while time.monotonic() - drop_started < D7_HISTORY_WAIT_S:
@@ -1252,6 +1269,8 @@ class DegradedLinkE2E:
             raise Failure(f"the drop cut no connection (harness problem): {result}")
         if history_after is None:
             raise Failure(f"the owed history never arrived after the drop: {result}")
+        if result["resumes"] < 1:
+            raise Failure(f"the re-attach after the drop did not resume, so it proves nothing (harness problem): {result}")
         return result
 
     def pane_states(self) -> Dict[str, Dict[str, Any]]:
