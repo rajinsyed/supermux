@@ -258,7 +258,7 @@ enum SupermuxTerminalSizingRecoveryDrivers {
         }
         open(connectionID, clientID: clientID)
         let delivered = await MobileHostIrxTerminalLaneServer.debugDeliverInput(
-            text: text, surfaceID: target.surfaceID, controlConnectionID: connectionID
+            text: text, surfaceID: target.surface.id, controlConnectionID: connectionID
         )
         return [
             "surface_id": target.surfaceID.uuidString, "client_id": clientID,
