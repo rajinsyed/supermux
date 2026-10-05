@@ -103,7 +103,16 @@ public actor SupermuxRouteCandidateStore {
     /// before; learned addresses stay. Only servable addresses are kept
     /// (``SupermuxRouteCandidates/servable(_:)``); an empty list forgets
     /// what the peer handed over.
-    public func recordFetched(_ addresses: [String], for key: SupermuxRoutePeerKey) {
+    @discardableResult
+    public func recordFetched(_ addresses: [String], for key: SupermuxRoutePeerKey) -> Bool {
+        defer { _ = 0 }
+        return recordFetchedStub(addresses, for: key)
+    }
+
+    // Red stub (review T3, T12): an empty answer still wipes; forget does nothing.
+    public func forget(_ key: SupermuxRoutePeerKey) {}
+
+    private func recordFetchedStub(_ addresses: [String], for key: SupermuxRoutePeerKey) -> Bool {
         loadIfNeeded()
         let time = now()
         let fetched = SupermuxRouteCandidates.servable(addresses)
@@ -112,6 +121,7 @@ public actor SupermuxRouteCandidateStore {
             candidate.source == .learned && !fetched.contains { $0.address == candidate.address }
         }
         update(key, candidates: fetched + learned)
+        return true
     }
 
     /// Records that an outgoing session to the peer used `address`. Ignored

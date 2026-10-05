@@ -16,13 +16,16 @@ import Testing
 /// 4. A stale LAN address after a DHCP change, a fixed port that fell back to
 ///    an ephemeral one, or a rotated IPv6 temporary address kept beside the
 ///    new one: a fetch must replace what the peer handed over before.
-/// 5. An empty answer (a relay-only peer) keeping the old addresses.
+/// 5. (Review T3) An empty answer (a host before its first network report,
+///    1–3 s after it bound) wiping the addresses the peer handed over before;
+///    a host that turned direct off (relay-only) leaving them dialable.
 /// 6. A re-enrolled peer (new endpoint id) or a peer looked up under another
 ///    device or tag getting the old addresses; a revoked peer's addresses
 ///    kept forever instead of aging out after 7 days.
 /// 7. Learned addresses (an outgoing session's selected direct path): lost
-///    on the next fetch, kept forever unused, accepted when not dialable, or
-///    rewriting the file on every 2 s sample.
+///    on the next fetch, kept forever unused, accepted when not dialable or
+///    not servable (review T10b: a public IPv4 NAT mapping a cold dial cannot
+///    use), or rewriting the file on every 2 s sample.
 /// 8. Persistence: lost on restart, or a corrupt file crashing the app
 ///    instead of reading as an empty cache.
 /// 9. Device and endpoint ids compared case-sensitively.
@@ -94,10 +97,21 @@ import Testing
         ])
     }
 
-    @Test func anEmptyFetchClearsThePeer() async {
+    @Test func anEmptyFetchKeepsWhatThePeerHandedOver() async {
+        let store = store()
+        #expect(await store.recordFetched(["192.168.1.20:58465"], for: key))
+        let stored = await store.recordFetched([], for: key)
+        #expect(!stored, "an empty answer is not authoritative")
+        #expect(await store.dialAddresses(for: key) == ["192.168.1.20:58465"])
+        #expect(await !store.recordFetched(["127.0.0.1:58465"], for: key), "nothing servable is empty too")
+        #expect(await store.dialAddresses(for: key) == ["192.168.1.20:58465"])
+    }
+
+    @Test func aPeerThatTurnedDirectOffIsForgotten() async {
         let store = store()
         await store.recordFetched(["192.168.1.20:58465"], for: key)
-        await store.recordFetched([], for: key)
+        await store.learn("100.69.64.102:58465", for: key)
+        await store.forget(key)
         #expect(await store.dialAddresses(for: key).isEmpty)
         #expect(await store.peers().isEmpty)
     }
@@ -133,16 +147,17 @@ import Testing
 
     @Test func learnedAddressesSurviveAFetchAndFollowFetchedOnes() async {
         let store = store()
-        await store.learn("203.0.113.7:58465", for: key)
+        await store.learn("100.69.64.102:58465", for: key)
         await store.recordFetched(["192.168.1.20:58465"], for: key)
-        #expect(await store.dialAddresses(for: key) == ["192.168.1.20:58465", "203.0.113.7:58465"])
+        #expect(await store.dialAddresses(for: key) == ["192.168.1.20:58465", "100.69.64.102:58465"])
         await store.learn("192.168.1.20:58465", for: key)
-        #expect(await store.dialAddresses(for: key) == ["192.168.1.20:58465", "203.0.113.7:58465"])
+        #expect(await store.dialAddresses(for: key) == ["192.168.1.20:58465", "100.69.64.102:58465"])
     }
 
-    @Test func undialableAddressesAreNotLearned() async {
+    @Test func undialableAndUnservableAddressesAreNotLearned() async {
         let store = store()
-        for address in ["127.0.0.1:58465", "[fe80::1%en0]:58465", "0.0.0.0:1", "nonsense", "https://apne1.relay.cmux.dev/"] {
+        for address in ["127.0.0.1:58465", "[fe80::1%en0]:58465", "0.0.0.0:1", "nonsense", "https://apne1.relay.cmux.dev/",
+                        "203.0.113.7:58465", "100.64.0.1:58465"] {
             await store.learn(address, for: key)
         }
         #expect(await store.peers().isEmpty)
@@ -151,25 +166,25 @@ import Testing
     @Test func aLearnedAddressInUseStaysAndAnUnusedOneAgesOut() async {
         let clock = Clock()
         let store = store(clock: clock)
-        await store.learn("203.0.113.7:58465", for: key)
-        await store.learn("198.51.100.9:58465", for: key)
+        await store.learn("100.69.64.102:58465", for: key)
+        await store.learn("192.168.1.30:58465", for: key)
         for _ in 0..<8 {
             clock.advance(Self.day)
-            await store.learn("203.0.113.7:58465", for: key)
+            await store.learn("100.69.64.102:58465", for: key)
         }
-        #expect(await store.dialAddresses(for: key) == ["203.0.113.7:58465"])
+        #expect(await store.dialAddresses(for: key) == ["100.69.64.102:58465"])
     }
 
     @Test func learningEveryFewSecondsDoesNotRewriteTheFile() async throws {
         let file = temporaryFile()
         let clock = Clock()
         let store = store(file, clock: clock)
-        await store.learn("203.0.113.7:58465", for: key)
+        await store.learn("100.69.64.102:58465", for: key)
         let first = try FileManager.default.attributesOfItem(atPath: file.path)[.modificationDate] as? Date
         let firstData = try Data(contentsOf: file)
         for _ in 0..<30 {
             clock.advance(2)
-            await store.learn("203.0.113.7:58465", for: key)
+            await store.learn("100.69.64.102:58465", for: key)
         }
         #expect(try Data(contentsOf: file) == firstData)
         #expect(try FileManager.default.attributesOfItem(atPath: file.path)[.modificationDate] as? Date == first)
