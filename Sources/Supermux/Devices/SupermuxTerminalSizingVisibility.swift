@@ -109,6 +109,11 @@ final class SupermuxTerminalSizingVisibility {
         mirrors.compactMapValues(\.session)
     }
 
+    /// The live device mirror shown in the local surface `surfaceID`.
+    func mirrorSession(for surfaceID: UUID) -> DeviceTerminalMirrorSession? {
+        mirrors[surfaceID]?.session
+    }
+
     /// Another live pane of `session`'s terminal on the same link (client id),
     /// on screen when `shown`: the pane that takes over speaking for this Mac
     /// when `session`'s pane goes off screen or closes.
@@ -197,11 +202,15 @@ final class SupermuxTerminalSizingVisibility {
         Task { @MainActor [weak self] in self?.refresh(surfaceID: surfaceID) }
     }
 
-    /// Input on a Mac pane. A pane marked off screen evidently is not: look
-    /// again. A set lookup otherwise, as this runs on every keystroke.
+    /// Input on a Mac pane, a mirror's included. A pane marked off screen
+    /// evidently is not: look again. Two lookups otherwise, as this runs on
+    /// every keystroke.
     func macPaneInput(_ surfaceID: UUID) {
-        guard hiddenHosts.contains(surfaceID) else { return }
-        refreshHost(surfaceID)
+        if hiddenHosts.contains(surfaceID) {
+            refreshHost(surfaceID)
+        } else if mirrors[surfaceID]?.session?.supermuxHidden == true {
+            refreshMirror(surfaceID)
+        }
     }
 
     /// A pane's grid changed. A pane shown for the first time gets its real

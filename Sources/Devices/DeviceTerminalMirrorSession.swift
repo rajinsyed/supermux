@@ -914,6 +914,34 @@ final class DeviceTerminalMirrorSession {
         supermuxHostHoldsHiddenCounts = false
     }
     // SUPERMUX:end device-mirror-hidden-counts
+    // SUPERMUX:begin device-mirror-size-to-me
+
+    /// Whether the other Mac's terminal is sized by this mirror now.
+    var supermuxOwnsGrid: Bool {
+        guard let viewer, let id = viewer.selfParticipantID else { return false }
+        return viewer.state?.owners.contains(id) == true
+    }
+
+    /// This Mac's user wants the other Mac's grid here (Size to My Window,
+    /// or the app becoming active with this mirror focused): this pane
+    /// speaks for this Mac and reports its grid with `view_appeared: true`,
+    /// which the other Mac notes as this viewer's activity in every mode
+    /// (SupermuxTerminalSizingAuto), so a Fit everyone to Auto change sent
+    /// just before it cannot race it. An older Mac ignores the key. Sent
+    /// during a replay too (the link is up; the other Mac's grid change
+    /// re-anchors this mirror right after the grid moves to someone else);
+    /// not while detached, off screen or between connections.
+    private func supermuxClaimGrid() {
+        guard phase == .attached || phase == .attaching, isConnected(),
+              !supermuxHidden, viewer?.detachment == nil else { return }
+        let generations = SupermuxDeviceViewportGenerations.shared
+        generations.bump(&viewer, surfaceID: remoteSurfaceID)
+        if let pane = sharingSurfaceID { generations.record(viewer, surfaceID: remoteSurfaceID, reportedBy: pane) }
+        guard var report = viewer?.viewportParams() else { return }
+        report["view_appeared"] = true
+        sendSizing("mobile.terminal.viewport", report)
+    }
+    // SUPERMUX:end device-mirror-size-to-me
 
     /// Pins only the mirror to the source grid; local resizing clips or letterboxes it.
     private func pin(columns: Int, rows: Int) {
@@ -971,7 +999,11 @@ extension DeviceTerminalMirrorSession: TerminalSharingSurfaceControlling {
 
     /// Input already carries the client id, which the host records as
     /// activity; an explicit focus has no mobile RPC.
-    func sharingNoteSelfActivity() {}
+    func sharingNoteSelfActivity() {
+        // SUPERMUX:begin device-mirror-size-to-me (Size to My Window, or switching to the app with this mirror focused, takes the other Mac's grid; upstream: an empty body)
+        supermuxClaimGrid()
+        // SUPERMUX:end device-mirror-size-to-me
+    }
 
     func sharingReattach(asViewer: Bool) -> Bool {
         // SUPERMUX:begin device-mirror-viewport-generations (above the link's floor, or the host drops it)

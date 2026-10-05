@@ -27,7 +27,9 @@ import Foundation
 ///   `counts_override` goes from false back to automatic), and a phone whose
 ///   terminal view came back on screen without leaving the terminal (it
 ///   navigated away and back: its report repeats the viewport but carries
-///   `view_appeared: true`, ``viewAppearedClientID``). Any other report that
+///   `view_appeared: true`, ``viewAppearedClientID``; another Mac's mirror
+///   sends it for Size to My Window and for its app becoming active with
+///   the mirror focused). Any other report that
 ///   repeats the same viewport is no activity: the phone sends one in answer
 ///   to every grid change, which would hand the grid back and forth.
 ///
@@ -98,19 +100,21 @@ final class SupermuxTerminalSizingAuto {
         explicitParticipantID: String?
     ) {
         if let explicitParticipantID { autoCounted[surfaceID]?.remove(explicitParticipantID) }
-        if host.state.policy.mode == .latest {
-            let appeared = viewAppearedClientID.map { LocalTerminalSizingHost.phoneParticipantID(clientID: $0) }
-            var phoneStarted = false
-            for id in host.phoneParticipantIDs {
-                if id == appeared || Self.startedViewing(id, now: host.state, before: previous) {
-                    host.noteActivity(id)
-                    phoneStarted = true
-                } else if previous.participant(id) == nil {
-                    phoneStarted = true
-                }
+        // `view_appeared` is activity in every mode: it decides once the
+        // terminal is in Auto, so a mirror's Size to My Window that switches
+        // Fit everyone to Auto wins whichever of its two requests lands first.
+        let auto = host.state.policy.mode == .latest
+        let appeared = viewAppearedClientID.map { LocalTerminalSizingHost.phoneParticipantID(clientID: $0) }
+        var phoneStarted = false
+        for id in host.phoneParticipantIDs {
+            if id == appeared || (auto && Self.startedViewing(id, now: host.state, before: previous)) {
+                host.noteActivity(id)
+                phoneStarted = true
+            } else if previous.participant(id) == nil {
+                phoneStarted = true
             }
-            if phoneStarted { keepMacSelection(&host, surfaceID: surfaceID) }
         }
+        if auto, phoneStarted { keepMacSelection(&host, surfaceID: surfaceID) }
         reconcileCounts(&host, surfaceID: surfaceID)
     }
 
@@ -171,12 +175,19 @@ final class SupermuxTerminalSizingAuto {
 
     /// Notes the Mac pane's activity for an action of this Mac's user that is
     /// no input event: Size to Me (from any entry point), the app becoming
-    /// active with the terminal focused.
+    /// active with the terminal focused. A mirror of another Mac's terminal
+    /// has no host here: unless it already sizes that terminal, it claims
+    /// the grid as its Size to My Window does.
     func noteMacAction(surfaceID: UUID) {
         let enclosing = notingMacAction
         notingMacAction = true
         defer { notingMacAction = enclosing }
-        TerminalController.shared.noteLocalTerminalSizingActivity(surfaceID: surfaceID)
+        let controller = TerminalController.shared
+        controller.noteLocalTerminalSizingActivity(surfaceID: surfaceID)
+        guard controller.localSizingHostsBySurfaceID[surfaceID] == nil,
+              let mirror = SupermuxTerminalSizingVisibility.shared.mirrorSession(for: surfaceID),
+              !mirror.supermuxOwnsGrid else { return }
+        mirror.sharingNoteSelfActivity()
     }
 
     /// Size to My Window on a local terminal, from any entry point: notes the
