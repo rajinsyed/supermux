@@ -125,6 +125,9 @@ public struct RemoteMacTerminalViewer: Sendable {
     @discardableResult
     public mutating func receive(_ next: TerminalSizingState, selfParticipantID: String?) -> Bool {
         if let state, next.generation < state.generation { return false }
+        // SUPERMUX:begin remote-mac-viewer-own-participant (the host's push names the first of the connection's client ids that participates, in set order; a link that also carries other clients' requests could name one of those, whose counts override then read as this Mac's own. This viewer is always its own client id; upstream keeps the pushed id)
+        let selfParticipantID = Self.ownParticipantID(clientID: clientID, pushed: selfParticipantID, in: next)
+        // SUPERMUX:end remote-mac-viewer-own-participant
         let changed = state != next || self.selfParticipantID != selfParticipantID
         state = next
         self.selfParticipantID = selfParticipantID
@@ -152,4 +155,14 @@ public struct RemoteMacTerminalViewer: Sendable {
         selfParticipantID = nil
     }
     // SUPERMUX:end remote-mac-viewer-connection-ended
+    // SUPERMUX:begin remote-mac-viewer-own-participant
+
+    /// This viewer's participant id (the host names it `mobile:<client_id>`):
+    /// whenever `state` lists it, or the push names it; never another
+    /// client's id the push named instead.
+    static func ownParticipantID(clientID: String, pushed: String?, in state: TerminalSizingState) -> String? {
+        let id = LocalTerminalSizingHost.phoneParticipantID(clientID: clientID)
+        return pushed == id || state.participant(id) != nil ? id : nil
+    }
+    // SUPERMUX:end remote-mac-viewer-own-participant
 }
