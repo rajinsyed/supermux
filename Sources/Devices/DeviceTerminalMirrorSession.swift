@@ -860,12 +860,14 @@ final class DeviceTerminalMirrorSession {
             // Discard bytes already covered by the replay, then apply the
             // remaining contiguous tail through the normal sequence check.
             for chunk in buffered { handle(.bytes(sequence: chunk.sequence, data: chunk.data)) }
-            // SUPERMUX:begin terminal-stream-grid-viewer (a full replay taken while output flowed is confirmed by one taken once it is quiet, the mirror staying attached)
+            // SUPERMUX:begin terminal-stream-grid-viewer (a full replay taken while output flowed is confirmed by one taken once it is quiet, the mirror staying attached; a resumed one picks up a re-capture still owed from before a lost link)
             if !replay.supermuxResumed {
                 supermuxStream?.fullReplayApplied { [weak self] in
                     guard let self, self.phase == .attached else { return }
                     self.supermuxRecaptureLive()
                 }
+            } else {
+                supermuxStream?.resumedReplyApplied()
             }
             // SUPERMUX:end terminal-stream-grid-viewer
             // A replay queued meanwhile re-enters `.attaching` at once, which

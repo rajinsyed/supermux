@@ -142,11 +142,15 @@ final class SupermuxTerminalStream {
     }
 
     /// The link is gone. What the mirror's screen holds stays, so the
-    /// reconnect can resume; the host refuses a stale position.
+    /// reconnect can resume; the host refuses a stale position. A re-capture
+    /// still owed (armed, or the history a hidden re-attach left out) stays
+    /// owed: a re-attach that resumes would never ask for it, and the pane
+    /// kept its short history for good (``resumedReplyApplied()``).
     func linkLost() {
         grid.linkLost()
         hostGrid = nil
         consecutiveBehind = 0
+        if confirmationTask != nil || historyIsShallow { pendingConfirmation = true }
         cancelConfirmation()
         confirming = false
         confirmationsInRow = 0
@@ -319,6 +323,14 @@ final class SupermuxTerminalStream {
             self.startConfirmation()
             self.confirm?()
         }
+    }
+
+    /// A resumed reply was applied: a re-capture owed from before the link
+    /// dropped waits for quiet output again, once the pane is on screen (a
+    /// full reply settles it through ``fullReplayApplied(confirm:)``).
+    func resumedReplyApplied() {
+        guard !hidden else { return }
+        resumePendingConfirmation()
     }
 
     /// The pane came back on screen: a confirmation that waited for the show
