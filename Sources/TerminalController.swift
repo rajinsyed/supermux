@@ -15744,6 +15744,9 @@ class TerminalController {
         let expectedViewport = applyMobileViewportReport(
             params: params,
             terminalTarget: terminalTarget,
+            // SUPERMUX:begin sizing-sticky-replay (a mounted phone's replay, which carries its viewport generation, claims the grid like its dedicated report; upstream: the default, non-sticky)
+            sticky: v2Int(params, "viewport_generation") != nil,
+            // SUPERMUX:end sizing-sticky-replay
             reason: "mobile.terminal.replay"
         )
         if hasViewportReportFields, expectedViewport == nil {
