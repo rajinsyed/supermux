@@ -175,6 +175,12 @@ final class SupermuxTerminalSizingVisibility {
         controller.localSizingHostsBySurfaceID[surfaceID] = host
     }
 
+    /// Whether the Mac pane's `counts_override: false` is this class's
+    /// off-screen mark, not an override someone set by hand.
+    func marksOffScreen(_ surfaceID: UUID) -> Bool {
+        hiddenHosts.contains(surfaceID)
+    }
+
     /// Whether someone other than the Mac pane would size the terminal if
     /// the pane stopped counting: it has a viewport and is not opted out.
     private static func othersWouldCount(_ host: LocalTerminalSizingHost) -> Bool {

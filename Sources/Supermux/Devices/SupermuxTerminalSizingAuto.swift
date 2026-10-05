@@ -1,4 +1,5 @@
 import AppKit
+import Bonsplit
 import CmuxTerminalSharing
 import CmuxTerminalSizing
 import Foundation
@@ -34,7 +35,12 @@ import Foundation
 /// this class adds the app becoming active with a terminal (or its TextBox)
 /// focused, and a scroll on the pane. A pane merely coming on screen is
 /// not: selecting a workspace on the phone selects it on the Mac too, and
-/// would take the grid from the phone.
+/// would take the grid from the phone. The reverse holds as well: an awake
+/// phone follows the Mac's selection and attaches to the terminal the Mac's
+/// user just selected, which would take the grid from the Mac. So a phone
+/// attaching to or starting to view a terminal within 3 s of this Mac's
+/// user selecting it leaves the Mac pane the newest
+/// (``macUserSelected(workspace:)``, ``macUserSelected(panelID:)``).
 ///
 /// Only this Mac's user is the Mac pane's activity (``isMacPaneActivity``).
 /// Every terminal input path runs the pane's explicit-input hook: a phone's
@@ -56,6 +62,12 @@ final class SupermuxTerminalSizingAuto {
     /// (`view_appeared: true`). Set by `v2MobileTerminalViewport` around the
     /// report only (SUPERMUX-TOUCHPOINTS.md #881).
     var viewAppearedClientID: String?
+    /// Terminals this Mac's user selected (a workspace, a tab, a pane), by
+    /// panel id, with when (system uptime).
+    private var macSelections: [UUID: TimeInterval] = [:]
+    /// How long after this Mac's user selects a terminal a phone that only
+    /// attaches to it does not take its grid.
+    private static let macSelectionWindow: TimeInterval = 3
     private var observer: NSObjectProtocol?
     #if DEBUG
     /// How many times the app becoming active noted a focused terminal's
@@ -88,10 +100,16 @@ final class SupermuxTerminalSizingAuto {
         if let explicitParticipantID { autoCounted[surfaceID]?.remove(explicitParticipantID) }
         if host.state.policy.mode == .latest {
             let appeared = viewAppearedClientID.map { LocalTerminalSizingHost.phoneParticipantID(clientID: $0) }
-            for id in host.phoneParticipantIDs
-            where id == appeared || Self.startedViewing(id, now: host.state, before: previous) {
-                host.noteActivity(id)
+            var phoneStarted = false
+            for id in host.phoneParticipantIDs {
+                if id == appeared || Self.startedViewing(id, now: host.state, before: previous) {
+                    host.noteActivity(id)
+                    phoneStarted = true
+                } else if previous.participant(id) == nil {
+                    phoneStarted = true
+                }
             }
+            if phoneStarted { keepMacSelection(&host, surfaceID: surfaceID) }
         }
         reconcileCounts(&host, surfaceID: surfaceID)
     }
@@ -224,6 +242,48 @@ final class SupermuxTerminalSizingAuto {
         guard let panel = AppDelegate.shared?.contextForMainWindow(window)?.tabManager.selectedTerminalPanel,
               panel.ownedFocusIntent(for: responder, in: window) != nil else { return nil }
         return panel.id
+    }
+
+    // MARK: - This Mac's user's selection
+
+    /// This Mac's user selected a workspace: the terminals it shows (each
+    /// pane's selected tab) are where they look now.
+    func macUserSelected(workspace: Workspace?) {
+        guard SupermuxLocalUserInput.isHandling, let workspace else { return }
+        let panes = workspace.bonsplitController
+        recordMacSelection(panes.allPaneIds.compactMap { pane in
+            panes.selectedTab(inPane: pane).flatMap { workspace.panelIdFromSurfaceId($0.id) }
+        })
+    }
+
+    /// This Mac's user selected a tab or focused a pane.
+    func macUserSelected(panelID: UUID?) {
+        guard SupermuxLocalUserInput.isHandling, let panelID else { return }
+        recordMacSelection([panelID])
+    }
+
+    private func recordMacSelection(_ panelIDs: [UUID]) {
+        let now = ProcessInfo.processInfo.systemUptime
+        macSelections = macSelections.filter { now - $0.value <= Self.macSelectionWindow }
+        for id in panelIDs { macSelections[id] = now }
+    }
+
+    /// A phone attached to, or started viewing, a terminal this Mac's user
+    /// selected a moment ago: the phone follows the Mac's selection (its
+    /// terminal view remounts on the pushed tab), so the user is at the Mac.
+    /// The Mac pane's activity is noted after the phone's, so it stays the
+    /// newest; typing on the phone still takes the grid. Only the Mac's own
+    /// selection: a socket, automation or the phone's selection is not.
+    /// The pane's activity is noted while the Visibility layer still marks
+    /// it off screen (it decides once the pane shows), never against an
+    /// override someone set by hand.
+    private func keepMacSelection(_ host: inout LocalTerminalSizingHost, surfaceID: UUID) {
+        guard let selectedAt = macSelections[surfaceID],
+              ProcessInfo.processInfo.systemUptime - selectedAt <= Self.macSelectionWindow,
+              let mac = host.state.participant(host.macParticipantID) else { return }
+        guard mac.participant.countsOverride != false
+                || SupermuxTerminalSizingVisibility.shared.marksOffScreen(surfaceID) else { return }
+        host.noteActivity(host.macParticipantID)
     }
 
     /// A scroll on a Mac pane is its user's activity, as typing is: a wheel
