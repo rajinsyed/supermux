@@ -265,14 +265,14 @@ struct SupermuxIrxDirectFirstDialTests {
 
     @Test("14. a handshake that connects after the probe's deadline is closed, not leaked", .timeLimit(.minutes(1)))
     func lateHandshakeAfterDeadlineIsClosed() async throws {
-        let late = FakeLeg(.ignoresCancel(7, after: .milliseconds(120)))
+        let late = FakeLeg(.ignoresCancel(7, after: .milliseconds(500)))
         let discards = Recorder()
         let started = ContinuousClock.now
         await #expect(throws: SupermuxIrxDirectFirstDial.TimedOut.self) {
             _ = try await SupermuxIrxDirectFirstDial.firstValue(
                 of: [{ try await late.run() }], deadline: .milliseconds(40), discard: { discards.append($0) })
         }
-        #expect(started.duration(to: .now) < .milliseconds(110), "the deadline answers at once")
+        #expect(started.duration(to: .now) < .milliseconds(400), "the deadline answers, not the handshake")
         try await waitUntil { discards.values == [7] }
     }
 

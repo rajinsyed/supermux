@@ -180,11 +180,16 @@ final class DeviceLink {
     /// Mac answered while this link sat on the relay. One planned redial after
     /// a short settle (so the old session has released its slot); the dial's
     /// race then lands on direct (`Sources/Supermux/Devices/SupermuxDeviceRouteSwitcher.swift`).
-    func supermuxPlannedRedial() {
-        guard phase == .connected else { return }
+    /// Returns whether the link left its session (a directory precondition keeps it).
+    @discardableResult
+    func supermuxPlannedRedial() -> Bool {
+        guard phase == .connected else { return false }
+        let next = applyPolicy(.supermuxPlannedRedial)
+        guard next != .connected else { return false }
         deviceLinkLog.info("device link planned redial \(self.instance.wireValue, privacy: .private(mask: .hash))")
-        transition(applyPolicy(.supermuxPlannedRedial))
+        transition(next)
         onChange?()
+        return true
     }
 
     /// The direct path under the live session stopped answering, and the

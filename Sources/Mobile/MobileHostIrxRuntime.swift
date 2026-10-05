@@ -374,6 +374,9 @@ final class MobileHostIrxRuntime: MobileHostPairingRuntime {
         await oldRegistry?.closeAll(code: .hostShutdown)
         await oldLegacy?.stop(revokeOwnBinding: true)
         await oldEndpoint?.deactivate()
+        // SUPERMUX:begin route-lane-sign-out (the direct lane carries this Mac's identity too: it goes with the endpoint)
+        await SupermuxComposition.directLane.deactivate()
+        // SUPERMUX:end route-lane-sign-out
         guard generationToken == token, let scope, isCurrent(token) else { return }
         setSettingsPhase(.activating)
         activationTask = Task { @MainActor [weak self] in

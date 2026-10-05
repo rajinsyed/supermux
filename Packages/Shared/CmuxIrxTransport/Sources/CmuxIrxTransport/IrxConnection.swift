@@ -485,6 +485,21 @@ public actor IrxConnection {
         return await task.value
     }
 
+    // SUPERMUX:begin route-liveness-join
+    /// ``probeLiveness(deadline:)`` for a second opinion (the route
+    /// switcher's liveness check on a direct-lane session): a probe already
+    /// in flight (the keepalive's) is joined for at most `deadline` and never
+    /// retired when that runs out, so a short check cannot cancel the
+    /// keepalive's own probe and make it report a miss.
+    public func supermuxProbeLivenessJoining(deadline: Duration) async -> Bool {
+        guard applicationActive, !isClosed, !Task.isCancelled else { return false }
+        guard let task = probeTask else { return await probeLiveness(deadline: deadline) }
+        let result = try? await withIrxDeadlineResult(deadline) { await task.value }
+        if case .operation(let alive) = result { return alive == true }
+        return false
+    }
+    // SUPERMUX:end route-liveness-join
+
     private func launchKeepalive() {
         guard applicationActive, !isClosed, keepaliveTask == nil, let settings = keepaliveSettings else { return }
         keepaliveGeneration &+= 1

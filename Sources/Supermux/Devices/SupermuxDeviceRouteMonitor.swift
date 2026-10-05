@@ -10,9 +10,10 @@ import SupermuxMobileCore
 ///
 /// Each sample is the outgoing session's selected path with iroh's RTT on
 /// it (`IrxConnection.supermuxSelectedPathSample()`), classified by
-/// `SupermuxLinkRouteClassifier`. A direct path it used is also learned by
-/// the route-candidate store (an outgoing session only: an inbound one's
-/// source port may not accept dials). The monitor also drives
+/// `SupermuxLinkRouteClassifier` (a global IPv6 path inside this Mac's own
+/// subnet is the LAN). A direct path it used is also learned by the
+/// route-candidate store, when servable (an outgoing session only: an
+/// inbound one's source port may not accept dials). The monitor also drives
 /// ``SupermuxRouteCandidateSync``.
 ///
 /// DEBUG builds can pin a link's route (`supermux.devices.route.override`):
@@ -105,7 +106,8 @@ final class SupermuxDeviceRouteMonitor {
         }
         let sample = current.sample
         let route = SupermuxLinkRouteClassifier.classify(
-            isRelay: sample.isRelay, remoteAddress: sample.remoteAddress, rttMs: sample.rttMs, now: Date())
+            isRelay: sample.isRelay, remoteAddress: sample.remoteAddress, rttMs: sample.rttMs, now: Date(),
+            localInterfaces: sample.isRelay ? [] : SupermuxLocalInterface.current())
         routes.apply(route, for: instance)
         guard !sample.isRelay else { return }
         let key = SupermuxRoutePeerKey(deviceID: instance.deviceID, tag: instance.tag, endpointID: current.endpointID)

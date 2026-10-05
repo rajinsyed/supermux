@@ -1,5 +1,5 @@
 // SUPERMUX:begin route-direct-lane (a direct-first dial: a direct-only lane races the relay — see SUPERMUX-TOUCHPOINTS.md)
-public import Foundation
+import Foundation
 public import IrohLib
 
 /// Which leg of a direct-first dial produced the connection.
@@ -66,9 +66,11 @@ public enum SupermuxIrxDirectFirstDial {
     /// No address answered within a probe's deadline.
     struct TimedOut: Error {}
 
-    /// How long a direct session may be quiet before ``answers(_:quietFor:probeDeadline:)`` probes it.
-    public static let quietBeforeProbe: Duration = .seconds(2)
-    /// How long that probe waits.
+    /// How long a direct session may be quiet before ``answers(_:quietFor:probeDeadline:)``
+    /// probes it: past one keepalive interval, so a healthy idle session
+    /// (a pong every 5 s) is never probed beside its keepalive.
+    public static let quietBeforeProbe: Duration = IrxProtocol().keepaliveInterval + .seconds(1)
+    /// The least time that probe waits; three round trips on the path when longer.
     public static let livenessProbeDeadline: Duration = .seconds(1)
 
     /// Races `direct` (if any) against `relay` under `timing`. `discard`
@@ -177,18 +179,22 @@ public enum SupermuxIrxDirectFirstDial {
     }
 
     /// Whether a direct session still answers: the peer's bytes arrived in
-    /// the last `quietFor`, or it answers a keepalive within `probeDeadline`.
-    /// A lane session has no relay path to fail over to, so its path dying
-    /// leaves the session silent until QUIC's 30 s idle timeout; this is the
-    /// faster evidence.
+    /// the last `quietFor`, or it answers a ping within `probeDeadline`
+    /// (by default the larger of ``livenessProbeDeadline`` and three round
+    /// trips on its path). A ping already out (the keepalive's) is joined,
+    /// never cancelled. A lane session has no relay path to fail over to, so
+    /// its path dying leaves the session silent until QUIC's 30 s idle
+    /// timeout; this is the faster evidence.
     public static func answers(
         _ connection: IrxConnection,
         quietFor: Duration = quietBeforeProbe,
-        probeDeadline: Duration = livenessProbeDeadline
+        probeDeadline: Duration? = nil
     ) async -> Bool {
         if await connection.isConnectionClosed() { return false }
         if let last = connection.inboundActivity.lastActivity, last.duration(to: .now) < quietFor { return true }
-        return await connection.probeLiveness(deadline: probeDeadline)
+        let rtt = connection.supermuxSelectedPathSample().map { Duration.milliseconds(Int64(clamping: $0.rttMs)) }
+        let deadline = probeDeadline ?? max(livenessProbeDeadline, (rtt ?? .zero) * 3)
+        return await connection.supermuxProbeLivenessJoining(deadline: deadline)
     }
 
     /// Closes a connection nobody will use, with a reason the host's journal shows.

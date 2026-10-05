@@ -11,9 +11,9 @@ import SupermuxMobileCore
 /// `supermux.devices.route.switch`). The loopback link has no Iroh session.
 ///
 /// While on, each new session of the loopback link lands like the dial's
-/// race: direct (no relay path beside it) when the lane is open, the link's
-/// policy allows direct and the route-candidate cache holds an address for
-/// the peer; otherwise on the relay. A probe answers, and a direct session
+/// race: direct (no relay path beside it) when the link's policy lets the
+/// dial race the lane, the lane is open and the route-candidate cache holds
+/// an address for the peer; otherwise on the relay. A probe answers, and a direct session
 /// answers its liveness checks, only while the lane is open. Each landing is
 /// pinned as the link's route, so `supermux.devices.list` reports it.
 @MainActor
@@ -46,7 +46,8 @@ final class SupermuxRouteSwitchSimulation {
         guard isActive else { return nil }
         let hasAddresses = await Self.hasDirectAddresses(device.instance)
         guard isActive else { return nil }
-        let direct = laneOpen && hasAddresses && SupermuxComposition.routeSwitcher.allowsDirect(device.instance)
+        // Like the dial: the policy's skip-once and hold-off, then an address and an open path.
+        let direct = SupermuxComposition.routeSwitcher.dialUsesDirect(device.instance) && laneOpen && hasAddresses
         landings.append(Landing(at: Date(), direct: direct))
         let route = direct
             ? SupermuxLinkRoute(kind: .direct(.lan), rttMs: 6, since: Date())
@@ -78,6 +79,10 @@ final class SupermuxSimulatedRouteSwitchSession: SupermuxRouteSwitchLinkSession 
         self.simulation = simulation
     }
 
+    func hasDirectAddresses() async -> Bool {
+        await SupermuxRouteSwitchSimulation.hasDirectAddresses(instance)
+    }
+
     /// Like the lane's probe: it needs an address to dial and an open path.
     func probeDirect() async -> Duration? {
         try? await Task.sleep(for: .milliseconds(50))
@@ -85,7 +90,7 @@ final class SupermuxSimulatedRouteSwitchSession: SupermuxRouteSwitchLinkSession 
         return simulation.laneOpen ? .milliseconds(5) : nil
     }
 
-    func answers() async -> Bool {
+    func answers(urgent: Bool) async -> Bool {
         simulation.laneOpen
     }
 }
