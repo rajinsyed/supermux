@@ -259,6 +259,9 @@ extension MobileIrxRuntimeComposition {
             return IrxClientSession(connection: connection, admit: admit, control: control, establishedAt: Date())
         } catch {
             await connection.close(code: .userRequested, origin: .local)
+            // SUPERMUX:begin phone-route-direct-race
+            supermuxAdmissionFailed(peerHex: peerHex, lane: dialed.lane)
+            // SUPERMUX:end phone-route-direct-race
             throw error
         }
     }

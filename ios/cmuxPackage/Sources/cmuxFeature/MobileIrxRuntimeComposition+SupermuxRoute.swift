@@ -36,6 +36,8 @@ extension MobileIrxRuntimeComposition: SupermuxPhoneRouteRuntime {
     /// checked, and each check's deadline.
     static let supermuxNetworkSettle: Duration = .seconds(1)
     static let supermuxLivenessDeadline: Duration = .milliseconds(1500)
+    /// Network changes closer together than this re-probe only once.
+    static let supermuxNetworkDebounce: Duration = .seconds(3)
 
     // MARK: - SupermuxPhoneRouteRuntime
 
@@ -96,14 +98,17 @@ extension MobileIrxRuntimeComposition: SupermuxPhoneRouteRuntime {
         privateAddresses: [String],
         automatic: @escaping @Sendable () async throws -> IrxConnection
     ) async throws -> (connection: IrxConnection, lane: SupermuxDialLane, raced: Bool) {
-        guard case .automatic = intent, let lane = supermuxDirectLane() else {
+        // A direct-lane admission that just failed sends the next dial to
+        // the automatic endpoint alone, so it can never loop without the relay.
+        let skipsRace = supermuxSkipRaceOnce.remove(peerHex) != nil
+        guard case .automatic = intent, !forceRelayOnly, !skipsRace else {
             return (try await automatic(), .automatic, false)
         }
         let stored = await supermuxRouteCandidates.dialAddresses(for: Self.supermuxRoutePeerKey(record))
         var seen = Set<String>()
         let addresses = (stored + privateAddresses).filter { seen.insert($0).inserted }
             .prefix(SupermuxRouteCandidates.limit)
-        guard !addresses.isEmpty,
+        guard !addresses.isEmpty, let lane = supermuxDirectLane(),
               let address = try? lane.dialAddress(
                   peerEndpointIDHex: peerHex, relayURL: nil, directAddresses: Array(addresses)) else {
             return (try await automatic(), .automatic, false)
@@ -121,6 +126,14 @@ extension MobileIrxRuntimeComposition: SupermuxPhoneRouteRuntime {
             "path": result.value.selectedPathDescription(),
         ])
         return (result.value, result.lane, true)
+    }
+
+    /// A dial's admission failed: a direct-lane one makes the next dial skip
+    /// the race.
+    func supermuxAdmissionFailed(peerHex: String, lane: SupermuxDialLane) {
+        guard lane == .direct else { return }
+        supermuxSkipRaceOnce.insert(peerHex)
+        journal.record("supermux-route", "direct-admission-failed", ["peer": String(peerHex.prefix(12))])
     }
 
     /// Records the lane an admitted session used; arms the prober.
@@ -247,6 +260,12 @@ extension MobileIrxRuntimeComposition: SupermuxPhoneRouteRuntime {
     /// sessions at once, and check that direct-lane sessions still answer.
     func supermuxRouteNetworkChanged() {
         guard applicationActive, !forceRelayOnly else { return }
+        let now = ContinuousClock.now
+        if let last = supermuxLastNetworkChange, last.duration(to: now) < Self.supermuxNetworkDebounce {
+            supermuxStartRouteLoopIfNeeded()
+            return
+        }
+        supermuxLastNetworkChange = now
         for peerHex in supermuxRouteSchedules.keys {
             supermuxRouteSchedules[peerHex]?.networkChanged()
         }

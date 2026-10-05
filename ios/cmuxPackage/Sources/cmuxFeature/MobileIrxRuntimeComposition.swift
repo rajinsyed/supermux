@@ -83,6 +83,9 @@ public actor MobileIrxRuntimeComposition {
     var supermuxLaneByPeer: [String: SupermuxDialLane] = [:]
     /// Macs whose direct-lane session is being checked after a network change.
     var supermuxRouteChecks: Set<String> = []
+    /// Macs whose next dial skips the race (a direct-lane admission failed).
+    var supermuxSkipRaceOnce: Set<String> = []
+    var supermuxLastNetworkChange: ContinuousClock.Instant?
     var supermuxRouteLoop: Task<Void, Never>?
     // SUPERMUX:end phone-route-direct-race
 
