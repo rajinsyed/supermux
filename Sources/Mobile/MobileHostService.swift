@@ -2660,13 +2660,19 @@ actor MobileHostConnection {
             return false
         }
 
-        return await sendControlFrame(frame)
+        // SUPERMUX:begin host-writer-bulk-yields (a large reply yields to every other write; upstream: `return await sendControlFrame(frame)`)
+        return await sendControlFrame(
+            frame, bulk: frame.count > MobileHostSerializedTransportWriter.supermuxBulkReplyByteCount
+        )
+        // SUPERMUX:end host-writer-bulk-yields
     }
 
-    private func sendControlFrame(_ frame: Data) async -> Bool {
+    // SUPERMUX:begin host-writer-bulk-yields (`bulk`, passed to the writer; upstream: `(_ frame: Data)` and `writer.send(frame)`)
+    private func sendControlFrame(_ frame: Data, bulk: Bool = false) async -> Bool {
         guard !isClosed else { return false }
         do {
-            try await writer.send(frame)
+            try await writer.send(frame, bulk: bulk)
+    // SUPERMUX:end host-writer-bulk-yields
             return true
         } catch {
             await close(

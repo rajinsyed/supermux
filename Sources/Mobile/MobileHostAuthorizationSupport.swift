@@ -227,33 +227,55 @@ actor MobileHostSerializedTransportWriter {
     private let transport: any CmxByteTransport
     private var sending = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
+    // SUPERMUX:begin host-writer-bulk-yields
+    /// Replies larger than this (a full replay is MBs) wait while any other
+    /// write waits: an input ack, a probe's answer, a status or watch reply
+    /// and event frames go first. Only the one large reply already on the
+    /// wire still holds them (a frame is never split).
+    static let supermuxBulkReplyByteCount = 64 * 1024
+    private var supermuxBulkWaiters: [CheckedContinuation<Void, Never>] = []
+    // SUPERMUX:end host-writer-bulk-yields
 
     init(transport: any CmxByteTransport) {
         self.transport = transport
     }
 
-    func send(_ data: Data) async throws {
-        await acquire()
+    // SUPERMUX:begin host-writer-bulk-yields (`bulk`: a large reply that yields to every other write; upstream: `func send(_ data: Data)` and `await acquire()`)
+    func send(_ data: Data, bulk: Bool = false) async throws {
+        await acquire(bulk: bulk)
+    // SUPERMUX:end host-writer-bulk-yields
         defer { release() }
         try Task.checkCancellation()
         try await transport.send(data)
     }
 
-    private func acquire() async {
+    // SUPERMUX:begin host-writer-bulk-yields (upstream: `private func acquire() async` appending every waiter to `waiters`)
+    private func acquire(bulk: Bool) async {
         if !sending {
             sending = true
             return
         }
         await withCheckedContinuation { continuation in
-            waiters.append(continuation)
+            if bulk {
+                supermuxBulkWaiters.append(continuation)
+            } else {
+                waiters.append(continuation)
+            }
         }
     }
 
+    /// Hands the stream to the oldest small write, else the oldest large
+    /// reply. A large reply cannot be starved: the event drain re-queues only
+    /// after its own write released, so only concurrent small replies (at most
+    /// the host's 16 request slots) can pass it.
     private func release() {
-        if waiters.isEmpty {
-            sending = false
-        } else {
+        if !waiters.isEmpty {
             waiters.removeFirst().resume()
+        } else if !supermuxBulkWaiters.isEmpty {
+            supermuxBulkWaiters.removeFirst().resume()
+        } else {
+            sending = false
         }
     }
+    // SUPERMUX:end host-writer-bulk-yields
 }
