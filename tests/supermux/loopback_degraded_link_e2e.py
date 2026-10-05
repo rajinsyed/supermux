@@ -53,10 +53,13 @@ D2 and D5 are guards; the others check the harness):
                                every key reaches the program exactly once. RED: input typed while
                                the mirror is `.attaching` is dropped (DeviceTerminalInputRouter's
                                enabled gate; `terminal_input.stats` `dropped_while_detached`).
-  D4b outage_keeps_typed_order a key is on its way (1.5 s to the host) when a 4 s drop cuts the link, a
+  D4b outage_keeps_typed_order a key is on its way (1.5 s to the host) when a 2 s drop cuts the link, a
                                second is typed while it is down, and the ECHO mirror's re-attach is
                                held on the host past the 10 s hold window (`link stall` with
-                               `surface_id`): the program gets both keys in order, the first alone or
+                               `surface_id`, 8 s: the request then lands inside the host's 15 s
+                               grace for this Mac's grid, so the re-attach resumes; past it the grid
+                               is cleared and the full replay drops the keys anyway): the program
+                               gets both keys in order, the first alone or
                                neither, never the second without the first (Enter without its
                                command). RED (2026-10-06, review S3): the hold timer dropped held keys
                                only if the mirror was still detached, so the second key went out
@@ -123,6 +126,7 @@ tests/supermux/artifacts/loopback_degraded_link_e2e-<tag>.json (and --report if 
 
 Usage:
   CMUX_E2E_SUITES="loopback_degraded_link_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
+  CMUX_DEGRADED_STEPS="D4b,D7" ... (only the steps whose names start with these, after setup)
   CMUX_TAG=<tag> python3 tests/supermux/loopback_degraded_link_e2e.py [--scratch DIR] [--report PATH]
 """
 
@@ -176,8 +180,8 @@ D5_MAX_BOUND_S = 0.25
 D6_DEADLINE_S = 3.0
 D6_HOLD_S = 9.0
 D4B_TO_HOST_MS = 1500
-D4B_DROP_S = 4.0
-D4B_STALL_S = 9.0
+D4B_DROP_S = 2.0
+D4B_STALL_S = 8.0
 D4C_STALL_S = 16.0
 D4C_SECOND_KEY_AT_S = 12.0
 REPLAY_WINDOW_S = 10.0
@@ -531,6 +535,9 @@ class DegradedLinkE2E:
     # -- steps -------------------------------------------------------------------
 
     def step(self, name: str, action: Callable[[], Optional[Dict[str, Any]]]) -> bool:
+        only = [s for s in os.environ.get("CMUX_DEGRADED_STEPS", "").split(",") if s]
+        if only and name not in ("setup", "impairment_on") and not any(name.startswith(s) for s in only):
+            return True
         started = time.monotonic()
         record: Dict[str, Any] = {"name": name}
         try:
@@ -1133,8 +1140,13 @@ class DegradedLinkE2E:
         self.sources["deep"] = {"workspace_id": workspace_id, "surface_id": surface_id}
         self.run_in("deep", f"python3 {self.scratch / 'deep_echo.py'} {self.deep_recorder_path} {HISTORY_LINES}")
         wait_for("DEEP-READY in its source", lambda: "DEEP-READY" in self.read_text(workspace_id, surface_id), 120, 1.0)
-        opened = self.sock.call("vm.workspace_open", {"id": self.machine, "workspace_id": workspace_id,
-                                                      "focus": False}, timeout_s=120) or {}
+
+        def open_mirror() -> Dict[str, Any]:
+            # The new workspace reaches the device's directory a moment after it exists.
+            return self.sock.call("vm.workspace_open", {"id": self.machine, "workspace_id": workspace_id,
+                                                        "focus": False}, timeout_s=120) or {}
+
+        opened = wait_for("the DEEP workspace in the device's directory", open_mirror, 60, 1.0)
         mirror_id = up(opened.get("workspace_id"))
         if not mirror_id:
             raise Failure(f"vm.workspace_open did not open a mirror of the DEEP terminal: {opened}")
