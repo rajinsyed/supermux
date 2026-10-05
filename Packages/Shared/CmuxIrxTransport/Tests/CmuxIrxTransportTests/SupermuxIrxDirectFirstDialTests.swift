@@ -44,6 +44,10 @@ import Testing
 ///   within its deadline when the path is cut.
 /// - L5. A direct session whose path is cut stops answering within a few
 ///   seconds (the evidence for falling back to the relay).
+/// - L6 (opt-in, public relays: `CMUX_IROH_PUBLIC_RELAY_TEST=1`). With the
+///   direct address blackholed the race lands on a real relay path; with that
+///   relay session admitted and authorized, the lane of the same identity
+///   still starts direct (the shared endpoint's selected path does not reach it).
 @Suite("direct-first dial")
 struct SupermuxIrxDirectFirstDialTests {
     typealias State = SupermuxIrxDialRaceState<Int>
@@ -304,6 +308,73 @@ struct SupermuxIrxDirectFirstDialTests {
         #expect(await lane.probeLiveness(deadline: .seconds(3)), "the path came back")
         #expect(await SupermuxIrxDirectFirstDial.answers(lane))
         await rig.shutDown()
+    }
+
+    @Test("L6. public relay: a blackholed direct address lands on the relay; the lane still starts direct beside it",
+          .enabled(if: ProcessInfo.processInfo.environment["CMUX_IROH_PUBLIC_RELAY_TEST"] == "1"),
+          .timeLimit(.minutes(1)))
+    func publicRelayRace() async throws {
+        let journal = IrxLiveTestSupport.journal()
+        func relayed(_ seed: Data) async throws -> Endpoint {
+            try await Endpoint.bind(options: EndpointOptions(
+                preset: presetMinimal(), secretKey: seed, alpns: [IrxProtocol().alpnData],
+                relayMode: RelayMode.defaultMode(), portMappingEnabled: false,
+                deferNatTraversalUntilAuthorized: true,
+                initialMaxConcurrentBiStreams: 8, initialMaxConcurrentUniStreams: 0))
+        }
+        let seed = IrxLiveTestSupport.identitySeed()
+        let hostEndpoint = try await relayed(IrxLiveTestSupport.identitySeed())
+        let main = try await relayed(seed)
+        await hostEndpoint.online()
+        await main.online()
+        let host = CountingHost(endpoint: hostEndpoint)
+        host.start(journal: journal)
+        let relayURL = try #require(hostEndpoint.addr().relayUrl())
+        let hostDirect = IrxLiveTestSupport.loopbackAddr(of: hostEndpoint).directAddresses()
+            .filter { $0.hasPrefix("127.0.0.1:") }
+        let hostPort = try #require(hostDirect.first?.split(separator: ":").last.flatMap { UInt16($0) })
+        let blackhole = try SupermuxShapedUDPLink(hostPort: hostPort, shape: .init(
+            bytesPerSecond: 1_000_000, oneWayDelay: 0, queueBytes: 100_000))
+        blackhole.blocked = true
+        let lane = IrxEndpointSupervisor(configuration: IrxEndpointConfiguration(
+            identity: IrxIdentity(privateKeyData: seed, deviceID: "lane-relay-test", appInstanceID: "lane-relay-test"),
+            pathMode: .directOnly, initialRemoteBiStreams: 0, initialRemoteUniStreams: 0), journal: journal)
+        let hostID = hostEndpoint.id()
+
+        let started = ContinuousClock.now
+        let outcome = try await SupermuxIrxDirectFirstDial.race(
+            timing: .standard,
+            direct: { try await lane.dial(address: EndpointAddr(id: hostID, relayUrl: nil,
+                addresses: [blackhole.clientFacingAddress]), credentials: []) },
+            relay: {
+                IrxConnection(connection: try await main.connect(
+                    addr: EndpointAddr(id: hostID, relayUrl: relayURL, addresses: []), alpn: IrxProtocol().alpnData),
+                    role: .dialer, journal: journal)
+            },
+            discard: { SupermuxIrxDirectFirstDial.close($0, reason: "supermux-dial-race-lost") })
+        let elapsed = started.duration(to: .now)
+        #expect(outcome.leg == .relay)
+        let relayedSample = try #require(outcome.value.supermuxSelectedPathSample())
+        #expect(relayedSample.isRelay, "\(relayedSample)")
+        _ = try await IrxAdmission().performClient(connection: outcome.value, grantJWS: "good-grant", journal: journal)
+        await outcome.value.authorizeDirectPaths()
+        print("public relay race with a blackholed direct address: \(outcome.journalFields) after \(elapsed), \(relayedSample)")
+
+        let direct = try await lane.dial(address: EndpointAddr(id: hostID, relayUrl: nil, addresses: hostDirect), credentials: [])
+        let laneSample = try #require(direct.supermuxSelectedPathSample())
+        #expect(!laneSample.isRelay && !laneSample.hasRelayPath, "\(laneSample)")
+        #expect(hostDirect.contains(laneSample.remoteAddress), "\(laneSample)")
+        _ = try await IrxAdmission().performClient(connection: direct, grantJWS: "good-grant", journal: journal)
+        #expect(await outcome.value.probeLiveness(deadline: .seconds(5)), "the relayed session still answers")
+        try await waitUntil { host.admitted == 2 }
+        print("lane beside the relayed session: \(laneSample)")
+
+        await outcome.value.close(code: .userRequested, origin: .local)
+        await direct.close(code: .userRequested, origin: .local)
+        blackhole.stop()
+        await lane.deactivate()
+        await host.stop()
+        try await main.close()
     }
 }
 
