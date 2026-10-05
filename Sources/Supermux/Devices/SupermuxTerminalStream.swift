@@ -36,6 +36,15 @@ final class SupermuxTerminalStream {
     static let attachBufferByteLimit = 16 * 1024 * 1024
     /// History rows a render-grid replay carries (the phone's ceiling is 20000).
     static let scrollbackRows = 10_000
+    /// History rows a hidden mirror's re-attach asks for. A 10000-row replay
+    /// is MBs, and a reply frame is never split, so on a slow link one blocks
+    /// every pane's output on that connection until it is through (a hidden
+    /// mirror's 1.7 MB replay after a reconnect held the shown ECHO
+    /// terminal's echo ~6 s at 300 KB/s, 2026-10-05 D3). Hidden, the mirror
+    /// gets its screen and this much history; the rest comes with a full
+    /// replay once a pane shows it and its output is quiet (the replay
+    /// boundary's confirmation, ``fullReplayApplied(confirm:)``).
+    static let hiddenScrollbackRows = 100
     /// Drops this Mac's scrollback before a full replay: a screen-anchored
     /// replay without history repaints in place and would keep stale rows.
     static let historyReset = Data([0x1B, 0x5B, 0x33, 0x4A])
@@ -204,6 +213,10 @@ final class SupermuxTerminalStream {
     /// A confirmation waits for the pane's show.
     private var pendingConfirmation = false
     private(set) var confirmations = 0
+    /// Whether the replay request leaving now asks for the hidden mirror's
+    /// short history, and whether the last full replay applied did.
+    private var requestIsShallow = false
+    private var historyIsShallow = false
     static let outputRaceWindow: Duration = .milliseconds(150)
     /// The race window while the host batches this terminal's bytes: they
     /// arrive up to its ~500 ms batch window plus 100 ms leeway late
@@ -244,7 +257,9 @@ final class SupermuxTerminalStream {
         if !confirming { confirmationsInRow = 0 }
         confirming = false
         let raced = confirmationsInRow == 0 ? requestRacedOutput || bytesDuringAttach : requestRacedOutput
-        guard isActive, raced, confirmationsInRow < Self.maximumConfirmationsInRow else { return }
+        // A hidden mirror's short history is completed the same way: by a full
+        // replay once it is shown and quiet.
+        guard isActive, raced || historyIsShallow, confirmationsInRow < Self.maximumConfirmationsInRow else { return }
         self.confirm = confirm
         guard !hidden else {
             pendingConfirmation = true
@@ -329,10 +344,13 @@ final class SupermuxTerminalStream {
     /// position to resume from when the mirror has one on this stream.
     func replayParams(expectedSequence: UInt64?, grid: (columns: Int, rows: Int)?) -> [String: Any] {
         guard isActive else { return [:] }
+        // A hidden mirror that attached before (it has an epoch) asks for its
+        // screen and a short history; the rest comes once it is shown.
+        requestIsShallow = hidden && epoch != nil
         var params: [String: Any] = [
             SupermuxTerminalStreamHost.streamParam: 1,
             "anchor": "screen",
-            "max_scrollback_rows": Self.scrollbackRows,
+            "max_scrollback_rows": requestIsShallow ? Self.hiddenScrollbackRows : Self.scrollbackRows,
         ]
         if !self.grid.needsFullReplay, let epoch, let expectedSequence, let grid,
            let generation = self.grid.screen {
@@ -347,7 +365,12 @@ final class SupermuxTerminalStream {
 
     func noteReply(_ reply: Reply) {
         epoch = reply.epoch
-        if reply.resumed == nil { fullReplays += 1 } else { resumes += 1 }
+        if reply.resumed == nil {
+            fullReplays += 1
+            historyIsShallow = requestIsShallow
+        } else {
+            resumes += 1
+        }
     }
 
     /// The host's latest grid, as its grid events report it.
