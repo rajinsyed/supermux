@@ -234,6 +234,10 @@ public final class MobileHostConnectionEventQueue: @unchecked Sendable {
     private var supermuxServeOrder: [String] = []
     /// Paused hidden terminals and the newest chunk each was refused since.
     private var supermuxPausedNewest: [String: SupermuxHeldChunk] = [:]
+    /// The terminal this connection last typed into, and whether the last
+    /// chunk served was its (it gets every other turn).
+    private var supermuxInteractiveSurfaceID: String?
+    private var supermuxServedInteractive = false
     // SUPERMUX:end terminal-stream-fair-queue
     // SUPERMUX:begin render-grid-watch
     /// The terminals whose render-grid frames this connection's phone shows;
@@ -682,6 +686,7 @@ public final class MobileHostConnectionEventQueue: @unchecked Sendable {
         supermuxWatchedTerminals.removeAll()
         supermuxServeOrder.removeAll()
         supermuxPausedNewest.removeAll()
+        supermuxInteractiveSurfaceID = nil
         // SUPERMUX:end terminal-stream-fair-queue
         // SUPERMUX:begin render-grid-watch
         supermuxRenderGridSurfaceIDs = nil
@@ -978,12 +983,20 @@ public final class MobileHostConnectionEventQueue: @unchecked Sendable {
         supermuxWatchedTerminals[surfaceID] = terminal
     }
 
-    /// The next watched chunk: the oldest of the first shown terminal in
-    /// turn, else of the first hidden one; that terminal goes to the back.
+    /// The next watched chunk: every other turn the terminal being typed in,
+    /// else the oldest of the first shown terminal in turn, else of the first
+    /// hidden one; that terminal goes to the back.
     private func supermuxDequeueWatchedLocked() -> QueuedEvent? {
         let background = supermuxBackgroundByteSurfaceIDs
-        guard let surfaceID = supermuxServeOrder.first(where: { !background.contains($0) })
+        let typedIn = supermuxInteractiveSurfaceID.flatMap { surfaceID in
+            !supermuxServedInteractive && supermuxWatchedTerminals[surfaceID] != nil
+                && !background.contains(surfaceID) ? surfaceID : nil
+        }
+        guard let surfaceID = typedIn
+            ?? supermuxServeOrder.first(where: { !background.contains($0) && $0 != supermuxInteractiveSurfaceID })
+            ?? supermuxServeOrder.first(where: { !background.contains($0) })
             ?? supermuxServeOrder.first else { return nil }
+        supermuxServedInteractive = surfaceID == supermuxInteractiveSurfaceID
         while let eventID = supermuxWatchedTerminals[surfaceID]?.order.popFirst() {
             guard let event = removeQueuedEventLocked(eventID) else { continue }
             if let index = supermuxServeOrder.firstIndex(of: surfaceID) {
@@ -995,8 +1008,14 @@ public final class MobileHostConnectionEventQueue: @unchecked Sendable {
         return nil
     }
 
-    /// The terminal this connection last typed into.
-    public func supermuxNoteInteractiveSurface(_ surfaceID: String) {}
+    /// The terminal this connection last typed into: its echo goes out
+    /// every other turn among shown terminals, so it waits for at most one
+    /// other terminal's chunk, and a flood in it still leaves half the turns.
+    public func supermuxNoteInteractiveSurface(_ surfaceID: String) {
+        lock.lock()
+        supermuxInteractiveSurfaceID = surfaceID.uppercased()
+        lock.unlock()
+    }
 
     private func supermuxDropWatchedBacklogLocked(surfaceID: String) {
         guard let terminal = supermuxWatchedTerminals[surfaceID] else { return }

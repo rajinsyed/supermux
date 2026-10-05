@@ -2596,6 +2596,9 @@ actor MobileHostConnection {
     private func noteInteractiveSurface(_ surfaceKey: String) {
         guard !surfaceKey.isEmpty, lastInteractiveSurfaceKey != surfaceKey else { return }
         lastInteractiveSurfaceKey = surfaceKey
+        // SUPERMUX:begin terminal-stream-fair-queue (its echo gets every other turn among watched terminals)
+        eventQueue.supermuxNoteInteractiveSurface(surfaceKey)
+        // SUPERMUX:end terminal-stream-fair-queue
         guard surfaceEventLanesActive, let independentEventWriter else { return }
         Task { await independentEventWriter.noteInteractiveSurface(surfaceKey) }
     }
