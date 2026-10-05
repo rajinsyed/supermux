@@ -103,7 +103,7 @@ enum SupermuxDevicePowerSocketCommands {
         }
         if let instance {
             let courtesy = SupermuxComposition.sleepCourtesy
-            let wait = courtesy.redialWait(for: instance, after: .zero)
+            let wait = courtesy.currentWait(for: instance, after: .zero)
             result["peer"] = [
                 "asleep": courtesy.isAsleep(instance),
                 "wait_ms": wait.components.seconds * 1_000 + wait.components.attoseconds / 1_000_000_000_000_000,

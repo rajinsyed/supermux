@@ -19,12 +19,15 @@ import SupermuxKit
 /// - **A full wake** (didWake or the screens waking) recovers once: after a
 ///   sleep of 60 s or more the main endpoint is closed and bound again (every
 ///   QUIC session on it is dead by then; phones and Macs redial, see
-///   ``rebuildMainEndpoint()``), iroh is told the network changed, the route
-///   switcher probes direct now and rebuilds the idle direct lane, and links
-///   waiting in a backoff dial at once. Dials wait for the rebuild.
+///   ``rebuildMainEndpoint()``; expired relay credentials are refreshed
+///   first, and without fresh ones the rebuild waits for the next network
+///   change within 30 s), iroh is told the network changed, the route
+///   switcher gives direct a fresh chance (hold-off cleared, probes now), the
+///   idle direct lane is rebound, and links waiting in a backoff dial at
+///   once. Dials wait for the rebuild, at most 5 s.
 /// - **A network change** (interfaces or IPv4 addresses, Tailscale's `utun`
 ///   too, debounced 1 s) recovers the same way while awake, without the
-///   rebuild or the redials.
+///   rebuild (unless one was put off at the wake) or the redials.
 ///
 /// The sleep is measured on the wall clock. Journals (category `power`):
 /// `will-sleep {links}`, `recovered {reason, slept_s, main, lane_rebuilt,
@@ -41,7 +44,8 @@ final class SupermuxSystemPower {
     /// What the last recovery did, for the DEBUG drivers.
     struct RecoveryRecord {
         let recovery: SupermuxWakePolicy.Recovery
-        /// `rebuilt`, `no-endpoint`, `kept-expired-credentials` or `kept` (no rebuild planned).
+        /// `rebuilt`, `rebuilt-after-refresh`, `no-endpoint`,
+        /// `kept-expired-credentials` or `kept` (no rebuild planned).
         let main: String
         let laneRebuilt: Bool
         let redialed: Int
@@ -50,6 +54,8 @@ final class SupermuxSystemPower {
     private let journal: IrxJournal
     private var policy = SupermuxWakePolicy()
     private var rebuilding = false
+    /// The rebuild `rebuilding` belongs to; an older one finishing never clears a newer one's.
+    private var rebuildToken: UInt64 = 0
     private var observers: [NSObjectProtocol] = []
     private var pathMonitor: MobileHostNetworkPathMonitor?
     private var sawFirstPath = false
@@ -113,8 +119,8 @@ final class SupermuxSystemPower {
         guard let recovery = policy.woke(reason, at: now) else { return nil }
         displayTask?.cancel()
         displayTask = nil
-        if recovery.rebuildsMainEndpoint { rebuilding = true }
-        return Task { await recover(recovery, redialsWaitingLinks: true) }
+        let token = recovery.rebuildsMainEndpoint ? beginRebuild() : nil
+        return Task { await recover(recovery, rebuild: token, redialsWaitingLinks: true) }
     }
 
     /// The network path changed; recovers after the burst settles. Returns
@@ -125,7 +131,8 @@ final class SupermuxSystemPower {
         let task = Task { [weak self] in
             guard (try? await Task.sleep(for: Self.networkDebounce)) != nil, let self else { return }
             guard let recovery = policy.networkChanged(at: Date()) else { return }
-            await recover(recovery, redialsWaitingLinks: false)
+            let token = recovery.rebuildsMainEndpoint ? beginRebuild() : nil
+            await recover(recovery, rebuild: token, redialsWaitingLinks: false)
         }
         networkTask = task
         return task
@@ -172,17 +179,19 @@ final class SupermuxSystemPower {
 
     // MARK: - Recovery
 
-    private func recover(_ recovery: SupermuxWakePolicy.Recovery, redialsWaitingLinks: Bool) async {
+    private func recover(_ recovery: SupermuxWakePolicy.Recovery, rebuild token: UInt64?, redialsWaitingLinks: Bool) async {
         var main = "kept"
-        if recovery.rebuildsMainEndpoint {
+        if let token {
             // Dials wait for the new endpoint, but never longer than the limit.
             let limit = Task { [weak self] in
                 guard (try? await Task.sleep(for: Self.rebuildWaitLimit)) != nil else { return }
-                self?.rebuilding = false
+                self?.endRebuild(token)
             }
-            main = await Self.rebuildMainEndpoint()
+            let outcome = await Self.rebuildMainEndpoint()
             limit.cancel()
-            rebuilding = false
+            endRebuild(token)
+            if outcome == .keptExpiredCredentials { policy.rebuildPostponed(at: Date()) }
+            main = outcome.rawValue
         }
         await MobileHostIrxRuntime.shared.endpointSupervisor?.notifyNetworkChange()
         SupermuxComposition.routeSwitcher.probeNow(reason: recovery.reason.rawValue)
@@ -199,10 +208,21 @@ final class SupermuxSystemPower {
         ])
     }
 
-    /// Closes the main endpoint and binds a new one: `rebuilt`, or why not
-    /// (`no-endpoint`; `kept-expired-credentials`: a relay endpoint needs a
-    /// live credential to bind, so it is kept until the control plane renews
-    /// them and rotates them in).
+    private func beginRebuild() -> UInt64 {
+        rebuildToken &+= 1
+        rebuilding = true
+        return rebuildToken
+    }
+
+    private func endRebuild(_ token: UInt64) {
+        if rebuildToken == token { rebuilding = false }
+    }
+
+    /// Closes the main endpoint and binds a new one
+    /// (``SupermuxMainEndpointRebuild``): at once with a usable relay
+    /// credential; after refreshing expired ones (credentials last 30 min, so
+    /// after a night they always have) within the dials' wait limit; or not
+    /// at all without one (a relay endpoint cannot bind without it).
     ///
     /// After a sleep of a minute or more every session on it is dead: peers
     /// dropped theirs after 30 s of idle on their own clocks, while this
@@ -211,15 +231,31 @@ final class SupermuxSystemPower {
     /// accept loop's exit binds the next generation on the same port, and
     /// `foreground()` asks for it at once. The stale relay socket and iroh's
     /// per-peer path blocks go with it. The direct lane is separate.
-    private static func rebuildMainEndpoint() async -> String {
+    private static func rebuildMainEndpoint() async -> SupermuxMainEndpointRebuild.Outcome {
         let runtime = MobileHostIrxRuntime.shared
-        guard let supervisor = runtime.endpointSupervisor, await supervisor.boundPort() != nil else { return "no-endpoint" }
+        let steps = SupermuxMainEndpointRebuild.Steps(
+            hasEndpoint: { @MainActor in await runtime.endpointSupervisor?.boundPort() != nil },
+            credentialsUsable: { @MainActor in await usableCredentials(runtime) },
+            refreshCredentials: { @MainActor in
+                guard let control = runtime.controlService else { throw IrxEndpointError.noUsableRelayCredential }
+                _ = try await control.refreshRelayCredentials()
+            },
+            rebuild: { @MainActor in
+                await runtime.endpointSupervisor?.close()
+                await runtime.foreground()
+            })
+        return await SupermuxMainEndpointRebuild.run(steps, limit: rebuildWaitLimit)
+    }
+
+    /// Whether the main endpoint could bind now: a relay credential that has
+    /// not expired (the control plane's own cache holds a refresh before the
+    /// runtime applies it), or no relay at all.
+    private static func usableCredentials(_ runtime: MobileHostIrxRuntime) async -> Bool {
+        guard MobileHostIrxRuntime.pathMode != .directOnly else { return true }
         let now = Int(Date().timeIntervalSince1970)
-        let usable = runtime.cachedState?.relayCredentials.contains { $0.expiresAt > now } ?? false
-        guard usable || MobileHostIrxRuntime.pathMode == .directOnly else { return "kept-expired-credentials" }
-        await supervisor.close()
-        await runtime.foreground()
-        return "rebuilt"
+        if runtime.cachedState?.relayCredentials.contains(where: { $0.expiresAt > now }) == true { return true }
+        guard let control = runtime.controlService else { return false }
+        return await control.snapshot().cache.relayCredentials.contains { $0.expiresAt > now }
     }
 
     /// Links waiting in a backoff dial at once: their sessions died with the sleep.
@@ -238,6 +274,7 @@ final class SupermuxSystemPower {
     /// Back to awake with no history (DEBUG drivers).
     func reset() {
         policy = SupermuxWakePolicy()
+        rebuildToken &+= 1
         rebuilding = false
         displayTask?.cancel()
         displayTask = nil

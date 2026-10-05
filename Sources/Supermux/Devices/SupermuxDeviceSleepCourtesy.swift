@@ -9,10 +9,12 @@ import SupermuxKit
 /// Before sleeping, this Mac's host sends ``topic`` to every Mac subscribed to
 /// it (the links that view it). A link that receives it drops its session at
 /// once (it is about to stop answering) and, until that Mac shows it is awake,
-/// waits at least ``SupermuxPeerSleep/wait`` (5 min) before each dial instead
-/// of its usual seconds-to-two-minutes backoff: a lid-closed laptop was dialed
-/// every 40 s all night and woken by many of those dials. When that Mac dials
-/// this one (it woke), the waiting link dials it back at once.
+/// waits at least ``SupermuxPeerSleep/wait`` (5 min; the link's ±20 % spread
+/// makes it 4–6 min) before each dial instead of its usual
+/// seconds-to-two-minutes backoff: a lid-closed laptop was dialed every 40 s
+/// all night and woken by many of those dials. When that Mac dials this one
+/// (it woke), the waiting link dials it back at once; a link whose own dial
+/// is out then redials at once should that dial fail.
 ///
 /// The notice is additive: an older Mac does not subscribe to the topic and
 /// never sees it; an older viewer ignores it. Journals (category `power`):
@@ -69,8 +71,14 @@ final class SupermuxDeviceSleepCourtesy {
     }
 
     /// The wait before the link to `instance` dials again: `computed`, or
-    /// longer while that Mac is asleep.
+    /// longer while that Mac is asleep, or zero once after it dialed in
+    /// while this link was dialing it.
     func redialWait(for instance: SurfaceDeviceInstanceID, after computed: Duration) -> Duration {
+        peers[instance]?.takeWait(after: computed) ?? computed
+    }
+
+    /// ``redialWait(for:after:)`` without using anything up (DEBUG status).
+    func currentWait(for instance: SurfaceDeviceInstanceID, after computed: Duration) -> Duration {
         peers[instance]?.wait(after: computed) ?? computed
     }
 
@@ -80,7 +88,8 @@ final class SupermuxDeviceSleepCourtesy {
     }
 
     /// A Mac's session was admitted on this host: it is awake, so this Mac's
-    /// link to it, if it is waiting, dials at once (at most every 15 s).
+    /// link to it, if it is waiting, dials at once (at most every 15 s); if
+    /// it is dialing, it redials at once should that dial fail.
     func peerDialedIn(endpointIDHex: String, deviceID: String, tag: String) {
         guard let instance = instance(endpointIDHex: endpointIDHex, deviceID: deviceID, tag: tag) else { return }
         peerDialedIn(instance)
@@ -91,8 +100,16 @@ final class SupermuxDeviceSleepCourtesy {
         var fields = attributes(instance)
         fields["dials_back"] = String(dialsBack)
         journal.record("power", "peer-dialed-in", fields)
-        guard dialsBack, let link = link(for: instance), case .waiting = link.phase else { return }
-        link.refresh()
+        guard dialsBack, let link = link(for: instance) else { return }
+        switch link.phase {
+        case .waiting:
+            link.refresh()
+        case .connecting:
+            // That dial may have started while the Mac slept: should it fail, redial at once.
+            peers[instance]?.dialedInDuringDial()
+        case .idle, .connected, .blocked:
+            break
+        }
     }
 
     // MARK: - Lookup

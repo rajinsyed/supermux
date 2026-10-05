@@ -1,4 +1,4 @@
-public import Foundation
+import Foundation
 
 /// Closing this Mac's main iroh endpoint and binding it again after a long
 /// sleep (``SupermuxWakePolicy``), with a relay credential it can bind with.
