@@ -108,6 +108,13 @@ final class DeviceTerminalMirrorSession {
         get { SupermuxDeviceViewportGenerations.shared.holdsHiddenCounts(viewer, surfaceID: remoteSurfaceID) }
         set { SupermuxDeviceViewportGenerations.shared.setHoldsHiddenCounts(newValue, viewer, surfaceID: remoteSurfaceID) }
     }
+    /// Whether the host may still hold that automatic false from before the
+    /// link dropped (see `linkDropped`), until a replay with this Mac's grid
+    /// is answered. Per link and terminal, as above.
+    private var supermuxHostMayHoldHiddenCounts: Bool {
+        get { SupermuxDeviceViewportGenerations.shared.mayHoldHiddenCounts(viewer, surfaceID: remoteSurfaceID) }
+        set { SupermuxDeviceViewportGenerations.shared.setMayHoldHiddenCounts(newValue, viewer, surfaceID: remoteSurfaceID) }
+    }
     // SUPERMUX:end device-mirror-hidden-counts
     // SUPERMUX:begin device-mirror-viewer-colors
     /// Replays carry no color state of their own; each is followed by bytes
@@ -434,8 +441,14 @@ final class DeviceTerminalMirrorSession {
         // SUPERMUX:begin device-mirror-sizing-claim (the next attach is a reconnect: push the claim again)
         SupermuxTerminalSizingDefaults.shared.connectionDropped(self)
         // SUPERMUX:end device-mirror-sizing-claim
-        // SUPERMUX:begin device-mirror-hidden-counts (the other Mac drops this link's counts override with its connection: the re-attach sends it again)
+        // SUPERMUX:begin device-mirror-hidden-counts (the other Mac drops this link's counts override with its connection: the re-attach sends it again, judged against the next host's state only; no publish, which would blank the size panel)
+        // It may keep the automatic false, though: the re-attach's replay can
+        // land before it notices the old connection closed, and that close then
+        // leaves the newer report alone (`sizing-connection-scoped-clear`). A
+        // pane shown by then lifts it with the replay.
+        if supermuxHostHoldsHiddenCounts { supermuxHostMayHoldHiddenCounts = true }
         supermuxHostHoldsHiddenCounts = false
+        viewer?.connectionEnded()
         // SUPERMUX:end device-mirror-hidden-counts
     }
 
@@ -582,6 +595,9 @@ final class DeviceTerminalMirrorSession {
                 // Register this Mac with its pane grid before the host captures.
                 params.merge(viewer.replayParams()) { _, new in new }
                 // SUPERMUX:begin device-mirror-hidden-counts
+                if params["viewport_columns"] != nil, !supermuxHidden, supermuxHostMayHoldHiddenCounts {
+                    params["counts_override"] = NSNull()
+                }
                 if params["viewport_columns"] != nil, supermuxHidden != supermuxHostHoldsHiddenCounts {
                     if supermuxHidden, supermuxOwnCountsOverride == nil {
                         params["counts_override"] = false
@@ -617,6 +633,9 @@ final class DeviceTerminalMirrorSession {
             // SUPERMUX:begin terminal-stream-replay-sizing (decoded off the main actor with the replay; upstream: `receiveReplaySizing(response)`)
             receiveReplaySizing(replay.supermuxSizing)
             // SUPERMUX:end terminal-stream-replay-sizing
+            // SUPERMUX:begin device-mirror-hidden-counts (the replay settled this Mac's counts on this host)
+            if params["viewport_columns"] != nil { supermuxHostMayHoldHiddenCounts = false }
+            // SUPERMUX:end device-mirror-hidden-counts
             // SUPERMUX:begin terminal-stream-grid-viewer (pinned in stream order: output already handed to the surface is parsed at the grid it was written for, and the replay only once the surface holds the replay's grid; upstream: `if let columns = replay.columns, let rows = replay.rows { pin(columns: columns, rows: rows) }`)
             if let columns = replay.columns, let rows = replay.rows {
                 if let surface {
@@ -876,9 +895,10 @@ final class DeviceTerminalMirrorSession {
             viewer?.receive(state, selfParticipantID: sizing.selfParticipantID)
         }
         publishSharing()
-        // The replay's report expires on the host's TTL; the dedicated
-        // report keeps this Mac attached for the link's lifetime.
-        // SUPERMUX:begin device-mirror-viewport-generations (only the pane that speaks for this Mac, above the floor; upstream: `if let report = viewer?.viewportParams() {`)
+        // SUPERMUX:begin device-mirror-viewport-generations (only the pane that speaks for this Mac, above the floor; upstream: `if let report = viewer?.viewportParams() {`; upstream's comment said the replay's report expires on the host's TTL)
+        // An older host keeps the replay's report only for its TTL (this
+        // fork's keeps one that carries a generation, `sizing-sticky-replay`);
+        // the dedicated report keeps this Mac attached for the link's lifetime.
         if supermuxReportsGrid(), let report = viewer?.viewportParams() { sendSizing("mobile.terminal.viewport", report) }
         // SUPERMUX:end device-mirror-viewport-generations
     }
@@ -990,8 +1010,56 @@ final class DeviceTerminalMirrorSession {
     /// The user chose a counts override for this mirror: it is theirs now.
     private func supermuxUserChoseCounts() {
         supermuxHostHoldsHiddenCounts = false
+        supermuxHostMayHoldHiddenCounts = false
     }
     // SUPERMUX:end device-mirror-hidden-counts
+    // SUPERMUX:begin device-mirror-size-to-me
+
+    /// Set by a counts lift until the claim that follows it in the same turn
+    /// (``supermuxNoteCountsLift(_:)``).
+    private var supermuxLiftCountsWithClaim = false
+
+    /// Whether the other Mac's terminal is sized by this mirror now.
+    var supermuxOwnsGrid: Bool {
+        guard let viewer, let id = viewer.selfParticipantID else { return false }
+        return viewer.state?.owners.contains(id) == true
+    }
+
+    /// This Mac's user wants the other Mac's grid here (Size to My Window,
+    /// or the app becoming active with this mirror focused): this pane
+    /// speaks for this Mac and reports its grid with `view_appeared: true`,
+    /// which the other Mac notes as this viewer's activity in every mode
+    /// (SupermuxTerminalSizingAuto), so a Fit everyone to Auto change sent
+    /// just before it cannot race it. An older Mac ignores the key. Sent
+    /// during a replay too (the link is up; the other Mac's grid change
+    /// re-anchors this mirror right after the grid moves to someone else);
+    /// not while detached, off screen or between connections.
+    private func supermuxClaimGrid() {
+        let liftsCounts = supermuxLiftCountsWithClaim
+        supermuxLiftCountsWithClaim = false
+        guard phase == .attached || phase == .attaching, isConnected(),
+              !supermuxHidden, viewer?.detachment == nil else { return }
+        let generations = SupermuxDeviceViewportGenerations.shared
+        generations.bump(&viewer, surfaceID: remoteSurfaceID)
+        if let pane = sharingSurfaceID { generations.record(viewer, surfaceID: remoteSurfaceID, reportedBy: pane) }
+        guard var report = viewer?.viewportParams() else { return }
+        report["view_appeared"] = true
+        if liftsCounts { report["counts_override"] = NSNull() }
+        sendSizing("mobile.terminal.viewport", report)
+    }
+
+    /// Size to My Window lifts a counts override of false and then claims
+    /// the grid, as two requests that can reach the other Mac in either
+    /// order; the claim's higher generation fences a lift that lands after
+    /// it. So the claim that follows a lift in the same main-actor turn
+    /// carries the lift too. Only in that turn: a lift from the counts toggle
+    /// alone never rides a later activation's claim.
+    private func supermuxNoteCountsLift(_ value: Bool?) {
+        supermuxLiftCountsWithClaim = value == nil
+        guard value == nil else { return }
+        Task { @MainActor [weak self] in self?.supermuxLiftCountsWithClaim = false }
+    }
+    // SUPERMUX:end device-mirror-size-to-me
 
     /// Pins only the mirror to the source grid; local resizing clips or letterboxes it.
     private func pin(columns: Int, rows: Int) {
@@ -1035,6 +1103,24 @@ extension DeviceTerminalMirrorSession: TerminalSharingSurfaceControlling {
         // SUPERMUX:begin device-mirror-hidden-counts
         supermuxUserChoseCounts()
         // SUPERMUX:end device-mirror-hidden-counts
+        // SUPERMUX:begin device-mirror-size-to-me
+        supermuxNoteCountsLift(value)
+        // SUPERMUX:end device-mirror-size-to-me
+        // SUPERMUX:begin device-mirror-hidden-counts
+        #if DEBUG
+        // The recovery E2E delivers a lift late (`terminal_sizing.hold_counts_lift`).
+        if value == nil, let hold = SupermuxTerminalSizingRecoveryDrivers.takeCountsLiftHold() {
+            var params = report
+            params.merge(surfaceParams) { current, _ in current }
+            let requestData = requestData
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: hold)
+                _ = try? await requestData("mobile.terminal.viewport", params)
+            }
+            return true
+        }
+        #endif
+        // SUPERMUX:end device-mirror-hidden-counts
         sendSizing("mobile.terminal.viewport", report)
         return true
     }
@@ -1049,7 +1135,11 @@ extension DeviceTerminalMirrorSession: TerminalSharingSurfaceControlling {
 
     /// Input already carries the client id, which the host records as
     /// activity; an explicit focus has no mobile RPC.
-    func sharingNoteSelfActivity() {}
+    func sharingNoteSelfActivity() {
+        // SUPERMUX:begin device-mirror-size-to-me (Size to My Window, or switching to the app with this mirror focused, takes the other Mac's grid; upstream: an empty body)
+        supermuxClaimGrid()
+        // SUPERMUX:end device-mirror-size-to-me
+    }
 
     func sharingReattach(asViewer: Bool) -> Bool {
         // SUPERMUX:begin device-mirror-viewport-generations (above the link's floor, or the host drops it)

@@ -901,6 +901,9 @@ final class MobileHostService {
             MobileRemoteControlPolicy.isDisabled
         },
         peerRequestHandler: (@Sendable (MobileHostRPCRequest) async -> MobileHostRPCResult?)? = nil,
+        // SUPERMUX:begin sizing-lane-input (the session's lanes know their control connection by this id)
+        connectionID: UUID = UUID(),
+        // SUPERMUX:end sizing-lane-input
         isCurrent: @escaping @Sendable () async -> Bool
     ) async -> CmxIrohAdmittedConnectionExit {
         let expectedExit = CmxIrohAdmittedConnectionExit(
@@ -922,7 +925,9 @@ final class MobileHostService {
             return expectedExit
         }
 
-        let id = UUID()
+        // SUPERMUX:begin sizing-lane-input (upstream: `let id = UUID()`)
+        let id = connectionID
+        // SUPERMUX:end sizing-lane-input
         let defaultFirstFrameTimeout: UInt64 = switch authorization {
         case .irohAdmission:
             // Iroh owns admission and native connection liveness. A delayed
@@ -1184,9 +1189,15 @@ final class MobileHostService {
         if !clientIDs.isEmpty {
             TerminalController.shared.clearMobileViewportReports(
                 clientIDs: clientIDs,
+                // SUPERMUX:begin sizing-connection-scoped-clear (only the reports this connection wrote last)
+                connectionID: id,
+                // SUPERMUX:end sizing-connection-scoped-clear
                 reason: "mobile.connection.closed"
             )
         }
+        // SUPERMUX:begin sizing-detach-reannounce (a later connection of a detached phone is told again)
+        SupermuxMobileDetachAnnouncements.connectionClosed(id)
+        // SUPERMUX:end sizing-detach-reannounce
         MobileHostRequestActivity.endConnection()
     }
 

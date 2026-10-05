@@ -356,6 +356,9 @@ extension MobileShellComposite {
             }
             return .acknowledged(acknowledgement)
         } catch MobileShellConnectionError.rpcError(let code, let message) {
+            // SUPERMUX:begin sizing-detached-rpc-error
+            supermuxApplyTerminalDetached(ifCode: code, surfaceID: unit.terminalID.rawValue)
+            // SUPERMUX:end sizing-detached-rpc-error
             exactlyOnceInputLog.error(
                 "terminal input refused surface=\(unit.terminalID.rawValue, privacy: .public) code=\(code ?? "-", privacy: .public) message=\(message, privacy: .public)"
             )

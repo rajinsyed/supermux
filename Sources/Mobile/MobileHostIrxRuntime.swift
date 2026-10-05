@@ -1043,18 +1043,23 @@ final class MobileHostIrxRuntime: MobileHostPairingRuntime {
             journal: journal
         )
         // SUPERMUX:end device-tunnel-host
+        // SUPERMUX:begin sizing-lane-input (the lanes run with this session's control connection id, so lane input is the phone's sizing activity; upstream: the same Task without `withValue`)
+        let controlConnectionID = UUID()
         let laneLoop = Task {
-            await Self.runLaneLoop(
-                irx, admittedPeer: admittedPeer, artifactRegistry: artifactRegistry,
-                controlTransport: controlTransport,
-                tunnelHost: tunnelHost,
-                journal: journal,
-                onInteractiveSurface: { surfaceID in
-                    // Fire-and-forget: input delivery never waits on the
-                    // output side. Keystrokes arrive at human rate.
-                    Task { await eventWriter.noteInteractiveSurface(surfaceID.uuidString) }
-                })
+            await SupermuxMobileConnectionContext.$controlConnectionID.withValue(controlConnectionID) {
+                await Self.runLaneLoop(
+                    irx, admittedPeer: admittedPeer, artifactRegistry: artifactRegistry,
+                    controlTransport: controlTransport,
+                    tunnelHost: tunnelHost,
+                    journal: journal,
+                    onInteractiveSurface: { surfaceID in
+                        // Fire-and-forget: input delivery never waits on the
+                        // output side. Keystrokes arrive at human rate.
+                        Task { await eventWriter.noteInteractiveSurface(surfaceID.uuidString) }
+                    })
+            }
         }
+        // SUPERMUX:end sizing-lane-input
         let peerRequestHandler: (@Sendable (MobileHostRPCRequest) async -> MobileHostRPCResult?)?
         if isMac {
             let layouts = deviceWorkspaceLayouts
@@ -1078,6 +1083,9 @@ final class MobileHostIrxRuntime: MobileHostPairingRuntime {
             irohAdmissionIsAuthorized: { stillAuthorized(peer.endpointIDHex) },
             remoteControlDisabledByPolicy: { !stillAuthorized(peer.endpointIDHex) },
             peerRequestHandler: peerRequestHandler,
+            // SUPERMUX:begin sizing-lane-input
+            connectionID: controlConnectionID,
+            // SUPERMUX:end sizing-lane-input
             isCurrent: { [weak self] in
                 let runtime = self
                 return await MainActor.run { runtime?.isCurrent(token) == true }

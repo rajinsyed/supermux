@@ -115,6 +115,9 @@ enum MobileHostIrxLegacyDialectServer {
             ),
             simulatorStreamHandler: MobileHostIrohSimulatorStreamLaneHandler()
         )
+        // SUPERMUX:begin sizing-lane-input (the lanes run with this session's control connection id, as the irx runtime's do: lane input passes the detach gate and is the phone's sizing activity)
+        let controlConnectionID = UUID()
+        // SUPERMUX:end sizing-lane-input
         let supervisor = CmxIrohAdmittedConnectionSupervisor(
             runControl: {
                 await MobileHostService.acceptTransport(
@@ -125,11 +128,18 @@ enum MobileHostIrxLegacyDialectServer {
                     independentEventWriter: eventWriter,
                     firstFrameTimeoutNanoseconds: 0,
                     promoteUsableSession: { await admitted.markUsable() },
+                    // SUPERMUX:begin sizing-lane-input
+                    connectionID: controlConnectionID,
+                    // SUPERMUX:end sizing-lane-input
                     isCurrent: isCurrent
                 )
             },
             runApplicationLanes: {
-                await laneRouter.run(isCurrent: isCurrent)
+                // SUPERMUX:begin sizing-lane-input (upstream: `await laneRouter.run(isCurrent: isCurrent)`)
+                await SupermuxMobileConnectionContext.$controlConnectionID.withValue(controlConnectionID) {
+                    await laneRouter.run(isCurrent: isCurrent)
+                }
+                // SUPERMUX:end sizing-lane-input
             },
             closeConnection: {
                 await admitted.close()

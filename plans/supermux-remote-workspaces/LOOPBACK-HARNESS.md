@@ -626,6 +626,32 @@ own actions, and resets the preference at start and end.
 CMUX_TAG=<tag> python3 tests/supermux/loopback_terminal_sizing_policy_e2e.py --app-path "<App path>"
 ```
 
+## Terminal sizing recovery E2E
+
+`tests/supermux/loopback_terminal_sizing_recovery_e2e.py` (touchpoints #952–#953) reuses the policy
+suite's class and checks that an Auto terminal always gets back to the viewing device's grid: the
+apply governor never wedges, Size to My Window forces the Mac pane's grid, a departed viewer's size
+does not outlive it on a hidden Mac pane, the Mac's scroll, activation (also from a TextBox) and own
+selection count, a scene-phase leave is soft, a connection close clears only its own reports, typing
+over the phone's IRX input lane is the phone's activity and honours a disconnect, a replay's claim is
+sticky, Fixed seeds from the Mac pane, and the loopback's mirror sizes to itself, takes the grid on
+activation and stays hidden after its host relaunches. Its docstring lists each step (R1–R18), what
+it proves and why it failed before. Each step builds its own terminal and fake client ids; the
+artifact holds per step its checks, decided states, governor snapshots and 100 ms live-grid samples.
+It drives `supermux.devices.terminal_sizing.{governor,reset_hosts,local_scroll,activate,local_select,
+connection_request,connection_close,lane_input}` (`SupermuxTerminalSizingRecoveryDrivers.swift`).
+
+The local steps run with auto-mirror off: otherwise every new terminal has the loopback's hidden
+mirror as a second remote participant, and Auto's "phones stay attached" path tears the apply
+governor down, which hides the wedge (R1–R3 and R18 then pass for the wrong reason). The mirror
+steps turn auto-mirror back on, after closing the local steps' workspaces. `local_scroll` addresses
+its wheel event through the CGEvent window-id field (51), the field `NSEvent(cgEvent:)` reads; R8
+first proves delivery (the terminal's viewport scrolls into its scrollback).
+
+```bash
+CMUX_E2E_SUITES="loopback_terminal_sizing_recovery_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
+```
+
 ## Mirror Files panel E2E
 
 `tests/supermux/loopback_mirror_files_e2e.py` checks that a device mirror's Files panel shows the

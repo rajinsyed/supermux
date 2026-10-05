@@ -1328,8 +1328,19 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
                 cancelRemoteOperationTasks()
                 resetTerminalOutputTracking()
             }
+            // SUPERMUX:begin sizing-reconnect-report
+            if remoteClient != nil, remoteClient !== oldValue {
+                supermuxRemoteClientGeneration &+= 1
+            }
+            // SUPERMUX:end sizing-reconnect-report
         }
     }
+    // SUPERMUX:begin sizing-reconnect-report
+    /// Bumped whenever a new Mac connection is adopted. The Mac dropped this
+    /// phone's viewport reports with the old connection, so every mounted
+    /// terminal observes this and sends a fresh dedicated report.
+    public private(set) var supermuxRemoteClientGeneration: UInt64 = 0
+    // SUPERMUX:end sizing-reconnect-report
     /// Whether legacy connected-but-clientless shells use local iOS workspace creation.
     public var usesLocalWorkspaceCreationFallback: Bool {
         remoteClient == nil && connectionState == .connected
@@ -1733,6 +1744,16 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
     /// Shared sizing state per terminal surface (size state, self participant,
     /// attachment). See `MobileShellComposite+TerminalSizing.swift`.
     var terminalSizingBySurfaceID: [String: MobileTerminalSizingSurface] = [:]
+    // SUPERMUX:begin sizing-clear-lease-owner
+    /// The Mac each surface's viewport lease was reported to, so its clear
+    /// goes to that Mac even after the phone switched to another one.
+    @ObservationIgnored var supermuxViewportLeaseOwnersBySurfaceID: [String: MacPairingKey] = [:]
+    // SUPERMUX:end sizing-clear-lease-owner
+    // SUPERMUX:begin sizing-hidden-terminal
+    /// Terminals hidden under another tab whose reports set
+    /// `counts_override: false`, so their viewport piggybacks say it too.
+    @ObservationIgnored var supermuxCountsHiddenSurfaceIDs: Set<String> = []
+    // SUPERMUX:end sizing-hidden-terminal
     /// Monotonic viewport fences scoped to the Mac app instance that consumes
     /// them. Warm Iroh focus swaps keep both peer connections alive, so their
     /// counters must survive independently for the signed-in account lifetime.
@@ -14235,6 +14256,9 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
         if let generation = terminalViewportGeneration(for: terminalID.rawValue) {
             params["viewport_generation"] = Int(clamping: generation)
         }
+        // SUPERMUX:begin sizing-hidden-terminal (a hidden terminal's grid does not count)
+        supermuxMarkCountsHidden(&params, surfaceID: terminalID.rawValue)
+        // SUPERMUX:end sizing-hidden-terminal
         return params
     }
 
@@ -14357,6 +14381,9 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
                     params["viewport_generation"] = Int(clamping: generation)
                 }
             }
+            // SUPERMUX:begin sizing-hidden-terminal (a hidden terminal's grid does not count)
+            supermuxMarkCountsHidden(&params, surfaceID: terminalID.rawValue)
+            // SUPERMUX:end sizing-hidden-terminal
             let responseData = try await client.sendRequest(
                 MobileCoreRPCClient.requestData(
                     method: "terminal.paste",
@@ -16299,6 +16326,9 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
                     "surface_id": surfaceID,
                 ]
                 params.merge(replayViewportParams) { _, new in new }
+                // SUPERMUX:begin sizing-hidden-terminal (read at send time, as the dedicated report's flag is)
+                self?.supermuxMarkCountsHidden(&params, surfaceID: surfaceID)
+                // SUPERMUX:end sizing-hidden-terminal
                 // Screen-anchored replays hydrate this device's deep local
                 // scrollback only when the mirror has none (cold attach, a
                 // rebuilt-blank surface). Steady-state replays request no
@@ -16763,6 +16793,16 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
                 // force-refresh-and-retry already gave up) must drive the re-auth
                 // prompt instead of silently leaving a stale frame.
                 guard !self.disconnectForAuthorizationFailureIfNeeded(error) else { return }
+                // SUPERMUX:begin sizing-detached-rpc-error
+                if self.supermuxApplyTerminalDetached(ifError: error, surfaceID: surfaceID) {
+                    self.clearTerminalReplayBarrierIfCurrent(
+                        surfaceID: surfaceID,
+                        token: replayBarrierTokenForRequest,
+                        reason: "detached"
+                    )
+                    return
+                }
+                // SUPERMUX:end sizing-detached-rpc-error
                 if self.isTerminalReplayViewportTransition(error) {
                     // Ghostty is still applying the viewport reported by this
                     // request. Do not consume replay retries or fail the

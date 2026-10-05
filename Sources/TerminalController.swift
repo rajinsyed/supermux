@@ -259,13 +259,20 @@ class TerminalController {
         var deviceKind: TerminalDeviceKind = .iphone; var deviceName: String? = nil
         /// The viewer's stable per-install `device_id`, when it sent one.
         var deviceID: String? = nil
+        // SUPERMUX:begin sizing-sticky-replay (upstream's doc named only the dedicated report as sticky)
         /// Sticky reports come from the dedicated `mobile.terminal.viewport`
-        /// RPC and live for the client's connection lifetime (cleared on
-        /// disconnect or surface detach), so an idle paired device keeps its
-        /// viewport border. Non-sticky reports piggyback on `terminal.input`
-        /// and expire on the TTL so a client that only ever typed once does
-        /// not pin the grid forever.
+        /// RPC, and from a `mobile.terminal.replay` that carries a viewport
+        /// generation (a mounted viewer's reconnect), and live for the
+        /// client's connection lifetime (cleared on disconnect or surface
+        /// detach), so an idle paired device keeps its viewport border.
+        /// Non-sticky reports piggyback on `terminal.input` (and a
+        /// generationless replay) and expire on the TTL so a client that only
+        /// ever typed once does not pin the grid forever.
+        // SUPERMUX:end sizing-sticky-replay
         var sticky: Bool = false
+        // SUPERMUX:begin sizing-report-connection (the phone connection that last wrote this report; nil from the control socket)
+        var connectionID: UUID? = nil
+        // SUPERMUX:end sizing-report-connection
     }
     private static let mobileViewportReportTTL: TimeInterval = 5
     /// Stability window for a governed cap-to-cap grid change: long enough to
@@ -15039,6 +15046,14 @@ class TerminalController {
         _ request: MobileHostRPCRequest,
         executionContext: MobileHostRPCExecutionContext? = nil
     ) async -> MobileHostRPCResult {
+        // SUPERMUX:begin sizing-report-connection (the request runs with its connection as the task's phone connection, which stamps the viewport reports it writes)
+        if let connectionID = executionContext?.connectionID,
+           SupermuxMobileConnectionContext.controlConnectionID != connectionID {
+            return await SupermuxMobileConnectionContext.$controlConnectionID.withValue(connectionID) {
+                await mobileHostHandleRPC(request, executionContext: executionContext)
+            }
+        }
+        // SUPERMUX:end sizing-report-connection
         // The mobile data-plane RPC speaks `MobileHostRPCRequest` /
         // `MobileHostRPCResult` and dispatches directly to the app-side
         // `v2Mobile*` bodies. It deliberately does NOT route through the v2
@@ -15733,6 +15748,9 @@ class TerminalController {
         let expectedViewport = applyMobileViewportReport(
             params: params,
             terminalTarget: terminalTarget,
+            // SUPERMUX:begin sizing-sticky-replay (a mounted phone's replay, which carries its viewport generation, claims the grid like its dedicated report; upstream: the default, non-sticky)
+            sticky: v2Int(params, "viewport_generation") != nil,
+            // SUPERMUX:end sizing-sticky-replay
             reason: "mobile.terminal.replay"
         )
         if hasViewportReportFields, expectedViewport == nil {
@@ -15946,6 +15964,9 @@ class TerminalController {
                 reportedGrid = clearMobileViewportReport(
                     surfaceID: terminalTarget.surfaceID,
                     clientID: clientID, generation: v2Int(params, "viewport_generation").flatMap { $0 >= 0 ? UInt64($0) : nil }, requireGeneration: true,
+                    // SUPERMUX:begin sizing-soft-leave (a phone's scene-phase leave, `transient: true`, is soft: a glance and return resizes nothing)
+                    immediate: v2Bool(params, "transient") != true,
+                    // SUPERMUX:end sizing-soft-leave
                     reason: "mobile.terminal.viewport.clear"
                 )
             } else {
@@ -16431,6 +16452,9 @@ class TerminalController {
         }
         // A phone someone disconnected stays out until it reattaches.
         if isMobileClientDetached(surfaceID: terminalPanel.id, clientID: clientID) { return nil }
+        // SUPERMUX:begin sizing-report-live-connection (a request that ran after its connection closed writes nothing: no later close would clear its stamp)
+        guard SupermuxMobileConnectionContext.isLive else { return nil }
+        // SUPERMUX:end sizing-report-live-connection
         // SUPERMUX:begin device-mirror-viewport-limit (a viewing Mac's full-screen pane may be larger than a phone's)
         let viewportLimit = SupermuxTerminalSizingDefaults.viewportLimit(
             deviceKind: v2String(params, "device_kind").flatMap(TerminalDeviceKind.init(rawValue:))
@@ -16489,6 +16513,9 @@ class TerminalController {
             deviceID: v2String(params, "device_id").map { String($0.prefix(64)) } ?? reports[clientID]?.deviceID,
             sticky: reportIsSticky
         )
+        // SUPERMUX:begin sizing-report-connection (restamped on every write: a connection's close clears only what it wrote last)
+        reports[clientID]?.connectionID = SupermuxMobileConnectionContext.controlConnectionID
+        // SUPERMUX:end sizing-report-connection
         mobileViewportReportsBySurfaceID[terminalPanel.id] = reports
         scheduleMobileViewportReportCleanup(surfaceID: terminalPanel.id, reports: reports)
         return resolveSharedSizing(
@@ -16513,6 +16540,9 @@ class TerminalController {
         surfaceID: UUID,
         target: MobileViewportApplyGovernor.Target,
         immediate: Bool = false,
+        // SUPERMUX:begin sizing-soft-leave (`softLeave`: a staged change waits the uncap window, cap or not)
+        softLeave: Bool = false,
+        // SUPERMUX:end sizing-soft-leave
         reason: String
     ) -> (columns: Int, rows: Int)? {
         var governor = mobileViewportApplyGovernorsBySurfaceID[surfaceID] ?? MobileViewportApplyGovernor()
@@ -16534,10 +16564,16 @@ class TerminalController {
                 "reschedule=\(scheduleFlush ? 1 : 0) reason=\(reason)"
             )
             #endif
-            if scheduleFlush {
+            // SUPERMUX:begin sizing-soft-leave (upstream: `if scheduleFlush {`; a soft leave re-arms a pending cap window, so its stage waits the uncap window)
+            if scheduleFlush || softLeave {
+            // SUPERMUX:end sizing-soft-leave
                 scheduleMobileViewportGovernorFlush(
                     surfaceID: surfaceID,
-                    window: Self.mobileViewportStabilityWindow(for: target),
+                    // SUPERMUX:begin sizing-soft-leave (upstream: `window: Self.mobileViewportStabilityWindow(for: target),`)
+                    window: softLeave
+                        ? Self.mobileViewportUncapApplyStabilityWindow
+                        : Self.mobileViewportStabilityWindow(for: target),
+                    // SUPERMUX:end sizing-soft-leave
                     reason: reason
                 )
             }
@@ -16620,36 +16656,63 @@ class TerminalController {
     /// macOS border reflects only the devices still attached. Every caller is
     /// an explicit leave, so the new size applies without the governor's
     /// stability window.
+    // SUPERMUX:begin sizing-soft-leave (`immediate`: false for a phone's scene-phase leave, which waits the governor's uncap window; upstream: no parameter, always immediate)
     func clearMobileViewportReport(
         surfaceID: UUID,
         clientID: String, generation: UInt64? = nil, requireGeneration: Bool = false,
+        immediate: Bool = true,
         reason: String
     ) -> (columns: Int, rows: Int)? {
+    // SUPERMUX:end sizing-soft-leave
         if requireGeneration, let generation { if let existingGeneration = mobileViewportReportsBySurfaceID[surfaceID]?[clientID]?.generation ?? mobileViewportGenerationsBySurfaceID[surfaceID]?[clientID], existingGeneration > generation { return nil }; mobileViewportGenerationsBySurfaceID[surfaceID, default: [:]][clientID] = generation }
         else if requireGeneration, (mobileViewportReportsBySurfaceID[surfaceID]?[clientID]?.generation ?? mobileViewportGenerationsBySurfaceID[surfaceID]?[clientID]) != nil { return nil }
         else if var generations = mobileViewportGenerationsBySurfaceID[surfaceID] { generations.removeValue(forKey: clientID); mobileViewportGenerationsBySurfaceID[surfaceID] = generations.isEmpty ? nil : generations }
+        // SUPERMUX:begin sizing-fence-writer (a generation clear's fence remembers the connection that wrote it; any other clear left no fence of its own)
+        SupermuxViewportFenceWriters.noteClear(
+            surfaceID: surfaceID, clientID: clientID, generation: requireGeneration ? generation : nil
+        )
+        // SUPERMUX:end sizing-fence-writer
         guard var reports = mobileViewportReportsBySurfaceID[surfaceID], reports[clientID] != nil else { return nil }
         reports.removeValue(forKey: clientID)
         if reports.isEmpty {
             mobileViewportReportsBySurfaceID[surfaceID] = nil
             mobileViewportReportCleanupTimersBySurfaceID[surfaceID]?.cancel()
             mobileViewportReportCleanupTimersBySurfaceID[surfaceID] = nil
-            _ = resolveSharedSizing(surfaceID: surfaceID, reports: [:], immediate: true, reason: reason)
+            // SUPERMUX:begin sizing-soft-leave (upstream: `immediate: true`)
+            _ = resolveSharedSizing(
+                surfaceID: surfaceID, reports: [:], immediate: immediate, softLeave: !immediate, reason: reason
+            )
+            // SUPERMUX:end sizing-soft-leave
             return nil
         }
         mobileViewportReportsBySurfaceID[surfaceID] = reports
         scheduleMobileViewportReportCleanup(surfaceID: surfaceID, reports: reports)
-        return resolveSharedSizing(surfaceID: surfaceID, reports: reports, immediate: true, reason: reason)
+        // SUPERMUX:begin sizing-soft-leave (upstream: `immediate: true`; a soft leave keeps other viewers' changes behind the uncap window)
+        return resolveSharedSizing(
+            surfaceID: surfaceID, reports: reports, immediate: immediate, softLeave: !immediate, reason: reason
+        )
+        // SUPERMUX:end sizing-soft-leave
     }
 
     /// Drop every viewport report owned by the given client IDs across all
     /// surfaces. Called when a mobile connection closes so a disconnected
     /// device stops pinning the grid even though it never sent an explicit
     /// clear. Sticky reports rely on this signal instead of the TTL.
-    func clearMobileViewportReports(clientIDs: Set<String>, reason: String) {
+    // SUPERMUX:begin sizing-connection-scoped-clear (`connectionID`: the closing connection; upstream: `(clientIDs: Set<String>, reason: String)`)
+    func clearMobileViewportReports(clientIDs: Set<String>, connectionID: UUID? = nil, reason: String) {
+    // SUPERMUX:end sizing-connection-scoped-clear
         guard !clientIDs.isEmpty else { return }
         for surfaceID in Set(mobileViewportReportsBySurfaceID.keys).union(mobileViewportGenerationsBySurfaceID.keys) {
             for clientID in clientIDs {
+                // SUPERMUX:begin sizing-connection-scoped-clear (a report another connection wrote last stays, with its generation fence; so does a fence another connection's clear wrote, #1000)
+                if let connectionID,
+                   let writer = mobileViewportReportsBySurfaceID[surfaceID]?[clientID]?.connectionID
+                       ?? SupermuxViewportFenceWriters.writer(
+                           surfaceID: surfaceID, clientID: clientID,
+                           fence: mobileViewportGenerationsBySurfaceID[surfaceID]?[clientID]
+                       ),
+                   writer != connectionID { continue }
+                // SUPERMUX:end sizing-connection-scoped-clear
                 _ = clearMobileViewportReport(surfaceID: surfaceID, clientID: clientID, reason: reason)
             }
         }

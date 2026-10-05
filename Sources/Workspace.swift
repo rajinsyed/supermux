@@ -13778,6 +13778,9 @@ extension Workspace: BonsplitDelegate {
         previousTerminalHostedView: GhosttySurfaceScrollView? = nil
     ) {
         guard !remoteTmuxMirrorMutations.suppressesFocusActivation else { return }
+        // SUPERMUX:begin sizing-auto-mac-selection (this Mac's user selecting a tab or focusing a pane: a phone that attaches to it right after does not take it)
+        SupermuxTerminalSizingAuto.shared.macUserSelected(panelID: panelIdFromSurfaceId(tabId))
+        // SUPERMUX:end sizing-auto-mac-selection
         tmuxOverlaySelectionRevision &+= 1
         let effectiveFocusTransactionId = focusTransactionId ?? activeFocusTransactionId
         pendingTabSelection = PendingTabSelectionRequest(

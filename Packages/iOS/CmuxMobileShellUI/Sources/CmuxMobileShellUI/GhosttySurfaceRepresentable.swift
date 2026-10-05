@@ -24,6 +24,12 @@ struct GhosttySurfaceRepresentable: UIViewControllerRepresentable {
     let terminalWorkPopulation: TerminalWorkContext
     let fontSize: Float32
     let terminalPresentationIsActive: Bool
+    // SUPERMUX:begin sizing-hidden-terminal
+    /// Whether the terminal is the workspace's shown tab. A terminal under a
+    /// browser, stream, Simulator or Mac-surface tab stays mounted (opacity 0)
+    /// but must not size the Mac terminal.
+    var terminalSurfaceIsShown: Bool = true
+    // SUPERMUX:end sizing-hidden-terminal
     /// Whether the mounted surface should grab the keyboard when it attaches to
     /// a window. Driven by the host's autofocus-suppression state so chrome
     /// actions (create workspace/terminal, switch terminal) do not pop the
@@ -136,6 +142,9 @@ struct GhosttySurfaceRepresentable: UIViewControllerRepresentable {
         // Stamp the shell-level id so id-scoped registry lookups (the
         // "View as Text" capture) resolve this exact terminal.
         view.hostSurfaceID = surfaceID
+        // SUPERMUX:begin sizing-reconnect-report
+        context.coordinator.appliedRemoteClientGeneration = store.supermuxRemoteClientGeneration
+        // SUPERMUX:end sizing-reconnect-report
         context.coordinator.attach(surfaceView: view)
         view.seedThemeParityPreviewIfRequested()
         // Mount the composer band immediately if the composer was already open when
@@ -172,6 +181,12 @@ struct GhosttySurfaceRepresentable: UIViewControllerRepresentable {
         // state write, so it is safe in `updateUIViewController`.
         context.coordinator.setTerminalPresentationActive(terminalPresentationIsActive)
         context.coordinator.attemptPendingOutputConsumerRecoveryPresentation()
+        // SUPERMUX:begin sizing-hidden-terminal
+        context.coordinator.supermuxSetTerminalSurfaceShown(terminalSurfaceIsShown)
+        // SUPERMUX:end sizing-hidden-terminal
+        // SUPERMUX:begin sizing-reconnect-report
+        context.coordinator.supermuxRemoteClientChanged(to: store.supermuxRemoteClientGeneration)
+        // SUPERMUX:end sizing-reconnect-report
         guard let surfaceView = (uiView as? GhosttySurfaceHostView)?.surfaceView else { return }
         surfaceView.terminalWorkPopulation = terminalWorkPopulation
         surfaceView.autoFocusOnWindowAttach = autoFocusOnWindowAttach
@@ -377,9 +392,30 @@ struct GhosttySurfaceRepresentable: UIViewControllerRepresentable {
         /// Set when the surface joins a window; the next viewport report sent
         /// says so (`view_appeared`), so the Mac's Auto mode hands the grid to
         /// this phone even though a view that only left the window kept its
-        /// viewport lease and reports the same size.
-        private var viewAppearedReportPending = false
+        /// viewport lease and reports the same size. Cleared only once a report
+        /// that carried it reached the Mac.
+        var viewAppearedReportPending = false
         // SUPERMUX:end sizing-auto-view-appeared
+        // SUPERMUX:begin sizing-hidden-terminal
+        /// Whether the terminal is the workspace's shown tab.
+        var terminalSurfaceShown = true
+        /// The phone set `counts_override: false` because the terminal is
+        /// hidden under another tab; every report carries it until shown,
+        /// and the store adds it to every request that carries the grid.
+        var phoneHidesCounts = false {
+            didSet {
+                guard phoneHidesCounts != oldValue else { return }
+                store?.supermuxSetTerminalCountsHidden(phoneHidesCounts, surfaceID: surfaceID)
+            }
+        }
+        /// Shown again after the phone hid its counts: the next delivered
+        /// report carries `counts_override: null`.
+        var countsRestorePending = false
+        // SUPERMUX:end sizing-hidden-terminal
+        // SUPERMUX:begin sizing-reconnect-report
+        /// The store's remote-client generation this mount last reported for.
+        var appliedRemoteClientGeneration: UInt64 = 0
+        // SUPERMUX:end sizing-reconnect-report
         private var composerMounted = false
         private var activeViewportPolicy: MobileTerminalOutputViewportPolicy = .natural
         /// Shared by the legacy and verified apply paths: an alternating
@@ -449,6 +485,14 @@ struct GhosttySurfaceRepresentable: UIViewControllerRepresentable {
             self.outputConsumerRecoveryClock = outputConsumerRecoveryClock
             self.viewportReportRetryClock = viewportReportRetryClock
             super.init()
+            // SUPERMUX:begin sizing-soft-leave
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(supermuxSceneWillResignActive),
+                name: UIApplication.willResignActiveNotification,
+                object: nil
+            )
+            // SUPERMUX:end sizing-soft-leave
         }
 
         func attach(surfaceView: GhosttySurfaceView) {
@@ -535,22 +579,15 @@ struct GhosttySurfaceRepresentable: UIViewControllerRepresentable {
                             reportID: report.id
                         )
                     // SUPERMUX:begin sizing-auto-view-appeared
-                    var preparation = self.preparedViewportReportsByReportID.removeValue(
-                        forKey: report.id
+                    let preparation = self.supermuxFlagViewportReport(
+                        self.preparedViewportReportsByReportID.removeValue(forKey: report.id),
+                        report: report,
+                        store: store
                     )
-                    if self.viewAppearedReportPending {
-                        preparation = preparation ?? store.prepareTerminalViewport(
-                            surfaceID: self.surfaceID,
-                            columns: report.columns,
-                            rows: report.rows
-                        )
-                        if preparation != nil {
-                            preparation?.viewAppeared = true
-                            self.viewAppearedReportPending = false
-                        }
-                    }
                     if let preparation {
-                        return await store.updatePreparedTerminalViewport(preparation)
+                        let granted = await store.updatePreparedTerminalViewport(preparation)
+                        if granted != nil { self.supermuxViewportReportDelivered(preparation) }
+                        return granted
                     }
                     // SUPERMUX:end sizing-auto-view-appeared
                     return await store.updateTerminalViewport(
@@ -571,6 +608,11 @@ struct GhosttySurfaceRepresentable: UIViewControllerRepresentable {
                         MobileDebugLog.anchormux(
                             "zoom.viewport.noEffective grid=\(report.columns)x\(report.rows)"
                         )
+                        // SUPERMUX:begin sizing-reconnect-report
+                        // No Mac to answer: keep the retry budget. The next
+                        // connection re-reports (supermuxRemoteClientChanged).
+                        if self.store?.supermuxTerminalViewportOffline == true { return }
+                        // SUPERMUX:end sizing-reconnect-report
                         self.scheduleViewportReportRetry(
                             surfaceView: surfaceView,
                             reason: "rpc_no_effective"
@@ -1205,7 +1247,9 @@ struct GhosttySurfaceRepresentable: UIViewControllerRepresentable {
             }
         }
 
-        private func stopMountedTasks(releaseViewport: Bool = false) {
+        // SUPERMUX:begin sizing-soft-leave (`transient` marks the release's clear soft)
+        private func stopMountedTasks(releaseViewport: Bool = false, transient: Bool = false) {
+        // SUPERMUX:end sizing-soft-leave
             let ownerID = outputConsumerOwnerID
             outputConsumerOwnerID = nil
             outputTaskGeneration &+= 1
@@ -1247,7 +1291,9 @@ struct GhosttySurfaceRepresentable: UIViewControllerRepresentable {
                 viewportLeaseHeld = false
                 lastViewportRetryColumns = nil
                 lastViewportRetryRows = nil
-                store?.clearTerminalViewport(surfaceID: surfaceID)
+                // SUPERMUX:begin sizing-soft-leave
+                store?.clearTerminalViewport(surfaceID: surfaceID, transient: transient)
+                // SUPERMUX:end sizing-soft-leave
                 #if DEBUG
                 releaseGateUIProbe?.terminalDidUnmount(surfaceID: surfaceID)
                 #endif
@@ -1283,11 +1329,48 @@ struct GhosttySurfaceRepresentable: UIViewControllerRepresentable {
                 attemptPendingOutputConsumerRecoveryPresentation()
             } else {
                 outputConsumerRecoveryAlertPending = outputConsumerRestartBlocked
-                stopMountedTasks(releaseViewport: true)
+                // SUPERMUX:begin sizing-soft-leave (the scene left .active: a soft leave)
+                stopMountedTasks(releaseViewport: true, transient: true)
+                // SUPERMUX:end sizing-soft-leave
             }
         }
 
+        // SUPERMUX:begin sizing-reconnect-report
+        /// A new Mac connection was adopted. The Mac dropped this phone's
+        /// sticky report with the old one. The replay piggyback re-registers
+        /// it (sticky when it carries a generation) but never says
+        /// `view_appeared` or clears a counts override, so an on-screen
+        /// terminal sends a fresh dedicated report with a fresh retry budget.
+        /// - Parameter generation: The store's remote-client generation.
+        func supermuxRemoteClientChanged(to generation: UInt64) {
+            guard generation != appliedRemoteClientGeneration else { return }
+            appliedRemoteClientGeneration = generation
+            guard terminalPresentationIsActive,
+                  viewportReportScheduler != nil,
+                  let surfaceView,
+                  surfaceView.window != nil else { return }
+            cancelViewportReportRetry(resetBackoff: true)
+            surfaceView.requestViewportReportForMount()
+        }
+        // SUPERMUX:end sizing-reconnect-report
+
+        // SUPERMUX:begin sizing-soft-leave
+        /// A terminal view that only left the window keeps its viewport lease,
+        /// and no presentation update reaches it while it is off screen. When
+        /// the scene leaves `.active`, release that lease softly too, so the
+        /// Mac does not keep this phone's size until the connection closes.
+        @objc func supermuxSceneWillResignActive() {
+            guard viewportLeaseHeld,
+                  let surfaceView,
+                  surfaceView.window == nil else { return }
+            stopMountedTasks(releaseViewport: true, transient: true)
+        }
+        // SUPERMUX:end sizing-soft-leave
+
         func detach() {
+            // SUPERMUX:begin sizing-hidden-terminal (an unmounted terminal no longer hides its counts)
+            if phoneHidesCounts { store?.supermuxSetTerminalCountsHidden(false, surfaceID: surfaceID) }
+            // SUPERMUX:end sizing-hidden-terminal
             outputConsumerRecoveryAlertPending = false
             stopMountedTasks(releaseViewport: true)
             surfaceView = nil

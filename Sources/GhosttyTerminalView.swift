@@ -9830,6 +9830,11 @@ class GhosttyNSView: NSView, NSUserInterfaceValidations {
             return
         }
         _ = rememberGhosttyMouseState(from: event)
+        // SUPERMUX:begin sizing-auto-local-input (a scroll on the pane is this Mac's user's activity: a wheel notch or a gesture's start, not its momentum)
+        if let surfaceID = terminalSurface?.id {
+            SupermuxTerminalSizingAuto.shared.macPaneScrolled(event, surfaceID: surfaceID)
+        }
+        // SUPERMUX:end sizing-auto-local-input
         postWheelScroll(requiresAuthoritativeResponse: true)
         lastScrollEventTime = CACurrentMediaTime()
         Self.focusLog("scrollWheel: surface=\(terminalSurface?.id.uuidString ?? "nil") firstResponder=\(String(describing: window?.firstResponder))")

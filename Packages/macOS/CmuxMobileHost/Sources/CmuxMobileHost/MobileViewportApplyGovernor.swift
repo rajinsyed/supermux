@@ -33,6 +33,10 @@ import Foundation
 ///
 /// Pure state machine: the owner schedules the flush timer when a decision
 /// asks for one, and calls `flush()` when it fires.
+// SUPERMUX:begin sizing-governor-immediate-flush
+/// The owner cancels that timer when an `immediate` request applies, and the
+/// governor records that no flush is scheduled any more.
+// SUPERMUX:end sizing-governor-immediate-flush
 public struct MobileViewportApplyGovernor {
     /// What the mobile report negotiation wants the surface to be.
     public enum Target: Equatable {
@@ -79,6 +83,9 @@ public struct MobileViewportApplyGovernor {
             // before the replay is captured, so the first cap never waits.
             staged = nil
             applied = target
+            // SUPERMUX:begin sizing-governor-immediate-flush (the owner cancels the flush timer on an immediate apply)
+            if immediate { flushScheduled = false }
+            // SUPERMUX:end sizing-governor-immediate-flush
             return .apply(target)
         }
         if target == .uncapped, applied == nil {
@@ -87,10 +94,14 @@ public struct MobileViewportApplyGovernor {
             return .drop
         }
         if immediate {
-            // An explicit leave: restore now. A pending timer fires as a
-            // no-op because nothing stays staged.
+            // SUPERMUX:begin sizing-governor-immediate-flush (upstream left `flushScheduled` set: "A pending timer fires as a no-op because nothing stays staged.")
+            // An explicit leave: restore now. The owner cancels the pending
+            // timer, so no flush is scheduled any more: left set, every later
+            // change would be staged with no timer to apply it.
             staged = nil
             applied = target
+            flushScheduled = false
+            // SUPERMUX:end sizing-governor-immediate-flush
             return .apply(target)
         }
         if target == staged {
