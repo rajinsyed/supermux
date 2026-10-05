@@ -9,6 +9,16 @@ import Testing
 /// one connection (each after a lane that had worked) or one failed send
 /// parked the lane for the rest of the connection, and every keystroke fell
 /// back to one RPC round trip per batch.
+///
+/// Failure modes for the retry itself (review findings I8 and I9), listed
+/// before the fix:
+/// 1. A lane open that fails with `CancellationError` because the engine
+///    replaced the dial it joined (an explicit redial) ends the run with the
+///    lane still "opening" and no task: no retry, and `ensure` never starts
+///    it again, so the terminal stays on the RPC fallback.
+/// 2. A lane that ends right after delivering its baseline (a host that
+///    accepts and drops it) resets the backoff, so it reopens every 250 ms
+///    forever.
 @Suite struct SupermuxTerminalLaneRetryTests {
     @Test func laneThatEndsAfterItsBaselineReopensEveryTime() async throws {
         // Four relay drops, each after a lane that delivered its baseline.
@@ -92,6 +102,47 @@ import Testing
         #expect(sleeps.values == [0, 1, 2, 0, 1].map { .milliseconds($0) })
         #expect(events.values.map(\.attempt) == [1, 2, 3, 1, 2])
         #expect(events.values.map { $0.failure == nil } == [false, false, false, true, false])
+        await coordinator.deactivateAll()
+    }
+
+    @Test func aLaneOpenCancelledUnderneathIsRetried() async throws {
+        let survivor = LaneRetryTestConnection(frames: [Self.baseline], waitsAfterFrames: true)
+        let provider = LaneRetryTestProvider(script: [.cancel, .lane(survivor)])
+        let coordinator = MobileTerminalLaneCoordinator(
+            provider: { request, surfaceID, cursor in
+                try await provider.open(request, surfaceID, cursor)
+            },
+            retrySleep: { _ in }
+        )
+        await coordinator.ensure(Self.configuration(try Self.request()))
+
+        #expect(
+            await Self.eventually { await coordinator.isOutputReady(surfaceID: Self.surfaceID) },
+            "a dial the engine cancelled stranded the lane"
+        )
+        #expect(await provider.requestCount() == 2)
+        await coordinator.deactivateAll()
+    }
+
+    @Test func aLaneThatEndsRightAfterItsBaselineBacksOff() async throws {
+        let quickEnds = (0..<4).map { _ in
+            LaneRetryTestConnection(frames: [Self.baseline], waitsAfterFrames: false)
+        }
+        let survivor = LaneRetryTestConnection(frames: [Self.baseline], waitsAfterFrames: true)
+        let provider = LaneRetryTestProvider(lanes: quickEnds + [survivor])
+        let sleeps = LaneRetryRecorder<Duration>()
+        let coordinator = MobileTerminalLaneCoordinator(
+            provider: { request, surfaceID, cursor in
+                try await provider.open(request, surfaceID, cursor)
+            },
+            retryDelay: { .milliseconds($0) },
+            retrySleep: { sleeps.append($0) }
+        )
+        await coordinator.ensure(Self.configuration(try Self.request()))
+
+        #expect(await Self.eventually { await provider.requestCount() == 5 })
+        #expect(await Self.eventually { await coordinator.isOutputReady(surfaceID: Self.surfaceID) })
+        #expect(sleeps.values == [0, 1, 2, 3].map { .milliseconds($0) }, "a lane that never stayed up reset the backoff")
         await coordinator.deactivateAll()
     }
 
@@ -220,6 +271,8 @@ actor LaneRetryTestProvider {
 
     enum Step {
         case refuse
+        /// The engine replaced the dial the open joined.
+        case cancel
         case lane(LaneRetryTestConnection)
     }
 
@@ -240,10 +293,12 @@ actor LaneRetryTestProvider {
         _: UInt64?
     ) throws -> any MobileTerminalLaneConnection {
         requests += 1
-        guard !script.isEmpty, case let .lane(lane) = script.removeFirst() else {
-            throw Refused()
+        guard !script.isEmpty else { throw Refused() }
+        switch script.removeFirst() {
+        case .refuse: throw Refused()
+        case .cancel: throw CancellationError()
+        case .lane(let lane): return lane
         }
-        return lane
     }
 
     func requestCount() -> Int { requests }
