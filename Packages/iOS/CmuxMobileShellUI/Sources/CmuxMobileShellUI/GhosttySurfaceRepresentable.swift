@@ -449,6 +449,14 @@ struct GhosttySurfaceRepresentable: UIViewControllerRepresentable {
             self.outputConsumerRecoveryClock = outputConsumerRecoveryClock
             self.viewportReportRetryClock = viewportReportRetryClock
             super.init()
+            // SUPERMUX:begin sizing-soft-leave
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(supermuxSceneWillResignActive),
+                name: UIApplication.willResignActiveNotification,
+                object: nil
+            )
+            // SUPERMUX:end sizing-soft-leave
         }
 
         func attach(surfaceView: GhosttySurfaceView) {
@@ -1205,7 +1213,9 @@ struct GhosttySurfaceRepresentable: UIViewControllerRepresentable {
             }
         }
 
-        private func stopMountedTasks(releaseViewport: Bool = false) {
+        // SUPERMUX:begin sizing-soft-leave (`transient` marks the release's clear soft)
+        private func stopMountedTasks(releaseViewport: Bool = false, transient: Bool = false) {
+        // SUPERMUX:end sizing-soft-leave
             let ownerID = outputConsumerOwnerID
             outputConsumerOwnerID = nil
             outputTaskGeneration &+= 1
@@ -1247,7 +1257,9 @@ struct GhosttySurfaceRepresentable: UIViewControllerRepresentable {
                 viewportLeaseHeld = false
                 lastViewportRetryColumns = nil
                 lastViewportRetryRows = nil
-                store?.clearTerminalViewport(surfaceID: surfaceID)
+                // SUPERMUX:begin sizing-soft-leave
+                store?.clearTerminalViewport(surfaceID: surfaceID, transient: transient)
+                // SUPERMUX:end sizing-soft-leave
                 #if DEBUG
                 releaseGateUIProbe?.terminalDidUnmount(surfaceID: surfaceID)
                 #endif
@@ -1283,9 +1295,24 @@ struct GhosttySurfaceRepresentable: UIViewControllerRepresentable {
                 attemptPendingOutputConsumerRecoveryPresentation()
             } else {
                 outputConsumerRecoveryAlertPending = outputConsumerRestartBlocked
-                stopMountedTasks(releaseViewport: true)
+                // SUPERMUX:begin sizing-soft-leave (the scene left .active: a soft leave)
+                stopMountedTasks(releaseViewport: true, transient: true)
+                // SUPERMUX:end sizing-soft-leave
             }
         }
+
+        // SUPERMUX:begin sizing-soft-leave
+        /// A terminal view that only left the window keeps its viewport lease,
+        /// and no presentation update reaches it while it is off screen. When
+        /// the scene leaves `.active`, release that lease softly too, so the
+        /// Mac does not keep this phone's size until the connection closes.
+        @objc func supermuxSceneWillResignActive() {
+            guard viewportLeaseHeld,
+                  let surfaceView,
+                  surfaceView.window == nil else { return }
+            stopMountedTasks(releaseViewport: true, transient: true)
+        }
+        // SUPERMUX:end sizing-soft-leave
 
         func detach() {
             outputConsumerRecoveryAlertPending = false

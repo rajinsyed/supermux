@@ -455,7 +455,9 @@ extension MobileShellComposite {
 
     /// Tell the Mac to drop this device's viewport pin for a surface (on
     /// detach). Fire-and-forget; the Mac also clears on connection close.
-    public func clearTerminalViewport(surfaceID: String) {
+    // SUPERMUX:begin sizing-soft-leave (`transient`: the scene left .active; the Mac may absorb the clear in its uncap window)
+    public func clearTerminalViewport(surfaceID: String, transient: Bool = false) {
+    // SUPERMUX:end sizing-soft-leave
         recordAppEvent(.terminalViewportClearStarted, correlationID: surfaceID)
         if sshOwnsSurface(surfaceID) {
             // Off screen: a cmux-tui terminal stops owning the shared grid.
@@ -513,16 +515,23 @@ extension MobileShellComposite {
         let remoteWorkspaceID = remoteWorkspaceID(for: workspaceID)
         Task { @MainActor in
             do {
+                // SUPERMUX:begin sizing-soft-leave
+                var params: [String: Any] = [
+                    "workspace_id": remoteWorkspaceID.rawValue,
+                    "surface_id": surfaceID,
+                    "client_id": id,
+                    "clear": true,
+                    "viewport_generation": Int(clamping: clearGeneration),
+                ]
+                // A glance at Control Center or a quick lock: the phone is
+                // likely back within the Mac's uncap window. Older Macs
+                // ignore the key and uncap at once, as before.
+                if transient { params["transient"] = true }
                 let request = try MobileCoreRPCClient.requestData(
                     method: "mobile.terminal.viewport",
-                    params: [
-                        "workspace_id": remoteWorkspaceID.rawValue,
-                        "surface_id": surfaceID,
-                        "client_id": id,
-                        "clear": true,
-                        "viewport_generation": Int(clamping: clearGeneration),
-                    ]
+                    params: params
                 )
+                // SUPERMUX:end sizing-soft-leave
                 _ = try await client.sendRequest(request)
                 self.recordAppEvent(
                     .terminalViewportClearSucceeded,
