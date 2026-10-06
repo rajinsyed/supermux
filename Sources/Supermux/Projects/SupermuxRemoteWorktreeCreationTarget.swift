@@ -18,7 +18,9 @@ import SupermuxMobileCore
 /// ``SupermuxDeviceWorkspaceOpener/openWhenAvailable(_:in:focus:timeout:)``,
 /// which reuses a mirror the auto-mirror coordinator is already opening. The
 /// open runs after the sheet has gone (like the local flow, which dismisses
-/// once git returns); a failure is shown in an alert. A link that drops after
+/// once git returns); a failure is shown in an alert. A create run in the
+/// background opens the mirror without selecting it, and returns once it is
+/// open, so its sidebar row stays until the mirror row is there. A link that drops after
 /// a create went out fails with an "outcome unknown" sentence, never a silent
 /// cancel (see `sendCreate`).
 @MainActor
@@ -107,7 +109,7 @@ final class SupermuxRemoteWorktreeCreationTarget: SupermuxWorktreeCreationTarget
         return branch
     }
 
-    func createWorktree(branchName: String, baseBranch: String?, workspaceName: String?) async throws {
+    func createWorktree(branchName: String, baseBranch: String?, workspaceName: String?, selectsWorkspace: Bool) async throws {
         let request = SupermuxRemoteWorktreeRequest(
             workspaceName: workspaceName ?? "",
             branchName: branchName,
@@ -116,7 +118,7 @@ final class SupermuxRemoteWorktreeCreationTarget: SupermuxWorktreeCreationTarget
         let ref = try await sendCreate {
             try await self.commands.requestWorktreeCreate(self.location, request: request)
         }
-        openMirror(of: ref)
+        await openMirror(of: ref, selecting: selectsWorkspace)
     }
 
     // MARK: - Prompt-first
@@ -227,6 +229,7 @@ final class SupermuxRemoteWorktreeCreationTarget: SupermuxWorktreeCreationTarget
 
     func startAgent(
         _ request: SupermuxAgentLaunchRequest,
+        selectsWorkspace: Bool,
         willCreateWorktree: @escaping @MainActor () -> Void
     ) async throws {
         // Naming and git both run on that Mac inside one call; once it is
@@ -235,7 +238,7 @@ final class SupermuxRemoteWorktreeCreationTarget: SupermuxWorktreeCreationTarget
         let ref = try await sendCreate {
             try await self.commands.requestAgentStart(self.location, request: request)
         }
-        openMirror(of: ref)
+        await openMirror(of: ref, selecting: selectsWorkspace)
     }
 
     // MARK: - Helpers
@@ -275,23 +278,26 @@ final class SupermuxRemoteWorktreeCreationTarget: SupermuxWorktreeCreationTarget
         }
     }
 
-    /// Opens the new workspace's mirror in this window and selects it; runs
-    /// on after the sheet is gone.
-    private func openMirror(of ref: SupermuxRemoteWorkspaceRef) {
+    /// Opens the new workspace's mirror in this window. Selected, it runs on
+    /// after the sheet is gone; in the background (`selecting == false`) it
+    /// is awaited instead, without switching the window.
+    private func openMirror(of ref: SupermuxRemoteWorkspaceRef, selecting: Bool) async {
         lastCreatedRef = ref
         // With the window gone, the auto-mirror coordinator still mirrors it
         // into another window.
         guard let tabManager else { return }
         let opener = self.opener
         let deviceName = self.deviceName
-        lastOpen = Task { @MainActor in
+        let open = Task { @MainActor in
             do {
-                return try await opener.openWhenAvailable(ref, in: tabManager, focus: true)
+                return try await opener.openWhenAvailable(ref, in: tabManager, focus: selecting)
             } catch {
                 Self.presentOpenFailure(error, deviceName: deviceName)
                 throw error
             }
         }
+        lastOpen = open
+        if !selecting { _ = try? await open.value }
     }
 
     private func failure(_ error: any Error) -> any Error {

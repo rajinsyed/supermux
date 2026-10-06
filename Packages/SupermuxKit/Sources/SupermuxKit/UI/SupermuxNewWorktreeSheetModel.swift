@@ -285,12 +285,21 @@ public final class SupermuxNewWorktreeSheetModel {
     /// Runs Create (prompt empty) or Start Claude (prompt typed) on the
     /// selected Mac. `onFinished` runs after the worktree was delivered (the
     /// sheet dismisses there). Returns the running flow, `nil` when disabled.
+    /// - Parameters:
+    ///   - selectsWorkspace: Whether the new workspace becomes the window's
+    ///     selected one; `false` when the create runs in the background
+    ///     (``SupermuxPendingWorktreeStore``).
+    ///   - onFinished: Runs once the worktree was delivered.
     @discardableResult
-    public func submit(onFinished: @escaping @MainActor () -> Void) -> Task<Void, Never>? {
+    public func submit(
+        selectsWorkspace: Bool = true,
+        onFinished: @escaping @MainActor () -> Void
+    ) -> Task<Void, Never>? {
         guard canCreate, let target, let entry = selectedEntry else { return nil }
+        let delivery = Delivery(entry: entry, selectsWorkspace: selectsWorkspace, onFinished: onFinished)
         let task = hasPrompt
-            ? startAgent(on: target, entry: entry, onFinished: onFinished)
-            : createPlain(on: target, entry: entry, onFinished: onFinished)
+            ? startAgent(on: target, delivery: delivery)
+            : createPlain(on: target, delivery: delivery)
         createTask = task
         return task
     }
@@ -300,12 +309,19 @@ public final class SupermuxNewWorktreeSheetModel {
         createTask?.cancel()
     }
 
+    /// Where a create's result goes: the Mac to remember, whether its
+    /// workspace is selected, and the caller's completion.
+    private struct Delivery {
+        let entry: SupermuxWorktreeDeviceEntry
+        let selectsWorkspace: Bool
+        let onFinished: @MainActor () -> Void
+    }
+
     /// The Claude path: names from the prompt (typed fields win), worktree,
     /// and a workspace whose terminal runs the command — all on the target.
     private func startAgent(
         on target: any SupermuxWorktreeCreationTarget,
-        entry: SupermuxWorktreeDeviceEntry,
-        onFinished: @escaping @MainActor () -> Void
+        delivery: Delivery
     ) -> Task<Void, Never> {
         phase = .naming
         errorMessage = nil
@@ -340,12 +356,12 @@ public final class SupermuxNewWorktreeSheetModel {
                     try Task.checkCancellation()
                     statusMessage = namingStatus
                 }
-                try await target.startAgent(request) {
+                try await target.startAgent(request, selectsWorkspace: delivery.selectsWorkspace) {
                     self.phase = .runningGit
                     self.statusMessage = self.creatingStatus
                 }
-                recordDevice(entry)
-                onFinished()
+                recordDevice(delivery.entry)
+                delivery.onFinished()
             } catch is CancellationError {
                 // Cancel (or the sheet going away) while naming. A request
                 // lost after it was sent comes back as an "outcome unknown"
@@ -364,8 +380,7 @@ public final class SupermuxNewWorktreeSheetModel {
     /// the branch was left blank; a typed branch is respected.
     private func createPlain(
         on target: any SupermuxWorktreeCreationTarget,
-        entry: SupermuxWorktreeDeviceEntry,
-        onFinished: @escaping @MainActor () -> Void
+        delivery: Delivery
     ) -> Task<Void, Never> {
         phase = .naming
         errorMessage = nil
@@ -398,10 +413,11 @@ public final class SupermuxNewWorktreeSheetModel {
                 try await target.createWorktree(
                     branchName: branchToUse,
                     baseBranch: selectedBase,
-                    workspaceName: trimmedName.isEmpty ? nil : trimmedName
+                    workspaceName: trimmedName.isEmpty ? nil : trimmedName,
+                    selectsWorkspace: delivery.selectsWorkspace
                 )
-                recordDevice(entry)
-                onFinished()
+                recordDevice(delivery.entry)
+                delivery.onFinished()
             } catch is CancellationError {
                 // Only a cancelled flow gets here: targets report a request
                 // lost after it was sent as an "outcome unknown" failure.

@@ -10,7 +10,7 @@ public final class SupermuxLocalWorktreeCreationTarget: SupermuxWorktreeCreation
     private let model: SupermuxProjectsModel
     private let project: SupermuxProject
     private let agentLaunch: SupermuxAgentLaunchEnvironment?
-    private let onCreated: (SupermuxProjectWorktree, String?) -> Void
+    private let onCreated: (SupermuxProjectWorktree, String?, Bool) -> Void
     private let onLaunched: (SupermuxAgentWorktreeLaunch) -> Void
 
     /// Creates the target.
@@ -18,13 +18,14 @@ public final class SupermuxLocalWorktreeCreationTarget: SupermuxWorktreeCreation
     ///   - model: Shared projects model that performs the git work.
     ///   - project: The project the worktree is created in.
     ///   - agentLaunch: Claude launch collaborators; `nil` hides the prompt path.
-    ///   - onCreated: Opens a plain worktree (with the chosen workspace name).
+    ///   - onCreated: Opens a plain worktree with the chosen workspace name,
+    ///     selecting its workspace when the `Bool` is `true`.
     ///   - onLaunched: Opens a prompt-first launch's `openRequest`.
     public init(
         model: SupermuxProjectsModel,
         project: SupermuxProject,
         agentLaunch: SupermuxAgentLaunchEnvironment?,
-        onCreated: @escaping (SupermuxProjectWorktree, String?) -> Void,
+        onCreated: @escaping (SupermuxProjectWorktree, String?, Bool) -> Void,
         onLaunched: @escaping (SupermuxAgentWorktreeLaunch) -> Void
     ) {
         self.model = model
@@ -60,14 +61,19 @@ public final class SupermuxLocalWorktreeCreationTarget: SupermuxWorktreeCreation
         await model.suggestBranchName(forWorkspaceName: name)
     }
 
-    public func createWorktree(branchName: String, baseBranch: String?, workspaceName: String?) async throws {
+    public func createWorktree(
+        branchName: String,
+        baseBranch: String?,
+        workspaceName: String?,
+        selectsWorkspace: Bool
+    ) async throws {
         let worktree = try await model.createWorktree(
             projectId: project.id,
             branchName: branchName,
             baseBranch: baseBranch
         )
         // A created worktree is always delivered, dismissed sheet or not.
-        onCreated(worktree, workspaceName)
+        onCreated(worktree, workspaceName, selectsWorkspace)
     }
 
     // MARK: - Prompt-first
@@ -123,10 +129,12 @@ public final class SupermuxLocalWorktreeCreationTarget: SupermuxWorktreeCreation
 
     public func startAgent(
         _ request: SupermuxAgentLaunchRequest,
+        selectsWorkspace: Bool,
         willCreateWorktree: @escaping @MainActor () -> Void
     ) async throws {
         guard let agentLaunch else { return }
-        let launch = try await agentLaunch.launcher.start(request, willCreateWorktree: willCreateWorktree)
+        var launch = try await agentLaunch.launcher.start(request, willCreateWorktree: willCreateWorktree)
+        if !selectsWorkspace { launch.openRequest = launch.openRequest.inBackground }
         // The worktree exists now: deliver it even if the sheet was dismissed
         // meanwhile, so it is opened rather than orphaned.
         onLaunched(launch)

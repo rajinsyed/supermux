@@ -5,6 +5,8 @@ import SwiftUI
 struct SupermuxNewWorktreeSheetItem: Identifiable {
     let id = UUID()
     let model: SupermuxNewWorktreeSheetModel
+    /// The sidebar project row the create shows under while it runs.
+    let rowID: UUID
     /// The project record the header avatar renders.
     let avatar: SupermuxProject
     let icon: NSImage?
@@ -13,7 +15,9 @@ struct SupermuxNewWorktreeSheetItem: Identifiable {
 /// Presents the one New Worktree sheet from every entry point: a local
 /// project row (hover ＋, context menu, "New Worktree on ▸ <Mac>") and a
 /// remote-only row. The sheet's device picker lists every Mac with the
-/// project; a "Set Up on <Mac>…" row hands off to the setup sheet.
+/// project; a "Set Up on <Mac>…" row hands off to the setup sheet. Create
+/// runs in the background (``SupermuxPendingWorktreeStore``): the sheet closes
+/// at once and the project row shows the create until its workspace is open.
 extension SupermuxProjectsSectionView {
     /// Opens the sheet for a project with a copy on this Mac.
     /// - Parameter preferredDeviceKey: The Mac picked from "New Worktree on ▸",
@@ -35,6 +39,7 @@ extension SupermuxProjectsSectionView {
         )
         newWorktreeSheet = SupermuxNewWorktreeSheetItem(
             model: sheetModel,
+            rowID: project.id,
             avatar: project,
             icon: iconStore.image(for: project.id)
         )
@@ -55,7 +60,46 @@ extension SupermuxProjectsSectionView {
                 ))
             }
         )
-        newWorktreeSheet = SupermuxNewWorktreeSheetItem(model: sheetModel, avatar: row.avatar, icon: row.icon)
+        newWorktreeSheet = SupermuxNewWorktreeSheetItem(model: sheetModel, rowID: row.id, avatar: row.avatar, icon: row.icon)
+    }
+
+    // MARK: - Background creates
+
+    /// The rows of this window's creates running in the background under one
+    /// sidebar row.
+    func pendingRows(for rowID: UUID) -> [SupermuxPendingWorktreeRow] {
+        pendingWorktrees.creations(forRow: rowID, owner: pendingWorktreeOwner).map(\.row)
+    }
+
+    /// What a background create's row does.
+    var pendingActions: SupermuxPendingWorktreeActions {
+        SupermuxPendingWorktreeActions(
+            cancel: { pendingWorktrees.cancel($0) },
+            dismiss: { pendingWorktrees.dismiss($0) },
+            reopen: { reopenPendingWorktree($0) }
+        )
+    }
+
+    /// Shows a failed create's sheet again, with its error and everything
+    /// typed, under the project row it ran under. The row stays when that
+    /// project row is gone, so what was typed is never silently dropped.
+    private func reopenPendingWorktree(_ id: UUID) {
+        guard let rowID = pendingWorktrees.creations.first(where: { $0.id == id })?.rowID else { return }
+        let header: (avatar: SupermuxProject, icon: NSImage?)
+        if let project = model.projects.first(where: { $0.id == rowID }) {
+            header = (project, iconStore.image(for: project.id))
+        } else if let row = remote.rows.first(where: { $0.id == rowID }) {
+            header = (row.avatar, row.icon)
+        } else {
+            return
+        }
+        guard let creation = pendingWorktrees.reopen(id) else { return }
+        newWorktreeSheet = SupermuxNewWorktreeSheetItem(
+            model: creation.sheet,
+            rowID: rowID,
+            avatar: header.avatar,
+            icon: header.icon
+        )
     }
 
     /// This Mac's target: the projects model and the agent environment, then
@@ -65,8 +109,14 @@ extension SupermuxProjectsSectionView {
             model: model,
             project: project,
             agentLaunch: agentLaunch,
-            onCreated: { worktree, workspaceName in
-                openWorktree(worktree, project: project, title: workspaceName, runSetup: true)
+            onCreated: { worktree, workspaceName, selectsWorkspace in
+                openWorktree(
+                    worktree,
+                    project: project,
+                    title: workspaceName,
+                    runSetup: true,
+                    selectsWorkspace: selectsWorkspace
+                )
             },
             onLaunched: { launch in
                 // The launcher already noted the project as opened and

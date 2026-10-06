@@ -29,7 +29,10 @@ import UniformTypeIdentifiers
 /// itself and its workspace opens here as a mirror. All state and flow live in
 /// ``SupermuxNewWorktreeSheetModel``; this view only renders it.
 ///
-/// Presented via `.sheet(item:)` from ``SupermuxProjectsSectionView``.
+/// Presented via `.sheet(item:)` from ``SupermuxProjectsSectionView``, which
+/// runs the create in the background: the sheet closes as soon as Create is
+/// pressed and the sidebar shows the create running under the project (see
+/// ``SupermuxPendingWorktreeStore``).
 public struct SupermuxNewWorktreeSheet: View {
     @State var sheet: SupermuxNewWorktreeSheetModel
     /// The project record behind the header avatar (name, color, symbol).
@@ -37,6 +40,9 @@ public struct SupermuxNewWorktreeSheet: View {
     /// The project's resolved avatar image (custom icon or detected logo),
     /// shared with the sidebar row so the header shows the same icon.
     private let projectIcon: NSImage?
+    /// Hands Create / Start Claude to the background and returns whether it
+    /// started; `nil` runs it here, with the sheet open until it is done.
+    private let runInBackground: (@MainActor (SupermuxNewWorktreeSheetModel) -> Bool)?
 
     @Environment(\.dismiss) private var dismiss
     @FocusState private var focusedField: Field?
@@ -51,10 +57,19 @@ public struct SupermuxNewWorktreeSheet: View {
     ///   - model: The sheet model (targets, device picker, flow).
     ///   - avatar: The project record the header avatar renders.
     ///   - projectIcon: The project's resolved avatar image, if cached.
-    public init(model: SupermuxNewWorktreeSheetModel, avatar: SupermuxProject, projectIcon: NSImage? = nil) {
+    ///   - runInBackground: Starts the create without waiting for it (the
+    ///     sheet then closes at once); `nil` keeps the sheet open until the
+    ///     worktree is delivered.
+    public init(
+        model: SupermuxNewWorktreeSheetModel,
+        avatar: SupermuxProject,
+        projectIcon: NSImage? = nil,
+        runInBackground: (@MainActor (SupermuxNewWorktreeSheetModel) -> Bool)? = nil
+    ) {
         _sheet = State(initialValue: model)
         self.avatar = avatar
         self.projectIcon = projectIcon
+        self.runInBackground = runInBackground
     }
 
     /// Creates the sheet for this Mac only (no device picker).
@@ -81,7 +96,7 @@ public struct SupermuxNewWorktreeSheet: View {
             model: model,
             project: project,
             agentLaunch: agentLaunch,
-            onCreated: onCreated,
+            onCreated: { worktree, name, _ in onCreated(worktree, name) },
             onLaunched: onLaunched
         )
         let location = SupermuxProjectLocation(place: .thisMac, projectID: project.id, rootPath: project.rootPath)
@@ -167,8 +182,9 @@ public struct SupermuxNewWorktreeSheet: View {
         // in flight, abort it so no worktree is created behind the user's
         // back. Cancel is disabled once git runs, so this only covers
         // programmatic dismissal — and once git has run, the created worktree
-        // is still delivered by the target.
-        .onDisappear { sheet.cancel() }
+        // is still delivered by the target. A create handed to the
+        // background keeps running: the sheet closes because it started.
+        .onDisappear { if runInBackground == nil { sheet.cancel() } }
     }
 
     // MARK: - Pieces
@@ -278,7 +294,9 @@ public struct SupermuxNewWorktreeSheet: View {
         HStack(spacing: 8) {
             Spacer(minLength: 0)
             Button(String(localized: "supermux.common.cancel", defaultValue: "Cancel")) {
-                sheet.cancel()
+                // A create already handed to the background is not this
+                // sheet's to cancel (Esc during the closing animation).
+                if runInBackground == nil { sheet.cancel() }
                 dismiss()
             }
             .keyboardShortcut(.cancelAction)
@@ -373,7 +391,11 @@ public struct SupermuxNewWorktreeSheet: View {
     // MARK: - Actions
 
     private func create() {
-        sheet.submit { dismiss() }
+        guard let runInBackground else {
+            sheet.submit { dismiss() }
+            return
+        }
+        if runInBackground(sheet) { dismiss() }
     }
 
     // Kept for the package tests that pin the base-branch rules.

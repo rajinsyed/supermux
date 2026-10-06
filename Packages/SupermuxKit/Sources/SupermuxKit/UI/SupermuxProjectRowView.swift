@@ -204,6 +204,10 @@ public struct SupermuxProjectRowView: View, Equatable {
     let setUp: (SupermuxProjectSetupDestination) -> Void
     /// Opens the New Worktree sheet preset to one Mac (a device key).
     let newWorktreeOn: (String) -> Void
+    /// Worktrees being created for this project in the background, drawn
+    /// where their workspaces will appear.
+    private let pendingWorktrees: [SupermuxPendingWorktreeRow]
+    private let pendingActions: SupermuxPendingWorktreeActions
 
     /// Sidebar font scale (cmux's `sidebar-font-size`); `1` at the default size.
     /// Multiplies the row's text and avatar so projects track the same setting
@@ -231,6 +235,8 @@ public struct SupermuxProjectRowView: View, Equatable {
     ///   - draggingWorkspaceId: Shared marker for the nested workspace being
     ///     dragged for reorder (defaults to a constant `nil` for previews).
     ///   - onWorkspaceDragStart: Called as a nested workspace drag starts.
+    ///   - pendingWorktrees: Worktrees being created in the background.
+    ///   - pendingActions: What their rows do.
     public init(
         project: SupermuxProject,
         detectedIcon: NSImage? = nil,
@@ -249,8 +255,12 @@ public struct SupermuxProjectRowView: View, Equatable {
         remoteExtras: SupermuxProjectRemoteExtras? = nil,
         remoteActions: SupermuxRemoteProjectActions = .inert,
         setUp: @escaping (SupermuxProjectSetupDestination) -> Void = { _ in },
-        newWorktreeOn: @escaping (String) -> Void = { _ in }
+        newWorktreeOn: @escaping (String) -> Void = { _ in },
+        pendingWorktrees: [SupermuxPendingWorktreeRow] = [],
+        pendingActions: SupermuxPendingWorktreeActions = .inert
     ) {
+        self.pendingWorktrees = pendingWorktrees
+        self.pendingActions = pendingActions
         self.remoteExtras = remoteExtras
         self.remoteActions = remoteActions
         self.setUp = setUp
@@ -288,6 +298,7 @@ public struct SupermuxProjectRowView: View, Equatable {
             && lhs.canMoveUp == rhs.canMoveUp
             && lhs.canMoveDown == rhs.canMoveDown
             && lhs.remoteExtras == rhs.remoteExtras
+            && lhs.pendingWorktrees == rhs.pendingWorktrees
     }
 
     public var body: some View {
@@ -318,6 +329,10 @@ public struct SupermuxProjectRowView: View, Equatable {
                     mirrorMenu: { remoteActions.mirrorMenu(workspace.id) }
                 )
                 .equatable()
+            }
+            ForEach(pendingWorktrees) { pending in
+                SupermuxPendingWorktreeRowView(row: pending, actions: pendingActions)
+                    .equatable()
             }
             // The disclosure reveals worktrees that exist on disk but have no
             // open workspace yet, as one-tap "open" affordances.

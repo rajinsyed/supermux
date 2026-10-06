@@ -363,7 +363,7 @@ struct FakeFailure: Error, LocalizedError {
         return suggestion
     }
 
-    func createWorktree(branchName: String, baseBranch: String?, workspaceName: String?) async throws {
+    func createWorktree(branchName: String, baseBranch: String?, workspaceName: String?, selectsWorkspace: Bool) async throws {
         if let createError { throw createError }
         createdRequests.append(CreateRequest(branchName: branchName, baseBranch: baseBranch, workspaceName: workspaceName))
     }
@@ -399,6 +399,7 @@ struct FakeFailure: Error, LocalizedError {
 
     func startAgent(
         _ request: SupermuxAgentLaunchRequest,
+        selectsWorkspace: Bool,
         willCreateWorktree: @escaping @MainActor () -> Void
     ) async throws {
         willCreateWorktree()
