@@ -46,7 +46,8 @@ DEFAULT_SIDEBAR_FONT_SIZE = 12.5
 class SidebarFontScaleE2E:
     def __init__(self, args: argparse.Namespace) -> None:
         self.args = args
-        self.app = TaggedApp(args.app_path, args.socket or socket_path_for_tag(args.tag))
+        self.app = TaggedApp(args.app_path, args.socket or socket_path_for_tag(args.tag), args.tag,
+                             args.projects_file, args.push_state_dir)
         self.steps: List[Dict[str, Any]] = []
         self.saved: Optional[str] = None
 
@@ -113,6 +114,8 @@ def main() -> int:
     parser.add_argument("--tag", default=os.environ.get("CMUX_TAG"))
     parser.add_argument("--socket", help="defaults to /tmp/cmux-debug-<tag>.sock")
     parser.add_argument("--app-path", required=True)
+    parser.add_argument("--projects-file", help="scratch projects document (default /tmp/<tag>-e2e/projects.json)")
+    parser.add_argument("--push-state-dir", help="scratch phone push state (default /tmp/<tag>-e2e/push-state)")
     parser.add_argument("--size", type=float, default=16.0, help="sidebar font size in pt (10-20)")
     parser.add_argument("--report")
     args = parser.parse_args()

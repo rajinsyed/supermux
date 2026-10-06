@@ -162,7 +162,7 @@ suite_args() {
     loopback_mirror_workspace_close_e2e) printf '%s\n' --app-path "$APP" --projects-file "$SCRATCH/projects.json" ;;
     loopback_mirror_simulator_e2e) printf '%s\n' --app-path "$APP" --projects-file "$SCRATCH/projects.json" ;;
     loopback_remote_host_mode_e2e) printf '%s\n' --app-path "$APP" --projects-file "$SCRATCH/projects.json" --push-state-dir "$SCRATCH/push-state" ;;
-    right_sidebar_width_e2e|sidebar_font_scale_e2e) printf '%s\n' --app-path "$APP" ;;
+    right_sidebar_width_e2e|sidebar_font_scale_e2e) printf '%s\n' --app-path "$APP" --projects-file "$SCRATCH/projects.json" --push-state-dir "$SCRATCH/push-state" ;;
   esac
 }
 

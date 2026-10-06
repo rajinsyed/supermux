@@ -3,7 +3,10 @@
 Shared by the suites that must set a preference before the app launches
 (right_sidebar_width_e2e.py, sidebar_font_scale_e2e.py). Every write goes to the
 tagged build's own defaults domain (its bundle id), never the user's app; the
-suites run require_isolated_app.py before they construct one. Stdlib only.
+suites run require_isolated_app.py before they construct one. Like
+run_all_loopback_e2e.sh, every launch points the projects document and the phone
+push state at scratch paths, so the user's project list and push credentials are
+never read or written. Stdlib only.
 """
 
 from __future__ import annotations
@@ -12,7 +15,7 @@ import plistlib
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Dict, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from loopback_tab_sync_e2e import Failure, Socket, wait_for  # noqa: E402
@@ -25,10 +28,16 @@ def require_isolated(app_path: str, tag: str) -> bool:
 
 
 class TaggedApp:
-    def __init__(self, app_path: str, socket_path: str) -> None:
+    def __init__(self, app_path: str, socket_path: str, tag: str,
+                 projects_file: Optional[str] = None, push_state_dir: Optional[str] = None) -> None:
         self.app = app_path
         self.bundle_id = plistlib.loads((Path(app_path) / "Contents" / "Info.plist").read_bytes())["CFBundleIdentifier"]
         self.sock = Socket(socket_path)
+        scratch = Path(f"/tmp/{tag}-e2e")
+        self.launch_env: Dict[str, str] = {
+            "SUPERMUX_PROJECTS_FILE": projects_file or str(scratch / "projects.json"),
+            "SUPERMUX_PHONE_PUSH_STATE_DIR": push_state_dir or str(scratch / "push-state"),
+        }
 
     # -- defaults (this tag's domain only) --------------------------------------
 
@@ -61,7 +70,11 @@ class TaggedApp:
 
     def launch(self) -> None:
         """Opens the app in the background and connects once a main window is up."""
-        subprocess.run(["open", "-g", self.app], check=True)
+        push_state = Path(self.launch_env["SUPERMUX_PHONE_PUSH_STATE_DIR"])
+        push_state.mkdir(parents=True, exist_ok=True)
+        push_state.chmod(0o700)
+        env_args = [arg for key, value in self.launch_env.items() for arg in ("--env", f"{key}={value}")]
+        subprocess.run(["open", "-g", *env_args, self.app], check=True)
 
         def window_up() -> bool:
             probe = Socket(self.sock.path, timeout_s=3)
