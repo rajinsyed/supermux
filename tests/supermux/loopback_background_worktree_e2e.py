@@ -88,6 +88,19 @@ class BackgroundE2E(PickerE2E):
     def window_workspaces(self) -> List[Dict[str, Any]]:
         return (self.client.call("workspace.list", {"window_id": self.window_id}) or {}).get("workspaces") or []
 
+    def new_local_workspaces(self, known: set) -> List[Dict[str, Any]]:
+        """This Mac's workspaces opened since `known`, queued for cleanup. The
+        loopback device is this app, so auto-mirror also mirrors each new local
+        workspace back here; those mirrors are left out of the result."""
+        bindings = self.client.call("supermux.devices.bindings", {}) or {}
+        mirrors = {norm(m.get("workspace_id")): m for m in bindings.get("mirrors") or []}
+        new = [w for w in self.window_workspaces() if norm(w.get("id")) not in known]
+        for workspace in new:
+            mirror = mirrors.get(norm(workspace.get("id")))
+            source = mirror.get("remote_workspace_id") if mirror else workspace["id"]
+            self.created.append({"mirror": workspace["id"], "remote": source})
+        return [w for w in new if norm(w.get("id")) not in mirrors]
+
     def submit_background(self, session: str, fields: Dict[str, Any]) -> Dict[str, Any]:
         """Presses Create / Start Claude as the sheet does, checking it did not wait."""
         started = time.monotonic()
@@ -156,9 +169,7 @@ class BackgroundE2E(PickerE2E):
             raise SmokeFailure("background_create_returns_at_once did not run")
         self.wait_gone(self.plain["pending_id"], "the pending row to go away")
         # No gap: the workspace is already in the window when the row goes.
-        new = [w for w in self.window_workspaces() if norm(w.get("id")) not in self.plain["known"]]
-        for workspace in new:
-            self.created.append({"mirror": workspace["id"], "remote": workspace["id"]})
+        new = self.new_local_workspaces(self.plain["known"])
         opened = [w for w in new if w.get("title") == self.plain["name"]]
         if len(opened) != 1:
             raise SmokeFailure(f"want one new workspace titled {self.plain['name']!r}, got {new}")
@@ -213,22 +224,20 @@ class BackgroundE2E(PickerE2E):
 
     def check_background_start_claude(self) -> Dict[str, Any]:
         self.ensure_echo_command()
-        state = self.open_session(preferred_device=THIS_MAC)
-        state = self.call("load", {"session_id": state["session_id"]}, timeout_s=120)
+        session = self.open_session(preferred_device=THIS_MAC)["session_id"]
+        state = self.call("load", {"session_id": session}, timeout_s=120)
         if "echo" not in (state.get("commands") or []):
             raise SmokeFailure(f"This Mac does not offer the test command: {state.get('commands')}")
         marker = f"bg-agent-{self.nonce}"
         selected_before = self.selected_workspaces()
         known = {norm(w.get("id")) for w in self.window_workspaces()}
-        result = self.submit_background(state["session_id"], {"prompt": f"say {marker}", "command": "echo"})
+        result = self.submit_background(session, {"prompt": f"say {marker}", "command": "echo"})
         pending_id = result["pending_id"]
         row = self.pending_row(pending_id)
         if row is None or not row.get("title") or row.get("state") == "failed":
             raise SmokeFailure(f"no pending Start Claude row: {row}")
         self.wait_gone(pending_id, "the Start Claude row to go away")
-        new = [w for w in self.window_workspaces() if norm(w.get("id")) not in known]
-        for workspace in new:
-            self.created.append({"mirror": workspace["id"], "remote": workspace["id"]})
+        new = self.new_local_workspaces(known)
         if len(new) != 1:
             raise SmokeFailure(f"want one new workspace, got {new}")
         workspace_id = new[0]["id"]
@@ -254,13 +263,14 @@ class BackgroundE2E(PickerE2E):
         state = self.open_session(preferred_device=self.machine)
         if state.get("selected_entry_id") != self.machine:
             raise SmokeFailure(f"preferred device ignored: {state.get('selected_entry_id')}")
-        state = self.call("load", {"session_id": state["session_id"]}, timeout_s=180)
+        session = state["session_id"]
+        state = self.call("load", {"session_id": session}, timeout_s=180)
         device_name = str((state.get("target") or {}).get("remote_device_name") or "")
         name, branch = f"bg remote {self.nonce}", f"bg-remote-{self.nonce}"
         selected_before = self.selected_workspaces()
         hook = self.slow_worktree_add(SLOW_GIT_S)
         self.hooks.append(hook)
-        result = self.submit_background(state["session_id"], {"workspace_name": name, "branch_name": branch})
+        result = self.submit_background(session, {"workspace_name": name, "branch_name": branch})
         pending_id = result["pending_id"]
 
         def on_device() -> Optional[Dict[str, Any]]:
