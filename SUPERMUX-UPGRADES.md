@@ -14,6 +14,86 @@ Add a section here as the last step of every upstream merge.
 
 ---
 
+## cmux main @ `161e1cce9f` → main @ `58ce7de4fe` (2026-10-06)
+
+Merged 114 first-parent upstream commits (upstream main 2026-10-04 → 2026-10-06). Five files
+conflicted, each a fork fence beside a line upstream added at the same spot; both sides were kept.
+No fork feature was dropped. One touchpoint was added (#26b, below). About 60 of the 114 commits
+are CI/test changes or cmux Cloud VM work that Supermux does not use.
+
+### Agents behave better after a relaunch and under load (Mac)
+
+- **The app no longer freezes or hangs on socket disconnects when many agents run at once**
+  (#17216): socket commands stop re-scanning every window, tab and pane on each call unless the
+  layout changed.
+- **Agent status after a relaunch comes from what is actually running** (#17475, #17521, #17435):
+  restored agents are not shown as running or waiting from stale saved state, and live agent views
+  reattach.
+- **Typing into a waiting agent shows it running at once** (#17456), and Claude's questions show
+  as soon as they are asked (#17454).
+- **Closing a workspace or window with an active agent session has its own warning** (#17430,
+  setting "Warn Before Closing Active Agent Session").
+- Agent Hibernation can now pick live Claude Code sessions (#17306), and notifications of restored
+  agents that are gone are cleared (#17067).
+- Claude Code agent teams work: cmux answers the tmux session commands Claude Code calls (#13632).
+
+### Other upstream changes you will notice (Mac)
+
+- Browser panes show a link's URL at the bottom on hover (#17258), and agents get
+  `cmux browser repl`, a Playwright-style browser REPL (#17256).
+- Sidebar PR and port links follow the "open in system browser" URL rules (#7397) — for upstream's
+  rows; see watch-outs for the fork's.
+- New cmux.json keys: `sidebar.fontSize` and `surfaceTabBar.fontSize` (#17467), Sleepy Mode
+  (#17466), `workspaceColors.brightenInDarkMode` (#17308). Classic cmux.json edits apply live
+  (#17442). Settings search no longer lags while typing (#17517).
+- My Devices in the Cloud tab: opening another Mac's workspace from its row works and the workspace
+  stays open (#17389, #17404); presence only lists your own account's Macs (#17385).
+- Install and Relaunch no longer stops at "Quit cmux?" (#17459). The updater went back to its
+  0.64.25 behavior again (#17368).
+- The pane tab bar keeps its four buttons in narrow panes (the ellipsis-menu collapse was reverted).
+- Restored `cmux ssh` workspaces reuse their authenticated connection (#17386); remote-tmux and
+  session-replay fixes.
+- The Cloud tab is shown to everyone by default upstream (#17436). Supermux already turned it on
+  for its release app, so nothing changes here.
+
+### Other upstream changes you will notice (iOS)
+
+- Agent Chat shows an agent as working as soon as your reply reaches its terminal, instead of
+  waiting for the agent's next hook (the Mac side of #17456). Otherwise only new translations.
+
+### What stays the same (fork features)
+
+Projects (Mac and iPhone), the Changes panel and PR viewer, Claude harness panes, Remote Macs
+(Devices, mirrors, remote terminal streaming, Remote Host Mode), project-aware notifications and
+phone push, empty-home windows, every fork shortcut, and the right sidebar's 200 pt minimum and
+220 pt opening width.
+
+### Fixed in the merge (would have changed otherwise)
+
+- **Right sidebar width.** Upstream now never lets the right sidebar get narrower than its tab bar
+  with one full tab name (#17074), about 290-360 pt with Supermux's tabs. That would have widened a
+  sidebar saved at 200-290 pt on launch and opened new windows wider than 220 pt. The fork keeps
+  its 200 pt floor and 220 pt opening width (#26b); at that width the tab row scrolls, as before.
+- **Projects font size.** The Projects section now follows cmux.json's new `sidebar.fontSize`
+  like the flat rows do; before the fix it would have stayed at the Ghostty config's size.
+
+### Watch-outs
+
+- **A "⚡ Running" line can appear briefly on a flat row.** When you type into an agent that is
+  waiting for you, upstream marks its Feed request Running until the agent's next hook. The fork
+  hides agent status lines that repeat the activity spinner, but not this one, so a flat row
+  (not a project row) can show "Running" next to the spinner for a moment.
+- **"Introducing cmux cloud" window.** Upstream shows it once at launch when Cloud is available
+  but Cloud Machines is off. Supermux turns Cloud Machines on for its release app, so you only see
+  it if you turned that off.
+- **Accent color in the notification popover.** With a non-default accent, the popover's unread
+  rails and bell badge use the default cmux blue (upstream dropped the accent environment there).
+  With the default accent nothing changes.
+- **External-open rules and the fork's own links.** The Projects section's PR badges and a mirror's
+  port chips still follow only the "open in cmux browser" preference, not the new URL rules.
+
+---
+
 ## cmux main @ `4e9d779888` → main @ `161e1cce9f` (2026-10-04)
 
 Merged 291 first-parent upstream commits (upstream main 2026-09-30 → 2026-10-04). 18 files

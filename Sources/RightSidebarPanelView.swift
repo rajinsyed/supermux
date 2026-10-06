@@ -90,6 +90,8 @@ struct RightSidebarPanelView: View {
     @State private var closeShortcutHintMonitor = WindowScopedShortcutHintModifierMonitor(activation: .commandOnly)
     @State private var hasMountedRightSidebarContent = false
     @State private var modeBarDrag = RightSidebarModeBarDragController()
+    @State private var modeBarWidthReport = RightSidebarModeBarWidthReport()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var keyboardShortcutSettingsObserver = KeyboardShortcutSettingsObserver.shared
     private let alwaysShowShortcutHints = ShortcutHintDebugSettings().alwaysShowHints
     private let closeShortcutHintXOffset = ShortcutHintDebugSettings.defaultRightSidebarCloseHintX
@@ -193,13 +195,12 @@ struct RightSidebarPanelView: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("RightSidebar")
         .onAppear {
+            modeBarWidthReport.onChange = { [fileExplorerState] in fileExplorerState.modeBarMinimumWidth = $0 }
             startShortcutHintMonitorsIfNeeded()
             if fileExplorerState.isVisible { hasMountedRightSidebarContent = true }
             fileExplorerState.refreshModeAvailability()
         }
-        .onDisappear {
-            stopShortcutHintMonitors()
-        }
+        .onDisappear { stopShortcutHintMonitors() }
         .onChange(of: showModifierHoldHints) { _, _ in
             startShortcutHintMonitorsIfNeeded()
         }
@@ -225,9 +226,7 @@ struct RightSidebarPanelView: View {
 
             HStack(spacing: RightSidebarChromeMetrics.headerControlSpacing) {
                 let displayedModes = availableModes
-                // The selected tab keeps its full label; the others share the
-                // rest and truncate, then drop to their icon.
-                RightSidebarModeBarTabsLayout(spacing: RightSidebarChromeMetrics.headerControlSpacing) {
+                RightSidebarModeBarTabsLayout(spacing: RightSidebarChromeMetrics.headerControlSpacing, widthReport: modeBarWidthReport) {
                     ForEach(modeBarItems) { item in
                         let shortcut = item.shortcutAction.map { KeyboardShortcutSettings.shortcut(for: $0) } ?? .unbound
                         ModeBarButton(
@@ -235,6 +234,7 @@ struct RightSidebarPanelView: View {
                             isSelected: item.isSelected(
                                 mode: fileExplorerState.mode
                             ),
+                            isDragged: modeBarDrag.isLifted(item.mode),
                             badgeCount: item.mode == .feed ? feedPendingCount : 0,
                             shortcutHint: shortcut,
                             showsShortcutHint: ShortcutHintTitlebarPolicy.shouldShow(
@@ -257,9 +257,15 @@ struct RightSidebarPanelView: View {
                             mode: item.mode, displayedModes: displayedModes,
                             barHeight: titlebarHeight, controller: modeBarDrag
                         ))
-                        .layoutValue(key: RightSidebarModeBarTabSelectedKey.self, value: item.isSelected(mode: fileExplorerState.mode))
+                        .layoutValue(
+                            key: RightSidebarModeBarTabSelectedKey.self,
+                            // Give the dragged tab the same full-label slot as
+                            // the focused tab, even when it started unfocused.
+                            value: item.isSelected(mode: fileExplorerState.mode) || modeBarDrag.isLifted(item.mode)
+                        )
                     }
                 }
+                .animation(reduceMotion ? nil : ModeBarButton.switchAnimation, value: fileExplorerState.mode)
                 // SUPERMUX:begin right-sidebar-mode-bar-overflow
                 .modifier(SupermuxModeBarOverflow())
                 // SUPERMUX:end right-sidebar-mode-bar-overflow
