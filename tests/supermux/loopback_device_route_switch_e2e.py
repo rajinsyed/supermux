@@ -189,6 +189,21 @@ class RouteSwitchE2E:
     def on(self, kind: str) -> Callable[[Dict[str, Any]], bool]:
         return lambda sample: sample["link"] == "connected" and sample["route"] == kind
 
+    def wait_for_fall_back(self, timeout_s: float) -> Dict[str, Any]:
+        """The policy's fall back after the lane blocked under a direct session: the link is on the relay
+        and the policy fell back (its `fallbacks` stat rose) or a new session started. A relay route
+        sample alone is not one: the connection's path can move to the relay inside the same session,
+        before the policy's liveness misses make it fall back and hold direct off."""
+        fallbacks = self.status()["stats"]["fallbacks"]
+        admitted = self.link().get("connections_admitted")
+
+        def fell_back(sample: Dict[str, Any]) -> bool:
+            if not self.on("relay")(sample):
+                return False
+            return self.status()["stats"]["fallbacks"] > fallbacks or sample["admitted"] > admitted
+
+        return self.wait_for("the fall back to the relay", fell_back, timeout_s)
+
     def reconnect(self) -> None:
         self.link("stop")
         self.wait_for("the link to drop", lambda s: s["link"] != "connected", 20)
@@ -275,7 +290,7 @@ class RouteSwitchE2E:
         before = self.link().get("connections_admitted")
         self.switch(lane="blocked")
         blocked = time.monotonic()
-        self.wait_for("the fall back to the relay", self.on("relay"), 8)
+        self.wait_for_fall_back(8)
         fell_back_after = round(time.monotonic() - blocked, 2)
         self.switch(lane="open")
         status = self.status()
@@ -325,7 +340,7 @@ class RouteSwitchE2E:
         self.wait_for("a direct session", self.on("direct"), 16)
         before = self.link().get("connections_admitted")
         self.switch(lane="blocked")
-        self.wait_for("the fall back to the relay", self.on("relay"), 8)
+        self.wait_for_fall_back(8)
         held = self.status()["policy"]
         expect(held["allows_direct"] is False and held["hold_off_ms"] >= 20_000,
                f"direct is not held off after the fall back: {held}")
