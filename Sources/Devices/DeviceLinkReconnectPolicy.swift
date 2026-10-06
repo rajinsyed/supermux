@@ -78,6 +78,9 @@ struct DeviceLinkReconnectPolicy: Equatable, Sendable {
     private var shortLivedLosses = 0
     static let stableConnectionInterval: TimeInterval = 30
     // SUPERMUX:begin device-link-unproven-session-backoff
+    // Upstream's `connectedSince`, `shortLivedLosses`, `stableConnectionInterval`
+    // and `delays` above are still written but decide nothing now (the
+    // session below does); they stay so upstream merges apply cleanly.
     /// The live session: when it connected, from which dial attempt, and
     /// whether it answered anything beyond the handshake. Its end decides the
     /// redial (``SupermuxDeviceLinkSession/redial(endedAt:unresponsive:)``).
@@ -114,11 +117,9 @@ struct DeviceLinkReconnectPolicy: Equatable, Sendable {
                 }
             }
         case .connectSucceeded:
-            if case .connecting = phase {
-                // SUPERMUX:begin device-link-unproven-session-backoff
-                if case .connecting(let attempt) = phase {
-                    supermuxSession = SupermuxDeviceLinkSession(connectedAt: now, attempt: attempt)
-                }
+            // SUPERMUX:begin device-link-unproven-session-backoff (upstream: `if case .connecting = phase {`, binding nothing)
+            if case .connecting(let attempt) = phase {
+                supermuxSession = SupermuxDeviceLinkSession(connectedAt: now, attempt: attempt)
                 // SUPERMUX:end device-link-unproven-session-backoff
                 phase = .connected
                 connectedSince = now
