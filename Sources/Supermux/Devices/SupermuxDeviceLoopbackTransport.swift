@@ -21,8 +21,11 @@ final class SupermuxDeviceLoopbackTransport: CmxByteTransport {
     static func makePair() -> (client: SupermuxDeviceLoopbackTransport, server: SupermuxDeviceLoopbackTransport) {
         let clientToServer = SupermuxDeviceLoopbackPipe(direction: .toHost)
         let serverToClient = SupermuxDeviceLoopbackPipe(direction: .toViewer)
+        let client = SupermuxDeviceLoopbackTransport(inbound: serverToClient, outbound: clientToServer)
+        // A link drop that cuts connections closes this end (both directions).
+        SupermuxDeviceLoopbackImpairment.register(client)
         return (
-            client: SupermuxDeviceLoopbackTransport(inbound: serverToClient, outbound: clientToServer),
+            client: client,
             server: SupermuxDeviceLoopbackTransport(inbound: clientToServer, outbound: serverToClient)
         )
     }

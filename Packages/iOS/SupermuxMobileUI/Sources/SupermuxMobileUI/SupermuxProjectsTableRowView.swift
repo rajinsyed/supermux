@@ -78,6 +78,12 @@ public struct SupermuxProjectsTableRowView: View {
                     newWorktree: actions.requestNewWorktree
                 )
             }
+        case .macRoutes(let macs):
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(macs, id: \.pairingID) { mac in
+                    SupermuxProjectsMacHeaderRow(header: mac, isRouteLine: true)
+                }
+            }
         case .notice:
             SupermuxNestedRowContainer {
                 SupermuxNestedNoticeRow(text: String(

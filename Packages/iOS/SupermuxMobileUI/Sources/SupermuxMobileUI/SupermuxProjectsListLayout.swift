@@ -130,6 +130,13 @@ public struct SupermuxProjectsListLayout: Sendable {
             projectCount: section.isCollapsed && section.hasLoaded ? projects.count : nil,
             canEdit: canEdit
         ))
+        // The route each shown Mac's session uses, one line per Mac, even
+        // while the block is folded: the merged list has no per-Mac headers.
+        // A Mac that is reconnecting keeps its line, which shows that instead.
+        let routed = groups.map(\.header).filter { ($0.route != nil || $0.status != .connected) && isShown($0) }
+        if !routed.isEmpty {
+            builder.fork("routes", .macRoutes(routed))
+        }
         let owned = Self.ownedWorkspaces(workspaces, matching: scope)
         for project in projects {
             let nested = Self.nested(in: project, owned: owned, scope: scope)

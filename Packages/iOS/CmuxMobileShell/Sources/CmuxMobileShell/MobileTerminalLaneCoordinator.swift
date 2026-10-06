@@ -97,9 +97,19 @@ actor MobileTerminalLaneCoordinator {
         var lane: (any MobileTerminalLaneConnection)?
         var task: Task<Void, Never>?
         var outputReady: Bool
+        // SUPERMUX:begin terminal-lane-retry
+        /// The run is sleeping out a retry delay, so the next `ensure` (a
+        /// reconnect, a route change, a remount) starts it again at once.
+        var waitingToRetry = false
+        // SUPERMUX:end terminal-lane-retry
     }
 
-    private static let maximumOpenAttempts = 3
+    // SUPERMUX:begin terminal-lane-retry (upstream: `private static let maximumOpenAttempts = 3`; a lane is now retried with backoff while its terminal stays mounted, see SupermuxTerminalLaneRetry.swift)
+    private let retryDelay: @Sendable (Int) -> Duration
+    private let retrySleep: @Sendable (Duration) async throws -> Void
+    private let retryObserver: (@Sendable (SupermuxTerminalLaneRetryEvent) -> Void)?
+    private let stableLaneLifetime: Duration
+    // SUPERMUX:end terminal-lane-retry
 
     private let provider: MobileTerminalLaneProvider?
     private let inputOnlyProvider: MobileTerminalLaneProvider?
@@ -108,10 +118,26 @@ actor MobileTerminalLaneCoordinator {
 
     init(
         provider: MobileTerminalLaneProvider?,
-        inputOnlyProvider: MobileTerminalLaneProvider? = nil
+        // SUPERMUX:begin terminal-lane-retry (upstream's last parameter gains a trailing comma)
+        inputOnlyProvider: MobileTerminalLaneProvider? = nil,
+        retryDelay: @escaping @Sendable (Int) -> Duration = {
+            SupermuxTerminalLaneRetryDelay().delay(forAttempt: $0)
+        },
+        retrySleep: @escaping @Sendable (Duration) async throws -> Void = {
+            try await Task.sleep(for: $0)
+        },
+        retryObserver: (@Sendable (SupermuxTerminalLaneRetryEvent) -> Void)? = nil,
+        stableLaneLifetime: Duration = SupermuxTerminalLaneRetryDelay.stableLaneLifetime
+        // SUPERMUX:end terminal-lane-retry
     ) {
         self.provider = provider
         self.inputOnlyProvider = inputOnlyProvider
+        // SUPERMUX:begin terminal-lane-retry
+        self.retryDelay = retryDelay
+        self.retrySleep = retrySleep
+        self.retryObserver = retryObserver
+        self.stableLaneLifetime = stableLaneLifetime
+        // SUPERMUX:end terminal-lane-retry
     }
 
     func ensure(_ configuration: Configuration) async {
@@ -126,6 +152,10 @@ actor MobileTerminalLaneCoordinator {
                 entry.phase = .opening
                 entriesByKey[key] = entry
                 launch(key: key, id: entry.id)
+            // SUPERMUX:begin terminal-lane-retry
+            } else if entry.waitingToRetry {
+                retryNow(key: key, entry: entry)
+            // SUPERMUX:end terminal-lane-retry
             }
             return
         }
@@ -182,7 +212,11 @@ actor MobileTerminalLaneCoordinator {
         } catch is MobileTerminalLaneDeliveryUnsupported {
             return .unavailable
         } catch {
-            await fail(key: key, id: entry.id, lane: lane)
+            // SUPERMUX:begin terminal-lane-retry (upstream: `await fail(key: key, id: entry.id, lane: lane)`, which parked the lane until a reconnect, route change or remount)
+            // Closing the lane ends the run's read, which opens it again
+            // after the retry delay.
+            await prepareToReopen(key: key, id: entry.id, lane: lane)
+            // SUPERMUX:end terminal-lane-retry
             return .failed
         }
     }
@@ -239,7 +273,13 @@ actor MobileTerminalLaneCoordinator {
 
     private func run(key: LaneKey, id: UUID) async {
         var openAttempt = 0
-        while openAttempt < Self.maximumOpenAttempts, !Task.isCancelled {
+        // SUPERMUX:begin terminal-lane-retry (upstream: `while openAttempt < Self.maximumOpenAttempts, !Task.isCancelled {`)
+        var failure: DiagnosticFailureKind?
+        while !Task.isCancelled {
+            failure = nil
+            // When this pass's lane delivered its baseline.
+            var readyAt: ContinuousClock.Instant?
+        // SUPERMUX:end terminal-lane-retry
             guard let entry = entriesByKey[key], entry.id == id else { return }
             let configuration = entry.configuration
             // Input-only lanes carry an empty replay baseline solely to gate
@@ -301,6 +341,10 @@ actor MobileTerminalLaneCoordinator {
                     switch disposition {
                     case let .accepted(outputReady):
                         if outputReady {
+                            // SUPERMUX:begin terminal-lane-retry
+                            // Its end resets the backoff if it stays up a while.
+                            if readyAt == nil { readyAt = .now }
+                            // SUPERMUX:end terminal-lane-retry
                             await setOutputReady(true, key: key, id: id)
                         } else {
                             // A consumer can reject a frame temporarily while
@@ -323,19 +367,82 @@ actor MobileTerminalLaneCoordinator {
                     throw CoordinatorError.missingReplayEnvelope
                 }
                 await prepareToReopen(key: key, id: id, lane: lane)
-            } catch is CancellationError {
+            // SUPERMUX:begin terminal-lane-retry (upstream: `} catch is CancellationError {`; the engine cancelling the dial a lane open joined, as an explicit redial does, is a failure to retry: only this run's own cancellation ends it)
+            } catch is CancellationError where Task.isCancelled {
+            // SUPERMUX:end terminal-lane-retry
                 return
             } catch {
+                // SUPERMUX:begin terminal-lane-retry
+                failure = DiagnosticFailureKind.classify(error)
+                // SUPERMUX:end terminal-lane-retry
                 if let lane = entriesByKey[key]?.lane {
                     await prepareToReopen(key: key, id: id, lane: lane)
                 } else {
                     await setOutputReady(false, key: key, id: id)
                 }
             }
+            // SUPERMUX:begin terminal-lane-retry (upstream: `openAttempt += 1` here and `await markFailed(key: key, id: id)` after the loop)
+            // A lane that worked for a while starts the backoff over; one
+            // that ended right after its baseline counts as a failure.
+            if let readyAt, readyAt.duration(to: .now) >= stableLaneLifetime { openAttempt = 0 }
+            guard await waitToRetry(key: key, id: id, attempt: openAttempt, failure: failure) else {
+                return
+            }
             openAttempt += 1
+            // SUPERMUX:end terminal-lane-retry
         }
-        await markFailed(key: key, id: id)
     }
+
+    // SUPERMUX:begin terminal-lane-retry
+    /// Sleeps out the delay before attempt `attempt + 1`. False when the
+    /// lane was deactivated, replaced or retried early meanwhile.
+    private func waitToRetry(
+        key: LaneKey,
+        id: UUID,
+        attempt: Int,
+        failure: DiagnosticFailureKind?
+    ) async -> Bool {
+        guard var entry = entriesByKey[key], entry.id == id, !Task.isCancelled else {
+            return false
+        }
+        let delay = retryDelay(attempt)
+        entry.waitingToRetry = true
+        entriesByKey[key] = entry
+        retryObserver?(SupermuxTerminalLaneRetryEvent(
+            surfaceID: key.surfaceID,
+            attempt: attempt + 1,
+            delay: delay,
+            failure: failure
+        ))
+        do {
+            try await retrySleep(delay)
+        } catch {
+            return false
+        }
+        guard var current = entriesByKey[key], current.id == id, !Task.isCancelled else {
+            return false
+        }
+        current.waitingToRetry = false
+        entriesByKey[key] = current
+        return true
+    }
+
+    /// Starts a lane that is waiting out its retry delay again right away,
+    /// under a new id so the sleeping run can never touch it.
+    private func retryNow(key: LaneKey, entry: Entry) {
+        entry.task?.cancel()
+        let id = UUID()
+        entriesByKey[key] = Entry(
+            id: id,
+            configuration: entry.configuration,
+            phase: .opening,
+            lane: nil,
+            task: nil,
+            outputReady: false
+        )
+        launch(key: key, id: id)
+    }
+    // SUPERMUX:end terminal-lane-retry
 
     private func install(
         lane: any MobileTerminalLaneConnection,

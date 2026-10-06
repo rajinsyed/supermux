@@ -24,6 +24,11 @@ actor V2TestSocket: V2ControlSocket {
     var directoryConflictStep: Int?
     var directoryRevisions: [Int?] = []
     var directoryRevision = 1
+    // SUPERMUX:begin v2-directory-refresh-floor
+    /// How long after `now` a plain directory reply's permissions end (upstream: always 3600).
+    var supermuxDirectoryPermissionTTL = 3600
+    func supermuxSetDirectoryPermissionTTL(_ seconds: Int) { supermuxDirectoryPermissionTTL = seconds }
+    // SUPERMUX:end v2-directory-refresh-floor
     var suspendRegistration = false
     var deferredRegistration: String?
     var registrationObserved: CheckedContinuation<Void, Never>?
@@ -100,7 +105,9 @@ actor V2TestSocket: V2ControlSocket {
                     teamID: device.identity.teamID), requestID: header.requestId, schemaID: .directoryResultV1))
                 return
             }
-            try push(V2DirectoryResponse(directory: V2Directory(devices: [record], issuedAt: now, nextCursor: nil, permissionExpiresAt: now + 3600, relayURLs: ["https://relay.example.com/"], revision: directoryRevision, rules: directoryRules, teamID: device.identity.teamID), requestID: header.requestId, schemaID: .directoryResultV1))
+            // SUPERMUX:begin v2-directory-refresh-floor (upstream: `permissionExpiresAt: now + 3600`)
+            try push(V2DirectoryResponse(directory: V2Directory(devices: [record], issuedAt: now, nextCursor: nil, permissionExpiresAt: now + supermuxDirectoryPermissionTTL, relayURLs: ["https://relay.example.com/"], revision: directoryRevision, rules: directoryRules, teamID: device.identity.teamID), requestID: header.requestId, schemaID: .directoryResultV1))
+            // SUPERMUX:end v2-directory-refresh-floor
         case "device.metadata.v1":
             lastMetadataRequestID = header.requestId
             if failNextMetadataReply {

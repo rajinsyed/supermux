@@ -71,8 +71,9 @@ SLOW_WATCH_S = 60
 # Step 12: how long the main thread is blocked once the liveness probe goes out;
 # longer than the probe's own 10 s deadline.
 MAIN_STALL_S = 12
-# Step 13: the mirror call the loopback holds, for how long (past the link's
-# 20 s deadline), and how long the pane gets to be attached again.
+# Step 13: the mirror call the loopback holds, for how long (past the 20 s
+# replay deadline the step sets; a replay's own default is 90 s), and how long
+# the pane gets to be attached again.
 REPLAY_METHOD = "mobile.terminal.replay"
 REPLAY_HOLD_S = 25
 REPLAY_DEADLINE_S = 20
@@ -501,6 +502,14 @@ class LoopbackSmoke:
         if before.get("phase") != "connected":
             raise SmokeFailure(f"the link is not connected before the slow replay: {before}")
         wait_for("the mirror pane to be attached", lambda: self.mirror_pane().get("attached"), self.timeout_s)
+        # A replay's own deadline is 90 s; this step keeps the 20 s it was written for.
+        self.client.call("supermux.devices.terminal_stream.replay_deadline", {"seconds": REPLAY_DEADLINE_S})
+        try:
+            return self.slow_replay_watch(before)
+        finally:
+            self.client.call("supermux.devices.terminal_stream.replay_deadline", {"seconds": None})
+
+    def slow_replay_watch(self, before: Dict[str, Any]) -> Dict[str, Any]:
         self.link("stall", method=REPLAY_METHOD, seconds=REPLAY_HOLD_S)
         self.client.call(
             "supermux.devices.terminal_close.replay",

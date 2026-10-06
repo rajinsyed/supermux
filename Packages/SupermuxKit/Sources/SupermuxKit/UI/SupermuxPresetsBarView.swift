@@ -20,6 +20,7 @@ public struct SupermuxPresetsBarView: View {
     private let onLaunch: (SupermuxTerminalPreset) -> Void
     private let onToggleRun: () -> Void
     private let hostLabel: String?
+    private let hostMachineID: String?
 
     @State private var showingEditor = false
     @State private var isRunHovering = false
@@ -36,13 +37,17 @@ public struct SupermuxPresetsBarView: View {
     ///   - hostLabel: For a device mirror, the localized note that presets and
     ///     Run open on that Mac, shown as a small Mac icon's tooltip and
     ///     accessibility label; `nil` for a local workspace.
+    ///   - hostMachineID: That Mac's catalog machine id: the icon's tooltip
+    ///     adds its link's route and it carries the amber dot while relayed
+    ///     (``EnvironmentValues/supermuxLinkRoutes``).
     public init(
         model: SupermuxProjectsModel,
         isRunning: Bool,
         runShortcutHint: String,
         onLaunch: @escaping (SupermuxTerminalPreset) -> Void,
         onToggleRun: @escaping () -> Void,
-        hostLabel: String? = nil
+        hostLabel: String? = nil,
+        hostMachineID: String? = nil
     ) {
         self.model = model
         self.isRunning = isRunning
@@ -50,6 +55,7 @@ public struct SupermuxPresetsBarView: View {
         self.onLaunch = onLaunch
         self.onToggleRun = onToggleRun
         self.hostLabel = hostLabel
+        self.hostMachineID = hostMachineID
     }
 
     public var body: some View {
@@ -61,11 +67,7 @@ public struct SupermuxPresetsBarView: View {
             if let hostLabel {
                 // Icon only: the name is already on the Changes strip and the
                 // row's chip, and a text label here squeezed the presets out.
-                Image(systemName: "desktopcomputer")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.tertiary)
-                    .help(hostLabel)
-                    .accessibilityLabel(hostLabel)
+                SupermuxPresetsBarHostMark(label: hostLabel, machineID: hostMachineID)
             }
             runControl
         }
@@ -225,5 +227,33 @@ private struct SupermuxPresetChip: View {
             defaultValue: "Open \(preset.name) in a new terminal tab"
         ))
         .accessibilityLabel(preset.name)
+    }
+}
+
+/// A device mirror's host icon on the presets bar: its tooltip says presets
+/// and Run open on that Mac and, while the link has one, which path it uses
+/// on a second line; an amber dot marks a relayed link. Only this view reads
+/// the route, so a route update never redraws the bar.
+private struct SupermuxPresetsBarHostMark: View {
+    let label: String
+    let machineID: String?
+
+    @Environment(\.supermuxLinkRoutes) private var routes
+
+    var body: some View {
+        let route = machineID.flatMap { routes.route(forMachineID: $0) }
+        let help = route.map { label + "\n" + SupermuxLinkRouteText.text(for: $0) } ?? label
+        Image(systemName: "desktopcomputer")
+            .font(.system(size: 10, weight: .medium))
+            .foregroundStyle(.tertiary)
+            .overlay(alignment: .bottomTrailing) {
+                if let route, SupermuxLinkRouteText.isWarning(route) {
+                    SupermuxRelayDot(diameter: 4.5)
+                }
+            }
+            .compositingGroup()
+            .help(help)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(help)
     }
 }

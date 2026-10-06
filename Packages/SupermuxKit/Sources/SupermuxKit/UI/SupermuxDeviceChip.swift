@@ -9,6 +9,8 @@ public struct SupermuxDeviceChip: View {
     private let name: String
     private let state: SupermuxDeviceChipState
     private let fontScale: CGFloat
+    /// Set for a project device, whose icon shows its link's route.
+    private var device: SupermuxProjectDevice?
 
     /// Creates the icon.
     /// - Parameters:
@@ -30,12 +32,18 @@ public struct SupermuxDeviceChip: View {
         self.fontScale = fontScale
     }
 
-    /// Creates the icon for a project device.
+    /// Creates the icon for a project device (its tooltip and relay dot
+    /// follow its link's route, as ``SupermuxRemoteMacIcon/init(device:pointSize:tint:)``).
     public init(device: SupermuxProjectDevice, fontScale: CGFloat = 1) {
         self.init(name: device.name, state: SupermuxRemoteMacIcon.state(of: device), fontScale: fontScale)
+        self.device = device
     }
 
     public var body: some View {
-        SupermuxRemoteMacIcon(name: name, state: state, pointSize: 9 * fontScale)
+        if let device {
+            SupermuxRemoteMacIcon(device: device, pointSize: 9 * fontScale)
+        } else {
+            SupermuxRemoteMacIcon(name: name, state: state, pointSize: 9 * fontScale)
+        }
     }
 }

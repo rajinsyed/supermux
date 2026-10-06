@@ -96,6 +96,10 @@ public enum SupermuxMobileCapability: String, CaseIterable, Codable, Sendable, E
     /// advertises it instead of v1: a v1-only mirror would only re-pin on a
     /// resize and garble, so it keeps upstream's replay path.
     case terminalStreamV2 = "supermux.terminal_stream.v2"
+    /// `route.candidates` is served: this Mac hands its direct addresses to
+    /// another of the user's devices over their admitted session, so that
+    /// device can dial it directly (LAN or Tailscale) from the first packet.
+    case routeCandidatesV1 = "supermux.route_candidates.v1"
 
     /// Images can be attached to an `agent.start` prompt: they are uploaded
     /// with `agent.attachment.upload` and `agent.start` takes their paths as

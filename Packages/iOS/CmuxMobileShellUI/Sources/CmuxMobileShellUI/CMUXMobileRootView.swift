@@ -6,6 +6,9 @@ import CmuxMobileShellModel
 import CmuxMobileSupport
 import CmuxMobileToast
 import CmuxMobileWorkspace
+// SUPERMUX:begin phone-route-direct-race
+import SupermuxMobileUI
+// SUPERMUX:end phone-route-direct-race
 import SwiftUI
 #if os(iOS)
 @preconcurrency import UIKit
@@ -387,6 +390,9 @@ struct CMUXMobileRootView: View {
             clearAttachTicketAuthenticationIfNeeded()
         }
         #if os(iOS)
+        // SUPERMUX:begin phone-route-direct-race (each Mac's route and the fetch of its direct addresses run while the app is active, on every screen, not only while the Projects list is up)
+        .supermuxPhoneRoutes(seams: { store.supermuxConnectionSeams })
+        // SUPERMUX:end phone-route-direct-race
         // A notification tap can arrive before the workspace (or terminal) it
         // targets is loaded (cold launch, or attach still in flight); re-apply
         // the parked deep link as the lists fill in. The version counter is a

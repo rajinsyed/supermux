@@ -227,33 +227,70 @@ actor MobileHostSerializedTransportWriter {
     private let transport: any CmxByteTransport
     private var sending = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
+    // SUPERMUX:begin host-writer-bulk-yields
+    /// A device mirror's replay replies larger than this (a full replay is
+    /// MBs) wait while any other write waits: an input ack, a probe's
+    /// answer, a status or watch reply and event frames go first. Only the
+    /// one large reply already on the wire still holds them (a frame is
+    /// never split).
+    static let supermuxBulkReplyByteCount = 64 * 1024
+    /// Small writes that may pass a waiting large reply in a row, so a
+    /// steady stream of them (a terminal typed in on a shared stream)
+    /// cannot starve it.
+    static let supermuxSmallWritesPerBulkTurn = 32
+    private var supermuxBulkWaiters: [(continuation: CheckedContinuation<Void, Never>, replacement: (@Sendable () -> Data?)?)] = []
+    private var supermuxSmallWritesPassedBulk = 0
+    // SUPERMUX:end host-writer-bulk-yields
 
     init(transport: any CmxByteTransport) {
         self.transport = transport
     }
 
-    func send(_ data: Data) async throws {
-        await acquire()
+    // SUPERMUX:begin host-writer-bulk-yields (`bulk`: a large reply that yields to every other write; upstream: `func send(_ data: Data)` and `await acquire()`)
+    // SUPERMUX:begin terminal-replay-supersede (`supermuxReplacement`: read once the write's turn comes; a superseded replay's reply goes as a small error instead)
+    func send(_ data: Data, bulk: Bool = false, supermuxReplacement: (@Sendable () -> Data?)? = nil) async throws {
+    // SUPERMUX:end terminal-replay-supersede
+        await acquire(bulk: bulk, replacement: supermuxReplacement)
+    // SUPERMUX:end host-writer-bulk-yields
         defer { release() }
         try Task.checkCancellation()
-        try await transport.send(data)
+        // SUPERMUX:begin terminal-replay-supersede (upstream: `try await transport.send(data)`)
+        try await transport.send(supermuxReplacement?() ?? data)
+        // SUPERMUX:end terminal-replay-supersede
     }
 
-    private func acquire() async {
+    // SUPERMUX:begin host-writer-bulk-yields (upstream: `private func acquire() async` appending every waiter to `waiters`)
+    private func acquire(bulk: Bool, replacement: (@Sendable () -> Data?)?) async {
         if !sending {
             sending = true
             return
         }
         await withCheckedContinuation { continuation in
-            waiters.append(continuation)
+            if bulk {
+                supermuxBulkWaiters.append((continuation, replacement))
+            } else {
+                waiters.append(continuation)
+            }
         }
     }
 
+    /// Hands the stream to a large reply superseded while it waited (it goes
+    /// as a small error, freeing its request slot on both ends), else to the
+    /// oldest small write unless ``supermuxSmallWritesPerBulkTurn`` of them
+    /// in a row passed a waiting large reply, else to the oldest large reply.
     private func release() {
-        if waiters.isEmpty {
-            sending = false
-        } else {
+        if let superseded = supermuxBulkWaiters.firstIndex(where: { $0.replacement?() != nil }) {
+            supermuxBulkWaiters.remove(at: superseded).continuation.resume()
+        } else if !waiters.isEmpty,
+                  supermuxBulkWaiters.isEmpty || supermuxSmallWritesPassedBulk < Self.supermuxSmallWritesPerBulkTurn {
+            supermuxSmallWritesPassedBulk = supermuxBulkWaiters.isEmpty ? 0 : supermuxSmallWritesPassedBulk + 1
             waiters.removeFirst().resume()
+        } else if !supermuxBulkWaiters.isEmpty {
+            supermuxSmallWritesPassedBulk = 0
+            supermuxBulkWaiters.removeFirst().continuation.resume()
+        } else {
+            sending = false
         }
     }
+    // SUPERMUX:end host-writer-bulk-yields
 }

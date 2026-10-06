@@ -36,6 +36,19 @@ final class SupermuxTerminalStream {
     static let attachBufferByteLimit = 16 * 1024 * 1024
     /// History rows a render-grid replay carries (the phone's ceiling is 20000).
     static let scrollbackRows = 10_000
+    /// History rows a hidden mirror's re-attach asks for. A 10000-row replay
+    /// is MBs, and a reply frame is never split, so on a slow link one blocks
+    /// every pane's output on that connection until it is through (a hidden
+    /// mirror's 1.7 MB replay after a reconnect held the shown ECHO
+    /// terminal's echo ~6 s at 300 KB/s, 2026-10-05 D3). Hidden, the mirror
+    /// gets its screen and this much history; the rest comes with a full
+    /// replay once a pane shows it, its output is quiet and nobody types in
+    /// it (the replay boundary's confirmation, ``fullReplayApplied(confirm:)``).
+    /// A grid re-anchor of a shown pane still asks for the whole history: a
+    /// short one there left Ghostty's soft-wrap flags on every other row
+    /// until the history came (2026-10-06, D7), so the echo waits for it when
+    /// showing the pane resizes its terminal on the other Mac.
+    static let hiddenScrollbackRows = 100
     /// Drops this Mac's scrollback before a full replay: a screen-anchored
     /// replay without history repaints in place and would keep stale rows.
     static let historyReset = Data([0x1B, 0x5B, 0x33, 0x4A])
@@ -67,6 +80,10 @@ final class SupermuxTerminalStream {
     /// dragged on the other Mac replays once it stops, not for every step.
     static let gridQuietNanoseconds: UInt64 = 120_000_000
     static let gridQuietLimitNanoseconds: UInt64 = 2_000_000_000
+    /// Names this mirror's replay requests to the host, so a newer one from
+    /// the same pane supersedes an older reply still waiting there
+    /// (``SupermuxTerminalReplaySupersession``).
+    let replayOwner = UUID().uuidString
 
     init(link: DeviceLink, surfaceID: UUID) {
         watch = SupermuxTerminalStreamWatch.of(link)
@@ -125,11 +142,15 @@ final class SupermuxTerminalStream {
     }
 
     /// The link is gone. What the mirror's screen holds stays, so the
-    /// reconnect can resume; the host refuses a stale position.
+    /// reconnect can resume; the host refuses a stale position. A re-capture
+    /// still owed (armed, or the history a hidden re-attach left out) stays
+    /// owed: a re-attach that resumes would never ask for it, and the pane
+    /// kept its short history for good (``resumedReplyApplied()``).
     func linkLost() {
         grid.linkLost()
         hostGrid = nil
         consecutiveBehind = 0
+        if confirmationTask != nil || historyIsShallow { pendingConfirmation = true }
         cancelConfirmation()
         confirming = false
         confirmationsInRow = 0
@@ -158,6 +179,7 @@ final class SupermuxTerminalStream {
         backgroundTask?.cancel()
         backgroundTask = nil
         guard hidden else {
+            shownAt = .now
             setBackground(false)
             resumePendingConfirmation()
             return
@@ -190,6 +212,16 @@ final class SupermuxTerminalStream {
     /// its request. A hidden pane's confirmation waits for its show, then for
     /// quiet output. (Until 2026-10-05 the wait polled at 10 Hz, and a
     /// terminal printing every second chained full replays.)
+    ///
+    /// Each one also waits until nothing was typed into the pane for
+    /// ``inputIdle``, nor since it was last shown: a multi-MB reply shares
+    /// the link with the echo (on one ordered stream it holds it for its
+    /// whole transfer), and the pane the user just looked at is the one
+    /// they are about to type in. A keystroke moves the wait on. The re-capture
+    /// itself keeps the pane attached (the session's live re-capture): output
+    /// is drawn as it comes and again over the new screen. A pane that still
+    /// owes its history waits at most ``maximumHistoryWait``: one that is
+    /// never quiet, or always typed in, gets it anyway (second review #5).
     private var lastBytesAt: ContinuousClock.Instant?
     private var bytesDuringAttach = false
     private var requestRacedOutput = false
@@ -204,13 +236,27 @@ final class SupermuxTerminalStream {
     /// A confirmation waits for the pane's show.
     private var pendingConfirmation = false
     private(set) var confirmations = 0
+    /// Whether the replay request leaving now asks for the hidden mirror's
+    /// short history, and whether the last full replay applied did.
+    private var requestIsShallow = false
+    private var historyIsShallow = false
     static let outputRaceWindow: Duration = .milliseconds(150)
     /// The race window while the host batches this terminal's bytes: they
     /// arrive up to its ~500 ms batch window plus 100 ms leeway late
     /// (`SupermuxTerminalByteCoalescer.backgroundWindow`).
     static let backgroundOutputRaceWindow: Duration = .milliseconds(750)
     static let outputQuiet: Duration = .milliseconds(400)
+    /// How long a re-capture of the pane waits after its last keystroke, and
+    /// after the pane was shown.
+    static let inputIdle: Duration = .seconds(3)
+    /// When typing last went to the pane (the session's input pipeline).
+    var lastInputAt: (@MainActor () -> ContinuousClock.Instant?)?
+    /// When the pane was last shown.
+    private var shownAt: ContinuousClock.Instant?
     static let maximumConfirmationQuiet: Duration = .seconds(8)
+    /// How long a pane that owes its history waits for quiet output and no
+    /// typing before it is fetched anyway.
+    static let maximumHistoryWait: Duration = .seconds(20)
     static let maximumConfirmationsInRow = 3
     static let confirmationTolerance: Duration = .milliseconds(100)
 
@@ -220,8 +266,21 @@ final class SupermuxTerminalStream {
         if attaching { bytesDuringAttach = true }
     }
 
+    #if DEBUG
+    /// Replay requests sent (full or resume), for `terminal_stream.stats`:
+    /// more than the replies applied means some were asked again or lost.
+    private(set) var replayRequests = 0
+
+    /// The next attach asks a full replay, as a grid change does
+    /// (`terminal_close.replay {full: true}`).
+    func debugNeedsFullReplay() { grid.needsFullReplay = true }
+    #endif
+
     /// A replay request leaves now.
     func replayRequested() {
+        #if DEBUG
+        replayRequests += 1
+        #endif
         bytesDuringAttach = false
         let window = background ? Self.backgroundOutputRaceWindow : Self.outputRaceWindow
         requestRacedOutput = lastBytesAt.map { ContinuousClock.now - $0 < window } ?? false
@@ -235,7 +294,9 @@ final class SupermuxTerminalStream {
         if !confirming { confirmationsInRow = 0 }
         confirming = false
         let raced = confirmationsInRow == 0 ? requestRacedOutput || bytesDuringAttach : requestRacedOutput
-        guard isActive, raced, confirmationsInRow < Self.maximumConfirmationsInRow else { return }
+        // A hidden mirror's short history is completed the same way: by a full
+        // replay once it is shown and quiet.
+        guard isActive, raced || historyIsShallow, confirmationsInRow < Self.maximumConfirmationsInRow else { return }
         self.confirm = confirm
         guard !hidden else {
             pendingConfirmation = true
@@ -249,9 +310,15 @@ final class SupermuxTerminalStream {
     private func armConfirmation() {
         cancelConfirmation()
         let quiet = min(Self.outputQuiet * (1 << confirmationsInRow), Self.maximumConfirmationQuiet)
+        // A confirmation of a raced capture waits for quiet as long as it takes.
+        let giveUpAt = historyIsShallow ? ContinuousClock.now + Self.maximumHistoryWait : nil
         confirmationTask = Task { [weak self] in
             // Each byte moves the deadline; the task wakes only at deadlines.
-            while let deadline = self?.quietDeadline(after: quiet) {
+            while var deadline = self?.quietDeadline(after: quiet) {
+                if let giveUpAt {
+                    guard ContinuousClock.now < giveUpAt else { break }
+                    deadline = min(deadline, giveUpAt)
+                }
                 do {
                     try await Task.sleep(until: deadline, tolerance: Self.confirmationTolerance, clock: .continuous)
                 } catch {
@@ -267,6 +334,14 @@ final class SupermuxTerminalStream {
             self.startConfirmation()
             self.confirm?()
         }
+    }
+
+    /// A resumed reply was applied: a re-capture owed from before the link
+    /// dropped waits for quiet output again, once the pane is on screen (a
+    /// full reply settles it through ``fullReplayApplied(confirm:)``).
+    func resumedReplyApplied() {
+        guard !hidden else { return }
+        resumePendingConfirmation()
     }
 
     /// The pane came back on screen: a confirmation that waited for the show
@@ -292,10 +367,15 @@ final class SupermuxTerminalStream {
         grid.needsFullReplay = true
     }
 
-    /// When output will have been quiet for `quiet`; nil once it has.
+    /// When output will have been quiet for `quiet`, and the pane free of
+    /// typing (and shown) for ``inputIdle``; nil once both hold.
     private func quietDeadline(after quiet: Duration) -> ContinuousClock.Instant? {
-        guard let lastBytesAt else { return nil }
-        let deadline = lastBytesAt + quiet
+        let deadlines = [
+            lastBytesAt.map { $0 + quiet },
+            lastInputAt?().map { $0 + Self.inputIdle },
+            shownAt.map { $0 + Self.inputIdle },
+        ]
+        guard let deadline = deadlines.compactMap({ $0 }).max() else { return nil }
         return deadline > .now ? deadline : nil
     }
 
@@ -320,10 +400,14 @@ final class SupermuxTerminalStream {
     /// position to resume from when the mirror has one on this stream.
     func replayParams(expectedSequence: UInt64?, grid: (columns: Int, rows: Int)?) -> [String: Any] {
         guard isActive else { return [:] }
+        // A hidden mirror that attached before (it has an epoch) asks for its
+        // screen and a short history; the rest comes once it is shown.
+        requestIsShallow = hidden && epoch != nil
         var params: [String: Any] = [
             SupermuxTerminalStreamHost.streamParam: 1,
+            SupermuxTerminalStreamHost.replayOwnerParam: replayOwner,
             "anchor": "screen",
-            "max_scrollback_rows": Self.scrollbackRows,
+            "max_scrollback_rows": requestIsShallow ? Self.hiddenScrollbackRows : Self.scrollbackRows,
         ]
         if !self.grid.needsFullReplay, let epoch, let expectedSequence, let grid,
            let generation = self.grid.screen {
@@ -336,9 +420,66 @@ final class SupermuxTerminalStream {
         return params
     }
 
+    // MARK: Replay deadline
+
+    /// How long a replay's reply may take. A full replay is MBs: on a slow
+    /// relay several of them leave the host one after another (7 at 300 KB/s
+    /// took ~40 s), so the link's 20 s missed the late ones, and each was
+    /// asked for again while the host still sent the first (STREAM.md H3b).
+    nonisolated static let replayDeadlineNanoseconds: UInt64 = 90_000_000_000
+    /// Retries after missed deadlines to a host that does not supersede
+    /// (each would add a whole reply): upstream's three.
+    static let retriesWithoutSuperseding = 3
+
+    /// Replays of this mirror that missed their deadline in a row (the
+    /// session's count): each retry waits twice as long, up to 8 times the
+    /// deadline, so a reply that takes longer than the deadline on a very
+    /// slow link is waited out instead of asked again forever.
+    var timedOutReplays = 0
+
+    /// The deadline of a mirror request: a replay's own (a suite may set it,
+    /// `terminal_stream.replay_deadline`), doubled per replay in a row that
+    /// missed it; nil (the link's) for every other method.
+    func deadline(forMethod method: String) -> UInt64? {
+        guard method == "mobile.terminal.replay" else { return nil }
+        var base = Self.replayDeadlineNanoseconds
+        #if DEBUG
+        if let seconds = SupermuxTerminalStreamDebug.replayDeadlineSeconds { base = UInt64(seconds * 1_000_000_000) }
+        #endif
+        return base << UInt64(min(timedOutReplays, 3))
+    }
+
+    /// Whether a replay that missed its deadline on a live link is asked
+    /// again (`attempt`, from 1): always to a host that supersedes the older
+    /// reply (learned from its replies), else at most
+    /// ``retriesWithoutSuperseding`` times, as upstream did.
+    func retriesMissedReplay(attempt: Int) -> Bool {
+        watch.hostSupersedesReplays || attempt <= Self.retriesWithoutSuperseding
+    }
+
+    /// The wait before asking again after the `attempt`-th replay in a row
+    /// missed its deadline on a live link: 2 s, doubling, at most 30 s.
+    static func replayRetryDelayNanoseconds(attempt: Int) -> UInt64 {
+        let seconds = min(UInt64(2) << UInt64(min(max(attempt - 1, 0), 4)), 30)
+        return seconds * 1_000_000_000
+    }
+
     func noteReply(_ reply: Reply) {
         epoch = reply.epoch
-        if reply.resumed == nil { fullReplays += 1 } else { resumes += 1 }
+        if reply.supersedes { watch.hostSupersedesReplays = true }
+        if reply.resumed == nil {
+            fullReplays += 1
+            historyIsShallow = requestIsShallow
+        } else {
+            resumes += 1
+        }
+        // Journaled in every build: its counters (`replay-full`,
+        // `replay-resumed`) go into `cmux iroh-diag`, so a field report shows
+        // whether reconnects resumed or re-sent whole screens.
+        MobileHostIrxRuntime.journal.record("terminal-stream", reply.resumed == nil ? "replay-full" : "replay-resumed", [
+            "device": String(watch.instance.deviceID.prefix(8)),
+            "tag": watch.instance.tag,
+        ])
     }
 
     /// The host's latest grid, as its grid events report it.
@@ -411,10 +552,13 @@ final class SupermuxTerminalStream {
         var gridGeneration: UInt64?
         /// A resumed reply's sizing fields (a full replay's come with its decode).
         var sizing: MobileTerminalReplaySizing?
+        /// The host supersedes an older reply of the pane (`supermux_supersedes`).
+        var supersedes = false
     }
 
     private nonisolated static let resumedMarker = Data("\"\(SupermuxTerminalStreamHost.resumedKey)\":true".utf8)
     private nonisolated static let epochMarker = Data("\"\(SupermuxTerminalStreamHost.epochKey)\":\"".utf8)
+    private nonisolated static let supersedesMarker = Data("\"\(SupermuxTerminalStreamHost.supersedesKey)\":true".utf8)
 
     /// Reads a replay reply off the main actor. A full replay (often MBs of
     /// grid) is only scanned for its epoch, never parsed a second time.
@@ -422,16 +566,12 @@ final class SupermuxTerminalStream {
     @concurrent
     #endif
     nonisolated static func decodeReply(_ data: Data) async -> Reply {
-        guard data.range(of: resumedMarker) != nil else {
-            return Reply(epoch: scannedEpoch(data), gridGeneration: SupermuxTerminalGridTracker.generation(inBytesPayload: data))
-        }
+        guard data.range(of: resumedMarker) != nil else { return scannedReply(data) }
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               object[SupermuxTerminalStreamHost.resumedKey] as? Bool == true,
               let sequence = (object["seq"] as? NSNumber)?.uint64Value,
               let encoded = object["data_b64"] as? String,
-              let bytes = Data(base64Encoded: encoded) else {
-            return Reply(epoch: scannedEpoch(data), gridGeneration: SupermuxTerminalGridTracker.generation(inBytesPayload: data))
-        }
+              let bytes = Data(base64Encoded: encoded) else { return scannedReply(data) }
         return Reply(
             epoch: object[SupermuxTerminalStreamHost.epochKey] as? String,
             resumed: Reply.Resumed(
@@ -441,7 +581,17 @@ final class SupermuxTerminalStream {
                 rows: (object["rows"] as? NSNumber)?.intValue
             ),
             gridGeneration: (object[SupermuxTerminalStreamHost.gridGenerationKey] as? NSNumber)?.uint64Value,
-            sizing: replaySizing(in: object)
+            sizing: replaySizing(in: object),
+            supersedes: object[SupermuxTerminalStreamHost.supersedesKey] as? Bool == true
+        )
+    }
+
+    /// A full replay's reply, scanned rather than parsed.
+    private nonisolated static func scannedReply(_ data: Data) -> Reply {
+        Reply(
+            epoch: scannedEpoch(data),
+            gridGeneration: SupermuxTerminalGridTracker.generation(inBytesPayload: data),
+            supersedes: data.range(of: supersedesMarker) != nil
         )
     }
 
@@ -501,9 +651,13 @@ final class SupermuxTerminalStreamWatch {
     private var counts: [UUID: Int] = [:]
     private var backgroundCounts: [UUID: Int] = [:]
     private var acked: (connection: UInt64, watched: Watched)?
+    /// The other Mac supersedes a pane's older replay reply when it asks
+    /// again (seen in a reply of any mirror on this link).
+    var hostSupersedesReplays = false
     private var failedConnection: UInt64?
     /// Sends that failed in a row; retries stop at ``maximumRetries`` (a host
-    /// that always rejects the call, such as a workspace-scoped ticket).
+    /// that always rejects the call, such as a workspace-scoped ticket),
+    /// unless a pane shown here is still background on the host.
     private var consecutiveFailures = 0
     private static let maximumRetries = 5
     private var syncTask: Task<Void, Never>?
@@ -615,7 +769,9 @@ final class SupermuxTerminalStreamWatch {
                 } catch {
                     self.failedConnection = connection
                     self.consecutiveFailures += 1
-                    if self.consecutiveFailures <= Self.maximumRetries { self.retryAfterFailure(on: connection) }
+                    if self.consecutiveFailures <= Self.maximumRetries || self.hostBatchesAShownTerminal(on: connection) {
+                        self.retryAfterFailure(on: connection)
+                    }
                     break
                 }
             }
@@ -628,17 +784,33 @@ final class SupermuxTerminalStreamWatch {
     /// A send that failed on a connection that stays up (a busy host, a missed
     /// deadline) goes out again shortly: a background change alone has no
     /// other path that sends it again, and a shown pane would keep getting
-    /// its bytes in background batches. A connection's first send retries
-    /// too, or the host would keep sending every terminal's bytes. At most
-    /// ``maximumRetries`` in a row: a host that keeps rejecting the call is
-    /// asked again only by the next change or attach.
+    /// its bytes in background batches, or stay frozen where the host paused
+    /// it. A connection's first send retries too, or the host would keep
+    /// sending every terminal's bytes. ``maximumRetries`` in a row 2 s
+    /// apart; past them only while the host still batches a terminal shown
+    /// here, backing off to 30 s (a host that keeps rejecting the call is
+    /// otherwise asked again only by the next change or attach).
     private func retryAfterFailure(on connection: UInt64) {
+        let delay = Self.retryDelay(afterFailures: consecutiveFailures)
         Task { [weak self] in
-            try? await Task.sleep(for: .seconds(2))
+            try? await Task.sleep(for: delay)
             guard let self, self.connection == connection, self.failedConnection == connection else { return }
             self.failedConnection = nil
             _ = self.sync()
         }
+    }
+
+    /// 2 s for the first ``maximumRetries`` failures in a row, then doubling to 30 s.
+    static func retryDelay(afterFailures failures: Int) -> Duration {
+        let past = min(max(failures - maximumRetries, 0), 4)
+        return .seconds(min(2 << past, 30))
+    }
+
+    /// Whether the host, as last acknowledged on `connection`, still batches
+    /// (or paused) a terminal that some pane here now shows.
+    private func hostBatchesAShownTerminal(on connection: UInt64) -> Bool {
+        guard let acked, acked.connection == connection else { return false }
+        return !acked.watched.background.subtracting(desired.background).isEmpty
     }
 }
 
@@ -657,6 +829,7 @@ extension SupermuxTerminalStreamWatch {
                 "gaps": stream?.gaps ?? 0,
                 "grid_resyncs": stream?.gridResyncs ?? 0,
                 "replay_confirmations": stream?.confirmations ?? 0,
+                "replay_requests": stream?.replayRequests ?? 0,
             ]
         }
         let background = acked?.connection == connection ? acked?.watched.background : nil

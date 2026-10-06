@@ -4738,5 +4738,63 @@
         ]
       }
     }
+  },
+  "supermux.route.scope.tailscale": {
+    "class": "brand",
+    "source": "Tailscale"
+  },
+  "supermux.route.twoParts": {
+    "class": "format",
+    "source": "%1$@ · %2$@"
+  },
+  "supermux.route.threeParts": {
+    "class": "format",
+    "source": "%1$@ · %2$@ · %3$@"
+  },
+  "supermux.route.scope.lan": {
+    "source": "LAN",
+    "identityLocales": {
+      "de": "LAN is the standard network abbreviation in this locale; the translated entry is still required.",
+      "fr": "LAN is the standard network abbreviation in this locale; the translated entry is still required.",
+      "es": "LAN is the standard network abbreviation in this locale; the translated entry is still required.",
+      "ko": "LAN is the standard network abbreviation in this locale; the translated entry is still required.",
+      "ja": "LAN is the standard network abbreviation in this locale; the translated entry is still required."
+    }
+  },
+  "supermux.route.scope.internet": {
+    "source": "Internet",
+    "identityLocales": {
+      "de": "Internet has the same spelling in this locale; the translated entry is still required.",
+      "fr": "Internet has the same spelling in this locale; the translated entry is still required.",
+      "es": "Internet has the same spelling in this locale; the translated entry is still required."
+    }
+  },
+  "supermux.route.kind.direct": {
+    "source": "Direct",
+    "identityLocales": {
+      "fr": "Direct has the same spelling in French; the translated entry is still required."
+    }
+  },
+  "supermux.route.place.apne1": {
+    "source": "Tokyo",
+    "identityLocales": {
+      "fr": "Tokyo has the same spelling in French; the translated entry is still required."
+    }
+  },
+  "supermux.route.place.ape1": {
+    "source": "Taiwan",
+    "identityLocales": {
+      "de": "Taiwan has the same spelling in German; the translated entry is still required."
+    }
+  },
+  "supermux.route.rtt": {
+    "source": "%lld ms",
+    "identityLocales": {
+      "de": "ms is the invariant SI symbol for milliseconds in this locale and does not inflect with the count; the translated entry is still required.",
+      "fr": "ms is the invariant SI symbol for milliseconds in this locale and does not inflect with the count; the translated entry is still required.",
+      "es": "ms is the invariant SI symbol for milliseconds in this locale and does not inflect with the count; the translated entry is still required.",
+      "ko": "ms is the invariant SI symbol for milliseconds in this locale and does not inflect with the count; the translated entry is still required.",
+      "ja": "ms is the invariant SI symbol for milliseconds in this locale and does not inflect with the count; the translated entry is still required."
+    }
   }
 }

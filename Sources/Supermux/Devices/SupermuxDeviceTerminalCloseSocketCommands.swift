@@ -13,9 +13,11 @@ import Foundation
 ///   failure card (`title`, `message`, `recovery`) or null.
 /// - `terminal_close.needs_confirm {workspace_id, surface_id}`: whether this Mac
 ///   would ask before closing that terminal of its own (`panelNeedsConfirmClose`).
-/// - `terminal_close.replay {workspace_id, panel_id}`: a fresh replay of that
-///   device-mirror pane (`retry()`), as the owning Mac's resize or a dropped
-///   chunk starts one.
+/// - `terminal_close.replay {workspace_id, panel_id, full?}`: a fresh replay of
+///   that device-mirror pane (`retry()`), as the owning Mac's resize or a
+///   dropped chunk starts one; `full` asks a render-grid replay instead of a
+///   resume, as a grid change does (a hidden pane's then carries its screen
+///   and a short history).
 @MainActor
 enum SupermuxDeviceTerminalCloseSocketCommands {
     static let methodPrefix = "terminal_close."
@@ -93,6 +95,7 @@ enum SupermuxDeviceTerminalCloseSocketCommands {
               let session = (catalog.provider(for: projection.resource.machine) as? DeviceSurfaceProvider)?.sessions[panelID] else {
             throw HookError(message: "panel_id does not name a device-mirror pane of that workspace")
         }
+        if params["full"] as? Bool == true { session.supermuxStream?.debugNeedsFullReplay() }
         session.retry()
         return ["panel_id": panelID.uuidString]
     }

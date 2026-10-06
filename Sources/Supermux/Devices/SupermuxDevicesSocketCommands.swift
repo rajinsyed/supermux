@@ -34,8 +34,11 @@ import SupermuxKit
 /// (``SupermuxRemoteHostSocketCommands``), the `terminal_sizing.*` size preference drivers
 /// (``SupermuxTerminalSizingSocketCommands``), the `terminal_clipboard.*` clipboard drivers
 /// (``SupermuxTerminalClipboardSocketCommands``), the `terminal_input.*` input latency
-/// drivers (``SupermuxTerminalInputSocketCommands``), and the `new_worktree.*` New Worktree
-/// sheet drivers (`SupermuxNewWorktreeSocketCommands`).
+/// drivers (``SupermuxTerminalInputSocketCommands``), the `link_impairment` loopback link
+/// impairment (``SupermuxDeviceLinkImpairmentSocketCommands``), the `route.*` link route and
+/// direct-address drivers (``SupermuxDeviceRouteSocketCommands``), the `power.*` sleep / wake drivers
+/// (``SupermuxDevicePowerSocketCommands``), and the `new_worktree.*` New Worktree
+/// sheet drivers (`SupermuxNewWorktreeSocketCommands`). `list` reports each device's `route`.
 @MainActor
 enum SupermuxDevicesSocketCommands {
     nonisolated static let methodPrefix = "supermux.devices."
@@ -115,8 +118,11 @@ enum SupermuxDevicesSocketCommands {
             case let name where SupermuxTerminalClipboardSocketCommands.handles(name): result = try SupermuxTerminalClipboardSocketCommands.handle(name, params)
             case let name where SupermuxTerminalStreamSocketCommands.handles(name): result = try SupermuxTerminalStreamSocketCommands.handle(name, params)
             case let name where SupermuxTerminalInputSocketCommands.handles(name): result = try SupermuxTerminalInputSocketCommands.handle(name, params)
+            case let name where SupermuxDeviceLinkImpairmentSocketCommands.handles(name): result = try SupermuxDeviceLinkImpairmentSocketCommands.handle(params)
             case let name where SupermuxDeviceMirrorCloseSocketCommands.handles(name): result = try SupermuxDeviceMirrorCloseSocketCommands.handle(name, params)
             case let name where SupermuxDeviceTunnelSocketCommands.handles(name): result = try await SupermuxDeviceTunnelSocketCommands.handle(name, params)
+            case let name where SupermuxDeviceRouteSocketCommands.handles(name): result = try await SupermuxDeviceRouteSocketCommands.handle(name, params)
+            case let name where SupermuxDevicePowerSocketCommands.handles(name): result = try await SupermuxDevicePowerSocketCommands.handle(name, params)
             case let name where SupermuxTerminalSizingSocketCommands.handles(name):
                 result = try await SupermuxTerminalSizingSocketCommands.handle(name, params: params)
             case let name where SupermuxPortMenusSocketCommands.handles(name): result = try await SupermuxPortMenusSocketCommands.handle(name, params)
@@ -312,14 +318,14 @@ enum SupermuxDevicesSocketCommands {
     }
 
     /// `link {machine, action: "stop" | "restore" | "stall" | "status", busy?,
-    /// method?, seconds?, main_seconds?}`: holds a device link down (tearing
+    /// method?, seconds?, surface_id?, main_seconds?}`: holds a device link down (tearing
     /// down its client like a transport loss, but without the immediate
     /// redial) or dials it again, so E2E can drop the link under an in-flight
     /// request and watch availability change live. `busy: "<method>"` on a
     /// restore makes the loopback host answer the new connection's first
     /// `<method>` request after its sync fetch `server_busy`; `stall` makes it
-    /// hold its next `method` request for `seconds` (default 30) before
-    /// answering it, and with `main_seconds` also blocks the main thread that
+    /// hold its next `method` request (naming `surface_id`, when given) for
+    /// `seconds` (default 30) before answering it, and with `main_seconds` also blocks the main thread that
     /// long while the liveness probe after the missed deadline is answered
     /// (``SupermuxDeviceLoopbackHostAcceptor``). Every action answers the
     /// link's phase, the loopback connections admitted since launch (a redial
@@ -338,7 +344,8 @@ enum SupermuxDevicesSocketCommands {
         case "stall":
             SupermuxDeviceLoopbackHostAcceptor.stalledRequest = (
                 method: try required(params, "method"),
-                seconds: min(max(number(params, "seconds") ?? 30, 1), 600)
+                seconds: min(max(number(params, "seconds") ?? 30, 1), 600),
+                surfaceID: string(params, "surface_id").flatMap(UUID.init(uuidString:))
             )
             SupermuxDeviceLoopbackHostAcceptor.mainStallDuringNextLivenessProbe =
                 number(params, "main_seconds").map { min(max($0, 1), 60) }

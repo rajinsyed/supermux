@@ -20,10 +20,15 @@ public struct SupermuxProjectsMacHeader: Equatable, Sendable {
     public let status: SupermuxMacSeam.Status
     /// Whether this is the foreground Mac.
     public let isForeground: Bool
+    /// The path the phone's session to the Mac uses (`Direct · LAN · 6 ms`),
+    /// only while the link is connected.
+    public let route: SupermuxLinkRoute?
 
     /// Creates a header from a Mac's info.
-    /// - Parameter mac: The Mac the header names.
-    public init(mac: SupermuxMacInfo) {
+    /// - Parameters:
+    ///   - mac: The Mac the header names.
+    ///   - route: The phone's route to the Mac, if sampled.
+    public init(mac: SupermuxMacInfo, route: SupermuxLinkRoute? = nil) {
         self.pairingID = mac.pairingID
         self.macDeviceID = mac.macDeviceID
         self.instanceTag = mac.instanceTag
@@ -32,6 +37,7 @@ public struct SupermuxProjectsMacHeader: Equatable, Sendable {
         self.customColor = mac.customColor
         self.status = mac.status
         self.isForeground = mac.isForeground
+        self.route = mac.status == .connected ? route : nil
     }
 }
 

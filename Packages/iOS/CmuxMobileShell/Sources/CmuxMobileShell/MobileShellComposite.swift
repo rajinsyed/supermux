@@ -502,6 +502,9 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
     var agentFeedReadRowKeyOrder: [String] = []
     var agentFeedUnreadBaseline: Date?
     var agentFeedRefreshTasksByMac: [String: Task<Void, Never>] = [:]
+    // SUPERMUX:begin agent-feed-retry-backoff (the connection each refresh task serves, and its token)
+    @ObservationIgnored var supermuxAgentFeedRefreshOwners: [String: SupermuxAgentFeedRefreshOwner] = [:]
+    // SUPERMUX:end agent-feed-retry-backoff
     var agentFeedRefreshPendingMacIDs: Set<String> = []
     var agentFeedSuccessfulMacIDs: Set<String> = []
     /// The group sections the UI renders. A materialized derivation of every
@@ -2272,7 +2275,10 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
             || runtime?.terminalInputLaneProvider != nil {
             self.terminalLaneCoordinator = MobileTerminalLaneCoordinator(
                 provider: runtime?.terminalLaneProvider,
-                inputOnlyProvider: runtime?.terminalInputLaneProvider
+                // SUPERMUX:begin terminal-lane-retry (upstream's last argument gains a trailing comma)
+                inputOnlyProvider: runtime?.terminalInputLaneProvider,
+                retryObserver: Self.terminalLaneRetryObserver(diagnosticLog: diagnosticLog)
+                // SUPERMUX:end terminal-lane-retry
             )
         } else {
             self.terminalLaneCoordinator = nil
@@ -16870,13 +16876,18 @@ public final class MobileShellComposite: MobileTerminalOutputSinking {
         #if DEBUG
         let latencyReceiveTime = MobileLatencyTrace.captureTime()
         #endif
-        // The frame may arrive nested under `render_grid` or as the bare payload;
-        // try the wrapper first, then fall back to decoding the whole payload.
-        let renderGridDTO = try? MobileTerminalRenderGridEvent.decode(json)
-        guard let renderGrid = renderGridDTO?.frame ?? (try? MobileTerminalRenderGridFrame.decode(json)),
+        // SUPERMUX:begin render-grid-sink-first (upstream decoded the wrapper, then the bare frame, and only then dropped frames for unmounted terminals)
+        // The frame may arrive nested under `render_grid` or as the bare
+        // payload. Find its terminal first and decode only a mounted one's,
+        // once, in the form it came in.
+        guard let peek = SupermuxRenderGridPayloadPeek.read(json),
+              let peekedSurfaceID = peek.frameSurfaceID,
+              hasTerminalOutputSink(surfaceID: peekedSurfaceID),
+              let renderGrid = peek.decodeFrame(json),
               hasTerminalOutputSink(surfaceID: renderGrid.surfaceID) else {
             return
         }
+        // SUPERMUX:end render-grid-sink-first
         if diagnosedTerminalOutputSurfaceIDs.insert(renderGrid.surfaceID).inserted {
             recordAppEvent(
                 .terminalOutputReceived,

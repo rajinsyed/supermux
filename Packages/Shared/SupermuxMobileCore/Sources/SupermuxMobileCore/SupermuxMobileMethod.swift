@@ -196,6 +196,15 @@ public enum SupermuxMobileMethod: String, CaseIterable, Codable, Sendable, Equat
     /// forwarded by another Mac's device mirror of that terminal.
     case terminalAction = "mobile.supermux.terminal.action"
 
+    // MARK: Routes
+
+    /// This Mac's direct addresses (LAN, Tailscale, global IPv6) and its
+    /// endpoint id (``SupermuxRouteCandidatesDTO``), for another of the
+    /// user's devices to dial it directly instead of starting on a relay.
+    /// Served only over an Iroh-admitted session
+    /// (``SupermuxMobileCapability/routeCandidatesV1``).
+    case routeCandidates = "mobile.supermux.route.candidates"
+
     /// The shared method-name prefix; the Mac router dispatches on it.
     public static let namespacePrefix = "mobile.supermux."
 

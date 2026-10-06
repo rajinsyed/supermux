@@ -167,13 +167,9 @@ final class SupermuxRemoteProjectsModel {
         refreshAll()
     }
 
-    /// Whether someone may be looking at this Mac's sidebar: the app is
-    /// active, or one of its main windows is on screen and not fully covered.
-    /// Never while Remote Host Mode keeps it headless.
+    /// Whether someone may be looking at this Mac's sidebar (``SupermuxAppInUse``).
     private static func isInUse() -> Bool {
-        let hostMode = SupermuxRemoteHostMode.shared
-        guard !hostMode.isHeadless else { return false }
-        return NSApp.isActive || hostMode.visibleMainWindows().contains { $0.occlusionState.contains(.visible) }
+        SupermuxAppInUse.now()
     }
 
     /// Loads a project's worktrees if no refresh has yet (every refresh

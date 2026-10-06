@@ -204,6 +204,13 @@ public actor IrxConnection {
     private var probeTask: Task<Bool, Never>?
     private var probeID: UUID?
     private var probeLane: IrxLaneStream?
+    // SUPERMUX:begin route-liveness-join
+    /// The probe ``supermuxProbeLivenessUnretired(deadline:)`` started: a
+    /// joined caller's shorter deadline leaves it to run out its own.
+    private var supermuxUnretiredProbeID: UUID?
+    /// Set just before that method starts a probe, for the probe to take.
+    private var supermuxStartsUnretiredProbe = false
+    // SUPERMUX:end route-liveness-join
     private var closureWaiters: [UUID: CheckedContinuation<Void, Never>] = [:]
     private var cancelledClosureWaiters = Set<UUID>()
     private var closureWatcher: Task<Void, Never>?
@@ -328,6 +335,12 @@ public actor IrxConnection {
         let stream = try await connection.openBi()
         let writer = IrxStreamWriter(stream.send())
         let reader = IrxStreamReader(stream.recv(), activity: inboundActivity)
+        // SUPERMUX:begin irx-stream-priority
+        // Before the descriptor, so the lane's first bytes already go at its priority.
+        if let priority = SupermuxIrxStreamPriority.priority(for: descriptor.lane) {
+            try? await writer.setPriority(priority)
+        }
+        // SUPERMUX:end irx-stream-priority
         try await writer.writeControlFrame(descriptor)
         return IrxLaneStream(descriptor: descriptor, writer: writer, reader: reader)
     }
@@ -350,6 +363,12 @@ public actor IrxConnection {
                 let writer = IrxStreamWriter(stream.send())
                 do {
                     if let descriptor = try await reader.readControlFrame(IrxLaneDescriptor.self) {
+                        // SUPERMUX:begin irx-stream-priority
+                        // Nothing has been written on the accepted stream yet.
+                        if let priority = SupermuxIrxStreamPriority.priority(for: descriptor.lane) {
+                            try? await writer.setPriority(priority)
+                        }
+                        // SUPERMUX:end irx-stream-priority
                         return IrxLaneStream(descriptor: descriptor, writer: writer, reader: reader)
                     }
                 } catch {
@@ -397,6 +416,19 @@ public actor IrxConnection {
         return (selected.isRelay, "\(selected.remoteAddr)")
     }
 
+    // SUPERMUX:begin irx-route-sample
+    /// The selected path with iroh's RTT on it (``SupermuxIrxPathSample``),
+    /// for the route a device link shows; nil before a path is selected.
+    /// Here because `connection` is private.
+    public nonisolated func supermuxSelectedPathSample() -> SupermuxIrxPathSample? {
+        let paths = connection.paths()
+        guard let selected = paths.first(where: { $0.isSelected }) else { return nil }
+        return SupermuxIrxPathSample(
+            isRelay: selected.isRelay, remoteAddress: "\(selected.remoteAddr)", rttMs: selected.rttMs,
+            pathCount: paths.count, hasRelayPath: paths.contains { $0.isRelay })
+    }
+    // SUPERMUX:end irx-route-sample
+
     /// The selected QUIC path right now, for relay attribution evidence.
     public nonisolated func selectedPathDescription() -> String {
         let paths = connection.paths()
@@ -442,11 +474,18 @@ public actor IrxConnection {
         if let task = probeTask, let id = probeID {
             let result = try? await withIrxDeadlineResult(deadline) { await task.value }
             if case .operation(let alive) = result { return alive == true }
+            // SUPERMUX:begin route-liveness-join
+            if probeID == id, supermuxUnretiredProbeID == id { return false }
+            // SUPERMUX:end route-liveness-join
             if probeID == id { cancelProbe() }
             return false
         }
         let id = UUID()
         probeID = id
+        // SUPERMUX:begin route-liveness-join
+        supermuxUnretiredProbeID = supermuxStartsUnretiredProbe ? id : nil
+        supermuxStartsUnretiredProbe = false
+        // SUPERMUX:end route-liveness-join
         let task = Task { () -> Bool in
             let alive = await self.performProbe(id: id, deadline: deadline)
             guard self.probeID == id else { return false }
@@ -459,6 +498,39 @@ public actor IrxConnection {
         probeTask = task
         return await task.value
     }
+
+    // SUPERMUX:begin route-liveness-join
+    /// ``probeLiveness(deadline:)`` for a second opinion (the route
+    /// switcher's liveness check on a direct-lane session): a probe already
+    /// in flight (the keepalive's) is joined for at most `deadline` and never
+    /// retired when that runs out, so a short check cannot cancel the
+    /// keepalive's own probe and make it report a miss.
+    public func supermuxProbeLivenessJoining(deadline: Duration) async -> Bool {
+        guard applicationActive, !isClosed, !Task.isCancelled else { return false }
+        guard let task = probeTask else { return await probeLiveness(deadline: deadline) }
+        let result = try? await withIrxDeadlineResult(deadline) { await task.value }
+        if case .operation(let alive) = result { return alive == true }
+        return false
+    }
+
+    /// ``probeLiveness(deadline:)`` that runs out its own deadline, for the
+    /// device link's check after a reply missed its deadline: its probe
+    /// waits longer than the keepalive's, and upstream retires a joined
+    /// probe once a shorter caller deadline ends, so the keepalive would
+    /// cancel it and a slow but live link would read as dead. A probe
+    /// already in flight is joined without being retired; when that one
+    /// misses, a probe of this method's own gets the time left.
+    public func supermuxProbeLivenessUnretired(deadline: Duration) async -> Bool {
+        let ends = ContinuousClock.now + deadline
+        if probeTask != nil, await supermuxProbeLivenessJoining(deadline: deadline) { return true }
+        let left = ContinuousClock.now.duration(to: ends)
+        guard left > .zero else { return false }
+        // Read by `probeLiveness` before its first suspension; cleared if it started none.
+        supermuxStartsUnretiredProbe = probeTask == nil
+        defer { supermuxStartsUnretiredProbe = false }
+        return await probeLiveness(deadline: left)
+    }
+    // SUPERMUX:end route-liveness-join
 
     private func launchKeepalive() {
         guard applicationActive, !isClosed, keepaliveTask == nil, let settings = keepaliveSettings else { return }

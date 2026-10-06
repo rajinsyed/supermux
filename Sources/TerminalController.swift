@@ -285,7 +285,12 @@ class TerminalController {
     /// this window (relay round trips inflate that gap to seconds) to cancel
     /// the clear+re-apply resize flap (issue 13474).
     private static let mobileViewportUncapApplyStabilityWindow: Duration = .seconds(3)
-    var mobileViewportReportsBySurfaceID: [UUID: [String: MobileViewportReport]] = [:]; private var mobileViewportGenerationsBySurfaceID: [UUID: [String: UInt64]] = [:]
+    // SUPERMUX:begin render-grid-watch (every change tells phone connections which terminals they show; upstream: one line declaring both maps, no observer)
+    var mobileViewportReportsBySurfaceID: [UUID: [String: MobileViewportReport]] = [:] {
+        didSet { SupermuxMobileRenderGridWatch.reportsChanged(mobileViewportReportsBySurfaceID) }
+    }
+    private var mobileViewportGenerationsBySurfaceID: [UUID: [String: UInt64]] = [:]
+    // SUPERMUX:end render-grid-watch
     private var mobileTerminalPasteInFlightSurfaceIDs: Set<UUID> = []
     private var mobileViewportReportCleanupTimersBySurfaceID: [UUID: DispatchSourceTimer] = [:]
     var mobileViewportApplyGovernorsBySurfaceID: [UUID: MobileViewportApplyGovernor] = [:]
@@ -11902,6 +11907,9 @@ class TerminalController {
             // command off the main thread, so the wait cannot self-deadlock.
             let report = await MobileHostDiagnostics.log.snapshot()
             export = String(decoding: report.humanReadableExport(), as: UTF8.self)
+            // SUPERMUX:begin iroh-diag-links
+            export += "\n" + SupermuxLinkDiagnosticsReport.text()
+            // SUPERMUX:end iroh-diag-links
             semaphore.signal()
         }
         semaphore.wait()
@@ -15777,6 +15785,9 @@ class TerminalController {
                 data: nil
             )
         }
+        // SUPERMUX:begin render-grid-watch (a phone's mount starts with a replay: its frames go to that connection from here on)
+        SupermuxMobileRenderGridWatch.replayServed(surfaceID: surfaceId)
+        // SUPERMUX:end render-grid-watch
         // SUPERMUX:begin terminal-stream-resume
         // Count every PTY read the parser may already show before a capture
         // takes the byte position (SupermuxTerminalTeeInbox).
@@ -16713,6 +16724,12 @@ class TerminalController {
                        ),
                    writer != connectionID { continue }
                 // SUPERMUX:end sizing-connection-scoped-clear
+                // SUPERMUX:begin sizing-mac-close-grace (a viewing Mac's report outlives its connection's close by a grace: its link redials within seconds and its mirrors re-attach at the same grid)
+                if let connectionID, SupermuxMacViewerCloseGrace.defers(
+                    deviceKind: mobileViewportReportsBySurfaceID[surfaceID]?[clientID]?.deviceKind,
+                    clientID: clientID, connectionID: connectionID, reason: reason
+                ) { continue }
+                // SUPERMUX:end sizing-mac-close-grace
                 _ = clearMobileViewportReport(surfaceID: surfaceID, clientID: clientID, reason: reason)
             }
         }

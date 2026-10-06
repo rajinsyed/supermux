@@ -182,14 +182,10 @@ extension MobileIrxRuntimeComposition {
         guard let supervisor = selectedSupervisor, let cache, !cache.authorityRevoked else {
             throw CompositionError.notSignedIn
         }
-        var credentials = Self.credentials(cache)
-        if case .automatic = intent, !credentials.contains(where: { $0.isUsable(at: Date()) }), let control {
-            credentials = try await control.refreshRelayCredentials().map {
-                IrxRelayCredential(relayURL: $0.relayURL, token: $0.token,
-                    expiresAt: Date(timeIntervalSince1970: Double($0.expiresAt)),
-                    refreshAfter: Date(timeIntervalSince1970: Double($0.refreshAfter)))
-            }
-        }
+        // SUPERMUX:begin phone-route-direct-race (an expired relay credential is refreshed in the race's relay leg, beside the direct lane; upstream refreshed it here, before the dial: `var credentials = Self.credentials(cache)`, then `if case .automatic = intent, !credentials.contains(where: { $0.isUsable(at: Date()) }), let control { credentials = try await control.refreshRelayCredentials().map { IrxRelayCredential(…) } }`)
+        let credentials = Self.credentials(cache)
+        let refresh = supermuxCredentialRefresh(intent: intent, authority: authority)
+        // SUPERMUX:end phone-route-direct-race
         try await assertDialAuthority(authority)
         let relay: String?
         var direct: [String]
@@ -220,11 +216,21 @@ extension MobileIrxRuntimeComposition {
         }
         try await assertDialAuthority(authority)
         let address = try supervisor.dialAddress(peerEndpointIDHex: peerHex, relayURL: relay, directAddresses: direct)
-        let connection = try await supervisor.dial(address: address, credentials: credentials)
+        // SUPERMUX:begin phone-route-direct-race (an automatic dial races the direct lane first; its relay leg refreshes an expired relay credential; upstream: `let connection = try await supervisor.dial(address: address, credentials: credentials)`)
+        let relayLeg = Self.supermuxRelayLeg(cached: credentials, refresh: refresh) { fresh in
+            try await supervisor.dial(address: address, credentials: fresh)
+        }
+        let dialed = try await supermuxDial(
+            peerHex: peerHex, record: record, intent: intent, privateAddresses: direct, automatic: relayLeg)
+        let connection = dialed.connection
+        // SUPERMUX:end phone-route-direct-race
         do {
             try await assertDialAuthority(authority)
             var authorizesDirectPaths = false
             if !forceRelayOnly, case .automatic = intent { authorizesDirectPaths = true }
+            // SUPERMUX:begin phone-route-direct-race (a direct-lane session never authorizes NAT traversal, like the Direct method's)
+            if dialed.lane == .direct { authorizesDirectPaths = false }
+            // SUPERMUX:end phone-route-direct-race
             let (admit, control) = try await IrxAdmission().performClient(
                 connection: connection, journal: journal,
                 authorizesDirectPaths: authorizesDirectPaths,
@@ -241,12 +247,18 @@ extension MobileIrxRuntimeComposition {
             await connection.raiseRemoteStreamCredit(bi: 0, uni: 40)
             try await assertDialAuthority(authority)
             activeDialIntentByPeer[peerHex] = intent
+            // SUPERMUX:begin phone-route-direct-race
+            supermuxSessionAdmitted(peerHex: peerHex, sessionID: admit.session, intent: intent, lane: dialed.lane)
+            // SUPERMUX:end phone-route-direct-race
             admittedSessionCount += 1
             journal.record("v2-peer", "admitted", ["session": admit.session, "count": String(admittedSessionCount),
                 "launchMs": String(Int(Date().timeIntervalSince(launchTime) * 1000))])
             return IrxClientSession(connection: connection, admit: admit, control: control, establishedAt: Date())
         } catch {
             await connection.close(code: .userRequested, origin: .local)
+            // SUPERMUX:begin phone-route-direct-race
+            supermuxAdmissionFailed(peerHex: peerHex, lane: dialed.lane)
+            // SUPERMUX:end phone-route-direct-race
             throw error
         }
     }

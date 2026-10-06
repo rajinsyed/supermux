@@ -16,7 +16,7 @@ Rules for adding a touchpoint:
 - Numbering: the highest number in use is **783** (remote terminal streaming, #777–#783; #764–#776 are
   reserved for open PRs #74/#75). The remote-workspaces work (#517–#599) left
 - Numbering: the highest number in use is **818**. The remote-workspaces work (#517–#599) left
-- Numbering: the highest number in use is **1032** (#999–#1002: terminal sizing's review fixes: a hand-set Mac pane false, the writer of a clear's generation fence, a report from a closed connection, the legacy dialect's lanes; #1027–#1032: terminal sizing's soft leave, Fixed seed and mirror claims; #1011–#1026: the phone side of terminal sizing: a soft scene-phase leave, a terminal hidden under another tab, a re-report on reconnect, a clear to the Mac holding the lease, a `detached` refusal; both ranges were #970–#975 and #990–#1005 on their branch until #92 took those numbers, so commit messages there use the old ones; #952–#969: the Mac side of terminal sizing: the recovery E2E drivers, the apply governor no longer wedges, activity that decides nothing is kept, scroll and TextBox activation, a connection close clears only its own reports, lane input is the phone's activity, a replay's claim is sticky, a detached phone is told again, a phone following this Mac's selection does not take the grid; #925–#951 are assigned on main: the iOS project, the irx transport, the phone's startup and reconnects, the right sidebar's mode bar; #1003–#1009 are unassigned). Before that **1010** (#970–#978: hidden mirrors stream in batches and reconnects resume quiet terminals; #979: a moved workspace's spinners follow its window; #980–#981: fewer process censuses; #982–#994, #996 and #998: cmux-wide battery fixes (995 unassigned; #997, a slower hang-watchdog heartbeat, was retired before merge); #1010: the mobile observers' shared state-sync ticker; 999–1009 are unassigned). Before that **924** (#920–#924: only this Mac's own input hands an Auto grid to the Mac pane). #907–#913: answering a Claude question or plan brings the working indicator back. Before that **906** (#900–#906: a streaming mirror re-anchors when the other Mac's grid changes). Before that **883** (#880–#883: Remote Host Mode's hotkey and notification shows, Auto's `view_appeared` report; #850–#879 are held by another open branch). The remote-workspaces work (#517–#599) left
+- Numbering: the highest number in use is **1121** (Mac rows reach #1087, iPhone rows #1120; #1121: the render-grid watch hears subscription changes, `render-grid-watch`; 1088–1099 and 1122–1129 are unassigned. #1086–#1087: the second review's Mac fixes, `device-wake-rebuild-credentials` and the wiring of `SupermuxMirrorInputHold.swift`; #1081–#1083: the review fixes for the Mac's transport and routing: `route-liveness-join`, `route-lane-without-relay`, `route-lane-sign-out`; #1084–#1085: the review fixes for the Mac's stream, output and replay, `irx-stream-priority` (the starvation test fenced), `terminal-stream-fair-queue` (the scheduler); #1100–#1120: the phone side of the remote-terminal latency and routing work: #1100–#1109 `terminal-lane-retry`, `agent-feed-retry-backoff`, `render-grid-sink-first`; #1110–#1117 the iPhone's per-Mac route and direct-first dial, `phone-route-direct-race`; #1118–#1120 the phone's review fixes: #1118 `agent-feed-retry-backoff` (a refresh belongs to one connection), #1119 the route model on every screen and #1120 its state test, `phone-route-direct-race`). Before that **1080** (#1078–#1080: which path a remote Mac's link uses, shown on this Mac, and the link history `cmux iroh-diag` keeps: `irx-journal-link-history`, `iroh-diag-links`). Before that **1077** (#1071–#1077: sleep, wake and network changes between Macs: `v2-directory-refresh-floor`, `device-dark-wake-gate`, `device-sleep-courtesy`; #1065–#1070: always direct between Macs, the direct lane and moving a link between it and the relay: `route-direct-lane`, `route-switch`, `route-dial-candidates` reworked, and the unfenced test helper `SupermuxShapedUDPLink.swift`; #1060–#1064: route visibility and the direct-address exchange: `irx-route-sample`, `route-candidates-off-main`, `route-dial-candidates`; #1052–#1059: remote terminal latency, re-attach and resume: `device-mirror-reattach-input`, `sizing-mac-close-grace`, `terminal-stream-tee-grace`, `terminal-replay-deadline`, `terminal-replay-supersede`; #1043–#1051: remote terminal latency, the host's output path: `terminal-stream-fair-queue`, `render-grid-watch`, `host-writer-bulk-yields`; #1033–#1042: remote terminal latency, transport priorities and liveness: `irx-stream-priority`, `transport-peer-liveness`, `device-link-unproven-session-backoff`; #1100–#1129 were reserved for the phone side of the same work). Before that **1032** (#999–#1002: terminal sizing's review fixes: a hand-set Mac pane false, the writer of a clear's generation fence, a report from a closed connection, the legacy dialect's lanes; #1027–#1032: terminal sizing's soft leave, Fixed seed and mirror claims; #1011–#1026: the phone side of terminal sizing: a soft scene-phase leave, a terminal hidden under another tab, a re-report on reconnect, a clear to the Mac holding the lease, a `detached` refusal; both ranges were #970–#975 and #990–#1005 on their branch until #92 took those numbers, so commit messages there use the old ones; #952–#969: the Mac side of terminal sizing: the recovery E2E drivers, the apply governor no longer wedges, activity that decides nothing is kept, scroll and TextBox activation, a connection close clears only its own reports, lane input is the phone's activity, a replay's claim is sticky, a detached phone is told again, a phone following this Mac's selection does not take the grid; #925–#951 are assigned on main: the iOS project, the irx transport, the phone's startup and reconnects, the right sidebar's mode bar; #1003–#1009 are unassigned). Before that **1010** (#970–#978: hidden mirrors stream in batches and reconnects resume quiet terminals; #979: a moved workspace's spinners follow its window; #980–#981: fewer process censuses; #982–#994, #996 and #998: cmux-wide battery fixes (995 unassigned; #997, a slower hang-watchdog heartbeat, was retired before merge); #1010: the mobile observers' shared state-sync ticker; 999–1009 are unassigned). Before that **924** (#920–#924: only this Mac's own input hands an Auto grid to the Mac pane). #907–#913: answering a Claude question or plan brings the working indicator back. Before that **906** (#900–#906: a streaming mirror re-anchors when the other Mac's grid changes). Before that **883** (#880–#883: Remote Host Mode's hotkey and notification shows, Auto's `view_appeared` report; #850–#879 are held by another open branch). The remote-workspaces work (#517–#599) left
   unassigned gaps it may still grow into: **523–524, 527–529, 539–544, 558–559, 562–569,
   578–579 and 588–589** (never assigned, not retired); #600–#601 came from the 2026-10-01 upstream merge; #620–#622 and
   #630–#639 are the remote-workspaces feedback round (602–619 and 623–629 unassigned). The second
@@ -594,16 +594,16 @@ Rules for adding a touchpoint:
 | 593 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the 3 polish files into the cmux target: `Sources/Supermux/Mirrors/SupermuxNewWorkspaceTarget.swift`, `Mirrors/SupermuxNewWorkspaceButtonHelp.swift` (#591/#592) and `Devices/SupermuxRestoredMirrorNotifications.swift` (#594), `Mirrors/…` / `Devices/…` paths inside the Supermux group. File refs `50BE00140000000000000001` / `…03` / `…05`, build files `…02` / `…04` / `…06`; `grep -c 50BE0014 cmux.xcodeproj/project.pbxproj` prints 12 |
 | 594 | `Sources/Devices/DeviceSurfaceProvider.swift` | `device-restored-pane-notifications` | In `reconnectRestoredPanes`, between `catalog.replaceProjection(projection, withPanel: created.panelID, …)` and `SurfacePaneFactory.close(panelID: projection.panelID, …)`: `SupermuxRestoredMirrorNotifications.carry(fromPanel: projection.panelID, toPanel: created.panelID, inWorkspace: projection.workspaceID)`. Closing the restored placeholder pane cleared its notifications, which the device sync then acknowledged to the owning Mac as read, so a relaunch dropped every mirrored notification (and a Mark as Unread) and read it on the other Mac; they now move to the live pane with their read state, and get back the `.deviceMac` origin session restore does not keep (from the correlation key), so the viewer never counts them as its own or forwards them to the phone |
 | 595 | `Sources/Devices/DeviceWorkspaceLayoutHost.swift` | `device-layout-tab-changes` | Remote Macs, workstream X: the owning Mac announces BACKGROUND tab changes to mirrors. Upstream re-captured a workspace's layout only on `.workspacePaneGeometryDidChange`, which a workspace posts only while on screen, so a tab added/closed/reordered in a workspace nobody is looking at (an agent's terminal, the phone's `mobile.terminal.create`, a preset, a CLI `new-surface`) never reached another Mac's mirror. Two fenced sites: (1) a `private lazy var supermuxTabChanges = SupermuxDeviceLayoutChangeObserver { [weak self] id in … _ = self.snapshot(for: id) }` after `receiptOrder`; (2) in `snapshot(for:)` upstream's first `guard let layout = capture(workspaceID), …` becomes `guard let layout = supermuxTabChanges.capture(workspaceID, { capture(workspaceID) }), …` (observation-tracked capture; the observer asks for a re-capture after any change to what it read, coalesced 40 ms per workspace; upstream's unchanged-arrangement check still decides whether to publish) |
-| 596 | `Packages/macOS/CmuxSettingsUI/Sources/CmuxSettingsUI/Sections/SupermuxRemoteMacsSettingsCard.swift` | `unfenced` | Whole fork-owned file inside the upstream `CmuxSettingsUI` package (the #143 precedent: the section stack has no app injection seam and the package cannot import `SupermuxKit`): the Settings "Remote Macs" card (auto-mirror / port-forwarding / project sync / push-sharing toggles, discoverable + discovery status with Turn On through upstream's `ComputersSettingsActions`, known Macs with link state, Show Hidden Workspaces), plus its private Mac row view, which for a connected Mac also shows its forwarded ports ("Ports: :3000 · :8081 → here :8082", or why it cannot forward) and a Ports… menu (each port's items as the snapshot lists them: Open in Default Browser, Copy Local URL, Stop Forwarding, Forward to This Mac; then Forward a Port… while the Mac can forward; #699/#705). The menu shows while the Mac can forward or any port offers something (`Mac.showsPortsMenu`), so a pending forward keeps its Stop Forwarding behind a ports note or a dropped link (#750). Mounted inside the #18 `ai-settings` body fence in `AutomationSection.swift` |
+| 596 | `Packages/macOS/CmuxSettingsUI/Sources/CmuxSettingsUI/Sections/SupermuxRemoteMacsSettingsCard.swift` | `unfenced` | Whole fork-owned file inside the upstream `CmuxSettingsUI` package (the #143 precedent: the section stack has no app injection seam and the package cannot import `SupermuxKit`): the Settings "Remote Macs" card (auto-mirror / port-forwarding / project sync / push-sharing toggles, discoverable + discovery status with Turn On through upstream's `ComputersSettingsActions`, known Macs with link state, Show Hidden Workspaces), plus its private Mac row view, which for a connected Mac also shows which path its link uses after "Connected" ("Relay · Tokyo · 241 ms", amber while relayed, #1078–#1080) and its forwarded ports ("Ports: :3000 · :8081 → here :8082", or why it cannot forward) and a Ports… menu (each port's items as the snapshot lists them: Open in Default Browser, Copy Local URL, Stop Forwarding, Forward to This Mac; then Forward a Port… while the Mac can forward; #699/#705). The menu shows while the Mac can forward or any port offers something (`Mac.showsPortsMenu`), so a pending forward keeps its Stop Forwarding behind a ports note or a dropped link (#750). Mounted inside the #18 `ai-settings` body fence in `AutomationSection.swift` |
 | 597 | `Packages/macOS/CmuxSettingsUI/Sources/CmuxSettingsUI/Environment/SupermuxRemoteMacsSettingsActions.swift` | `unfenced` | Whole fork-owned file in the upstream package: `SupermuxRemoteMacsSettingsActions` (the card's app services, including `setForwardPorts`, `portAction` and `forwardPort`, which take defaulted init arguments), `SupermuxRemoteMacPortAction` (a Ports… menu item) and the `SupermuxRemoteMacsSettingsHosting` protocol the app's `HostSettingsActions` adopts in the fork file `Sources/Supermux/Devices/HostSettingsActions+SupermuxRemoteMacs.swift`; the card finds it with a dynamic cast, so upstream's `SettingsHostActions` gains no requirement |
-| 598 | `Packages/macOS/CmuxSettingsUI/Sources/CmuxSettingsUI/Environment/SupermuxRemoteMacsSettingsSnapshot.swift` | `unfenced` | Whole fork-owned file in the upstream package: `SupermuxRemoteMacsSettingsSnapshot`, the value the Remote Macs card renders (built app-side by `SupermuxRemoteMacsSettingsFeed`): the four preferences (`forwardPorts` included), each Mac with its `ports` (`Port`: remote and local port, the line and menu texts, and `actions`, its Ports… submenu as the app's `SupermuxPortMenuItems` decides it) and `portsNote`, plus `canForwardPorts` and `showsPortsMenu` (#750) |
+| 598 | `Packages/macOS/CmuxSettingsUI/Sources/CmuxSettingsUI/Environment/SupermuxRemoteMacsSettingsSnapshot.swift` | `unfenced` | Whole fork-owned file in the upstream package: `SupermuxRemoteMacsSettingsSnapshot`, the value the Remote Macs card renders (built app-side by `SupermuxRemoteMacsSettingsFeed`): the four preferences (`forwardPorts` included), each Mac with its `route` (`Route`: the localized words and whether it is relayed, nil unless connected; #1078–#1080), its `ports` (`Port`: remote and local port, the line and menu texts, and `actions`, its Ports… submenu as the app's `SupermuxPortMenuItems` decides it) and `portsNote`, plus `canForwardPorts` and `showsPortsMenu` (#750) |
 | 599 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires the 4 workstream-X files under `Sources/Supermux/Devices/` into the cmux target (four entries each, `Devices/…` paths inside the `Supermux` group; the `+` path is quoted): `SupermuxDeviceLayoutChangeObserver`, `SupermuxRemoteMacsSettingsFeed`, `HostSettingsActions+SupermuxRemoteMacs`, `SupermuxRemoteMacsSocketCommands`. Ids `50BE000C0000000000000001`–`…0008` (odd = file reference, even = build file, in that order); `grep -c 50BE000C cmux.xcodeproj/project.pbxproj` prints 16 |
 | 600 | `Sources/TerminalCopyAction.swift` | `claude-harness-builtin-action` | Adds a `.newClaudeHarness` arm returning `nil` to upstream's exhaustive `terminalCopyAction` switch (a harness pane is not a copy action). Added at the 2026-10-01 upstream merge, when upstream introduced the copy built-ins; part of the #433–442 family |
 | 601 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/MobileDisplaySettings.swift` | `ios-notifications-tab-default` | Flips the absent-key default of upstream's `feedReplacesNotifications` from `true` to `false`, so the phone keeps the Notifications tab (where the fork's project-aware rows render, #365/#366) beside upstream's new agent Feed tab. An explicit choice under Settings → Legacy Notifications Tab still wins. Open decision recorded in SUPERMUX-UPGRADES.md (2026-10-01) |
 | 620 | `Sources/AppDelegate.swift` | `sidebar-empty-area-local` | Wraps the body of `sidebarEmptyAreaUsesRemoteNewWorkspaceRouting(tabManager:)` (upstream's bare `selectedTab?.isRemoteTmuxMirror == true || selectedWorkspace?.deviceMachineForNewWorkspace != nil`, now with `return`) and puts `if SupermuxNewWorkspaceTarget.isForkDeviceWorkspace(tabManager.selectedWorkspace) { return false }` before it: a double-click on the sidebar's empty area (SwiftUI `SidebarEmptyArea` and the AppKit list's `createWorkspaceAtEndFromSidebar`, which share this helper) with a device mirror selected creates what origin/main did — `addWorkspaceIfActive(placementOverride: .end)`: a local workspace after every row, standalone at the root (#41), in the home / Ghostty-default directory (#80, #577); a configured `ui.newWorkspace.action` still applies with `.end` placement (through #571, local) |
 | 621 | `Sources/TerminalController+WorkspaceCreate.swift` | `device-root-workspace-create` | In `v2MobileWorkspaceCreate`, right after `createParams["auto_refresh_metadata"] = false`: `SupermuxDeviceWorkspaceOpener.applyRootDirectoryRequest(to: &createParams)`. Another Mac's "New Workspace on ▸ <this Mac>" (`SupermuxDeviceWorkspaceOpener.createWorkspace` without a directory) sends the fork-only flag `supermux_root_directory: true`; with it and neither `working_directory` nor `cwd`, the helper sets `working_directory` to this Mac's home folder, so the workspace starts there instead of inheriting the directory of whatever this Mac has selected (usually a worktree). Every other create (the phone's, explicit directories, New Worktree) is untouched; a Mac without the fork ignores the flag and inherits as before. The viewer cannot send `~` itself: the mobile directory check accepts absolute paths only |
 | 622 | `Sources/VerticalTabsSidebar+EmptyAreasAndFooter.swift` | `sidebar-empty-area-device-menu` | In `sidebarEmptyAreaWorkspaceGroupContextMenu(tabManager:)`, after upstream's "New Empty Workspace Group" button: `SupermuxEmptyAreaNewWorkspaceMenu(tabManager: tabManager)`. Right-clicking the sidebar's empty area offers, below that item, a "New Workspace on ▸" submenu: This Mac (a local workspace after every row: what the double-click does, #620, while that creates here; while a Cloud VM workspace or one of a Mac only upstream handles is selected, #591 with `.end`, since the double-click follows those) then every known Mac, a Mac that is not connected disabled with "(Offline)" / "(Connecting…)" after its name; a Mac row creates a global workspace there, in that Mac's home folder (#621), and opens its mirror in this window (`SupermuxDeviceNewWorkspaceAction`). Renders nothing when no other Mac is known. The view lives in `Sources/Supermux/Mirrors/SupermuxNewWorkspaceDeviceMenu.swift` and reuses the `+` menu's rows. Not mirrored into the AppKit list's `emptyAreaMenu()` (that list is pinned off by #130) |
-| 630 | `Sources/Devices/DeviceTerminalInputRouter.swift` | `device-mirror-input-batch` | Remote Macs input fidelity. The router queues a `SupermuxTerminalInputBatch` (ordered bytes and forwarded key presses) instead of `Data`: `import SupermuxKit`; the `pending` property; a designated `init(sendBatch:onFailure:)` plus upstream's `init(send:onFailure:)` kept as a convenience init that sends the batch's bytes only (upstream tests construct it); `enqueue` keeps `.namedKey` frames that decode as `SupermuxForwardedKeyEvent` and drops the mirror's own terminal replies (`SupermuxDeviceTerminalInput.batchItem`); `takePending` returns the batch |
+| 630 | `Sources/Devices/DeviceTerminalInputRouter.swift` | `device-mirror-input-batch` | Remote Macs input fidelity. The router queues a `SupermuxTerminalInputBatch` (ordered bytes and forwarded key presses) instead of `Data`: `import SupermuxKit`; the `pending` property; a designated `init(sendBatch:onFailure:)` plus upstream's `init(send:onFailure:)` kept as a convenience init that sends the batch's bytes only (upstream tests construct it); `enqueue` keeps `.namedKey` frames that decode as `SupermuxForwardedKeyEvent` and drops the mirror's own terminal replies (`SupermuxDeviceTerminalInput.batchItem`); `takePending` returns the batch; in DEBUG builds `enqueue` counts input it drops while the mirror is not attached (`SupermuxTerminalInputDebug.inputDroppedWhileDetached`, `terminal_input.stats` `dropped_while_detached`, read by `loopback_degraded_link_e2e.py`) |
 | 631 | `Sources/Devices/DeviceTerminalMirrorSession.swift` | `device-mirror-input-batch`, `device-mirror-hidden-counts` | Input: `import SupermuxKit`, a defaulted `supportsSupermuxInput` init parameter (the convenience init passes the link's `supermux.terminal_input.v1` capability), and the router's send closure builds its params with `SupermuxDeviceTerminalInput.inputParams` (the ordered batch as `supermux_input` when the host takes it, else upstream's text). Sizing: `supermuxHidden` / `supermuxHostHoldsHiddenCounts` (a computed property over `SupermuxDeviceViewportGenerations.holdsHiddenCounts`, per client id and terminal, because the host keeps one counts override per client id that every pane of the terminal on the link shares), `supermuxSetHidden(_:)` (a pane going off screen calls `supermuxHandOverToShownPane()`, #643) and its reconcile (also run right after an attach sticks; it lifts the automatic false unless the host shows an override of `true`, and sends each automatic counts change one generation above the link's floor, `SupermuxDeviceViewportGenerations.bump`, so the host applies the panes' separate sends in order), tracking in `bind`/`stop`, a visibility re-check in `paneGridChanged`, `counts_override` on the replay while the pane is off screen, a fenced reset of `supermuxHostHoldsHiddenCounts` at the end of `linkDropped()` (the other Mac drops the link's counts override with its connection, so the post-attach reconcile sends it again; before, a mirror off screen across a reconnect counted until it was shown and hidden again, `hidden_mirror_survives_reconnect`), followed by `viewer?.connectionEnded()` (#1029: the next host may be a relaunched process; no publish, which would blank the size panel), and `supermuxUserChoseCounts()` in `sharingSetCountsOverride`/`sharingReattach` so a user's own counts choice is never replaced (`SupermuxTerminalSizingVisibility`); in DEBUG builds the same `sharingSetCountsOverride` fence sends a counts lift (`nil`) late when the recovery E2E asked for it (`SupermuxTerminalSizingRecoveryDrivers.takeCountsLiftHold()`, `terminal_sizing.hold_counts_lift`). `supermuxHostMayHoldHiddenCounts` (`SupermuxDeviceViewportGenerations.mayHoldHiddenCounts`, per client id and terminal): `linkDropped` sets it when the host held the automatic false, because the reattach's replay can reach the host before it notices the old connection closed and that close then leaves the newer report and its override alone (#958); the speaking pane's next replay, shown, carries `counts_override: null`, and a fence after `receiveReplaySizing` clears the flag once a replay with this Mac's grid is answered (`supermuxUserChoseCounts` clears it too). Before, a mirror shown during the reconnect could stay non-counting with 'Counts toward size' off until Size to My Window. The upstream `viewer:` argument/parameter lines sit inside the input fences because they gained trailing commas |
 | 632 | `Sources/TerminalController.swift` | `device-mirror-input-host` | Two fences in `v2MobileTerminalInput`: the `text` guard accepts an empty text when the request carries a `supermux_input` batch, and the delivery closure hands the batch to `SupermuxDeviceTerminalInput.deliver` (bytes exactly via a Ghostty `text:` binding, keys through `ghostty_surface_key` with this Mac's terminal state) instead of `sendInputResult(text)` |
 | 633 | `Sources/TerminalController+SharedSizing.swift` | `sizing-hidden-mac-pane` | Two fences. In `localSizingHost(surfaceID:create:)`, the new host is `var` and `SupermuxTerminalSizingVisibility.shared.prepareHost(&host, surface:)` records an off-screen Mac pane as released (it still counts: nobody else is attached yet); the first viewer that would size the terminal gets it marked `counts_override: false` before that viewer's grid applies (#774), so a never-shown tab does not hold the shared grid at its default size. At the top of `localSizingMacViewportChanged(surfaceID:)`, `surfaceGeometryChanged(_:)` re-checks visibility (a pane laid out for the first time posts no visibility change) |
@@ -649,7 +649,7 @@ Rules for adding a touchpoint:
 | 686 | `Packages/Shared/CMUXMobileCore/Tests/CMUXMobileCoreTests/SupermuxReplayMouseModeTests.swift` | `replay-mouse-modes-last` | Fork-only test file (the whole body fenced): runs the full snapshot's mode sequences through a model of Ghostty's single mouse event / format state and expects the program's modes to survive, crossterm's `?1015h ?1006h` (SGR wins) included |
 | 687 | `Sources/Workspace.swift` | `device-reserved-pane-not-saved` | In `sessionSnapshot`, after `allPanelIds` is built: `allPanelIds.removeAll { cloudPendingCreations[$0]?.machine.isDevice == true }`. A mirror tab still waiting for (or failed to get) its terminal on another Mac is a reserved pane with no projection; saved like any terminal pane, a relaunch restored it as a LOCAL shell inside the mirror, placed first and looking like the other Mac's tabs. The layout is already pruned to the saved panels (`layoutCodec.pruned`) |
 | 688 | `Sources/Surfaces/Workspace+CloudTerminalReservation.swift` | `device-pane-failure-mac-wording` | In `failReservedCloudTerminalPane`, a device machine's reserved pane gets `SupermuxDevicePaneFailureText.detail(machine:)` ("<Mac> couldn’t complete this. Check that it is online and try again.", `Sources/Supermux/Devices/SupermuxDeviceError.swift`) and no reference, instead of `failure.errorText`/`failure.copyableText` (upstream's Cloud wording: "The Cloud operation failed. Copy the diagnostic reference…") |
-| 690 | `Sources/Devices/DeviceTerminalMirrorSession.swift` | `device-mirror-replay-timed-out` | Three fences. A stored `supermuxTimedOutRetries` beside `viewportTransitionRetries`; its reset beside `viewportTransitionRetries = 0` after a replay that sticks; and, first in `attach()`'s generic `catch` (after its cancellation guard, before the `viewport_transition` retry): a replay that failed with the link's missed-deadline answer (`SupermuxDeviceLinkEvents.isMissedDeadline`, `timed_out`) on a connected link is asked again after 2 s, at most 3 times running (`replayNeeded = true`, the phase stays `.attaching`). Since #723 the link stays up on a missed deadline, so the reconnect that re-attached every mirror no longer comes; without this the pane stayed detached (input off, "Retry") while the device read connected. E2E: `loopback_device_smoke.py` (`slow_replay_reattaches_the_mirror`) |
+| 690 | `Sources/Devices/DeviceTerminalMirrorSession.swift` | `device-mirror-replay-timed-out` | Six fences. A stored `supermuxTimedOutRetries` beside `viewportTransitionRetries`; `supermuxResetTimedOutReplays()` (before `isViewportTransition`: the count and the stream's `timedOutReplays` start over) called beside `viewportTransitionRetries = 0` after a replay that sticks, at the top of `retry()` after its guard, and on `.linkReconnected` after #1053's set-aside (second review #13: only a reply reset the count, so after Retry or a reconnect the first replay waited up to 8 times the deadline, 720 s); and, first in `attach()`'s generic `catch` (after its cancellation guard, before the `viewport_transition` retry): a replay that failed with the link's missed-deadline answer (`SupermuxDeviceLinkEvents.isMissedDeadline`, `timed_out`) on a connected link is asked again after `SupermuxTerminalStream.replayRetryDelayNanoseconds(attempt:)` (2 s doubling to 30 s), with no limit while the link stays up to a host that supersedes an older reply (`SupermuxTerminalStream.retriesMissedReplay(attempt:)`, learned from its replies' `supermux_supersedes`; an older host gets upstream's 3), each retry's deadline doubling up to 8 times (the stream's `timedOutReplays`, set beside `supermuxTimedOutRetries` and reset with it; review S7) (`replayNeeded = true`, the phase stays `.attaching`; until #1058 at most 3 times 2 s apart, then the pane showed "Mac disconnected" until Retry). Since #723 the link stays up on a missed deadline, so the reconnect that re-attached every mirror no longer comes; without this the pane stayed detached (input off, "Retry") while the device read connected. E2E: `loopback_device_smoke.py` (`slow_replay_reattaches_the_mirror`) |
 | 691 | `Sources/Devices/DeviceWorkspaceLayoutCoordinator.swift` | `device-terminal-close-timed-out` | Two fences. In `performClose`'s `catch`, after #641's `device-terminal-close-deferred` fence: a close that failed with the link's missed-deadline answer on a connected link re-fetches the workspace layout (`supermuxCloseRan(_:remoteID:)`, the second fence, a private method before `refreshRequested()`); when the terminal is gone there the close ran, so it refreshes, clears the delivery and succeeds instead of restoring the tab with a failure card. Otherwise upstream's restore-and-fail path runs |
 | 692 | `Sources/Devices/DeviceLink.swift` | `device-link-fetch-timed-out` | At the end of `performFetch(generation:)`'s `catch`, after upstream's log line: a `mobile.sync.fetch` that failed with the missed-deadline answer calls `supermuxFetchAgain(isCurrent:)` (an extension in `Sources/Supermux/Devices/SupermuxDeviceLinkEvents.swift`), which runs `fetchNow()` after 2 s while the connection is the same one. Before #723 the reconnect fetched again; on a live link the workspace list stayed stale (empty after a connect) until the other Mac changed something |
 | 693 | `Sources/Mobile/MobileHostIrxRuntime.swift` | `device-tunnel-host` | In `superviseConnection`, upstream's `let tunnelHost: IrxTunnelHost? = isMac ? nil : MobileHostBrowserTunnel.makeHost(isAuthorized:journal:)` (and its comment) becomes `SupermuxDeviceTunnelHosts.makeHost(peerIsMac: isMac, isAuthorized: { stillAuthorized(peer.endpointIDHex) }, journal: journal)` (`Sources/Supermux/Ports/SupermuxDeviceTunnelHosts.swift`). A phone still gets upstream's browser tunnel host; a Mac peer, which upstream refused every `tcp_connect`/`listening_ports` lane (reset, code 2), gets an `IrxTunnelHost` with a fixed loopback-only policy (`allowsNonLoopbackHosts: false`, so the iPhone-labelled `mobile.browserTunnel.allowOtherHosts` cannot widen it), Mac-peer limits (48 tunnels, 96 burst, 48/s) and `SupermuxLoopGuardConnector` (refuses ports in `SupermuxOwnListenerPorts`, this app's own forward and proxy listeners); each open re-checks `MobileHostBrowserTunnel.isAvailable && stillAuthorized`. `runLaneLoop`'s dispatch and the teardown's `tunnelHost?.stop()` are unchanged. The DEBUG loopback acceptor calls the same factory. E2E: `tests/supermux/loopback_device_tunnel_e2e.py` |
@@ -716,11 +716,11 @@ Rules for adding a touchpoint:
 | 774 | `Sources/TerminalController+SharedSizing.swift` | `sizing-mac-pane-recheck` | At the top of `applyLocalSizing(surfaceID:previous:immediate:reason:)`: `SupermuxTerminalSizingVisibility.shared.hostWillApply(surfaceID:)`, a set lookup unless #633's rule found the Mac pane off screen; then the pane's automatic `counts_override: false` is lifted before the decision applies when it is on screen again or when nobody else would size the terminal any more (it stays counting, "released", so the last viewer leaving restores the pane's own grid whatever the display, window or tab state), and set again on a released off-screen pane once another participant would count. Nobody counting holds the grid (`TerminalSizingEngine`, reason `held`) and `applyTarget` pinned the pane to it, so a pane still marked off screen kept a departed phone's or mirror's size (99x38; 2026-10-05: also a hidden pane, until a visibility notification) |
 | 775 | `Sources/TerminalController+SharedSizing.swift` | `sizing-mac-pane-input-recheck` | At the top of `noteLocalTerminalSizingActivity(surfaceID:)`: `SupermuxTerminalSizingVisibility.shared.macPaneInput(surfaceID)`, a set lookup unless the pane is marked off screen, then a visibility re-check (input on a pane shows it is in view; a missed reveal must not keep it from counting) |
 | 776 | `Sources/TerminalWindowPortal.swift` | `sizing-portal-reveal` | In `synchronizeHostedView`'s reveal branch, right after `hostedView.isHidden = false`: `SupermuxTerminalSizingVisibility.shared.paneRevealed(hostedView.surfaceView.terminalSurface?.id)`. The portal hides a pane during layout, split and remount churn and reveals it with no visibility notification and often no frame change, so a pane found off screen meanwhile (any window's occlusion change re-checks every pane) stayed "off screen" and stopped counting while shown |
-| 777 | `Packages/macOS/CmuxMobileHost/Sources/CmuxMobileHost/MobileHostConnectionEventQueue.swift` | `terminal-stream-watch` | A connection that named its terminals (`supermuxWatchTerminalBytes(surfaceIDs:)`, set by #778) gets `terminal.bytes` only for those: `enqueue` first runs `supermuxEnqueueWatchedBytesLocked`, which refuses the others and admits the watched ones in order on the shared lane outside the shared 256-event / 8 MB budget, never shed (`hasRoomLocked` and the shed walk subtract them, the walk skips them, `removeQueuedEventLocked` forgets them, `close()` clears them). Past 8 MB queued for one terminal its queued bytes go and only the newest chunk stays, so the viewer sees the gap and resumes (`supermuxWatchedByteResyncCount`). A connection that never names terminals (the phone, an older Mac) keeps upstream's topic-wide, droppable delivery |
-| 778 | `Sources/Mobile/MobileHostService.swift` | `terminal-stream-watch` | `MobileHostConnection.handleSubscriptionRPC` answers `mobile.supermux.terminal.watch {surface_ids}` on the connection itself (`SupermuxTerminalStreamHost.watch`, `Sources/Supermux/Devices/SupermuxTerminalStreamHost.swift`), since its event queue is the filter |
+| 777 | `Packages/macOS/CmuxMobileHost/Sources/CmuxMobileHost/MobileHostConnectionEventQueue.swift` | `terminal-stream-watch` | A connection that named its terminals (`supermuxWatchTerminalBytes(surfaceIDs:)`, set by #778) gets `terminal.bytes` only for those: `enqueue` first runs `supermuxEnqueueWatchedBytesLocked`, which refuses the others and admits the watched ones on the shared lane outside the shared 256-event / 8 MB budget, each terminal in its own order (served by #1044: other events first, then terminals in turn, shown before hidden), never shed (`hasRoomLocked` and the shed walk subtract them, the walk skips them, `removeQueuedEventLocked` forgets them, `close()` clears them). Past 8 MB queued for one terminal its queued bytes go and only the newest chunk stays, so the viewer sees the gap and resumes (`supermuxWatchedByteResyncCount`). A connection that never names terminals (the phone, an older Mac) keeps upstream's topic-wide, droppable delivery |
+| 778 | `Sources/Mobile/MobileHostService.swift` | `terminal-stream-watch` | `MobileHostConnection.handleSubscriptionRPC` answers `mobile.supermux.terminal.watch {surface_ids}` on the connection itself (`SupermuxTerminalStreamHost.watch`, `Sources/Supermux/Devices/SupermuxTerminalStreamHost.swift`), since its event queue is the filter, then claims the queue's drains (`claimDrains()`): a paused terminal shown again queued its newest chunk (#1044) |
 | 779 | `Sources/Mobile/MobileTerminalByteTee.swift` | `terminal-stream-resume`, `terminal-stream-coalesce` | `SurfaceState` gains `supermuxStreamEpoch` / `supermuxSkipGeneration`; the no-subscriber early return in `append` calls `SupermuxTerminalStreamContinuity.noteSkipped()` (an atomic flag) and `publishFromMain` refreshes the epoch first, so a stretch the tee did not record starts a new epoch and no byte position from before it is resumed. Upstream's JSON+base64 `terminal.bytes` emit at the end of `publishFromMain` becomes `SupermuxTerminalByteCoalescer.shared.append(...)`: the first chunk after a quiet spell goes out at once, later ones within ~2 ms join one event per terminal (up to 32 KB); sequences are unchanged |
 | 780 | `Sources/TerminalController.swift` | `terminal-stream-resume` | Two fences in `v2MobileTerminalReplay`. Before `let state = MobileTerminalByteTee.shared.replayState(...)`: a request with `supermux_resume_from_seq` / `supermux_resume_epoch` / `supermux_resume_columns` / `supermux_resume_rows` is answered by `supermuxTerminalStreamResume(...)` (the bytes since that position from the tee's tail, `supermux_resumed: true`, plus upstream's sizing fields) when the tail holds them, the epoch matches and the PTY grid is the viewer's; otherwise upstream's render-grid replay runs. After `addSharedSizingReplayFields`: `supermuxAddTerminalStreamEpoch` adds `supermux_stream_epoch` to replays that sent `supermux_stream` (and `supermux_grid_gen` when the capture holds the PTY's requested grid). The first fence starts with `SupermuxTerminalTeeInbox.shared.drainNow()` (#903), so the replay's `seq` counts every PTY read its capture can show |
-| 781 | `Sources/Devices/DeviceTerminalMirrorSession.swift` | `terminal-stream-viewer` | The session owns a `SupermuxTerminalStream` (made in `init(link:…)`, stopped in `stop()`). `attach()` awaits `prepare()` (watch this terminal on the connection, capability `supermux.terminal_stream.v1`) before its replay, merges `replayParams` (screen anchor, 10000 history rows, resume position), decodes the reply with `SupermuxTerminalStream.decodeReply` (a resumed reply becomes a `Replay` with `supermuxResumed`; else upstream's `decodeReplay`), feeds resumed bytes as they are and a full replay after `ESC[3J`. While attaching a streaming mirror buffers up to 16 MB (upstream 256 KB); a gap is counted. A grid change re-anchors a streaming mirror (#905, `terminal-stream-grid-viewer`; until 2026-10-04 it only re-pinned). Without the capability (`supermux.terminal_stream.v2`) every path is upstream's |
+| 781 | `Sources/Devices/DeviceTerminalMirrorSession.swift` | `terminal-stream-viewer` | The session owns a `SupermuxTerminalStream` (made at the top of `init(link:…)`, before `self.init`, since #1057's replay deadline is the stream's, and stored after it; stopped in `stop()`). `attach()` awaits `prepare()` (watch this terminal on the connection, capability `supermux.terminal_stream.v1`) before its replay, merges `replayParams` (screen anchor, 10000 history rows, resume position), decodes the reply with `SupermuxTerminalStream.decodeReply` (a resumed reply becomes a `Replay` with `supermuxResumed`; else upstream's `decodeReplay`), feeds resumed bytes as they are and a full replay after `ESC[3J`. While attaching a streaming mirror buffers up to 16 MB (upstream 256 KB); a gap is counted. A grid change re-anchors a streaming mirror (#905, `terminal-stream-grid-viewer`; until 2026-10-04 it only re-pinned). Without the capability (`supermux.terminal_stream.v2`) every path is upstream's |
 | 782 | `Sources/Devices/DeviceLinkTerminalEvents.swift` | `terminal-stream-viewer` | Each session's event stream holds `SupermuxTerminalStream.sessionEventBufferLimit` (4096; upstream 512) events; DEBUG builds count every decoded `terminal.bytes` payload per surface through `supermuxOnBytes` (`supermux.devices.terminal_stream.stats`) |
 | 783 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `SupermuxTerminalStream.swift` (`50BE00191000000000000001`/`…02`), `SupermuxTerminalStreamHost.swift` (`…03`/`…04`) and `SupermuxTerminalStreamSocketCommands.swift` (`…05`/`…06`, DEBUG drivers) into the cmux target, four entries each in the Supermux group next to `SupermuxDeviceTunnelSocketCommands.swift` (`path = Devices/<file>`) |
 | 790 | `Sources/TerminalController+SharedSizing.swift` | `sizing-auto` | Three fences calling `SupermuxTerminalSizingAuto` (`Sources/Supermux/Devices/`). In `resolveSharedSizing`, after `syncPhones` and the explicit `counts_override`: `viewersReported(&host, surfaceID:, previous:, explicitParticipantID:)` (in Auto a viewer whose viewport changed or whose `counts_override` false was lifted gets `noteActivity`, and a phone without an override of its own gets `counts_override: true`). In `localSizingSetPolicy`, after `setPolicy`: `policyChanged(&host, surfaceID:)` (Auto's overrides follow the mode, cleared when it leaves Auto). In `localSizingSetCountsOverride`, before `setCountsOverride`: `userSetCounts(participantID:surfaceID:)` (an override set by hand is the user's) |
@@ -823,7 +823,7 @@ Rules for adding a touchpoint:
 | 835 | `Sources/GhosttyTerminalView.swift` | `remote-host-mode` | One fenced early return in `GhosttySurfaceScrollView.ensureFocus(...)`, right before its `window.makeKeyAndOrderFront(nil)` (after the `shouldAllowEnsureFocusWindowActivation` guard): while headless (`SupermuxRemoteHostMode.shared.isHeadless`) focusing a terminal never orders its hidden window in. Found by the relaunch step: the restored workspace's terminal focus made the hidden window key and visible |
 | 850 | `Sources/Devices/DeviceTerminalInputRouter.swift` | `terminal-input-pipeline` | A `pipelined` closure (stored property and a defaulted trailing `init(sendBatch:onFailure:pipelined:)` parameter, nested inside the `device-mirror-input-batch` init fence); `drain()` first offers each batch to it (`if let pipelined, await pipelined(batch) { continue }`) and keeps upstream's one-at-a-time send only when it declines; DEBUG in-flight counters (`SupermuxTerminalInputDebug.requestStarted/requestFinished`) around that legacy `send` |
 | 851 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/Devices/SupermuxTerminalInputSocketCommands.swift` (`50BE00851000000000000001`/`…02`, DEBUG `terminal_input.*` drivers and counters) and `SupermuxTerminalInputPipeline.swift` (`…03`/`…04`) into the cmux target, four entries each next to #783's `SupermuxTerminalStreamSocketCommands.swift` |
-| 852 | `Sources/Devices/DeviceTerminalMirrorSession.swift` | `terminal-input-pipeline` | The `supermuxInputPipeline` property, a defaulted `supportsInputPipeline` init parameter (the convenience init passes the link's `supermux.terminal_input_pipeline.v1` capability), the pipeline's creation right before the router (`SupermuxTerminalInputPipeline.forMirror`) and its `pipelined:` argument, `setEnabled(phase == .attached)` in `phase`'s `didSet`, and `invalidate()` in `stop()` |
+| 852 | `Sources/Devices/DeviceTerminalMirrorSession.swift` | `terminal-input-pipeline` | The `supermuxInputPipeline` property, a defaulted `supportsInputPipeline` init parameter (the convenience init passes the link's `supermux.terminal_input_pipeline.v1` capability), the pipeline's creation right before the router (`SupermuxTerminalInputPipeline.forMirror`) and its `pipelined:` argument, `setEnabled(supermuxLive)` in `phase`'s `didSet`, before #1053's router line (input it drops as expired takes the router's held keys before they are released), and `invalidate()` in `stop()` |
 | 880 | `Sources/AppDelegate.swift` | `remote-host-user-show` | Three fenced sites calling `SupermuxRemoteHostMode`: the top of `toggleApplicationVisibilityFromGlobalHotkey()` (`if showsWindowsForUserRequest() { return }`: the global show/hide hotkey shows a headless host's windows), the first statement of the `Task` in `userNotificationCenter(_:didReceive:withCompletionHandler:)` (`notificationClicked(actionIdentifier:)`: a click on a banner or its Show action shows them before the open), and the menu bar item's `onOpenNotification` closure in the `MenuBarExtraController` factory (`showsWindowsForUserRequest()` before `openTerminalNotification`) |
 | 881 | `Sources/TerminalController.swift` | `sizing-auto-view-appeared` | In `v2MobileTerminalViewport`, the non-clear branch, right before `applyMobileViewportReport`: sets `SupermuxTerminalSizingAuto.shared.viewAppearedClientID` to the report's `client_id` when it carries `view_appeared: true` (nil otherwise), with a `defer` clearing it, so `viewersReported` notes that phone's activity although its viewport repeats (since #1030 in every mode, and for another Mac's mirror too: its Size to My Window and app activation send the flag) |
 | 882 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite+TerminalViewport.swift` | `sizing-auto-view-appeared` | Two fenced sites: a `public var viewAppeared = false` on `MobileTerminalViewportPreparation`, and in `updatePreparedTerminalViewport` the `mobile.terminal.viewport` parameters built into a local `viewportParams` (with `countsOverride: preparation.countsOverride`, #1014) that gains `"view_appeared": true` when the preparation says so |
@@ -833,7 +833,7 @@ Rules for adding a touchpoint:
 | 902 | `Packages/macOS/CmuxTerminal/Sources/CmuxTerminal/Surface/TerminalSurfaceRemoteOutputLane.swift` | `terminal-stream-output-fence` | `TerminalSurfaceRemoteOutputLane.supermuxFence(_:)` (a main-actor callback queued behind every admitted operation; at once when the lane is closed) and `TerminalSurface.supermuxRemoteOutputParsed(timeoutNanoseconds:) async` (flushes the pre-runtime buffer, then awaits the fence or a 1 s timeout through the file-private `SupermuxRemoteOutputFenceGate`) at the end of the `retireRemoteOutputLane` extension |
 | 903 | `Sources/Mobile/MobileTerminalByteTee.swift` | `terminal-stream-tee-inbox` | `append` hands each PTY read to `SupermuxTerminalTeeInbox.shared.push(surfaceID:data:)` (a locked FIFO drained on the main queue into upstream's `publishFromMain`) instead of upstream's `publishQueue.async { Task { @MainActor in publishFromMain } }`, so a replay can drain it first (#780) |
 | 904 | `Sources/Devices/DeviceLinkTerminalEvents.swift` | `terminal-stream-grid-viewer` | `DeviceTerminalEvent.supermuxGridGeneration(UInt64)` (non-control in `deliver`); `receive` sends it ahead of a `terminal.bytes` event whose payload carries a new `supermux_grid_gen` for its terminal (`supermuxGridGenerations`, cleared by a `linkLost` / `linkReconnected` broadcast) |
-| 905 | `Sources/Devices/DeviceTerminalMirrorSession.swift` | `terminal-stream-grid-viewer` | `phase`'s `didSet` keeps input enabled and the pane connected while `supermuxGridResyncing` (a grid re-anchor on a live link; the `terminal-input-pipeline` line takes the same `supermuxLive`); `.updated` on a streaming mirror records the host grid and, on another grid, re-anchors without re-pinning when attached or re-attaches when detached (replaces #781's re-pin-only return); `.supermuxGridGeneration` re-anchors when newer than the screen's; `linkDropped` tells the stream; `attach()` calls `attachStarted()`, waits for the grid to hold still before a re-anchor's replay (`awaitGridQuiet`), pins through `supermuxPinInStreamOrder` (output already handed over is parsed first; the replay waits for the new grid) and, right after `expectedSequence`, asks `screenApplied`: behind re-anchors again before drawing the held bytes, too often behind rechecks later (`supermuxRecheckGrid`); `supermuxSetHidden` (inside `device-mirror-hidden-counts`) reconciles the counts during a grid re-anchor too; `.bytes` reports to `noteBytes`, the replay request to `replayRequested()`, and an applied full replay to `fullReplayApplied` (a replay output raced is confirmed by another once output is quiet); `supermuxResyncGrid()` |
+| 905 | `Sources/Devices/DeviceTerminalMirrorSession.swift` | `terminal-stream-grid-viewer` | `phase`'s `didSet` keeps input live and the pane connected while `supermuxGridResyncing` (a grid re-anchor on a live link; #1053 hands `supermuxLive` to the router, the `terminal-input-pipeline` line takes the same `supermuxLive`); `.updated` on a streaming mirror records the host grid and, on another grid, re-anchors without re-pinning when attached or re-attaches when detached (replaces #781's re-pin-only return); `.supermuxGridGeneration` re-anchors when newer than the screen's; `linkDropped` tells the stream; `attach()` calls `attachStarted()`, waits for the grid to hold still before a re-anchor's replay (`awaitGridQuiet`), pins through `supermuxPinInStreamOrder` (output already handed over is parsed first; the replay waits for the new grid) and, right after `expectedSequence`, asks `screenApplied`: behind re-anchors again before drawing the held bytes, too often behind rechecks later (`supermuxRecheckGrid`); `supermuxSetHidden` (inside `device-mirror-hidden-counts`) reconciles the counts during a grid re-anchor too; `.bytes` reports to `noteBytes`, the replay request to `replayRequested()`, and an applied full replay to `fullReplayApplied` (a replay output raced is confirmed by another once output is quiet); `supermuxResyncGrid()`. Review S2: a confirmation (and the history a hidden re-attach left out) re-captures the screen through `supermuxRecaptureLive()` instead of a re-anchor: the mirror stays `.attached` (`supermuxLiveRecapture`; `attach()` keeps the phase, its guards accept it through `supermuxAttachApplies`, upstream's `phase == .attaching` after the reply included), `.bytes` draws and keeps each chunk (`supermuxKeepForRecapture`, within the attach buffer's limits), and once the reply's screen is applied the kept chunks go again through the sequence check from the reply's position; a failed live re-capture leaves the mirror attached (before upstream's `phase = .detached` in the generic catch); the convenience init hands the stream the pipeline's `lastInputAt`, which the re-capture waits out (`SupermuxTerminalStream.inputIdle`, 3 s, also after a show). Review S6: a resumed reply calls `resumedReplyApplied()`, so a re-capture a lost link left owed runs once the pane is shown; DEBUG lines for a gap and a live re-capture |
 | 906 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/Devices/SupermuxTerminalStreamGrid.swift` (`50BE00900000000000000001` file ref, `…02` build file) into the cmux target, next to #851's `SupermuxTerminalInputPipeline.swift` entries |
 | 907 | `CLI/CMUXCLI+ClaudeHookSettings.swift` | `claude-answer-hook` | In `emitClaudeWrapperInjectSettings`, a second `PostToolUse` group after upstream's `PushNotification` one: `claudeQueuedHookGroup(matcher: Self.supermuxClaudeAnsweredToolMatcher, subcommand: "post-tool-use")` (`AskUserQuestion\|ExitPlanMode`, defined in `CLI/CMUXCLI+SupermuxClaudeAnswerHook.swift`). Claude Code runs these tools' PostToolUse as soon as the user answers the question or approves the plan in the terminal, the only hook that answer fires. E2E: `tests/supermux/loopback_agent_answer_e2e.py` (`answer_hook_installed`) |
 | 908 | `Resources/bin/cmux-claude-wrapper` | `claude-answer-hook` | Two fences in `cmux_claude_build_standard_hook_settings`: the `post_tool_use` local and the `PostToolUse` line, which appends the queued `post-tool-use` group (matcher `AskUserQuestion\|ExitPlanMode`) after the `PushNotification` one, so the wrapper's byte-exact standard document still equals `cmux hooks claude inject-settings` (#907) and launches keep skipping Node validation |
@@ -870,8 +870,500 @@ Rules for adding a touchpoint:
 | 996 | `Sources/PortScanner.swift` | `agent-port-rescan-slower` | `agentRescanInterval` is 5 s with 1 s leeway (upstream 2 s, no leeway). |
 | 998 | `Packages/macOS/CmuxMobileHost/Sources/CmuxMobileHost/DeviceTerminalGridPublisher.swift` | `device-grid-global-sample-floor` | A global tick samples every terminal's grid at most once a second, and always the first global tick after a topology change (`topologyNeedsFullSample`, kept until that sample); terminals the tick names are always sampled. `deferredGlobalSampleDeadline` says when a skipped global sample may run. `reset()` clears all three. |
 | 1010 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/SupermuxStateSyncTicker.swift` (`50BE10100000000000000001` file ref, `…02` build file) into the cmux target: the file reference, the `Supermux` group child after `SupermuxMobileSidebarStatusObserver.swift`, the build file and the target's Sources phase entry |
+| 1033 | `Packages/Shared/CmuxIrxTransport/Sources/CmuxIrxTransport/IrxConnection.swift` | `irx-stream-priority` | Two fences. `openLane` sets the new stream's send priority from `SupermuxIrxStreamPriority.priority(for: descriptor.lane)` before it writes the descriptor; `acceptLane` sets it on the accepted stream right after reading the descriptor. Keepalive lanes go at 1000, control and control-repair lanes at 100 (the focused surface's own); every other lane keeps its default, which its owner may still set (the artifact router's −10). Upstream: every bidirectional lane at 0, below terminal output (100 and 50) |
+| 1034 | `Packages/Shared/CmuxIrxTransport/Sources/CmuxIrxTransport/SupermuxIrxStreamPriority.swift` | `irx-stream-priority` | Whole new file (fenced top to bottom): the send-priority ladder (`keepalive` 1000, `control` = `IrxSurfaceEventLanes.Configuration().focusedPriority`) and `priority(for:)` |
+| 1035 | `Packages/Shared/CMUXMobileCore/Sources/CMUXMobileCore/SupermuxByteTransportPeerActivity.swift` | `transport-peer-liveness` | Whole new file (fenced top to bottom): the public protocol `SupermuxByteTransportPeerActivity: CmxByteTransport` with `supermuxPeerShowsLife(since:probeDeadline:) async -> Bool` |
+| 1036 | `Packages/Shared/CmuxIrxTransport/Sources/CmuxIrxTransport/IrxControlByteTransport.swift` | `transport-peer-liveness` | One fenced extension at the end of the file: `IrxControlByteTransport` conforms; true when the admitted connection's `applicationSilenceEvidence(since:)` is `.activity`, else (given a deadline) the result of `supermuxProbeLivenessUnretired(deadline:)` (#1081: the keepalive cannot retire it); false when closed or not established |
+| 1037 | `Packages/Shared/CmuxIrohTransport/Sources/CmuxIrohTransport/CmxIrohDeferredByteTransport.swift` | `transport-peer-liveness` | One fenced extension at the end of the file: the deferred wrapper conforms by forwarding to its activated transport (false when closed or the transport cannot tell). In this file because `transport` and `closed` are private |
+| 1038 | `Packages/iOS/CmuxMobileRPC/Sources/CmuxMobileRPC/MobileCoreRPCClient+SupermuxPeerActivity.swift` | `transport-peer-liveness` | Whole new file (fenced top to bottom): `MobileCoreRPCClient.supermuxPeerShowsLife(since:probeDeadline:)` (public) through `MobileCoreRPCSession`'s installed transport; false when none is installed or it does not conform |
+| 1039 | `Packages/Shared/CmuxIrxTransport/Tests/CmuxIrxTransportTests/SupermuxIrxPeerActivityTests.swift` | `transport-peer-liveness` | **Whole-file fork test inside an upstream package.** Output on another lane proves life while control never answers; an idle host answering a keepalive is alive and its older bytes alone are not; a silent host is not; a closed connection is not |
+| 1040 | `Sources/Devices/DeviceLinkReconnectPolicy.swift` | `device-link-unproven-session-backoff` | Seven fences. `import SupermuxKit`; `Event` gains `supermuxExchanged` and `supermuxUnresponsive`; `delay(afterFailures:)` returns `SupermuxDeviceLinkBackoff.delay(afterFailures:)` (1 s doubling to a 2 min cap; upstream's `delays` table, capped at 30 s, is no longer read); stored `supermuxSession: SupermuxDeviceLinkSession?`; `.connectSucceeded` records the session with the attempt that opened it (upstream's `if case .connecting = phase {` becomes `if case .connecting(let attempt) = phase {` inside the fence); new `case .supermuxExchanged` notes an answered request on a live session; the `.transportLost` case label also takes `.supermuxUnresponsive`, and its tail after the precondition branch (upstream: 30 s up reset `shortLivedLosses`, the first loss redialed at once, later ones waited) becomes the session's `redial(endedAt:unresponsive:)`. `connectedSince`, `shortLivedLosses`, `stableConnectionInterval` and `delays` stay declared (and the first two written) but no longer decide anything; a fenced comment above `supermuxSession` says so |
+| 1041 | `Sources/Devices/DeviceLink.swift` | `device-link-unproven-session-backoff` | Four fences. `import SupermuxKit`; `supermuxReportUnresponsive(_:)` after `reportTransportLost` (same body, event `.supermuxUnresponsive`), called by the liveness check after a missed deadline when it finds no sign of life; `supermuxRequestDataOnce` applies `.supermuxExchanged` after a successful reply on the current generation; the `.waiting` transition sleeps `SupermuxDeviceLinkBackoff.jittered(supermuxWait)` (±20 %) instead of `delay`; `supermuxWait` is #1076's sleep-courtesy wait, `delay` itself unless the other Mac said it is going to sleep |
+| 1042 | `cmuxTests/DeviceLinkReconnectPolicyTests.swift` | `device-link-unproven-session-backoff` | Three fences. `import SupermuxKit`; `flappingTransportBacksOff` and `connectLoseRetry` rewritten for the new contract (a ~31 s session backs off from its first loss, doubling; only a proven session redials at once and resets the count) plus `unprovenOrSilentSessionBacksOff`; `backoffTable` asserts the 2 min ceiling (upstream: 30 s) |
+| 1043 | `Packages/macOS/CmuxMobileHost/Tests/CmuxMobileHostTests/SupermuxWatchedByteQueueTests.swift` | `terminal-stream-fair-queue` | **Whole-file fork test inside an upstream package.** A shown terminal's bytes leave before a hidden one's backlog; shown terminals take turns; the terminal being typed in gets every other turn; other events do not wait behind terminal bytes; one terminal's order holds when it is shown mid-backlog; the drain keeps running while watched bytes are queued; a hidden terminal too far behind pauses (backlog dropped, bytes refused); showing it sends its newest chunk first; an unwatched paused terminal forgets that chunk; shown and barely-behind terminals never pause; `close()` forgets pauses |
+| 1044 | `Packages/macOS/CmuxMobileHost/Sources/CmuxMobileHost/MobileHostConnectionEventQueue.swift` | `terminal-stream-fair-queue` | Four fences. State after #777's block: `supermuxScheduler` (#1085's `SupermuxWatchedByteScheduler`, which owns the turns) and two accessors over it, `supermuxBackgroundByteMaximumAge` (8 s) and `supermuxWatchedBytePauseCount`; in `dequeue`, after upstream's lane loop finds nothing, the shared lane returns `supermuxDequeueWatchedLocked()`; `close()` resets the scheduler; the glue block at the end of the class, which keeps the events in the queue's own storage and asks the scheduler whose turn it is. #777's watch helpers call it: watched bytes no longer go into `laneOrders[.shared]` but into their terminal's turn (`supermuxQueueWatchedLocked`), the 8 MB budget drops through `supermuxDropWatchedBacklogLocked`, `supermuxPausesLocked` refuses a paused hidden terminal's chunk (or pauses it when its oldest queued chunk waited the maximum age), `supermuxForgetWatchedEventLocked` keeps the per-terminal counts, and `supermuxWatchTerminalBytes` re-queues a paused terminal's newest chunk once it is shown (forgets it once unwatched); `supermuxNoteInteractiveSurface` (#1051) names the terminal typed in |
+| 1045 | `Packages/macOS/CmuxMobileHost/Tests/CmuxMobileHostTests/SupermuxRenderGridWatchTests.swift` | `render-grid-watch` | **Whole-file fork test inside an upstream package.** The queue: an untold connection gets every terminal; others' frames are refused without a resync; a refused terminal shown again waits for a full frame; a never-refused one keeps its chain; nil restores everything. The state: no dedicated report, no filter; the first report filters to reported and replayed terminals; a replay adds a terminal and clearing its report removes it; every report cleared filters to nothing and a new report brings frames back; two phones are independent and an unchanged set sends nothing; a closed connection is forgotten |
+| 1046 | `Packages/macOS/CmuxMobileHost/Sources/CmuxMobileHost/SupermuxRenderGridWatchState.swift` | `render-grid-watch` | Whole new file (fenced top to bottom): `SupermuxRenderGridWatchState`, which terminals each phone connection shows. A connection is limited once it wrote a sticky viewport report (one that never has keeps every terminal); its set is the terminals it holds a sticky report for plus those it asked a replay of since, until their report goes; it stays limited (possibly to nothing) after its reports are cleared; closed connections are forgotten. `reportsChanged`/`replayServed` return each connection whose set changed and the terminals that joined it (none on the first limit: it got every frame until then) |
+| 1047 | `Packages/macOS/CmuxMobileHost/Sources/CmuxMobileHost/MobileHostConnectionEventQueue.swift` | `render-grid-watch` | Four fences. The `supermuxRenderGridSurfaceIDs` property after #1044's state; in `enqueue`, right after #777's watched-bytes hook, a `terminal.render_grid` frame of a terminal outside the set is refused (`.rejected`) and its surface poisoned, so only a full frame readmits it once shown, and no resync is asked (it would only produce frames to refuse); `close()` resets the set; `supermuxShowRenderGrid(surfaceIDs:)` and `supermuxRefusesRenderGridLocked` at the end of the class |
+| 1048 | `Sources/TerminalController.swift` | `render-grid-watch` | Two fences. `mobileViewportReportsBySurfaceID` gains `didSet { SupermuxMobileRenderGridWatch.reportsChanged(...) }` (upstream: declared on one line with `mobileViewportGenerationsBySurfaceID`, no observer; the two declarations are split); `v2MobileTerminalReplay` calls `SupermuxMobileRenderGridWatch.replayServed(surfaceID:)` after its viewport checks pass, before #780's resume and the capture (`Sources/Supermux/SupermuxMobileRenderGridWatch.swift` reads the running request's connection, hands every sticky report to the state's `reportsHeard(_:takesRenderGrid:isOpen:)`, which counts only render-grid connections' reports, pushes each changed set to that connection's event queue and asks the render observer for a full frame of each joined terminal) |
+| 1121 | `Sources/Mobile/MobileHostService.swift` | `render-grid-watch` | Two fences in `MobileHostConnection`. `subscribe(...)`, right after `eventQueue.updateSubscribedTopics`, and `unsubscribe(streamID:)`, at the same point, call `SupermuxMobileRenderGridWatch.subscriptionsChanged()` when the subscription's topics (new or previous) include `terminal.render_grid`: a phone that wrote its sticky viewport reports before subscribing is limited at once, not at its next report change (third review) |
+| 1049 | `Sources/Mobile/MobileHostAuthorizationSupport.swift` | `host-writer-bulk-yields` | Three fences in `MobileHostSerializedTransportWriter`: `supermuxBulkReplyByteCount` (64 KB), `supermuxSmallWritesPerBulkTurn` (32), a second waiter list `supermuxBulkWaiters` (each with its supersession replacement, #1056) and the count of small writes that passed a waiting bulk one; `send(_:bulk:)` (upstream: `send(_:)`) acquires with `bulk` and the replacement; `acquire(bulk:replacement:)` puts a bulk write in the second list and `release()` resumes a bulk waiter whose reply was superseded meanwhile first (it goes as a small error and frees its request slot on both ends), then the oldest small waiter unless 32 in a row passed a waiting bulk one, then the oldest bulk one (upstream: one first-in-first-out list) |
+| 1050 | `Sources/Mobile/MobileHostService.swift` | `host-writer-bulk-yields` | Two fences. `sendResponse` passes `bulk: supermuxReplacement != nil && frame.count > MobileHostSerializedTransportWriter.supermuxBulkReplyByteCount` to `sendControlFrame` (only a device mirror's replay reply, the one with an owner tag and so a supersession replacement, yields; a phone's large replies keep upstream's order, review S8), which gains `bulk: Bool = false` and passes it to `writer.send` (upstream: `sendControlFrame(_ frame:)`, `writer.send(frame)`). Event frames always go as small writes, so their order with replies is upstream's |
+| 1051 | `Sources/Mobile/MobileHostService.swift` | `terminal-stream-fair-queue` | At the top of `MobileHostConnection.noteInteractiveSurface` (before upstream's guard, so on every ordered terminal input, not only when the terminal typed in changes): `eventQueue.supermuxNoteInteractiveSurface(surfaceKey)`, and when it returns true (a paused terminal queued its newest chunk) `claimDrains()` with a drain started per lane. The terminal this connection last typed into gets every other turn among the watched terminals the queue serves (#1044); input also shows a terminal the connection named background, until its next watch, and brings a paused one back (review S5: the viewer's watch may never have reached the host) |
+| 1052 | `Sources/Devices/DeviceTerminalInputRouter.swift` | `device-mirror-reattach-input` | Six fences. Stored `supermuxHolding`, `supermuxHeldWhileDown` (a `SupermuxTerminalInputBatch`), `supermuxHeldSince` (when the oldest held key was taken) and `supermuxHeldInputExpired` (told when held keys were dropped for their age) after #850's property; a defaulted trailing init parameter `supermuxHeldInputExpired:` after #850's `pipelined:` (which gains a trailing comma), stored in the body; `enqueue` starts the hold's clock and no drain while holding (upstream: `guard !draining else { return }`); `takePending` takes nothing while holding (upstream: `guard !invalidated, enabled, !pending.isEmpty else {`); after `invalidate()`: `supermuxSetInput(accepting:holding:)` (not accepting drops `pending` and the held-while-down keys, as upstream's `setEnabled(false)` does; holding starts the clock for keys already queued; releasing a hold starts the drain of what it kept), `supermuxSetAsideHeldInput()` (moves `pending` into `supermuxHeldWhileDown` and resets the clock: the set-aside keys wait under the session's hold, keys typed after the link came back start the clock again; holding no longer starts the clock for set-aside keys), `supermuxDropSetAsideInput()` (drops only the set-aside keys: the session's hold ran out while it re-attaches, second review #2), `supermuxSettleHeldInput(deliver:keepPending:)` (puts them back in front of `pending`, or drops them; drops `pending` too unless `keepPending`), `supermuxDropHeldInput()` and the hold clock: once the oldest held key has waited `SupermuxTerminalInputPipeline.replayWindow` (10 s) every held key is dropped and the session told (review S4). Upstream's `setEnabled(_:)` stays, unused by the session |
+| 1053 | `Sources/Devices/DeviceTerminalMirrorSession.swift` | `device-mirror-reattach-input` | Eight fences. `phase`'s `didSet` calls `supermuxUpdateInput(live:)` after #852's pipeline line (the router line moved out of #905's fence; upstream: `inputRouter.setEnabled(phase == .attached)`); the router's `supermuxHeldInputExpired:` argument (the pipeline's `expireStalled()`, on the main actor) and, after the router is made, `pipeline.onInputDropped` (input the pipeline drops takes the router's held keys with it); stored `supermuxHasAttached`, `supermuxLinkLostSinceAttach`, `supermuxHoldsWhileDown` and its hold (`SupermuxMirrorInputHold`: awake time, ignored while dark, started over at a full wake after dropping what was held from before the sleep; second review #3) after #905's `supermuxGridResyncing`; `stop()` cancels the expiry; `.linkReconnected` first sets the held keys apart (`supermuxSetAsideHeldInput`) when the link was lost since the last attach; `linkDropped()` holds typing for `SupermuxTerminalInputPipeline.replayWindow` (10 s) from the first drop when the mirror had attached; right after #781's `noteReply`, `supermuxReplyArrived(resumed:)` settles keys set apart (sent only when the reply resumed the terminal within their hold; a full reply drops the keys typed since the link came back too) and records the attach. The methods follow #975's block: a re-attaching mirror (any attach after the first that stuck) and one whose link is down for under 10 s hold typing in the router, which sends it once the mirror is attached; when the hold from the drop runs out while still detached every key typed so far goes; while it re-attaches (the link is back) only the keys typed while it was down go and the ones typed since stay under the router's clock (second review #2); either way the pipeline's unsent input goes, and the keys after it (review S3); the first attach, a failed attach and a longer outage drop it as upstream does |
+| 1054 | `Sources/TerminalController.swift` | `sizing-mac-close-grace` | In `clearMobileViewportReports`, right after #957's writer check, a connection close (`connectionID` set) leaves a viewing Mac's report (`device_kind: mac`) for now: `SupermuxMacViewerCloseGrace.defers(deviceKind:clientID:connectionID:reason:)` (`Sources/Supermux/Devices/SupermuxTerminalSizingConnections.swift`) records it and, 15 s of awake time later (the suspending clock, started over at a full wake by `SupermuxSystemPower.woke`, review S1), runs this same connection-scoped clear for those client ids, so a report the Mac's reconnect wrote again by then (stamped with the new connection) stays. Phones' reports and explicit clears are unchanged |
+| 1055 | `Sources/Mobile/MobileTerminalByteTee.swift` | `terminal-stream-tee-grace` | `append`'s subscriber guard gains `|| SupermuxTerminalTeeGrace.isRecording` (`Sources/Supermux/Devices/SupermuxTerminalStreamHost.swift`): for 120 s after the last `terminal.bytes` subscriber left, the tee records into its tail as with a subscriber, so the terminal's stream epoch holds and a viewing Mac's reconnect resumes |
+| 1056 | `Sources/Mobile/MobileHostService.swift` | `terminal-stream-tee-grace` | In `MobileHostEventSubscriptionTracker.replace`, after the changed topics are known: when `terminal.bytes` changed, `SupermuxTerminalTeeGrace.subscribersChanged(active:)` (its last subscriber leaving arms the tee's 120 s grace; a new one disarms it) |
+| 1057 | `Sources/Devices/DeviceTerminalMirrorSession.swift` | `terminal-replay-deadline` | In the convenience `init(link:…)`, the `requestData` closure passes `timeoutNanoseconds: supermuxStream.deadline(forMethod:)` (the session's stream, made before `self.init` for it by #781's fence; the deadline doubles per replay in a row that missed it, up to 8 times) (upstream: `try await link.requestData(method, params: params)`): a `mobile.terminal.replay` gets its own deadline, every other method keeps the link's (nil). DEBUG: a suite sets it with `supermux.devices.terminal_stream.replay_deadline` |
+| 1058 | `Sources/Mobile/MobileHostAuthorizationSupport.swift` | `terminal-replay-supersede` | Two fences in `MobileHostSerializedTransportWriter.send`, the first nested in #1049's signature fence: `send(_:bulk:supermuxReplacement:)` gains a defaulted `supermuxReplacement: (@Sendable () -> Data?)?`, and the write sends `supermuxReplacement?() ?? data` (upstream: `try await transport.send(data)`): read once the write's turn comes, so a reply superseded while it waited goes as the small error instead |
+| 1059 | `Sources/Mobile/MobileHostService.swift` | `terminal-replay-supersede` | Six fences in `MobileHostConnection`: the stored `supermuxReplays` (`SupermuxTerminalReplaySupersession`, `Sources/Supermux/Devices/SupermuxTerminalStreamHost.swift`) after `responseWorkQuota`; in `respond(to:)`'s success case a ticket from `begin(method:params:)` (ended by a `defer`) and `sendResponse(_:supermuxReplacement:)` with `replacement(for:requestID:)` (upstream: `if await sendResponse(response.data) {`); `sendResponse`'s signature gains the defaulted `supermuxReplacement` (upstream: `(_ response: Data)`) and passes it to `sendControlFrame` (an argument nested in #1050's call fence), whose signature gains it too and passes it to `writer.send` (nested in #1050's signature fence) |
+| 1060 | `Packages/Shared/CmuxIrxTransport/Sources/CmuxIrxTransport/IrxConnection.swift` | `irx-route-sample` | One fence before `selectedPathDescription()`: `public nonisolated func supermuxSelectedPathSample() -> SupermuxIrxPathSample?`, the selected path from `connection.paths()` with its `rttMs` (QUIC's smoothed RTT on that path), the path count and whether a relay path is open. Here because `connection` is private; upstream's `selectedPath()` gives only `(isRelay, remoteAddress)`. Read by the device route monitor (`Sources/Supermux/Devices/SupermuxDeviceRouteMonitor.swift`) |
+| 1061 | `Packages/Shared/CmuxIrxTransport/Sources/CmuxIrxTransport/SupermuxIrxPathSample.swift` | `irx-route-sample` | Whole new file (fenced top to bottom): `public struct SupermuxIrxPathSample` (`isRelay`, `remoteAddress`: the relay URL or the peer's `ip:port`, `rttMs`, `pathCount`, `hasRelayPath`) |
+| 1062 | `Packages/Shared/CmuxIrxTransport/Tests/CmuxIrxTransportTests/SupermuxIrxRouteSampleTests.swift` | `irx-route-sample` | **Whole-file fork test inside an upstream package.** On real iroh connections: a loopback path reads direct at the dialed address under 50 ms; a path through `SupermuxShapedUDPLink` with 120 ms each way reads 200–400 ms; opt-in (`CMUX_IROH_PUBLIC_RELAY_TEST=1`) a public-relay dial reads relay at the relay URL, then direct once iroh moves (relay path kept). Verify: `swift test --package-path Packages/Shared/CmuxIrxTransport --filter SupermuxIrxRouteSampleTests` |
+| 1063 | `Sources/Mobile/MobileHostService.swift` | `route-candidates-off-main` | In `acceptTransport`'s `handleRequest` closure, first: `if SupermuxRouteCandidatesHost.answers(request), let result = await SupermuxRouteCandidatesHost.answer(request, authorization: authorization) { return result }` (the synchronous method check keeps every other request from awaiting it) (`Sources/Supermux/Devices/SupermuxRouteCandidatesHost.swift`). `mobile.supermux.route.candidates` (this Mac's endpoint id and servable direct addresses) is answered there, off the main actor: `mobileHostHandleRPC` is `@MainActor` and a Mac peer's `peerRequestHandler` hops to main for every request, so the small reply would otherwise wait behind replays captured on the main thread. Refused unless the session is Iroh-admitted; every other method returns nil and continues to upstream's handlers |
+| 1064 | `Sources/Devices/DeviceIrxClient.swift` | `route-dial-candidates` | Four fences in `dial`. The first replaces upstream's `dialAddress(…, directAddresses: [])` and `supervisor.dial(address:credentials:)` with `let (connection, supermuxLeg) = try await SupermuxDeviceDirectDial.connect(instance:endpointID:relayURL:credentials:main:allowsDirectPaths:journal:)` (`Sources/Supermux/Devices/SupermuxRouteDialCandidates.swift`): this Mac's direct lane (`SupermuxComposition.directLane`, a direct-only endpoint with the same identity) at the peer's cached LAN, Tailscale and global IPv6 addresses races upstream's relay dial on the shared endpoint, which now gets no direct addresses (`SupermuxIrxDirectFirstDial`, #1065); and `supermuxAuthorizesDirectPaths = context.allowsDirectPaths && supermuxLeg == .relay`. The second passes that as `performClient`'s `authorizesDirectPaths:` (upstream: `context.allowsDirectPaths`) and the third uses it in `if !… { try await recheckBinding() }`: a session on the lane never authorizes NAT traversal (no candidates, no health checks, no quarantine) and so runs the binding recheck explicitly, as the relay-only lane does. The fourth, in the admission's `catch` after upstream's close: `if supermuxLeg == .direct { await SupermuxDeviceDirectDial.admissionFailed(instance:journal:) }`, so the next dial skips the lane once (a lane whose handshakes work but whose sessions fail can never keep the link off the relay). The lane is skipped in relay-only mode, with `supermux.route.dialCandidates` false (the kill switch: upstream's relay dial), while the link's switch policy holds direct off after a flap or skips it once, and with no address reachable from this Mac's interfaces. Journals `route/dial-candidates {device, cached, count, scopes}`, `route/dial-race {device, candidates, direct_skipped?, holds_relay?, winner, direct, relay}` (or `route/dial-race-failed`) and `route/direct-admission-failed` |
+| 1065 | `Packages/Shared/CmuxIrxTransport/Sources/CmuxIrxTransport/SupermuxIrxDirectFirstDial.swift` | `route-direct-lane` | Whole new file (fenced top to bottom): `SupermuxIrxDialLeg` and `SupermuxIrxDirectFirstDial`: `race(timing:direct:relay:discard:sleep:)` (the lane starts at once, the relay after a 250 ms head start or as soon as the lane fails; direct wins whenever it connects within 1.5 s, a relay connection ready first is held until then; one value out, the other leg cancelled and anything it still produces closed before a hello, so the host admits once; the relay's error when both fail), `dial(lane:directAddresses:main:relayAddress:credentials:timing:)` (no relay credential: the relay leg fails at once with `noUsableRelayCredential`, only the lane can connect), `laneLeg(lane:peerEndpointIDHex:addresses:)` (the lane's leg: one handshake per address, all at once, through `firstValue(of:deadline:discard:)`: the first to connect wins, the others are cancelled or closed before a hello, so one wrong address answered by another endpoint cannot sink the right one), `probe(lane:peerEndpointIDHex:addresses:deadline:)` (the same handshakes, never admitted, closed at once with reason `supermux-route-probe`; one that connects after the deadline is closed too) and `answers(_:quietFor:probeDeadline:)` (the peer's bytes in the last 6 s, past one keepalive interval, else a ping within max(1 s, 3 × RTT), joining the keepalive's without cancelling it, #1081). `Timing.holdsRelay` (`Timing.noRelayHold`): a relay ready first is taken at once instead of held to the direct deadline. `relayLeg(credentials:dial:)` (second review #6): the relay leg refreshes an expired or missing credential itself, beside the lane, and a leg cancelled while it refreshes never dials. The decisions are the pure `SupermuxIrxDialRaceState`, run by a private driver; the fan-out is the private `SupermuxIrxFirstValue`. In the shared package so the phone can race the same way |
+| 1066 | `Packages/Shared/CmuxIrxTransport/Tests/CmuxIrxTransportTests/SupermuxIrxDirectFirstDialTests.swift` | `route-direct-lane` | **Whole-file fork test inside an upstream package.** The race's decisions (15 failure modes: a race that does not hold the relay; the lane's per-address fan-out: first value wins, a value after a probe's deadline is closed, all failing fails the leg), the race running with fake legs, and live iroh endpoints: the lane reaches the host directly beside another endpoint of the same identity; the race lands direct with one admission; a cut direct path lands on the relay at the deadline with one admission; a probe is never admitted and a cut one gives up at its deadline; a cut lane session stops answering; a wrong address answered first by another iroh host (its own identity) does not sink the right one, for the race and a probe (L7); the relay leg's credential refresh never holds the lane, and a leg cancelled while it refreshes never dials (16). Verify: `swift test --package-path Packages/Shared/CmuxIrxTransport --filter SupermuxIrxDirectFirstDialTests` |
+| 1067 | `Sources/Devices/DeviceLink.swift` | `route-switch` | One fence after #1041's `supermuxReportUnresponsive`: `@discardableResult supermuxPlannedRedial() -> Bool` (a live link only: `applyPolicy(.supermuxPlannedRedial)`; false when the link stays, a directory precondition kept it, so the switcher counts no move) and `supermuxReportDirectPathLost()` (a live link only: `applyPolicy(.supermuxUnresponsive)`, the liveness-failure event, without setting `lastFailure`). Called by `SupermuxDeviceRouteSwitcher` (`Sources/Supermux/Devices/SupermuxDeviceRouteSwitcher.swift`) |
+| 1068 | `Sources/Devices/DeviceLinkReconnectPolicy.swift` | `route-switch` | Two fences. `Event` gains `supermuxPlannedRedial` after #1040's cases; `apply` handles it before `waitElapsed`: from `.connected` only, while dialable and with no directory precondition, it clears the Supermux session and goes to `.waiting(attempt: 0, delay: SupermuxDeviceLinkBackoff.plannedRedialSettle)` (SupermuxKit; 300 ms, so the old session releases its endpoint slot), whose `waitElapsed` dials attempt 1: a move is not a failure |
+| 1069 | `cmuxTests/DeviceLinkReconnectPolicyTests.swift` | `route-switch` | One fence after #1042's block: `plannedRedialSettlesThenDialsAfresh` (a live link settles then dials attempt 1, a link that is not live does not move, a directory precondition keeps the live link) |
+| 1070 | `Packages/Shared/CmuxIrxTransport/Tests/CmuxIrxTransportTests/SupermuxShapedUDPLink.swift` | `irx-shaped-udp-link` | **Whole-file fork test helper inside an upstream package** (fenced top to bottom; added unfenced by `ef19138e3ed`, fenced with #1084): a shaped UDP relay on 127.0.0.1 for live QUIC tests. #1065's tests add `blocked` (drops every datagram both ways: a cut path, silence rather than a close). Keep the whole file |
+| 1071 | `Packages/Shared/CmuxIrxTransport/Sources/CmuxIrxTransport/V2/V2ControlService+Maintenance.swift` | `v2-directory-refresh-floor` | Four fences. In `maintain(run:)`: a local `supermuxDirectoryFloor` before the loop; `directoryDue` is `max(due(directoryRefreshAfter, …), supermuxDirectoryFloor)` (upstream: `due(…)` alone); after the refresh task group the floor becomes `Self.supermuxDirectoryFloor(_:refreshedDirectory:triedTicket:now:)`. At the end of the file an extension with `supermuxDirectoryRefreshSpacing` (30 s) and that rule: a pass that tried the ticket lifts the floor (a renewal can extend the permissions), one that refreshed the directory puts the next at least 30 s later. Stops the field's 485 refreshes in 31 s while the directory's permissions end inside the 300 s margin before the ticket renews |
+| 1072 | `Packages/Shared/CmuxIrxTransport/Tests/CmuxIrxTransportTests/V2/V2TestSocket.swift` | `v2-directory-refresh-floor` | Two fences: `supermuxDirectoryPermissionTTL` (default 3600) with its setter after `directoryRevision`; the plain directory reply's `permissionExpiresAt` is `now + supermuxDirectoryPermissionTTL` (upstream: `now + 3600`) |
+| 1073 | `Packages/Shared/CmuxIrxTransport/Tests/CmuxIrxTransportTests/V2/V2TestBackend.swift` | `v2-directory-refresh-floor` | Two fences: `supermuxDirectoryPermissionTTL` (default 3600) with its setter after `directoryPageRules`; `connect` hands it to each socket before `holdRegistration` |
+| 1074 | `Packages/Shared/CmuxIrxTransport/Tests/CmuxIrxTransportTests/V2/SupermuxV2DirectoryRefreshFloorTests.swift` | `v2-directory-refresh-floor` | **Whole-file fork test inside an upstream package.** Permissions ending 200 s out with the clock stopped: at most 3 directory refreshes in 0.5 s and a non-zero planned wait (red: 1122); the floor rule. Verify: `swift test --package-path Packages/Shared/CmuxIrxTransport --filter SupermuxV2DirectoryRefreshFloorTests` |
+| 1075 | `Sources/Devices/DeviceLink.swift` | `device-dark-wake-gate` | One fence at the top of `startConnect`'s task: `guard await SupermuxSystemPower.waitUntilAwake(), generation == self.generation else { return }` (`Sources/Supermux/Devices/SupermuxSystemPower.swift`): no dial while this Mac is dark (willSleep to a full wake, so never out of a DarkWake) or its main endpoint is rebuilt after a long sleep (at most 5 s); a cancelled wait returns quietly |
+| 1076 | `Sources/Devices/DeviceLink.swift` | `device-sleep-courtesy` | Two fences. `supermuxPeerGoingToSleep()` after #1067's methods (a live link only: `applyPolicy(.supermuxUnresponsive)`, never a redial at once); in the `.waiting` transition's task, before #1041's jitter, `let supermuxWait = SupermuxComposition.sleepCourtesy.redialWait(for: self.instance, after: delay)` (at least 5 min while the other Mac said it is going to sleep, `delay` otherwise; `Sources/Supermux/Devices/SupermuxDeviceSleepCourtesy.swift`) |
+| 1077 | `Sources/Mobile/MobileHostIrxRuntime.swift` | `device-sleep-courtesy` | One fence in `superviseConnection` after the registry admission check: for a Mac peer, `SupermuxComposition.sleepCourtesy.peerDialedIn(endpointIDHex:deviceID:tag:)`: that Mac is awake, so this Mac's waiting link to it dials at once (at most every 15 s) |
+| 1078 | `Packages/Shared/CmuxIrxTransport/Sources/CmuxIrxTransport/IrxJournal.swift` | `irx-journal-link-history` | Three fences. The stored `supermuxLinkRing` after `ring`; in `record`, after the shared ring's trim, an event whose component is in `supermuxLinkHistoryComponents` (`route`, `device-link`, `power`, `connection`) is appended there too, trimmed to `supermuxLinkHistoryCapacity` (512); after `tail(_:)`, the two statics and `supermuxLinkHistory(_:)` (newest events, oldest first, under the journal's lock). The shared 512-event ring holds about half an hour of keepalive, engine and terminal-trace events, so route and reconnect events never survived to a report |
+| 1079 | `Packages/Shared/CmuxIrxTransport/Tests/CmuxIrxTransportTests/IrxJournalTests.swift` | `irx-journal-link-history` | One fence at the end of the suite: `linkEventsSurviveAFloodOfChattyEvents` (four link events survive 1,536 keepalive/engine/control-plane events and 100 terminal traces that evict them from the shared ring) and `linkHistoryIsBoundedOldestFirstAndRedacted` |
+| 1080 | `Sources/TerminalController.swift` | `iroh-diag-links` | One fence in `irohDiagText()` after upstream's export: `export += "\n" + SupermuxLinkDiagnosticsReport.text()`, the remote Mac links section (each link's route now from `SupermuxDeviceRoutes.offMainRoutes`, the #1078 link history, the journal's counters, the journal path), read off the main actor like upstream's report |
+| 1081 | `Packages/Shared/CmuxIrxTransport/Sources/CmuxIrxTransport/IrxConnection.swift` | `route-liveness-join` | Four fences. After `probeLane`: `supermuxUnretiredProbeID: UUID?` and `supermuxStartsUnretiredProbe: Bool`; in `probeLiveness`, a joiner whose deadline ran out returns false without retiring a probe that is `supermuxUnretiredProbeID` (before upstream's `if probeID == id { cancelProbe() }`), and a new probe takes the flag as its unretired mark; before `launchKeepalive()`, `public func supermuxProbeLivenessUnretired(deadline:) async -> Bool` (joins a probe in flight without retiring it, and when that misses starts its own unretired probe with the time left: #1036's check after a missed reply waits longer than the 2 s keepalive, which otherwise joined and cancelled it, so a slow but live link read as dead) and `public func supermuxProbeLivenessJoining(deadline:) async -> Bool`: a probe already in flight (the keepalive's) is joined for at most `deadline` and never retired when that runs out (upstream's `probeLiveness` retires a joined probe when a shorter caller deadline ends, so the route switcher's 1 s check cancelled the 2 s keepalive probe and made it journal a miss); with none in flight, `probeLiveness(deadline:)`. Here because `probeTask` is private. Called by `SupermuxIrxDirectFirstDial.answers` (#1065) |
+| 1082 | `Sources/Devices/DeviceIrxClient.swift` | `route-lane-without-relay` | One fence in `dial` (second review #6; was two): upstream's cached credentials, refresh-when-empty and `guard await context.isCurrent(), !credentials.isEmpty else { throw DeviceLinkError.notConnected }` become a `supermuxCredentials` closure (the cached ones, else a refresh, then `isCurrent` and non-empty or `notConnected`) handed to `SupermuxDeviceDirectDial.connect`, whose relay leg runs it (`SupermuxIrxDirectFirstDial.relayLeg`, #1065), plus the `isCurrent` guard. The lane races at once: with the internet down and the LAN up it no longer waits out the refresh's timeout, and after 30 min idle no dial waits an HTTPS round trip first. Relay-only mode fails exactly as upstream (the relay leg is the race's only leg) |
+| 1083 | `Sources/Mobile/MobileHostIrxRuntime.swift` | `route-lane-sign-out` | One fence in `transition(to:)` after `await oldEndpoint?.deactivate()`: `await SupermuxComposition.directLane.deactivate(retiring: oldEndpoint)`: the direct lane carries this Mac's identity too and goes with the endpoint on sign-out or an account change (it was replaced only at the next dial); a dial or route probe that read the old endpoint before the sign-out gets no lane afterwards (`beginUse(matching:)` returns nil for a retired main, checked after its last suspension; second review #16) |
+| 1084 | `Packages/Shared/CmuxIrxTransport/Tests/CmuxIrxTransportTests/SupermuxIrxPriorityStarvationTests.swift` | `irx-stream-priority` | **Whole-file fork test inside an upstream package** (fenced top to bottom; added unfenced by `ef19138e3ed`). Two Iroh endpoints through #1070's shaped UDP link (300 KB/s, 50 ms one way, 64 KB queue): a keepalive probe and a control request are answered within 2 s while surface output fills the path (#1033–#1034). Verify: `swift test --package-path Packages/Shared/CmuxIrxTransport --filter SupermuxIrxPriorityStarvationTests` |
+| 1085 | `Packages/macOS/CmuxMobileHost/Sources/CmuxMobileHost/SupermuxWatchedByteScheduler.swift` | `terminal-stream-fair-queue` | Whole new file (fenced top to bottom): `SupermuxWatchedByteScheduler`, the turns a watching connection's terminal bytes take (per-terminal order, round robin with shown terminals first, the terminal typed in every other turn, pausing a hidden terminal whose oldest chunk waited `backgroundMaximumAge` and handing its newest chunk back once shown). Moved out of #1044's fences, behavior unchanged |
+| 1086 | `Sources/Mobile/MobileHostIrxRuntime.swift` | `device-wake-rebuild-credentials` | One fence in `apply(_:token:)`, inside the credentials-changed block after the supervisor's `rotateCredentials`: `SupermuxComposition.systemPower.credentialsReceived()`. A main-endpoint rebuild the last wake kept for lack of a fresh relay credential runs now, within 30 s of the wake; one still waiting for credentials sees them and goes once more if it kept the endpoint (second review #4, `SupermuxSystemPower`, `SupermuxWakePolicy.credentialsReceived(at:)`) |
+| 1087 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/Devices/SupermuxMirrorInputHold.swift` (#1053's hold: awake time, restarted at a full wake) into the cmux target (ids `C1AE2C7CC8597CA35A453FFB` file ref / `BA4B95842AE54CB23EAE8988` build file from `scripts/wire-app-sources.py`, four entries, `Devices/…` path in the Supermux group) |
+| 1100 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileTerminalLaneCoordinator.swift` | `terminal-lane-retry` | Twelve fences (the one in `init` also holds upstream's `inputOnlyProvider:` parameter, which gains a trailing comma). `Entry` gains `var waitingToRetry = false`; `private static let maximumOpenAttempts = 3` is replaced by stored `retryDelay`/`retrySleep`/`retryObserver`/`stableLaneLifetime`, which `init` takes as defaulted parameters (`SupermuxTerminalLaneRetryDelay`, `Task.sleep`, nil, `SupermuxTerminalLaneRetryDelay.stableLaneLifetime`); `ensure` calls `retryNow(key:entry:)` for an entry sleeping out a retry delay; `sendInput`'s catch calls `prepareToReopen` (upstream: `fail`, which parked the lane); `run` loops `while !Task.isCancelled` (upstream: `openAttempt < Self.maximumOpenAttempts`), keeps a per-pass `readyAt` set when a frame is accepted with `outputReady`, catches `CancellationError` only `where Task.isCancelled` (upstream: every `CancellationError` returned, so one from the engine replacing the dial a lane open joined stranded the lane), classifies the caught error, and ends each pass by resetting `openAttempt = 0` only when the lane stayed up `stableLaneLifetime` after its baseline, then `waitToRetry` (upstream: `openAttempt += 1`, then `markFailed` after the loop); the new `waitToRetry`/`retryNow` helpers. `fail(key:id:lane:)` is now unused but left in place |
+| 1101 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/SupermuxTerminalLaneRetry.swift` | `terminal-lane-retry` | Whole new file (fenced top to bottom): `SupermuxTerminalLaneRetryDelay` (250 ms × 2ⁿ, ±20 %, 5 s cap; `static stableLaneLifetime = 5 s`, how long a lane must stay up after its baseline to reset the backoff), `SupermuxTerminalLaneRetryEvent`, and `MobileShellComposite.terminalLaneRetryObserver(diagnosticLog:)` (a `retryScheduled` diagnostic event plus an os_log notice, category `mobile-terminal-lane`) |
+| 1102 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite.swift` | `terminal-lane-retry` | In `init`, the `MobileTerminalLaneCoordinator(...)` call passes `retryObserver: Self.terminalLaneRetryObserver(diagnosticLog: diagnosticLog)`; the fence also holds upstream's `inputOnlyProvider:` argument, which gains a trailing comma |
+| 1103 | `Packages/iOS/CmuxMobileShell/Tests/CmuxMobileShellTests/SupermuxTerminalLaneRetryTests.swift` | `terminal-lane-retry` | **Whole-file fork test inside an upstream package.** Four lane ends after a baseline reopen every time (no waits); a failed send reopens; refused opens keep retrying past three; backoff sequence and reset (lanes that stayed up, `stableLaneLifetime: .zero`); a lane open cancelled underneath (the provider throws `CancellationError`) is retried; lanes that end right after their baseline back off 0, 1, 2, 3; delay policy; `ensure` cuts a retry delay short. The test provider gains a `.cancel` step |
+| 1104 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite+AgentFeed.swift` | `agent-feed-retry-backoff` | Eleven fences. `scheduleAgentFeedRefresh` cancels and drops a running refresh whose `supermuxAgentFeedRefreshOwners` entry names another client (upstream joined it), and registers a `SupermuxAgentFeedRefreshOwner` (token + client) for the task it starts; the task's loop counts consecutive failed fetches and, after one, breaks at once when `agentFeedClient(for:) !== client` and otherwise awaits `supermuxAgentFeedRetryWait(afterFailures:)` (break when it returns false); after the loop the task returns without touching the maps unless its owner token is still the registered one, then clears its owner entry before upstream's cleanup; `fetchAgentFeed` becomes `@discardableResult … async -> Bool` (true once `feed.list` answered, including the stale-client return after a reply; false in the catch) |
+| 1105 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/SupermuxAgentFeedRetry.swift` | `agent-feed-retry-backoff` | Whole new file (fenced top to bottom): `SupermuxAgentFeedRefreshOwner` (`token: UUID`, `client: ObjectIdentifier`), `supermuxAgentFeedMaximumFailedAttempts = 3` and `supermuxAgentFeedRetryWait(afterFailures:)` (1 s, then 2 s on `controlPlaneSchedulingClock`) |
+| 1106 | `Packages/iOS/CmuxMobileShell/Tests/CmuxMobileShellTests/SupermuxAgentFeedRetryTests.swift` | `agent-feed-retry-backoff` | **Whole-file fork test inside an upstream package.** A refresh against a Mac whose dial fails instantly makes at most 2 attempts in 300 ms, and 3 in all before it waits for the next trigger (sleeps 1 s and 2 s); a reconnect during the 1 s backoff fetches for the new connection within 0.6 s, and the old refresh's end leaves the new one registered |
+| 1107 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite.swift` | `render-grid-sink-first` | In `handleTerminalRenderGridEvent`, the decode-then-sink guard (upstream: wrapper decode, then bare decode, then `hasTerminalOutputSink`) becomes: `SupermuxRenderGridPayloadPeek.read(json)`, `hasTerminalOutputSink(surfaceID: peek.frameSurfaceID)`, then `peek.decodeFrame(json)` once and the original sink check on the decoded frame |
+| 1108 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/SupermuxRenderGridPayloadPeek.swift` | `render-grid-sink-first` | Whole new file (fenced top to bottom): a `Decodable` that reads only `surface_id` (bare) or `render_grid.surface_id` (wrapped) and decodes the frame once in the form it found |
+| 1109 | `Packages/iOS/CmuxMobileShell/Tests/CmuxMobileShellTests/SupermuxRenderGridPayloadPeekTests.swift` | `render-grid-sink-first` | **Whole-file fork test inside an upstream package.** Bare and wrapped payloads name their terminal and decode once; malformed payloads drop; the peek is far cheaper than the decode it skips |
+| 1110 | `ios/cmuxPackage/Package.swift` | `phone-route-direct-race` | Three fences. The package dependencies gain `../../Packages/iOS/SupermuxMobileKit` and `../../Packages/Shared/SupermuxMobileCore`; the `cmuxFeature` target gains `"SupermuxMobileKit"` and `"SupermuxMobileCore"`; the `cmuxFeatureTests` target gains `"SupermuxMobileKit"` and `"SupermuxMobileCore"` (`SupermuxPhoneDialRaceTests` names `SupermuxDialLane`, `SupermuxPhoneRouteStateTests` the address store's keys) |
+| 1111 | `ios/cmuxPackage/Sources/cmuxFeature/MobileIrxRuntimeComposition.swift` | `phone-route-direct-race` | Three fences. Imports `SupermuxMobileCore` and `SupermuxMobileKit`; stored state after `admittedSessionCount`: `let supermuxRouteCandidates: SupermuxRouteCandidateStore`, `var supermuxRouteAddressEpoch: UInt64 = 0` (the sign-outs that forgot every address), `var supermuxRoutePolicies = SupermuxPhoneRoutePolicies()`, `var supermuxPrivateAddressesByPeer: [String: [String]]` (the Private Addresses each Mac's last dial named, so the prober tries what that dial raced), `let supermuxNetworkDebounce = SupermuxTrailingDebounce(settle: …supermuxNetworkSettle)`, `var supermuxRouteLoop: Task<Void, Never>?`; `init` ends with `supermuxRouteCandidates = SupermuxRouteCandidateStore(fileURL: Self.supermuxRouteCandidatesFile(stateDirectory: configuration.stateDirectory))` |
+| 1112 | `ios/cmuxPackage/Sources/cmuxFeature/MobileIrxRuntimeComposition+Dial.swift` | `phone-route-direct-race` | Five fences, all inside `dialOnce` (itself inside the `mobile-irx-cached-dial-authority` fence). Upstream's relay credential refresh before the dial (`var credentials = Self.credentials(cache)`, then `if case .automatic = intent, !credentials.contains(where: { $0.isUsable(at: Date()) }), let control { credentials = try await control.refreshRelayCredentials().map { … } }`) becomes `let credentials = Self.credentials(cache)` and `let refresh = supermuxCredentialRefresh(intent: intent, authority: authority)` (upstream's `assertDialAuthority` after it stays); `let connection = try await supervisor.dial(address:credentials:)` becomes `let relayLeg = Self.supermuxRelayLeg(cached: credentials, refresh: refresh) { fresh in try await supervisor.dial(address: address, credentials: fresh) }`, `let dialed = try await supermuxDial(peerHex:record:intent:privateAddresses: direct, automatic: relayLeg)` and `let connection = dialed.connection` (an expired credential is refreshed inside the race's relay leg, beside the direct lane); after upstream's `authorizesDirectPaths` line, `if dialed.lane == .direct { authorizesDirectPaths = false }`; after `activeDialIntentByPeer[peerHex] = intent`, `supermuxSessionAdmitted(peerHex:sessionID: admit.session, intent:lane: dialed.lane)`; in the admission `catch`, after the close, `supermuxAdmissionFailed(peerHex:lane: dialed.lane)` |
+| 1113 | `ios/cmuxPackage/Sources/cmuxFeature/MobileIrxRuntimeComposition+Lifecycle.swift` | `phone-route-direct-race` | Four fences. At the end of `notifyNetworkChange()` (runs on every reachability update and every foreground): `supermuxRouteNetworkChanged()`. In `detachCurrentRuntime`: `let oldDirectSupervisor = directEndpointSupervisor` becomes `let supermuxKeptDirectLane = preservePrepared ? directEndpointSupervisor : nil` and `let oldDirectSupervisor = preservePrepared ? nil : directEndpointSupervisor` (sign-in for the warmed account keeps the direct lane a launch dial raced on, with its sessions); after upstream's `control = nil; endpointSupervisor = nil; directEndpointSupervisor = nil`, `directEndpointSupervisor = supermuxKeptDirectLane`; before the final `return DetachedRuntime(…)`, `if !preservePrepared { await supermuxResetRouteState(forgetAddresses: activeScope == nil) }` |
+| 1114 | `ios/cmuxPackage/Sources/cmuxFeature/MobileIrxRuntimeComposition+SupermuxRoute.swift` | `phone-route-direct-race` | Whole new file (fenced top to bottom): `MobileIrxRuntimeComposition: SupermuxPhoneRouteRuntime` (`supermuxLinkPaths()` with each session's id, `supermuxRecordRouteCandidates(_:macDeviceID:instanceTag:) -> Answer` (`.stored`, `.empty` for an empty answer that keeps the old addresses, `.failed` for an unknown Mac or another endpoint's answer), `supermuxForgetRouteCandidates(macDeviceID:instanceTag:)` for `direct_off`); the dial (`supermuxDial` first judges a network that changed since the last judgement (`judgeNetworkForDial`, journaled `network-settled` `by=dial`), asks `supermuxRoutePolicies.dialPlan` (hold-off, skip-once, relay hold), dials `SupermuxIrxDirectFirstDial.laneLeg` at the addresses `SupermuxPhoneRoutePolicies.directAddresses` keeps (the Mac's reachable from the same `SupermuxLocalInterface.current()` read, then the user's Private Addresses less the phone's own), reports `raceFinished`; `static supermuxRelayLeg(cached:refresh:dial:)` (the automatic dial as the relay leg, an expired credential refreshed inside it through the shared `relayLeg`) and `supermuxCredentialRefresh(intent:authority:)` (the control service's refresh, the authority re-checked after it); `static supermuxRace(timing:direct:automatic:discard:)` = `SupermuxIrxDirectFirstDial.race` with the leg mapped to `SupermuxDialLane`; `supermuxSessionAdmitted(peerHex:sessionID:intent:lane:)`, `supermuxAdmissionFailed`, `supermuxDirectLane()` built with `identity ?? preparedCachedRuntime?.identity`); the 2 s loop over the followed Macs (learn direct paths, `observe` → probe via `SupermuxIrxDirectFirstDial.probe` 1.5 s then `probeFinished` → `upgradeStarted` and one planned redial `engine.ensureSession(explicit: true, trigger: "supermux-route-*")` only while that session is still live; `checkLiveness` via `SupermuxIrxDirectFirstDial.answers` (at once within 10 s of a network change; counts as answered while suspended) then `livenessChecked` → redial on `fallBack`); `supermuxRouteNetworkChanged()` (pokes the 1 s trailing debounce) and `supermuxNetworkSettled()` (`networkSettled(on: SupermuxLocalInterface.current())`); `static supermuxRouteCandidatesFile(stateDirectory:)` (`<state>/supermux-route/candidates.json`, directory 0700, excluded from backup, `completeUntilFirstUserAuthentication` on iOS, the old `supermux-route-candidates.json` moved in once, never over a newer file, then removed); `supermuxResetRouteState(forgetAddresses:)` (a forgetting reset bumps `supermuxRouteAddressEpoch` before its first await); `supermuxRecordFetched(_:for:epoch:)` and `supermuxLearn(_:for:epoch:)`, the only writes of handed-over and learned addresses, which skip a write a sign-out came before and undo one it overtook |
+| 1115 | `ios/cmux/AppCompositionRoot.swift` | `phone-route-direct-race` | Three fences: `import SupermuxMobileKit`; `let supermuxRoutes: SupermuxPhoneRouteModel` after `irx`; `self.supermuxRoutes = SupermuxPhoneRouteModel(runtime: irx)` after `self.irx = irx` |
+| 1116 | `ios/cmux/cmuxApp.swift` | `phone-route-direct-race` | Two fences: `import SupermuxMobileKit`; in `rootScene`, `.environment(Self.root.supermuxRoutes)` after the `scrollInteractionReporter` environment |
+| 1117 | `ios/cmuxPackage/Tests/cmuxFeatureTests/SupermuxPhoneDialRaceTests.swift` | `phone-route-direct-race` | **Whole-file fork test inside an upstream package** (fenced top to bottom). Drives `MobileIrxRuntimeComposition.supermuxRace` at the phone's real timing: relay ready at 300 ms and direct at 900 ms picks direct and closes the relay; a direct leg that never answers picks the relay at the 1.5 s deadline (not before, not after); direct at once never dials the relay; direct failing fast uses the relay at once; an expired relay credential is refreshed in the relay leg, so the lane races at once and wins while the refresh fails, and a lane that wins first never refreshes; the leg dials with a usable credential as it is and with the fresh one after a refresh (`supermuxRelayLeg`) |
+| 1118 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite.swift` | `agent-feed-retry-backoff` | One fence after `agentFeedRefreshTasksByMac`: `@ObservationIgnored var supermuxAgentFeedRefreshOwners: [String: SupermuxAgentFeedRefreshOwner] = [:]` (which connection each agent-feed refresh task serves, and its token; #1104) |
+| 1119 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/CMUXMobileRootView.swift` | `phone-route-direct-race` | Two fences: `import SupermuxMobileUI`; at the top of `body`'s second `#if os(iOS)` modifier block (before the notification-tap `onChange(of: store.workspaceTopologyVersion)`), `.supermuxPhoneRoutes(seams: { store.supermuxConnectionSeams })`, which runs the route model (each Mac's route and the fetch of its direct addresses) while the app is active, on every screen |
+| 1120 | `ios/cmuxPackage/Tests/cmuxFeatureTests/SupermuxPhoneRouteStateTests.swift` | `phone-route-direct-race` | **Whole-file fork test inside an upstream package** (fenced top to bottom). The address file's directory is not the Iroh state directory, is 0700 and excluded from backups; sign-out forgets a lane skip and the cached addresses; a launch dial has a direct lane under the warmed identity; sign-in for the warmed account keeps that lane and another account's drops it; the old address file moves into the private directory once and never over a newer one; an address write a sign-out overtook is undone and one decided after it stands |
 
 ## How to re-apply
+
+### 1110–1117, 1119, 1120. The iPhone shows each Mac's route and dials it direct first — `phone-route-direct-race`
+
+From the user's "in the app it should show which it's using, direct or relay, and where" and "it should always use
+direct, whether via Tailscale or local direct" (W8 and W8b of the latency work's `ROUTING-DESIGN.md`), reworked on
+2026-10-06 to run the Mac's switch policy (review findings I1–I10). Fork-package files (`Packages/iOS/SupermuxMobileKit`,
+`Packages/iOS/SupermuxMobileUI`) carry no fences and need no rows.
+
+- **Display.** `SupermuxPhoneRouteModel` (SupermuxMobileKit, built in `AppCompositionRoot`, carried down as an
+  `@Observable` environment object) is run by the shell's root view (`supermuxPhoneRoutes(seams:)`, #1119) whenever the
+  app is active, on every screen (until 2026-10-06 the Projects section driver ran it, so only while the workspace
+  list was mounted). Every 2 s it samples each Mac session's selected path, classifies it with
+  `SupermuxLinkRouteClassifier` against the phone's own interfaces (a global IPv6 path inside the phone's /64 is the
+  LAN), and publishes through `SupermuxLinkRoutePublishing`. The iPhone's merged Projects list shows one line per Mac
+  under PROJECTS (`SupermuxProjectsTableRowValue.macRoutes`, accessibility id `SupermuxMacRouteLine`; `Direct · LAN ·
+  6 ms`, `Relay · Tokyo · 241 ms`, orange when relayed); a Mac that is reconnecting keeps its line and shows
+  "Reconnecting…" there (until 2026-10-06 its line went). The Projects driver only reads the routes; the SwiftUI
+  list's per-Mac header shows the same words (`SupermuxLinkRouteCaption`).
+- **Addresses.** The route model asks every Mac advertising `supermux.route_candidates.v1` for
+  `mobile.supermux.route.candidates` on `SupermuxRouteCandidateFetchSchedule` (SupermuxMobileCore, shared with the
+  Mac): at once on each new connection and each newly admitted session (the runtime reports each path's session id),
+  10 min after an answer that settled it, a minute after a failure or an empty list, 5 s after `not_ready`. An
+  empty answer keeps the old addresses; `direct_off` forgets the Mac (`supermuxForgetRouteCandidates`). Answers are
+  filed under the directory's endpoint id for that Mac in `<Iroh state dir>/supermux-route/candidates.json`, a 0700
+  directory excluded from backups and protected until first unlock. The direct path any session used is learned (the
+  store keeps only servable addresses). Sign-out forgets them all, and a handed-over answer or learned path already
+  past its guard then is undone (`supermuxRouteAddressEpoch`; `supermuxRecordFetched`/`supermuxLearn` are the only
+  writes). Nothing is sent to the backend. Until 2026-10-06 it asked once per connection and again only 10 min later
+  or a minute after a failure (an empty answer counted as settled), and the file was
+  `<Iroh state dir>/supermux-route-candidates.json`, backed up and kept across sign-out (its addresses move into the
+  new file once, never over a newer one, and the old file is removed; until the second review it was deleted
+  unread).
+- **Policy.** `SupermuxPhoneRoutePolicies` (SupermuxMobileKit) holds one `SupermuxRouteSwitchPolicy` (SupermuxMobileCore,
+  the Mac's) per Mac endpoint, the lane each admitted session went out on, and the phone's last interface set. The
+  phone's own `SupermuxRouteUpgradeSchedule` is deleted, so both platforms decide alike.
+- **Race.** An Automatic-method dial races the direct-only endpoint against the automatic dial with the Mac's
+  `SupermuxIrxDirectFirstDial.race` (`supermuxRace`), the lane dialing each reachable address as its own handshake
+  (`laneLeg`): direct wins whenever it connects within 1.5 s. Skipped while the policy holds direct off after a flap
+  (30 s, doubling to 10 min), once after a direct-lane admission failed, and when it has no address: the Mac's that
+  the phone can reach from its interfaces (`SupermuxRouteCandidates.reachable`: not its own addresses; LAN while the
+  phone is on a private network of that family or Tailscale is up, never from cellular alone; Tailscale only with its
+  tunnel up; global IPv6 only with its own), best first, then the user's Private Addresses less the phone's own
+  (`excludingOwn`), 16 in all (`SupermuxPhoneRoutePolicies.directAddresses`; until the second review LAN needed a
+  subnet the phone was on and the Private Addresses were filtered too); after two lost races on one network a dial
+  stops holding a ready relay (`noRelayHold`). An expired or missing relay credential is refreshed inside the relay
+  leg (`supermuxRelayLeg` over the shared `relayLeg`), so the lane races at once (until the second review the refresh
+  came first: after 30 min idle every dial waited an HTTPS round trip, and with the internet down and the LAN up the
+  dial failed before the lane). The direct lane is built with the warmed cached identity before sign-in
+  finishes, so a cold launch races too (until 2026-10-06 dials under the warmed identity did not race); sign-in for
+  that account keeps the lane and its sessions (#1113). A direct-lane session never authorizes NAT traversal. The
+  journal's `supermux-route/dial-race` event carries the race's per-leg fields. The phone's own first-success race
+  (`SupermuxDialRace`) was deleted in W8b, so both platforms run one race. Relay-only mode and the Direct/Tailscale
+  methods are unchanged.
+- **Prober, checks, fallback.** A 2 s loop feeds each followed session's path to its policy. A relayed session with a
+  reachable address is probed (`SupermuxIrxDirectFirstDial.probe`, 1.5 s, never admitted) when the policy says so
+  (10 s ±20 %, 30 s after 5 misses); a probe that works makes one planned redial
+  (`engine.ensureSession(explicit: true, trigger: "supermux-route-upgrade")`), at most one per 30 s. A direct session
+  with no relay path beside it (every direct-lane session, even while iroh reports no path) is checked with
+  `SupermuxIrxDirectFirstDial.answers`; two misses redial (`supermux-route-fallback`) and record a flap. A session
+  admitted before the engine adopts it stays followed.
+- **Network.** Every path update and foreground pokes a 1 s trailing debounce (`SupermuxTrailingDebounce`, at most
+  5 s after a burst's first update); the last one judges the phone's networks: a real change
+  (`SupermuxLocalInterface.networkFingerprint` differs: link-local addresses, AWDL/`llw`, IPsec and `anpi`
+  interfaces and rotating temporary IPv6 do not count, an IPv6 address counts as its /64) clears every hold-off, flap
+  count and lost race, probes relayed sessions at once (or the next session within 30 s) and has checks ping at once
+  for 10 s; anything else (a foreground on the same network) only probes relayed sessions soon, and a hold-off holds.
+  A dial judges a changed network first (`judgeNetworkForDial`), so a foreground's dial, which comes before the
+  debounce's judgement, never runs on the old network's hold-off (until 2026-10-06 the phone's own
+  `SupermuxRouteUpgradeSchedule` acted on the first change of a burst and counted every foreground as a network
+  change; until the second review the full interface set was compared, so nearly every foreground still did, a burst
+  that never paused was never judged, and the foreground's dial ran before the judgement).
+- Journal events: `supermux-route/{candidates, dial-race, dial-direct-skipped, probe, redial, liveness-miss, fallback,
+  direct-admission-failed, network-settled}`.
+
+Failure modes the tests pin: the race at the phone's timing (#1117); a fall back holds direct off and doubles, a
+foreground keeps the hold, a real change clears it, a direct lane without a path is checked, a failed lane admission
+skips once, lost races stop holding the relay, an ended session is not followed, a session admitted before adoption
+stays followed, only reachable addresses are dialed and Private Addresses lose only the phone's own, sign-out
+forgets, a foreground on the same network is no change whatever comes and goes on it, a dial right after a change
+runs on the fresh judgement (`SupermuxPhoneRoutePoliciesTests`); a burst of network changes acts once, after the last,
+and at most 5 s after its first (`SupermuxTrailingDebounceTests`); an expired relay credential never holds up the
+lane (#1117); the old address file moves in once, a write a sign-out overtook is undone (#1120); the fetch schedule, a new session asked
+again, empty/not_ready asked again in a minute, direct_off forgotten, IPv6 in the phone's /64 is the LAN
+(`SupermuxPhoneRouteModelTests`); a reconnecting Mac keeps its line (`SupermuxProjectsRouteStripTests`); the file's
+privacy, sign-out, the launch lane (#1120).
+
+Re-apply after an upstream merge: if upstream rewrites the composition's `dialOnce`, `notifyNetworkChange` or
+`detachCurrentRuntime`, keep #1112's four call sites and #1113's four (the network hook, the kept direct lane on a
+preserving detach, the route reset otherwise); #1111's stored state and the store's `init`; #1110's package
+dependencies (`cmuxFeatureTests` too); #1115/#1116 the model and its environment; #1119 the root view's driver.
+#1114, #1117 and #1120 are whole fork files.
+
+Second review (2026-10-06, `/tmp/latency-work/REVIEW2-FINDINGS.md` on the branch that made it), the phone's parts of
+#1, #6, #7, #10, #11 and #16; rows #1111, #1112, #1114, #1117 and #1120 updated, no new rows (the policy and the
+debounce are fork-package files). Red at `5982ce5e62c`: SupermuxMobileKit, compile errors for the debounce's
+`maximumWait`/`now` and `judgeNetworkForDial`, and without those tests 4 issues (policies 13: a foreground counted as
+a change and cleared the hold-off; 10: the routed subnet, cellular Private Addresses); cmuxFeatureTests, compile
+errors for `supermuxRelayLeg`, `supermuxRouteAddressEpoch`, `supermuxRecordFetched`, `supermuxLearn`, and without
+those tests route state 5 (the update dropped the old file's addresses). Green: SupermuxMobileKit 261/261,
+SupermuxMobileUI 252/252, cmuxFeatureTests 271/271, `CmuxMobileShell --filter
+'Route|Lane|AgentFeed|RenderGrid|TerminalLane|Feed'` 383/384 (`signOutCancelsInFlightIrohRecoveryOwner`, which failed
+on the pre-change baseline too and passes alone), the iOS simulator app builds.
+
+Verify: `swift test --package-path Packages/iOS/SupermuxMobileKit` (261; the review fixes red at `50a5a418d59`,
+`86611b20e8b` and `94e1638b232`, the second review's at `5982ce5e62c`); `swift test --package-path
+Packages/iOS/SupermuxMobileUI` (252; red at `e42448a69fc`); `swift test --package-path Packages/Shared/CmuxIrxTransport --filter SupermuxIrxDirectFirstDialTests`
+(the shared race);
+`xcodebuild test -workspace ios/cmux.xcworkspace -scheme <a scheme with cmuxFeatureTests> -destination 'platform=iOS Simulator,name=iPhone 18 Pro' -only-testing:cmuxFeatureTests/SupermuxPhoneDialRaceTests -only-testing:cmuxFeatureTests/SupermuxPhoneRouteStateTests`
+(#1117 red at `61e77314781`, 2 of 4 fail, the relay won at ~0.3 s; #1120 red at `99f3a83d62c`, 4 of 4 fail; both
+again at `5982ce5e62c`, 12 tests now; the `cmuxFeature` scheme has no test action, so use a temporary scheme).
+
+### 1100–1109 and 1118. Remote terminal latency, phone side — `terminal-lane-retry`, `agent-feed-retry-backoff`, `render-grid-sink-first`
+
+Found while fixing "remote terminals are awfully delayed, worse after a reconnect" (2026-10-05). Field evidence is in
+the latency work's `FIELD-EVIDENCE.md` §6 and `STREAM.md` H4/H5. No wire changes.
+
+- **#1100–#1103 `terminal-lane-retry`.** The phone's per-terminal input (or output) lane is never parked while its
+  terminal stays mounted (until 2026-10-06 three failed opens, or one failed send, parked it on the RPC fallback until
+  a reconnect, a route change or a remount). A lane that delivered its baseline and stayed up 5 s
+  (`stableLaneLifetime`) resets the attempt count; one that ends sooner counts as a failure (until 2026-10-06 any
+  baseline reset it, so a host that accepted and dropped a lane got a reopen every 250 ms forever). A
+  `CancellationError` ends a run only when the run itself is cancelled; one from the engine replacing the dial a lane
+  open joined (an explicit redial) is retried like any failure (it used to strand the lane: no task, and `ensure`
+  never restarted it). Consecutive failures wait 250 ms × 2ⁿ (±20 %, 5 s cap). A failed send closes the lane and the
+  run reopens it. A fresh `ensure` (reconnect, route change, remount) starts a lane that is sleeping out its delay
+  again at once, under a new entry id, so the sleeping run cannot touch it. Every reopen is a `retryScheduled`
+  diagnostic event (surface alias, the delay in `ms`, attempt in `a`, failure kind in `b`, empty for a clean end) and
+  an os_log notice (category `mobile-terminal-lane`). If upstream rewrites `run`, keep four properties: no attempt
+  cap, reset only after a lane stayed up, a delay before every reopen, and only the run's own cancellation ends it.
+- **#1104–#1106, #1118 `agent-feed-retry-backoff`.** The resume dial storm (1,291 instant dial failures to one Mac in
+  120 ms) was the agent feed's refresh loop: a failed `feed.list` re-armed the pending flag and the `repeat` fetched
+  again at once, while the peer engine failed every dial fast during its redial cooldown. After a failure the loop
+  now waits 1 s, then 2 s, and stops after 3 failed attempts; the next trigger (`feed.changed`, a new connection, a
+  pull to refresh) fetches again. A refresh is owned by one connection (`SupermuxAgentFeedRefreshOwner`, #1118): a
+  trigger for a new connection cancels and replaces a refresh still running for an earlier one instead of joining it
+  (until 2026-10-06 it joined: that one slept out its backoff, then ended for its stale client and swallowed the new
+  connection's refresh), a stale client's failure ends the loop without sleeping, and only the task holding the
+  current token unregisters itself. Upstream's notification feed already caps its loop; if upstream fixes the agent
+  feed the same way, retire these fences.
+- **#1107–#1109 `render-grid-sink-first`.** The phone reads a render-grid frame's `surface_id` before decoding it
+  and drops frames for terminals with no mounted sink. Upstream decoded every frame twice (wrapper, then bare) on
+  the main actor first. If upstream changes the payload shape, keep the peek in step with
+  `MobileTerminalRenderGridEvent` (wrapped) and `MobileTerminalRenderGridFrame` (bare). The host half (a phone gets
+  frames only for the terminals it shows) is #1045–#1048.
+
+Known limits (not done): the SupermuxMobileKit stores (Projects, Worktrees, Run, Changes) judge "stream was healthy"
+by `Date()`, so after a long suspension the first resubscribe skips its backoff (one extra dial per store per
+resume, not a loop); `IrxPeerEngine`'s cooldown fast-fail answers any caller at once, so a future loop that retries
+on failure can storm the same way (a guard in `MobileCoreRPCSession.ensureConnected` would bound all callers, but
+that session is shared with the Mac); `MobileTerminalInputSender` still abandons a stream after 3 RPC failures and
+the typed input is lost (STREAM 1d: loss, not latency); the render-grid liveness watchdog (9 s of silence, 3 s
+probe, two failures) can false-fire on a congested relay because its probe rides the control stream (STREAM P9.6).
+
+Re-apply after an upstream merge: #1100's twelve fences in `MobileTerminalLaneCoordinator` (the entry flag, the stored
+retry closures and their `init` parameters, `ensure`'s early retry, `sendInput`'s reopen, `run`'s loop, the pass's
+`readyAt`, the `CancellationError` catch narrowed to the run's own cancellation, classification, the reset after a
+stable lane and the wait, the two helpers) and #1102's observer argument; #1104's eleven fences in
+`scheduleAgentFeedRefresh` (the replace of another connection's refresh, the owner, the failure count and wait, the
+owner's cleanup) and `fetchAgentFeed` (the `Bool` result) and #1118's owners map; #1107's guard in
+`handleTerminalRenderGridEvent`. #1101, #1103, #1105, #1106, #1108 and #1109 are whole fork files.
+
+Verify: `swift test --package-path Packages/iOS/CmuxMobileShell --filter 'SupermuxTerminalLaneRetryTests|SupermuxAgentFeedRetryTests|SupermuxRenderGridPayloadPeekTests'`
+(15 tests in 3 suites; red at `b124601a4c6` and `5654e263b4b`; the review fixes' three new tests red at
+`e7fd30e1009`, 3 of 11 fail).
+
+### 1081–1083. Review fixes for the Mac's transport and routing — `route-liveness-join`, `route-lane-without-relay`, `route-lane-sign-out`
+
+A review of the latency and routing work (findings T1–T13, H3) found ways the Mac still fell back to the Tokyo relay,
+or came back to direct slowly, that the earlier tests missed. The fixes, with the shared ones in
+SupermuxMobileCore so the phone can take them:
+- one wrong address (a VM bridge address both Macs have, a stale one reaching another cmux host) sank the whole
+  direct handshake: the lane now dials each address as its own handshake (#1065), and only addresses this Mac can
+  reach from its interfaces are dialed (`SupermuxRouteCandidates.reachable(_:from:)`: never its own, LAN only on a
+  shared Wi-Fi/wired subnet, Tailscale only with its tunnel up, global IPv6 only with its own);
+- the switch policy (`SupermuxRouteSwitchPolicy`, moved to SupermuxMobileCore): a wake or network change clears the
+  flap hold-off and probes at once, also for a link that comes up within 30 s; the first fall back within 30 s of
+  a change is not a flap; a move the link could not make (#1067 returns false) is not counted; a failed lane
+  admission skips the lane once (#1064's fourth fence); after two lost races on a network a ready relay is taken
+  at once; no probe without a reachable address, and new addresses probe at once;
+- an empty candidates answer no longer wipes the cache (`not_ready` until iroh's first report, `direct_off` when the
+  host is relay-only; `SupermuxRouteCandidateFetchSchedule` is the shared ask schedule); only servable addresses are
+  learned;
+- a long sleep's main-endpoint rebuild refreshes expired relay credentials first (`SupermuxMainEndpointRebuild`), or
+  runs at the next network change within 30 s; overlapping rebuilds no longer clear each other's dial gate;
+- the lane is rebound only while no dial or probe holds it, once per recovery; it goes with the endpoint on sign-out
+  (#1083); a dial with no relay credential still runs the lane (#1082);
+- a liveness check on a lane session waits for a keepalive interval of quiet (at once within 10 s of a recovery),
+  waits max(1 s, 3 × RTT) and never cancels the keepalive's own probe (#1081); route probes journal under
+  `route-probe`, outside the link history;
+- a Mac that dials in while this Mac's link is dialing it gets redialed at once should that dial fail.
+
+Re-apply after an upstream merge: #1081's method before `launchKeepalive()`; #1082's two fences around the credential
+refresh and its guard in `DeviceIrxClient.dial`; #1083's call after `oldEndpoint?.deactivate()` in `transition(to:)`.
+
+Verify: `swift test --package-path Packages/Shared/SupermuxMobileCore` (the policy, reachability, fetch schedule and
+store); `swift test --package-path Packages/SupermuxKit --filter 'SupermuxMainEndpointRebuildTests|SupermuxWakePolicyTests|SupermuxPeerSleepTests'`;
+`swift test --package-path Packages/Shared/CmuxIrxTransport --filter SupermuxIrxDirectFirstDialTests` (L7: a wrong
+address does not sink the right one); `tests/supermux/loopback_device_route_switch_e2e.py` steps 5–6,
+`loopback_device_route_e2e.py` step 11.
+
+### 1086–1087 and the second review's Mac and shared fixes — `device-wake-rebuild-credentials`, `device-mirror-reattach-input`, `device-mirror-replay-timed-out`, `route-lane-without-relay`, `route-lane-sign-out`, `route-direct-lane`
+
+A second review of the remote-terminal latency and routing work (2026-10-06, findings #1–#17;
+`/tmp/latency-work/REVIEW2-FINDINGS.md` on the branch that made it) found a held key dropped once the link was
+back, the first keys after a wake dropped, a wake's rebuild that rarely ran, a busy pane's history never
+fetched, and route filtering that dropped working paths. Rows #690, #1052, #1053, #1065, #1066, #1082 and #1083
+updated; #1086–#1087 new. Fork-owned files (SupermuxMobileCore, SupermuxKit, `Sources/Supermux`) need no rows:
+- typing (#1052, #1053, #1087): the hold from a link drop runs on awake time in `SupermuxMirrorInputHold`
+  (suspending clock, ignored while dark, started over at a full wake after dropping what was held before the
+  sleep; #3); when it runs out while the mirror re-attaches only the keys set aside while the link was down go
+  (`supermuxDropSetAsideInput`), and setting keys aside restarts the router's clock for keys typed after (#2);
+- replays (#690): Retry and a reconnect start the doubled replay deadline over (#13); a pane owing its history
+  fetches it at most 20 s after the show, however busy (`SupermuxTerminalStream.maximumHistoryWait`, #5);
+- the wake's main-endpoint rebuild (#1086): wanted for 30 s from the wake (`SupermuxWakePolicy.wantsRebuild`), run
+  by a network change or fresh credentials (`credentialsReceived`), one at a time with a run-again flag; the
+  credential wait is 4 s, a second under the dials' 5 s gate (#4);
+- dials (#1065, #1066, #1082): the relay credential refresh moved into the race's relay leg
+  (`SupermuxIrxDirectFirstDial.relayLeg`), so the lane never waits for it (#6);
+- the lane (#1083): sign-out retires the old main endpoint, and `beginUse` returns nil for it (#16); an idle
+  rebuild lets go of the lane before closing it (#17);
+- shared routing (SupermuxMobileCore, no rows): `SupermuxLocalInterface.networkFingerprint` (#1, for the phone;
+  the Mac's own detection already compares IPv4, interface names and gateways only); LAN addresses kept on any
+  private network of their family or with Tailscale up, `excludingOwn` for Private Addresses (#7); the cache
+  hands every fresh address to the filter and the dial takes 16 after it, Tailscale ranked before ULA (#15); a
+  probe out during a network change or new addresses probes again right after it (#9); `not_ready` asks again
+  after 5 s (#14).
+Not done: #8 (a shown pane's grid re-anchor still waits for its whole history: known limit), #12 (a live
+re-capture's kept output, BEL and OSC notifications or OSC 52 among it, is drawn twice: filtering it would have to
+run inside upstream's byte path after the sequence trim, and a suppressed sequence split across the last kept
+chunk and the next live one would leave its tail drawn as text). The phone's parts of #1, #6, #7, #10, #11 and
+#16 belong to the iOS work.
+
+Re-apply after an upstream merge: #1086's call after the credential rotation in `MobileHostIrxRuntime.apply`;
+#1087 by `scripts/wire-app-sources.py`; the amended rows as they read.
+
+Verify: `swift test --package-path Packages/Shared/SupermuxMobileCore`; `swift test --package-path
+Packages/SupermuxKit --filter 'SupermuxWakePolicyTests|SupermuxMainEndpointRebuildTests'`; `swift test
+--package-path Packages/Shared/CmuxIrxTransport --filter SupermuxIrxDirectFirstDialTests`;
+`CMUX_E2E_SUITES=loopback_degraded_link_e2e CMUX_DEGRADED_STEPS="D4d,D4e,D6c,D7c"
+tests/supermux/run_all_loopback_e2e.sh`. Red/green numbers:
+- D4d (#2): red (the old expiry, emulated on 55385eee4d9) neither key, re-attach 13.5 s after the drop; green the
+  key typed 8.5 s after the drop delivered (5.05 s after it was typed), the outage's key dropped;
+- D4e (#3): red the key typed right after the wake dropped; green delivered, re-attach 2.5 s after the wake;
+- D6c (#13): red the request after the reconnect's left 8.3 s later; green 5.7 s;
+- D7c (#5): red no history in 60 s of typing; green the history 26.6 s after the show;
+- packages: SupermuxMobileCore red 12 issues (+18 compile errors for the new API), green 190/190; SupermuxKit
+  wake policy red 1 issue (+24 compile errors), green 19/19; CmuxIrxTransport red 6 compile errors (`relayLeg`),
+  green 26/26.
+- the full regression on 8ee3c15759c (COMMON's ten suites, degraded link, route, route switch, sleep-wake): 13 of
+  14 pass on the first run; `loopback_terminal_resize_integrity_e2e` `dragged_window_replays_few_times` counted 7
+  full replays for its 20-step drag (bound 6; the same 7 was seen and rerun at an earlier stage) and passed on
+  both reruns (6 and 5). Degraded link: D1 p95 838 ms, D3 first echo 2.61 s after the drop's end, D4 all keys,
+  D4b neither key, D4c 'p' only, D4d 'r' only (re-attach 14.1 s after the drop), D4e 's' (2.5 s), D5 max 13 ms,
+  D6 one reply, D6b settled at 10 s with 3 replies, D6c 6.0 s, D7 p95 410 ms, D7b history 13.2 s after the
+  drop, D7c 26.6 s; sleep-wake: wake probe 0.98 s, reconnect 0.27 s, close grace cleared 15.2 s after the wake.
+  `swift test`: SupermuxMobileCore 190/190, SupermuxKit 1372/1372, CmuxMobileHost 41/41, CmuxIrxTransport
+  289/289; `swift build` SupermuxMobileKit (macOS) builds (its `SupermuxPhoneRoutePoliciesTests` 10 needs the
+  phone's `directAddresses` moved to `excludingOwn` for Private Addresses, iOS work).
+
+### 1084–1085 and the review fixes for the Mac's stream, output and replay — `irx-stream-priority`, `irx-shaped-udp-link`, `terminal-stream-fair-queue`
+
+A review of the remote-terminal latency work (findings S1–S9, the hot path, H1, H2) found ways a Mac mirror could
+still freeze its echo, type keys out of order or long after they were typed, keep a short history for good or never
+settle on a very slow link. The fixes (rows #690, #781, #852, #905, #1044, #1049–#1054, #1057 and #1063 updated;
+#1084–#1085 new):
+- the turns a watching connection's terminal bytes take moved out of the upstream event queue into the fork-owned
+  `SupermuxWatchedByteScheduler` (#1085, behavior unchanged; #1044's fences are storage glue now); input typed into a
+  terminal shows it for that connection until its next watch and brings a paused one back, and the viewer's watch
+  keeps retrying (2 s doubling to 30 s) while the host still batches a pane shown here (#1051, S5);
+- the host writer lets only a device mirror's replay reply (owner-tagged) yield to small writes, gives a waiting one
+  a turn after 32 small writes in a row, and sends a reply superseded while it waited first (#1049–#1050, S8, S7);
+- render-grid frames: only connections subscribed to `terminal.render_grid` limit or ask full frames (a Mac
+  mirror no longer asks every phone for full frames, S9); a report write that changes no sticky report stops at a
+  set comparison, and `route.candidates` is checked by method name before it is awaited (#1063, hot path);
+- typing: a key in flight when the link drops and a key typed while it is down never part (the hold is timed from the
+  first drop and, when it runs out, drops everything typed so far whatever the phase, the pipeline's unsent input
+  with it; whenever the pipeline drops input the router's held keys go too; S3); keys held during a re-attach on a
+  live link are dropped once the first of them has waited 10 s; after a lost link a full reply drops the keys typed
+  since the link came back (S4) (#852, #1052, #1053);
+- a pane's owed history (a hidden re-attach carries 100 rows) and any replay confirmation wait until nothing was typed
+  into the pane for 3 s and it has been shown for 3 s, and re-capture the screen without leaving `.attached`: output is
+  drawn as it comes and again over the new screen (#905, S2); a lost link keeps that fetch owed and a resumed reply
+  re-arms it (S6);
+- a replay that misses its deadline gets twice the deadline each time (up to 8×), and retries without limit only to a
+  host that says it supersedes (`supermux_supersedes` in its replies; an older host gets upstream's three) (#690, #781,
+  #1057, S7);
+- a viewing Mac's 15 s close grace counts awake time only and starts over at a full wake (#1054, S1);
+- the IRX priority test and its shaped UDP link are fenced and registered (#1070, #1084, H1).
+
+Known limits: when showing a pane resizes its terminal on the other Mac (this Mac's pane counts again), the grid
+re-anchor still carries the whole history, so on a slow link the echo waits for that reply. A short re-anchor was
+tried (633e730531e) and backed out (aa43b0f268a): on a shown pane its reply left Ghostty's soft-wrap flag on every
+other row, the live lines after it too, until the deferred history replaced the screen. "Defer while the link is
+slow" is not judged: the loopback has no throughput signal, and on IRX control replies and focused output take turns
+(#1033). A history fetch already on its way still shares the link with the echo (on one ordered stream it holds it).
+
+Re-apply after an upstream merge: #1044's glue (watched bytes out of `laneOrders[.shared]`, the `dequeue`
+fallthrough); #1051's call before upstream's guard in `noteInteractiveSurface`; #1049's three fences in the writer;
+the session's and router's fences as their rows list (the pipeline's `setEnabled` before the router's line in
+`phase`'s `didSet`; the stream made before `self.init`).
+
+Verify: `swift test --package-path Packages/macOS/CmuxMobileHost` (SupermuxWatchedByteQueueTests: red 2 of 14 at
+94bffdd85f6); `CMUX_E2E_SUITES="loopback_degraded_link_e2e loopback_device_sleep_wake_e2e" CMUX_TAG=<tag>
+tests/supermux/run_all_loopback_e2e.sh` (D4b, D4c, D6b, D7, D7b; close_grace_restarts_at_wake). Red/green numbers:
+- package: `swift test --package-path Packages/macOS/CmuxMobileHost` 41 tests in 5 suites pass (S5: red 2 of 14 in
+  SupermuxWatchedByteQueueTests at 94bffdd85f6, 4 issues);
+- D4b (S3): red 'n' without 'm' (re-attach 12.7 s after the drop); green: neither key (the hold from the drop ran out
+  at 10 s, the re-attach ended at 12.4 s);
+- D4c (S4): red 'op', 'o' typed 16.4 s before it reached the program; green 'p' only, nothing late;
+- D6b (S7): red never settled in 60 s, 7 full replies sent, 5 missed deadlines; green settled after 10.0 s, 3 replies,
+  1 missed deadline;
+- D7 (S2): red echo p95 7172 ms (every key 4.1–7.2 s); green p95 413 ms (353–413 ms), the history 9.5 s after the
+  typing stopped, the pane never 'connecting';
+- D7b (S6): red (its re-attach resumed 4.6 s after the drop) the history never came in 90 s; green it came 14.6 s
+  after the drop;
+- close_grace_restarts_at_wake (S1): red cleared ~5 s after the wake (gone at the 8 s check); green held at 8 s,
+  cleared 15.3 s after the wake;
+- unchanged guards on the same build: D1 p95 831 ms, D2 no redial, D3 first echo 2.65 s after the drop's end, D4,
+  D5 max 13 ms, D6 one reply; the sleep-wake suite's other five steps;
+- the full regression on f36708803e7 (route, route switch, sleep-wake, degraded link and COMMON's ten suites): 14 of
+  14 pass (D1 p95 724 ms, D7 p95 397 ms, D6b settled at 10 s with 3 replies, D7b history 13.4 s after the drop, the
+  close grace cleared 15.0 s after the wake); `swift test` CmuxMobileHost 41/41, SupermuxKit 1370/1370,
+  CmuxIrxTransport `SupermuxIrxPriorityStarvationTests` 2/2.
+
+### 1078–1080. Which path a remote Mac's link uses, on this Mac, and the link history `cmux iroh-diag` keeps — `irx-journal-link-history`, `iroh-diag-links`
+
+The user: "in the app it should show which its using. direct or relay - location." The phone showed it (W8); the Mac
+showed nothing, and `cmux iroh-diag` held only terminal layout events (FIELD-EVIDENCE §8: its 4,096-event ring was
+full of them, and a Mac's link never wrote transport events there at all).
+
+Now (fork-owned files, no fences):
+- `SupermuxLinkRouteText` (SupermuxKit): the phone's words with the phone's keys, in the app catalog in all nine
+  locales: `Direct · LAN · 6 ms`, `Direct · Tailscale · 8 ms`, `Relay · Tokyo · 241 ms`.
+- `SupermuxRemoteMacIcon`: while that Mac is connected its tooltip and VoiceOver label say "On <Mac> — <route>"
+  (`supermux.devices.chip.route`) and an amber dot sits on the glyph only while relayed; connecting or offline it shows
+  the status as before. The flat-row chip passes the route (`SupermuxDeviceChipState.resolveRoute`, a connected
+  same-named Mac's); nested Projects rows, the presets bar's host mark (route on a second tooltip line, the same dot) and
+  the mirror Changes strip ("Relay · Tokyo · 241 ms" at its trailing end, amber while relayed) read
+  `EnvironmentValues.supermuxLinkRoutes`, which `SupermuxComposition.linkRouteLookup` fills at their Supermux-owned
+  mounts. Each reads the route in its own small body, so a route update (at most every 5 s) never redraws a row.
+- The Remote Macs row (#596, #598): "Connected · Relay · Tokyo · 241 ms · Workspaces: 2", the route amber while relayed;
+  the feed also re-emits on `SupermuxDeviceRoutes.routes`. `remote_macs_settings` and `flat_chips` (and the sidebar
+  payloads' `device_icon`) report `route` and the relay flag.
+- `cmux iroh-diag` ends with "Remote Mac links" (#1080): each link's route now as JSON, the #1078 link history in the
+  journal's JSON, the counters (now with `replay-full` / `replay-resumed`, journaled by `SupermuxTerminalStream` in every
+  build) and the journal file's path.
+
+Failure modes considered: Tailscale read as LAN, a relay shown as its host label, an assumed city shown as a city, an
+unknown relay shown empty, `nil ms`, a stale route on an unreachable Mac, the dot on a direct or dimmed icon, a
+same-named offline Mac's route winning, a key missing a locale; chatty journal components evicting the link history,
+the history unbounded or unredacted; the diag waiting for a wedged main thread.
+
+Known limits: a flat row knows its Mac only by name, so two connected Macs with one name show the first one's route. The
+presets bar and Changes strip routes are not in a socket payload (checked visually). A RTT-only change is not
+journaled, so the history shows kind changes; the route line shows the current RTT.
+
+Re-apply after an upstream merge: #1078's three fences in `IrxJournal` (storage, the append in `record`, the statics
+and accessor after `tail`); #1079's block at the end of `IrxJournalTests`; #1080's line after upstream's export in
+`irohDiagText()`.
+
+Verify: `swift test --package-path Packages/SupermuxKit --filter SupermuxRemoteMacRouteTests`;
+`swift test --package-path Packages/Shared/CmuxIrxTransport --filter IrxJournalTests`;
+`tests/supermux/loopback_device_route_e2e.py` steps 12–15 (the icon and the row read each route, a dropped link shows its
+status, `iroh_diag` ends with the route now, the history and the counters).
+
+### 1071–1077. Sleep, wake and network changes between Macs — `v2-directory-refresh-floor`, `device-dark-wake-gate`, `device-sleep-courtesy`
+
+Field evidence (2026-10-05, `/tmp/latency-work/FIELD-EVIDENCE.md`): a lid-closed MacBook Pro DarkWoke 90–165 times an
+hour (Wi-Fi TCP keepalive offload); its app dialed and accepted links inside those 2–35 s wakes, every one a ~31 s
+zombie that both Macs called connected; the always-awake M4 redialed it every 40 s all night, and half its DarkWakes
+came 0–6 s after one of those dials. After real wakes direct took up to minutes: macOS never told iroh (whose clock
+stops in sleep) that anything changed. Separately, the M4's control plane refreshed the directory 485 times in 31 s.
+
+Now:
+- `SupermuxSystemPower` (`Sources/Supermux/Devices/SupermuxSystemPower.swift`, policy `SupermuxWakePolicy` in
+  SupermuxKit): willSleep sends the notice below, takes every connected link down with a planned redial, and the Mac is
+  dark until a full wake (didWake, the screens waking, or a display found awake twice should a wake notification be
+  lost). #1075 holds every dial while dark, so nothing dials out of a DarkWake (macOS posts no wake for one). A full wake
+  recovers once: after a sleep of 60 s or more (wall clock) the main endpoint is closed and bound again (every session on
+  it is dead by then; kept while no relay credential is live), dials waiting at most 5 s for it; `notifyNetworkChange()`;
+  the route switcher's `probeNow` (direct probes now, the idle direct lane rebuilt); links waiting in a backoff dial at
+  once. A network change (its own `MobileHostNetworkPathMonitor`, Tailscale's `utun` included, debounced 1 s) recovers
+  the same way while awake, without the rebuild or the redials.
+- `SupermuxDeviceSleepCourtesy` (`Sources/Supermux/Devices/SupermuxDeviceSleepCourtesy.swift`, policy
+  `SupermuxPeerSleep`): the notice is the event `supermux.device.sleeping` from this host to its subscribed Macs
+  (additive: an older Mac never subscribes). A link that receives it drops its session at once (#1076's
+  `supermuxPeerGoingToSleep`) and every wait before dialing that Mac lasts at least 5 min (#1076's wait), until that Mac
+  dials in (#1077: the waiting link dials back at once, at most every 15 s) or a session started after the notice stays up
+  2 min.
+- `SupermuxRemoteSessionActivity`: a `ProcessInfo` activity (`.userInitiatedAllowingIdleSystemSleep`) while any host
+  connection or connected Mac link exists, so App Nap never throttles a live session.
+- #1071: maintenance's directory refreshes are at least 30 s apart unless the ticket was just renewed.
+
+Failure modes considered: a short sleep rebuilding the endpoint under live sessions; a long one not rebuilding; a sleep
+measured on a clock that stops in sleep, or a clock set backwards; one wake recovering twice; an unknown sleep
+rebuilding; a DarkWake counted as a wake; a second willSleep restarting the sleep clock; a network change while dark;
+a display wake without a sleep; a lost wake notification leaving links parked forever; a sleeping Mac redialed at the
+normal backoff; a DarkWake session, or the session live when the notice came, clearing the notice; a proven session not
+clearing it; a dial-in not dialing back, or dial-ins storming; the directory refresh loop; the spacing outliving a
+ticket renewal.
+
+Known limits: the notice is best effort (the willSleep window is short, and a link that was down then never hears
+it; it then keeps L1's backoff). A link's phase still shows the computed delay while it waits the sleep wait. Inbound
+sessions are still accepted in a DarkWake (refusing them would change older peers' reconnects); with the notice, newer
+peers dial a sleeping Mac only every 5 min. A link to a Mac that has no link back to this one learns it woke only from
+its 5 min dial.
+
+Re-apply after an upstream merge: #1071's four fences in `maintain(run:)` and the extension; #1072/#1073's knobs; #1075's
+guard at the top of `startConnect`'s task; #1076's method after #1067 and its line before #1041's jitter; #1077's call
+after the registry admission. #1074 is a whole fork file.
+
+Verify: `swift test --package-path Packages/SupermuxKit --filter 'SupermuxWakePolicyTests|SupermuxPeerSleepTests'`;
+`swift test --package-path Packages/Shared/CmuxIrxTransport --filter SupermuxV2DirectoryRefreshFloorTests`;
+`tests/supermux/loopback_device_sleep_wake_e2e.py` (a wake or network change probes direct in ~1 s; willSleep holds every
+dial while dark and didWake redials at once; another Mac's notice holds the redial >= 5 min; its dial-in redials at once).
 
 ### 2026-10-04 upstream merge — RETIRED rows
 
@@ -5394,7 +5886,8 @@ Capability: `supermux.terminal_input.v1`; an older Mac on either side keeps upst
 Re-apply after an upstream merge:
 - **#630 router**: keep the batch as the pending store and upstream's `init(send:onFailure:)` as a
   convenience over `init(sendBatch:onFailure:)`; `enqueue` must route every `TerminalManualInput`
-  through `SupermuxDeviceTerminalInput.batchItem` (never drop `.namedKey` unconditionally).
+  through `SupermuxDeviceTerminalInput.batchItem` (never drop `.namedKey` unconditionally). In DEBUG
+  builds its `enabled` guard counts the input it drops (`inputDroppedWhileDetached`).
 - **#631 session**: wherever upstream builds the `mobile.terminal.input` params in the router's send
   closure, build them with `SupermuxDeviceTerminalInput.inputParams(batch, base:, hostTakesBatches:)`
   and keep upstream's later fields (`client_id`). Keep the replay's `counts_override` while
@@ -7304,3 +7797,379 @@ loopback_agent_answer_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
 `cmux claude-hook pre-tool-use` with an unchanged phase (the stress harness's hook loop,
 `tests/supermux/stress_worktrees_energy.py`), the host DEBUG log's `mobile.emit topic=workspace.updated` lines
 per second fall to about zero.
+
+### 1033–1034. Keepalive and request replies are never starved by terminal output — `irx-stream-priority`
+
+Found while fixing "remote terminals are awfully delayed, worse after a sleep" (2026-10-05). noq sends a
+strictly higher-priority stream's buffered data first. The host wrote terminal output at 100 (focused surface)
+and 50 (every other surface, and the shared events lane every Mac mirror uses), while the keepalive pong and
+every control reply (replays, request answers, the liveness probe's answer) stayed at the default 0. On a relay
+(240–400 ms, capacity-bound) each packet the congestion window allowed carried output: pings missed from a
+session's first one, replies hit their 20 s deadline, the liveness probe after them missed too, and the viewer
+redialed a link that carried bytes the whole time (132 sessions in under 3 h, median life 30.8 s).
+
+The ladder, highest first: keepalive 1000 (a few bytes every 5 s, so it cannot starve anything); control and
+its replacement stream 100, equal to the focused surface, so noq's default send fairness takes turns packet by
+packet between request replies and the focused terminal's output; background output 50; artifacts −10.
+Control is not strictly above focused output because a multi-MB replay on the control stream would then hold
+the focused terminal's echo for seconds; not strictly below, because a focused terminal printing without pause
+would then starve every reply and the probe.
+
+Failure modes considered: replays on the control stream now go ahead of background output (50), so on a
+saturated link a Mac mirror's shared events lane waits while re-attach replays drain (bounded by the replay
+bytes; the re-attach work shrinks them); `setPriority` crosses an iroh-ffi lock that waits for an in-flight
+write on the same stream, so it runs before the first write on a fresh stream and never waits; a lane kind not
+in the ladder keeps its default; priority is local send scheduling, so older peers are unaffected (no wire
+change). Both ends apply it (the phone's and a viewer Mac's pings and requests too).
+
+Re-apply after an upstream merge: keep the call in `openLane` before the descriptor write and the call in
+`acceptLane` right after the descriptor read. If upstream sets lane priorities itself, keep keepalive above
+all output and control at least at the focused surface's priority.
+
+Verify: `swift test --package-path Packages/Shared/CmuxIrxTransport --filter SupermuxIrxPriorityStarvationTests`
+(two Iroh endpoints through a 300 KB/s, 50 ms, 64 KB-queue UDP link; red at `ef19138e3ed`: keepalive unanswered
+after 2.005 s, control request unanswered after 8 s; green: both answered within 2 s).
+
+### 1035–1039. A device link is judged dead only when its connection shows no life — `transport-peer-liveness`
+
+After a request missed its 20 s reply deadline, the device link asked the other Mac whether it still answered
+with a `mobile.events.probe` on the control stream (#723). On a congested relay the request was late because the
+control stream sat behind bulk (replays, and before #1033 every terminal's output), and the probe waited behind
+the same bulk, so a link that carried bytes the whole time was declared lost at about 30 s and redialed, about 45
+times an hour. Now `SupermuxDeviceLinkEvents.supermuxHostAnswers` (Supermux-owned) keeps the link on the first of:
+the other Mac's bytes on any stream of the connection in the last 10 s, or its answer to a transport keepalive
+within 5 s (`supermuxPeerShowsLife`, which goes at the top send priority); the old probe within 10 s; bytes that
+arrived while that probe waited. A link is dead only with none of them. Transports that cannot tell (Tailscale,
+the DEBUG loopback) answer false and go straight to the probe, as before.
+
+The evidence is `IrxConnection`'s own: `applicationSilenceEvidence(since:)` counts only application reads on
+any stream (control, events, keepalive pongs; QUIC ACKs and transport keep-alives do not count), and
+`probeLiveness` needs the other Mac's application layer to write a pong.
+
+Failure modes considered: a host whose control stream is wedged but other lanes deliver stays connected (by
+design: the RPC session's own silent-timeout teardown, which looks at control-stream deliveries only, still
+condemns a control stream silent for two whole deadlines, and its control-stream repair consults the same
+connection evidence); a keepalive probe that fails is inconclusive, never proof (the old probe still runs);
+bytes from before the window do not count; a closed connection is never alive; the probe shares the client
+keepalive loop's in-flight probe instead of opening a second one. A dead link is now declared up to 5 s later
+than before (5 s keepalive, then the 10 s probe).
+
+Re-apply after an upstream merge: keep the protocol file and the three conformances (`IrxControlByteTransport`,
+`CmxIrohDeferredByteTransport`, the RPC client/session accessor). If upstream adds its own connection-level
+liveness query to `CmxByteTransport`, call that from `supermuxHostAnswers` instead and retire these fences.
+
+Verify: `swift test --package-path Packages/Shared/CmuxIrxTransport --filter SupermuxIrxPeerActivityTests`
+(4 tests); the loopback cannot exercise it (one ordered stream, no conformance), so `loopback_device_smoke`
+steps 11–13 keep proving the probe path.
+
+### 1040–1042. A device link backs off after a session that proved nothing — `device-link-unproven-session-backoff`
+
+Field evidence (2026-10-05): on a congested relay every session lived about 31 s (a 20 s reply deadline, then a
+10 s probe that missed), just past the 30 s "stable" bar, so every loss redialed at once: 132 sessions in under
+three hours, each re-attaching every mirror onto the same relay. While a MacBook Pro slept with its lid closed,
+this Mac's sessions were made inside its DarkWakes (2–35 s) and also redialed at once, and half of the laptop's
+DarkWakes came 0–6 s after one of these dials; with nobody answering, the 30 s cap dialed it every 40 s all night.
+
+Now a session proves the other Mac healthy only by answering a request beyond the dial's handshake (the
+post-connect `mobile.sync.fetch` counts) and staying up for 2 min (past a DarkWake plus QUIC's 30 s idle timeout,
+and past a missed deadline plus the liveness check). Only a proven session that the other Mac closed redials at
+once; a proven session that went silent (`supermuxUnresponsive`: a missed deadline, then no sign of life, see
+#1035–#1039) backs off from the first step; any other loss continues the backoff of the dial that opened it.
+Waits double from 1 s to a 2 min cap and are spread by ±20 % at the sleep, so the reducer stays deterministic.
+The rules live in `Packages/SupermuxKit/Sources/SupermuxKit/Devices/SupermuxDeviceLinkBackoff.swift`
+(`SupermuxDeviceLinkBackoff`, `SupermuxDeviceLinkSession`).
+
+Failure modes considered: an idle but healthy link (no requests after its first fetch) still proves itself by
+staying up 2 min; a link that drops within 2 min of connecting waits 1 s (±20 %) instead of 0, then 2, 4 s… for
+consecutive early drops; Refresh, a pairing change and a directory edge reset the count as before; a peer that
+wakes up waits at most the 2 min cap (plus jitter) for this Mac's next dial; the 2 min cap trades that against
+about 28 dials an hour (was 90) to a Mac that stays asleep. `stop`/`restore` drivers go through `refresh()` and
+are unaffected.
+
+Re-apply after an upstream merge: keep the `.transportLost` tail replaced by the session's redial, the session
+recorded on `.connectSucceeded`, `.supermuxExchanged` applied after a successful `requestData` reply, the
+jittered sleep, and `supermuxReportUnresponsive` as the liveness check's dead-link exit.
+
+Verify: `swift test --package-path Packages/SupermuxKit --filter SupermuxDeviceLinkBackoffTests` (red at the
+test commit: 7 of 8 fail, 17 issues; green: 8 pass) and `cmuxTests/DeviceLinkReconnectPolicyTests` in CI.
+
+### 1043–1044. A shown terminal's echo never waits behind other terminals' output — `terminal-stream-fair-queue`
+
+Field evidence (2026-10-05, `/tmp/latency-work/STREAM.md` H3d): a watching connection's event queue held every
+watched terminal's `terminal.bytes` in one first-in-first-out line, 8 MB per terminal, so a keystroke's echo in a
+shown mirror waited behind every byte other terminals printed before it. On a 300 ms, 300 KB/s relay with a hidden
+terminal printing 600 KB/s, the echo took 11 s (loopback_degraded_link_e2e D1: p50 4.7 s, p95 11.3 s), and each
+time the hidden terminal's backlog passed 8 MB it was dropped and fully replayed, the replay queued ahead too.
+
+Now each watched terminal queues its own bytes in order. The shared lane's drain sends every other event first
+(status, grids, layouts: small, and never overtaken by later bytes), then one chunk per terminal in turn, shown
+terminals before hidden ones (the watch's `background_surface_ids`). A hidden terminal whose oldest queued chunk has
+waited 8 s pauses: its backlog is dropped and its bytes are refused, keeping only the newest chunk. When the
+connection shows it again (its next `mobile.supermux.terminal.watch`), that chunk is queued first and the drain is
+claimed; its position is past what the viewer holds, so the viewer sees the gap and resumes or replays, as for any
+gap (a viewer that replayed since holds that position already and ignores it). Background batches are capped at
+64 KB (were 256 KB, `SupermuxTerminalByteCoalescer`, fork-owned), so the frame a shown terminal's echo can find on
+the wire ahead of it is ~90 KB encoded, 0.3 s at 300 KB/s. The terminal the connection last typed into (#1051, from
+ordered terminal input) gets every other turn among shown terminals: with replies and events on one stream the host
+writer lets one event frame through between two large replies (#1049), and a turn per shown terminal cost the echo one
+replay reply each; every other turn still leaves the other shown terminals half when it floods.
+
+Failure modes considered (the package test's list): a shown terminal behind a hidden backlog; one shown terminal
+behind another's backlog; status events behind bytes; one terminal's byte order broken by the reordering (bytes of a
+terminal never overtake each other; a terminal's bytes may now arrive after a later `terminal.updated` or grid event,
+which a v2 viewer handles through grid generations and an older one by the replay it schedules anyway); a hidden
+backlog growing for as long as the terminal prints; a pause losing the gap signal (the newest chunk carries it, even
+when the terminal printed nothing since); a shown or barely-behind terminal pausing; the drain stopping while watched
+bytes are queued. Cost: a hidden terminal that paused needs a full replay when shown or re-attached, where it would
+have resumed had it kept up (it could not: it fell 8 s behind). A connection that never names terminals (the phone,
+an older Mac) keeps upstream's single line.
+
+Re-apply after an upstream merge: keep watched bytes out of `laneOrders[.shared]` and the `dequeue` fallthrough to
+`supermuxDequeueWatchedLocked`; the glue only touches the queue's own bookkeeping (`queuedEvents`, `arrivalOrder`,
+`queuedCountByLane`, `removeQueuedEventLocked`). Since #1085 the turns themselves (which terminal goes next, pausing)
+live in the fork-owned `SupermuxWatchedByteScheduler`, so the fenced code in the upstream file is storage glue only.
+
+Verify: `swift test --package-path Packages/macOS/CmuxMobileHost --filter SupermuxWatchedByteQueueTests` (red at the
+test commit: 5 of 10 fail, 11 issues; green: 10 pass) and loopback_degraded_link_e2e D1.
+
+### 1045–1048. A phone gets render frames only for the terminals it shows — `render-grid-watch`
+
+Field evidence (2026-10-05, `/tmp/latency-work/STREAM.md` H4): the host captured every terminal on a global tick and
+sent each `terminal.render_grid` frame to every phone. On a slow relay the phone's one 256-event buffer filled with
+hidden terminals' frames and shed the focused terminal's; a shed poisoned its deltas until a full frame.
+
+The Mac already hears which terminals each phone connection shows, with no new wire key, so an installed phone is
+fixed by a Mac update alone: a phone mounts a terminal with a replay, then a dedicated `mobile.terminal.viewport`
+report (sticky for the connection's life, stamped with its connection by #957), keeps that report while the terminal
+sits under another tab, and clears it when it unmounts the terminal or its app goes inactive (a soft leave; coming
+back remounts with a replay). `SupermuxRenderGridWatchState` (#1046) turns that into each connection's set: a
+connection is limited once it wrote a sticky report (an older phone, or one that only piggybacks reports on input,
+keeps every terminal); its set is the terminals it holds a sticky report for plus those it asked a replay of since,
+until their report goes; a limited connection stays limited, to nothing if every report is cleared. The glue
+(`Sources/Supermux/SupermuxMobileRenderGridWatch.swift`) recomputes on every change of the report map (#1048's
+observer), every subscription to or from `terminal.render_grid` (#1121: a phone that reported before it subscribed
+was otherwise unlimited until a report changed) and every replay served (before the capture), pushes changed sets to the connections' event queues, and
+asks the render observer for a full frame of each terminal that joined a set (the connection skipped frames its next
+delta would build on). The queue (#1047) refuses the other terminals' frames and poisons them, so a terminal shown
+again is readmitted only by a full frame; it asks no resync for a refusal.
+
+Failure modes considered (the package test's list): an older or silent phone losing frames; hidden frames still
+going; a refusal spinning full-frame resyncs; a delta whose base the phone never saw; a never-refused terminal
+losing its chain; a mount's replay without frames until its report; an unmounted terminal keeping frames; an inactive
+phone getting everything or, once back, nothing; two phones interfering; closed connections lingering; unchanged
+sets resyncing. Known costs: a joined terminal's full frame goes to every phone and widens that terminal's frame pacing
+one step (`performRenderGridFullResync` treats it as a shed; it halves back after 2 s of quiet); a terminal replayed
+but never reported keeps getting frames until the connection closes. Not done: limiting the observer's captures
+(`renderSurfaceIDs`) to the union of the sets.
+
+Re-apply after an upstream merge: keep the queue's refusal ahead of upstream's render-grid admission, the report map's
+observer and the replay hook before the capture. If upstream adds its own per-connection render watch, retire these.
+
+Verify: `swift test --package-path Packages/macOS/CmuxMobileHost --filter SupermuxRenderGridWatchTests` (red at the
+test commit: 7 of 11 fail, 10 issues; green: 11 pass). No loopback suite has a phone; the regression suites guard
+the Mac side.
+
+### 1049–1050. Small writes go before large replies on the host's control stream — `host-writer-bulk-yields`
+
+Field evidence (2026-10-05, `/tmp/latency-work/STREAM.md` H3c, P1): the host's control-stream writer was one
+first-in-first-out line of whole frames, so an input ack, a probe's answer, a status or watch reply waited behind
+every multi-MB replay reply queued before it (7 replays at 300 KB/s: ~40 s). Each such request also held one of the
+viewer's 15 request slots until its answer arrived.
+
+Now a reply over 64 KB waits while any other write waits; small replies and event frames (always small writes, so
+their order with replies is upstream's) go first. A frame is never split, so the one large reply already on the wire
+still holds them. A large reply is not starved: the event drain queues its next write only after its own released,
+so only concurrent small replies (at most the host's 16 request slots) can pass it.
+
+Not done: reserving viewer request slots for small requests (`MobileCoreRPCSession`'s admission, shared with iOS). It
+binds only with more than ~11 replays outstanding, and doing it without head-of-line blocking needs the shared write
+loop reordered; superseding duplicate replays (STREAM P3) removes that case at its source.
+
+Re-apply after an upstream merge: keep the second waiter list and `sendResponse`'s size test.
+
+Verify: loopback_degraded_link_e2e (D2, D3's missed deadlines) and the regression suites; no isolated test.
+
+### 1052–1053. Typing during a re-attach is held, not dropped — `device-mirror-reattach-input`
+
+Field evidence (2026-10-05, `/tmp/latency-work/STREAM.md` 1a row 2 and P6; red run D4): a mirror's router was enabled
+only while the mirror was attached, so every key typed while it re-attached (a resume over a 300 ms link, a full
+replay after a reconnect, a gap, a replay retry) was dropped: `qwertyuiop` typed during a resume reached the program
+as `yuiop`, every run.
+
+Now a re-attaching mirror (any attach after the first that stuck) holds typing in the router, in order, and the
+router sends it once the mirror is attached. It goes through the router once, so the input pipeline's exactly-once
+identity covers it like any other batch: a reply the host already applied is answered `duplicate`, and a restarted
+host that forgot the stream answers `gap` and the pipeline drops the batches. Keys typed while the link is down are
+held too, for at most the pipeline's replay window (10 s): when the link comes back they are set apart, and the
+re-attach's reply decides. A resume proves the same host process continues the terminal's byte stream, so they go
+first; a full replay may be a restarted Mac that restored the terminal under the same id with a new shell, so they
+are dropped (upstream's rule for input typed while detached). Keys typed once the link is back go either way. The
+first attach, a failed attach (Retry) and an outage longer than 10 s drop typing as upstream does.
+
+Failure modes considered: a held key sent twice (the router hands each batch out once; the pipeline's ledger drops
+resends), out of order (one queue, held keys first), into a restarted host's new shell (only after a resume), long
+after it was typed (10 s bound while the link is down), a drain racing the hold (one queue; a drain takes nothing
+while holding), the pane's overlay (unchanged: a re-attach on a live link shows none, one after a lost link shows
+"Mac disconnected" until the attach sticks).
+
+Re-apply after an upstream merge: keep the router's hold ahead of its drain and the session's hooks (the `didSet`,
+`linkDropped`, `.linkReconnected`, the reply).
+
+Verify: loopback_degraded_link_e2e D4 (10 keys typed during a re-attach arrive exactly once, in order) and D3's probe
+keys; loopback_terminal_input_e2e and loopback_terminal_input_pipeline_e2e (reconnect resends, older host).
+
+### 1054. A viewing Mac keeps its grid through a brief disconnect — `sizing-mac-close-grace`
+
+Field evidence (2026-10-05 red run, D3; `/tmp/latency-work/red-run.md`): when a viewing Mac's connection closed, the
+host cleared that connection's viewport reports at once (#957), so every terminal the Mac showed resized to its own
+pane (`mobile.viewport.clear`), and back when the reconnect's replay re-registered the same grid. The grid generation
+moved, so even an idle terminal's resume was refused (`grid_generation`) and it came back as a 10000-row full replay;
+the first replay of each was answered `viewport_transition`.
+
+Now a connection close leaves a viewing Mac's reports (`device_kind: mac`) for 15 s and then runs the same
+connection-scoped clear (`SupermuxMacViewerCloseGrace`). A reconnect within the grace re-registers the report from its
+replay, stamped with the new connection, so the deferred clear leaves it; a Mac that really left releases its size 15 s
+later than before. A phone's reports still clear at once: the phone's sizing contract (a soft leave when it goes
+inactive, the recovery E2E's R14 timing) relies on it. An explicit clear (a mirror pane closing, Disconnect) is
+unchanged.
+
+Failure modes considered: a size stuck after the Mac left (the clear still runs, 15 s later, and only skips a report a
+newer connection wrote); a reconnect that re-registers a different grid (its report replaces the old one at once); a
+generation fence left behind (fences without a report clear at once, as before); a phone held (only `mac` reports
+wait).
+
+Re-apply after an upstream merge: keep the deferral after #957's writer check, inside the per-client loop.
+
+Verify: loopback_degraded_link_e2e D3 (no `viewport_transition`, idle terminals resume) and the sizing suites
+(recovery R14 times a phone's close; policy's reconnect steps).
+
+### 1055–1056. The byte tee keeps recording after the last mirror left — `terminal-stream-tee-grace`
+
+Field evidence (2026-10-05, `/tmp/latency-work/STREAM.md` H3a, P5; red run D3): with no `terminal.bytes` subscriber
+the tee recorded nothing and moved the stream epoch of every terminal that printed meanwhile. A viewing Mac's link
+that redialed after a relay drop therefore found every printing terminal's resume refused
+(`not_in_tail_or_epoch`) and pulled a 10000-row full replay of each (1.7 MB at 300 KB/s: ~6 s apiece, one after
+another).
+
+Now the tee records for 120 s after the last `terminal.bytes` subscriber left (`SupermuxTerminalTeeGrace`, armed by
+the subscription tracker when the topic goes inactive, disarmed when it is active again), into the same bounded tail
+(256-512 KB per terminal), so a reconnect within that time resumes from the mirror's byte position. Meanwhile each
+PTY read costs what it costs with a subscriber, minus the sending (no `terminal.bytes` event is built without one):
+one copy and a main hop. Phones' render frames need no byte position, so only the Mac mirrors' topic arms it.
+
+Failure modes considered: a resume across output the tee skipped (after the grace the skip marks the terminal and
+its epoch moves, as before); unbounded memory (the tail's budget is unchanged); cost on a Mac nobody mirrors (armed
+only after a subscriber left, for 120 s); a phone keeping the tee busy (it does not arm it).
+
+Not done: a larger tail for terminals a Mac watches (a terminal printing more than 256 KB during the outage still
+needs a full replay).
+
+Re-apply after an upstream merge: keep the extra condition at the end of `append`'s guard and the tracker hook.
+
+Verify: loopback_degraded_link_e2e D3 (the tickers, printing while the link was down, resume).
+
+### 1057–1059. A replay that misses its deadline is superseded, never sent twice — `terminal-replay-deadline`, `terminal-replay-supersede`
+
+Field evidence (2026-10-05, `/tmp/latency-work/STREAM.md` H3b, P3; red run D3): on a slow relay several 10000-row
+replies (~1.7-2.5 MB each) left the host one after another, so the late ones missed the link's 20 s deadline. The
+mirror asked again up to 3 times, 2 s apart, while the host still sent the first reply in full (the late reply also
+held a viewer request slot until it arrived), and after the third the pane showed "Mac disconnected" until Retry on
+a live link.
+
+Now:
+- a `mobile.terminal.replay` gets its own 90 s deadline (#1057; `SupermuxTerminalStream.deadline(forMethod:)`), so a
+  replay waiting behind others is no longer asked again at 20 s;
+- a replay that still misses it on a live link is asked again after 2 s, doubling to 30 s, for as long as the link
+  stays up (#690's fence), instead of leaving the pane detached;
+- each streaming mirror names itself on its replays (`supermux_replay_owner`, one per pane), and the host turns an
+  older reply of the same pane and terminal on the same connection that has not started on the wire into a small
+  `superseded` error once its write's turn comes (#1058, #1059; a frame already on the wire is never cut). The mirror
+  stopped waiting for the older request, so nothing reads that error. A request without an owner (an older Mac, a
+  phone) is never superseded, and two panes of one terminal never supersede each other.
+
+Failure modes considered: a reply superseded that a mirror still awaits (the owner only asks again after its own
+request failed); two panes of a terminal cutting each other off (one owner per pane); a phone's or an older Mac's
+replies (no owner, untouched); a frame cut mid-write (the swap happens before the write starts); a dead link retried
+forever (the link's liveness check after a missed deadline still reports it lost, which detaches the mirror).
+
+Re-apply after an upstream merge: keep the ticket around `respond(to:)`'s send, the replacement parameter through
+`sendResponse`/`sendControlFrame` to the writer, and the deadline in the mirror's convenience init.
+
+Verify: loopback_degraded_link_e2e D6 (a replay held 9 s past a 3 s deadline: one reply sent, the first superseded,
+the pane attached again before it, never detached) and D3; loopback_device_smoke step 13 (a 20 s deadline missed on a
+live link re-attaches the pane).
+
+### 1060–1064. Which path a remote Mac's link uses, and dialing it direct first — `irx-route-sample`, `route-candidates-off-main`, `route-dial-candidates`
+
+Field evidence (2026-10-05, `/tmp/latency-work/TRANSPORT.md`, `ROUTING-DESIGN.md` §1–§2): every Mac-to-Mac dial
+passed iroh no direct address (`DeviceIrxClient.dial`: `directAddresses: []`) and the directory carries only relay
+URLs, so every session started on the Tokyo relay (~240 ms) and left it only when iroh's own holepunch (60 s cadence,
+5–300 s quarantine) moved it; and nothing showed the user which path a link used.
+
+Now:
+- `IrxConnection.supermuxSelectedPathSample()` (#1060, type #1061, live tests #1062) reads the selected path, its
+  remote address and QUIC's RTT on it; the route monitor (`Sources/Supermux/Devices/SupermuxDeviceRouteMonitor.swift`)
+  classifies it and publishes it to `SupermuxComposition.deviceRoutes`;
+- the host answers `mobile.supermux.route.candidates` before the main-actor dispatch (#1063): its endpoint id and
+  servable direct addresses (LAN, Tailscale, global IPv6), Iroh sessions only;
+- the dialer passes the cached addresses of the peer it dials (#1064), so iroh sprays the first packets there too.
+
+Failure modes considered: Tailscale read as LAN or ULA; a service address read as a peer; zoned and IPv4-mapped
+addresses; relay URL spellings; an assumed relay city shown as fact; undialable or public addresses served or
+dialed; a bad string failing the whole dial (all addresses are respelled canonically after parsing); stale
+addresses kept beside new ones; addresses filed under an endpoint the session did not reach; the reply waiting
+behind main-thread replays; RTT jitter redrawing views.
+
+Known limit (fixed by #1064–#1070 below): a session that started on a direct path on the shared endpoint had no
+relay backup path in iroh's deferred mode, so its one IP path dying ended it. The dial addresses now go only to the
+direct lane, whose sessions are watched and fall back to the relay within seconds.
+
+Re-apply after an upstream merge: keep the sample method beside `selectedPath()`, the early answer at the top of
+`handleRequest`, and #1064's fences in `dial` (described with #1065–#1070).
+
+Verify: `swift test --package-path Packages/Shared/SupermuxMobileCore --filter "SupermuxLinkRouteClassifierTests|SupermuxRouteCandidateStoreTests"`;
+`swift test --package-path Packages/Shared/CmuxIrxTransport --filter SupermuxIrxRouteSampleTests` (plus
+`CMUX_IROH_PUBLIC_RELAY_TEST=1` for the relay case); `tests/supermux/loopback_device_route_e2e.py`.
+
+### 1064–1070. Always direct between Macs: the direct lane, the dial race, moving a link back and falling back — `route-dial-candidates`, `route-direct-lane`, `route-switch`
+
+Field evidence (2026-10-05, `/tmp/latency-work/ROUTING-DESIGN.md` §1–§3): every Mac-to-Mac session started on the
+Tokyo relay (~240 ms a keystroke) because the shared endpoint's per-peer state sends a dial's first packets to the
+path it already selected (usually the relay, under the other Mac's inbound session), and iroh moved it direct only
+by its own holepunch, with a 5–300 s block on a direct path that once stalled. The user keeps Tailscale on on both
+Macs and wants direct, LAN or Tailscale, always.
+
+Now:
+- each Mac has a direct lane (`Sources/Supermux/Devices/SupermuxDeviceDirectLane.swift`): a second endpoint with its
+  own identity and every relay disabled, outgoing only, never advertised or learned, closed and rebound when idle
+  without touching the phone or inbound links (the phone's "Direct" method builds the same endpoint);
+- every dial races the lane at the peer's cached addresses against the relay dial, direct first (#1064, #1065): direct
+  wins whenever it connects within 1.5 s; the relay is used only when no address answers; one connection reaches
+  admission, so the host's one-session-per-device registry never supersedes;
+- `SupermuxDeviceRouteSwitcher` (one `SupermuxRouteSwitchPolicy` per link, SupermuxMobileCore since #1081–#1083) looks at each connected
+  link's path every second: on the relay it probes the lane every ~10 s (30 s after five misses, never admitted) and
+  on success does one planned redial (#1067, #1068: a 300 ms settle, then attempt 1); on a lane session (direct, no
+  relay path) it checks liveness and after two misses reports the path lost, which redials like a liveness failure
+  (L1's backoff applies) with the lane held off, so it lands on the relay;
+- flaps (a fall back, or a move that lands on the relay) hold direct off for 30 s, doubling to 10 min; two minutes
+  direct reset it. `probeNow(reason:)` is the wake / network-change hook (wired by #1071–#1077's `SupermuxSystemPower`).
+
+Failure modes considered: both legs admitted (one session superseded); relay first wins while direct answers;
+blackholed or stale addresses hold the dial; the relay waits a head start for nothing; a leaked loser or late
+connection; cancellation; a relayed link never tried direct again; probing too often or in step; repeated moves;
+a move that loops back to the relay; a silent lane session kept until QUIC's idle timeout; one lost probe tearing a
+link down; iroh-backed direct paths second-guessed; unbounded reconnects under a flapping path; stale answers acting
+on a new session; probing a peer with no session (waking a lid-closed laptop); probe-now skipping the anti-flap wait.
+
+Known limits: the host authorizes NAT traversal on every admitted session, so its per-peer state for this Mac can
+also list the lane's socket and try it on its own outgoing session to this Mac while that one is on the relay
+(a few seconds of path probing; it settles once both Macs' links are on their lanes); a move re-attaches the link's
+mirrors (L3 made it cheap); the Tailscale-to-LAN move is not done (the wake hooks came with #1071–#1077).
+
+Re-apply after an upstream merge: keep #1064's four fences in `dial`, #1067's methods after `supermuxReportUnresponsive`
+and #1068's event and case; #1065, #1066 and #1070 are whole fork files.
+
+Verify: `swift test --package-path Packages/Shared/SupermuxMobileCore --filter SupermuxRouteSwitchPolicyTests`;
+`swift test --package-path Packages/Shared/CmuxIrxTransport --filter SupermuxIrxDirectFirstDialTests`;
+`tests/supermux/loopback_device_route_switch_e2e.py` (a simulated network under the loopback link: lands direct,
+moves direct within ~15 s, falls back within seconds, at most four reconnects a minute while flapping).

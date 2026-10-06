@@ -374,6 +374,9 @@ final class MobileHostIrxRuntime: MobileHostPairingRuntime {
         await oldRegistry?.closeAll(code: .hostShutdown)
         await oldLegacy?.stop(revokeOwnBinding: true)
         await oldEndpoint?.deactivate()
+        // SUPERMUX:begin route-lane-sign-out (the direct lane carries this Mac's identity too: it goes with the endpoint, and a dial that read the old endpoint never makes one again)
+        await SupermuxComposition.directLane.deactivate(retiring: oldEndpoint)
+        // SUPERMUX:end route-lane-sign-out
         guard generationToken == token, let scope, isCurrent(token) else { return }
         setSettingsPhase(.activating)
         activationTask = Task { @MainActor [weak self] in
@@ -620,6 +623,9 @@ final class MobileHostIrxRuntime: MobileHostPairingRuntime {
                 await supervisor.rotateCredentials(Self.credentials(snapshot.cache))
                 guard isCurrent(token) else { return }
             }
+            // SUPERMUX:begin device-wake-rebuild-credentials (a main-endpoint rebuild the last wake kept for lack of a fresh credential runs now)
+            SupermuxComposition.systemPower.credentialsReceived()
+            // SUPERMUX:end device-wake-rebuild-credentials
         }
         requestEndpointReady(token: token)
         if activeDeviceCapabilities != deviceCapabilities { updateDeviceHostingMetadata() }
@@ -1004,6 +1010,14 @@ final class MobileHostIrxRuntime: MobileHostPairingRuntime {
             await irx.close(code: .revoked, origin: .local)
             return
         }
+        // SUPERMUX:begin device-sleep-courtesy
+        // Another Mac dialed in, so it is awake: this Mac's link to it, if
+        // waiting (maybe on that Mac's "going to sleep" notice), dials at once.
+        if isMac {
+            SupermuxComposition.sleepCourtesy.peerDialedIn(
+                endpointIDHex: peer.endpointIDHex, deviceID: peer.deviceID, tag: peer.tag)
+        }
+        // SUPERMUX:end device-sleep-courtesy
         // Automatic path mode: authorize NAT traversal so the admitted session
         // can upgrade to a direct/LAN path make-before-break.
         if !Self.forceRelayOnly {

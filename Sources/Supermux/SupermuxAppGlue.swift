@@ -294,6 +294,9 @@ struct SupermuxProjectsMount: View {
         }
         .supermuxTracksWindowVisibility(windowVisibility)
         .environment(\.supermuxSidebarFontScale, fontScaleStore.fontScale)
+        // A remote row's Mac icon reads its link's route itself (tooltip,
+        // amber relay dot), so route updates never re-run this mount.
+        .environment(\.supermuxLinkRoutes, SupermuxComposition.linkRouteLookup)
         // Nested rows honor the flat rows' user-settable badge color; empty
         // hex (the default) resolves to cmux's accent, like the flat rows.
         .environment(
@@ -738,8 +741,12 @@ struct SupermuxPresetsBarMount: View {
                 guard let workspace else { return }
                 _ = SupermuxComposition.runCoordinator.toggleRun(workspace: workspace)
             },
-            hostLabel: mirror?.presetsBarHostLabel
+            hostLabel: mirror?.presetsBarHostLabel,
+            hostMachineID: mirror?.ref.machineID
         )
+        // The host mark reads the mirror's route itself, so a route update
+        // redraws that icon, not the bar.
+        .environment(\.supermuxLinkRoutes, SupermuxComposition.linkRouteLookup)
         // The bar deliberately does not observe the workspace, so a closed run
         // surface would leave the Stop button stale: reconcile from the panel
         // membership stream instead (fires on add/remove only, never typing).

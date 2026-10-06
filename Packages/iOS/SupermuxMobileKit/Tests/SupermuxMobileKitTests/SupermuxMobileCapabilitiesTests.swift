@@ -89,6 +89,7 @@ import Testing
             (.terminalActionsV1, \.supportsTerminalActions),
             (.terminalInputPipelineV1, \.supportsTerminalInputPipeline),
             (.terminalStreamV2, \.supportsTerminalStreamGrid),
+            (.routeCandidatesV1, \.supportsRouteCandidates),
             (.agentAttachmentsV1, \.supportsAgentAttachments),
         ]
         #expect(accessors.count == SupermuxMobileCapability.all.count)

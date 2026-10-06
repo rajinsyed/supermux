@@ -5,6 +5,10 @@ import CmuxIrxTransport
 public import CmuxMobileShellModel
 public import CmuxMobileTransport
 public import Foundation
+// SUPERMUX:begin phone-route-direct-race
+import SupermuxMobileCore
+import SupermuxMobileKit
+// SUPERMUX:end phone-route-direct-race
 
 /// Owns one v2 control service and endpoint per authenticated team/build identity.
 public actor MobileIrxRuntimeComposition {
@@ -70,6 +74,22 @@ public actor MobileIrxRuntimeComposition {
     var applicationActive = true
     var activityGeneration: UInt64 = 0
     var admittedSessionCount = 0
+    // SUPERMUX:begin phone-route-direct-race (MobileIrxRuntimeComposition+SupermuxRoute.swift)
+    /// Each Mac's direct addresses (handed over or learned), on this phone only.
+    let supermuxRouteCandidates: SupermuxRouteCandidateStore
+    /// Counts the sign-outs that forgot every address: a write to the
+    /// address store decided before one is undone.
+    var supermuxRouteAddressEpoch: UInt64 = 0
+    /// Each Mac's switch policy (shared with the Mac), the lane its session
+    /// went out on, and the network the phone was last on.
+    var supermuxRoutePolicies = SupermuxPhoneRoutePolicies()
+    /// The user's Private Addresses each Mac's last dial named, so the
+    /// prober tries the same direct addresses that dial raced.
+    var supermuxPrivateAddressesByPeer: [String: [String]] = [:]
+    /// Judges the phone's network once its path updates stop.
+    let supermuxNetworkDebounce = SupermuxTrailingDebounce(settle: MobileIrxRuntimeComposition.supermuxNetworkSettle)
+    var supermuxRouteLoop: Task<Void, Never>?
+    // SUPERMUX:end phone-route-direct-race
 
     /// Dependencies are owned here; authentication is supplied later without copying its persistence.
     public init(configuration: MobileIrohV2Configuration, macListAuthState: MobileMacListAuthState, keychainAccessGroup: String? = nil,
@@ -82,6 +102,10 @@ public actor MobileIrxRuntimeComposition {
         installation = MobileIrohV2InstallationStore(configuration: configuration, accessGroup: keychainAccessGroup)
         journal = IrxJournal(subsystem: "dev.cmux.ios", category: "iroh-v2",
             journalFileURL: configuration.stateDirectory.appendingPathComponent("iroh-v2-journal.jsonl"))
+        // SUPERMUX:begin phone-route-direct-race
+        supermuxRouteCandidates = SupermuxRouteCandidateStore(
+            fileURL: Self.supermuxRouteCandidatesFile(stateDirectory: configuration.stateDirectory))
+        // SUPERMUX:end phone-route-direct-race
     }
 
     /// Shared registration ID for this installation's Iroh and Cloud clients.
