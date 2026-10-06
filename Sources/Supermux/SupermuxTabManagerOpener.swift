@@ -9,12 +9,29 @@ import os
 @MainActor
 final class SupermuxTabManagerOpener: SupermuxWorkspaceOpening {
     private weak var tabManager: TabManager?
+    /// Whether an open whose window has closed goes to the app's main window
+    /// instead: a worktree created in the background can finish after the
+    /// window that started it is gone.
+    private let fallsBackToMainWindow: Bool
     private static let logger = Logger(subsystem: "com.cmuxterm.app", category: "supermux.opener")
 
     /// Creates an opener bound to one window's tab manager.
-    /// - Parameter tabManager: The window's workspace manager.
-    init(tabManager: TabManager) {
+    /// - Parameters:
+    ///   - tabManager: The window's workspace manager.
+    ///   - fallsBackToMainWindow: Open in the app's main window once this
+    ///     window has closed, instead of dropping the open.
+    init(tabManager: TabManager, fallsBackToMainWindow: Bool = false) {
         self.tabManager = tabManager
+        self.fallsBackToMainWindow = fallsBackToMainWindow
+    }
+
+    /// This window's manager, or the main window's once this one has closed
+    /// (only with ``fallsBackToMainWindow``).
+    private var openTarget: TabManager? {
+        guard fallsBackToMainWindow, tabManager?.isFinalizedForWindowClose ?? true else { return tabManager }
+        return AppDelegate.shared?.preferredMainWindowContextForWorkspaceCreation(
+            debugSource: "supermux.opener.closedWindow"
+        )?.tabManager
     }
 
     func openWorkspace(_ request: SupermuxOpenWorkspaceRequest) {
@@ -28,7 +45,7 @@ final class SupermuxTabManagerOpener: SupermuxWorkspaceOpening {
     /// `nil` only when the window's tab manager is gone.
     @discardableResult
     func openWorkspaceReturningWorkspaceId(_ request: SupermuxOpenWorkspaceRequest) -> UUID? {
-        guard let tabManager else { return nil }
+        guard let tabManager = openTarget else { return nil }
         let directory = (request.directory as NSString).expandingTildeInPath
         // A command- or setup-carrying request always opens a fresh workspace so
         // the work runs in a clean terminal; plain "open" requests reuse a

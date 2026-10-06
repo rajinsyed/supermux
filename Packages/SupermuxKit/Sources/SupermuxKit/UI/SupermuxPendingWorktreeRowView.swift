@@ -6,7 +6,8 @@ public import SwiftUI
 public struct SupermuxPendingWorktreeRow: Identifiable, Equatable, Sendable {
     /// The create's id.
     public let id: UUID
-    /// The name the workspace is expected to open as.
+    /// The name the workspace is expected to open as: what was typed, or the
+    /// prompt's offline guess (AI naming may still pick another).
     public let title: String
     /// What is happening ("Creating worktree…", "Creating on <Mac>…"), or
     /// that it failed.

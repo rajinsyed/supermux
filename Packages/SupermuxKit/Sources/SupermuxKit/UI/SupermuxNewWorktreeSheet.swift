@@ -294,7 +294,9 @@ public struct SupermuxNewWorktreeSheet: View {
         HStack(spacing: 8) {
             Spacer(minLength: 0)
             Button(String(localized: "supermux.common.cancel", defaultValue: "Cancel")) {
-                sheet.cancel()
+                // A create already handed to the background is not this
+                // sheet's to cancel (Esc during the closing animation).
+                if runInBackground == nil { sheet.cancel() }
                 dismiss()
             }
             .keyboardShortcut(.cancelAction)

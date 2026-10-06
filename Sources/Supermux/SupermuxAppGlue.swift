@@ -223,7 +223,9 @@ struct SupermuxProjectsMount: View {
         )
         SupermuxProjectsSectionView(
             model: SupermuxComposition.projectsModel,
-            opener: SupermuxTabManagerOpener(tabManager: tabManager),
+            // A worktree created in the background still opens if its
+            // window closed meanwhile (in the main window, unselected).
+            opener: SupermuxTabManagerOpener(tabManager: tabManager, fallsBackToMainWindow: true),
             openWorkspaces: openWorkspaces,
             onSelectWorkspace: { [weak tabManager] id in
                 guard let workspace = tabManager?.tabs.first(where: { $0.id == id }) else { return }
