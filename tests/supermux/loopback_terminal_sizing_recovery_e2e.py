@@ -52,7 +52,15 @@ Steps (fix, what it proves; why it fails today):
                                       today.
   R6  fit_everyone_hidden_pane        (F3 guard) Fit everyone with another Mac viewing (200x60): while
                                       the pane is hidden the grid is 200x60 (a hidden pane does not
-                                      size a terminal someone else views). Passes today.
+                                      size a terminal someone else views), and it holds for 1.5 s:
+                                      the Mac row stays out and the live grid stays 200x60. From the
+                                      hide to the end of that hold the size state moves at most 3
+                                      generations (the mark and the pane's capped viewport take 2).
+                                      Today the mark's own publish makes SwiftUI's portal
+                                      reconciliation un-hide the pane for a few ms (the driver hides
+                                      it again), the decision after the cap sees it on screen and
+                                      lifts the mark at once, and the grid flaps 200x60 / 67x35 about
+                                      every 100 ms (generation +5 to +32) until the churn stops.
   R7  mac_activity_kept               (F5) the phone owns; the Mac row counts false; a key press on
                                       the Mac pane; the phone repeats its 40x12; the Mac row counts
                                       again: the Mac owns. Today activity that changes no published
@@ -170,6 +178,7 @@ non-zero on any failure. Stdlib only.
 
 Usage:
   CMUX_TAG=<tag> python3 tests/supermux/loopback_terminal_sizing_recovery_e2e.py [--timeout 30] [--report PATH]
+  CMUX_TAG=<tag> python3 tests/supermux/loopback_terminal_sizing_recovery_e2e.py --only R6 --repeat 25
   CMUX_E2E_SUITES="loopback_terminal_sizing_recovery_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
 """
 
@@ -332,11 +341,12 @@ class SizingRecoveryE2E(SizingPolicyE2E):
                           "the local steps need auto-mirror off")
 
     def keeps(self, what: str, surface_id: str, check: Callable[[Dict[str, Any]], None],
-              seconds: float) -> Dict[str, Any]:
-        """`check` keeps passing for `seconds`; a failure says what was expected and when it broke."""
+              seconds: float, steady: bool = False) -> Dict[str, Any]:
+        """`check` keeps passing for `seconds` (and, `steady`, the size state barely moves); a failure
+        says what was expected and when it broke."""
         started = time.monotonic()
         try:
-            return self.hold(surface_id, check, seconds, steady=False)
+            return self.hold(surface_id, check, seconds, steady=steady)
         except Failure as error:
             self.snap(f"broke: {what}", surface_id)
             raise Failure(f"{what}: broke after {time.monotonic() - started:.1f}s of {seconds}s: {error}") from None
@@ -675,7 +685,8 @@ class SizingRecoveryE2E(SizingPolicyE2E):
         return {"decided": decided}
 
     def r6_fit_everyone_hidden_pane(self) -> Dict[str, Any]:
-        hidden_ms = 3000
+        # Long enough for the steady hold after the pane stops counting, before the reveal.
+        hidden_ms = 4000
         workspace, surface = self.fresh("r6")
         viewer = self.client("r6-mac")
         self.set_mode(surface, "smallest")
@@ -683,6 +694,7 @@ class SizingRecoveryE2E(SizingPolicyE2E):
             self.within("Fit everyone", surface, self.expect_mode("smallest"), 3)
             self.report(workspace, surface, viewer, 200, 60, kind="mac")
             self.within("the other Mac to join", surface, self.has_row("mobile:" + viewer, "the other Mac"), 3)
+            before = int(self.state(surface).get("generation") or 0)
             self.portal_flicker(surface, hidden_ms)
             hidden_at = time.monotonic()
             self.within("the hidden Mac pane to stop counting", surface, self.mac_counts(False), 2)
@@ -691,14 +703,29 @@ class SizingRecoveryE2E(SizingPolicyE2E):
                 if self.grid(state) != (200, 60):
                     raise Failure(f"grid {self.grid(state)}, expected the viewing Mac's 200x60 while the pane is hidden")
 
+            def stays_hidden(state: Dict[str, Any]) -> None:
+                viewer_grid(state)
+                self.mac_counts(False)(state)
+                live = self.surface_grid(surface)
+                if live != (200, 60):
+                    raise Failure(f"the live grid is {live}, not the viewing Mac's 200x60")
+
             decided = self.within("the viewing Mac's 200x60 while the pane is hidden", surface, viewer_grid, 1.0)
+            held = self.keeps("the viewing Mac's 200x60, steady while the pane stays hidden", surface,
+                              stays_hidden, 1.5, steady=True)
+            end = int(self.state(surface).get("generation") or 0)
+            held["generations"] = [before, end]
+            if end - before > 3:
+                self.snap("flapped while hidden", surface)
+                raise Failure(f"the size state flapped while the pane was hidden: generation {before} -> {end} "
+                              "(the mark and the pane's capped viewport take 2)")
             self.before_reveal(hidden_at, hidden_ms)
             time.sleep(max(0.0, hidden_ms / 1000.0 - (time.monotonic() - hidden_at)) + 0.5)
             after = self.snap("after the reveal", surface)
         finally:
             self.leave(workspace, surface, viewer)
             self.set_mode(surface, "latest")
-        return {"decided": decided, "after_reveal": after}
+        return {"decided": decided, "held": held, "after_reveal": after}
 
     # -- R7-R8: the Mac's activity ----------------------------------------------------
 
@@ -1349,11 +1376,32 @@ class SizingRecoveryE2E(SizingPolicyE2E):
             self.facts.setdefault("cleanup_errors", []).append(str(error))
         super().cleanup()
 
+    def selected_plan(self) -> List[Tuple[str, Callable[[], Optional[Dict[str, Any]]]]]:
+        """The plan, or only the steps `--only` names (by name or its prefix, e.g. `R6`), each run
+        `--repeat` times. A repeated step closes its workspaces after each run."""
+        only = [name.strip() for name in (self.args.only or "").split(",") if name.strip()]
+        plan = [(name, action) for name, action in self.plan()
+                if not only or any(name == want or name.startswith(want + "_") for want in only)]
+        repeat = max(1, self.args.repeat)
+        if repeat == 1:
+            return plan
+
+        def again(action: Callable[[], Optional[Dict[str, Any]]]) -> Callable[[], Optional[Dict[str, Any]]]:
+            def run() -> Optional[Dict[str, Any]]:
+                try:
+                    return action()
+                finally:
+                    if not self.source_surface:
+                        self.close_created()
+            return run
+
+        return [(f"{name}#{index}", again(action)) for name, action in plan for index in range(1, repeat + 1)]
+
     def run(self) -> bool:
         ok = self.step("setup", self.setup)
         if ok:
             self.set_auto_mirror(False)
-            for name, action in self.plan():
+            for name, action in self.selected_plan():
                 ok = self.step(name, action) and ok
         self.cleanup()
         return ok
@@ -1367,6 +1415,8 @@ def main() -> int:
     parser.add_argument("--app-path", help="unused (accepted for the runner's common arguments)")
     parser.add_argument("--projects-file", help="unused (accepted for the runner's common arguments)")
     parser.add_argument("--keep", action="store_true", help="leave the test workspaces open")
+    parser.add_argument("--only", help="comma-separated steps to run (a name or its prefix, e.g. R6); default all")
+    parser.add_argument("--repeat", type=int, default=1, help="run each selected step this many times (e.g. 25)")
     parser.add_argument("--report", help="report path")
     args = parser.parse_args()
     if not args.tag and not args.socket:
