@@ -105,7 +105,6 @@ struct SupermuxPendingWorktreeRowView: View, Equatable {
         .contextMenu { menu }
         .help(row.detail ?? row.status)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(row.title), \(row.status)")
         .accessibilityAddTraits(row.isFailed ? .isButton : [])
     }
 

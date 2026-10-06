@@ -78,9 +78,13 @@ class BackgroundE2E(PickerE2E):
 
     # -- helpers -------------------------------------------------------------
 
+    def open_session(self, **extra: Any) -> Dict[str, Any]:
+        """A sheet opened in the test's window, like a click on its sidebar."""
+        return super().open_session(window_id=self.window_id, **extra)
+
     def pending(self) -> List[Dict[str, Any]]:
-        """The pending rows the sidebar draws under the project."""
-        return self.call("pending", {"project_id": self.project_id}).get("pending") or []
+        """The pending rows the test window's sidebar draws under the project."""
+        return self.call("pending", {"project_id": self.project_id, "window_id": self.window_id}).get("pending") or []
 
     def pending_row(self, pending_id: str) -> Optional[Dict[str, Any]]:
         return next((row for row in self.pending() if row.get("id") == pending_id), None)

@@ -60,6 +60,8 @@ public struct SupermuxProjectsSectionView: View {
     /// The creates the sheet handed to the background, drawn as loading rows
     /// under their projects. May be a shared, host-injected instance (see `init`).
     @State var pendingWorktrees: SupermuxPendingWorktreeStore
+    /// This window's key in a shared ``pendingWorktrees`` store.
+    let pendingWorktreeOwner: AnyHashable?
     /// Presents "Set Up on <Mac>…".
     @State var projectSetupTarget: SupermuxProjectSetupTarget?
 
@@ -132,6 +134,8 @@ public struct SupermuxProjectsSectionView: View {
     ///   - pendingWorktrees: A host-owned store of background creates shared
     ///     across windows. Same stable-instance contract as
     ///     `pullRequestModel`; `nil` keeps a private per-section store.
+    ///   - pendingWorktreeOwner: This window's key in that store, so the
+    ///     window shows (and retries) only the creates it started.
     public init(
         model: SupermuxProjectsModel,
         opener: any SupermuxWorkspaceOpening,
@@ -145,6 +149,7 @@ public struct SupermuxProjectsSectionView: View {
         pullRequestModel: SupermuxWorktreePullRequestModel? = nil,
         iconStore: SupermuxProjectIconStore? = nil,
         pendingWorktrees: SupermuxPendingWorktreeStore? = nil,
+        pendingWorktreeOwner: AnyHashable? = nil,
         agentLaunch: SupermuxAgentLaunchEnvironment? = nil,
         remote: SupermuxRemoteProjectsPresentation = .empty
     ) {
@@ -162,6 +167,7 @@ public struct SupermuxProjectsSectionView: View {
         _pullRequestModel = State(initialValue: pullRequestModel ?? SupermuxWorktreePullRequestModel())
         _iconStore = State(initialValue: iconStore ?? SupermuxProjectIconStore())
         _pendingWorktrees = State(initialValue: pendingWorktrees ?? SupermuxPendingWorktreeStore())
+        self.pendingWorktreeOwner = pendingWorktreeOwner
     }
 
     public var body: some View {
@@ -297,7 +303,9 @@ public struct SupermuxProjectsSectionView: View {
                 model: item.model,
                 avatar: item.avatar,
                 projectIcon: item.icon,
-                runInBackground: { sheet in pendingWorktrees.start(sheet, rowID: item.rowID) != nil }
+                runInBackground: { sheet in
+                    pendingWorktrees.start(sheet, rowID: item.rowID, owner: pendingWorktreeOwner) != nil
+                }
             )
         }
         .sheet(item: $editorProject) { project in

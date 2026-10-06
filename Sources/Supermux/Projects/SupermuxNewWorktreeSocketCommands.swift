@@ -21,8 +21,8 @@ import SupermuxKit
 /// (`background`: hands the sheet to the sidebar's
 /// ``SupermuxPendingWorktreeStore`` as its Create button does and answers at
 /// once with `pending_id`),
-/// `pending {project_id?}` (the background creates the sidebar draws, under
-/// that project row or all), `pending_action {pending_id, action}` (`cancel`,
+/// `pending {project_id?, window_id?}` (the background creates, under that
+/// project row or all; with `window_id`, the ones that window's sidebar draws), `pending_action {pending_id, action}` (`cancel`,
 /// `dismiss`, or `reopen`, which answers with the reopened sheet's session),
 /// `state {session_id}`, `close {session_id}`, `last_device {set?}` (the one
 /// remembered Mac; `set` replaces it and returns `previous`),
@@ -41,10 +41,13 @@ enum SupermuxNewWorktreeSocketCommands {
         let setUps: SetUpLog
         /// The sidebar project row the sheet was opened from.
         let rowID: UUID
-        init(model: SupermuxNewWorktreeSheetModel, setUps: SetUpLog, rowID: UUID) {
+        /// The window it was opened in (``SupermuxComposition/pendingWorktreeOwner(_:)``).
+        let owner: AnyHashable?
+        init(model: SupermuxNewWorktreeSheetModel, setUps: SetUpLog, rowID: UUID, owner: AnyHashable?) {
             self.model = model
             self.setUps = setUps
             self.rowID = rowID
+            self.owner = owner
         }
     }
 
@@ -129,7 +132,12 @@ enum SupermuxNewWorktreeSocketCommands {
         } else {
             throw invalid("project_id names no local project or remote-only project row")
         }
-        let session = Session(model: model, setUps: setUps, rowID: projectID)
+        let session = Session(
+            model: model,
+            setUps: setUps,
+            rowID: projectID,
+            owner: SupermuxComposition.pendingWorktreeOwner(tabManager)
+        )
         sessions[sessionID] = session
         var payload = state(session)
         payload["session_id"] = sessionID
@@ -186,7 +194,8 @@ enum SupermuxNewWorktreeSocketCommands {
     private static func submitInBackground(_ params: [String: Any]) async throws -> [String: Any] {
         let session = try session(params)
         await fill(session.model, params)
-        guard let creation = SupermuxComposition.pendingWorktrees.start(session.model, rowID: session.rowID) else {
+        let store = SupermuxComposition.pendingWorktrees
+        guard let creation = store.start(session.model, rowID: session.rowID, owner: session.owner) else {
             throw invalid("Create is disabled for the selected Mac (can_create is false)")
         }
         var payload = state(session)
@@ -194,10 +203,18 @@ enum SupermuxNewWorktreeSocketCommands {
         return payload
     }
 
-    /// The background creates the sidebar draws, under one project row or all.
+    /// The background creates, under one project row or all; with
+    /// `window_id`, only the ones that window's sidebar draws.
     private static func pending(_ params: [String: Any]) throws -> [String: Any] {
-        let rowID = params["project_id"] == nil ? nil : try uuid(params, "project_id")
-        let creations = SupermuxComposition.pendingWorktrees.creations.filter { rowID == nil || $0.rowID == rowID }
+        var creations = SupermuxComposition.pendingWorktrees.creations
+        if params["project_id"] != nil {
+            let rowID = try uuid(params, "project_id")
+            creations = creations.filter { $0.rowID == rowID }
+        }
+        if params["window_id"] != nil {
+            let owner = SupermuxComposition.pendingWorktreeOwner(try SupermuxProjectsSocketCommands.tabManager(params))
+            creations = creations.filter { $0.owner == owner }
+        }
         return ["pending": creations.map(pendingRow)]
     }
 
@@ -213,7 +230,7 @@ enum SupermuxNewWorktreeSocketCommands {
             store.dismiss(id)
         case "reopen":
             guard let creation = store.reopen(id) else { throw invalid("pending_id names no failed create") }
-            let session = Session(model: creation.sheet, setUps: SetUpLog(), rowID: creation.rowID)
+            let session = Session(model: creation.sheet, setUps: SetUpLog(), rowID: creation.rowID, owner: creation.owner)
             let sessionID = UUID().uuidString
             sessions[sessionID] = session
             var payload = state(session)

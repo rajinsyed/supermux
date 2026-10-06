@@ -65,9 +65,10 @@ extension SupermuxProjectsSectionView {
 
     // MARK: - Background creates
 
-    /// The rows of the creates running in the background under one sidebar row.
+    /// The rows of this window's creates running in the background under one
+    /// sidebar row.
     func pendingRows(for rowID: UUID) -> [SupermuxPendingWorktreeRow] {
-        pendingWorktrees.creations(forRow: rowID).map(\.row)
+        pendingWorktrees.creations(forRow: rowID, owner: pendingWorktreeOwner).map(\.row)
     }
 
     /// What a background create's row does.

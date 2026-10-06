@@ -138,10 +138,15 @@ enum SupermuxComposition {
     )
 
     /// App-wide New Worktree creates running in the background, shared by
-    /// every window's sidebar (each draws them under their project) and the
-    /// DEBUG `new_worktree` socket drivers. Must be a stable instance — the
-    /// section seeds its `@State` from it on first mount.
+    /// every window's sidebar (each draws the ones it started, keyed by its
+    /// `TabManager`) and the DEBUG `new_worktree` socket drivers. Must be a
+    /// stable instance — the section seeds its `@State` from it on first mount.
     static let pendingWorktrees = SupermuxPendingWorktreeStore()
+
+    /// A window's key in ``pendingWorktrees``.
+    static func pendingWorktreeOwner(_ tabManager: TabManager) -> AnyHashable {
+        AnyHashable(ObjectIdentifier(tabManager))
+    }
 
     /// App-wide subagent transcript service shared by every harness pane and web consumer.
     static let harnessSubagentTranscriptService: any SupermuxHarnessSubagentTranscriptLoading =
@@ -286,6 +291,7 @@ struct SupermuxProjectsMount: View {
             iconStore: SupermuxComposition.projectIconStore,
             // Creates the New Worktree sheet handed to the background.
             pendingWorktrees: SupermuxComposition.pendingWorktrees,
+            pendingWorktreeOwner: SupermuxComposition.pendingWorktreeOwner(tabManager),
             // "Start Claude in a New Worktree" (prompt-first worktree launch).
             agentLaunch: SupermuxComposition.agentLaunch,
             // Other Macs' copies: remote-only rows, Mac icons and actions.
