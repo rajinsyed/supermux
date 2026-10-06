@@ -23,6 +23,8 @@ import Testing
 /// 4. A host that answers nothing and sent nothing in the window reads as
 ///    alive, so a dead link is kept.
 /// 5. A closed connection reads as alive.
+/// 6. A slow host's answer is lost because the connection's own keepalive,
+///    with its shorter deadline, joins the check's probe and retires it.
 @Suite("peer activity evidence for a device link's liveness check", .serialized)
 struct SupermuxIrxPeerActivityTests {
     @Test("output on another lane proves life while the control stream never answers", .timeLimit(.minutes(1)))
@@ -52,6 +54,18 @@ struct SupermuxIrxPeerActivityTests {
         let start = ContinuousClock.now
         #expect(await !pair.clientControl.supermuxPeerShowsLife(since: start, probeDeadline: .milliseconds(500)))
         #expect(start.duration(to: .now) >= .milliseconds(500), "the keepalive probe must have run to its deadline")
+        await pair.shutDown()
+    }
+
+    @Test("a slow host's answer counts though the keepalive's shorter probes run alongside", .timeLimit(.minutes(1)))
+    func slowAnswerOutlastsTheKeepalive() async throws {
+        let pair = try await PeerActivityPair.make(answersKeepalive: true, keepaliveReplyDelay: .milliseconds(1500))
+        try await pair.client.startClientKeepalive(interval: .milliseconds(100), deadline: .milliseconds(500)) {}
+        let start = ContinuousClock.now
+        #expect(
+            await pair.clientControl.supermuxPeerShowsLife(since: start, probeDeadline: .seconds(4)),
+            "the host answers 1.5 s after each ping, inside the check's 4 s"
+        )
         await pair.shutDown()
     }
 
@@ -102,7 +116,8 @@ private final class PeerActivityPair: Sendable {
         ))
     }
 
-    static func make(answersKeepalive: Bool) async throws -> PeerActivityPair {
+    /// `keepaliveReplyDelay`: how long an answering host waits before each pong.
+    static func make(answersKeepalive: Bool, keepaliveReplyDelay: Duration = .zero) async throws -> PeerActivityPair {
         let journal = IrxLiveTestSupport.journal()
         let server = try await bind()
         let clientEndpoint = try await bind()
@@ -134,7 +149,11 @@ private final class PeerActivityPair: Sendable {
             var unanswered: [IrxLaneStream] = []
             while !Task.isCancelled, let lane = await host.acceptLane() {
                 if answersKeepalive, lane.descriptor.lane == .keepalive {
-                    _ = host.respondKeepalive(on: lane)
+                    if keepaliveReplyDelay == .zero {
+                        _ = host.respondKeepalive(on: lane)
+                    } else {
+                        Self.respondKeepalive(on: lane, after: keepaliveReplyDelay)
+                    }
                 } else {
                     unanswered.append(lane)
                 }
@@ -145,6 +164,16 @@ private final class PeerActivityPair: Sendable {
             server: server, clientEndpoint: clientEndpoint, client: client, host: host,
             clientControl: clientControl, serving: serving
         )
+    }
+
+    /// Answers each ping on `lane` with its pong `delay` later.
+    private static func respondKeepalive(on lane: IrxLaneStream, after delay: Duration) {
+        Task {
+            while let ping = try? await lane.reader.readControlFrame(IrxPing.self), !ping.pong {
+                try? await Task.sleep(for: delay)
+                try? await lane.writer.writeControlFrame(IrxPing(seq: ping.seq, pong: true))
+            }
+        }
     }
 
     /// The host writes one frame on an events lane; returns once the client read it.
