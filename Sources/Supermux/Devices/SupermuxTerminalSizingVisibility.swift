@@ -36,6 +36,13 @@ import SupermuxKit
 /// decision (`sizing-mac-pane-recheck`): nobody counting holds the grid, so a
 /// shown pane still marked off screen kept a departed phone's size.
 ///
+/// While someone else would size the terminal, a marked pane comes back only
+/// once it stays on screen for a moment too. The mark's own publish makes
+/// SwiftUI reconcile the pane, which un-hides a pane the portal hid until the
+/// portal hides it again a few ms later. Lifting the mark on that reveal
+/// resized the terminal back to the pane's grid, the next settle marked it
+/// again, and the grid flapped between the two sizes about every 100 ms.
+///
 /// Also: a terminal whose runtime starts after its shared grid was decided
 /// gets that grid when it becomes ready (upstream applies only to a live
 /// surface and never retries).
@@ -54,6 +61,9 @@ final class SupermuxTerminalSizingVisibility {
     /// Local terminals whose Mac pane is off screen but still counts, because
     /// nobody else would size the terminal. Disjoint from `hiddenHosts`.
     private var releasedHosts: Set<UUID> = []
+    /// Marked panes seen on screen, waiting to stay there through the settle
+    /// (`showWhenSettled`). Seeing the pane off screen again ends the wait.
+    private var pendingShows: Set<UUID> = []
     private var observers: [NSObjectProtocol] = []
 
     /// Starts following visibility changes. Later calls are no-ops.
@@ -145,7 +155,8 @@ final class SupermuxTerminalSizingVisibility {
     /// Called before a local terminal's sizing decision applies, so the
     /// decision never holds a departed viewer's size. A set lookup unless the
     /// pane is off screen.
-    /// - On screen: the pane counts again.
+    /// - On screen: the pane counts again; while someone else would size the
+    ///   terminal, only once it stays on screen (`showWhenSettled`).
     /// - Marked, but nobody else would size the terminal any more: the pane
     ///   counts again, released.
     /// - Released, and someone else would size it now: marked again.
@@ -159,8 +170,13 @@ final class SupermuxTerminalSizingVisibility {
               let surface = controller.terminalSocketTarget(surfaceID: surfaceID)?.surface,
               let row = host.state.participant(host.macParticipantID) else { return }
         let override = row.participant.countsOverride
+        let onScreen = Self.isOnScreen(surface)
+        if !onScreen { showInterrupted(surfaceID) }
         let value: Bool?
-        if Self.isOnScreen(surface) {
+        if onScreen, marked, override == false, Self.othersWouldCount(host) {
+            showWhenSettled(surfaceID)
+            return
+        } else if onScreen {
             hiddenHosts.remove(surfaceID)
             releasedHosts.remove(surfaceID)
             guard marked, override == false else { return }
@@ -291,12 +307,15 @@ final class SupermuxTerminalSizingVisibility {
         }
     }
 
-    /// How long a pane must stay off screen before it counts as hidden.
+    /// How long a pane must stay off screen before it counts as hidden, and a
+    /// marked pane on screen before it counts again.
     private static let hideSettleNanoseconds: UInt64 = 250_000_000
 
-    /// Shows at once; hides, as a mirror does, only once the pane is still off
-    /// screen a moment later (the portal hides a pane briefly during layout).
-    /// A hidden pane nobody else would replace is released instead of marked.
+    /// Hides, as a mirror does, only once the pane is still off screen a
+    /// moment later (the portal hides a pane briefly during layout). A hidden
+    /// pane nobody else would replace is released instead of marked. Shows a
+    /// marked pane once it stays on screen (`showWhenSettled`), at once when
+    /// nobody else would size the terminal.
     private func refreshHost(_ surfaceID: UUID, settled: Bool = false) {
         let controller = TerminalController.shared
         guard let host = controller.localSizingHostsBySurfaceID[surfaceID] else {
@@ -308,6 +327,7 @@ final class SupermuxTerminalSizingVisibility {
         let macID = host.macParticipantID
         let current = host.state.participant(macID)?.participant.countsOverride
         if !Self.isOnScreen(surface) {
+            showInterrupted(surfaceID)
             // A released pane is hostWillApply's: it marks it once someone else counts.
             guard current == nil, !releasedHosts.contains(surfaceID) else { return }
             guard settled else {
@@ -326,15 +346,53 @@ final class SupermuxTerminalSizingVisibility {
             }
         } else if releasedHosts.remove(surfaceID) != nil {
             return
+        } else if hiddenHosts.contains(surfaceID), current == false, Self.othersWouldCount(host) {
+            showWhenSettled(surfaceID)
         } else if hiddenHosts.remove(surfaceID) != nil, current == false {
-            // Coming on screen is an explicit return, not a flap: apply at
-            // once rather than after the governor's uncap window.
-            var updated = host
-            let previous = updated.state
-            updated.setCountsOverride(macID, nil)
-            controller.localSizingHostsBySurfaceID[surfaceID] = updated
-            _ = controller.applyLocalSizing(surfaceID: surfaceID, previous: previous, immediate: true, reason: "supermux.sizing.onScreen")
+            liftMark(surfaceID)
         }
+    }
+
+    /// Lifts the mark of a pane seen on screen once it stayed there through
+    /// the settle; seeing it off screen meanwhile cancels the wait
+    /// (`showInterrupted`). A reveal the portal undoes a few ms later is no
+    /// return.
+    private func showWhenSettled(_ surfaceID: UUID) {
+        guard pendingShows.insert(surfaceID).inserted else { return }
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: Self.hideSettleNanoseconds)
+            guard let self, self.pendingShows.remove(surfaceID) != nil else { return }
+            let controller = TerminalController.shared
+            guard let host = controller.localSizingHostsBySurfaceID[surfaceID],
+                  let surface = controller.terminalSocketTarget(surfaceID: surfaceID)?.surface,
+                  Self.isOnScreen(surface),
+                  host.state.participant(host.macParticipantID)?.participant.countsOverride == false,
+                  self.hiddenHosts.remove(surfaceID) != nil else { return }
+            self.liftMark(surfaceID)
+        }
+    }
+
+    /// The pane was seen off screen while its show waited to settle: the show
+    /// did not hold. Looks again a settle later, as the reveal that ends this
+    /// hide may post nothing.
+    private func showInterrupted(_ surfaceID: UUID) {
+        guard pendingShows.remove(surfaceID) != nil else { return }
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: Self.hideSettleNanoseconds)
+            self?.refreshHost(surfaceID)
+        }
+    }
+
+    /// The marked pane is on screen: it counts again. Coming on screen is an
+    /// explicit return, not a flap: apply at once rather than after the
+    /// governor's uncap window.
+    private func liftMark(_ surfaceID: UUID) {
+        let controller = TerminalController.shared
+        guard var host = controller.localSizingHostsBySurfaceID[surfaceID] else { return }
+        let previous = host.state
+        host.setCountsOverride(host.macParticipantID, nil)
+        controller.localSizingHostsBySurfaceID[surfaceID] = host
+        _ = controller.applyLocalSizing(surfaceID: surfaceID, previous: previous, immediate: true, reason: "supermux.sizing.onScreen")
     }
 
     /// On screen: shown in its workspace, in a visible window that is not
