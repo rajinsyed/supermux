@@ -146,6 +146,13 @@ final class SupermuxTabManagerOpener: SupermuxWorkspaceOpening {
         }
     }
 
+    /// Runs a project action's command as a new terminal tab in the selected
+    /// workspace (see ``runAction(_:in:)``). The protocol requirement the
+    /// sidebar's project row calls.
+    func runAction(_ request: SupermuxOpenWorkspaceRequest) {
+        runAction(request, in: nil)
+    }
+
     /// Runs a project action's command as a new terminal tab in the focused
     /// workspace (the presets-bar behavior), not as a separate workspace. The
     /// command runs through the workspace's interactive shell (see
@@ -154,8 +161,9 @@ final class SupermuxTabManagerOpener: SupermuxWorkspaceOpening {
     /// - Parameters:
     ///   - request: The action's command, title and project.
     ///   - target: Where to run instead of the selected workspace (another
-    ///     Mac names the one its user is looking at through its mirror).
-    func runAction(_ request: SupermuxOpenWorkspaceRequest, in target: Workspace? = nil) {
+    ///     Mac names the one its user is looking at through its mirror), or
+    ///     `nil` for the selected workspace.
+    func runAction(_ request: SupermuxOpenWorkspaceRequest, in target: Workspace?) {
         // A device mirror's terminals run on another Mac: a local project's
         // action must not open a local shell inside it, so it gets its own
         // workspace (the no-focused-workspace fallback).

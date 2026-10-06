@@ -123,13 +123,48 @@ public protocol SupermuxWorkspaceOpening: AnyObject {
     /// expects them to run where they are looking, like the global presets bar,
     /// not to spawn a new workspace. Hosts should fall back to
     /// ``openWorkspace(_:)`` when there is no focused workspace to host the tab.
+    ///
+    /// Deliberately has no default implementation: with one, a host method
+    /// whose signature drifted (e.g. gained a parameter) silently stopped
+    /// witnessing this requirement, and every action opened a new workspace.
     func runAction(_ request: SupermuxOpenWorkspaceRequest)
 }
 
 public extension SupermuxWorkspaceOpening {
-    /// Default behaviour: open a workspace, matching the legacy action path.
-    /// Hosts that can target the focused workspace override this.
-    func runAction(_ request: SupermuxOpenWorkspaceRequest) {
-        openWorkspace(request)
+    /// Runs one of `project`'s actions where the user is looking
+    /// (``runAction(_:)``): the path of a local project row's Actions menu.
+    /// No-op for an action without a name or command.
+    /// - Parameters:
+    ///   - action: The action to run.
+    ///   - project: The project that owns it.
+    ///   - preservesUserFocus: Leave keyboard focus where it is instead of
+    ///     moving it to the action's new tab.
+    func runProjectAction(
+        _ action: SupermuxProjectAction,
+        of project: SupermuxProject,
+        preservesUserFocus: Bool = false
+    ) {
+        guard action.isLaunchable else { return }
+        runAction(.projectAction(action, of: project, preservesUserFocus: preservesUserFocus))
+    }
+}
+
+public extension SupermuxOpenWorkspaceRequest {
+    /// The request a project action runs with: its command, in a tab titled
+    /// "<project> · <action>", associated with the project, at the project
+    /// root when there is no workspace to run in.
+    static func projectAction(
+        _ action: SupermuxProjectAction,
+        of project: SupermuxProject,
+        preservesUserFocus: Bool = false
+    ) -> SupermuxOpenWorkspaceRequest {
+        SupermuxOpenWorkspaceRequest(
+            title: "\(project.name) · \(action.name)",
+            directory: project.rootPath,
+            colorHex: project.colorHex,
+            initialCommand: action.command,
+            projectId: project.id,
+            preservesUserFocus: preservesUserFocus
+        )
     }
 }
