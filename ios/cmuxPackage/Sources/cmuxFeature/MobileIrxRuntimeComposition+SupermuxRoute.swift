@@ -303,7 +303,8 @@ extension MobileIrxRuntimeComposition: SupermuxPhoneRouteRuntime {
             await supermuxLearn(sample.remoteAddress, for: Self.supermuxRoutePeerKey(record), epoch: epoch)
         }
         var hasCandidates = false
-        if sample?.isRelay == true, let record {
+        // The addresses cost a store hop and an interface read; only a due probe uses them.
+        if sample?.isRelay == true, let record, supermuxRoutePolicies.probeDue(for: peerHex, at: now) {
             hasCandidates = await !supermuxDirectAddresses(
                 record: record, privateAddresses: supermuxPrivateAddressesByPeer[peerHex] ?? []).isEmpty
         }

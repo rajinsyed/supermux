@@ -138,7 +138,8 @@ public struct SupermuxPhoneRoutePolicies: Sendable {
     ///   - sessionID: The engine's current session, nil when it has none.
     ///   - sample: Its selected path, nil before iroh selected one.
     ///   - hasCandidates: Whether any of the Mac's direct addresses is
-    ///     reachable from the phone now (asked only of a relayed session).
+    ///     reachable from the phone now (asked only of a relayed session
+    ///     due to probe, ``probeDue(for:at:)``).
     ///   - now: The current time.
     public mutating func observe(
         _ mac: String, sessionID: String?, sample: Sample?, hasCandidates: Bool, at now: Date
@@ -161,6 +162,13 @@ public struct SupermuxPhoneRoutePolicies: Sendable {
             case .none, .upgrade, .fallBack: return .none
             }
         }
+    }
+
+    /// Whether a relayed sample of `mac` now would probe, given direct
+    /// addresses (``SupermuxRouteSwitchPolicy/probeDue(at:)``): only then
+    /// are they worth looking up for ``observe(_:sessionID:sample:hasCandidates:at:)``.
+    public func probeDue(for mac: String, at now: Date) -> Bool {
+        policies[mac]?.probeDue(at: now) ?? false
     }
 
     /// The answer to a ``Step/probe(session:)``: ``SupermuxRouteSwitchPolicy/Action/upgrade``

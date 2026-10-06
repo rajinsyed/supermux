@@ -187,7 +187,8 @@ public struct SupermuxRouteSwitchPolicy: Equatable, Sendable {
 
     /// The live session's path, sampled about once a second. `hasCandidates`:
     /// whether the peer's direct addresses (as this device can reach them)
-    /// are known; without any a relayed session is not probed.
+    /// are known; without any a relayed session is not probed. Only read
+    /// when ``probeDue(at:)``; pass anything otherwise.
     public mutating func observe(_ path: Path, hasCandidates: Bool = true, at now: Date) -> Action {
         guard let startedAt else { return .none }
         self.path = path
@@ -198,7 +199,13 @@ public struct SupermuxRouteSwitchPolicy: Equatable, Sendable {
                 upgradePending = false
                 recordFlap(at: now)
             }
-            guard hasCandidates, !probing, allowsDirect(at: now), let due = nextProbeAt, now >= due else { return .none }
+            guard probeDue(at: now) else { return .none }
+            guard hasCandidates else {
+                // Nothing to try: look again a probe interval out. New
+                // addresses or a network change bring the probe forward.
+                nextProbeAt = now.addingTimeInterval(Self.probeInterval)
+                return .none
+            }
             probing = true
             return .probe
         case .direct(let backedUp):
@@ -212,6 +219,15 @@ public struct SupermuxRouteSwitchPolicy: Equatable, Sendable {
             checking = true
             return .checkLiveness
         }
+    }
+
+    /// Whether a relayed sample now would probe, given direct addresses:
+    /// the owner asks before it looks the addresses up, which costs a store
+    /// hop and an interface read, so a link reads them only when they decide
+    /// something.
+    public func probeDue(at now: Date) -> Bool {
+        guard startedAt != nil, !probing, allowsDirect(at: now), let due = nextProbeAt else { return false }
+        return now >= due
     }
 
     /// The answer to a ``Action/probe`` started during `session`.

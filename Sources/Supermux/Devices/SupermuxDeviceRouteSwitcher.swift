@@ -187,7 +187,9 @@ final class SupermuxDeviceRouteSwitcher {
         // A link already up when the switcher started has had no connect event.
         if !started.contains(instance) { sessionStarted(instance, at: now) }
         guard let session = await session(for: device), let path = session.path, policies[instance] != nil else { return }
-        let hasCandidates = path == .relay ? await session.hasDirectAddresses() : true
+        // The addresses cost a store hop and an interface read; only a due probe uses them.
+        let probeDue = path == .relay && policies[instance]?.probeDue(at: now) == true
+        let hasCandidates = probeDue ? await session.hasDirectAddresses() : true
         guard var policy = policies[instance] else { return }
         let number = policy.session
         let action = policy.observe(path, hasCandidates: hasCandidates, at: now)
