@@ -21,7 +21,9 @@ import Testing
 /// - a phone whose app went inactive (every report cleared) gets everything
 ///   again, or the one that comes back gets nothing;
 /// - two phones affect each other; a closed connection's state lingers;
-/// - an unchanged set re-requests full frames on every report.
+/// - an unchanged set re-requests full frames on every report;
+/// - a phone that subscribes to render frames after writing its reports gets
+///   every terminal's frames until one of its reports changes (third review).
 @Suite("Supermux render-grid watch: frames only for terminals the phone shows")
 struct SupermuxRenderGridWatchTests {
     private let renderGrid = MobileHostEventTopicPolicy().renderGridTopic
@@ -142,6 +144,21 @@ struct SupermuxRenderGridWatchTests {
         ])
         #expect(state.reportsChanged(reports, isOpen: open).isEmpty)
         #expect(state.replayServed(surfaceID: shownID, connectionID: phone, isOpen: open).isEmpty)
+    }
+
+    @Test("Reports written before the render-grid subscription count once it subscribes")
+    func subscribingAfterReportsFilters() {
+        var state = SupermuxRenderGridWatchState()
+        var subscribed: Set<UUID> = []
+        let reports: Set<SupermuxRenderGridWatchState.Report> = [.init(surfaceID: shownID, connectionID: phone)]
+        #expect(state.reportsHeard(reports, takesRenderGrid: { subscribed.contains($0) }, isOpen: open).isEmpty,
+                "a connection not reading render frames is not filtered")
+        subscribed.insert(phone)
+        #expect(state.subscriptionsChanged(takesRenderGrid: { subscribed.contains($0) }, isOpen: open)
+            == [.init(connectionID: phone, surfaceIDs: [shownID], joined: [])])
+        #expect(state.reportsHeard(reports, takesRenderGrid: { subscribed.contains($0) }, isOpen: open).isEmpty,
+                "an unchanged report set sends nothing")
+        #expect(state.subscriptionsChanged(takesRenderGrid: { subscribed.contains($0) }, isOpen: open).isEmpty)
     }
 
     @Test("A closed connection is forgotten")
