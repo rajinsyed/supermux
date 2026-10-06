@@ -316,14 +316,26 @@ actor DeviceIrxClient {
         let target = try intent.resolve(cache: cache, localIdentity: context.localDevice.descriptor.identity, now: now())
         let relay = target.descriptor.metadata.relayURLs.first { cache.directory?.relayURLs.contains($0) == true }
         guard let relay else { throw DeviceLinkError.notConnected }
-        var credentials = Self.relayCredentials(cache, at: now())
-        if credentials.isEmpty {
+        // SUPERMUX:begin route-lane-without-relay (upstream: `var credentials = Self.relayCredentials(cache, at: now())`, refreshed here with `_ = try await context.control.refreshRelayCredentials()` when empty, then `guard await context.isCurrent(), !credentials.isEmpty else { throw DeviceLinkError.notConnected }`)
+        // An expired or missing credential (after 30 min idle, an internet outage) is refreshed in the race's
+        // relay leg, so the direct lane, which may reach the peer on the LAN or Tailscale, never waits for it.
+        let supermuxCachedCredentials = Self.relayCredentials(cache, at: now())
+        let supermuxCredentials: @Sendable () async throws -> [IrxRelayCredential] = {
+            guard supermuxCachedCredentials.isEmpty else { return supermuxCachedCredentials }
             _ = try await context.control.refreshRelayCredentials()
-            credentials = Self.relayCredentials(await context.control.snapshot().cache, at: now())
+            let fresh = Self.relayCredentials(await context.control.snapshot().cache, at: now())
+            guard await context.isCurrent(), !fresh.isEmpty else { throw DeviceLinkError.notConnected }
+            return fresh
         }
-        guard await context.isCurrent(), !credentials.isEmpty else { throw DeviceLinkError.notConnected }
-        let address = try context.supervisor.dialAddress(peerEndpointIDHex: endpoint, relayURL: relay, directAddresses: [])
-        let connection = try await context.supervisor.dial(address: address, credentials: credentials)
+        guard await context.isCurrent() else { throw DeviceLinkError.notConnected }
+        // SUPERMUX:end route-lane-without-relay
+        // SUPERMUX:begin route-dial-candidates (direct first: this Mac's direct lane at the peer's direct addresses races the relay dial below; upstream: `let address = try context.supervisor.dialAddress(peerEndpointIDHex: endpoint, relayURL: relay, directAddresses: [])` then `let connection = try await context.supervisor.dial(address: address, credentials: credentials)`)
+        let (connection, supermuxLeg) = try await SupermuxDeviceDirectDial.connect(
+            instance: instance, endpointID: endpoint, relayURL: relay, credentials: supermuxCredentials,
+            main: context.supervisor, allowsDirectPaths: context.allowsDirectPaths, journal: journal)
+        // A session on the lane never authorizes NAT traversal: no candidates, no health checks, no quarantine.
+        let supermuxAuthorizesDirectPaths = context.allowsDirectPaths && supermuxLeg == .relay
+        // SUPERMUX:end route-dial-candidates
         do {
             guard await context.isCurrent() else { throw DeviceLinkError.notConnected }
             // Post-admit binding recheck. On the direct-path lane it runs
@@ -340,13 +352,20 @@ actor DeviceIrxClient {
             }
             let (admit, control) = try await IrxAdmission().performClient(
                 connection: connection, journal: journal,
-                authorizesDirectPaths: context.allowsDirectPaths,
+                // SUPERMUX:begin route-dial-candidates (upstream: `authorizesDirectPaths: context.allowsDirectPaths,`)
+                authorizesDirectPaths: supermuxAuthorizesDirectPaths,
+                // SUPERMUX:end route-dial-candidates
                 preAuthorization: recheckBinding)
-            if !context.allowsDirectPaths { try await recheckBinding() }
+            // SUPERMUX:begin route-dial-candidates (upstream: `if !context.allowsDirectPaths { … }`)
+            if !supermuxAuthorizesDirectPaths { try await recheckBinding() }
+            // SUPERMUX:end route-dial-candidates
             await connection.raiseRemoteStreamCredit(bi: 0, uni: 4)
             return IrxClientSession(connection: connection, admit: admit, control: control, establishedAt: now())
         } catch {
             await connection.close(code: .userRequested, origin: .local)
+            // SUPERMUX:begin route-dial-candidates (a lane session that failed its admission: the next dial skips the lane once)
+            if supermuxLeg == .direct { await SupermuxDeviceDirectDial.admissionFailed(instance: instance, journal: journal) }
+            // SUPERMUX:end route-dial-candidates
             throw error
         }
     }

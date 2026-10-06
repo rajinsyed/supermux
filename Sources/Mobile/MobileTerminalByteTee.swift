@@ -126,6 +126,9 @@ final class MobileTerminalByteTee {
             MobileHostService.hasEventSubscribers(topic: "terminal.bytes")
                 || MobileHostService.hasEventSubscribers(topic: "terminal.render_grid")
                 || laneDemand.loadAcquire()
+                // SUPERMUX:begin terminal-stream-tee-grace (keeps recording for a while after the last mirror left, so its reconnect resumes)
+                || SupermuxTerminalTeeGrace.isRecording
+                // SUPERMUX:end terminal-stream-tee-grace
         else {
             // SUPERMUX:begin terminal-stream-resume
             SupermuxTerminalStreamContinuity.noteSkipped(surfaceID: surfaceID)

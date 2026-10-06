@@ -159,24 +159,38 @@ enum SupermuxProjectsSocketPayloads {
     }
 
     /// What a row draws for the Mac it lives on: the small Mac + cloud icon
-    /// (`SupermuxRemoteMacIcon`, no name capsule), its tooltip naming the Mac.
-    static func deviceIcon(name: String, state: SupermuxDeviceChipState) -> [String: Any] {
-        [
+    /// (`SupermuxRemoteMacIcon`, no name capsule), its tooltip naming the Mac
+    /// and, while connected, its link's route (`route`, the words), and
+    /// whether it carries the amber relay dot (`relayed`).
+    static func deviceIcon(name: String, state: SupermuxDeviceChipState, route: SupermuxLinkRoute?) -> [String: Any] {
+        let shown = state == .online ? route : nil
+        return [
             "style": "icon",
             "symbol": SupermuxRemoteMacIcon.symbol,
             "badge_symbol": SupermuxRemoteMacIcon.badgeSymbol,
-            "help": SupermuxRemoteMacIcon.helpText(name: name, state: state),
+            "help": SupermuxRemoteMacIcon.helpText(name: name, state: state, route: shown),
             "dimmed": state.isDimmed,
+            "route": shown.map(SupermuxLinkRouteText.text(for:)) ?? NSNull(),
+            "relayed": SupermuxRemoteMacIcon.showsRelayDot(state: state, route: shown),
         ]
     }
 
     private static func deviceIcon(for device: SupermuxProjectDevice) -> [String: Any] {
-        deviceIcon(name: device.name, state: SupermuxRemoteMacIcon.state(of: device))
+        deviceIcon(
+            name: device.name,
+            state: SupermuxRemoteMacIcon.state(of: device),
+            route: SupermuxComposition.linkRouteLookup.route(forMachineID: device.machineID)
+        )
     }
 
     private static func flatDeviceIcon(label: String) -> [String: Any] {
         let name = SupermuxFlatRowDeviceChip.macName(fromDeviceWorkspaceLabel: label)
-        return deviceIcon(name: name, state: SupermuxFlatRowDeviceChip.state(ofMacNamed: name, devices: SupermuxComposition.devices.devices))
+        let devices = SupermuxComposition.devices.devices
+        return deviceIcon(
+            name: name,
+            state: SupermuxFlatRowDeviceChip.state(ofMacNamed: name, devices: devices),
+            route: SupermuxFlatRowDeviceChip.route(ofMacNamed: name, devices: devices)
+        )
     }
 
     /// Where a flat mirror row draws its Mac icon: first on its

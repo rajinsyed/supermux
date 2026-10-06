@@ -40,9 +40,17 @@ enum SupermuxTerminalStreamHost {
     nonisolated static let resumeColumnsParam = "supermux_resume_columns"
     nonisolated static let resumeRowsParam = "supermux_resume_rows"
     nonisolated static let resumeGridGenerationParam = "supermux_resume_grid_gen"
+    /// Names the mirror pane asking, so its newer replay request supersedes
+    /// its older one (``SupermuxTerminalReplaySupersession``).
+    nonisolated static let replayOwnerParam = "supermux_replay_owner"
     /// Replay reply keys.
     nonisolated static let epochKey = "supermux_stream_epoch"
     nonisolated static let resumedKey = "supermux_resumed"
+    /// Replay reply key: this host turns an older reply of the same pane
+    /// into `superseded` when the pane asks again
+    /// (``SupermuxTerminalReplaySupersession``), so the viewer may keep
+    /// asking after missed deadlines without duplicating replies.
+    nonisolated static let supersedesKey = "supermux_supersedes"
     /// `terminal.bytes` and replay key: the grid generation (v2).
     nonisolated static let gridGenerationKey = "supermux_grid_gen"
 
@@ -134,6 +142,7 @@ extension TerminalController {
             SupermuxTerminalStreamHost.resumedKey: true,
             SupermuxTerminalStreamHost.epochKey: epoch,
             SupermuxTerminalStreamHost.gridGenerationKey: viewerGeneration,
+            SupermuxTerminalStreamHost.supersedesKey: params[SupermuxTerminalStreamHost.replayOwnerParam] != nil,
         ]
     }
 
@@ -148,6 +157,9 @@ extension TerminalController {
         if SupermuxTerminalStreamDebug.pretendsOldHost { return }
         #endif
         payload[SupermuxTerminalStreamHost.epochKey] = MobileTerminalByteTee.shared.supermuxStreamEpoch(surfaceID: surfaceID)
+        if params[SupermuxTerminalStreamHost.replayOwnerParam] != nil {
+            payload[SupermuxTerminalStreamHost.supersedesKey] = true
+        }
         if let columns = (payload["columns"] as? NSNumber)?.intValue,
            let rows = (payload["rows"] as? NSNumber)?.intValue,
            let requested = SupermuxTerminalGridGeneration.requestedGrid(surfaceID: surfaceID),
@@ -159,6 +171,84 @@ extension TerminalController {
         let generation = payload[SupermuxTerminalStreamHost.gridGenerationKey].map { "\($0)" } ?? "nil"
         cmuxDebugLog("supermux.terminal.replay surface=\(surfaceID.uuidString.prefix(8)) gridGen=\(generation)")
         #endif
+    }
+}
+
+// MARK: - Replay: a newer request supersedes an older reply
+
+/// A mirror pane's newer replay request supersedes its older one on the host.
+///
+/// On a slow link a full replay's reply (MBs) can wait in the host's writer
+/// behind others past the viewer's deadline; the viewer then asked again
+/// while the host still held the first reply, and both went out in full
+/// (STREAM.md H3b). Each streaming mirror names itself on its replays
+/// (`supermux_replay_owner`, one per pane), so a newer request from the same
+/// pane for the same terminal on the same connection turns the older reply,
+/// if it has not started on the wire, into a small `superseded` error (a
+/// frame already on the wire is never cut). The viewer stopped waiting for
+/// the older request, so nothing reads that error. A request without an
+/// owner (an older Mac, a phone) is never superseded. One per connection.
+final class SupermuxTerminalReplaySupersession: Sendable {
+    struct Ticket: Sendable {
+        fileprivate let key: String
+        fileprivate let serial: UInt64
+    }
+
+    private struct State {
+        var nextSerial: UInt64 = 0
+        /// The newest request's serial per terminal and pane.
+        var latest: [String: UInt64] = [:]
+    }
+
+    private let state = OSAllocatedUnfairLock(initialState: State())
+
+    /// A request arrives: a replay from a named pane supersedes that pane's
+    /// older ones for the same terminal. Nil for anything else.
+    func begin(method: String, params: [String: Any]) -> Ticket? {
+        guard method == "mobile.terminal.replay",
+              let owner = params[SupermuxTerminalStreamHost.replayOwnerParam] as? String,
+              let surfaceID = (params["surface_id"] as? String).flatMap(UUID.init(uuidString:)) else { return nil }
+        let key = "\(surfaceID.uuidString)/\(owner)"
+        return state.withLock { state in
+            state.nextSerial &+= 1
+            state.latest[key] = state.nextSerial
+            return Ticket(key: key, serial: state.nextSerial)
+        }
+    }
+
+    /// The request's reply was written or dropped.
+    func end(_ ticket: Ticket?) {
+        guard let ticket else { return }
+        state.withLock { state in
+            if state.latest[ticket.key] == ticket.serial { state.latest[ticket.key] = nil }
+        }
+    }
+
+    /// What the writer sends in place of the reply once its turn comes: the
+    /// `superseded` error when a newer request of the same pane arrived.
+    /// Once superseded, always (a newer serial never goes back). The writer
+    /// may ask more than once (a superseded reply waiting as bulk goes
+    /// first); the DEBUG log line counts it once.
+    func replacement(for ticket: Ticket?, requestID: Any?) -> (@Sendable () -> Data?)? {
+        guard let ticket,
+              let frame = try? MobileSyncFrameCodec.encodeFrame(MobileHostRPCEnvelope.error(
+                  id: requestID, code: "superseded", message: "A newer replay of this terminal was requested"
+              )) else { return nil }
+        let state = state
+        #if DEBUG
+        let logged = OSAllocatedUnfairLock(initialState: false)
+        #endif
+        return {
+            guard state.withLock({ $0.latest[ticket.key] != ticket.serial }) else { return nil }
+            #if DEBUG
+            let first = logged.withLock { logged in
+                defer { logged = true }
+                return !logged
+            }
+            if first { cmuxDebugLog("supermux.terminal.replay SUPERSEDED surface=\(ticket.key.prefix(8))") }
+            #endif
+            return frame
+        }
     }
 }
 
@@ -185,6 +275,38 @@ enum SupermuxTerminalStreamContinuity {
     /// Whether the tee skipped output of `surfaceID` since the last call.
     nonisolated static func takeSkipped(surfaceID: UUID) -> Bool {
         skipped.withLock { $0.remove(surfaceID) != nil }
+    }
+}
+
+/// The byte tee keeps recording for a while after the last mirror left.
+///
+/// With no `terminal.bytes` subscriber the tee records nothing, so every
+/// terminal that printed while a viewing Mac's link redialed moved its
+/// stream epoch, and the reconnect's resume was refused for a multi-MB full
+/// replay (2026-10-05 red run, D3: every ticker printing a line a second;
+/// STREAM.md P5). The tee now records for ``grace`` after the last
+/// subscriber left, into the same bounded tail (256-512 KB per terminal), so
+/// a reconnect after a short drop resumes. Meanwhile each PTY read costs
+/// what it costs with a subscriber, minus the sending: one copy and a main
+/// hop. Phones' render frames need no byte position, so only the Mac
+/// mirrors' topic arms it.
+enum SupermuxTerminalTeeGrace {
+    nonisolated static let graceNanoseconds: UInt64 = 120 * 1_000_000_000
+    /// Uptime (ns) until which the tee records without a subscriber; 0 while
+    /// one subscribes or before the first left.
+    nonisolated private static let recordUntil = OSAllocatedUnfairLock(initialState: UInt64(0))
+
+    /// Whether the tee records although nobody subscribes. On the PTY read
+    /// thread, only after the subscriber checks failed.
+    nonisolated static var isRecording: Bool {
+        let until = recordUntil.withLock { $0 }
+        return until != 0 && DispatchTime.now().uptimeNanoseconds < until
+    }
+
+    /// `terminal.bytes` gained its first subscriber (`active`) or lost its last.
+    nonisolated static func subscribersChanged(active: Bool) {
+        let until = active ? 0 : DispatchTime.now().uptimeNanoseconds + graceNanoseconds
+        recordUntil.withLock { $0 = until }
     }
 }
 
@@ -222,10 +344,12 @@ extension MobileTerminalByteTee {
 ///   (keystroke echo never waits), and chunks arriving within the next ~2 ms
 ///   join one event per terminal, up to 32 KB.
 /// - Background (every connection watching it has it off screen): chunks join
-///   one event per terminal for ~500 ms, up to 256 KB, so a hidden mirror
+///   one event per terminal for ~500 ms, up to 64 KB, so a hidden mirror
 ///   costs about two events a second instead of one per redraw. A terminal
 ///   back on screen, or about to be captured by a full replay, sends its
-///   batch before anything newer.
+///   batch before anything newer. The cap bounds the frame a shown
+///   terminal's echo may find on the wire ahead of it (~90 KB encoded, 0.3 s
+///   at 300 KB/s; it was 256 KB, ~1.1 s, until 2026-10-05).
 /// - Unwatched: no event at all; the byte tee's tail keeps the bytes for a
 ///   resume.
 /// Sequences are untouched, so every receiver's gap check holds. Each event
@@ -238,7 +362,7 @@ final class SupermuxTerminalByteCoalescer {
     static let maximumEventByteCount = 32 * 1024
     static let backgroundWindow: DispatchTimeInterval = .milliseconds(500)
     static let backgroundLeeway: DispatchTimeInterval = .milliseconds(100)
-    static let maximumBackgroundEventByteCount = 256 * 1024
+    static let maximumBackgroundEventByteCount = 64 * 1024
 
     private struct Pending {
         var sequence: UInt64
@@ -390,5 +514,8 @@ final class SupermuxTerminalByteCoalescer {
 /// (`supermux.devices.terminal_stream.pretend_old_host`).
 enum SupermuxTerminalStreamDebug {
     nonisolated(unsafe) static var pretendsOldHost = false
+    /// The mirrors' replay deadline in seconds, when a suite set one
+    /// (`supermux.devices.terminal_stream.replay_deadline`).
+    nonisolated(unsafe) static var replayDeadlineSeconds: Double?
 }
 #endif

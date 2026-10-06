@@ -45,6 +45,11 @@ private enum MobileHostEventSubscriptionTracker {
     static func replace(previousTopics: Set<String>?, nextTopics: Set<String>?) {
         let changedTopics = updateCounts(previousTopics: previousTopics, nextTopics: nextTopics)
         guard !changedTopics.isEmpty else { return }
+        // SUPERMUX:begin terminal-stream-tee-grace (the byte tee records for a while after the last mirror left)
+        if changedTopics.contains("terminal.bytes") {
+            SupermuxTerminalTeeGrace.subscribersChanged(active: hasSubscribers(topic: "terminal.bytes"))
+        }
+        // SUPERMUX:end terminal-stream-tee-grace
         NotificationCenter.default.post(
             name: .mobileHostEventSubscriptionsDidChange,
             object: nil,
@@ -972,6 +977,12 @@ final class MobileHostService {
                 return true
             },
             handleRequest: { request in
+                // SUPERMUX:begin route-candidates-off-main (this Mac's direct addresses, answered before the main-actor dispatch and the peer handler's main hop)
+                if SupermuxRouteCandidatesHost.answers(request),
+                   let result = await SupermuxRouteCandidatesHost.answer(request, authorization: authorization) {
+                    return result
+                }
+                // SUPERMUX:end route-candidates-off-main
                 if let result = await peerRequestHandler?(request) { return result }
                 if request.method == "mobile.host.status" {
                     return await Self.connectionStatusResult(
@@ -1504,6 +1515,11 @@ actor MobileHostConnection {
     private let onClose: @Sendable (UUID) async -> Void
     private let requestSimulatorFrameReplay: @Sendable (UUID, Set<String>) async -> Void
     private let responseWorkQuota = MobileHostRPCWorkQuota()
+    // SUPERMUX:begin terminal-replay-supersede
+    /// A mirror pane's newer replay request turns its older reply, still
+    /// waiting to be written, into a small `superseded` error.
+    private let supermuxReplays = SupermuxTerminalReplaySupersession()
+    // SUPERMUX:end terminal-replay-supersede
     /// Pre-write mailbox with synchronous admission from the event
     /// fan-out. Nonisolated so ``MobileHostService/emitEvent(topic:payload:)``
     /// admits events without scheduling any per-event actor work.
@@ -1903,10 +1919,19 @@ actor MobileHostConnection {
         }
         switch decodedRequest {
         case let .success(request):
+            // SUPERMUX:begin terminal-replay-supersede (a newer replay from the same mirror pane supersedes this one)
+            let supermuxTicket = supermuxReplays.begin(method: request.method, params: request.params)
+            defer { supermuxReplays.end(supermuxTicket) }
+            // SUPERMUX:end terminal-replay-supersede
             guard let response = await successResponsePayload(for: request) else {
                 return
             }
-            if await sendResponse(response.data) {
+            // SUPERMUX:begin terminal-replay-supersede (upstream: `if await sendResponse(response.data) {`)
+            if await sendResponse(
+                response.data,
+                supermuxReplacement: supermuxReplays.replacement(for: supermuxTicket, requestID: request.id)
+            ) {
+            // SUPERMUX:end terminal-replay-supersede
                 await recordReadinessContribution(response.readinessContribution)
             }
         case let .failure(error):
@@ -2108,7 +2133,10 @@ actor MobileHostConnection {
             ])
         // SUPERMUX:begin terminal-stream-watch
         case SupermuxTerminalStreamHost.watchMethod:
-            return SupermuxTerminalStreamHost.watch(request.params, queue: eventQueue)
+            let watched = SupermuxTerminalStreamHost.watch(request.params, queue: eventQueue)
+            // A paused terminal shown again queued its newest chunk: send it now.
+            for lane in eventQueue.claimDrains() { startEventDrain(lane: lane) }
+            return watched
         // SUPERMUX:end terminal-stream-watch
         default:
             return nil
@@ -2235,6 +2263,12 @@ actor MobileHostConnection {
             self.usableEventSubscription = nil
         }
         eventQueue.updateSubscribedTopics(currentSubscribedTopics())
+        // SUPERMUX:begin render-grid-watch (viewport reports written before this subscription limit the connection now)
+        let renderGridTopic = MobileHostEventTopicPolicy().renderGridTopic
+        if topics.contains(renderGridTopic) || previousTopics?.contains(renderGridTopic) == true {
+            await SupermuxMobileRenderGridWatch.subscriptionsChanged()
+        }
+        // SUPERMUX:end render-grid-watch
         MobileHostEventSubscriptionTracker.replace(
             previousTopics: previousTopics,
             nextTopics: topics
@@ -2254,6 +2288,11 @@ actor MobileHostConnection {
             usableEventSubscription = nil
         }
         eventQueue.updateSubscribedTopics(currentSubscribedTopics())
+        // SUPERMUX:begin render-grid-watch (a connection that left render frames stops counting)
+        if previousSubscription?.topics.contains(MobileHostEventTopicPolicy().renderGridTopic) == true {
+            await SupermuxMobileRenderGridWatch.subscriptionsChanged()
+        }
+        // SUPERMUX:end render-grid-watch
         if let previousSubscription {
             MobileHostEventSubscriptionTracker.replace(
                 previousTopics: previousSubscription.topics,
@@ -2591,6 +2630,11 @@ actor MobileHostConnection {
     }
 
     private func noteInteractiveSurface(_ surfaceKey: String) {
+        // SUPERMUX:begin terminal-stream-fair-queue (every input: its echo gets every other turn among watched terminals, and a background or paused terminal typed into is shown again)
+        if !surfaceKey.isEmpty, eventQueue.supermuxNoteInteractiveSurface(surfaceKey) {
+            for lane in eventQueue.claimDrains() { startEventDrain(lane: lane) }
+        }
+        // SUPERMUX:end terminal-stream-fair-queue
         guard !surfaceKey.isEmpty, lastInteractiveSurfaceKey != surfaceKey else { return }
         lastInteractiveSurfaceKey = surfaceKey
         guard surfaceEventLanesActive, let independentEventWriter else { return }
@@ -2637,7 +2681,9 @@ actor MobileHostConnection {
         await independentEventWriter?.reset()
     }
 
-    private func sendResponse(_ response: Data) async -> Bool {
+    // SUPERMUX:begin terminal-replay-supersede (`supermuxReplacement`, passed to the writer; upstream: `(_ response: Data)`)
+    private func sendResponse(_ response: Data, supermuxReplacement: (@Sendable () -> Data?)? = nil) async -> Bool {
+    // SUPERMUX:end terminal-replay-supersede
         guard !isClosed else {
             return false
         }
@@ -2657,13 +2703,24 @@ actor MobileHostConnection {
             return false
         }
 
-        return await sendControlFrame(frame)
+        // SUPERMUX:begin host-writer-bulk-yields (a device mirror's large replay reply, the one with a replacement, yields to every other write; upstream: `return await sendControlFrame(frame)`)
+        return await sendControlFrame(
+            frame, bulk: supermuxReplacement != nil && frame.count > MobileHostSerializedTransportWriter.supermuxBulkReplyByteCount,
+            // SUPERMUX:begin terminal-replay-supersede
+            supermuxReplacement: supermuxReplacement
+            // SUPERMUX:end terminal-replay-supersede
+        )
+        // SUPERMUX:end host-writer-bulk-yields
     }
 
-    private func sendControlFrame(_ frame: Data) async -> Bool {
+    // SUPERMUX:begin host-writer-bulk-yields (`bulk`, passed to the writer; upstream: `(_ frame: Data)` and `writer.send(frame)`)
+    // SUPERMUX:begin terminal-replay-supersede (`supermuxReplacement`, passed to the writer)
+    private func sendControlFrame(_ frame: Data, bulk: Bool = false, supermuxReplacement: (@Sendable () -> Data?)? = nil) async -> Bool {
         guard !isClosed else { return false }
         do {
-            try await writer.send(frame)
+            try await writer.send(frame, bulk: bulk, supermuxReplacement: supermuxReplacement)
+    // SUPERMUX:end terminal-replay-supersede
+    // SUPERMUX:end host-writer-bulk-yields
             return true
         } catch {
             await close(

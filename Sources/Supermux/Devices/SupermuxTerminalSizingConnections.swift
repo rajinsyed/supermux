@@ -1,5 +1,6 @@
 import CmuxMobileHost
 import CmuxTerminalSharing
+import CmuxTerminalSizing
 import Foundation
 
 /// The phone connection behind the sizing work running now.
@@ -91,6 +92,85 @@ enum SupermuxViewportFenceWriters {
 
     private static func key(surfaceID: UUID, clientID: String) -> String {
         "\(surfaceID.uuidString)/\(clientID)"
+    }
+}
+
+/// A viewing Mac keeps its grid through a brief disconnect.
+///
+/// A connection that closes clears the viewport reports it wrote last
+/// (#957). A viewing Mac's link redials within seconds of a relay drop and
+/// each of its mirrors re-attaches with the grid it had, but clearing at
+/// once resized every terminal it showed to its own pane, and back on the
+/// re-attach. That moved each terminal's grid generation, so even an idle
+/// terminal could not resume and came back as a multi-MB full replay
+/// (2026-10-05 red run, D3). A Mac's report (`device_kind: mac`) is now
+/// cleared ``grace`` after its connection closed, by the same
+/// connection-scoped clear, so a report its reconnect wrote again by then
+/// stays (it carries the new connection's stamp). A phone's report still
+/// goes at once: the phone's sizing contract (and its E2E) times that clear.
+///
+/// The grace counts awake time only (the suspending clock) and starts over
+/// at a full wake (``restartAfterWake()``): a connection closed before this
+/// Mac slept would otherwise have its grace end the moment it woke, before
+/// the viewer could redial, and every terminal it showed resized and came
+/// back as a full replay (review S1).
+@MainActor
+enum SupermuxMacViewerCloseGrace {
+    static let grace: Duration = .seconds(15)
+
+    /// A closed connection's reports waiting for their clear.
+    private struct Deferred {
+        var clientIDs: Set<String> = []
+        let reason: String
+        var timer: Task<Void, Never>?
+    }
+
+    private static var deferred: [UUID: Deferred] = [:]
+    /// The connection whose deferred clear runs now (it clears, not defers).
+    private static var clearing: UUID?
+
+    /// Whether the close of `connectionID` leaves this report (of
+    /// `deviceKind`) for now; its clear then runs after ``grace``.
+    static func defers(deviceKind: TerminalDeviceKind?, clientID: String, connectionID: UUID, reason: String) -> Bool {
+        guard deviceKind == .mac, clearing != connectionID else { return false }
+        if deferred[connectionID] == nil {
+            deferred[connectionID] = Deferred(reason: reason)
+            startGrace(connectionID)
+        }
+        deferred[connectionID]?.clientIDs.insert(clientID)
+        return true
+    }
+
+    /// A full wake: every deferred clear waits a whole ``grace`` from now.
+    /// The viewers' links redial after the wake, so their reports come back
+    /// first.
+    static func restartAfterWake() {
+        for connectionID in deferred.keys { startGrace(connectionID) }
+    }
+
+    #if DEBUG
+    /// The closed connections whose clear waits now (`power.close_grace`).
+    static var deferredConnections: [UUID] { Array(deferred.keys) }
+    #endif
+
+    private static func startGrace(_ connectionID: UUID) {
+        deferred[connectionID]?.timer?.cancel()
+        deferred[connectionID]?.timer = Task { @MainActor in
+            guard (try? await Task.sleep(for: grace, tolerance: nil, clock: .suspending)) != nil else { return }
+            clear(connectionID: connectionID)
+        }
+    }
+
+    private static func clear(connectionID: UUID) {
+        guard let entry = deferred.removeValue(forKey: connectionID) else { return }
+        #if DEBUG
+        cmuxDebugLog("supermux.sizing mac close grace over connection=\(connectionID.uuidString.prefix(8)) clients=\(entry.clientIDs.count)")
+        #endif
+        clearing = connectionID
+        defer { clearing = nil }
+        TerminalController.shared.clearMobileViewportReports(
+            clientIDs: entry.clientIDs, connectionID: connectionID, reason: entry.reason
+        )
     }
 }
 

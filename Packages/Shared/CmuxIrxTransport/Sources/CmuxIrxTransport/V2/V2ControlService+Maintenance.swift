@@ -101,6 +101,9 @@ extension V2ControlService {
     }
 
     private func maintain(run: UUID) async {
+        // SUPERMUX:begin v2-directory-refresh-floor
+        var supermuxDirectoryFloor: TimeInterval = 0
+        // SUPERMUX:end v2-directory-refresh-floor
         while runID == run, status == .ready, !Task.isCancelled {
             let now = dependencies.now().timeIntervalSince1970
             let ticketRefreshAfter = cache.ticket?.refreshAfter
@@ -108,7 +111,9 @@ extension V2ControlService {
             let directoryRefreshAfter = cache.directory.map { $0.permissionExpiresAt - 300 }
             let ticketDue = due(ticketRefreshAfter, schema: "ticket.request.v1", now: now)
             let relayDue = due(relayRefreshAfter, schema: "relay.request.v1", now: now)
-            let directoryDue = due(directoryRefreshAfter, schema: "directory.request.v1", now: now)
+            // SUPERMUX:begin v2-directory-refresh-floor (upstream: `let directoryDue = due(directoryRefreshAfter, schema: "directory.request.v1", now: now)`)
+            let directoryDue = max(due(directoryRefreshAfter, schema: "directory.request.v1", now: now), supermuxDirectoryFloor)
+            // SUPERMUX:end v2-directory-refresh-floor
 #if DEBUG
             let verificationDue = nextVerificationRenewalAt?.timeIntervalSince1970 ?? .infinity
 #else
@@ -174,6 +179,13 @@ extension V2ControlService {
                     }
                 }
             }
+            // SUPERMUX:begin v2-directory-refresh-floor
+            supermuxDirectoryFloor = Self.supermuxDirectoryFloor(
+                supermuxDirectoryFloor,
+                refreshedDirectory: directoryDue <= deadline || forceVerification,
+                triedTicket: ticketDue <= deadline || forceVerification,
+                now: dependencies.now().timeIntervalSince1970)
+            // SUPERMUX:end v2-directory-refresh-floor
         }
         journal("maintenance-exited", [
             "reason": Task.isCancelled ? "cancelled" : (runID == run ? "status" : "run-superseded"),
@@ -214,3 +226,28 @@ extension V2ControlService {
         cooldowns[operation(schema)] = max(cooldowns[operation(schema)] ?? retry, retry)
     }
 }
+
+// SUPERMUX:begin v2-directory-refresh-floor
+extension V2ControlService {
+    /// The least time between two directory refreshes maintenance makes.
+    ///
+    /// Maintenance refreshes the directory 300 s before its permissions end.
+    /// The server cannot extend them past the ticket, so once they end inside
+    /// that margin every refresh came back with the same expiry and was due
+    /// again at once: 485 refreshes in 31 s in the field (each re-running
+    /// endpoint readiness and the relay-hint publish), until the ticket renewed.
+    static let supermuxDirectoryRefreshSpacing: TimeInterval = 30
+
+    /// When maintenance may next refresh the directory, after a pass that
+    /// refreshed it and/or tried the ticket. A ticket renewal can extend the
+    /// permissions, so the refresh after it goes at once (one more if the
+    /// directory raced the ticket in the same pass); otherwise refreshes are
+    /// at least ``supermuxDirectoryRefreshSpacing`` apart.
+    static func supermuxDirectoryFloor(
+        _ floor: TimeInterval, refreshedDirectory: Bool, triedTicket: Bool, now: TimeInterval
+    ) -> TimeInterval {
+        if triedTicket { return 0 }
+        return refreshedDirectory ? now + supermuxDirectoryRefreshSpacing : floor
+    }
+}
+// SUPERMUX:end v2-directory-refresh-floor

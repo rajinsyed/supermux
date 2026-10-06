@@ -13,6 +13,9 @@ enum SupermuxTerminalInputDebug {
         var maxInFlight = 0
         var resends = 0
         var pipelinedRequests = 0
+        /// Key batches a mirror dropped because it was not attached (typed
+        /// while it re-attached or the link was down).
+        var droppedWhileDetached = 0
     }
 
     /// This host withholds `supermux.terminal_input_pipeline.v1`, as a host
@@ -38,6 +41,11 @@ enum SupermuxTerminalInputDebug {
         lock.withLock { stats.inFlight = max(0, stats.inFlight - 1) }
     }
 
+    /// A mirror pane dropped typed input because it was not attached.
+    static func inputDroppedWhileDetached() {
+        lock.withLock { stats.droppedWhileDetached += 1 }
+    }
+
     /// The counters; `reset` starts new ones (keeping the requests in flight).
     static func snapshot(reset: Bool) -> Stats {
         lock.withLock {
@@ -53,7 +61,8 @@ enum SupermuxTerminalInputDebug {
 /// ``SupermuxDevicesSocketCommands``:
 ///
 /// - `terminal_input.stats {reset?}`: ``SupermuxTerminalInputDebug`` counters
-///   (requests sent, in flight now, most in flight at once, resends).
+///   (requests sent, in flight now, most in flight at once, resends, key
+///   batches dropped because the mirror was not attached).
 /// - `terminal_input.latency {to_host_ms?, to_viewer_ms?}`: one-way latency
 ///   of the loopback device's link (``SupermuxDeviceLoopbackLatency``), so
 ///   typing runs over a slow link; 0 turns it off.
@@ -82,6 +91,7 @@ enum SupermuxTerminalInputSocketCommands {
                 "max_in_flight": stats.maxInFlight,
                 "resends": stats.resends,
                 "pipelined_requests": stats.pipelinedRequests,
+                "dropped_while_detached": stats.droppedWhileDetached,
             ]
         case "latency":
             if let toHost = milliseconds(params["to_host_ms"]) {

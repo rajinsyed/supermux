@@ -26,7 +26,10 @@ Mac" = this same app's own mobile host):
   8. live_reset_during_gap_settles       a program's OSC 11 reaches the mirror only live (no replay
                                          carries it); its OSC 111 lands while the link is down, and the
                                          reconnect replay alone must bring the mirror back to this Mac's
-                                         theme (each replay settles every color, not a delta)
+                                         theme (each replay settles every color, not a delta). A
+                                         reconnect resumes from the mirror's byte position (it would
+                                         carry the OSC 111 itself), so the gap also asks the DEBUG
+                                         `terminal_close.replay {full: true}` driver for a full replay
   9. restored_mirror_matches_local       (with --app-path) quit + relaunch: the restored background
                                          mirror matches the local pane when selected
 
@@ -543,7 +546,15 @@ class MirrorAppearanceE2E:
             return problems
 
         live = self.settle("the program's OSC 11 on the mirror, live only", surface, live_only)
-        resync = self.resync(surface, during_gap=lambda: self.run_in(source, "printf '\\033]111\\007'; ", "GAPRESET"))
+
+        def gap() -> None:
+            self.run_in(source, "printf '\\033]111\\007'; ", "GAPRESET")
+            # The reconnect would resume and stream the OSC 111 live; a full replay carries no color
+            # sequence, so only the replay settling every color can bring the mirror back.
+            self.sock.call("supermux.devices.terminal_close.replay",
+                           {"workspace_id": mirror, "panel_id": surface, "full": True})
+
+        resync = self.resync(surface, during_gap=gap)
         wait_for("the gap's marker after the replay",
                  lambda: f"LOOK_GAPRESET_42_{self.nonce}" in self.screen_text(mirror, surface), self.timeout)
         after = self.settle("the reconnect replay to reset the live-set background", surface, self.like_local)

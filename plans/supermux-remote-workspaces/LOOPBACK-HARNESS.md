@@ -593,6 +593,53 @@ fix: 255–283 ms per key (≈ the 250 ms one-way delay), 551 ms total, up to 7 
 CMUX_E2E_SUITES="loopback_terminal_input_pipeline_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
 ```
 
+## Degraded link E2E (slow relay)
+
+`tests/supermux/loopback_degraded_link_e2e.py` runs eight mirrors (six on screen) over a link like a far relay, the field case of
+2026-10-05 (a 240–400 ms relay, ~45 reconnects an hour, remote terminals "awfully delayed"). The DEBUG driver
+`supermux.devices.link_impairment` (`SupermuxDeviceLoopbackImpairment`, applied by every device-link
+`SupermuxDeviceLoopbackPipe`, both directions alike) takes `rtt_ms` (or `to_host_ms` / `to_viewer_ms`),
+`bytes_per_second` (0 lifts the cap), `queue_bytes` (the send buffer before a write waits, default 64 KB, about
+the bandwidth-delay product, so the app's own queues hold the backlog), `drop_every_s` / `drop_for_s` (scheduled
+drops), `drop_cuts` (a drop also closes the live connection, so the link redials; default true), `drop_now_s` (one
+drop now), `reset` and `reset_stats`. It answers the settings, whether a drop is on, the drops and connections cut,
+and per direction the bytes delivered, queued now and at most, and the writes that waited for room. Bytes leave
+in 16 KB chunks at the capped rate, travel the one-way delay, and wait out a drop. `terminal_stream.stats` now
+also counts each pane's `replay_requests`, and `terminal_input.stats` the key batches a mirror dropped because
+it was not attached (`dropped_while_detached`).
+
+At 300 ms and 300 KB/s: D1 echo under a hidden flood (p95 ≤ 1.5 s, every key exactly once), D2 no redial
+under 60 s of flood, D4 typing during a re-attach arrives exactly once, D3 a 2 s cut drop recovers (no
+unplanned redial, at most one replay per pane besides confirmations, an echo within 8 s, no pane left
+detached), D5 the main thread stays under 250 ms during the reconnect. The loopback is one ordered stream per
+direction, so QUIC stream priority (the field's probe starvation) is covered by
+`SupermuxIrxPriorityStarvationTests` in CmuxIrxTransport, which puts a shaped UDP relay
+(`SupermuxShapedUDPLink`) between two real Iroh endpoints.
+
+Red on the test commit: D1 echo p50 4.7 s, p95 11.3 s (input reaches the host in ~160 ms; the echo waits
+behind the flood's backlog in the host's per-connection event queue); D4 5 of 10 keys dropped while the mirror
+re-attached; D3 seven full replays after the drop (the host's `mobile.viewport.clear` on disconnect resizes every
+visible terminal, so even the idle one needs a full replay), three missed the 20 s deadline and were asked again
+while the host still sent them, ~30 keys dropped, the ECHO mirror first echoed ~40 s after the drop. D2 and D5
+are green in the loopback (see the suite's docstring).
+
+D6 holds the ECHO mirror's replay request 9 s on the host (`supermux.devices.link stall`) with the mirrors'
+replay deadline at 3 s (DEBUG `supermux.devices.terminal_stream.replay_deadline {seconds}`; null restores the 90 s
+default): the mirror must ask again on the live link, the host must send the pane one reply (the held one swapped
+for a small `superseded` error, logged as `supermux.terminal.replay SUPERSEDED`), and the pane must be attached
+again before the held reply, never detached. Red on its test commit: two replies, none superseded.
+`loopback_device_smoke` step 13 sets the 20 s deadline it was written for the same way.
+
+After the re-attach fixes (touchpoints #1052–#1059) every step passes: D3's ECHO mirror echoes ~3 s after the drop,
+every visible terminal and the hidden ticker resume (the viewing Mac's viewport is kept 15 s past its connection's
+close, the byte tee records 120 s past the last mirror), the hidden FLOOD gets a short replay (its history comes
+once it is shown), no replay misses its deadline and no key is dropped.
+
+```bash
+CMUX_E2E_SUITES="loopback_degraded_link_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
+swift test --package-path Packages/Shared/CmuxIrxTransport --filter SupermuxIrxPriorityStarvationTests
+```
+
 ## Terminal size policy E2E
 
 `tests/supermux/loopback_terminal_sizing_policy_e2e.py` (touchpoints #665–#670) checks that a

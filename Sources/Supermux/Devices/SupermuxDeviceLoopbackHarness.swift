@@ -99,7 +99,14 @@ final class SupermuxDeviceLoopbackHarness {
         ).supermuxReplacingTransportFactory(
             SupermuxDeviceLoopbackTransportFactory { [acceptor] transport in acceptor.accept(transport) }
         )
-        let link = DeviceLink(record: record, runtime: runtime, authorization: LoopbackAuthorization())
+        // Its phases go to the transport journal like a real link's (the
+        // registry's diagnostics), so `cmux iroh-diag`'s link history shows them.
+        let link = DeviceLink(
+            record: record,
+            runtime: runtime,
+            authorization: LoopbackAuthorization(),
+            diagnostics: DeviceLinkDiagnostics(journal: MobileHostIrxRuntime.journal)
+        )
         self.identity = identity
         self.acceptor = acceptor
         self.record = record

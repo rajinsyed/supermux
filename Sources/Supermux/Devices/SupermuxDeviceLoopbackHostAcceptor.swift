@@ -23,10 +23,11 @@ final class SupermuxDeviceLoopbackHostAcceptor {
     /// ``BusyRequest``); armed by the DEBUG `supermux.devices.link
     /// {action: "restore", busy: "<method>"}`.
     static var busyMethodForNextConnection: String?
-    /// The method whose next request the loopback host holds, and for how
-    /// many seconds (see ``holdIfStalled(_:)``); armed by the DEBUG
-    /// `supermux.devices.link {action: "stall", method, seconds}`.
-    static var stalledRequest: (method: String, seconds: Double)?
+    /// The method whose next request the loopback host holds, for how many
+    /// seconds, and the terminal it must name when set (see
+    /// ``holdIfStalled(_:)``); armed by the DEBUG `supermux.devices.link
+    /// {action: "stall", method, seconds, surface_id?}`.
+    static var stalledRequest: (method: String, seconds: Double, surfaceID: UUID?)?
     /// How long the main thread is blocked once the next liveness probe after
     /// a missed deadline is on its way (see ``blockMainDuringLivenessProbeIfArmed()``);
     /// armed by the DEBUG `supermux.devices.link {action: "stall", main_seconds}`.
@@ -157,7 +158,9 @@ final class SupermuxDeviceLoopbackHostAcceptor {
     /// git command or file read in a folder behind an unanswered macOS privacy
     /// prompt is. The connection keeps answering everything else meanwhile.
     private static func holdIfStalled(_ request: MobileHostRPCRequest) async {
-        guard let stall = stalledRequest, stall.method == request.method else { return }
+        guard let stall = stalledRequest, stall.method == request.method,
+              stall.surfaceID == nil
+                || stall.surfaceID == (request.params["surface_id"] as? String).flatMap(UUID.init(uuidString:)) else { return }
         stalledRequest = nil
         cmuxDebugLog("supermux.loopback host holds \(stall.method) for \(stall.seconds) s")
         try? await Task.sleep(for: .milliseconds(Int(stall.seconds * 1000)))

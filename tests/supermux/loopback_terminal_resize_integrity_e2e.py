@@ -24,12 +24,41 @@ terminals' render grids (`mobile.terminal.replay` on this control socket; see
                                     the mirror still equals the source
   4. dragged_window_replays_few_times
                                     20 grid steps 40 ms apart (a window dragged on the other
-                                    Mac) while output flows: the drag reaches the PTY, costs at
-                                    most 6 full replays (one per 400 ms governor window plus the
-                                    leave, not one per step), and the mirror equals the source.
-                                    Until 2026-10-05 the budget was 4: the apply governor was
-                                    wedged by the previous step's clear, so the drag never
-                                    reached the PTY and only the output stream replayed
+                                    Mac) while output flows. A second connection samples the
+                                    source's real grid (the `governor` driver's `surface_grid`,
+                                    Ghostty's own size) every 25 ms from the drag's start until
+                                    the replays are counted: the grid changes that reached the
+                                    PTY (`applied_grid_changes`). Three checks (`drag_verdict`),
+                                    and the mirror equals the source:
+                                    - the drag reaches the PTY: one of its own grids (rows 24,
+                                      cols 50-80) is the governor's applied target at its end;
+                                    - the governor bounds the PTY: at most 2 + ceil(drag / 400 ms)
+                                      grid changes (the cold cap, one per 400 ms cap window, the
+                                      leave), not one per step;
+                                    - the mirror replays per applied grid, not per step: at most
+                                      `applied_grid_changes` + 8 full replays. Beyond each applied
+                                      grid's own replay the stream adds, by its own limits
+                                      (SupermuxTerminalStream): one chain of `behind` re-anchors
+                                      while the host's grid event (sampled at most once a second)
+                                      catches up with the last landing, capped at 4
+                                      (maxConsecutiveGridReanchors) before it backs off;
+                                      confirmation replays once output is quiet, at most 3 in a row
+                                      (maximumConfirmationsInRow); and one pane-geometry commit
+                                      after the leave that restores the pane's pixel box (a host
+                                      grid generation at the same cols x rows, which the sampler
+                                      cannot see).
+                                    Per-step replays fail either way: 20 replays against the 11
+                                    that 3 applied grids allow, or, with an ungoverned PTY, ~20
+                                    applied grids against a governor bound of ~5.
+                                    History: until 2026-10-05 the budget was 4 (the governor was
+                                    wedged by the previous step's clear, so the drag never reached
+                                    the PTY); then a fixed 6, which failed on the stream's own
+                                    variance (5, 6, 7 replays). At 6a16a4ac47e the PTY took 3
+                                    grids in each of 11 runs while the mirror replayed 4 to 8
+                                    times; the extra replays were `behind` re-anchors (1 to 4 in a
+                                    row), the geometry commit and 1 confirmation, never more
+                                    applied grids, so `applied_grid_changes` + 2 failed 2 runs in
+                                    11 (6 and 8 replays)
 
 Usage:
   CMUX_TAG=<tag> python3 tests/supermux/loopback_terminal_resize_integrity_e2e.py [--report PATH]
@@ -39,11 +68,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import random
 import re
 import socket
 import sys
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -136,6 +167,90 @@ class SocketClient:
             self._buffer += chunk
         line, self._buffer = self._buffer.split(b"\n", 1)
         return line.decode("utf-8", errors="replace")
+
+
+class GridSampler:
+    """The source terminal's real grid (the `governor` driver's `surface_grid`,
+    Ghostty's own size) sampled on a second connection every `interval_s`
+    while a step runs: the grid changes that really reached the PTY. The
+    governor applies a cap at most once per 400 ms window and a leave at
+    once, so a 25 ms sample sees each of them."""
+
+    def __init__(self, socket_path: str, surface_id: str, interval_s: float = 0.025) -> None:
+        self.socket_path = socket_path
+        self.surface_id = surface_id
+        self.interval_s = interval_s
+        self.samples: List[tuple] = []
+        self.error: Optional[str] = None
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+
+    def __enter__(self) -> "GridSampler":
+        self._thread.start()
+        # The grid before the step's first change must be on record, or that change goes unseen.
+        deadline = time.monotonic() + 10
+        while not self.samples and self.error is None and time.monotonic() < deadline:
+            time.sleep(0.01)
+        return self
+
+    def __exit__(self, *_: Any) -> None:
+        self._stop.set()
+        self._thread.join(timeout=15)
+
+    def _run(self) -> None:
+        try:
+            with SocketClient(self.socket_path, timeout_s=15) as client:
+                while not self._stop.is_set():
+                    reply = client.call("supermux.devices.terminal_sizing.governor", {"surface_id": self.surface_id}) or {}
+                    grid = reply.get("surface_grid") or {}
+                    if grid.get("cols") is not None and grid.get("rows") is not None:
+                        self.samples.append((time.monotonic(), (int(grid["cols"]), int(grid["rows"]))))
+                    self._stop.wait(self.interval_s)
+        except (Failure, OSError, ValueError) as error:
+            self.error = str(error)
+
+    def grids(self) -> List[tuple]:
+        """Each grid the PTY took, in order (consecutive repeats collapsed)."""
+        seen: List[tuple] = []
+        for _, grid in self.samples:
+            if not seen or seen[-1] != grid:
+                seen.append(grid)
+        return seen
+
+    def facts(self) -> Dict[str, Any]:
+        times = [t for t, _ in self.samples]
+        gaps = [b - a for a, b in zip(times, times[1:])]
+        grids = self.grids()
+        return {
+            "applied_grid_changes": max(len(grids) - 1, 0),
+            "applied_grids": [list(grid) for grid in grids],
+            "grid_samples": len(self.samples),
+            "longest_sample_gap_ms": round(max(gaps) * 1000) if gaps else None,
+            "sampler_error": self.error,
+        }
+
+
+# The full replays a drag may cost beyond one per applied grid, by the stream's own limits
+# (Sources/Supermux/Devices/SupermuxTerminalStream.swift): one chain of `behind` re-anchors
+# (maxConsecutiveGridReanchors), confirmations once output is quiet (maximumConfirmationsInRow),
+# and the pane-geometry commit after the leave.
+STREAM_EXTRA_REPLAYS = 4 + 3 + 1
+
+
+def drag_verdict(applied: Optional[Dict[str, Any]], changes: int, replays: int, governor_bound: int,
+                 steps: int) -> Optional[str]:
+    """What is wrong with a drag (None when nothing): `applied` is the
+    governor's target at the drag's end, `changes` the grid changes the PTY
+    took, `replays` the mirror's full replays (module docstring, step 4)."""
+    applied = applied or {}
+    # One of the drag's own grids (rows 24, cols 50-80) must be on the PTY, not an earlier step's cap.
+    if applied.get("kind") != "cap" or applied.get("rows") != 24 or not 50 <= int(applied.get("cols", 0)) <= 80:
+        return f"the drag never reached the PTY (governor applied {applied})"
+    if changes > governor_bound:
+        return f"{changes} grid changes reached the PTY for one drag of {steps} steps (governor bound {governor_bound})"
+    if replays > changes + STREAM_EXTRA_REPLAYS:
+        return f"{replays} full replays for {changes} applied grid changes ({steps} steps)"
+    return None
 
 
 def slug(tag: str) -> str:
@@ -459,28 +574,39 @@ class ResizeIntegrityE2E:
         """A window dragged on the other Mac: many grid steps in quick
         succession while output flows cost a few replays, not one per step."""
         f = self.facts
-        before = int(self.pane_stats().get("full_replays", 0))
+        counters = ("full_replays", "grid_resyncs", "replay_confirmations", "replay_requests", "resumes", "gaps")
+        before = {key: int(self.pane_stats().get(key, 0)) for key in counters}
         done = f"GEN_DONE_{self.nonce}_42"
-        self.send_text(f["source_workspace_id"], f["source_surface_id"], f"clear; python3 {self.script_path} 600 {self.nonce}\n")
-        steps = 0
-        for cols in list(range(50, 80, 3)) + list(range(80, 50, -3)):
-            self.report_viewport("mac2", "mac", cols, 24)
-            steps += 1
-            time.sleep(0.04)
-        applied = self.governor_applied()
-        self.clear_viewports()
-        self.wait_text("the generator's end in the SOURCE", f["source_workspace_id"], f["source_surface_id"], done, 120)
-        self.wait_text("the generator's end in the MIRROR", f["mirror_workspace_id"], f["mirror_surface_id"], done, 120)
-        time.sleep(1.5)
-        result = self.compare("drag")
-        replays = int(self.pane_stats().get("full_replays", 0)) - before
-        result.update({"grid_steps": steps, "full_replays": replays, "governor_applied": applied})
-        # One of the drag's own grids (rows 24, cols 50-80) must be on the PTY, not an earlier step's cap.
-        applied = applied or {}
-        if applied.get("kind") != "cap" or applied.get("rows") != 24 or not 50 <= int(applied.get("cols", 0)) <= 80:
-            raise Failure(f"the drag never reached the PTY (governor applied {applied}): {result}")
-        if replays > 6:
-            raise Failure(f"{replays} full replays for one drag of {steps} steps: {result}")
+        with GridSampler(self.client.path, f["source_surface_id"]) as sampler:
+            self.send_text(f["source_workspace_id"], f["source_surface_id"], f"clear; python3 {self.script_path} 600 {self.nonce}\n")
+            steps = 0
+            drag_started = time.monotonic()
+            for cols in list(range(50, 80, 3)) + list(range(80, 50, -3)):
+                self.report_viewport("mac2", "mac", cols, 24)
+                steps += 1
+                time.sleep(0.04)
+            applied = self.governor_applied()
+            drag_seconds = time.monotonic() - drag_started
+            self.clear_viewports()
+            self.wait_text("the generator's end in the SOURCE", f["source_workspace_id"], f["source_surface_id"], done, 120)
+            self.wait_text("the generator's end in the MIRROR", f["mirror_workspace_id"], f["mirror_surface_id"], done, 120)
+            time.sleep(1.5)
+            result = self.compare("drag")
+            stats = self.pane_stats()
+        stream = {key: int(stats.get(key, 0)) - before[key] for key in counters}
+        replays = stream["full_replays"]
+        sampled = sampler.facts()
+        changes = sampled["applied_grid_changes"]
+        # The cold cap, one cap per 400 ms window while the drag lasts, and the leave.
+        governor_bound = 2 + math.ceil(drag_seconds / 0.4)
+        result.update({"grid_steps": steps, "full_replays": replays, "governor_applied": applied,
+                       "drag_seconds": round(drag_seconds, 2), "governor_bound": governor_bound,
+                       "replay_bound": changes + STREAM_EXTRA_REPLAYS, "stream": stream, **sampled})
+        if sampled["sampler_error"] or sampled["grid_samples"] < 10:
+            raise Failure(f"the grid sampler did not run, so the step proves nothing: {result}")
+        problem = drag_verdict(applied, changes, replays, governor_bound, steps)
+        if problem:
+            raise Failure(f"{problem}: {result}")
         return result
 
     def cleanup(self) -> None:

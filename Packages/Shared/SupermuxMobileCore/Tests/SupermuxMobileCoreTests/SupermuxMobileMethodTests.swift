@@ -78,11 +78,13 @@ import Testing
         // Terminal streaming
         "mobile.supermux.terminal.watch",
         "mobile.supermux.terminal.action",
+        // Routes
+        "mobile.supermux.route.candidates",
     ]
 
     @Test func allExposesEveryMethodExactlyOnce() {
         #expect(SupermuxMobileMethod.all.map(\.rawValue) == Self.expectedRawValues)
-        #expect(SupermuxMobileMethod.all.count == 61)
+        #expect(SupermuxMobileMethod.all.count == 62)
         #expect(Set(SupermuxMobileMethod.all).count == SupermuxMobileMethod.all.count)
     }
 

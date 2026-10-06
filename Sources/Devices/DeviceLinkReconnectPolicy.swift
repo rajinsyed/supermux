@@ -1,4 +1,7 @@
 import Foundation
+// SUPERMUX:begin device-link-unproven-session-backoff
+import SupermuxKit
+// SUPERMUX:end device-link-unproven-session-backoff
 
 /// The reconnect state machine for one device link, as a pure reducer so the
 /// recovery contract (network blip, remote app restart, presence flip, sign-out,
@@ -41,12 +44,28 @@ struct DeviceLinkReconnectPolicy: Equatable, Sendable {
         /// that can change another Mac's admission decision.
         case directoryRevisionAdvanced
         case stopped
+        // SUPERMUX:begin device-link-unproven-session-backoff
+        /// The live session answered a request beyond the dial's handshake.
+        case supermuxExchanged
+        /// The other Mac stopped answering: a reply missed its deadline and the
+        /// liveness check after it found no sign of life. Never redials at once.
+        case supermuxUnresponsive
+        // SUPERMUX:end device-link-unproven-session-backoff
+        // SUPERMUX:begin route-switch
+        /// Move a live link onto a better path (the direct lane answered): not
+        /// a failure, so one short settle and the next dial is attempt 1.
+        case supermuxPlannedRedial
+        // SUPERMUX:end route-switch
     }
 
     static let delays: [Duration] = [.seconds(1), .seconds(2), .seconds(5), .seconds(10), .seconds(30)]
 
     static func delay(afterFailures failures: Int) -> Duration {
-        delays[min(max(failures - 1, 0), delays.count - 1)]
+        // SUPERMUX:begin device-link-unproven-session-backoff
+        // Doubling from 1 s to a 2 min cap; upstream's `delays` table (capped at
+        // 30 s) is no longer read. DeviceLink spreads each wait by ±20 %.
+        SupermuxDeviceLinkBackoff.delay(afterFailures: failures)
+        // SUPERMUX:end device-link-unproven-session-backoff
     }
 
     private(set) var phase: Phase = .idle
@@ -58,6 +77,15 @@ struct DeviceLinkReconnectPolicy: Equatable, Sendable {
     private var connectedSince: Date?
     private var shortLivedLosses = 0
     static let stableConnectionInterval: TimeInterval = 30
+    // SUPERMUX:begin device-link-unproven-session-backoff
+    // Upstream's `connectedSince`, `shortLivedLosses`, `stableConnectionInterval`
+    // and `delays` above are still written but decide nothing now (the
+    // session below does); they stay so upstream merges apply cleanly.
+    /// The live session: when it connected, from which dial attempt, and
+    /// whether it answered anything beyond the handshake. Its end decides the
+    /// redial (``SupermuxDeviceLinkSession/redial(endedAt:unresponsive:)``).
+    private var supermuxSession: SupermuxDeviceLinkSession?
+    // SUPERMUX:end device-link-unproven-session-backoff
 
     mutating func apply(_ event: Event, now: Date = .distantPast) -> Phase {
         switch event {
@@ -89,10 +117,17 @@ struct DeviceLinkReconnectPolicy: Equatable, Sendable {
                 }
             }
         case .connectSucceeded:
-            if case .connecting = phase {
+            // SUPERMUX:begin device-link-unproven-session-backoff (upstream: `if case .connecting = phase {`, binding nothing)
+            if case .connecting(let attempt) = phase {
+                supermuxSession = SupermuxDeviceLinkSession(connectedAt: now, attempt: attempt)
+                // SUPERMUX:end device-link-unproven-session-backoff
                 phase = .connected
                 connectedSince = now
             }
+        // SUPERMUX:begin device-link-unproven-session-backoff
+        case .supermuxExchanged:
+            if phase == .connected { supermuxSession?.noteExchange() }
+        // SUPERMUX:end device-link-unproven-session-backoff
         case .connectFailed(let failure):
             guard case .connecting(let attempt) = phase else { return phase }
             guard isDialable else { phase = .idle; return phase }
@@ -103,7 +138,9 @@ struct DeviceLinkReconnectPolicy: Equatable, Sendable {
             guard case .connecting(let attempt) = phase else { return phase }
             guard isDialable else { phase = .idle; return phase }
             phase = .waiting(attempt: attempt, delay: Self.delay(afterFailures: attempt))
-        case .transportLost:
+        // SUPERMUX:begin device-link-unproven-session-backoff
+        case .transportLost, .supermuxUnresponsive:
+        // SUPERMUX:end device-link-unproven-session-backoff
             guard phase == .connected else { return phase }
             guard isDialable else { phase = .idle; return phase }
             if let directoryPrecondition {
@@ -114,17 +151,29 @@ struct DeviceLinkReconnectPolicy: Equatable, Sendable {
                 phase = .blocked(directoryPrecondition)
                 return phase
             }
-            if let connectedSince, now.timeIntervalSince(connectedSince) >= Self.stableConnectionInterval {
-                shortLivedLosses = 0
-            }
+            // SUPERMUX:begin device-link-unproven-session-backoff
+            // Upstream counted a loss after 30 s up as stable and redialed the
+            // first loss at once. A session must now prove the other Mac healthy
+            // (an answered request and 2 min up) to be redialed at once; any
+            // other loss continues the backoff of the dial that opened it.
+            let session = supermuxSession ?? SupermuxDeviceLinkSession(connectedAt: now, attempt: 1)
+            supermuxSession = nil
             connectedSince = nil
-            shortLivedLosses += 1
-            if shortLivedLosses == 1 {
+            switch session.redial(endedAt: now, unresponsive: event == .supermuxUnresponsive) {
+            case .now:
                 phase = .connecting(attempt: 1)
-            } else {
-                let failures = shortLivedLosses - 1
-                phase = .waiting(attempt: failures, delay: Self.delay(afterFailures: failures))
+            case .after(let attempt, let delay):
+                phase = .waiting(attempt: attempt, delay: delay)
             }
+            // SUPERMUX:end device-link-unproven-session-backoff
+        // SUPERMUX:begin route-switch
+        case .supermuxPlannedRedial:
+            guard phase == .connected, isDialable, directoryPrecondition == nil else { return phase }
+            supermuxSession = nil
+            connectedSince = nil
+            // The settle lets the old session release its slot; `waitElapsed` dials attempt 1.
+            phase = .waiting(attempt: 0, delay: SupermuxDeviceLinkBackoff.plannedRedialSettle)
+        // SUPERMUX:end route-switch
         case .waitElapsed:
             guard case .waiting(let attempt, _) = phase else { return phase }
             phase = isDialable ? .connecting(attempt: attempt + 1) : .idle

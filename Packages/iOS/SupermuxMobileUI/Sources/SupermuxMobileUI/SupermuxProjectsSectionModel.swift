@@ -1,6 +1,6 @@
 public import Foundation
 import Observation
-import SupermuxMobileCore
+public import SupermuxMobileCore
 public import SupermuxMobileKit
 
 /// Main-actor owner of the phone's Projects section state.
@@ -101,6 +101,10 @@ public final class SupermuxProjectsSectionModel {
 
     /// The open workspaces the shell last reported (project-associated only).
     private var workspaceRows: [SupermuxProjectWorkspaceRowSnapshot] = []
+
+    /// The route the phone's session to each Mac uses, by pairing id (from
+    /// `SupermuxPhoneRouteModel`, through the driver).
+    private var routesByPairingID: [String: SupermuxLinkRoute] = [:]
 
     /// The shell's workspace-open closure, by ROW id.
     @ObservationIgnored var selectWorkspaceAction: @MainActor (_ workspaceID: String) -> Void = { _ in }
@@ -213,7 +217,7 @@ public final class SupermuxProjectsSectionModel {
             )
         }
         return SupermuxProjectsMacGroupSnapshot(
-            header: SupermuxProjectsMacHeader(mac: session.mac),
+            header: SupermuxProjectsMacHeader(mac: session.mac, route: routesByPairingID[session.pairingID]),
             hasLoaded: store.hasLoaded,
             rows: rows,
             showsPresets: store.showsPresets,
@@ -221,6 +225,16 @@ public final class SupermuxProjectsSectionModel {
             showsActions: session.runStore?.showsActions ?? false,
             showsWorktreeCreation: session.capabilities?.supportsWorktrees ?? false
         )
+    }
+
+    // MARK: Routes
+
+    /// Feeds each Mac's route into the section's headers. Called from the
+    /// driver's event handlers, never a view body.
+    /// - Parameter routes: The routes by pairing id.
+    public func updateRoutes(_ routes: [String: SupermuxLinkRoute]) {
+        guard routes != routesByPairingID else { return }
+        routesByPairingID = routes
     }
 
     // MARK: Workspaces

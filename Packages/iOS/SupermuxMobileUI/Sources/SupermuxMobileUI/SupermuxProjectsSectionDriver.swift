@@ -1,4 +1,5 @@
 public import CmuxMobileShellModel
+import SupermuxMobileCore
 public import SupermuxMobileKit
 public import SwiftUI
 
@@ -66,6 +67,10 @@ private struct SupermuxProjectsSectionDriver: ViewModifier {
     #if DEBUG
     @Environment(\.supermuxProjectsPreviewMacs) private var previewMacs
     #endif
+    /// The phone's per-Mac routes, injected at the app's composition root
+    /// and run by the shell's root view (`supermuxPhoneRoutes(seams:)`);
+    /// absent in previews and on the Mac.
+    @Environment(SupermuxPhoneRouteModel.self) private var routes: SupermuxPhoneRouteModel?
 
     func body(content: Content) -> some View {
         let runnable = seams.filter { $0.status != .unavailable }
@@ -110,6 +115,9 @@ private struct SupermuxProjectsSectionDriver: ViewModifier {
             .task(id: sessionKeys) {
                 model.updateMacs(macs)
                 await runSessions()
+            }
+            .onChange(of: routes?.routes ?? [:], initial: true) { _, routes in
+                model.updateRoutes(routes)
             }
             // Names, colors, status and order change without restarting sessions.
             .onChange(of: macs, initial: true) { _, macs in

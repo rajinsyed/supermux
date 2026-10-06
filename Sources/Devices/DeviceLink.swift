@@ -5,6 +5,9 @@ import CmuxMobileHost
 import CmuxSurfaceCatalogModel
 import Foundation
 import OSLog
+// SUPERMUX:begin device-link-unproven-session-backoff
+import SupermuxKit
+// SUPERMUX:end device-link-unproven-session-backoff
 
 nonisolated private let deviceLinkLog = Logger(subsystem: "dev.cmux", category: "device-link")
 
@@ -159,6 +162,62 @@ final class DeviceLink {
         onChange?()
     }
 
+    // SUPERMUX:begin device-link-unproven-session-backoff
+    /// The other Mac stopped answering: a reply missed its deadline and the
+    /// liveness check after it found no sign of life. Reconnects like
+    /// ``reportTransportLost(_:)``, but never at once
+    /// (``DeviceLinkReconnectPolicy``).
+    func supermuxReportUnresponsive(_ error: any Error) {
+        deviceLinkLog.error("device link unresponsive \(self.instance.wireValue, privacy: .private(mask: .hash)): \(String(describing: error), privacy: .private)")
+        lastFailure = DeviceLinkFailure.classify(error, hostName: record.deviceName)
+        transition(applyPolicy(.supermuxUnresponsive))
+        onChange?()
+    }
+    // SUPERMUX:end device-link-unproven-session-backoff
+
+    // SUPERMUX:begin route-switch
+    /// Moves the live link onto a better path: a direct handshake to the other
+    /// Mac answered while this link sat on the relay. One planned redial after
+    /// a short settle (so the old session has released its slot); the dial's
+    /// race then lands on direct (`Sources/Supermux/Devices/SupermuxDeviceRouteSwitcher.swift`).
+    /// Returns whether the link left its session (a directory precondition keeps it).
+    @discardableResult
+    func supermuxPlannedRedial() -> Bool {
+        guard phase == .connected else { return false }
+        let next = applyPolicy(.supermuxPlannedRedial)
+        guard next != .connected else { return false }
+        deviceLinkLog.info("device link planned redial \(self.instance.wireValue, privacy: .private(mask: .hash))")
+        transition(next)
+        onChange?()
+        return true
+    }
+
+    /// The direct path under the live session stopped answering, and the
+    /// session has no relay path to fail over to. Reconnects as a liveness
+    /// failure does (``supermuxReportUnresponsive(_:)``: never at once, the
+    /// backoff of a session that proved nothing continues), but shows no
+    /// failure; the dial skips the direct lane for a while and lands on the relay.
+    func supermuxReportDirectPathLost() {
+        guard phase == .connected else { return }
+        deviceLinkLog.info("device link direct path lost \(self.instance.wireValue, privacy: .private(mask: .hash))")
+        transition(applyPolicy(.supermuxUnresponsive))
+        onChange?()
+    }
+    // SUPERMUX:end route-switch
+
+    // SUPERMUX:begin device-sleep-courtesy
+    /// The other Mac said it is going to sleep: drop the session now, before
+    /// it stops answering, and reconnect as after a liveness failure (never at
+    /// once). Its waits then last until that Mac shows it is awake
+    /// (`Sources/Supermux/Devices/SupermuxDeviceSleepCourtesy.swift`).
+    func supermuxPeerGoingToSleep() {
+        guard phase == .connected else { return }
+        deviceLinkLog.info("device link peer going to sleep \(self.instance.wireValue, privacy: .private(mask: .hash))")
+        transition(applyPolicy(.supermuxUnresponsive))
+        onChange?()
+    }
+    // SUPERMUX:end device-sleep-courtesy
+
     private func applyPolicy(_ event: DeviceLinkReconnectPolicy.Event) -> Phase {
         policy.apply(event, now: runtime.now())
     }
@@ -232,6 +291,10 @@ final class DeviceLink {
         do {
             let data = try await client.sendRequest(requestData, timeoutNanoseconds: timeoutNanoseconds)
             guard !Task.isCancelled, requestGeneration == generation else { throw CancellationError() }
+            // SUPERMUX:begin device-link-unproven-session-backoff
+            // An answer beyond the dial's handshake: the session may prove itself.
+            _ = applyPolicy(.supermuxExchanged)
+            // SUPERMUX:end device-link-unproven-session-backoff
             return data
         } catch let error as MobileShellConnectionError {
             guard !Task.isCancelled, requestGeneration == generation else { throw CancellationError() }
@@ -272,6 +335,14 @@ final class DeviceLink {
             // shape `CloudMachineLink` and the presence heartbeat use.
             waitTask = Task { [weak self] in
                 guard let self else { return }
+                // SUPERMUX:begin device-sleep-courtesy
+                // A Mac that said it is going to sleep is dialed again only after a long wait.
+                let supermuxWait = SupermuxComposition.sleepCourtesy.redialWait(for: self.instance, after: delay)
+                // SUPERMUX:end device-sleep-courtesy
+                // SUPERMUX:begin device-link-unproven-session-backoff
+                // Spread by ±20 % so links that failed together do not dial in step.
+                let delay = SupermuxDeviceLinkBackoff.jittered(supermuxWait)
+                // SUPERMUX:end device-link-unproven-session-backoff
                 guard (try? await self.clock.sleep(for: delay)) != nil else { return }
                 self.transition(self.applyPolicy(.waitElapsed))
                 self.onChange?()
@@ -308,6 +379,12 @@ final class DeviceLink {
         let record = self.record
         connectTask = Task { [weak self] in
             guard let self else { return }
+            // SUPERMUX:begin device-dark-wake-gate
+            // No dial while this Mac is dark (from willSleep to a full wake, so
+            // never out of a DarkWake) or its main endpoint is being rebuilt
+            // after a long sleep (Sources/Supermux/Devices/SupermuxSystemPower.swift).
+            guard await SupermuxSystemPower.waitUntilAwake(), generation == self.generation else { return }
+            // SUPERMUX:end device-dark-wake-gate
             do {
                 let (client, events) = try await self.makeConnectedClient(record: record)
                 guard !Task.isCancelled, generation == self.generation else {
