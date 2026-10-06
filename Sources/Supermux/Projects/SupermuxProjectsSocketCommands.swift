@@ -13,6 +13,7 @@ import SupermuxMobileCore
 /// `remote_worktrees {machine, project_id}`,
 /// `remote_worktree_create {machine, project_id, workspace_name?, branch_name?, base_branch?, focus?, window_id?}`,
 /// `remote_action_run {machine, project_id, action_id, window_id?}` (the row's Actions menu),
+/// `project_action_run {project_id, action_id, focus?, window_id?}` (a local row's Actions menu),
 /// `project_sync {}`, `projects_presentation {window_id?}`,
 /// `sidebar_rows {window_id?}` (the nested rows per project in display order,
 /// and each flat-list row's directory line, as the sidebar draws them).
@@ -20,8 +21,8 @@ import SupermuxMobileCore
 enum SupermuxProjectsSocketCommands {
     private static let methods: Set<String> = [
         "unified_projects", "remote_projects", "remote_worktrees",
-        "remote_worktree_create", "remote_action_run", "project_sync", "projects_presentation",
-        "sidebar_rows",
+        "remote_worktree_create", "remote_action_run", "project_action_run", "project_sync",
+        "projects_presentation", "sidebar_rows",
     ]
 
     /// Whether `name` (the part after `supermux.devices.`) is served here.
@@ -65,6 +66,8 @@ enum SupermuxProjectsSocketCommands {
             return try await remoteWorktreeCreate(params)
         case "remote_action_run":
             return try await remoteActionRun(params)
+        case "project_action_run":
+            return try await projectActionRun(params)
         case "project_sync":
             let report = await SupermuxComposition.projectSync.syncNow()
             return SupermuxProjectsSocketPayloads.syncReport(report)
@@ -113,6 +116,27 @@ enum SupermuxProjectsSocketCommands {
         }
         let url = try await SupermuxRemoteProjectCommands.shared.runAction(location, action: action, in: try tabManager(params))
         return ["outcome": url == nil ? "command" : "open_url", "url": url?.absoluteString ?? NSNull()]
+    }
+
+    /// A local project row's Actions menu item: the same shared path, in the
+    /// window's selected workspace. Keyboard focus stays put unless `focus`
+    /// is true (the menu click moves it to the action's tab).
+    private static func projectActionRun(_ params: [String: Any]) async throws -> [String: Any] {
+        let projectID = try uuid(params, "project_id")
+        let actionID = try uuid(params, "action_id")
+        let model = SupermuxComposition.projectsModel
+        await model.loadIfNeeded()
+        guard let project = model.projects.first(where: { $0.id == projectID }) else {
+            throw invalid("project_id does not name a project on this Mac")
+        }
+        guard let action = project.actions.first(where: { $0.id == actionID }), action.isLaunchable else {
+            throw invalid("action_id does not name a launchable action of that project")
+        }
+        model.noteOpened(id: project.id)
+        SupermuxTabManagerOpener(tabManager: try tabManager(params)).runProjectAction(
+            action, of: project, preservesUserFocus: params["focus"] as? Bool != true
+        )
+        return [:]
     }
 
     /// The device project named by `machine` + `project_id`, as a row's location.
