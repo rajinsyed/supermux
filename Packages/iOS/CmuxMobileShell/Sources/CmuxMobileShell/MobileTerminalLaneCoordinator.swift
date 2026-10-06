@@ -118,8 +118,8 @@ actor MobileTerminalLaneCoordinator {
 
     init(
         provider: MobileTerminalLaneProvider?,
+        // SUPERMUX:begin terminal-lane-retry (upstream's last parameter gains a trailing comma)
         inputOnlyProvider: MobileTerminalLaneProvider? = nil,
-        // SUPERMUX:begin terminal-lane-retry
         retryDelay: @escaping @Sendable (Int) -> Duration = {
             SupermuxTerminalLaneRetryDelay().delay(forAttempt: $0)
         },
