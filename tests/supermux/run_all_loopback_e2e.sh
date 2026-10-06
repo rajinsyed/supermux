@@ -164,14 +164,16 @@ suite_args() {
     loopback_mirror_simulator_e2e) printf '%s\n' --app-path "$APP" --projects-file "$SCRATCH/projects.json" ;;
     loopback_remote_host_mode_e2e) printf '%s\n' --app-path "$APP" --projects-file "$SCRATCH/projects.json" --push-state-dir "$SCRATCH/push-state" ;;
     right_sidebar_width_e2e|sidebar_font_scale_e2e) printf '%s\n' --app-path "$APP" --projects-file "$SCRATCH/projects.json" --push-state-dir "$SCRATCH/push-state" ;;
+    project_action_target_e2e) printf '%s\n' --app-path "$APP" --push-state-dir "$SCRATCH/push-state" ;;
   esac
 }
 
 # The remote-host-mode, mirror-render and auto-mirror suites run last: they quit and relaunch the app for their restart checks;
-# right_sidebar_width_e2e and sidebar_font_scale_e2e relaunch it with preferences set before launch.
+# right_sidebar_width_e2e and sidebar_font_scale_e2e relaunch it with preferences set before launch;
+# project_action_target_e2e relaunches it with a projects document of its own.
 # CMUX_E2E_SUITES="a b" runs only those suites (same order rules). loopback_degraded_link_e2e (~5 min) is not in the
 # default list: it is the red regression for the slow-link latency fixes; run it by name until they land.
-SUITES=(${CMUX_E2E_SUITES:-loopback_device_smoke loopback_device_route_e2e loopback_device_route_switch_e2e loopback_device_sleep_wake_e2e loopback_projects_e2e loopback_worktree_disclosure_e2e loopback_new_worktree_picker_e2e loopback_background_worktree_e2e loopback_workspace_behaviors_e2e loopback_notifications_e2e loopback_tab_sync_e2e loopback_remote_macs_settings_e2e loopback_sidebar_rows_e2e loopback_terminal_input_e2e loopback_terminal_input_pipeline_e2e loopback_terminal_clipboard_e2e loopback_mirror_tab_close_e2e loopback_mirror_workspace_close_e2e loopback_mirror_appearance_e2e loopback_new_tab_order_e2e loopback_terminal_sizing_policy_e2e loopback_terminal_sizing_recovery_e2e loopback_mirror_files_e2e loopback_agent_activity_e2e loopback_agent_answer_e2e loopback_mirror_simulator_e2e loopback_port_forward_e2e loopback_mirror_local_panels_e2e loopback_mirror_browser_e2e loopback_device_tunnel_e2e loopback_mirror_render_e2e loopback_auto_mirror_e2e loopback_terminal_streaming_e2e loopback_terminal_resize_integrity_e2e loopback_terminal_polish_e2e right_sidebar_width_e2e sidebar_font_scale_e2e loopback_remote_host_mode_e2e})
+SUITES=(${CMUX_E2E_SUITES:-loopback_device_smoke loopback_device_route_e2e loopback_device_route_switch_e2e loopback_device_sleep_wake_e2e loopback_projects_e2e loopback_worktree_disclosure_e2e loopback_new_worktree_picker_e2e loopback_background_worktree_e2e loopback_workspace_behaviors_e2e loopback_notifications_e2e loopback_tab_sync_e2e loopback_remote_macs_settings_e2e loopback_sidebar_rows_e2e loopback_terminal_input_e2e loopback_terminal_input_pipeline_e2e loopback_terminal_clipboard_e2e loopback_mirror_tab_close_e2e loopback_mirror_workspace_close_e2e loopback_mirror_appearance_e2e loopback_new_tab_order_e2e loopback_terminal_sizing_policy_e2e loopback_terminal_sizing_recovery_e2e loopback_mirror_files_e2e loopback_agent_activity_e2e loopback_agent_answer_e2e loopback_mirror_simulator_e2e loopback_port_forward_e2e loopback_mirror_local_panels_e2e loopback_mirror_browser_e2e loopback_device_tunnel_e2e loopback_mirror_render_e2e loopback_auto_mirror_e2e loopback_terminal_streaming_e2e loopback_terminal_resize_integrity_e2e loopback_terminal_polish_e2e right_sidebar_width_e2e sidebar_font_scale_e2e project_action_target_e2e loopback_remote_host_mode_e2e})
 
 status=0
 for name in "${SUITES[@]}"; do

@@ -418,13 +418,7 @@ public struct SupermuxProjectsSectionView: View {
         model.noteOpened(id: project.id)
         // Project actions run as a new tab in the focused workspace (like the
         // presets bar), not as a separate workspace — see `runAction`.
-        opener.runAction(SupermuxOpenWorkspaceRequest(
-            title: "\(project.name) · \(action.name)",
-            directory: project.rootPath,
-            colorHex: project.colorHex,
-            initialCommand: action.command,
-            projectId: project.id
-        ))
+        opener.runProjectAction(action, of: project)
     }
 
     private func openLocal(_ project: SupermuxProject) {
