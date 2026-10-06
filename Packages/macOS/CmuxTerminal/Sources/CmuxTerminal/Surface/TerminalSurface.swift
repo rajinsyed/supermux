@@ -415,6 +415,9 @@ public final class TerminalSurface: Identifiable, ObservableObject {
     /// on the main thread). A device mirror sends it to the Mac that runs the
     /// terminal.
     public var onFocusStateChange: ((Bool) -> Void)?
+    /// Read-only ``desiredFocusState`` for release builds, where the DEBUG-only
+    /// `debugDesiredFocusState()` does not exist.
+    public var isFocusDesired: Bool { desiredFocusState }
     // SUPERMUX:end device-terminal-focus
 
     /// Whether this model still owns its logical surface-registry entry.
