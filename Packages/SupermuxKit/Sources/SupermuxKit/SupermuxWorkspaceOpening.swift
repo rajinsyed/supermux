@@ -101,6 +101,17 @@ public struct SupermuxOpenWorkspaceRequest: Sendable, Hashable {
         self.selectsWorkspace = selectsWorkspace
         self.pullRequest = pullRequest
     }
+
+    /// The same request opened in the background: the window keeps its
+    /// selected workspace and the user keeps keyboard focus. Used for a
+    /// worktree created in the background, which must not pull the user out
+    /// of whatever they moved on to.
+    public var inBackground: SupermuxOpenWorkspaceRequest {
+        var request = self
+        request.selectsWorkspace = false
+        request.preservesUserFocus = true
+        return request
+    }
 }
 
 /// Seam through which SupermuxKit opens workspaces in the host app.

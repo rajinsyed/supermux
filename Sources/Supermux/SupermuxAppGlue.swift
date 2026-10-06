@@ -137,6 +137,12 @@ enum SupermuxComposition {
             ?? SupermuxPullRequestProbe()
     )
 
+    /// App-wide New Worktree creates running in the background, shared by
+    /// every window's sidebar (each draws them under their project) and the
+    /// DEBUG `new_worktree` socket drivers. Must be a stable instance — the
+    /// section seeds its `@State` from it on first mount.
+    static let pendingWorktrees = SupermuxPendingWorktreeStore()
+
     /// App-wide subagent transcript service shared by every harness pane and web consumer.
     static let harnessSubagentTranscriptService: any SupermuxHarnessSubagentTranscriptLoading =
         SupermuxHarnessSubagentTranscriptService(
@@ -278,6 +284,8 @@ struct SupermuxProjectsMount: View {
             pullRequestModel: SupermuxComposition.worktreePullRequestModel,
             // One app-wide logo cache, shared with the workspace switcher.
             iconStore: SupermuxComposition.projectIconStore,
+            // Creates the New Worktree sheet handed to the background.
+            pendingWorktrees: SupermuxComposition.pendingWorktrees,
             // "Start Claude in a New Worktree" (prompt-first worktree launch).
             agentLaunch: SupermuxComposition.agentLaunch,
             // Other Macs' copies: remote-only rows, Mac icons and actions.

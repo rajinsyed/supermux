@@ -57,6 +57,9 @@ public struct SupermuxProjectsSectionView: View {
     @State var expandedRemoteProjectIds: Set<UUID> = []
     /// Presents the New Worktree sheet (any project, any Mac).
     @State var newWorktreeSheet: SupermuxNewWorktreeSheetItem?
+    /// The creates the sheet handed to the background, drawn as loading rows
+    /// under their projects. May be a shared, host-injected instance (see `init`).
+    @State var pendingWorktrees: SupermuxPendingWorktreeStore
     /// Presents "Set Up on <Mac>…".
     @State var projectSetupTarget: SupermuxProjectSetupTarget?
 
@@ -126,6 +129,9 @@ public struct SupermuxProjectsSectionView: View {
     ///     the store's `refresh(projects:)` prunes entries missing from the
     ///     passed list, so shared callers must always pass the full project
     ///     list (this section does).
+    ///   - pendingWorktrees: A host-owned store of background creates shared
+    ///     across windows. Same stable-instance contract as
+    ///     `pullRequestModel`; `nil` keeps a private per-section store.
     public init(
         model: SupermuxProjectsModel,
         opener: any SupermuxWorkspaceOpening,
@@ -138,6 +144,7 @@ public struct SupermuxProjectsSectionView: View {
         pullRequestPolling: SupermuxPullRequestPollingPolicy = SupermuxPullRequestPollingPolicy(),
         pullRequestModel: SupermuxWorktreePullRequestModel? = nil,
         iconStore: SupermuxProjectIconStore? = nil,
+        pendingWorktrees: SupermuxPendingWorktreeStore? = nil,
         agentLaunch: SupermuxAgentLaunchEnvironment? = nil,
         remote: SupermuxRemoteProjectsPresentation = .empty
     ) {
@@ -154,6 +161,7 @@ public struct SupermuxProjectsSectionView: View {
         self.pullRequestPolling = pullRequestPolling
         _pullRequestModel = State(initialValue: pullRequestModel ?? SupermuxWorktreePullRequestModel())
         _iconStore = State(initialValue: iconStore ?? SupermuxProjectIconStore())
+        _pendingWorktrees = State(initialValue: pendingWorktrees ?? SupermuxPendingWorktreeStore())
     }
 
     public var body: some View {
@@ -213,7 +221,9 @@ public struct SupermuxProjectsSectionView: View {
                         remoteExtras: remote.extrasByLocalProjectID[project.id],
                         remoteActions: remote.actions,
                         setUp: { destination in presentSetUp(project: project, destination: destination) },
-                        newWorktreeOn: { deviceKey in presentNewWorktree(forLocal: project, preferredDeviceKey: deviceKey) }
+                        newWorktreeOn: { deviceKey in presentNewWorktree(forLocal: project, preferredDeviceKey: deviceKey) },
+                        pendingWorktrees: pendingRows(for: project.id),
+                        pendingActions: pendingActions
                     )
                     .equatable()
                 }
@@ -283,7 +293,12 @@ public struct SupermuxProjectsSectionView: View {
             await runWorktreePullRequestProbe()
         }
         .sheet(item: $newWorktreeSheet) { item in
-            SupermuxNewWorktreeSheet(model: item.model, avatar: item.avatar, projectIcon: item.icon)
+            SupermuxNewWorktreeSheet(
+                model: item.model,
+                avatar: item.avatar,
+                projectIcon: item.icon,
+                runInBackground: { sheet in pendingWorktrees.start(sheet, rowID: item.rowID) != nil }
+            )
         }
         .sheet(item: $editorProject) { project in
             SupermuxProjectEditorSheet(model: model, project: project)
@@ -417,12 +432,14 @@ public struct SupermuxProjectsSectionView: View {
     /// Opens a workspace in `worktree`. When `runSetup` is true (only the
     /// just-created path), the project's setup script runs in a dedicated setup
     /// terminal of the new workspace; re-opening an existing worktree never
-    /// re-runs setup.
+    /// re-runs setup. `selectsWorkspace == false` (a worktree created in the
+    /// background) opens it without switching the window.
     func openWorktree(
         _ worktree: SupermuxProjectWorktree,
         project rawProject: SupermuxProject,
         title: String? = nil,
-        runSetup: Bool = false
+        runSetup: Bool = false,
+        selectsWorkspace: Bool = true
     ) {
         // Use the model's current record, not the (possibly stale) snapshot the
         // caller captured: `createWorktree` re-imports config.json just before
@@ -434,7 +451,7 @@ public struct SupermuxProjectsSectionView: View {
         let setupEnvironment: [String: String] = setupScript == nil
             ? [:]
             : SupermuxWorktreeEnvironment.variables(projectRoot: project.rootPath, worktreePath: worktree.path)
-        opener.openWorkspace(SupermuxOpenWorkspaceRequest(
+        let request = SupermuxOpenWorkspaceRequest(
             title: resolvedTitle,
             directory: worktree.path,
             colorHex: project.colorHex,
@@ -446,7 +463,8 @@ public struct SupermuxProjectsSectionView: View {
             // nested row would otherwise go blank until cmux's own probe
             // chain catches up (see SupermuxOpenWorkspaceRequest.pullRequest).
             pullRequest: pullRequestModel.pullRequestsByWorktreePath[worktree.path]
-        ))
+        )
+        opener.openWorkspace(selectsWorkspace ? request : request.inBackground)
     }
 
     private func deleteWorktree(_ worktree: SupermuxProjectWorktree, project: SupermuxProject, deleteBranch: Bool) {

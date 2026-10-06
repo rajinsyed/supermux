@@ -28,7 +28,9 @@ public struct SupermuxAgentCommandList: Equatable, Sendable {
 ///
 /// Both creates deliver the worktree even when the sheet is already gone:
 /// once they return (or throw), the worktree exists and its workspace is
-/// being opened, or nothing happened.
+/// being opened, or nothing happened. A create that runs in the background
+/// (`selectsWorkspace == false`) opens its workspace without switching the
+/// window, and returns only once that workspace is there.
 @MainActor
 public protocol SupermuxWorktreeCreationTarget: AnyObject, Sendable {
     /// The project's id on THAT Mac (used in its RPCs and launch requests).
@@ -53,7 +55,9 @@ public protocol SupermuxWorktreeCreationTarget: AnyObject, Sendable {
     ///   - baseBranch: An explicit starting branch, `HEAD`, or `nil` for the
     ///     project default.
     ///   - workspaceName: The workspace title, `nil` to name it after the branch.
-    func createWorktree(branchName: String, baseBranch: String?, workspaceName: String?) async throws
+    ///   - selectsWorkspace: Whether the opened workspace becomes the
+    ///     window's selected one (`false` in the background).
+    func createWorktree(branchName: String, baseBranch: String?, workspaceName: String?, selectsWorkspace: Bool) async throws
 
     /// Whether the prompt-first ("Start Claude") path is offered there.
     var supportsAgentLaunch: Bool { get }
@@ -85,8 +89,10 @@ public protocol SupermuxWorktreeCreationTarget: AnyObject, Sendable {
     func stageAttachments(_ files: [URL]) async throws -> [String]
     /// Names, creates and opens a worktree whose terminal runs the command.
     /// Calls `willCreateWorktree` right before the point of no return.
+    /// `selectsWorkspace` is as for ``createWorktree(branchName:baseBranch:workspaceName:selectsWorkspace:)``.
     func startAgent(
         _ request: SupermuxAgentLaunchRequest,
+        selectsWorkspace: Bool,
         willCreateWorktree: @escaping @MainActor () -> Void
     ) async throws
 }

@@ -32,9 +32,9 @@ Steps:
   8. background_start_claude: Start Claude (a harmless "echo" command) on This
      Mac returns at once with a pending row titled from the prompt; then the
      workspace opens unselected and its terminal echoes the prompt.
-  9. remote_background_create: Create on the Loopback Mac shows
-     "Creating on <Mac>…" in its row; the row stays until the mirror is open,
-     and the mirror opens unselected.
+  9. remote_background_create: with git slowed again, Create on the Loopback
+     Mac shows "Creating on <Mac>…" in its row; the row stays until the
+     mirror is open, and the mirror opens unselected.
 
 `--only a,b` runs just those steps (after 1-2) and records each result.
 
@@ -258,6 +258,8 @@ class BackgroundE2E(PickerE2E):
         device_name = str((state.get("target") or {}).get("remote_device_name") or "")
         name, branch = f"bg remote {self.nonce}", f"bg-remote-{self.nonce}"
         selected_before = self.selected_workspaces()
+        hook = self.slow_worktree_add(SLOW_GIT_S)
+        self.hooks.append(hook)
         result = self.submit_background(state["session_id"], {"workspace_name": name, "branch_name": branch})
         pending_id = result["pending_id"]
 
@@ -269,6 +271,7 @@ class BackgroundE2E(PickerE2E):
 
         row = wait_for(f"the row to say it is creating on {device_name}", on_device, self.timeout_s)
         self.wait_gone(pending_id, "the remote create's row to go away")
+        hook.unlink(missing_ok=True)
         worktree = next((w for w in self.remote_worktrees() if w.get("branch") == branch), None)
         remote_id = (worktree or {}).get("workspace_id")
         if not remote_id:

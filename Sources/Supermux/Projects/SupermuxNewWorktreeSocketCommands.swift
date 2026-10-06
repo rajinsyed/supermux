@@ -17,7 +17,13 @@ import SupermuxKit
 /// (`attachments`: image file paths, converted and added as the file picker
 /// adds them; it answers once they are attached),
 /// `remove_attachment {session_id, index}`,
-/// `submit {session_id, <fill fields>, await_open?, stop_link_after_seconds?}`,
+/// `submit {session_id, <fill fields>, await_open?, stop_link_after_seconds?, background?}`
+/// (`background`: hands the sheet to the sidebar's
+/// ``SupermuxPendingWorktreeStore`` as its Create button does and answers at
+/// once with `pending_id`),
+/// `pending {project_id?}` (the background creates the sidebar draws, under
+/// that project row or all), `pending_action {pending_id, action}` (`cancel`,
+/// `dismiss`, or `reopen`, which answers with the reopened sheet's session),
 /// `state {session_id}`, `close {session_id}`, `last_device {set?}` (the one
 /// remembered Mac; `set` replaces it and returns `previous`),
 /// `set_agent_commands {commands, selected?}` (returns the previous list, for restoring).
@@ -33,9 +39,12 @@ enum SupermuxNewWorktreeSocketCommands {
     @MainActor private final class Session {
         let model: SupermuxNewWorktreeSheetModel
         let setUps: SetUpLog
-        init(model: SupermuxNewWorktreeSheetModel, setUps: SetUpLog) {
+        /// The sidebar project row the sheet was opened from.
+        let rowID: UUID
+        init(model: SupermuxNewWorktreeSheetModel, setUps: SetUpLog, rowID: UUID) {
             self.model = model
             self.setUps = setUps
+            self.rowID = rowID
         }
     }
 
@@ -70,7 +79,12 @@ enum SupermuxNewWorktreeSocketCommands {
             session.model.removeAttachment(id: session.model.attachments[index].id)
             return state(session)
         case "submit":
+            if params["background"] as? Bool == true { return try await submitInBackground(params) }
             return try await submit(params, payloads: payloads)
+        case "pending":
+            return try pending(params)
+        case "pending_action":
+            return try pendingAction(params)
         case "close":
             sessions[try string(params, "session_id")] = nil
             return ["closed": true]
@@ -115,7 +129,7 @@ enum SupermuxNewWorktreeSocketCommands {
         } else {
             throw invalid("project_id names no local project or remote-only project row")
         }
-        let session = Session(model: model, setUps: setUps)
+        let session = Session(model: model, setUps: setUps, rowID: projectID)
         sessions[sessionID] = session
         var payload = state(session)
         payload["session_id"] = sessionID
@@ -164,6 +178,65 @@ enum SupermuxNewWorktreeSocketCommands {
             payload["mirror"] = payloads.opened(try await open.value)
         }
         return payload
+    }
+
+    /// Fills the fields and presses Create / Start Claude as the sidebar's
+    /// sheet does: the create goes to the shared background store under the
+    /// session's project row, and this answers without waiting for it.
+    private static func submitInBackground(_ params: [String: Any]) async throws -> [String: Any] {
+        let session = try session(params)
+        await fill(session.model, params)
+        guard let creation = SupermuxComposition.pendingWorktrees.start(session.model, rowID: session.rowID) else {
+            throw invalid("Create is disabled for the selected Mac (can_create is false)")
+        }
+        var payload = state(session)
+        payload["pending_id"] = creation.id.uuidString
+        return payload
+    }
+
+    /// The background creates the sidebar draws, under one project row or all.
+    private static func pending(_ params: [String: Any]) throws -> [String: Any] {
+        let rowID = params["project_id"] == nil ? nil : try uuid(params, "project_id")
+        let creations = SupermuxComposition.pendingWorktrees.creations.filter { rowID == nil || $0.rowID == rowID }
+        return ["pending": creations.map(pendingRow)]
+    }
+
+    /// Acts on a pending row as its ✕ / menu / click does; `reopen` answers
+    /// with the reopened sheet as a new session.
+    private static func pendingAction(_ params: [String: Any]) throws -> [String: Any] {
+        let id = try uuid(params, "pending_id")
+        let store = SupermuxComposition.pendingWorktrees
+        switch try string(params, "action") {
+        case "cancel":
+            store.cancel(id)
+        case "dismiss":
+            store.dismiss(id)
+        case "reopen":
+            guard let creation = store.reopen(id) else { throw invalid("pending_id names no failed create") }
+            let session = Session(model: creation.sheet, setUps: SetUpLog(), rowID: creation.rowID)
+            let sessionID = UUID().uuidString
+            sessions[sessionID] = session
+            var payload = state(session)
+            payload["session_id"] = sessionID
+            return payload
+        default:
+            throw invalid("action must be cancel, dismiss or reopen")
+        }
+        return ["ok": true]
+    }
+
+    private static func pendingRow(_ creation: SupermuxPendingWorktreeCreation) -> [String: Any] {
+        let row = creation.row
+        let state = row.isFailed ? "failed" : creation.sheet.phase == .runningGit ? "creating" : "naming"
+        return [
+            "id": row.id.uuidString,
+            "row_id": creation.rowID.uuidString,
+            "title": row.title,
+            "status": row.status,
+            "state": state,
+            "can_cancel": row.canCancel,
+            "error": creation.failure ?? NSNull(),
+        ]
     }
 
     /// The Mac the New Worktree sheet remembers (one for every project, so a
@@ -223,13 +296,14 @@ enum SupermuxNewWorktreeSocketCommands {
             model: SupermuxComposition.projectsModel,
             project: project,
             agentLaunch: SupermuxComposition.agentLaunch,
-            onCreated: { worktree, name in
-                opener.openWorkspace(SupermuxOpenWorkspaceRequest(
+            onCreated: { worktree, name, selectsWorkspace in
+                let request = SupermuxOpenWorkspaceRequest(
                     title: name ?? worktree.displayName,
                     directory: worktree.path,
                     colorHex: project.colorHex,
                     projectId: project.id
-                ))
+                )
+                opener.openWorkspace(selectsWorkspace ? request : request.inBackground)
             },
             onLaunched: { launch in opener.openWorkspace(launch.openRequest) }
         )

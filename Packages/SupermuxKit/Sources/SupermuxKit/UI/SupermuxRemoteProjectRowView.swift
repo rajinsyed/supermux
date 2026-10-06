@@ -17,6 +17,9 @@ struct SupermuxRemoteProjectRowView: View {
     let closeWorkspace: (UUID) -> Void
     let renameWorkspace: (UUID) -> Void
     let openPullRequest: (URL, UUID?) -> Void
+    /// Worktrees being created here in the background.
+    var pendingWorktrees: [SupermuxPendingWorktreeRow] = []
+    var pendingActions: SupermuxPendingWorktreeActions = .inert
 
     @Environment(\.supermuxSidebarFontScale) private var fontScale
     @State private var isHovered = false
@@ -39,6 +42,10 @@ struct SupermuxRemoteProjectRowView: View {
                     mirrorMenu: { actions.mirrorMenu(workspace.id) }
                 )
                 .equatable()
+            }
+            ForEach(pendingWorktrees) { pending in
+                SupermuxPendingWorktreeRowView(row: pending, actions: pendingActions)
+                    .equatable()
             }
             if isExpanded {
                 ForEach(row.worktrees) { worktree in
