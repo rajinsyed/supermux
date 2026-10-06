@@ -128,6 +128,8 @@ enum SupermuxProjectsSocketPayloads {
             "window_id": AppDelegate.shared?.windowId(for: tabManager)?.uuidString ?? NSNull(),
             // The sidebar font scale both row kinds draw at (`supermuxSidebarFontScale`).
             "font_scale": SidebarTabItemFontScale.scale(for: SupermuxSidebarFontScaleStore.currentSidebarFontSize()),
+            // What each window's mounted Projects section draws at right now.
+            "drawn_font_scales": SupermuxSidebarFontScaleStore.mountedFontScales.map(Double.init),
             "projects": projectOrder.map { id -> [String: Any] in
                 ["project_id": id.uuidString, "rows": (rowsByProject[id] ?? []).map(nestedRow)]
             },

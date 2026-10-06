@@ -20,6 +20,15 @@ final class SupermuxSidebarFontScaleStore: ObservableObject {
     private var loadTask: Task<Void, Never>?
     private var configObservers: [NSObjectProtocol] = []
 
+    /// Every live store (one per window's Projects section), weakly held.
+    private static let mounted = NSHashTable<SupermuxSidebarFontScaleStore>.weakObjects()
+
+    /// The scales the mounted Projects sections draw at, for the
+    /// `supermux.devices.sidebar_rows` payload.
+    static var mountedFontScales: [CGFloat] {
+        mounted.allObjects.map(\.fontScale)
+    }
+
     /// The sidebar font size the flat workspace rows draw at: cmux.json's
     /// `sidebar.fontSize` when set, else the Ghostty config's `sidebar-font-size`.
     nonisolated static func currentSidebarFontSize() -> CGFloat {
@@ -40,6 +49,7 @@ final class SupermuxSidebarFontScaleStore: ObservableObject {
                 Task { @MainActor [weak self] in self?.refresh() }
             }
         }
+        Self.mounted.add(self)
     }
 
     deinit {

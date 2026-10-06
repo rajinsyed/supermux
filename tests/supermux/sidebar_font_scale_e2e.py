@@ -6,12 +6,14 @@ Upstream's #17467 (merged 2026-10-06) made `sidebar.fontSize` a cmux.json key: t
 settings file store writes it to the `cmux.settings.sidebarFontSize` default, and
 `GhosttyConfig.loadForCmux()` lays it over the Ghostty config, so upstream's flat
 workspace rows draw at that size. The fork's Projects section and its nested rows
-must draw at the same scale (`SupermuxSidebarFontScaleStore`), which
-`supermux.devices.sidebar_rows` reports as `font_scale`:
+must draw at the same scale (`SupermuxSidebarFontScaleStore`).
+`supermux.devices.sidebar_rows` reports both the resolved scale (`font_scale`) and
+the scale each window's mounted Projects section draws at (`drawn_font_scales`):
 
   1. setup                          the tagged app quit; the tag's own default recorded
   2. cmux_json_size_scales_projects launched with the default the cmux.json key writes
-                                    (`--size`, 16 pt): `font_scale` is size / 12.5
+                                    (`--size`, 16 pt): `font_scale` and every mounted
+                                    section's drawn scale are size / 12.5
   3. cleanup                        the tag's default restored; the app relaunched
 
 The user's own cmux.json is never touched: the test writes only the default that
@@ -51,9 +53,9 @@ class SidebarFontScaleE2E:
         self.steps: List[Dict[str, Any]] = []
         self.saved: Optional[str] = None
 
-    def font_scale(self) -> Optional[float]:
-        value = (self.app.sock.call("supermux.devices.sidebar_rows", {}) or {}).get("font_scale")
-        return float(value) if value is not None else None
+    def scales(self) -> Dict[str, Any]:
+        rows = self.app.sock.call("supermux.devices.sidebar_rows", {}) or {}
+        return {"font_scale": rows.get("font_scale"), "drawn_font_scales": rows.get("drawn_font_scales") or []}
 
     def step(self, name: str, action: Callable[[], Optional[Dict[str, Any]]]) -> bool:
         started = time.monotonic()
@@ -79,19 +81,23 @@ class SidebarFontScaleE2E:
         expected = self.args.size / DEFAULT_SIDEBAR_FONT_SIZE
         self.app.write_float(SIZE_KEY, self.args.size)
         self.app.launch()
-        seen: List[Optional[float]] = []
+        seen: List[Dict[str, Any]] = []
+
+        def close(value: Any) -> bool:
+            return value is not None and abs(float(value) - expected) < 0.001
 
         def matches() -> bool:
-            scale = self.font_scale()
-            seen.append(scale)
-            return scale is not None and abs(scale - expected) < 0.001
+            scales = self.scales()
+            seen.append(scales)
+            drawn = scales["drawn_font_scales"]
+            return close(scales["font_scale"]) and bool(drawn) and all(close(value) for value in drawn)
 
         try:
             wait_for(f"font_scale {expected:.3f} for a {self.args.size} pt sidebar", matches, 10)
         except Failure as error:
             raise Failure(f"{error}; saw {seen[-5:]}")
         shot = self.app.screenshot("sidebar-font-scale")
-        return {"expected": expected, "font_scale": seen[-1], "screenshot": shot}
+        return {"expected": expected, **seen[-1], "screenshot": shot}
 
     def cleanup(self) -> Dict[str, Any]:
         self.app.quit()
