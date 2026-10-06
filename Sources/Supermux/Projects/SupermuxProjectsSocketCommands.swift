@@ -132,8 +132,9 @@ enum SupermuxProjectsSocketCommands {
         guard let action = project.actions.first(where: { $0.id == actionID }), action.isLaunchable else {
             throw invalid("action_id does not name a launchable action of that project")
         }
+        let manager = try tabManager(params)
         model.noteOpened(id: project.id)
-        SupermuxTabManagerOpener(tabManager: try tabManager(params)).runProjectAction(
+        SupermuxTabManagerOpener(tabManager: manager).runProjectAction(
             action, of: project, preservesUserFocus: params["focus"] as? Bool != true
         )
         return [:]

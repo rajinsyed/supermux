@@ -62,6 +62,7 @@ class ProjectActionTargetE2E:
                              str(self.root / "projects.json"), args.push_state_dir)
         self.steps: List[Dict[str, Any]] = []
         self.initial_workspaces: Set[str] = set()
+        self.launched = False
 
     # -- socket ---------------------------------------------------------------------
 
@@ -111,6 +112,7 @@ class ProjectActionTargetE2E:
         document = {"version": 3, "projects": [project], "isSectionCollapsed": False}
         (self.root / "projects.json").write_text(json.dumps(document, indent=2), encoding="utf-8")
         self.app.launch()
+        self.launched = True
         self.initial_workspaces = self.workspace_ids()
         return {"repo": str(self.repo), "project_id": self.project_id, "action_id": self.action_id}
 
@@ -160,17 +162,19 @@ class ProjectActionTargetE2E:
         return facts
 
     def cleanup(self) -> Dict[str, Any]:
-        opened = sorted(self.workspace_ids() - self.initial_workspaces)
-        for workspace_id in opened:
-            self.call("workspace.close", {"workspace_id": workspace_id})
+        opened: List[str] = []
+        if self.launched:
+            opened = sorted(self.workspace_ids() - self.initial_workspaces)
+            for workspace_id in opened:
+                self.call("workspace.close", {"workspace_id": workspace_id})
         self.app.quit()
         shutil.rmtree(self.root, ignore_errors=True)
         return {"closed": opened}
 
     def run(self) -> bool:
-        if not self.step("setup", self.setup):
-            return False
-        ok = self.step("action_runs_in_selected_workspace", self.action_runs_in_selected_workspace)
+        # Cleanup runs even when setup fails after launching the app.
+        ok = self.step("setup", self.setup) and self.step(
+            "action_runs_in_selected_workspace", self.action_runs_in_selected_workspace)
         return self.step("cleanup", self.cleanup) and ok
 
 
