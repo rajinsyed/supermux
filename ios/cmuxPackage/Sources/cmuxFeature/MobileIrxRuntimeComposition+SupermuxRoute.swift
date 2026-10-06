@@ -121,6 +121,8 @@ extension MobileIrxRuntimeComposition: SupermuxPhoneRouteRuntime {
         automatic: @escaping @Sendable () async throws -> IrxConnection
     ) async throws -> (connection: IrxConnection, lane: SupermuxDialLane) {
         guard case .automatic = intent, !forceRelayOnly else { return (try await automatic(), .automatic) }
+        // The prober tries what this dial races, the Private Addresses included.
+        supermuxPrivateAddressesByPeer[peerHex] = privateAddresses
         let interfaces = SupermuxLocalInterface.current()
         if supermuxRoutePolicies.judgeNetworkForDial(on: interfaces, at: Date()) {
             journal.record("supermux-route", "network-settled", ["changed": "true", "by": "dial"])
@@ -302,7 +304,8 @@ extension MobileIrxRuntimeComposition: SupermuxPhoneRouteRuntime {
         }
         var hasCandidates = false
         if sample?.isRelay == true, let record {
-            hasCandidates = await !supermuxDirectAddresses(record: record).isEmpty
+            hasCandidates = await !supermuxDirectAddresses(
+                record: record, privateAddresses: supermuxPrivateAddressesByPeer[peerHex] ?? []).isEmpty
         }
         let step = supermuxRoutePolicies.observe(
             peerHex,
@@ -329,7 +332,8 @@ extension MobileIrxRuntimeComposition: SupermuxPhoneRouteRuntime {
         if let record = supermuxMacRecord(endpointID: peerHex), let lane = supermuxDirectLane() {
             took = await SupermuxIrxDirectFirstDial.probe(
                 lane: lane, peerEndpointIDHex: peerHex,
-                addresses: await supermuxDirectAddresses(record: record),
+                addresses: await supermuxDirectAddresses(
+                    record: record, privateAddresses: supermuxPrivateAddressesByPeer[peerHex] ?? []),
                 deadline: Self.supermuxProbeDeadline)
         }
         let action = supermuxRoutePolicies.probeFinished(
@@ -447,6 +451,7 @@ extension MobileIrxRuntimeComposition: SupermuxPhoneRouteRuntime {
         supermuxRouteLoop = nil
         supermuxNetworkDebounce.cancel()
         supermuxRoutePolicies.reset()
+        supermuxPrivateAddressesByPeer = [:]
         guard forgetAddresses else { return }
         // Before the first await: a write still out sees it and undoes itself.
         supermuxRouteAddressEpoch &+= 1

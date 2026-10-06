@@ -83,6 +83,9 @@ public actor MobileIrxRuntimeComposition {
     /// Each Mac's switch policy (shared with the Mac), the lane its session
     /// went out on, and the network the phone was last on.
     var supermuxRoutePolicies = SupermuxPhoneRoutePolicies()
+    /// The user's Private Addresses each Mac's last dial named, so the
+    /// prober tries the same direct addresses that dial raced.
+    var supermuxPrivateAddressesByPeer: [String: [String]] = [:]
     /// Judges the phone's network once its path updates stop.
     let supermuxNetworkDebounce = SupermuxTrailingDebounce(settle: MobileIrxRuntimeComposition.supermuxNetworkSettle)
     var supermuxRouteLoop: Task<Void, Never>?
