@@ -104,7 +104,7 @@ enum SupermuxDeviceTerminalActions {
             focusSettles[panelID] = nil
             guard let surface, deviceTerminal(for: surface) != nil else { return }
             let onScreen = SupermuxTerminalSizingVisibility.isOnScreen(surface)
-            let focused = surface.debugDesiredFocusState() && onScreen
+            let focused = surface.isFocusDesired && onScreen
             applyGhosttyFocus(surface, onScreen: onScreen)
             // Nothing sent yet counts as unfocused, so a pane built hidden
             // never takes focus from whoever uses that terminal on its Mac.
@@ -118,11 +118,11 @@ enum SupermuxDeviceTerminalActions {
     private static func applyGhosttyFocus(_ surface: TerminalSurface, onScreen: Bool) {
         let panelID = surface.id
         if !onScreen {
-            guard surface.debugDesiredFocusState(),
+            guard surface.isFocusDesired,
                   let live = surface.liveSurfaceForGhosttyAccess(reason: "supermux.mirrorFocus.offScreen") else { return }
             ghostty_surface_set_focus(live, false)
             unfocusedOffScreen.insert(panelID)
-        } else if unfocusedOffScreen.remove(panelID) != nil, surface.debugDesiredFocusState() {
+        } else if unfocusedOffScreen.remove(panelID) != nil, surface.isFocusDesired {
             // `force`: cmux's record already says focused, so only the
             // runtime surface (and its display id) is brought back.
             surface.setFocus(true, force: true)

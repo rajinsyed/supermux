@@ -89,9 +89,11 @@ final class SupermuxRouteCandidateSync {
         let outcome = await ask(device)
         schedules[instance]?.finished(outcome.answer, at: Date())
         if outcome == .stored { storedCount += 1 }
+        #if DEBUG
         if outcome != .stored, outcome != .unsupported {
             cmuxDebugLog("supermux.route candidates from \(instance.deviceID.prefix(8)): \(outcome.rawValue)")
         }
+        #endif
         return outcome
     }
 
