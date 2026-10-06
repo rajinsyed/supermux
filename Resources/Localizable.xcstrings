@@ -660875,6 +660875,23 @@
           }
         }
       }
+    },
+    "supermux.pendingWorktree.failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t create the worktree"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ワークツリーを作成できませんでした"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

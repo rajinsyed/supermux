@@ -105,13 +105,18 @@ public final class SupermuxPendingWorktreeCreation: Identifiable {
     /// Whether Cancel still applies: AI naming can stop, git cannot.
     public var canCancel: Bool { sheet.phase == .naming }
 
-    /// The value the sidebar row renders.
+    /// The value the sidebar row renders. A failure gets a short line there
+    /// (git's own output leads with noise that would fill the row) and its
+    /// full sentence in the tooltip and the reopened sheet.
     public var row: SupermuxPendingWorktreeRow {
-        SupermuxPendingWorktreeRow(
+        let status = failure == nil
+            ? sheet.statusMessage ?? String(localized: "supermux.agent.status.creating", defaultValue: "Creating worktree…")
+            : String(localized: "supermux.pendingWorktree.failed", defaultValue: "Couldn’t create the worktree")
+        return SupermuxPendingWorktreeRow(
             id: id,
             title: title,
-            status: failure ?? sheet.statusMessage
-                ?? String(localized: "supermux.agent.status.creating", defaultValue: "Creating worktree…"),
+            status: status,
+            detail: failure,
             isFailed: failure != nil,
             canCancel: canCancel
         )

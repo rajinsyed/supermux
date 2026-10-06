@@ -9,8 +9,10 @@ public struct SupermuxPendingWorktreeRow: Identifiable, Equatable, Sendable {
     /// The name the workspace is expected to open as.
     public let title: String
     /// What is happening ("Creating worktree…", "Creating on <Mac>…"), or
-    /// the error sentence once it failed.
+    /// that it failed.
     public let status: String
+    /// The full error once it failed (the row's tooltip).
+    public let detail: String?
     /// Whether the create failed: the row then reopens its sheet.
     public let isFailed: Bool
     /// Whether Cancel still applies (AI naming; git cannot be taken back).
@@ -101,7 +103,7 @@ struct SupermuxPendingWorktreeRowView: View, Equatable {
         .onHover { isHovered = $0 }
         .onTapGesture { if row.isFailed { actions.reopen(row.id) } }
         .contextMenu { menu }
-        .help(row.status)
+        .help(row.detail ?? row.status)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(row.title), \(row.status)")
         .accessibilityAddTraits(row.isFailed ? .isButton : [])
