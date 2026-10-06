@@ -6,7 +6,6 @@ import SupermuxKit
 import SwiftUI
 
 struct NotificationPopoverRow: View, Equatable {
-    @Environment(\.cmuxAccentColor) private var cmuxAccent
     // Closures excluded from ==; equality is the rendered snapshot only (#2586).
     nonisolated static func == (lhs: NotificationPopoverRow, rhs: NotificationPopoverRow) -> Bool {
         lhs.notification == rhs.notification && lhs.workspaceTitle == rhs.workspaceTitle
@@ -32,6 +31,7 @@ struct NotificationPopoverRow: View, Equatable {
     let onToggleRead: () -> Void
 
     @State private var isHovering: Bool = false
+    @Environment(\.cmuxAccentColor) private var cmuxAccent
 
     var body: some View {
         // Row uses a ZStack so the hover-only clear button is a *sibling* of the row's

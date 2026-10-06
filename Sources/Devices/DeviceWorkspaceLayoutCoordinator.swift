@@ -226,8 +226,11 @@ final class DeviceWorkspaceLayoutCoordinator {
         let remaining = catalog.projections.filter {
             $0.workspaceID == projection.workspaceID && !supermuxLocalPanelIDs.contains($0.panelID)
         }
+        // An adopted reservation stays pending until its owner completes it,
+        // but its pane already mirrors a terminal and counts as synchronized.
+        let projectedPanels = Set(remaining.map(\.panelID))
         let reserved = native.cloudPendingCreations.values.filter {
-            $0.machine == machine && $0.remoteWorkspaceID == remoteID
+            $0.machine == machine && $0.remoteWorkspaceID == remoteID && !projectedPanels.contains($0.panelID)
         }.map(\.panelID)
         guard remaining.allSatisfy({ $0.resource.machine == machine && $0.remoteWorkspaceID == remoteID }),
               Set(remaining.map(\.panelID)) == Set(native.panels.keys).subtracting([projection.panelID])
@@ -659,8 +662,8 @@ final class DeviceWorkspaceLayoutCoordinator {
                     let view = try catalog.remoteView(for: resourceID, workspaceID: target.remoteID)
                     let location = locations[resourceID.key]
                     // Only the reservation bound to this terminal lends its pane,
-                    // and that same reservation is the one adopted. An earlier
-                    // projection in this pass may already have adopted it.
+                    // and that same reservation is the one adopted. Adoption keeps
+                    // it pending until its owner completes or cancels it.
                     let reservation = reservations[CloudTerminalReservationKey(resource: resourceID, remoteTabID: view?.tabID)]
                         .flatMap { native.cloudPendingCreations[$0.panelID] === $0 ? $0 : nil }
                     let pane = location.flatMap { localPanesByRemotePane[$0.paneID] }
