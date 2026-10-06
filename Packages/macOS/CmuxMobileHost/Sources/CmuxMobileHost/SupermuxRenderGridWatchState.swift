@@ -49,8 +49,27 @@ public struct SupermuxRenderGridWatchState: Sendable {
     private var replayed: [UUID: Set<UUID>] = [:]
     /// The set each limited connection was last given.
     private var given: [UUID: Set<UUID>] = [:]
+    /// Every sticky report last heard of, render-grid connection or not.
+    private var heard: Set<Report> = []
 
     public init() {}
+
+    /// Every sticky report now held; only those of connections that
+    /// `takesRenderGrid` (subscribed to `terminal.render_grid`) count. Runs
+    /// on every report write, so an unchanged set stops at the comparison.
+    public mutating func reportsHeard(
+        _ reports: Set<Report>, takesRenderGrid: (UUID) -> Bool, isOpen: (UUID) -> Bool
+    ) -> [Change] {
+        guard reports != heard else { return [] }
+        heard = reports
+        return subscriptionsChanged(takesRenderGrid: takesRenderGrid, isOpen: isOpen)
+    }
+
+    /// A connection subscribed to or left `terminal.render_grid`: the reports
+    /// it wrote before count, or stop counting, now.
+    public mutating func subscriptionsChanged(takesRenderGrid: (UUID) -> Bool, isOpen: (UUID) -> Bool) -> [Change] {
+        reportsChanged(heard.filter { takesRenderGrid($0.connectionID) }, isOpen: isOpen)
+    }
 
     /// The dedicated reports now held (every connection's).
     public mutating func reportsChanged(_ reports: Set<Report>, isOpen: (UUID) -> Bool) -> [Change] {

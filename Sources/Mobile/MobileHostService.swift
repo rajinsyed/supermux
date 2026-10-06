@@ -2263,6 +2263,12 @@ actor MobileHostConnection {
             self.usableEventSubscription = nil
         }
         eventQueue.updateSubscribedTopics(currentSubscribedTopics())
+        // SUPERMUX:begin render-grid-watch (viewport reports written before this subscription limit the connection now)
+        let renderGridTopic = MobileHostEventTopicPolicy().renderGridTopic
+        if topics.contains(renderGridTopic) || previousTopics?.contains(renderGridTopic) == true {
+            await SupermuxMobileRenderGridWatch.subscriptionsChanged()
+        }
+        // SUPERMUX:end render-grid-watch
         MobileHostEventSubscriptionTracker.replace(
             previousTopics: previousTopics,
             nextTopics: topics
@@ -2282,6 +2288,11 @@ actor MobileHostConnection {
             usableEventSubscription = nil
         }
         eventQueue.updateSubscribedTopics(currentSubscribedTopics())
+        // SUPERMUX:begin render-grid-watch (a connection that left render frames stops counting)
+        if previousSubscription?.topics.contains(MobileHostEventTopicPolicy().renderGridTopic) == true {
+            await SupermuxMobileRenderGridWatch.subscriptionsChanged()
+        }
+        // SUPERMUX:end render-grid-watch
         if let previousSubscription {
             MobileHostEventSubscriptionTracker.replace(
                 previousTopics: previousSubscription.topics,

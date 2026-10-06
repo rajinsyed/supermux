@@ -23,13 +23,11 @@ import Foundation
 @MainActor
 enum SupermuxMobileRenderGridWatch {
     private static var state = SupermuxRenderGridWatchState()
-    /// The sticky reports the state last heard about.
-    private static var lastReports = Set<SupermuxRenderGridWatchState.Report>()
 
     /// The viewport reports changed (any write, clear or expiry). Only the
     /// sticky reports a render-grid connection wrote count. Runs on every
     /// report write, a phone's keystroke with viewport fields included, so
-    /// a write that changed no sticky report stops at the comparison.
+    /// a write that changed no sticky report stops at the state's comparison.
     static func reportsChanged(_ reportsBySurfaceID: [UUID: [String: TerminalController.MobileViewportReport]]) {
         var reports = Set<SupermuxRenderGridWatchState.Report>()
         for (surfaceID, reportsByClient) in reportsBySurfaceID {
@@ -38,9 +36,13 @@ enum SupermuxMobileRenderGridWatch {
                 reports.insert(.init(surfaceID: surfaceID, connectionID: connectionID))
             }
         }
-        guard reports != lastReports else { return }
-        lastReports = reports
-        apply(state.reportsChanged(reports.filter { takesRenderGrid($0.connectionID) }, isOpen: isOpen))
+        apply(state.reportsHeard(reports, takesRenderGrid: takesRenderGrid, isOpen: isOpen))
+    }
+
+    /// A connection subscribed to or left `terminal.render_grid`: reports it
+    /// wrote before subscribing limit it now, not at its next report change.
+    static func subscriptionsChanged() {
+        apply(state.subscriptionsChanged(takesRenderGrid: takesRenderGrid, isOpen: isOpen))
     }
 
     /// A replay of `surfaceID` is served on the running request's phone
