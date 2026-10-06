@@ -173,16 +173,11 @@ extension TerminalController {
                 return .err(code: "unavailable", message: "Workspace context is unavailable", data: nil)
             }
             SupermuxComposition.projectsModel.noteOpened(id: project.id)
-            // Mirror the desktop's launchAction exactly (title, directory,
-            // color, command, association).
-            SupermuxTabManagerOpener(tabManager: tabManager).runAction(SupermuxOpenWorkspaceRequest(
-                title: "\(project.name) · \(action.name)",
-                directory: project.rootPath,
-                colorHex: project.colorHex,
-                initialCommand: action.command,
-                projectId: project.id,
-                preservesUserFocus: true
-            ), in: named)
+            // The desktop's request (title, directory, color, command,
+            // association), without moving the Mac user's focus.
+            SupermuxTabManagerOpener(tabManager: tabManager).runAction(
+                .projectAction(action, of: project, preservesUserFocus: true), in: named
+            )
             return .ok(SupermuxMobileActionRun.commandResult())
         }
     }

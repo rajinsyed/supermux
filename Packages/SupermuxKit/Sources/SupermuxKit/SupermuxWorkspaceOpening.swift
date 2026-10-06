@@ -123,16 +123,14 @@ public protocol SupermuxWorkspaceOpening: AnyObject {
     /// expects them to run where they are looking, like the global presets bar,
     /// not to spawn a new workspace. Hosts should fall back to
     /// ``openWorkspace(_:)`` when there is no focused workspace to host the tab.
+    ///
+    /// Deliberately has no default implementation: with one, a host method
+    /// whose signature drifted (e.g. gained a parameter) silently stopped
+    /// witnessing this requirement, and every action opened a new workspace.
     func runAction(_ request: SupermuxOpenWorkspaceRequest)
 }
 
 public extension SupermuxWorkspaceOpening {
-    /// Default behaviour: open a workspace, matching the legacy action path.
-    /// Hosts that can target the focused workspace override this.
-    func runAction(_ request: SupermuxOpenWorkspaceRequest) {
-        openWorkspace(request)
-    }
-
     /// Runs one of `project`'s actions where the user is looking
     /// (``runAction(_:)``): the path of a local project row's Actions menu.
     /// No-op for an action without a name or command.
