@@ -8,9 +8,9 @@ import SwiftUI
 /// (``SidebarTabItemFontScale``); the Projects section reuses the *same* scale so
 /// bumping the sidebar font size enlarges projects and their nested workspaces
 /// too, instead of leaving them stuck at a fixed size. Mirrors cmux's
-/// `SidebarTabItemSettingsStore` font handling: the size is read off the main
-/// thread and refreshed whenever the Ghostty config reloads (the broadcast a
-/// settings change emits).
+/// `SidebarTabItemSettingsStore` font handling: the size is cmux's resolved one
+/// (cmux.json's `sidebar.fontSize` over the Ghostty config), read off the main
+/// thread and refreshed whenever that size or the Ghostty config changes.
 @MainActor
 final class SupermuxSidebarFontScaleStore: ObservableObject {
     /// Multiplier injected into the Projects section via
@@ -18,30 +18,34 @@ final class SupermuxSidebarFontScaleStore: ObservableObject {
     @Published private(set) var fontScale: CGFloat
 
     private var loadTask: Task<Void, Never>?
-    private var configObserver: NSObjectProtocol?
+    private var configObservers: [NSObjectProtocol] = []
+
+    /// The sidebar font size the flat workspace rows draw at: cmux.json's
+    /// `sidebar.fontSize` when set, else the Ghostty config's `sidebar-font-size`.
+    nonisolated static func currentSidebarFontSize() -> CGFloat {
+        GhosttyConfig.loadForCmux().sidebarFontSize
+    }
 
     init() {
         // Seed synchronously from the loaded config — exactly like the
-        // enclosing sidebar's `SidebarTabItemSettingsStore` (`GhosttyConfig.load()`
+        // enclosing sidebar's `SidebarTabItemSettingsStore` (`GhosttyConfig.loadForCmux()`
         // is cached, so this adds no new I/O class). Seeding the *default* size
         // and loading async rendered the section's first frames at the wrong
         // scale on every mount, then visibly re-laid it out (and republished
         // the section height) when the load landed. The async `refresh()` path
         // remains for config reloads only.
-        fontScale = SidebarTabItemFontScale.scale(for: GhosttyConfig.load().sidebarFontSize)
-        configObserver = NotificationCenter.default.addObserver(
-            forName: .ghosttyConfigDidReload,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in self?.refresh() }
+        fontScale = SidebarTabItemFontScale.scale(for: Self.currentSidebarFontSize())
+        configObservers = [Notification.Name.ghosttyConfigDidReload, .ghosttySidebarFontSizeDidChange].map { name in
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor [weak self] in self?.refresh() }
+            }
         }
     }
 
     deinit {
         loadTask?.cancel()
-        if let configObserver {
-            NotificationCenter.default.removeObserver(configObserver)
+        for observer in configObservers {
+            NotificationCenter.default.removeObserver(observer)
         }
     }
 
@@ -51,7 +55,7 @@ final class SupermuxSidebarFontScaleStore: ObservableObject {
         loadTask?.cancel()
         loadTask = Task { @MainActor [weak self] in
             let size = await Task.detached(priority: .utility) {
-                GhosttyConfig.load().sidebarFontSize
+                Self.currentSidebarFontSize()
             }.value
             guard let self, !Task.isCancelled else { return }
             let next = SidebarTabItemFontScale.scale(for: size)

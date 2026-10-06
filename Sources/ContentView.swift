@@ -1295,7 +1295,12 @@ struct ContentView: View {
             candidate,
             availableWidth: resolvedRightSidebarAvailableWidth(availableWidth),
             configuredMaximumWidth: rightSidebarConfiguredMaximumWidth,
-            contentMinimumWidth: fileExplorerState.modeBarMinimumWidth
+            // SUPERMUX:begin right-sidebar-min-width-content
+            // Supermux keeps its 200 pt floor and 220 pt opening width; the mode
+            // bar scrolls when its narrowest layout does not fit (#950/#951).
+            // (upstream: `contentMinimumWidth: fileExplorerState.modeBarMinimumWidth`)
+            contentMinimumWidth: 0
+            // SUPERMUX:end right-sidebar-min-width-content
         )
     }
 
