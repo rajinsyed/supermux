@@ -123,7 +123,11 @@ class ProjectActionTargetE2E:
             raise Failure(f"workspace.create returned {created}")
         self.call("workspace.select", {"workspace_id": looking})
         wait_for("the sub/ workspace to be selected", lambda: self.selected_workspace() == looking, 10)
-        before_ids = self.workspace_ids()
+        def listed() -> Optional[Set[str]]:
+            ids = self.workspace_ids()
+            return ids if looking in ids else None
+
+        before_ids = wait_for("the sub/ workspace to be listed", listed, 10)
         before_terminals = wait_for("the sub/ workspace's terminal", lambda: self.terminal_count(looking), 10)
 
         self.call("supermux.devices.project_action_run", {"project_id": self.project_id, "action_id": self.action_id})
