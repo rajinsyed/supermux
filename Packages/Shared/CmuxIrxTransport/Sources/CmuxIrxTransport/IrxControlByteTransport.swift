@@ -624,7 +624,8 @@ extension IrxControlByteTransport: SupermuxByteTransportPeerActivity {
         guard !isClosed, let (connection, _) = pair else { return false }
         if await connection.applicationSilenceEvidence(since: start) == .activity { return true }
         guard let probeDeadline else { return false }
-        return await connection.probeLiveness(deadline: probeDeadline)
+        // Unretired: the connection's keepalive, with its shorter deadline, joins it.
+        return await connection.supermuxProbeLivenessUnretired(deadline: probeDeadline)
     }
 }
 // SUPERMUX:end transport-peer-liveness
