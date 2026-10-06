@@ -62,8 +62,10 @@ final class SupermuxTerminalSizingVisibility {
     /// nobody else would size the terminal. Disjoint from `hiddenHosts`.
     private var releasedHosts: Set<UUID> = []
     /// Marked panes seen on screen, waiting to stay there through the settle
-    /// (`showWhenSettled`). Seeing the pane off screen again ends the wait.
-    private var pendingShows: Set<UUID> = []
+    /// (`showWhenSettled`), each with its wait's token: seeing the pane off
+    /// screen again ends the wait, and a later wait's timer is the only one
+    /// that may end the new one.
+    private var pendingShows: [UUID: UUID] = [:]
     private var observers: [NSObjectProtocol] = []
 
     /// Starts following visibility changes. Later calls are no-ops.
@@ -358,10 +360,14 @@ final class SupermuxTerminalSizingVisibility {
     /// (`showInterrupted`). A reveal the portal undoes a few ms later is no
     /// return.
     private func showWhenSettled(_ surfaceID: UUID) {
-        guard pendingShows.insert(surfaceID).inserted else { return }
+        guard pendingShows[surfaceID] == nil else { return }
+        // A timer of an interrupted wait must not end this one early.
+        let token = UUID()
+        pendingShows[surfaceID] = token
         Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: Self.hideSettleNanoseconds)
-            guard let self, self.pendingShows.remove(surfaceID) != nil else { return }
+            guard let self, self.pendingShows[surfaceID] == token else { return }
+            self.pendingShows[surfaceID] = nil
             let controller = TerminalController.shared
             guard let host = controller.localSizingHostsBySurfaceID[surfaceID],
                   let surface = controller.terminalSocketTarget(surfaceID: surfaceID)?.surface,
@@ -376,7 +382,7 @@ final class SupermuxTerminalSizingVisibility {
     /// did not hold. Looks again a settle later, as the reveal that ends this
     /// hide may post nothing.
     private func showInterrupted(_ surfaceID: UUID) {
-        guard pendingShows.remove(surfaceID) != nil else { return }
+        guard pendingShows.removeValue(forKey: surfaceID) != nil else { return }
         Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: Self.hideSettleNanoseconds)
             self?.refreshHost(surfaceID)
