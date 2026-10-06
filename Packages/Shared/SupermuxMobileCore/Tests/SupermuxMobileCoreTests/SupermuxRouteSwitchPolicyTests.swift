@@ -56,6 +56,12 @@ import Testing
 /// 21. (#9) A network change (or new addresses) while a probe is out is
 ///     lost: the probe's answer, from the old network, sets the next probe
 ///     10 s out.
+///
+/// Third review (2026-10-06), written before the fix:
+/// 22. Every relayed sample, once a second per link, reads the peer's direct
+///     addresses (a store hop and an interface read) although only a sample
+///     due to probe uses them, and a due link without any reads them every
+///     second until some arrive.
 struct SupermuxRouteSwitchPolicyTests {
     typealias Policy = SupermuxRouteSwitchPolicy
     private let t0 = Date(timeIntervalSince1970: 1_000)
@@ -508,5 +514,18 @@ struct SupermuxRouteSwitchPolicyTests {
         #expect(quiet.observe(.relay, at: at(12)) == .none, "without a change the cadence holds")
         #expect(quiet.observe(.relay, at: at(19)) == .none)
         #expect(quiet.observe(.relay, at: at(21)) == .probe)
+    }
+
+    @Test("22. only a sample due to probe needs the addresses; a due one without any waits a probe interval")
+    func addressesOnlyWhenAProbeIsDue() {
+        var policy = relayed()
+        #expect(!policy.probeDue(at: at(9.9)))
+        #expect(policy.probeDue(at: at(10)))
+        #expect(policy.observe(.relay, hasCandidates: false, at: at(10)) == .none)
+        #expect(!policy.probeDue(at: at(11)), "without addresses the next look is a probe interval out")
+        #expect(policy.probeDue(at: at(20)))
+        #expect(policy.observe(.relay, at: at(20)) == .probe)
+        #expect(!policy.probeDue(at: at(21)), "a probe is out")
+        #expect(policy.probeFailures == 0, "a sample without addresses is no failure")
     }
 }
