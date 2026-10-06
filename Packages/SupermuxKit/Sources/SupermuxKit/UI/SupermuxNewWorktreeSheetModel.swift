@@ -408,7 +408,7 @@ public final class SupermuxNewWorktreeSheetModel {
             // Point of no return: Cancel is disabled from here and the created
             // worktree is always delivered by the target.
             phase = .runningGit
-            statusMessage = creatingStatus
+            if target.remoteDeviceName != nil { statusMessage = creatingStatus }
             do {
                 try await target.createWorktree(
                     branchName: branchToUse,

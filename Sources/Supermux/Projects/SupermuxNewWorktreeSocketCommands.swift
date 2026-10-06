@@ -42,8 +42,8 @@ enum SupermuxNewWorktreeSocketCommands {
         /// The sidebar project row the sheet was opened from.
         let rowID: UUID
         /// The window it was opened in (``SupermuxComposition/pendingWorktreeOwner(_:)``).
-        let owner: AnyHashable?
-        init(model: SupermuxNewWorktreeSheetModel, setUps: SetUpLog, rowID: UUID, owner: AnyHashable?) {
+        weak var owner: AnyObject?
+        init(model: SupermuxNewWorktreeSheetModel, setUps: SetUpLog, rowID: UUID, owner: AnyObject?) {
             self.model = model
             self.setUps = setUps
             self.rowID = rowID
@@ -213,7 +213,7 @@ enum SupermuxNewWorktreeSocketCommands {
         }
         if params["window_id"] != nil {
             let owner = SupermuxComposition.pendingWorktreeOwner(try SupermuxProjectsSocketCommands.tabManager(params))
-            creations = creations.filter { $0.owner == owner }
+            creations = creations.filter { $0.isOwned(by: owner) }
         }
         return ["pending": creations.map(pendingRow)]
     }

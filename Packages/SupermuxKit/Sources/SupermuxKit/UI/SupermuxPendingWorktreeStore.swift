@@ -3,7 +3,9 @@ import Observation
 
 /// The New Worktree creates running in the background, held app-wide and
 /// drawn only by the window that started each one (its `owner`): that window's
-/// targets open the workspace, so its sidebar is where the row belongs.
+/// targets open the workspace, so its sidebar is where the row belongs. The
+/// owner is held weakly: a closed window's failed creates are dropped instead
+/// of lingering, or showing up in a later window.
 ///
 /// Create / Start Claude hands its sheet here and the sheet closes at once, so
 /// the next task can start without waiting for AI naming and git. The sidebar
@@ -25,23 +27,25 @@ public final class SupermuxPendingWorktreeStore {
     /// - Parameters:
     ///   - rowID: A local project's id, or a remote-only row's id.
     ///   - owner: The window, as given to ``start(_:rowID:owner:)``.
-    public func creations(forRow rowID: UUID, owner: AnyHashable?) -> [SupermuxPendingWorktreeCreation] {
-        creations.filter { $0.rowID == rowID && $0.owner == owner }
+    public func creations(forRow rowID: UUID, owner: AnyObject?) -> [SupermuxPendingWorktreeCreation] {
+        creations.filter { $0.rowID == rowID && $0.isOwned(by: owner) }
     }
 
     /// Starts the sheet's Create / Start Claude without waiting for it.
     /// - Parameters:
     ///   - sheet: The sheet to run (its inputs as typed).
     ///   - rowID: The sidebar project row to show it under.
-    ///   - owner: The window whose sheet started it (any stable key the host
-    ///     picks); only that window draws its row.
+    ///   - owner: The window whose sheet started it (an object the host keeps
+    ///     alive with the window, held weakly); only that window draws its row.
     /// - Returns: The running create, or `nil` when the sheet cannot create now.
     @discardableResult
     public func start(
         _ sheet: SupermuxNewWorktreeSheetModel,
         rowID: UUID,
-        owner: AnyHashable?
+        owner: AnyObject?
     ) -> SupermuxPendingWorktreeCreation? {
+        // A closed window's failed creates have no sidebar left to show them.
+        creations.removeAll { $0.ownerIsGone && $0.failure != nil }
         let creation = SupermuxPendingWorktreeCreation(rowID: rowID, owner: owner, sheet: sheet)
         // Removed the moment the workspace is delivered, so the loading row
         // and the workspace row never show together.
@@ -95,19 +99,31 @@ public final class SupermuxPendingWorktreeCreation: Identifiable {
     /// The sidebar project row it shows under: a local project's id, or a
     /// remote-only row's id.
     public let rowID: UUID
-    /// The window that started it.
-    public let owner: AnyHashable?
+    /// The window that started it, `nil` once that window is gone.
+    public private(set) weak var owner: AnyObject?
+    /// Whether a window was given at all (a private per-section store has none).
+    private let hasOwner: Bool
     /// The name shown while it runs.
     public let title: String
     /// The sheet running the create, shown again by ``SupermuxPendingWorktreeStore/reopen(_:)``.
     public let sheet: SupermuxNewWorktreeSheetModel
 
-    init(rowID: UUID, owner: AnyHashable?, sheet: SupermuxNewWorktreeSheetModel) {
+    init(rowID: UUID, owner: AnyObject?, sheet: SupermuxNewWorktreeSheetModel) {
         self.rowID = rowID
         self.owner = owner
+        self.hasOwner = owner != nil
         self.title = sheet.backgroundTitle
         self.sheet = sheet
     }
+
+    /// Whether `window` started it (`nil`: started without a window).
+    public func isOwned(by window: AnyObject?) -> Bool {
+        guard let window else { return !hasOwner }
+        return owner === window
+    }
+
+    /// Whether the window that started it has closed.
+    var ownerIsGone: Bool { hasOwner && owner == nil }
 
     /// The error sentence once the create failed; `nil` while it runs.
     public var failure: String? {

@@ -143,9 +143,11 @@ enum SupermuxComposition {
     /// stable instance — the section seeds its `@State` from it on first mount.
     static let pendingWorktrees = SupermuxPendingWorktreeStore()
 
-    /// A window's key in ``pendingWorktrees``.
-    static func pendingWorktreeOwner(_ tabManager: TabManager) -> AnyHashable {
-        AnyHashable(ObjectIdentifier(tabManager))
+    /// A window's key in ``pendingWorktrees``: its `TabManager`, which the
+    /// store holds weakly (an `ObjectIdentifier` could be reused by a later
+    /// window once this one is gone).
+    static func pendingWorktreeOwner(_ tabManager: TabManager) -> AnyObject {
+        tabManager
     }
 
     /// App-wide subagent transcript service shared by every harness pane and web consumer.

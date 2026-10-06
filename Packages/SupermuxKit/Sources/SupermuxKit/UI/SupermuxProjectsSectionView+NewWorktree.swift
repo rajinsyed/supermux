@@ -81,24 +81,25 @@ extension SupermuxProjectsSectionView {
     }
 
     /// Shows a failed create's sheet again, with its error and everything
-    /// typed, under the project row it ran under.
+    /// typed, under the project row it ran under. The row stays when that
+    /// project row is gone, so what was typed is never silently dropped.
     private func reopenPendingWorktree(_ id: UUID) {
-        guard let creation = pendingWorktrees.reopen(id) else { return }
-        if let project = model.projects.first(where: { $0.id == creation.rowID }) {
-            newWorktreeSheet = SupermuxNewWorktreeSheetItem(
-                model: creation.sheet,
-                rowID: project.id,
-                avatar: project,
-                icon: iconStore.image(for: project.id)
-            )
-        } else if let row = remote.rows.first(where: { $0.id == creation.rowID }) {
-            newWorktreeSheet = SupermuxNewWorktreeSheetItem(
-                model: creation.sheet,
-                rowID: row.id,
-                avatar: row.avatar,
-                icon: row.icon
-            )
+        guard let rowID = pendingWorktrees.creations.first(where: { $0.id == id })?.rowID else { return }
+        let header: (avatar: SupermuxProject, icon: NSImage?)
+        if let project = model.projects.first(where: { $0.id == rowID }) {
+            header = (project, iconStore.image(for: project.id))
+        } else if let row = remote.rows.first(where: { $0.id == rowID }) {
+            header = (row.avatar, row.icon)
+        } else {
+            return
         }
+        guard let creation = pendingWorktrees.reopen(id) else { return }
+        newWorktreeSheet = SupermuxNewWorktreeSheetItem(
+            model: creation.sheet,
+            rowID: rowID,
+            avatar: header.avatar,
+            icon: header.icon
+        )
     }
 
     /// This Mac's target: the projects model and the agent environment, then

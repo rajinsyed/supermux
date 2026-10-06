@@ -61,7 +61,7 @@ public struct SupermuxProjectsSectionView: View {
     /// under their projects. May be a shared, host-injected instance (see `init`).
     @State var pendingWorktrees: SupermuxPendingWorktreeStore
     /// This window's key in a shared ``pendingWorktrees`` store.
-    let pendingWorktreeOwner: AnyHashable?
+    let pendingWorktreeOwner: AnyObject?
     /// Presents "Set Up on <Mac>…".
     @State var projectSetupTarget: SupermuxProjectSetupTarget?
 
@@ -149,7 +149,7 @@ public struct SupermuxProjectsSectionView: View {
         pullRequestModel: SupermuxWorktreePullRequestModel? = nil,
         iconStore: SupermuxProjectIconStore? = nil,
         pendingWorktrees: SupermuxPendingWorktreeStore? = nil,
-        pendingWorktreeOwner: AnyHashable? = nil,
+        pendingWorktreeOwner: AnyObject? = nil,
         agentLaunch: SupermuxAgentLaunchEnvironment? = nil,
         remote: SupermuxRemoteProjectsPresentation = .empty
     ) {
