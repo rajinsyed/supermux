@@ -580968,6 +580968,65 @@
         }
       }
     },
+    "settings.search.alias.setting.workspaceColors.brighten-dark-mode": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "workspaceColors.brightenInDarkMode brighten lighten dark mode workspace colors fill dim muted exact color"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "workspaceColors.brightenInDarkMode brighten lighten dark mode workspace colors fill dim muted exact color 明るく ダークモード ワークスペース 色 塗りつぶし"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "workspaceColors.brightenInDarkMode brighten lighten dark mode workspace colors fill dim muted exact color 调亮 深色模式 工作区 颜色 填充"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "workspaceColors.brightenInDarkMode brighten lighten dark mode workspace colors fill dim muted exact color 調亮 深色模式 工作區 顏色 填滿"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "workspaceColors.brightenInDarkMode brighten lighten dark mode workspace colors fill dim muted exact color 밝게 다크 모드 작업 공간 색상 채우기"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "workspaceColors.brightenInDarkMode brighten lighten dark mode workspace colors fill dim muted exact color aufhellen dunkler Modus Arbeitsbereich Farben Füllung"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "workspaceColors.brightenInDarkMode brighten lighten dark mode workspace colors fill dim muted exact color aclarar modo oscuro espacio de trabajo colores relleno"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "workspaceColors.brightenInDarkMode brighten lighten dark mode workspace colors fill dim muted exact color éclaircir mode sombre espace de travail couleurs remplissage"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "workspaceColors.brightenInDarkMode brighten lighten dark mode workspace colors fill dim muted exact color تفتيح الوضع الداكن مساحة العمل الألوان تعبئة"
+          }
+        }
+      }
+    },
     "settings.workspaceColors.subtleSelection": {
       "extractionState": "manual",
       "localizations": {
@@ -642392,65 +642451,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Claude に画像で何をしてもらいますか？"
-          }
-        }
-      }
-    },
-    "settings.search.alias.setting.workspaceColors.brighten-dark-mode": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "workspaceColors.brightenInDarkMode brighten lighten dark mode workspace colors fill dim muted exact color"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "workspaceColors.brightenInDarkMode brighten lighten dark mode workspace colors fill dim muted exact color 明るく ダークモード ワークスペース 色 塗りつぶし"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "workspaceColors.brightenInDarkMode brighten lighten dark mode workspace colors fill dim muted exact color 调亮 深色模式 工作区 颜色 填充"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "workspaceColors.brightenInDarkMode brighten lighten dark mode workspace colors fill dim muted exact color 調亮 深色模式 工作區 顏色 填滿"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "workspaceColors.brightenInDarkMode brighten lighten dark mode workspace colors fill dim muted exact color 밝게 다크 모드 작업 공간 색상 채우기"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "workspaceColors.brightenInDarkMode brighten lighten dark mode workspace colors fill dim muted exact color aufhellen dunkler Modus Arbeitsbereich Farben Füllung"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "workspaceColors.brightenInDarkMode brighten lighten dark mode workspace colors fill dim muted exact color aclarar modo oscuro espacio de trabajo colores relleno"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "workspaceColors.brightenInDarkMode brighten lighten dark mode workspace colors fill dim muted exact color éclaircir mode sombre espace de travail couleurs remplissage"
-          }
-        },
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "workspaceColors.brightenInDarkMode brighten lighten dark mode workspace colors fill dim muted exact color تفتيح الوضع الداكن مساحة العمل الألوان تعبئة"
           }
         }
       }
