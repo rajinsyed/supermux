@@ -6,7 +6,9 @@ public import SwiftUI
 ///
 /// The project is copied into local state on init; nothing is persisted until
 /// the user confirms with Save, which routes the edited record through
-/// ``SupermuxProjectsModel/updateProject(_:)`` and dismisses the sheet.
+/// ``SupermuxProjectsModel/updateProject(_:)`` and dismisses the sheet. When a
+/// repo-shipped `config.json` owns the run/setup/teardown/actions fields, Save
+/// also writes any change to them into the project's `.supermux/config.json`.
 public struct SupermuxProjectEditorSheet: View {
     @Environment(\.dismiss) private var dismiss
 
@@ -20,8 +22,14 @@ public struct SupermuxProjectEditorSheet: View {
     @State private var teardownCommandsInput: String
     /// Relative path of the project's `config.json` when one manages it, e.g.
     /// `.superset/config.json`; `nil` when the project has no config file. When
-    /// set, the run/setup/teardown/actions fields are config-owned and read-only.
+    /// set, the run/setup/teardown/actions fields are config-owned: Save writes
+    /// changes to them into `.supermux/config.json`.
     @State private var configRelativePath: String?
+    /// The run/setup/teardown/actions as loaded from `config.json`, so Save
+    /// writes the file only when one of them actually changed.
+    @State private var configBaseline: ScriptFields?
+    @State private var isSaving = false
+    @State private var saveError: String?
 
     /// Creates the editor.
     /// - Parameters:
@@ -39,7 +47,7 @@ public struct SupermuxProjectEditorSheet: View {
     }
 
     /// Whether a repo-shipped `config.json` owns the run/setup/teardown/actions
-    /// fields. They are then read-only — editing the file is the way to change them.
+    /// fields, so Save writes them to `.supermux/config.json`.
     private var isConfigManaged: Bool { configRelativePath != nil }
 
     /// The sheet content.
@@ -72,7 +80,6 @@ public struct SupermuxProjectEditorSheet: View {
                 Section {
                     runCommandsRow
                 }
-                .disabled(isConfigManaged)
                 Section {
                     scriptRow(
                         title: String(localized: "supermux.projectEditor.setupScript", defaultValue: "Setup Script"),
@@ -93,13 +100,11 @@ public struct SupermuxProjectEditorSheet: View {
                 } header: {
                     Text(String(localized: "supermux.projectEditor.scripts", defaultValue: "Worktree Scripts"))
                 }
-                .disabled(isConfigManaged)
                 Section {
                     actionsRow
                 } header: {
                     Text(String(localized: "supermux.projectEditor.actions", defaultValue: "Actions"))
                 }
-                .disabled(isConfigManaged)
                 Section {
                     locationRow
                 }
@@ -177,22 +182,32 @@ public struct SupermuxProjectEditorSheet: View {
     }
 
     /// A note shown when a repo-shipped `config.json` owns the run/setup/
-    /// teardown/actions fields, naming the file the user should edit instead.
+    /// teardown/actions fields, naming the file Save writes them to.
     private var configManagedSection: some View {
         Section {
             Label {
-                Text(String(
-                    localized: "supermux.projectEditor.configManaged",
-                    defaultValue: "Run, setup, teardown, and actions are managed by \(configRelativePath ?? "config.json"). Edit that file to change them."
-                ))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+                Text(configManagedNote)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             } icon: {
                 Image(systemName: "doc.badge.gearshape")
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    private var configManagedNote: String {
+        if configRelativePath == SupermuxProjectConfigWriter.relativePath {
+            return String(
+                localized: "supermux.projectEditor.configSavedToSupermux",
+                defaultValue: "Run, setup, teardown, and actions are saved to .supermux/config.json in this project."
+            )
+        }
+        return String(
+            localized: "supermux.projectEditor.configImported",
+            defaultValue: "Run, setup, teardown, and actions come from \(configRelativePath ?? "config.json"). Changes to them are saved to .supermux/config.json, which Supermux reads first."
+        )
     }
 
     /// A labeled multi-line script editor used for the setup and teardown
@@ -263,16 +278,23 @@ public struct SupermuxProjectEditorSheet: View {
 
     private var buttonBar: some View {
         HStack {
+            if let saveError {
+                Text(saveError)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             Spacer()
             Button(String(localized: "supermux.common.cancel", defaultValue: "Cancel")) {
                 dismiss()
             }
             .keyboardShortcut(.cancelAction)
             Button(String(localized: "supermux.projectEditor.save", defaultValue: "Save")) {
-                save()
+                Task { await save() }
             }
             .keyboardShortcut(.defaultAction)
-            .disabled(trimmedName.isEmpty)
+            .disabled(trimmedName.isEmpty || isSaving)
         }
         .padding(12)
     }
@@ -315,12 +337,30 @@ public struct SupermuxProjectEditorSheet: View {
         edited.name.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// The editor's current run/setup/teardown/actions, compared against
+    /// ``configBaseline`` to tell whether Save must rewrite `config.json`.
+    private struct ScriptFields: Equatable {
+        var run: String
+        var setup: String
+        var teardown: String
+        var actions: [SupermuxProjectAction]
+    }
+
+    private var scriptFields: ScriptFields {
+        ScriptFields(
+            run: runCommandsInput,
+            setup: setupCommandsInput,
+            teardown: teardownCommandsInput,
+            actions: edited.actions
+        )
+    }
+
     // MARK: - Actions
 
     /// Detects whether a repo-shipped `config.json` manages this project and, if
-    /// so, mirrors its live values into the (read-only) script/run/action fields
-    /// so the editor always reflects the file's current contents. File I/O runs
-    /// off the main actor.
+    /// so, mirrors its live values into the script/run/action fields so the
+    /// editor always starts from the file's current contents. File I/O runs off
+    /// the main actor.
     private func loadConfigState() async {
         let rootPath = edited.rootPath
         let loader = SupermuxProjectConfigLoader()
@@ -334,6 +374,7 @@ public struct SupermuxProjectEditorSheet: View {
         // model never disagree about whether the project is config-managed.
         guard let resolved, let config = resolved.config else {
             configRelativePath = nil
+            configBaseline = nil
             return
         }
         configRelativePath = resolved.path
@@ -341,9 +382,10 @@ public struct SupermuxProjectEditorSheet: View {
         teardownCommandsInput = config.teardown.joined(separator: "\n")
         runCommandsInput = config.run.joined(separator: "\n")
         edited.actions = edited.applying(config).actions
+        configBaseline = scriptFields
     }
 
-    private func save() {
+    private func save() async {
         var project = edited
         project.name = trimmedName
         let trimmedIcon = iconInput.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -358,9 +400,11 @@ public struct SupermuxProjectEditorSheet: View {
             .replacingOccurrences(of: "\\", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         project.worktreesDirName = (folder.isEmpty || folder == "." || folder == "..") ? ".worktrees" : folder
-        // Run/setup/teardown/actions are owned by config.json when one is
-        // present; leave the config-derived values (already on `edited`) intact.
-        if !isConfigManaged {
+        // When config.json owns run/setup/teardown/actions and none of them
+        // changed, keep the config-derived values (already on `edited`) so the
+        // record matches the next re-import and nothing is written.
+        let writesConfig = isConfigManaged && scriptFields != configBaseline
+        if !isConfigManaged || writesConfig {
             project.runCommands = runCommandsInput
                 .components(separatedBy: .newlines)
                 .map { $0.trimmingCharacters(in: .whitespaces) }
@@ -374,8 +418,43 @@ public struct SupermuxProjectEditorSheet: View {
                 return t
             }.filter { $0.isLaunchable }
         }
+        if writesConfig {
+            saveError = nil
+            isSaving = true
+            defer { isSaving = false }
+            let config = SupermuxProjectConfig(project: project)
+            let rootPath = project.rootPath
+            do {
+                try await Task.detached {
+                    try SupermuxProjectConfigWriter().write(config, projectRoot: rootPath)
+                }.value
+            } catch {
+                saveError = Self.configSaveMessage(for: error)
+                return
+            }
+        }
         model.updateProject(project)
         dismiss()
+    }
+
+    private static func configSaveMessage(for error: any Error) -> String {
+        switch error as? SupermuxProjectConfigWriter.WriteError {
+        case .existingFileUnreadable:
+            return String(
+                localized: "supermux.projectEditor.configSaveFailed.invalidJSON",
+                defaultValue: ".supermux/config.json isn't valid JSON. Fix or delete it, then save again."
+            )
+        case .projectRootMissing:
+            return String(
+                localized: "supermux.projectEditor.configSaveFailed.rootMissing",
+                defaultValue: "The project folder no longer exists."
+            )
+        case nil:
+            return String(
+                localized: "supermux.projectEditor.configSaveFailed",
+                defaultValue: "Couldn't save .supermux/config.json: \(error.localizedDescription)"
+            )
+        }
     }
 
     /// Stores a setup/teardown editor's text as a single multi-line script entry
