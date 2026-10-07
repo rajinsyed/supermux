@@ -27,6 +27,9 @@ import Testing
 /// 7. The dropped row jumps back until the Mac answers, stays moved after the
 ///    Mac refused, or an earlier move's answer undoes a later move's order.
 /// 8. Moves reach the Mac out of order.
+/// 9. A row on a Mac other than the foreground one jumps back for a moment:
+///    that Mac's list is fetched again after the move answered, so the order
+///    the drop showed must stay until the list holds it (or a short wait ends).
 @MainActor
 @Suite struct SupermuxNestedReorderTests {
     private let macBook = SupermuxMacInfo(
@@ -236,6 +239,25 @@ import Testing
         // first move, holds c, a, b, loose: a must go before `loose`, not c.
         let move = SupermuxNestedMove(workspaceID: "a", segment: "cmux", order: ["c", "b", "a"], changesOrder: true)
         #expect(SupermuxNestedReorderPolicy.beforeWorkspaceID(for: move, in: windowTabs) == "loose")
+    }
+
+    // MARK: The list holding the move (9)
+
+    @Test func theListHoldsAMoveOnceItsRowsAreInItsOrder() {
+        let moved = SupermuxNestedMove(workspaceID: "c", segment: "cmux", order: ["c", "a", "b"], changesOrder: true)
+        #expect(!SupermuxNestedReorderPolicy.listHolds(moved, windowTabs))
+        let after = [windowTabs[2], windowTabs[3], windowTabs[0], windowTabs[1]] + windowTabs.dropFirst(4)
+        #expect(SupermuxNestedReorderPolicy.listHolds(moved, after))
+        #expect(!SupermuxNestedReorderPolicy.listHolds(moved, Array(windowTabs.dropFirst())), "a row of the move is gone")
+    }
+
+    @Test func waitingForTheListEndsWhenItHoldsTheMoveOrTimeIsUp() async {
+        var checks = 0
+        await SupermuxNestedReorderModel.wait(upTo: .seconds(5)) { checks += 1; return checks == 3 }
+        #expect(checks == 3)
+        let started = ContinuousClock.now
+        await SupermuxNestedReorderModel.wait(upTo: .milliseconds(200)) { false }
+        #expect(ContinuousClock.now - started < .seconds(2))
     }
 
     // MARK: Showing and sending (7, 8)

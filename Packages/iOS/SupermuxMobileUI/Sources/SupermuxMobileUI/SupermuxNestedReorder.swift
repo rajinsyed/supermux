@@ -92,6 +92,13 @@ public enum SupermuxNestedReorderPolicy {
     }
 }
 
+extension SupermuxNestedReorderPolicy {
+    /// Whether `workspaces` lists the move's rows in its order.
+    public static func listHolds(_ move: SupermuxNestedMove, _ workspaces: [MobileWorkspacePreview]) -> Bool {
+        false
+    }
+}
+
 /// The nested rows the phone shows moved before their Mac has answered.
 @MainActor
 @Observable
@@ -114,6 +121,9 @@ public final class SupermuxNestedReorderModel {
     ///   - send: Sends the move and returns once the Mac's list was fetched
     ///     again; `false` when the Mac refused it.
     /// - Returns: The task that sends it.
+    /// Waits until `isDone()` or `timeout` passes, checking every 50 ms.
+    public static func wait(upTo timeout: Duration, until isDone: @MainActor () -> Bool) async {}
+
     @discardableResult
     public func perform(
         _ move: SupermuxNestedMove,
