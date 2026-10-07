@@ -110,48 +110,59 @@ public final class SupermuxNestedReorderModel {
     /// The latest move per segment: only its answer ends the segment's order.
     @ObservationIgnored private var latest: [String: Int] = [:]
     @ObservationIgnored private var moveCount = 0
-    /// The last move sent, which the next one waits for.
-    @ObservationIgnored private var tail: Task<Void, Never>?
+    /// Each segment's last move, which its next move waits for. A segment is
+    /// one project on one Mac, so a slow Mac holds up only its own moves.
+    @ObservationIgnored private var tails: [String: Task<Void, Never>] = [:]
+    /// Bumped when a segment's move does not land: the moves queued on it
+    /// were worked out from the order it showed, so they are dropped.
+    @ObservationIgnored private var generations: [String: Int] = [:]
 
     /// Creates an empty model.
     public init() {}
 
-    /// Shows `move` at once and sends it after every earlier move.
-    /// - Parameters:
-    ///   - move: The drop.
-    ///   - send: Sends the move and returns once the Mac's list was fetched
-    ///     again; `false` when the Mac refused it.
-    /// - Returns: The task that sends it.
     /// Waits until `isDone()` or `timeout` passes, checking every 50 ms.
+    /// - Returns: Whether `isDone()` came true.
     @discardableResult
     public static func wait(upTo timeout: Duration, until isDone: @MainActor () -> Bool) async -> Bool {
         let deadline = ContinuousClock.now + timeout
-        while !isDone(), ContinuousClock.now < deadline {
+        while ContinuousClock.now < deadline {
+            if isDone() { return true }
             try? await Task.sleep(for: .milliseconds(50))
         }
-        return false
+        return isDone()
     }
 
+    /// Shows `move` at once and sends it after its segment's earlier moves.
+    /// - Parameters:
+    ///   - move: The drop.
+    ///   - send: Sends the move and returns whether it landed: the Mac took it
+    ///     and the list shows it.
+    /// - Returns: The task that sends it.
     @discardableResult
     public func perform(
         _ move: SupermuxNestedMove,
         send: @escaping @MainActor () async -> Bool
     ) -> Task<Void, Never> {
+        let segment = move.segment
         moveCount += 1
         let token = moveCount
-        latest[move.segment] = token
-        orders[move.segment] = move.order
-        let previous = tail
+        latest[segment] = token
+        orders[segment] = move.order
+        let generation = generations[segment, default: 0]
+        let previous = tails[segment]
         let task = Task { @MainActor [weak self] in
             await previous?.value
-            // Either way the list now holds the Mac's order: the move's own
-            // result, or the order it kept after refusing.
-            _ = await send()
-            guard let self, self.latest[move.segment] == token else { return }
-            self.latest[move.segment] = nil
-            self.orders[move.segment] = nil
+            guard let self, self.generations[segment, default: 0] == generation else { return }
+            if await send() {
+                guard self.latest[segment] == token else { return }
+            } else {
+                // The list holds the Mac's order; drop what was queued on this.
+                self.generations[segment, default: 0] += 1
+            }
+            self.latest[segment] = nil
+            self.orders[segment] = nil
         }
-        tail = task
+        tails[segment] = task
         return task
     }
 }

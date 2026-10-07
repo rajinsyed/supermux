@@ -1232,7 +1232,9 @@ final class WorkspaceListTableCoordinator: NSObject, UITableViewDataSource,
 
     func tableView(_ tableView: UITableView, dragSessionWillBegin session: UIDragSession) {
         dropIntoTarget = nil
-        setDragSessionActive(true, in: tableView)
+        // SUPERMUX:begin supermux-mobile-nested-reorder (a nested row never drops into a loose group: no group boundaries; upstream: `setDragSessionActive(true, in: tableView)`)
+        setDragSessionActive(!supermuxIsNestedDrag(session), in: tableView)
+        // SUPERMUX:end supermux-mobile-nested-reorder
     }
 
     func tableView(_ tableView: UITableView, dragSessionDidEnd session: UIDragSession) {
@@ -1587,6 +1589,12 @@ extension WorkspaceListTableCoordinator {
         guard !configuration.enablesReorder else { return true }
         guard let payload = configuration.supermuxProjects else { return false }
         return payload.moveNestedWorkspace != nil && !payload.layout.nestedSegments.isEmpty
+    }
+
+    /// Whether the session lifts a workspace nested under a project.
+    private func supermuxIsNestedDrag(_ session: UIDragSession) -> Bool {
+        guard let item = session.items.first?.localObject as? WorkspaceListTableItem else { return false }
+        return supermuxIsNested(item)
     }
 
     /// Whether `item` is a workspace nested under a project.
