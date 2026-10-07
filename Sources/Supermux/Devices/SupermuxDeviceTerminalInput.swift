@@ -1,3 +1,4 @@
+import Carbon.HIToolbox
 import CmuxSurfaceCatalogModel
 import CmuxTerminal
 import Foundation
@@ -15,8 +16,8 @@ import SupermuxMobileCore
 /// became Esc presses. When the other Mac advertises
 /// `supermux.terminal_input.v1`:
 ///
-/// - Viewer: the pane's key-name resolver forwards every key press as a
-///   ``SupermuxForwardedKeyEvent``, which travels in order with the pane's
+/// - Viewer: the pane's key-name resolver forwards every key press but a lone
+///   modifier as a ``SupermuxForwardedKeyEvent``, which travels in order with the pane's
 ///   other input (paste, mouse reports, binding text). The router drops the
 ///   mirror's own replies to terminal queries, since the other Mac answered
 ///   them. One `mobile.terminal.input` carries the ordered batch as
@@ -39,10 +40,31 @@ enum SupermuxDeviceTerminalInput {
         guard machine.isDevice else { return nil }
         return { event in
             guard SupermuxForwardedKeyEvent.shouldForward(action: event.action.rawValue, composing: event.composing),
+                  !isModifierKey(event.keycode),
                   supportsForwardedInput(on: machine) else { return nil }
             return forwardedKey(event).keyName
         }
     }
+
+    /// Whether `keycode` is a modifier key (Cmd, Shift, Option, Control, Caps
+    /// Lock, Fn), pressed alone.
+    ///
+    /// A modifier stays with the mirror's own Ghostty, as on a terminal of
+    /// this Mac. Forwarded, it went through Ghostty's text-input path, which
+    /// scrolls to the live bottom for every key it sees, so a lone Cmd threw
+    /// the view out of the scrollback being read. Ghostty's key path skips
+    /// modifiers there, and encodes one only for a program that asked for
+    /// every key (kitty flag 8), with the mirror's own keyboard flags; those
+    /// bytes still reach the other Mac. A full replay resets those flags, so
+    /// such a program sees lone modifiers again only once it sets them anew.
+    static func isModifierKey(_ keycode: UInt32) -> Bool {
+        modifierKeycodes.contains(keycode)
+    }
+
+    private static let modifierKeycodes = Set([
+        kVK_Command, kVK_RightCommand, kVK_Shift, kVK_RightShift, kVK_Option,
+        kVK_RightOption, kVK_Control, kVK_RightControl, kVK_CapsLock, kVK_Function,
+    ].map(UInt32.init))
 
     /// Whether the other Mac takes ordered input batches.
     @MainActor
