@@ -98,6 +98,9 @@ final class WorkspaceListTableCoordinator: NSObject, UITableViewDataSource,
     /// The row whose swipe controls UIKit is presenting.
     private var editedItemID: String?
     private var isDragSessionActive = false
+    // SUPERMUX:begin supermux-mobile-nested-reorder (a nested row's drag holds geometry like any drag but shows no loose group boundaries)
+    private var supermuxHidesGroupBoundaries = false
+    // SUPERMUX:end supermux-mobile-nested-reorder
     private var dropIntoTarget: (
         sessionIdentifier: ObjectIdentifier,
         headerIndexPath: IndexPath,
@@ -242,7 +245,9 @@ final class WorkspaceListTableCoordinator: NSObject, UITableViewDataSource,
             items.append(item)
             let model = configuration.rowModel(
                 for: item,
-                showsGroupBoundaries: isDragSessionActive
+                // SUPERMUX:begin supermux-mobile-nested-reorder (upstream: `showsGroupBoundaries: isDragSessionActive`)
+                showsGroupBoundaries: isDragSessionActive && !supermuxHidesGroupBoundaries
+                // SUPERMUX:end supermux-mobile-nested-reorder
             )
             let height: CGFloat
             if let rendered = renderedRows[item.id], rendered.model == model,
@@ -1171,8 +1176,8 @@ final class WorkspaceListTableCoordinator: NSObject, UITableViewDataSource,
     }
 
     private func isMovable(_ item: WorkspaceListTableItem) -> Bool {
-        // SUPERMUX:begin supermux-mobile-projects-nested-reorder (a workspace nested under a project moves only inside its project — see supermuxCanMoveNested)
-        if let row = indexPath(forID: item.id)?.row, row < chromePrefixCount { return supermuxCanMoveNested(item) }
+        // SUPERMUX:begin supermux-mobile-projects-nested-reorder (a workspace nested under a project never takes the loose list's path; its drag is supermuxNestedDragItems')
+        if let row = indexPath(forID: item.id)?.row, row < chromePrefixCount { return false }
         return switch item { // upstream: `switch item {` (implicit return)
         // SUPERMUX:end supermux-mobile-projects-nested-reorder
         case .workspace(let workspaceID, _):
@@ -1232,9 +1237,10 @@ final class WorkspaceListTableCoordinator: NSObject, UITableViewDataSource,
 
     func tableView(_ tableView: UITableView, dragSessionWillBegin session: UIDragSession) {
         dropIntoTarget = nil
-        // SUPERMUX:begin supermux-mobile-nested-reorder (a nested row never drops into a loose group: no group boundaries; upstream: `setDragSessionActive(true, in: tableView)`)
-        setDragSessionActive(!supermuxIsNestedDrag(session), in: tableView)
+        // SUPERMUX:begin supermux-mobile-nested-reorder (a nested row never drops into a loose group: no group boundaries, but geometry is held as for any drag)
+        supermuxHidesGroupBoundaries = supermuxIsNestedDrag(session)
         // SUPERMUX:end supermux-mobile-nested-reorder
+        setDragSessionActive(true, in: tableView)
     }
 
     func tableView(_ tableView: UITableView, dragSessionDidEnd session: UIDragSession) {
@@ -1242,6 +1248,9 @@ final class WorkspaceListTableCoordinator: NSObject, UITableViewDataSource,
         // UIKit owns the lifted source cell until its drop animator completes;
         // geometry held during the drag commits from the latest snapshot now.
         setDragSessionActive(false, in: tableView)
+        // SUPERMUX:begin supermux-mobile-nested-reorder
+        supermuxHidesGroupBoundaries = false
+        // SUPERMUX:end supermux-mobile-nested-reorder
     }
 
     func tableView(

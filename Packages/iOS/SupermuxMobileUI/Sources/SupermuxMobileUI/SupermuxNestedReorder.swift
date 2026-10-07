@@ -58,9 +58,10 @@ public enum SupermuxNestedReorderPolicy {
         run.insert(moved, at: destination)
         // A move inside the segment only swaps rows between the slots the
         // segment already holds; landing anywhere else changes those slots.
-        guard slots(run) == slots(leadingRun) else { return nil }
-        let order = slots(run).compactMap { run[$0] }
-        let previous = slots(leadingRun).compactMap { leadingRun[$0] }
+        let held = slots(leadingRun)
+        guard slots(run) == held else { return nil }
+        let order = held.compactMap { run[$0] }
+        let previous = held.compactMap { leadingRun[$0] }
         return SupermuxNestedMove(workspaceID: moved, segment: segment, order: order, changesOrder: order != previous)
     }
 
@@ -87,16 +88,24 @@ public enum SupermuxNestedReorderPolicy {
                 && workspace.windowID == moved.windowID
         }
         let members = Set(move.order)
-        guard let after = window.firstIndex(where: { $0.id == move.order[position - 1] }) else { return nil }
+        // The nearest row above it that is still open: a closed predecessor
+        // must not send the row to the window's end, outside its project.
+        let after = move.order[..<position].reversed().lazy.compactMap { id in
+            window.firstIndex { $0.id == id }
+        }.first
+        guard let after else { return nil }
         return window[(after + 1)...].first { !members.contains($0.id) }?.id
     }
 }
 
 extension SupermuxNestedReorderPolicy {
-    /// Whether `workspaces` lists the move's rows in its order.
+    /// Whether `workspaces` lists the move's rows in its order (a row closed
+    /// since the drop is not waited for).
     public static func listHolds(_ move: SupermuxNestedMove, _ workspaces: [MobileWorkspacePreview]) -> Bool {
         let members = Set(move.order)
-        return workspaces.map(\.id).filter(members.contains) == move.order
+        let listed = workspaces.map(\.id).filter(members.contains)
+        let open = Set(listed)
+        return listed == move.order.filter(open.contains)
     }
 }
 
