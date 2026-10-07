@@ -11,7 +11,9 @@ extension WorkspaceListView {
     /// sorts by recent activity, whose order has no place on the Mac.
     ///
     /// The anchor is worked out when the move is sent, after every earlier
-    /// move came back, so it reads the Mac's current order.
+    /// move came back, so it reads the Mac's current order. The shown order
+    /// ends once the list holds the move: a background Mac's list is fetched
+    /// again only after the move answered (at most a few seconds).
     var supermuxMoveNestedWorkspace: (@MainActor (SupermuxNestedMove) -> Void)? {
         guard let moveWorkspace, !appliesRecencySort else { return nil }
         let reorder = supermuxProjects.nestedReorder
@@ -23,7 +25,13 @@ extension WorkspaceListView {
                     for: move,
                     in: store?.workspaces ?? listed
                 )
-                return await moveWorkspace(move.workspaceID, nil, before, false)
+                let accepted = await moveWorkspace(move.workspaceID, nil, before, false)
+                if accepted, let store {
+                    await SupermuxNestedReorderModel.wait(upTo: .seconds(3)) {
+                        SupermuxNestedReorderPolicy.listHolds(move, store.workspaces)
+                    }
+                }
+                return accepted
             }
         }
     }
