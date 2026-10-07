@@ -60,7 +60,7 @@ public struct SupermuxProjectsListLayout: Sendable {
     public let accessories: [MobileWorkspacePreview.ID: SupermuxNestedWorkspaceAccessory]
     /// The segment each draggable nested row moves in, by workspace id
     /// (see ``SupermuxNestedMove``). Empty when nested rows cannot be dragged.
-    public let nestedSegments: [MobileWorkspacePreview.ID: String] = [:]
+    public let nestedSegments: [MobileWorkspacePreview.ID: String]
 
     /// The swipe-tray ids of the rows on screen. A tray whose row left the
     /// list is closed (``SupermuxProjectsSectionModel/closeSwipeTray(unlessAmong:)``),
@@ -70,18 +70,21 @@ public struct SupermuxProjectsListLayout: Sendable {
     }
 
     /// No project block: the list is exactly the shell's own.
-    public static let empty = SupermuxProjectsListLayout(entries: [], nestedWorkspaceIDs: [], forkRows: [:], accessories: [:])
+    public static let empty = SupermuxProjectsListLayout(
+        entries: [], nestedWorkspaceIDs: [], forkRows: [:], accessories: [:], nestedSegments: [:])
 
     private init(
         entries: [Entry],
         nestedWorkspaceIDs: Set<MobileWorkspacePreview.ID>,
         forkRows: [String: SupermuxProjectsTableRowValue],
-        accessories: [MobileWorkspacePreview.ID: SupermuxNestedWorkspaceAccessory]
+        accessories: [MobileWorkspacePreview.ID: SupermuxNestedWorkspaceAccessory],
+        nestedSegments: [MobileWorkspacePreview.ID: String]
     ) {
         self.entries = entries
         self.nestedWorkspaceIDs = nestedWorkspaceIDs
         self.forkRows = forkRows
         self.accessories = accessories
+        self.nestedSegments = nestedSegments
     }
 
     /// Projects the section and the shell's workspaces into the list.
@@ -115,9 +118,16 @@ public struct SupermuxProjectsListLayout: Sendable {
         // a workspace on another Mac makes it the shell's foreground, and the
         // list must not reorder or move its cloud-Mac icons for that.
         let groups = Self.stableMacOrder(section.groups)
-        let projects = SupermuxPhoneProjectMerge.merge(groups).compactMap { project in
-            project.keeping { isShown($0.mac) }
-        }
+        // The list's home Mac, the Mac sidebar's "this Mac": the first Mac
+        // with projects in the stable order, which also leads every project it
+        // holds. Rows on any other Mac carry the cloud-Mac icon; scoped to one
+        // Mac, that Mac is home and none do.
+        let home = groups.first { $0.isDisplayed && isShown($0.header) }
+        let projects = Self.homeOrder(
+            SupermuxPhoneProjectMerge.merge(groups).compactMap { project in
+                project.keeping { isShown($0.mac) }
+            },
+            home: home)
         // Scoped to one Mac that has no projects: no block at all, rather
         // than a "No projects yet" that is only true of that Mac.
         if !parsedMachines.isEmpty, section.hasLoaded, projects.isEmpty {
@@ -125,12 +135,7 @@ public struct SupermuxProjectsListLayout: Sendable {
             return
         }
 
-        // The list's home Mac, the Mac sidebar's "this Mac": the first Mac
-        // with projects in the stable order, which also leads every project it
-        // holds. Rows on any other Mac carry the cloud-Mac icon; scoped to one
-        // Mac, that Mac is home and none do.
-        let homePairingID = groups.first { $0.isDisplayed && isShown($0.header) }?.header.pairingID
-        var builder = Builder(homePairingID: homePairingID)
+        var builder = Builder(homePairingID: home?.header.pairingID)
         builder.fork("header", .header(
             isCollapsed: section.isCollapsed,
             projectCount: section.isCollapsed && section.hasLoaded ? projects.count : nil,
@@ -145,10 +150,16 @@ public struct SupermuxProjectsListLayout: Sendable {
         }
         let owned = Self.ownedWorkspaces(workspaces, matching: scope)
         for project in projects {
-            let nested = Self.nested(in: project, owned: owned, scope: scope)
+            var nested = Self.nested(in: project, owned: owned, scope: scope)
                 .filter { !builder.nestedWorkspaceIDs.contains($0.id) }
             builder.nestedWorkspaceIDs.formUnion(nested.map(\.id))
             guard !section.isCollapsed else { continue }
+            // The recency order has no place on the Mac to send a drag to.
+            if !scope.appliesRecencySort {
+                let segments = Self.segments(of: nested, in: project)
+                builder.nestedSegments.merge(segments) { first, _ in first }
+                nested = Self.showing(nestedOrder, in: nested, segments: segments)
+            }
             builder.add(project, nested: nested, preparingNewWorktreeProjectID: preparingNewWorktreeProjectID)
         }
         if !section.isCollapsed {
@@ -162,7 +173,8 @@ public struct SupermuxProjectsListLayout: Sendable {
             entries: builder.entries,
             nestedWorkspaceIDs: builder.nestedWorkspaceIDs,
             forkRows: builder.forkRows,
-            accessories: builder.accessories
+            accessories: builder.accessories,
+            nestedSegments: builder.nestedSegments
         )
     }
 
@@ -204,20 +216,101 @@ public struct SupermuxProjectsListLayout: Sendable {
         return owned
     }
 
-    /// A project's nested workspaces: by Mac in the stable order, then each
-    /// Mac's own order, pinned first (or by recent activity when sorting so).
+    /// The projects with the home Mac's in its sidebar order first; the rest
+    /// keep theirs. Merging already leads with the first Mac's projects, so
+    /// this matters when the list is scoped to another Mac.
+    /// - Parameters:
+    ///   - projects: The merged projects, in merge order.
+    ///   - home: The list's home Mac.
+    static func homeOrder(
+        _ projects: [SupermuxMergedProject],
+        home: SupermuxProjectsMacGroupSnapshot?
+    ) -> [SupermuxMergedProject] {
+        guard let home else { return projects }
+        let rank = Dictionary(home.rows.enumerated().map { ($1.id, $0) }) { first, _ in first }
+        func homeRank(_ project: SupermuxMergedProject) -> Int {
+            project.locations.lazy.compactMap { rank[$0.row.id] }.first ?? .max
+        }
+        return projects.enumerated()
+            .sorted { (homeRank($0.element), $0.offset) < (homeRank($1.element), $1.offset) }
+            .map(\.element)
+    }
+
+    /// A project's nested workspaces as each Mac's sidebar shows them: by Mac
+    /// in the stable order, then each Mac window's own order with its pinned
+    /// rows first (or by recent activity when sorting so).
     private static func nested(
         in project: SupermuxMergedProject,
         owned: [String: [MobileWorkspacePreview]],
         scope: SupermuxProjectsListScope
     ) -> [MobileWorkspacePreview] {
         var seen = Set<MobileWorkspacePreview.ID>()
-        let rows = project.locations.flatMap { owned[$0.row.id] ?? [] }
-            .filter { seen.insert($0.id).inserted }
-        if scope.appliesRecencySort {
-            return MobileWorkspaceRecencyOrder().displayOrder(rows)
+        let perMac = project.locations.map { location in
+            (owned[location.row.id] ?? []).filter { seen.insert($0.id).inserted }
         }
-        return rows.filter(\.isPinned) + rows.filter { !$0.isPinned }
+        if scope.appliesRecencySort {
+            return MobileWorkspaceRecencyOrder().displayOrder(perMac.flatMap { $0 })
+        }
+        return perMac.flatMap { rows in
+            var windows: [String?] = []
+            for row in rows where !windows.contains(row.windowID) {
+                windows.append(row.windowID)
+            }
+            return windows.flatMap { window in
+                let inWindow = rows.filter { $0.windowID == window }
+                return inWindow.filter(\.isPinned) + inWindow.filter { !$0.isPinned }
+            }
+        }
+    }
+
+    /// The segment each nested row can be dragged in: one project, one Mac,
+    /// one of its windows, one side of the pinned line. That run is in the
+    /// Mac's own tab order, so a drag inside it is one move on that Mac.
+    private static func segments(
+        of nested: [MobileWorkspacePreview],
+        in project: SupermuxMergedProject
+    ) -> [MobileWorkspacePreview.ID: String] {
+        var segments: [MobileWorkspacePreview.ID: String] = [:]
+        for workspace in nested {
+            let pairingID = SupermuxMacSeam.pairingID(
+                macDeviceID: workspace.macDeviceID,
+                instanceTag: workspace.macInstanceTag
+            )
+            let tier = workspace.isPinned ? "pinned" : "unpinned"
+            segments[workspace.id] = [project.id, pairingID, workspace.windowID ?? "", tier]
+                .joined(separator: "\u{1F}")
+        }
+        return segments
+    }
+
+    /// `nested` with each segment a move is on its way for in that move's
+    /// order; rows the move does not know keep their place after it.
+    private static func showing(
+        _ nestedOrder: [String: [MobileWorkspacePreview.ID]],
+        in nested: [MobileWorkspacePreview],
+        segments: [MobileWorkspacePreview.ID: String]
+    ) -> [MobileWorkspacePreview] {
+        guard !nestedOrder.isEmpty else { return nested }
+        var result: [MobileWorkspacePreview] = []
+        var start = 0
+        while start < nested.count {
+            let segment = segments[nested[start].id]
+            var end = start + 1
+            while end < nested.count, segments[nested[end].id] == segment {
+                end += 1
+            }
+            let run = nested[start..<end]
+            if let segment, let order = nestedOrder[segment] {
+                let rank = Dictionary(order.enumerated().map { ($1, $0) }) { first, _ in first }
+                result += run.enumerated()
+                    .sorted { (rank[$0.element.id] ?? .max, $0.offset) < (rank[$1.element.id] ?? .max, $1.offset) }
+                    .map(\.element)
+            } else {
+                result += run
+            }
+            start = end
+        }
+        return result
     }
 
     /// Accumulates the leading run.
@@ -228,6 +321,7 @@ public struct SupermuxProjectsListLayout: Sendable {
         var nestedWorkspaceIDs = Set<MobileWorkspacePreview.ID>()
         var forkRows: [String: SupermuxProjectsTableRowValue] = [:]
         var accessories: [MobileWorkspacePreview.ID: SupermuxNestedWorkspaceAccessory] = [:]
+        var nestedSegments: [MobileWorkspacePreview.ID: String] = [:]
 
         mutating func fork(_ id: String, _ value: SupermuxProjectsTableRowValue) {
             entries.append(.fork(id))

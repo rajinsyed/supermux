@@ -473,7 +473,8 @@ struct WorkspaceListView: View {
                 appliesRecencySort: appliesRecencySort
             ),
             canEdit: actions.editing != nil,
-            preparingNewWorktreeProjectID: actions.preparingNewWorktreeProjectID
+            preparingNewWorktreeProjectID: actions.preparingNewWorktreeProjectID,
+            nestedOrder: supermuxProjects.nestedReorder.orders
         )
         #else
         return .empty

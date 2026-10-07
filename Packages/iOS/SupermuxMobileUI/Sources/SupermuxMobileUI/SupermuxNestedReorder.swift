@@ -48,7 +48,20 @@ public enum SupermuxNestedReorderPolicy {
         to destination: Int,
         segments: [MobileWorkspacePreview.ID: String]
     ) -> SupermuxNestedMove? {
-        nil
+        guard leadingRun.indices.contains(source), leadingRun.indices.contains(destination),
+              let moved = leadingRun[source], let segment = segments[moved] else { return nil }
+        func slots(_ run: [MobileWorkspacePreview.ID?]) -> [Int] {
+            run.indices.filter { index in run[index].flatMap { segments[$0] } == segment }
+        }
+        var run = leadingRun
+        run.remove(at: source)
+        run.insert(moved, at: destination)
+        // A move inside the segment only swaps rows between the slots the
+        // segment already holds; landing anywhere else changes those slots.
+        guard slots(run) == slots(leadingRun) else { return nil }
+        let order = slots(run).compactMap { run[$0] }
+        let previous = slots(leadingRun).compactMap { leadingRun[$0] }
+        return SupermuxNestedMove(workspaceID: moved, segment: segment, order: order, changesOrder: order != previous)
     }
 
     /// The workspace the Mac puts the moved one right before, or `nil` for
@@ -60,7 +73,22 @@ public enum SupermuxNestedReorderPolicy {
         for move: SupermuxNestedMove,
         in workspaces: [MobileWorkspacePreview]
     ) -> MobileWorkspacePreview.ID? {
-        nil
+        guard let position = move.order.firstIndex(of: move.workspaceID) else { return nil }
+        if position + 1 < move.order.count {
+            return move.order[position + 1]
+        }
+        // Dropped last: right after the row it now follows, which in the
+        // Mac's tabs is before the next tab of that window outside the
+        // segment (rows of the segment there are placed by this order).
+        guard position > 0, let moved = workspaces.first(where: { $0.id == move.workspaceID }) else { return nil }
+        let window = workspaces.filter { workspace in
+            workspace.macDeviceID == moved.macDeviceID
+                && workspace.macInstanceTag == moved.macInstanceTag
+                && workspace.windowID == moved.windowID
+        }
+        let members = Set(move.order)
+        guard let after = window.firstIndex(where: { $0.id == move.order[position - 1] }) else { return nil }
+        return window[(after + 1)...].first { !members.contains($0.id) }?.id
     }
 }
 
@@ -70,6 +98,12 @@ public enum SupermuxNestedReorderPolicy {
 public final class SupermuxNestedReorderModel {
     /// The order each segment shows while its move is on the way, by segment.
     public private(set) var orders: [String: [MobileWorkspacePreview.ID]] = [:]
+
+    /// The latest move per segment: only its answer ends the segment's order.
+    @ObservationIgnored private var latest: [String: Int] = [:]
+    @ObservationIgnored private var moveCount = 0
+    /// The last move sent, which the next one waits for.
+    @ObservationIgnored private var tail: Task<Void, Never>?
 
     /// Creates an empty model.
     public init() {}
@@ -85,6 +119,21 @@ public final class SupermuxNestedReorderModel {
         _ move: SupermuxNestedMove,
         send: @escaping @MainActor () async -> Bool
     ) -> Task<Void, Never> {
-        Task {}
+        moveCount += 1
+        let token = moveCount
+        latest[move.segment] = token
+        orders[move.segment] = move.order
+        let previous = tail
+        let task = Task { @MainActor [weak self] in
+            await previous?.value
+            // Either way the list now holds the Mac's order: the move's own
+            // result, or the order it kept after refusing.
+            _ = await send()
+            guard let self, self.latest[move.segment] == token else { return }
+            self.latest[move.segment] = nil
+            self.orders[move.segment] = nil
+        }
+        tail = task
+        return task
     }
 }

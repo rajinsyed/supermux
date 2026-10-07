@@ -13,7 +13,11 @@ extension WorkspaceListView {
     var supermuxProjectsTablePayload: SupermuxProjectsTablePayload? {
         let layout = supermuxProjectsLayout
         guard !layout.entries.isEmpty else { return nil }
-        return SupermuxProjectsTablePayload(layout: layout, actions: supermuxProjects.actions)
+        return SupermuxProjectsTablePayload(
+            layout: layout,
+            actions: supermuxProjects.actions,
+            moveNestedWorkspace: supermuxMoveNestedWorkspace
+        )
     }
     // SUPERMUX:end supermux-mobile-projects-table-row
 
