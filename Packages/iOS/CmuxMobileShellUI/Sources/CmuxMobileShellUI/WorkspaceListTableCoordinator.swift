@@ -1642,7 +1642,7 @@ extension WorkspaceListTableCoordinator {
               let source = indexPath(forID: item.id),
               supermuxCanMoveNested(item),
               let segments = configuration.supermuxProjects?.layout.nestedSegments else { return nil }
-        return SupermuxNestedReorderPolicy.move(
+        return SupermuxNestedReorderPolicy().move(
             leadingRun: supermuxLeadingRun,
             from: source.row,
             to: destination.row,

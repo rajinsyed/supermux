@@ -23,13 +23,13 @@ extension WorkspaceListView {
         return { move in
             reorder.perform(move) {
                 let current = store?.workspaces ?? listed
-                let before = SupermuxNestedReorderPolicy.beforeWorkspaceID(for: move, in: current)
+                let before = SupermuxNestedReorderPolicy().beforeWorkspaceID(for: move, in: current)
                 // The row keeps its group: a `nil` group asks the Mac to ungroup it.
                 let groupID = current.first { $0.id == move.workspaceID }?.groupID
                 guard await moveWorkspace(move.workspaceID, groupID, before, false) else { return false }
                 guard let store else { return true }
                 return await SupermuxNestedReorderModel.wait(upTo: .seconds(3)) {
-                    SupermuxNestedReorderPolicy.listHolds(move, store.workspaces)
+                    SupermuxNestedReorderPolicy().listHolds(move, store.workspaces)
                 }
             }
         }

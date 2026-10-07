@@ -34,7 +34,10 @@ public struct SupermuxNestedMove: Equatable, Sendable {
 }
 
 /// Pure rules for dragging a nested workspace row.
-public enum SupermuxNestedReorderPolicy {
+public struct SupermuxNestedReorderPolicy: Sendable {
+    /// Creates the rules.
+    public init() {}
+
     /// The move a drop makes, or `nil` when the row may not land there.
     /// - Parameters:
     ///   - leadingRun: The table's leading run top to bottom: a nested
@@ -42,7 +45,7 @@ public enum SupermuxNestedReorderPolicy {
     ///   - source: The dragged row's index in `leadingRun`.
     ///   - destination: The row's index after the drop (UIKit's insertion index).
     ///   - segments: Each nested workspace's segment.
-    public static func move(
+    public func move(
         leadingRun: [MobileWorkspacePreview.ID?],
         from source: Int,
         to destination: Int,
@@ -70,7 +73,7 @@ public enum SupermuxNestedReorderPolicy {
     /// - Parameters:
     ///   - move: The drop.
     ///   - workspaces: The shell's rows in the Macs' own order.
-    public static func beforeWorkspaceID(
+    public func beforeWorkspaceID(
         for move: SupermuxNestedMove,
         in workspaces: [MobileWorkspacePreview]
     ) -> MobileWorkspacePreview.ID? {
@@ -101,7 +104,7 @@ public enum SupermuxNestedReorderPolicy {
 extension SupermuxNestedReorderPolicy {
     /// Whether `workspaces` lists the move's rows in its order (a row closed
     /// since the drop is not waited for).
-    public static func listHolds(_ move: SupermuxNestedMove, _ workspaces: [MobileWorkspacePreview]) -> Bool {
+    public func listHolds(_ move: SupermuxNestedMove, _ workspaces: [MobileWorkspacePreview]) -> Bool {
         let members = Set(move.order)
         let listed = workspaces.map(\.id).filter(members.contains)
         let open = Set(listed)

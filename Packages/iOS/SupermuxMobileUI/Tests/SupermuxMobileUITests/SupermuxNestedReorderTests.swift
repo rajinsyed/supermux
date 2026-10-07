@@ -178,33 +178,33 @@ import Testing
     private var segments: [MobileWorkspacePreview.ID: String] { ["a": "cmux", "b": "cmux", "c": "cmux", "x": "infra"] }
 
     @Test func aDropInsideItsProjectIsAMove() throws {
-        let move = try #require(SupermuxNestedReorderPolicy.move(leadingRun: leadingRun, from: 4, to: 2, segments: segments))
+        let move = try #require(SupermuxNestedReorderPolicy().move(leadingRun: leadingRun, from: 4, to: 2, segments: segments))
         #expect(move == SupermuxNestedMove(workspaceID: "c", segment: "cmux", order: ["c", "a", "b"], changesOrder: true))
-        let down = try #require(SupermuxNestedReorderPolicy.move(leadingRun: leadingRun, from: 2, to: 4, segments: segments))
+        let down = try #require(SupermuxNestedReorderPolicy().move(leadingRun: leadingRun, from: 2, to: 4, segments: segments))
         #expect(down.order == ["b", "c", "a"])
     }
 
     @Test func aDropOnItsOwnPlaceChangesNothing() throws {
-        let move = try #require(SupermuxNestedReorderPolicy.move(leadingRun: leadingRun, from: 3, to: 3, segments: segments))
+        let move = try #require(SupermuxNestedReorderPolicy().move(leadingRun: leadingRun, from: 3, to: 3, segments: segments))
         #expect(!move.changesOrder)
         #expect(move.order == ["a", "b", "c"])
     }
 
     @Test(arguments: [0, 1, 5, 6])
     func aDropOutsideItsProjectIsRefused(destination: Int) {
-        #expect(SupermuxNestedReorderPolicy.move(leadingRun: leadingRun, from: 2, to: destination, segments: segments) == nil)
+        #expect(SupermuxNestedReorderPolicy().move(leadingRun: leadingRun, from: 2, to: destination, segments: segments) == nil)
     }
 
     @Test func onlyANestedRowMoves() {
-        #expect(SupermuxNestedReorderPolicy.move(leadingRun: leadingRun, from: 1, to: 3, segments: segments) == nil)
-        #expect(SupermuxNestedReorderPolicy.move(leadingRun: leadingRun, from: 9, to: 3, segments: segments) == nil)
+        #expect(SupermuxNestedReorderPolicy().move(leadingRun: leadingRun, from: 1, to: 3, segments: segments) == nil)
+        #expect(SupermuxNestedReorderPolicy().move(leadingRun: leadingRun, from: 9, to: 3, segments: segments) == nil)
     }
 
     // MARK: The anchor sent to the Mac (4, 5)
 
     @Test func aDropBetweenRowsGoesBeforeTheNextRowOfTheProject() {
         let move = SupermuxNestedMove(workspaceID: "c", segment: "cmux", order: ["a", "c", "b"], changesOrder: true)
-        #expect(SupermuxNestedReorderPolicy.beforeWorkspaceID(for: move, in: windowTabs) == "b")
+        #expect(SupermuxNestedReorderPolicy().beforeWorkspaceID(for: move, in: windowTabs) == "b")
     }
 
     /// MacBook's window w1 in its tab order, with its other window and the
@@ -223,7 +223,7 @@ import Testing
 
     @Test func aDropAtTheProjectsEndGoesBeforeTheNextTabOfItsWindow() {
         let move = SupermuxNestedMove(workspaceID: "a", segment: "cmux", order: ["b", "c", "a"], changesOrder: true)
-        #expect(SupermuxNestedReorderPolicy.beforeWorkspaceID(for: move, in: windowTabs) == "loose")
+        #expect(SupermuxNestedReorderPolicy().beforeWorkspaceID(for: move, in: windowTabs) == "loose")
     }
 
     @Test func aDropAtTheEndOfItsWindowSendsNoAnchor() {
@@ -234,7 +234,7 @@ import Testing
             workspace("studio-row", on: studio, project: nil),
         ]
         let move = SupermuxNestedMove(workspaceID: "a", segment: "cmux", order: ["b", "a"], changesOrder: true)
-        #expect(SupermuxNestedReorderPolicy.beforeWorkspaceID(for: move, in: tabs) == nil)
+        #expect(SupermuxNestedReorderPolicy().beforeWorkspaceID(for: move, in: tabs) == nil)
     }
 
     @Test func aDropAtTheEndSkipsRowsAnEarlierMoveStillOnItsWayPlacesFirst() {
@@ -242,17 +242,17 @@ import Testing
         // says a, b, c); now a goes to the end: c, b, a. The Mac, after the
         // first move, holds c, a, b, loose: a must go before `loose`, not c.
         let move = SupermuxNestedMove(workspaceID: "a", segment: "cmux", order: ["c", "b", "a"], changesOrder: true)
-        #expect(SupermuxNestedReorderPolicy.beforeWorkspaceID(for: move, in: windowTabs) == "loose")
+        #expect(SupermuxNestedReorderPolicy().beforeWorkspaceID(for: move, in: windowTabs) == "loose")
     }
 
     // MARK: The list holding the move (9)
 
     @Test func theListHoldsAMoveOnceItsRowsAreInItsOrder() {
         let moved = SupermuxNestedMove(workspaceID: "c", segment: "cmux", order: ["c", "a", "b"], changesOrder: true)
-        #expect(!SupermuxNestedReorderPolicy.listHolds(moved, windowTabs))
+        #expect(!SupermuxNestedReorderPolicy().listHolds(moved, windowTabs))
         let after = [windowTabs[2], windowTabs[3], windowTabs[0], windowTabs[1]] + windowTabs.dropFirst(4)
-        #expect(SupermuxNestedReorderPolicy.listHolds(moved, after))
-        #expect(!SupermuxNestedReorderPolicy.listHolds(moved, Array(windowTabs.dropFirst())), "a row of the move is gone")
+        #expect(SupermuxNestedReorderPolicy().listHolds(moved, after))
+        #expect(!SupermuxNestedReorderPolicy().listHolds(moved, Array(windowTabs.dropFirst())), "a row of the move is gone")
     }
 
     @Test func waitingForTheListEndsWhenItHoldsTheMoveOrTimeIsUp() async {
