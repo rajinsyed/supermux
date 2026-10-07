@@ -341,8 +341,10 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   every key press travels to the owning Mac as a key event and is encoded there by that Mac's own
   Ghostty (kitty keyboard flags, cursor-key mode), in order with the mirror's paste, mouse and
   binding bytes, which reach the PTY exactly; the mirror's own answers to terminal queries are
-  dropped. A pending Ghostty key sequence stays local. An older Mac on either side keeps upstream's
-  text path.
+  dropped. A pending Ghostty key sequence stays local, and so does a modifier pressed alone (Cmd,
+  Shift, Option, Control): forwarded, it scrolled the mirror to the bottom like a keystroke, so a
+  lone Cmd lost the scrollback being read (`tests/supermux/loopback_mirror_scrollback_e2e.py`). An
+  older Mac on either side keeps upstream's text path.
 - **A busy Mac is asked again** (#721): after a reconnect every mirrored terminal re-attaches (those
   on screen at once, hidden ones three at a time, #975), and a Mac with many of them answers further
   requests `server_busy` (its per-connection request quota is full; the request never ran). Every
