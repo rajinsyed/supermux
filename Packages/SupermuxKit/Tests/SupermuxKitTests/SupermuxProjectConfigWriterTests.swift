@@ -126,6 +126,40 @@ struct SupermuxProjectConfigWriterTests {
         #expect(read(".supermux/config.json", under: root) == handEdited)
     }
 
+    /// A file that exists but can't be read must not be mistaken for a
+    /// missing one and replaced.
+    @Test func refusesToReplaceFileItCannotRead() throws {
+        let root = try makeTempDirectory()
+        defer { cleanUp(root) }
+        let original = #"{ "run": ["mine"] }"#
+        try write(original, to: ".supermux/config.json", under: root)
+        let path = (root as NSString).appendingPathComponent(".supermux/config.json")
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: path) }
+
+        #expect(throws: (any Error).self) {
+            try SupermuxProjectConfigWriter().write(SupermuxProjectConfig(run: ["new"]), projectRoot: root)
+        }
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: path)
+        #expect(read(".supermux/config.json", under: root) == original)
+    }
+
+    // MARK: - Actions
+
+    /// Editing one action must not rewrite the others: an unchanged entry
+    /// keeps its slug id and icon keyword.
+    @Test func unchangedActionsKeepTheirLoadedEntries() throws {
+        let loaded = SupermuxProjectConfig(actions: [
+            .init(id: "open-gh", name: "Open GitHub", command: "open https://github.com", icon: "deploy"),
+        ])
+        let unchanged = try #require(loaded.actions[0].toProjectAction())
+        let added = SupermuxProjectAction(name: "Lint", command: "bun lint", iconSymbol: "bolt")
+
+        let entries = loaded.actionEntries(for: [unchanged, added])
+
+        #expect(entries == [loaded.actions[0], SupermuxProjectConfig.Action(action: added)])
+    }
+
     // MARK: - Project root
 
     @Test func throwsWhenProjectRootIsMissing() throws {

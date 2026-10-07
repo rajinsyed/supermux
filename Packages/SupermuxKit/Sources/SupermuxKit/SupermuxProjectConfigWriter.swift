@@ -104,3 +104,10 @@ public extension SupermuxProjectConfig.Action {
         )
     }
 }
+
+public extension SupermuxProjectConfig {
+    /// `actions` in config form.
+    func actionEntries(for actions: [SupermuxProjectAction]) -> [Action] {
+        actions.map(Action.init(action:))
+    }
+}
