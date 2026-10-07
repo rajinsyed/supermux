@@ -20,7 +20,9 @@ app's process, so they take the same `flagsChanged` / `keyDown` path a keyboard 
 
   1. setup                          auto-mirror on, the loopback linked and fetched
   2. mirror_shows_long_output       a background source prints long output; its mirror shows the end
-  3. mirror_scrolled_up             the mirror, focused and scrolled up, shows older lines
+  3. mirror_scrolled_up             the mirror, focused and scrolled up, shows older lines and
+                                    keeps them for 5 s, through the re-capture that confirms the
+                                    replay taken while the output flowed
   4. <modifier>_keeps_scrollback    Cmd, Shift, Option and Control pressed and released alone
                                     leave the mirror's view where it was
   5. full_replay_keeps_scrollback   a full replay (a reconnect to a host that cannot resume,
@@ -69,6 +71,8 @@ SCROLL_LINES = 20
 # How long a key gets to move the view before the view counts as kept, and how often it is read.
 SETTLE_S = 1.5
 POLL_S = 0.25
+# How long a freshly scrolled view must stay put while the first replay's re-capture lands.
+QUIET_HOLD_S = 5.0
 
 # Virtual key code and the press's modifier flags (device-independent mask plus the
 # left-side device bit a real keyboard sets, and NX_NONCOALESCEDMASK).
@@ -229,13 +233,29 @@ class MirrorScrollbackE2E:
 
         wait_for("the mirror terminal to take keyboard focus", focused, self.timeout)
         self.scroll_up()
-        return {"top_line": self.top_line()}
+        before = self.top_line()
+        # The first replay ran while the output flowed, so a re-capture confirms it once the
+        # output is quiet: a full replay that lands on its own while the user reads.
+        deadline = time.monotonic() + QUIET_HOLD_S
+        while time.monotonic() < deadline:
+            if self.top_line() != before:
+                raise Failure(f"the view left {before!r} on its own: now {self.top_line()!r}"
+                              f"{' (the live bottom)' if self.at_bottom() else ''}")
+            time.sleep(POLL_S)
+        return {"top_line": before}
 
     def scroll_up(self) -> None:
         """One wheel scroll up: the view ends a known distance above the bottom, well within
-        the history a replay carries (a legacy host's replay brings ~240 rows)."""
-        self.sock.call(SIZING + "local_scroll", {"surface_id": self.mirror_surface, "lines": SCROLL_LINES})
-        wait_for("the mirror to show older lines", lambda: not self.at_bottom(), self.timeout, interval_s=POLL_S)
+        the history a replay carries (a legacy host's replay brings ~240 rows). Scrolls again
+        only when the view is still at the bottom 2 s later."""
+        for _ in range(3):
+            self.sock.call(SIZING + "local_scroll", {"surface_id": self.mirror_surface, "lines": SCROLL_LINES})
+            try:
+                wait_for("the mirror to show older lines", lambda: not self.at_bottom(), 2.0, interval_s=POLL_S)
+                return
+            except Failure:
+                continue
+        raise Failure("three wheel scrolls left the mirror at the live bottom")
 
     def modifier_keeps_scrollback(self, name: str) -> Dict[str, Any]:
         if self.at_bottom():
@@ -311,10 +331,10 @@ class MirrorScrollbackE2E:
                     self.facts.setdefault("cleanup_errors", []).append(str(error))
 
     def run(self) -> bool:
-        ok = (self.step("setup", self.setup)
-              and self.step("mirror_shows_long_output", self.mirror_shows_long_output)
-              and self.step("mirror_scrolled_up", self.mirror_scrolled_up))
+        ok = self.step("setup", self.setup) and self.step("mirror_shows_long_output", self.mirror_shows_long_output)
         if ok:
+            # Every later step scrolls up again first when the view is at the bottom.
+            ok = self.step("mirror_scrolled_up", self.mirror_scrolled_up)
             for name in MODIFIERS:
                 ok = self.step(f"{name}_keeps_scrollback", lambda name=name: self.modifier_keeps_scrollback(name)) and ok
             ok = self.step("full_replay_keeps_scrollback", self.full_replay_keeps_scrollback) and ok
