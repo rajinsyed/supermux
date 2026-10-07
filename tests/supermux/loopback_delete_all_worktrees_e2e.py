@@ -22,18 +22,18 @@ Steps:
   2. project_registered: a scratch git repo is registered through the
      device's project.create, and the unified list has it on This Mac and the
      loopback device.
-  3. menu_hidden_without_worktrees: the row offers no Delete All.
-  4. menu_offers_every_mac_with_worktrees: with one worktree under
-     <root>/.worktrees (worktree.create) and one made by plain git outside the
-     repository, the row offers Delete All on This Mac and on the Loopback Mac.
-  5. this_mac_deletes_worktrees_outside_the_folder: Delete All on This Mac
-     lists and removes both worktrees (the outside one included) and their
-     branches; the main checkout stays.
-  6. loopback_mac_keeps_dirty_until_forced: Delete All on the Loopback Mac
+  3. menu_offers_every_mac: with no worktrees yet, the row still offers
+     Delete All on This Mac and on the Loopback Mac (the item never waits
+     for a worktree list to be refreshed), and a run there lists nothing.
+  4. this_mac_deletes_worktrees_made_anywhere: one worktree under
+     <root>/.worktrees (worktree.create) and one made by plain git outside
+     the repository, with no refresh since; Delete All on This Mac lists and
+     removes both and their branches; the main checkout stays.
+  5. loopback_mac_keeps_dirty_until_forced: Delete All on the Loopback Mac
      removes the clean worktrees (inside and outside the folder) and keeps the
      dirty one; a second run with "Delete Anyway" removes it too.
-  7. menu_hidden_after_delete_all: no worktree is left anywhere, the main
-     checkout and its files are intact, and the row offers no Delete All.
+  6. nothing_left: no worktree is left anywhere, the main checkout and its
+     files are intact, and the row still offers both Macs.
 
 Prints a JSON report, writes it to tests/supermux/artifacts/ (or --report),
 exits non-zero on any failed check. Stdlib only.
@@ -99,16 +99,6 @@ class DeleteAllE2E:
             timeout_s=timeout_s + 5,
         ) or {}
         return result.get("result") or {}
-
-    def refresh(self) -> None:
-        """Both Macs' lists: the background refresh lists the Loopback Mac's
-        worktrees, and that `worktrees.list` re-reads This Mac's (same app)."""
-        self.client.call("supermux.devices.remote_projects", {"refresh": True}, timeout_s=120)
-        self.client.call(
-            "supermux.devices.remote_worktrees",
-            {"machine": self.machine, "project_id": self.project_id},
-            timeout_s=120,
-        )
 
     def menu(self) -> List[Dict[str, Any]]:
         """The Macs the project row's Delete All offers, as the row draws them."""
@@ -215,22 +205,10 @@ class DeleteAllE2E:
         unified = wait_for("the project on This Mac and the loopback device", merged, self.timeout_s)
         return {"project_id": self.project_id, "unified_id": unified["id"]}
 
-    def check_hidden_without_worktrees(self) -> Dict[str, Any]:
-        self.refresh()
-        entries = wait_for("the project's local row", lambda: {"menu": self.menu()}, self.timeout_s)["menu"]
-        if entries:
-            raise SmokeFailure(f"Delete All is offered for a project with no worktrees: {entries}")
-        return {"delete_all_worktrees": entries}
-
     def check_offers_every_mac(self) -> Dict[str, Any]:
-        inside = self.add_folder_worktree(f"inside-{self.nonce}")
-        outside = self.add_outside_worktree(f"outside-{self.nonce}")
-        if not inside.startswith(real(self.repo / ".worktrees") + "/"):
-            raise SmokeFailure(f"worktree.create made {inside}, not under <root>/.worktrees")
         want = [{"place": "this_mac", "machine": None}, {"place": "device", "machine": self.machine}]
 
         def offered() -> Optional[List[Dict[str, Any]]]:
-            self.refresh()
             entries = self.menu()
             got = [{"place": e.get("place"), "machine": e.get("machine")} for e in entries]
             return entries if got == want and all(e.get("is_online") for e in entries) else None
@@ -239,10 +217,19 @@ class DeleteAllE2E:
             entries = wait_for("Delete All on This Mac and the Loopback Mac", offered, self.timeout_s)
         except SmokeFailure as error:
             raise SmokeFailure(f"{error}; last menu: {self.menu()}") from None
-        return {"inside": inside, "outside": outside, "delete_all_worktrees": entries}
+        empty = self.delete_all(None, delete_branches=False, force_dirty=False)
+        if empty.get("listed") != [] or empty.get("removed") or empty.get("cancelled"):
+            raise SmokeFailure(f"Delete All on a project with no worktrees did something: {empty}")
+        return {"delete_all_worktrees": entries, "empty_run": empty}
 
     def check_this_mac(self) -> Dict[str, Any]:
+        inside = self.add_folder_worktree(f"inside-{self.nonce}")
+        outside = self.add_outside_worktree(f"outside-{self.nonce}")
+        if not inside.startswith(real(self.repo / ".worktrees") + "/"):
+            raise SmokeFailure(f"worktree.create made {inside}, not under <root>/.worktrees")
         before = sorted(self.git_worktrees())
+        if before != sorted([inside, outside]):
+            raise SmokeFailure(f"git lists {before}, want {sorted([inside, outside])}")
         result = self.delete_all(None, delete_branches=True, force_dirty=False)
         listed = sorted(real(p) for p in result.get("listed") or [])
         removed = sorted(real(p) for p in result.get("removed") or [])
@@ -290,22 +277,12 @@ class DeleteAllE2E:
             raise SmokeFailure(f"branches went without the checkbox: {self.branches()}")
         return {"first": first, "forced": forced}
 
-    def check_hidden_after(self) -> Dict[str, Any]:
+    def check_nothing_left(self) -> Dict[str, Any]:
         if self.git_worktrees():
             raise SmokeFailure(f"git still lists worktrees: {self.git_worktrees()}")
         if not (self.repo / "README.md").exists():
             raise SmokeFailure("the main checkout lost its files")
-
-        def hidden() -> Optional[Dict[str, Any]]:
-            self.refresh()
-            entries = self.menu()
-            return {"menu": entries} if not entries else None
-
-        try:
-            entries = wait_for("Delete All to leave the menu", hidden, self.timeout_s)["menu"]
-        except SmokeFailure as error:
-            raise SmokeFailure(f"{error}; last menu: {self.menu()}") from None
-        return {"delete_all_worktrees": entries}
+        return self.check_offers_every_mac()
 
     # -- cleanup -------------------------------------------------------------
 
@@ -323,11 +300,10 @@ class DeleteAllE2E:
         try:
             self.step("device_connected", self.check_device)
             self.step("project_registered", self.register_project)
-            self.step("menu_hidden_without_worktrees", self.check_hidden_without_worktrees)
-            self.step("menu_offers_every_mac_with_worktrees", self.check_offers_every_mac)
-            self.step("this_mac_deletes_worktrees_outside_the_folder", self.check_this_mac)
+            self.step("menu_offers_every_mac", self.check_offers_every_mac)
+            self.step("this_mac_deletes_worktrees_made_anywhere", self.check_this_mac)
             self.step("loopback_mac_keeps_dirty_until_forced", self.check_loopback_mac)
-            self.step("menu_hidden_after_delete_all", self.check_hidden_after)
+            self.step("nothing_left", self.check_nothing_left)
             return True
         except SmokeFailure:
             return False

@@ -119,6 +119,39 @@ struct SupermuxProjectsModelBulkWorktreeRemovalTests {
         #expect(model.worktreesByProjectId[project.id]?.isEmpty == true)
     }
 
+    /// Removing a worktree deletes its whole folder. A dirty worktree nested
+    /// inside another (in a git-ignored folder, like `.claude/worktrees`, so
+    /// the outer one's status looks clean) must be kept, and the outer one
+    /// with it, until Delete Anyway; then both go.
+    @Test func removeAllKeepsADirtyNestedWorktreeAndItsParentUntilForced() async throws {
+        let root = try GitFixture.makeFixtureRepo(prefix: "supermux-bulk-worktree-removal")
+        defer { GitFixture.cleanUp(root) }
+        let sibling = try GitFixture.makeTempDirectory(prefix: "supermux-bulk-worktree-removal")
+        defer { GitFixture.cleanUp(sibling) }
+        let outer = (sibling as NSString).appendingPathComponent("outer")
+        let inner = (outer as NSString).appendingPathComponent("nested/inner")
+        try GitFixture.runGit(["worktree", "add", "-b", "outer", outer], in: root)
+        try GitFixture.write("nested/\n", to: ".git/info/exclude", in: root)
+        try GitFixture.runGit(["worktree", "add", "-b", "inner", inner], in: root)
+        try GitFixture.write("wip\n", to: "wip.txt", in: inner)
+        let project = SupermuxProject(name: "Fixture", rootPath: root)
+        let model = try await makeLoadedModel(project: project, in: root)
+
+        let first = try await model.removeAllWorktrees(projectId: project.id, deleteBranch: false)
+
+        #expect(first.removed.isEmpty)
+        #expect(Set(first.dirty.map(\.branch)) == ["outer", "inner"])
+        #expect(first.failures.isEmpty)
+        #expect(FileManager.default.fileExists(atPath: (inner as NSString).appendingPathComponent("wip.txt")))
+
+        let forced = await model.removeWorktrees(first.dirty, projectId: project.id, force: true, deleteBranch: false)
+
+        #expect(Set(forced.removed.map(\.branch)) == ["outer", "inner"])
+        #expect(forced.failures.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: outer))
+        #expect(model.worktreesByProjectId[project.id]?.isEmpty == true)
+    }
+
     /// A project registered at a linked worktree sees the repository's main
     /// checkout in `git worktree list`. It is never offered for deletion: no
     /// teardown script may run there and git would refuse to remove it anyway.
