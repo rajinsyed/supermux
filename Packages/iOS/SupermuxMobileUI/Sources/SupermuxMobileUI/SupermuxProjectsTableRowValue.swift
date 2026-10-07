@@ -118,10 +118,18 @@ public struct SupermuxProjectsTablePayload {
     public let layout: SupermuxProjectsListLayout
     /// The section's closure bundle.
     public let actions: SupermuxProjectsSectionActions
+    /// Sends a nested row's drag to its Mac, or `nil` when nested rows
+    /// cannot be dragged.
+    public let moveNestedWorkspace: (@MainActor (SupermuxNestedMove) -> Void)?
 
     /// Memberwise initializer.
-    public init(layout: SupermuxProjectsListLayout, actions: SupermuxProjectsSectionActions) {
+    public init(
+        layout: SupermuxProjectsListLayout,
+        actions: SupermuxProjectsSectionActions,
+        moveNestedWorkspace: (@MainActor (SupermuxNestedMove) -> Void)? = nil
+    ) {
         self.layout = layout
         self.actions = actions
+        self.moveNestedWorkspace = moveNestedWorkspace
     }
 }

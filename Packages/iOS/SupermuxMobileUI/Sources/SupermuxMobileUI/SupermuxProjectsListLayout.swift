@@ -58,6 +58,9 @@ public struct SupermuxProjectsListLayout: Sendable {
     public let forkRows: [String: SupermuxProjectsTableRowValue]
     /// What each nested workspace row adds, by workspace id.
     public let accessories: [MobileWorkspacePreview.ID: SupermuxNestedWorkspaceAccessory]
+    /// The segment each draggable nested row moves in, by workspace id
+    /// (see ``SupermuxNestedMove``). Empty when nested rows cannot be dragged.
+    public let nestedSegments: [MobileWorkspacePreview.ID: String] = [:]
 
     /// The swipe-tray ids of the rows on screen. A tray whose row left the
     /// list is closed (``SupermuxProjectsSectionModel/closeSwipeTray(unlessAmong:)``),
@@ -88,12 +91,15 @@ public struct SupermuxProjectsListLayout: Sendable {
     ///   - scope: How the list is narrowed.
     ///   - canEdit: Whether Add Project is available.
     ///   - preparingNewWorktreeProjectID: The row preparing a New Worktree sheet.
+    ///   - nestedOrder: The order segments show while a drag's move is on its
+    ///     way to the Mac (``SupermuxNestedReorderModel/orders``).
     public init(
         section: SupermuxProjectsSectionSnapshot,
         workspaces: [MobileWorkspacePreview],
         scope: SupermuxProjectsListScope,
         canEdit: Bool,
-        preparingNewWorktreeProjectID: String?
+        preparingNewWorktreeProjectID: String?,
+        nestedOrder: [String: [MobileWorkspacePreview.ID]] = [:]
     ) {
         guard section.isVisible, !scope.flattensList else {
             self = .empty
