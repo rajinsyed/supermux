@@ -136,7 +136,8 @@ extension SupermuxProjectsModel {
 
     /// Re-lists the project's worktrees from git: the exact set a Delete All
     /// acts on. Every linked worktree counts, made by supermux or not; the main
-    /// checkout is never listed (see ``SupermuxGitWorktreeService/listWorktrees(for:)``).
+    /// checkout is never listed (see ``SupermuxGitWorktreeService/listWorktrees(for:)``),
+    /// nor a worktree whose folder holds the project's own checkout.
     ///
     /// The sidebar calls this *before* showing its confirmation so the list the
     /// user confirms is the list that gets deleted (then passes it to
@@ -157,7 +158,10 @@ extension SupermuxProjectsModel {
                 )
             )
         }
-        return worktreesByProjectId[projectId] ?? []
+        // A worktree holding the project's own checkout (a project registered
+        // at a worktree nested in another) would take the project with it.
+        let root = SupermuxWorktreePath.canonical(projects.first { $0.id == projectId }?.rootPath ?? "")
+        return (worktreesByProjectId[projectId] ?? []).filter { !root.hasPrefix($0.path + "/") }
     }
 
     /// Removes the given worktrees one after another (nested ones first, see

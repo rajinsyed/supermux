@@ -159,7 +159,10 @@ struct SupermuxRemoteProjectCommands {
     /// cannot list them.
     func worktreesForRemoval(_ location: SupermuxProjectLocation) async throws -> [SupermuxRemoteWorktree] {
         let machine = try Self.machine(of: location)
-        return try await remoteProjects.loadWorktrees(on: machine, projectID: location.projectID).map { worktree in
+        let listed = try await remoteProjects.loadWorktrees(on: machine, projectID: location.projectID)
+        // Never a worktree holding the project's own checkout (see
+        // SupermuxProjectsModel.worktreesForRemoval).
+        return listed.filter { !location.rootPath.hasPrefix($0.path + "/") }.map { worktree in
             SupermuxRemoteWorktree(
                 location: location,
                 path: worktree.path,
