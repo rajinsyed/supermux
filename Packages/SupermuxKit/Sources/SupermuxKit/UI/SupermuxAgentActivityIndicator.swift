@@ -370,7 +370,15 @@ final class SupermuxBrailleSpinnerNSView: SupermuxActivityAnimationNSView {
 
         let font = NSFont.monospacedSystemFont(ofSize: pointSize, weight: .semibold)
         let color = NSColor(SupermuxActivityPalette.working)
-        let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
+        // The braille glyphs fall back to AppleBraille, which has one weight,
+        // so `weight` alone can't embolden them: a same-colour stroke drawn
+        // with the fill (negative width) thickens each dot instead.
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: color,
+            .strokeColor: color,
+            .strokeWidth: -5,
+        ]
         // Monospaced font: every glyph shares the same cell, so the layer's
         // size stays constant across frames and nothing ever re-layouts.
         let cell = frames.reduce(CGSize.zero) { acc, glyph in

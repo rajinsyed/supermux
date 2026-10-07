@@ -220,6 +220,15 @@ most every 10 min otherwise), for each connected, non-loopback device serving pr
 - Local project rows: device worktrees (each with its Mac icon) in the disclosure, "Open on ▸" when
   several Macs have it, remote worktrees in "Worktrees ▸", "Set Up on <Mac>…". Edit/Reveal/Move stay
   local-only.
+- "Delete All Worktrees" (`SupermuxDeleteAllWorktreesMenu`) offers every Mac with a copy of the
+  project, whatever its last worktree list said: a plain "Delete All Worktrees…" when the row's own
+  Mac is the only one, else "Delete All Worktrees on ▸ <Mac>" (offline Macs disabled). Each runs
+  `SupermuxDeleteAllWorktreesFlow`: a fresh list of every linked worktree, open or not, wherever it
+  lives (this Mac's git, or that Mac's `worktrees.list`; a failure deletes nothing; the main
+  checkout is never listed; an empty list says so), a confirmation listing each with its folder
+  (and "Also delete their local branches"), one removal per worktree, nested ones first
+  (`worktree.remove` for another Mac; a worktree holding a kept one is kept too), then "Delete
+  Anyway" for the ones kept for uncommitted changes.
 - The worktree pill ("⑂ N ›", `SupermuxWorktreeDisclosure`) shows only when the project has an
   unopened worktree, always with its number: this Mac's worktrees with no open workspace here plus
   the other Macs' worktrees that are not open there and mirrored here. The main checkout never
@@ -233,8 +242,8 @@ most every 10 min otherwise), for each connected, non-loopback device serving pr
   `remote_projects {refresh}` can return before the lists land. Remote-only rows follow the same
   rule while their Mac is online.
 - Remote-only rows: Mac icon, run indicator, dimmed + "offline" tooltip while the Mac is offline;
-  tap = Open on <Mac>; menu: New Worktree… (the device-aware sheet, P2), Worktrees ▸, Actions ▸, Set Up on <Mac>…
-  (incl. This Mac), Remove from Projects on <Mac>….
+  tap = Open on <Mac>; menu: New Worktree… (the device-aware sheet, P2), Worktrees ▸, Delete All Worktrees…,
+  Actions ▸, Set Up on <Mac>… (incl. This Mac), Remove from Projects on <Mac>….
 - Flat rows (touchpoint #561): device mirrors always show the Mac icon (`SupermuxFlatRowDeviceChip`),
   first on the row's branch/directory line in every layout, or before the title when the row draws no
   such line (`SupermuxFlatRowDeviceChip.drawsOnBranchLine`), tinted with the row's secondary color.
@@ -249,6 +258,7 @@ CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.unified_projects '
 CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.remote_projects '{"refresh":true}'
 CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.remote_worktrees '{"machine":"device:…","project_id":"<that Mac's id>"}'
 CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.remote_worktree_create '{"machine":"device:…","project_id":"…","workspace_name":"x","branch_name":"y","focus":false}'
+CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.delete_all_worktrees '{"project_id":"…","machine":"device:… (omit for This Mac)","delete_branches":false,"force_dirty":false}'  # DEBUG only → {listed, removed, dirty, failures}
 - Local project rows: device worktrees (each with its Mac icon) in the disclosure, "Open on ▸" when
   several Macs have it, remote worktrees in "Worktrees ▸", "Set Up on <Mac>…". Edit/Reveal/Move stay
   local-only.
@@ -271,7 +281,9 @@ CMUX_TAG=<tag> scripts/cmux-debug-cli.sh rpc supermux.devices.project_sync '{}' 
 All take an optional `window_id`. E2E: `CMUX_TAG=<tag> python3 tests/supermux/loopback_projects_e2e.py
 --projects-file <scratch projects.json>` (launch the build with `SUPERMUX_DEBUG_LOOPBACK_DEVICE=1` and
 `SUPERMUX_PROJECTS_FILE` set to that file; the suite edits it as another build would), and
-`tests/supermux/loopback_worktree_disclosure_e2e.py` for the worktree pill.
+`tests/supermux/loopback_worktree_disclosure_e2e.py` for the worktree pill, and
+`tests/supermux/loopback_delete_all_worktrees_e2e.py` for Delete All Worktrees
+(`projects_presentation` rows carry `delete_all_worktrees`, the Macs the menu offers).
 
 ## New Worktree on any Mac (P2)
 
