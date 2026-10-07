@@ -153,16 +153,12 @@ import Testing
         #expect(selected == ["w42"])
     }
 
-    // MARK: m6-f2 row parity — branch / PR / remote id mapping
+    // MARK: m6-f2 row parity — branch / remote id mapping
 
-    @Test func nestedRowMappingCarriesBranchPullRequestAndRemoteID() throws {
+    @Test func nestedRowMappingCarriesBranchAndRemoteID() throws {
         var full = preview(id: "mac1:w1", name: "alpha main", supermuxProjectID: Self.projectID)
         full.remoteWorkspaceID = MobileWorkspacePreview.ID(rawValue: "w1")
         full.supermuxBranch = "  feature/parity  "
-        full.supermuxPullRequestNumber = 4321
-        full.supermuxPullRequestState = "merged"
-        full.supermuxPullRequestURL = "https://github.com/acme/alpha/pull/4321"
-        full.supermuxPullRequestIsStale = true
 
         var bare = preview(id: "w2", name: "alpha wt", supermuxProjectID: Self.projectID)
         bare.supermuxBranch = "   "
@@ -170,21 +166,15 @@ import Testing
         let rows = SupermuxProjectWorkspaceRowSnapshot.rows(from: [full, bare])
         try #require(rows.count == 2)
 
-        // Full row: trimmed branch, badge snapshot, Mac-local remote id.
+        // Full row: trimmed branch, Mac-local remote id.
         #expect(rows[0].branch == "feature/parity")
         #expect(rows[0].remoteID == "w1")
-        let badge = try #require(rows[0].pullRequest)
-        #expect(badge.number == 4321)
-        #expect(badge.state == .merged)
-        #expect(badge.url?.absoluteString == "https://github.com/acme/alpha/pull/4321")
-        #expect(badge.isStale)
         // rows(from:) never marks running — the section model stamps it.
         #expect(!rows[0].isRunning)
 
-        // Bare row: blank branch degrades to nil, no badge, remote id falls
-        // back to the UI row id.
+        // Bare row: blank branch degrades to nil, remote id falls back to the
+        // UI row id.
         #expect(rows[1].branch == nil)
-        #expect(rows[1].pullRequest == nil)
         #expect(rows[1].remoteID == "w2")
     }
 

@@ -119,24 +119,6 @@ enum SupermuxComposition {
     /// main workspace sits at the root and has no worktree-dir signal).
     static let workspaceAssociations = SupermuxWorkspaceAssociationStore(persistence: projectsModel)
 
-    /// App-wide PR model for *unopened* worktree badges, injected into every
-    /// window's Projects section so one poll pass and one repo cache serve all
-    /// sidebars (the model is multi-window-safe: client-scoped union tracking
-    /// plus a generation guard). Must be a stable instance — the section seeds
-    /// its `@State` from it on first mount.
-    ///
-    /// The probe wraps the app's shared `PullRequestProbeService`: service
-    /// copies retain the same `GitHubPullRequestRequestCoordinator` actor, so
-    /// the worktree prober and cmux's opened-workspace pollers coalesce
-    /// requests, share the ETag cache, and honor one rate-limit deadline
-    /// instead of spending the same GitHub token from two disjoint transports.
-    /// (This static is first touched from the sidebar render path, well after
-    /// AppDelegate exists; the fallback covers non-app harnesses only.)
-    static let worktreePullRequestModel = SupermuxWorktreePullRequestModel(
-        probe: AppDelegate.shared.map { SupermuxPullRequestProbe(service: $0.pullRequestProbeService) }
-            ?? SupermuxPullRequestProbe()
-    )
-
     /// App-wide New Worktree creates running in the background, shared by
     /// every window's sidebar (each draws the ones it started, keyed by its
     /// `TabManager`) and the DEBUG `new_worktree` socket drivers. Must be a
@@ -179,22 +161,6 @@ struct SupermuxProjectsMount: View {
     /// ``SupermuxWorkspaceObservation``.
     @StateObject private var observation = SupermuxWorkspaceObservation()
 
-    /// Whether this window is on screen: off screen (minimized, covered,
-    /// hidden, a headless Remote Host Mode window) the worktree PR probe
-    /// slows to its off-screen cadence instead of polling every minute.
-    @StateObject private var windowVisibility = SupermuxWindowVisibility()
-
-    // cmux's PR-probe gates (Settings → sidebar), read via @AppStorage so a
-    // toggle re-renders the mount and restarts/stops the section's probe loop.
-    // Missing keys default to the catalog defaults, matching
-    // `SidebarWorkspaceDetailDefaults`'s semantics; the combination mirrors
-    // its `pullRequestActivity` resolution — including the master "Hide all
-    // details" switch, which hides every PR badge on the mac sidebar and must
-    // hide the fork's nested-row badges the same way.
-    @AppStorage(SidebarWorkspaceDetailDefaults.showPullRequestsKey) private var showPullRequests = true
-    @AppStorage(SidebarWorkspaceDetailDefaults.watchGitStatusKey) private var watchGitStatus = true
-    @AppStorage(SidebarCatalogSection().hideAllDetails.userDefaultsKey) private var hideAllDetails = false
-
     // The user-settable badge color (Settings → workspace colors), read live so
     // nested rows recolor with the flat rows. Empty means the default accent.
     @AppStorage(SidebarCatalogSection().notificationBadgeColorHex.userDefaultsKey)
@@ -208,7 +174,6 @@ struct SupermuxProjectsMount: View {
         // Reading tabs/selectedTabId here subscribes this small, eager section
         // to workspace add/remove/select changes (not per-keystroke output), so
         // a project's live workspaces stay nested and in sync underneath it.
-        let pullRequestsEnabled = watchGitStatus && showPullRequests && !hideAllDetails
         // Reading the @Observable snapshot here subscribes the mount to unread
         // publications, so a nested row's badge appears/clears live — the same
         // per-workspace summary source cmux's flat rows read.
@@ -218,7 +183,6 @@ struct SupermuxProjectsMount: View {
         // during this body, so they keep subscribing the mount.
         let openWorkspaces = SupermuxNestedWorkspaceRows.rows(
             for: tabManager,
-            includePullRequest: pullRequestsEnabled,
             unreadCount: { unreadSnapshot.unreadCount(forWorkspaceId: $0) }
         )
         SupermuxProjectsSectionView(
@@ -255,42 +219,6 @@ struct SupermuxProjectsMount: View {
                     _ = tabManager.reorderWorkspace(tabId: draggedId, before: targetId, isDragOperation: true)
                 }
             },
-            onOpenPullRequest: { [weak tabManager] url, workspaceId in
-                // Honor cmux's PR-link routing: open in the cmux browser when
-                // the setting is on, else the default browser. A badge on an
-                // open workspace's row opens in *that* workspace (selecting it
-                // first, mirroring cmux's own sidebar rows); a worktree badge
-                // has no workspace and uses the selected one.
-                if BrowserLinkOpenSettings.openSidebarPullRequestLinksInCmuxBrowser(),
-                   let tabManager {
-                    if let workspaceId,
-                       let workspace = tabManager.tabs.first(where: { $0.id == workspaceId }) {
-                        tabManager.selectWorkspace(workspace)
-                    }
-                    let targetId = workspaceId ?? tabManager.selectedTabId
-                    if let targetId,
-                       tabManager.openBrowser(
-                           inWorkspace: targetId,
-                           url: url,
-                           preferSplitRight: true,
-                           insertAtEnd: true
-                       ) != nil {
-                        return
-                    }
-                }
-                _ = NSWorkspace.shared.open(url)
-            },
-            // Honor cmux's own PR-probe gates: with polling off, the section
-            // clears worktree badges and never touches GitHub. Off screen it
-            // keeps the badges (a headless host's phones read them) and only
-            // polls less often.
-            pullRequestPolling: SupermuxPullRequestPollingPolicy(
-                isEnabled: pullRequestsEnabled,
-                isOnScreen: windowVisibility.isOnScreen
-            ),
-            // One app-wide PR model: every window's sidebar shares one poll
-            // pass and one repo cache instead of probing per window.
-            pullRequestModel: SupermuxComposition.worktreePullRequestModel,
             // One app-wide logo cache, shared with the workspace switcher.
             iconStore: SupermuxComposition.projectIconStore,
             // Creates the New Worktree sheet handed to the background.
@@ -310,7 +238,6 @@ struct SupermuxProjectsMount: View {
         .onChange(of: tabManager.tabs.map(\.id)) {
             observation.observe(tabs: tabManager.tabs)
         }
-        .supermuxTracksWindowVisibility(windowVisibility)
         .environment(\.supermuxSidebarFontScale, fontScaleStore.fontScale)
         // A remote row's Mac icon reads its link's route itself (tooltip,
         // amber relay dot), so route updates never re-run this mount.
@@ -395,7 +322,7 @@ final class SupermuxWorkspaceObservation: ObservableObject {
     private var lastRendered: [RenderedRowState] = []
 
     /// The per-workspace fields ``SupermuxWorkspaceRow`` snapshots actually
-    /// render (title, directory, branch, activity, PR badge). The volatile
+    /// render (title, directory, branch, activity). The volatile
     /// automatic process title is represented by the settle model's
     /// `changeGeneration` instead of its raw value, so telemetry-triggered
     /// checks don't see mid-animation title frames as changes.
@@ -406,7 +333,6 @@ final class SupermuxWorkspaceObservation: ObservableObject {
         let directory: String
         let branch: String?
         let activity: SupermuxWorkspaceActivity
-        let pullRequest: SupermuxPullRequest?
     }
 
     private static func renderedState(for workspace: Workspace) -> RenderedRowState {
@@ -422,8 +348,7 @@ final class SupermuxWorkspaceObservation: ObservableObject {
                 : 0,
             directory: workspace.currentDirectory,
             branch: workspace.supermuxSidebarBranch,
-            activity: SupermuxWorkspaceActivityResolver.activity(for: workspace),
-            pullRequest: workspace.supermuxSidebarPullRequest
+            activity: SupermuxWorkspaceActivityResolver.activity(for: workspace)
         )
     }
 

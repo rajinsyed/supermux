@@ -5,17 +5,15 @@ import Testing
 
 /// Fork coverage for the additive supermux workspace metadata and focused-panel
 /// fields on ``WorkspaceSyncRecord``. Mobile state sync v2 becomes
-/// authoritative on any Mac that answers `mobile.sync.fetch`, so these four
+/// authoritative on any Mac that answers `mobile.sync.fetch`, so these
 /// fields must survive the record wire round-trip or project nesting, the
-/// agent-activity dot, the branch subtitle, and the PR badge silently vanish on
-/// the phone. Records from an upstream cmux Mac carry none of them and must
+/// agent-activity dot, and the branch subtitle silently vanish on the phone. Records from an upstream cmux Mac carry none of them and must
 /// still decode.
 struct SupermuxWorkspaceSyncRecordFieldsTests {
     private func makeRecord(
         supermuxProjectID: String? = nil,
         supermuxActivity: String? = nil,
         supermuxBranch: String? = nil,
-        supermuxPullRequest: WorkspaceSyncRecord.SupermuxPullRequest? = nil,
         supermuxUnreadCount: Int? = nil,
         supermuxUnreadPanelIDs: [String]? = nil,
         // SUPERMUX:begin supermux-mobile-selection-sync
@@ -42,7 +40,6 @@ struct SupermuxWorkspaceSyncRecordFieldsTests {
             supermuxProjectID: supermuxProjectID,
             supermuxActivity: supermuxActivity,
             supermuxBranch: supermuxBranch,
-            supermuxPullRequest: supermuxPullRequest,
             supermuxUnreadCount: supermuxUnreadCount,
             supermuxUnreadPanelIDs: supermuxUnreadPanelIDs
         )
@@ -52,13 +49,7 @@ struct SupermuxWorkspaceSyncRecordFieldsTests {
         makeRecord(
             supermuxProjectID: "9E2B7F1C-0000-4000-8000-000000000001",
             supermuxActivity: "needs_input",
-            supermuxBranch: "feature/mobile-sync",
-            supermuxPullRequest: WorkspaceSyncRecord.SupermuxPullRequest(
-                number: 4321,
-                state: "open",
-                url: "https://github.com/manaflow-ai/cmux/pull/4321",
-                isStale: true
-            )
+            supermuxBranch: "feature/mobile-sync"
         )
     }
 
@@ -68,11 +59,7 @@ struct SupermuxWorkspaceSyncRecordFieldsTests {
         #expect(object["supermux_project_id"] as? String == "9E2B7F1C-0000-4000-8000-000000000001")
         #expect(object["supermux_activity"] as? String == "needs_input")
         #expect(object["supermux_branch"] as? String == "feature/mobile-sync")
-        let pullRequest = object["supermux_pull_request"] as? [String: Any]
-        #expect(pullRequest?["number"] as? Int == 4321)
-        #expect(pullRequest?["state"] as? String == "open")
-        #expect(pullRequest?["url"] as? String == "https://github.com/manaflow-ai/cmux/pull/4321")
-        #expect(pullRequest?["is_stale"] as? Bool == true)
+        #expect(object["supermux_pull_request"] == nil)
     }
 
     @Test func supermuxFieldsRoundTripThroughTheRecordWire() throws {
@@ -88,10 +75,6 @@ struct SupermuxWorkspaceSyncRecordFieldsTests {
         #expect(decoded.supermuxProjectID == "9E2B7F1C-0000-4000-8000-000000000001")
         #expect(decoded.supermuxActivity == "needs_input")
         #expect(decoded.supermuxBranch == "feature/mobile-sync")
-        #expect(decoded.supermuxPullRequest?.number == 4321)
-        #expect(decoded.supermuxPullRequest?.state == "open")
-        #expect(decoded.supermuxPullRequest?.url == "https://github.com/manaflow-ai/cmux/pull/4321")
-        #expect(decoded.supermuxPullRequest?.isStale == true)
     }
 
     @Test func upstreamMacRecordWithoutSupermuxFieldsDecodesWithThemAllNil() throws {
@@ -123,7 +106,6 @@ struct SupermuxWorkspaceSyncRecordFieldsTests {
         #expect(decoded.supermuxProjectID == nil)
         #expect(decoded.supermuxActivity == nil)
         #expect(decoded.supermuxBranch == nil)
-        #expect(decoded.supermuxPullRequest == nil)
         // An upstream Mac reports `has_unread` but never the fork's exact count
         // or pane state, so the phone keeps both legacy fallbacks available.
         #expect(decoded.supermuxUnreadCount == nil)
@@ -136,7 +118,6 @@ struct SupermuxWorkspaceSyncRecordFieldsTests {
         #expect(object["supermux_project_id"] == nil)
         #expect(object["supermux_activity"] == nil)
         #expect(object["supermux_branch"] == nil)
-        #expect(object["supermux_pull_request"] == nil)
         #expect(object["supermux_unread_count"] == nil)
         #expect(object["supermux_unread_panel_ids"] == nil)
     }
@@ -344,12 +325,9 @@ struct SupermuxWorkspaceSyncRecordFieldsTests {
         #expect(decoded.supermuxProjectID == nil)
         #expect(decoded.supermuxActivity == nil)
         #expect(decoded.supermuxBranch == nil)
-        #expect(decoded.supermuxPullRequest?.number == nil)
-        #expect(decoded.supermuxPullRequest?.state == nil)
-        #expect(decoded.supermuxPullRequest?.isStale == nil)
     }
 
-    @Test func nonObjectPullRequestDegradesToEmptyFieldsInsteadOfFailing() throws {
+    @Test func olderMacPullRequestFieldIsIgnored() throws {
         let decoded = try MobileSyncFrameCoder().decode(
             WorkspaceSyncRecord.self,
             fromJSONString: """
@@ -372,9 +350,9 @@ struct SupermuxWorkspaceSyncRecordFieldsTests {
             """
         )
 
+        // Older Supermux Macs still send `supermux_pull_request`; this Mac and
+        // phone no longer read it, so the record decodes without it.
         #expect(decoded.id == "ws-pr-string")
-        #expect(decoded.supermuxPullRequest?.number == nil)
-        #expect(decoded.supermuxPullRequest?.url == nil)
     }
 
     @Test func supermuxFieldChangesAreVisibleToTheDiffsEqualityCheck() {
@@ -385,10 +363,6 @@ struct SupermuxWorkspaceSyncRecordFieldsTests {
         #expect(
             makeRecord(supermuxBranch: "main")
                 != makeRecord(supermuxBranch: "release")
-        )
-        #expect(
-            makeRecord(supermuxPullRequest: .init(number: 1))
-                != makeRecord(supermuxPullRequest: .init(number: 2))
         )
         #expect(base == makeRecord(supermuxProjectID: "p-1", supermuxActivity: "working"))
     }

@@ -67,64 +67,15 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
         public let supermuxActivity: String?
         /// The workspace's git branch (the mac sidebar row's subtitle); `nil` when unknown, unassociated, or from upstream cmux.
         public let supermuxBranch: String?
-        /// The workspace branch's pull request; `nil` when none, unassociated, or from upstream cmux.
-        public let supermuxPullRequest: SupermuxPullRequest?
         /// How many unread notifications the workspace has, so the badge can show the same
         /// numeral the Mac sidebar does. `nil` from an upstream cmux Mac (which sends only
         /// `has_unread`); the badge then renders its countless dot form. Travels for EVERY
-        /// workspace, unlike the four project-gated fields above.
+        /// workspace, unlike the three project-gated fields above.
         public let supermuxUnreadCount: Int?
         /// Pane identifiers whose Mac unread indicator is visible. `nil` means
         /// the host does not support exact pane unread state; an empty array means
         /// it supports the field and no pane currently needs acknowledgment.
         public let supermuxUnreadPanelIDs: [String]?
-        /// The `supermux_pull_request` object: same shape as the worktree DTO's `pull_request`
-        /// (`{number, state, url, is_stale}`). Decoding is LOSSY on purpose: a malformed
-        /// extension object (wrong types, not even an object) degrades to nil fields —
-        /// "no badge" — and never fails the whole workspace-list decode.
-        public struct SupermuxPullRequest: Decodable, Sendable, Equatable {
-            /// The PR number (the `#1234` on the badge); consumers drop the badge when nil.
-            public let number: Int?
-            /// PR state string (`"open"`/`"merged"`/`"closed"`), when sent.
-            public let state: String?
-            /// The PR's web URL, when sent.
-            public let url: String?
-            /// Whether the badge is stale (mac dims it), when sent.
-            public let isStale: Bool?
-
-            private enum CodingKeys: String, CodingKey {
-                case number, state, url
-                case isStale = "is_stale"
-            }
-
-            public init(from decoder: any Decoder) throws {
-                guard let container = try? decoder.container(keyedBy: CodingKeys.self) else {
-                    number = nil; state = nil; url = nil; isStale = nil
-                    return
-                }
-                number = (try? container.decodeIfPresent(Int.self, forKey: .number)) ?? nil
-                state = (try? container.decodeIfPresent(String.self, forKey: .state)) ?? nil
-                url = (try? container.decodeIfPresent(String.self, forKey: .url)) ?? nil
-                isStale = (try? container.decodeIfPresent(Bool.self, forKey: .isStale)) ?? nil
-            }
-
-            /// Memberwise construction for locally-synced sources: mobile state
-            /// sync v2 projects `WorkspaceSyncRecord.SupermuxPullRequest` (same
-            /// wire shape) through this type so both transports feed one apply
-            /// path. Declaring `init(from:)` above suppresses the synthesized
-            /// memberwise init, and a synthesized one would be internal anyway.
-            public init(
-                number: Int? = nil,
-                state: String? = nil,
-                url: String? = nil,
-                isStale: Bool? = nil
-            ) {
-                self.number = number
-                self.state = state
-                self.url = url
-                self.isStale = isStale
-            }
-        }
         // SUPERMUX:end supermux-mobile-workspace-fields
 
         private enum CodingKeys: String, CodingKey {
@@ -153,7 +104,6 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
             case supermuxProjectID = "supermux_project_id"
             case supermuxActivity = "supermux_activity"
             case supermuxBranch = "supermux_branch"
-            case supermuxPullRequest = "supermux_pull_request"
             case supermuxUnreadCount = "supermux_unread_count"
             case supermuxUnreadPanelIDs = "supermux_unread_panel_ids"
             // SUPERMUX:end supermux-mobile-workspace-fields
@@ -190,7 +140,6 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
             supermuxProjectID: String? = nil,
             supermuxActivity: String? = nil,
             supermuxBranch: String? = nil,
-            supermuxPullRequest: SupermuxPullRequest? = nil,
             supermuxUnreadCount: Int? = nil,
             supermuxUnreadPanelIDs: [String]? = nil
             // SUPERMUX:end supermux-mobile-workspace-fields
@@ -220,7 +169,6 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
             self.supermuxProjectID = supermuxProjectID
             self.supermuxActivity = supermuxActivity
             self.supermuxBranch = supermuxBranch
-            self.supermuxPullRequest = supermuxPullRequest
             self.supermuxUnreadCount = supermuxUnreadCount
             self.supermuxUnreadPanelIDs = supermuxUnreadPanelIDs
             // SUPERMUX:end supermux-mobile-workspace-fields
@@ -259,13 +207,10 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
                 forKey: .simulators
             ) ?? []
             // SUPERMUX:begin supermux-mobile-workspace-fields (lenient: a malformed additive
-            // field degrades to nil — "no badge / no fold" — and never fails the row decode)
+            // field degrades to nil — "no fold" — and never fails the row decode)
             supermuxProjectID = (try? container.decodeIfPresent(String.self, forKey: .supermuxProjectID)) ?? nil
             supermuxActivity = (try? container.decodeIfPresent(String.self, forKey: .supermuxActivity)) ?? nil
             supermuxBranch = (try? container.decodeIfPresent(String.self, forKey: .supermuxBranch)) ?? nil
-            supermuxPullRequest = (
-                try? container.decodeIfPresent(SupermuxPullRequest.self, forKey: .supermuxPullRequest)
-            ) ?? nil
             supermuxUnreadCount = (try? container.decodeIfPresent(Int.self, forKey: .supermuxUnreadCount)) ?? nil
             supermuxUnreadPanelIDs = (
                 try? container.decodeIfPresent([String].self, forKey: .supermuxUnreadPanelIDs)

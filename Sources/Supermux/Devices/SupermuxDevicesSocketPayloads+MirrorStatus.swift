@@ -4,7 +4,7 @@ import SupermuxKit
 
 extension SupermuxDevicesSocketPayloads {
     /// What a mirror row shows, as the E2E sees it: the overlays every
-    /// consumer reads (activity through the shared resolver, branch, PR) and
+    /// consumer reads (activity through the shared resolver, branch) and
     /// the remote pills / progress / log / customization written into the
     /// mirror workspace.
     func mirrorStatus(_ workspace: Workspace) -> [String: Any] {
@@ -20,11 +20,9 @@ extension SupermuxDevicesSocketPayloads {
                 ]
             }
         let remoteLog = workspace.logEntries.last { $0.source == SupermuxDeviceStatusProjector.remoteLogSource }
-        let pullRequest = workspace.supermuxSidebarPullRequest
         return [
             "activity": SupermuxWorkspaceActivityResolver.activity(for: workspace).rawValue,
             "branch": workspace.supermuxSidebarBranch ?? NSNull(),
-            "pull_request": pullRequest.map { ["number": $0.number, "state": $0.status.rawValue, "url": $0.url.absoluteString] } ?? NSNull(),
             "status_entries": remoteEntries,
             "progress": workspace.progress.map { ["value": $0.value, "label": $0.label ?? NSNull()] as [String: Any] } ?? NSNull(),
             "log": remoteLog.map { ["message": $0.message, "level": $0.level.rawValue] } ?? NSNull(),

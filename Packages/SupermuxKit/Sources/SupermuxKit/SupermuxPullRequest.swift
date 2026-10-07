@@ -1,17 +1,13 @@
 public import Foundation
 
-/// A pull request associated with a worktree (or its opened workspace), reduced
-/// to the fields the sidebar badge needs.
+/// The pull request cmux already tracks for a workspace, reduced to the
+/// fields the Changes panel's PR header needs to show and open it.
 ///
-/// One value type bridges both sources of PR state so the sidebar renders a
-/// single, consistent badge wherever a worktree appears:
-/// - opened worktrees nest as live workspace rows whose PR comes straight from
-///   cmux's own probe (cmux's `SidebarPullRequestState`), and
-/// - unopened worktrees are resolved by ``SupermuxPullRequestProbe`` (cmux's
-///   `CmuxGit` pipeline).
+/// The host bridges it from cmux's own per-workspace probe (cmux's
+/// `SidebarPullRequestState`), so no fetch of supermux's own runs for it.
 ///
 /// It is a pure value — no store, and it imports neither SwiftUI nor CmuxGit —
-/// so it crosses the sidebar snapshot boundary into rows freely.
+/// so it crosses view boundaries freely.
 public struct SupermuxPullRequest: Hashable, Sendable {
     /// The lifecycle state of a pull request, matching GitHub's reported states.
     ///
@@ -27,36 +23,28 @@ public struct SupermuxPullRequest: Hashable, Sendable {
         case closed
     }
 
-    /// The pull request number (the `#1234` shown on the badge).
+    /// The pull request number.
     public let number: Int
-    /// The pull request's lifecycle state (drives the badge icon and color).
+    /// The pull request's lifecycle state.
     public let status: Status
-    /// The PR's web URL, opened when the badge is clicked.
+    /// The PR's web URL.
     public let url: URL
     /// The PR's title, when the source that produced this value carries one.
     ///
-    /// The sidebar badge never renders it, but the mobile wire DTO
-    /// (`SupermuxPullRequestDTO`) forwards it to the phone. cmux's probe
-    /// pipeline (`CmuxGit.WorkspacePullRequestResolvedItem`) does not surface
-    /// titles today, so production values are `nil` until it does; the field
-    /// exists so title-carrying sources (and test stubs) flow through intact.
+    /// cmux's probe pipeline does not surface titles today, so production
+    /// values are `nil` until it does; the PR viewer loads the title on click.
     public let title: String?
-    /// Whether the badge is stale (kept after repeated probe failures); rendered
-    /// dimmed, mirroring cmux's own stale-PR treatment.
-    public let isStale: Bool
 
-    /// Creates a pull request badge value.
+    /// Creates a pull request value.
     /// - Parameters:
     ///   - number: The PR number.
     ///   - status: The PR's lifecycle state.
     ///   - url: The PR's web URL.
     ///   - title: The PR's title, when known; defaults to `nil`.
-    ///   - isStale: Whether the badge should render dimmed; defaults to `false`.
-    public init(number: Int, status: Status, url: URL, title: String? = nil, isStale: Bool = false) {
+    public init(number: Int, status: Status, url: URL, title: String? = nil) {
         self.number = number
         self.status = status
         self.url = url
         self.title = title
-        self.isStale = isStale
     }
 }

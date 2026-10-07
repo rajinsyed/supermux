@@ -182,54 +182,6 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
     public let simulators: [MobileSimulatorPanelDescriptor]
     // SUPERMUX:begin supermux-mobile-workspace-fields (additive §6 fields mirrored from the legacy
     // list payload so state sync v2 does not drop them — see SUPERMUX-TOUCHPOINTS.md)
-    /// The `supermux_pull_request` object: the same `{number, state, url, is_stale}`
-    /// shape the legacy list payload carries, so the phone's projection maps it
-    /// 1:1 onto `MobileSyncWorkspaceListResponse.Workspace.SupermuxPullRequest`.
-    /// Decoding is LOSSY on purpose: a malformed extension object (wrong types,
-    /// not even an object) degrades to nil fields — "no badge" — and never fails
-    /// the whole record, which would gap the mirror.
-    public struct SupermuxPullRequest: Codable, Equatable, Sendable {
-        /// The PR number (the `#1234` on the badge); consumers drop the badge when nil.
-        public let number: Int?
-        /// PR state string (`"open"`/`"merged"`/`"closed"`), when sent.
-        public let state: String?
-        /// The PR's web URL, when sent.
-        public let url: String?
-        /// Whether the badge is stale (mac dims it), when sent.
-        public let isStale: Bool?
-
-        /// Creates a pull-request row from its wire fields.
-        public init(
-            number: Int? = nil,
-            state: String? = nil,
-            url: String? = nil,
-            isStale: Bool? = nil
-        ) {
-            self.number = number
-            self.state = state
-            self.url = url
-            self.isStale = isStale
-        }
-
-        public init(from decoder: any Decoder) throws {
-            guard let container = try? decoder.container(keyedBy: CodingKeys.self) else {
-                number = nil; state = nil; url = nil; isStale = nil
-                return
-            }
-            number = (try? container.decodeIfPresent(Int.self, forKey: .number)) ?? nil
-            state = (try? container.decodeIfPresent(String.self, forKey: .state)) ?? nil
-            url = (try? container.decodeIfPresent(String.self, forKey: .url)) ?? nil
-            isStale = (try? container.decodeIfPresent(Bool.self, forKey: .isStale)) ?? nil
-        }
-
-        private enum CodingKeys: String, CodingKey {
-            case number
-            case state
-            case url
-            case isStale = "is_stale"
-        }
-    }
-
     /// The supermux project owning this workspace (UUID string); `nil` when
     /// unassociated or when the record came from an upstream cmux Mac.
     public let supermuxProjectID: String?
@@ -239,15 +191,12 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
     /// The workspace's git branch (the mac sidebar row's subtitle); `nil` when
     /// unknown, unassociated, or from an upstream cmux Mac.
     public let supermuxBranch: String?
-    /// The workspace branch's pull request; `nil` when none, unassociated, or
-    /// from an upstream cmux Mac.
-    public let supermuxPullRequest: SupermuxPullRequest?
     /// How many unread notifications the workspace has, so the phone's badge
     /// can show the same numeral the Mac sidebar does instead of a countless
     /// dot. `nil` from an upstream cmux Mac, which sends only `has_unread`;
     /// the phone then falls back to the dot form.
     ///
-    /// Unlike the four fields above, this one travels for EVERY workspace, not
+    /// Unlike the three fields above, this one travels for EVERY workspace, not
     /// just project-associated ones — unread is a cmux concept, not a projects
     /// one, so it cannot ride the association-gated augmenter.
     public let supermuxUnreadCount: Int?
@@ -344,7 +293,6 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
         supermuxProjectID: String? = nil,
         supermuxActivity: String? = nil,
         supermuxBranch: String? = nil,
-        supermuxPullRequest: SupermuxPullRequest? = nil,
         supermuxUnreadCount: Int? = nil,
         supermuxUnreadPanelIDs: [String]? = nil,
         supermuxStatusEntries: [SupermuxStatusEntry]? = nil,
@@ -379,7 +327,6 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
         self.supermuxProjectID = supermuxProjectID
         self.supermuxActivity = supermuxActivity
         self.supermuxBranch = supermuxBranch
-        self.supermuxPullRequest = supermuxPullRequest
         self.supermuxUnreadCount = supermuxUnreadCount
         self.supermuxUnreadPanelIDs = supermuxUnreadPanelIDs
         self.supermuxStatusEntries = supermuxStatusEntries
@@ -427,13 +374,10 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
         ) ?? []
         // SUPERMUX:begin supermux-mobile-workspace-fields (lenient: a malformed additive field
         // degrades to nil instead of failing the record, which would gap the client's mirror;
-        // an upstream Mac omits all four and every one decodes nil)
+        // an upstream Mac omits all of them and every one decodes nil)
         supermuxProjectID = (try? container.decodeIfPresent(String.self, forKey: .supermuxProjectID)) ?? nil
         supermuxActivity = (try? container.decodeIfPresent(String.self, forKey: .supermuxActivity)) ?? nil
         supermuxBranch = (try? container.decodeIfPresent(String.self, forKey: .supermuxBranch)) ?? nil
-        supermuxPullRequest = (
-            try? container.decodeIfPresent(SupermuxPullRequest.self, forKey: .supermuxPullRequest)
-        ) ?? nil
         supermuxUnreadCount = (try? container.decodeIfPresent(Int.self, forKey: .supermuxUnreadCount)) ?? nil
         supermuxUnreadPanelIDs = (
             try? container.decodeIfPresent([String].self, forKey: .supermuxUnreadPanelIDs)
@@ -477,7 +421,6 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
         case supermuxProjectID = "supermux_project_id"
         case supermuxActivity = "supermux_activity"
         case supermuxBranch = "supermux_branch"
-        case supermuxPullRequest = "supermux_pull_request"
         case supermuxUnreadCount = "supermux_unread_count"
         case supermuxUnreadPanelIDs = "supermux_unread_panel_ids"
         case supermuxStatusEntries = "supermux_status_entries"

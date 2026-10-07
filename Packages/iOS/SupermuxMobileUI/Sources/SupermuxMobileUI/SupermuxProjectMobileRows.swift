@@ -364,7 +364,7 @@ struct SupermuxNestedRowContainer<Content: View>: View {
 
 /// One open workspace nested under its project, laid out like the Mac
 /// sidebar's `SupermuxOpenWorkspaceRowView`: the workspace name over its
-/// monospaced branch, with the status cluster — PR badge, run indicator, agent
+/// monospaced branch, with the status cluster — run indicator, agent
 /// activity, unread — pinned to the trailing edge in the Mac's order.
 ///
 /// Sidebar-specific on purpose: the project DETAIL screen's
@@ -459,7 +459,7 @@ struct SupermuxSidebarWorkspaceRow: View {
         )
     }
 
-    /// Mac order exactly — PR badge, run, agent activity, unread.
+    /// Mac order exactly — run, agent activity, unread.
     ///
     /// The unread badge is back, but as the shared numbered capsule rather than
     /// the bare blue dot removed earlier. That dot went because it was a third
@@ -470,9 +470,6 @@ struct SupermuxSidebarWorkspaceRow: View {
     @ViewBuilder
     private var statusCluster: some View {
         HStack(spacing: 6) {
-            if let pullRequest = workspace.pullRequest {
-                SupermuxMobilePullRequestBadge(pullRequest: pullRequest)
-            }
             if workspace.isRunning {
                 SupermuxMobileRunIndicator()
             }
@@ -488,8 +485,7 @@ struct SupermuxSidebarWorkspaceRow: View {
 
 /// One unopened worktree nested under an expanded project: the branch glyph in
 /// the avatar column, the branch name (after the cloud-Mac icon when it lives
-/// on another Mac than the list's home Mac), a dirty marker, and the PR badge
-/// — the phone twin of the Mac sidebar's `SupermuxWorktreeRowView` and
+/// on another Mac than the list's home Mac) and a dirty marker — the phone twin of the Mac sidebar's `SupermuxWorktreeRowView` and
 /// `SupermuxRemoteWorktreeRowView`. Tapping opens a
 /// workspace in the worktree (m2-f2 flow) through the passed closure.
 ///
@@ -538,9 +534,6 @@ struct SupermuxNestedWorktreeRow: View {
                         .accessibilityHidden(true)
                 }
                 Spacer(minLength: 6)
-                if let pullRequest = worktree.pullRequest {
-                    SupermuxMobilePullRequestBadge(pullRequest: pullRequest)
-                }
             }
             .padding(.trailing, SupermuxProjectRowMetrics.rowHorizontalPadding)
             .frame(minHeight: metrics.compactRowHeight)

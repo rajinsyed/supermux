@@ -4,8 +4,8 @@ public import SwiftUI
 /// row's time, description and preview, as the Mac sidebar's nested row
 /// shows it: one line right under the title with the branch — the small
 /// cloud-Mac icon first when the workspace lives on another Mac than the
-/// list's home Mac — and, centered on the row's trailing edge, the PR badge
-/// and the run indicator.
+/// list's home Mac — and, centered on the row's trailing edge, the run
+/// indicator.
 public struct SupermuxNestedWorkspaceAccessory: Equatable, Sendable {
     /// The workspace's row id.
     public let workspaceID: String
@@ -13,8 +13,6 @@ public struct SupermuxNestedWorkspaceAccessory: Equatable, Sendable {
     public let remoteMac: SupermuxRemoteMac?
     /// The workspace's branch, if the Mac reported one.
     public let branch: String?
-    /// The branch's PR badge, if any.
-    public let pullRequest: SupermuxPullRequestBadgeSnapshot?
     /// Whether the project's run command runs in this workspace.
     public let isRunning: Bool
 
@@ -25,33 +23,30 @@ public struct SupermuxNestedWorkspaceAccessory: Equatable, Sendable {
         workspaceID: String,
         remoteMac: SupermuxRemoteMac?,
         branch: String?,
-        pullRequest: SupermuxPullRequestBadgeSnapshot?,
         isRunning: Bool
     ) {
         self.workspaceID = workspaceID
         self.remoteMac = remoteMac
         self.branch = branch
-        self.pullRequest = pullRequest
         self.isRunning = isRunning
     }
 
     /// Whether the row draws the branch line under its title.
     public var hasBranchLine: Bool { remoteMac != nil || branch != nil }
 
-    /// Whether the row shows the PR badge or run indicator.
-    var hasStatus: Bool { pullRequest != nil || isRunning }
+    /// Whether the row shows the run indicator.
+    var hasStatus: Bool { isRunning }
 
     /// What of the accessory changes the row's height: the branch line adds
     /// a line, and the status takes width beside a title that may wrap.
     public struct LayoutKey: Hashable, Sendable {
         let hasBranchLine: Bool
-        let hasPullRequest: Bool
         let isRunning: Bool
     }
 
     /// The row-height identity of this accessory.
     public var layoutKey: LayoutKey {
-        LayoutKey(hasBranchLine: hasBranchLine, hasPullRequest: pullRequest != nil, isRunning: isRunning)
+        LayoutKey(hasBranchLine: hasBranchLine, isRunning: isRunning)
     }
 }
 
@@ -102,9 +97,9 @@ public struct SupermuxNestedBranchSlot: View {
     }
 }
 
-/// The room the shell row leaves on its trailing edge for a nested row's PR
-/// badge and run indicator, laid out but not drawn, for the same reason as
-/// ``SupermuxNestedBranchSlot``. An empty slot when the row has neither, so
+/// The room the shell row leaves on its trailing edge for a nested row's run
+/// indicator, laid out but not drawn, for the same reason as
+/// ``SupermuxNestedBranchSlot``. An empty slot when the row has none, so
 /// the row's padding around it still keeps text clear of the activity dot.
 public struct SupermuxNestedStatusSlot: View {
     /// How far from the row's trailing edge the status stays, clear of the
@@ -133,8 +128,8 @@ public struct SupermuxNestedStatusSlot: View {
 extension View {
     /// Hands a nested workspace row its accessory and draws it in the room
     /// the row left for it: the branch under its title
-    /// (``SupermuxNestedBranchSlot``), and the PR badge and run indicator on
-    /// its trailing edge (``SupermuxNestedStatusSlot``). Overlays, each its
+    /// (``SupermuxNestedBranchSlot``), and the run indicator on its trailing
+    /// edge (``SupermuxNestedStatusSlot``). Overlays, each its
     /// own accessibility element.
     /// - Parameter accessory: The row's accessory; `nil` draws nothing.
     public func supermuxNestedWorkspaceAccessory(_ accessory: SupermuxNestedWorkspaceAccessory?) -> some View {
@@ -197,15 +192,12 @@ private struct SupermuxNestedBranchLine: View {
     }
 }
 
-/// A nested row's PR badge and run indicator, after its branch as on the Mac.
+/// A nested row's run indicator, after its branch as on the Mac.
 private struct SupermuxNestedWorkspaceStatusView: View {
     let accessory: SupermuxNestedWorkspaceAccessory
 
     var body: some View {
         HStack(spacing: 6) {
-            if let pullRequest = accessory.pullRequest {
-                SupermuxMobilePullRequestBadge(pullRequest: pullRequest)
-            }
             if accessory.isRunning {
                 SupermuxMobileRunIndicator()
             }

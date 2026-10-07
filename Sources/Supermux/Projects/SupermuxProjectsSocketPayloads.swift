@@ -112,7 +112,6 @@ enum SupermuxProjectsSocketPayloads {
         let unread = TerminalNotificationStore.shared.sidebarUnread
         let rows = SupermuxNestedWorkspaceRows.rows(
             for: tabManager,
-            includePullRequest: true,
             unreadCount: { unread.unreadCount(forWorkspaceId: $0) }
         )
         var projectOrder: [UUID] = []
@@ -267,7 +266,7 @@ enum SupermuxProjectsSocketPayloads {
     /// The window's nested workspace rows by owning project (the mount's own builder).
     private static func nestedWorkspacesByProject(for tabManager: TabManager) -> [UUID: [SupermuxOpenWorkspace]] {
         var result: [UUID: [SupermuxOpenWorkspace]] = [:]
-        for row in SupermuxNestedWorkspaceRows.rows(for: tabManager, includePullRequest: false, unreadCount: { _ in 0 }) {
+        for row in SupermuxNestedWorkspaceRows.rows(for: tabManager, unreadCount: { _ in 0 }) {
             guard let projectId = row.projectId else { continue }
             result[projectId, default: []].append(row)
         }

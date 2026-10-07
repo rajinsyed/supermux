@@ -15,8 +15,7 @@ public import Observation
 /// no matter what the UI does. Codex's endpoint is polled by its own TUI at
 /// 60s, so 120s is comfortably polite.
 ///
-/// The model is view-driven like ``SupermuxWorktreePullRequestModel``: each
-/// mounted button runs `.task { await model.runPollLoop(isObserved:) }`, which
+/// The model is view-driven: each mounted button runs `.task { await model.runPollLoop(isObserved:) }`, which
 /// keeps one shared loop alive while any button is mounted. The loop polls
 /// only while one of those buttons' windows is on screen; otherwise it waits,
 /// with no timer, for ``observationDidChange()``. A Mac with no window on

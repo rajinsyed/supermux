@@ -2,30 +2,6 @@ public import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
-/// Deregisters this window's PR-badge client when the section's `@State` is
-/// torn down — a whole-window close skips `onDisappear` (see
-/// ``SupermuxChangesModel``'s `deinit` for the same pitfall), but `@State`
-/// storage is still destroyed, so this token's `deinit` is the backstop that
-/// keeps a closed window's paths out of the shared model's prune union and its
-/// entry out of the client registry. The section's `onDisappear` still calls
-/// ``SupermuxWorktreePullRequestModel/endTracking(client:)`` directly for
-/// prompt cleanup; the double call is harmless because `endTracking` treats
-/// unknown clients as a no-op.
-@MainActor final class SupermuxPullRequestClientToken {
-    /// This section's stable client identity with the (possibly shared) model.
-    let id = UUID()
-    /// The model to deregister from; wired once before the first refresh.
-    /// Weak: the token must never keep a host-shared model alive.
-    weak var model: SupermuxWorktreePullRequestModel?
-    deinit {
-        // deinit of a @MainActor class is not MainActor-isolated, so hop via a
-        // Task — capturing locals, never `self` (it is being destroyed).
-        let model = self.model
-        let id = self.id
-        Task { @MainActor in model?.endTracking(client: id) }
-    }
-}
-
 /// The sticky "Projects" section rendered at the top of the cmux sidebar.
 ///
 /// Shows every registered project with quick actions to open it locally or
@@ -33,8 +9,7 @@ import UniformTypeIdentifiers
 /// app supplies a ``SupermuxWorkspaceOpening`` so activating a row opens (or
 /// focuses) a real cmux workspace.
 public struct SupermuxProjectsSectionView: View {
-    // Internal (not private) where the PR-probe extension in
-    // `SupermuxProjectsSectionView+PullRequests.swift` needs access.
+    // Internal (not private) where the section's extensions need access.
     @Bindable var model: SupermuxProjectsModel
     let opener: any SupermuxWorkspaceOpening
     let openWorkspaces: [SupermuxOpenWorkspace]
@@ -42,10 +17,6 @@ public struct SupermuxProjectsSectionView: View {
     let onCloseWorkspace: (UUID) -> Void
     private let onRenameWorkspace: (UUID, String) -> Void
     private let onReorderWorkspace: (UUID, UUID) -> Void
-    let onOpenPullRequest: (URL, UUID?) -> Void
-    /// Host-supplied gate/cadence for the worktree PR probe (mirrors cmux's
-    /// own PR polling settings). Defaults to enabled at 60s.
-    let pullRequestPolling: SupermuxPullRequestPollingPolicy
     /// Launcher, model catalog, and command settings behind "Start Claude in a
     /// New Worktree"; `nil` hides that entry point everywhere in the section.
     let agentLaunch: SupermuxAgentLaunchEnvironment?
@@ -64,18 +35,6 @@ public struct SupermuxProjectsSectionView: View {
     let pendingWorktreeOwner: AnyObject?
     /// Presents "Set Up on <Mac>…".
     @State var projectSetupTarget: SupermuxProjectSetupTarget?
-
-    /// Resolves pull requests for unopened worktrees (opened ones reuse cmux's
-    /// own probe via ``SupermuxOpenWorkspace/pullRequest``). Owned here at the
-    /// section level — never by a row — so rows receive immutable PR value
-    /// snapshots, preserving the sidebar snapshot boundary. May be a shared,
-    /// host-injected instance serving every window (see `init`).
-    @State var pullRequestModel: SupermuxWorktreePullRequestModel
-    /// This section's stable identity with the (possibly shared) PR model, so
-    /// one window's refresh never prunes badges another window still tracks.
-    /// A deinit token rather than a bare `UUID` so a whole-window close (which
-    /// skips `onDisappear`) still deregisters the client.
-    @State var pullRequestClientToken = SupermuxPullRequestClientToken()
 
     @State private var editorProject: SupermuxProject?
     /// In-flight drag-reorder marker (project or nested workspace). A reference
@@ -113,27 +72,15 @@ public struct SupermuxProjectsSectionView: View {
     ///     newTitle)` (an empty title clears it, reverting to the process title).
     ///   - onReorderWorkspace: Reorders a nested workspace `(draggedId,
     ///     targetId)` within its project (wired to the host's tab order).
-    ///   - onOpenPullRequest: Opens a PR badge's URL; the second argument is
-    ///     the open workspace the badge belongs to (`nil` for an unopened
-    ///     worktree's badge). Defaults to the system browser; the host
-    ///     overrides it to honor cmux's PR-link routing and open the PR in the
-    ///     badge's own workspace.
-    ///   - pullRequestPolling: Gate + cadence for the worktree PR probe; the
-    ///     host derives it from cmux's PR polling settings. Defaults to the
-    ///     standalone behavior (enabled, 60s).
-    ///   - pullRequestModel: A host-owned PR model shared across windows so one
-    ///     poll pass and one repo cache serve every sidebar. Pass a **stable**
-    ///     instance (it seeds `@State` on first mount). `nil` (the default)
-    ///     keeps a private per-section model.
     ///   - iconStore: A host-owned logo cache shared across windows (and the
-    ///     workspace switcher). Same stable-instance contract as
-    ///     `pullRequestModel`; `nil` keeps a private per-section store. Note
+    ///     workspace switcher). Pass a **stable** instance (it seeds `@State`
+    ///     on first mount); `nil` keeps a private per-section store. Note
     ///     the store's `refresh(projects:)` prunes entries missing from the
     ///     passed list, so shared callers must always pass the full project
     ///     list (this section does).
     ///   - pendingWorktrees: A host-owned store of background creates shared
-    ///     across windows. Same stable-instance contract as
-    ///     `pullRequestModel`; `nil` keeps a private per-section store.
+    ///     across windows. Same stable-instance contract as `iconStore`;
+    ///     `nil` keeps a private per-section store.
     ///   - pendingWorktreeOwner: This window's key in that store, so the
     ///     window shows (and retries) only the creates it started.
     public init(
@@ -144,9 +91,6 @@ public struct SupermuxProjectsSectionView: View {
         onCloseWorkspace: @escaping (UUID) -> Void = { _ in },
         onRenameWorkspace: @escaping (UUID, String) -> Void = { _, _ in },
         onReorderWorkspace: @escaping (UUID, UUID) -> Void = { _, _ in },
-        onOpenPullRequest: @escaping (URL, UUID?) -> Void = { url, _ in _ = NSWorkspace.shared.open(url) },
-        pullRequestPolling: SupermuxPullRequestPollingPolicy = SupermuxPullRequestPollingPolicy(),
-        pullRequestModel: SupermuxWorktreePullRequestModel? = nil,
         iconStore: SupermuxProjectIconStore? = nil,
         pendingWorktrees: SupermuxPendingWorktreeStore? = nil,
         pendingWorktreeOwner: AnyObject? = nil,
@@ -162,9 +106,6 @@ public struct SupermuxProjectsSectionView: View {
         self.onCloseWorkspace = onCloseWorkspace
         self.onRenameWorkspace = onRenameWorkspace
         self.onReorderWorkspace = onReorderWorkspace
-        self.onOpenPullRequest = onOpenPullRequest
-        self.pullRequestPolling = pullRequestPolling
-        _pullRequestModel = State(initialValue: pullRequestModel ?? SupermuxWorktreePullRequestModel())
         _iconStore = State(initialValue: iconStore ?? SupermuxProjectIconStore())
         _pendingWorktrees = State(initialValue: pendingWorktrees ?? SupermuxPendingWorktreeStore())
         self.pendingWorktreeOwner = pendingWorktreeOwner
@@ -193,7 +134,6 @@ public struct SupermuxProjectsSectionView: View {
                         project: project,
                         detectedIcon: iconStore.image(for: project.id),
                         worktrees: model.worktreesByProjectId[project.id] ?? [],
-                        worktreePullRequests: worktreePullRequests(for: project.id),
                         openWorkspaces: grouped[project.id] ?? [],
                         isExpanded: model.expandedProjectIds.contains(project.id),
                         actions: rowActions(for: project),
@@ -270,13 +210,6 @@ public struct SupermuxProjectsSectionView: View {
             // Backstop for a drag still in flight when the section goes away.
             dragFailsafe.stop()
             dragState.commitProjectOrder = nil
-            // The (possibly shared) PR model prunes badges to the union of all
-            // clients' tracked paths, so a torn-down section must deregister —
-            // otherwise its paths stay in the union forever and the client
-            // registry grows across window open/close cycles. Kept alongside
-            // the token's deinit backstop for prompt cleanup; the eventual
-            // double endTracking is a no-op for the already-removed client.
-            pullRequestModel.endTracking(client: pullRequestClientToken.id)
         }
         .task { await model.loadIfNeeded() }
         // Re-resolve logos whenever the set of projects (or their roots) changes.
@@ -289,14 +222,6 @@ public struct SupermuxProjectsSectionView: View {
         }
         .task(id: iconResolutionToken) {
             await iconStore.refresh(projects: model.projects)
-        }
-        // Probe pull requests for the unopened worktrees currently shown (under
-        // expanded projects, section not collapsed, polling enabled). Re-runs
-        // when that set changes, then re-polls on the policy interval to catch
-        // open→merged/closed transitions; opened worktrees reuse cmux's own
-        // probe and aren't fetched here.
-        .task(id: worktreePullRequestProbeToken) {
-            await runWorktreePullRequestProbe()
         }
         .sheet(item: $newWorktreeSheet) { item in
             SupermuxNewWorktreeSheet(
@@ -359,8 +284,7 @@ public struct SupermuxProjectsSectionView: View {
             renameWorkspace: { promptRenameWorkspace(id: $0) },
             moveUp: { moveProject(project, by: -1) },
             moveDown: { moveProject(project, by: 1) },
-            reorderWorkspace: onReorderWorkspace,
-            openPullRequest: onOpenPullRequest
+            reorderWorkspace: onReorderWorkspace
         )
     }
 
@@ -459,12 +383,7 @@ public struct SupermuxProjectsSectionView: View {
             colorHex: project.colorHex,
             projectId: project.id,
             setupScript: setupScript,
-            setupEnvironment: setupEnvironment,
-            // Hand the badge this worktree row is showing to the host: the
-            // probe drops the path once it is an open workspace, and the
-            // nested row would otherwise go blank until cmux's own probe
-            // chain catches up (see SupermuxOpenWorkspaceRequest.pullRequest).
-            pullRequest: pullRequestModel.pullRequestsByWorktreePath[worktree.path]
+            setupEnvironment: setupEnvironment
         )
         opener.openWorkspace(selectsWorkspace ? request : request.inBackground)
     }

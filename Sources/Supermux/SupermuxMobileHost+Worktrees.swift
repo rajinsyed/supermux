@@ -11,9 +11,7 @@ import SupermuxMobileCore
 /// script runs in a dedicated terminal exactly like the desktop flow.
 extension TerminalController {
     /// `mobile.supermux.worktrees.list`: the project's worktrees as
-    /// `{worktrees: [SupermuxWorktreeDTO]}`, folding open-workspace state and
-    /// pull-request badges (per-workspace probe for opened worktrees, the
-    /// shared ``SupermuxWorktreePullRequestModel`` for unopened ones). Local
+    /// `{worktrees: [SupermuxWorktreeDTO]}`, folding open-workspace state. Local
     /// `branches` are included only when `include_branches` is true.
     @MainActor
     func v2SupermuxWorktreesList(params: [String: Any]) async -> V2CallResult {
@@ -56,9 +54,7 @@ extension TerminalController {
             let payload = try SupermuxMobileWorktreesPayloadBuilder().worktreesList(
                 worktrees: worktrees,
                 branches: branches,
-                openWorkspaces: supermuxOpenWorkspaceSnapshots(),
-                pullRequestsByWorktreePath:
-                    SupermuxComposition.worktreePullRequestModel.pullRequestsByWorktreePath
+                openWorkspaces: supermuxOpenWorkspaceSnapshots()
             )
             return .ok(payload)
         } catch {
@@ -317,9 +313,7 @@ extension TerminalController {
     }
 
     /// Light snapshots of every open workspace across all main windows, for
-    /// worktree open-state matching and the opened-worktree PR fold (cmux's
-    /// own per-workspace probe — the same source the desktop rows use).
-    /// Device mirrors are left out: their directory is the other Mac's path,
+    /// worktree open-state matching. Device mirrors are left out: their directory is the other Mac's path,
     /// and their ids never reach the phone or other Macs (host export filter).
     @MainActor
     private func supermuxOpenWorkspaceSnapshots() -> [SupermuxOpenWorkspace] {
@@ -336,9 +330,7 @@ extension TerminalController {
                     id: workspace.id,
                     title: workspace.customTitle ?? workspace.title,
                     directory: workspace.currentDirectory,
-                    isSelected: false,
-                    pullRequest: workspace.sidebarPullRequestsInDisplayOrder().first
-                        .flatMap(SupermuxPullRequest.init(sidebarState:))
+                    isSelected: false
                 ))
             }
         }

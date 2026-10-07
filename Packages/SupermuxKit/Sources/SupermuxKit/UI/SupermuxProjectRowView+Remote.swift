@@ -20,8 +20,7 @@ extension SupermuxProjectRowView {
             SupermuxRemoteWorktreeRowView(
                 worktree: worktree,
                 open: { remoteActions.openWorktree(worktree) },
-                delete: { deleteBranch in remoteActions.removeWorktree(worktree, deleteBranch) },
-                openPullRequest: { url in actions.openPullRequest(url, nil) }
+                delete: { deleteBranch in remoteActions.removeWorktree(worktree, deleteBranch) }
             )
         }
         .transition(.opacity.combined(with: .move(edge: .top)))

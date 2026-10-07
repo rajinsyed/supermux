@@ -32,8 +32,6 @@ struct SupermuxOpenWorkspaceRowView: View, Equatable {
     /// drag-start write dims only this row in place; reading it in the parent
     /// `ForEach` would recreate the row and cancel the drag.
     @Binding var draggingWorkspaceId: UUID?
-    /// Opens the workspace's PR badge URL (cmux's per-workspace PR state).
-    var openPullRequest: (URL) -> Void = { _ in }
     /// A device mirror's extra menu items from the host (its "Ports on <Mac>").
     var mirrorMenu: @MainActor () -> AnyView = { AnyView(EmptyView()) }
 
@@ -71,18 +69,11 @@ struct SupermuxOpenWorkspaceRowView: View, Equatable {
                 }
             }
             Spacer(minLength: 2)
-            if let pullRequest = workspace.pullRequest {
-                SupermuxPullRequestBadge(
-                    pullRequest: pullRequest,
-                    fontScale: fontScale,
-                    onOpen: openPullRequest
-                )
-            }
             if workspace.isRunning {
                 SupermuxRunIndicator()
             }
             // Agent activity: only the amber working spinner, rendered as the
-            // rightmost element (after the PR badge and run status) so the
+            // rightmost element (after the run status) so the
             // loading signal always sits at the row's right edge. The
             // needs-input and ready dots are deliberately not shown — one
             // working indicator per row, nothing when the agent is settled.
@@ -94,8 +85,8 @@ struct SupermuxOpenWorkspaceRowView: View, Equatable {
             // count whether it renders flat, nested, or on the phone. 7pt, not
             // the flat rows' 9pt: the shared style's capsule stands 1.6× its
             // font, and this row's neighbors are smaller than a flat row's —
-            // an 11pt PR icon and a 6pt activity spinner — so 7pt lands the
-            // capsule at 11pt, level with the PR badge instead of over it.
+            // a 6pt activity spinner — so 7pt lands the capsule at 11pt,
+            // level with the row's other trailing glyphs instead of over them.
             if workspace.unreadCount > 0 {
                 SupermuxUnreadBadgeView(
                     count: workspace.unreadCount,

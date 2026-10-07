@@ -2,8 +2,8 @@ import SwiftUI
 
 /// One open workspace nested under the project, laid out like the mac
 /// sidebar's `SupermuxOpenWorkspaceRowView`: title with a monospaced branch
-/// subtitle, then the trailing status cluster — agent activity, PR badge,
-/// run indicator — plus the phone's unread dot and navigation chevron.
+/// subtitle, then the trailing status cluster — agent activity, run
+/// indicator — plus the phone's unread dot and navigation chevron.
 /// Tapping opens the workspace through the shell's own navigation closure.
 struct SupermuxProjectWorkspaceRow: View {
     let workspace: SupermuxProjectWorkspaceRowSnapshot
@@ -30,13 +30,10 @@ struct SupermuxProjectWorkspaceRow: View {
                 }
                 Spacer(minLength: 4)
                 // Status cluster on the trailing edge, mac order: activity,
-                // PR badge, run indicator (idle activity renders nothing).
+                // run indicator (idle activity renders nothing).
                 // 9: this row titles in `.subheadline`, matching the sidebar's
                 // nested rows rather than the shell tiles' headline scale.
                 SupermuxWorkspaceActivityDot(activity: workspace.activity, size: 9)
-                if let pullRequest = workspace.pullRequest {
-                    SupermuxMobilePullRequestBadge(pullRequest: pullRequest)
-                }
                 if workspace.isRunning {
                     SupermuxMobileRunIndicator()
                 }

@@ -8,7 +8,6 @@ struct SupermuxRemoteWorktreeRowView: View {
     let open: () -> Void
     /// Removes the worktree on its Mac; `true` also deletes the branch.
     let delete: (Bool) -> Void
-    var openPullRequest: (URL) -> Void = { _ in }
 
     @Environment(\.supermuxSidebarFontScale) private var fontScale
     @State private var isHovered = false
@@ -33,9 +32,6 @@ struct SupermuxRemoteWorktreeRowView: View {
                     .truncationMode(.tail)
             }
             Spacer(minLength: 2)
-            if let pullRequest = worktree.pullRequest {
-                SupermuxPullRequestBadge(pullRequest: pullRequest, fontScale: fontScale, onOpen: openPullRequest)
-            }
             Image(systemName: "arrow.right")
                 .font(.system(size: 8.5 * fontScale, weight: .semibold))
                 .foregroundStyle(.tertiary)
