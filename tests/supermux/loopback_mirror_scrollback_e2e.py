@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
-"""End-to-end test: a lone modifier key leaves another Mac's terminal where you scrolled it.
+"""End-to-end test: another Mac's terminal stays where you scrolled it.
 
-Reading back through a device mirror's scrollback, pressing Cmd on its own (or Shift,
-Option, Control) threw the view back to the bottom. The mirror forwards every key press
-to the Mac that runs the terminal, and a forwarded key goes through Ghostty's text-input
-path, which scrolls to the bottom for every keystroke it sees, modifier or not. A
-terminal on this Mac never moves for a modifier: Ghostty's own key path skips them.
+Reading back through a device mirror's scrollback, the view was thrown to the live bottom:
+
+- by pressing Cmd on its own (or Shift, Option, Control). The mirror forwards every key
+  press to the Mac that runs the terminal, and a forwarded key goes through Ghostty's
+  text-input path, which scrolls to the bottom for every keystroke it sees, modifier or
+  not. A terminal on this Mac never moves for a modifier: Ghostty's own key path skips them.
+- "at random", whenever the mirror took a full replay of the other Mac's screen (`ESC c`,
+  `CSI 3 J`, then the screen and its history): the confirmation re-capture once output
+  goes quiet, every grid change, a reconnect that cannot resume. The replay rebuilds the
+  terminal at the live bottom.
 
 This suite runs against one tagged DEBUG build with the loopback device ("Loopback Mac" =
 this app's own mobile host), so the source workspace is the "other Mac" and its auto
@@ -18,7 +23,10 @@ app's process, so they take the same `flagsChanged` / `keyDown` path a keyboard 
   3. mirror_scrolled_up             the mirror, focused and scrolled up, shows older lines
   4. <modifier>_keeps_scrollback    Cmd, Shift, Option and Control pressed and released alone
                                     leave the mirror's view where it was
-  5. keystroke_returns_to_bottom    control: a Right-arrow press still brings the mirror back to
+  5. full_replay_keeps_scrollback   a full replay (a reconnect to a host that cannot resume,
+                                    `terminal_stream.pretend_old_host`) leaves the view on the
+                                    lines being read; the replay count proves one happened
+  6. keystroke_returns_to_bottom    control: a Right-arrow press still brings the mirror back to
                                     the live bottom (keys reach it, and keystrokes still follow)
 
 Writes a JSON report (default tests/supermux/artifacts/loopback_mirror_scrollback_e2e-<tag>.json)
@@ -55,6 +63,7 @@ from loopback_auto_mirror_e2e import (  # noqa: E402
 )
 
 SIZING = "supermux.devices.terminal_sizing."
+STREAM = "supermux.devices.terminal_stream."
 OUTPUT_LINES = 1500
 SCROLL_LINES = 40
 # How long a key gets to move the view before the view counts as kept.
@@ -235,6 +244,47 @@ class MirrorScrollbackE2E:
             time.sleep(0.1)
         return {"top_line_before": before, "top_line_after": self.top_line()}
 
+    def full_replays(self) -> int:
+        stats = self.sock.call(STREAM + "stats", {"machine": self.machine}) or {}
+        for pane in stats.get("panes") or []:
+            if up(pane.get("panel_id")) == up(self.mirror_surface):
+                return int(pane.get("full_replays") or 0)
+        raise Failure(f"no stream stats for the mirror pane {self.mirror_surface}")
+
+    def reconnect(self, old_host: bool) -> None:
+        """Drops the loopback link and dials it again; `old_host` makes this host
+        one that cannot resume, so the mirror re-attaches with a full replay."""
+        self.sock.call(STREAM + "pretend_old_host", {"enabled": old_host})
+        self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "stop"})
+        time.sleep(1.0)
+        self.sock.call("supermux.devices.link", {"machine": self.machine, "action": "restore"})
+
+    def full_replay_keeps_scrollback(self) -> Dict[str, Any]:
+        if self.at_bottom():
+            self.scroll_up()
+        before, replays = self.top_line(), self.full_replays()
+        try:
+            self.reconnect(old_host=True)
+            wait_for("a full replay of the mirror", lambda: self.full_replays() > replays, self.timeout)
+            try:
+                wait_for(f"the view back on {before!r}", lambda: self.top_line() == before, 5.0, interval_s=0.1)
+            except Failure:
+                raise Failure(f"a full replay moved the mirror's view: top line {before!r} -> {self.top_line()!r}"
+                              f"{' (the live bottom)' if self.at_bottom() else ''}")
+            time.sleep(SETTLE_S)
+            if self.top_line() != before:
+                raise Failure(f"the view left {before!r} after the replay: now {self.top_line()!r}")
+            return {"top_line_before": before, "top_line_after": self.top_line(), "full_replays": self.full_replays() - replays}
+        finally:
+            self.reconnect(old_host=False)
+            wait_for("the loopback link to reconnect", self.link_connected, self.timeout)
+
+    def link_connected(self) -> bool:
+        for device in (self.sock.call("supermux.devices.list", {}) or {}).get("devices") or []:
+            if device.get("is_loopback"):
+                return device.get("link_state") == "connected"
+        return False
+
     def keystroke_returns_to_bottom(self) -> Dict[str, Any]:
         if self.at_bottom():
             self.scroll_up()
@@ -260,6 +310,7 @@ class MirrorScrollbackE2E:
         if ok:
             for name in MODIFIERS:
                 ok = self.step(f"{name}_keeps_scrollback", lambda name=name: self.modifier_keeps_scrollback(name)) and ok
+            ok = self.step("full_replay_keeps_scrollback", self.full_replay_keeps_scrollback) and ok
             ok = self.step("keystroke_returns_to_bottom", self.keystroke_returns_to_bottom) and ok
         self.cleanup()
         return ok
