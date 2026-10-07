@@ -48,6 +48,9 @@ public struct SupermuxRemoteProjectActions {
     /// Removes a remote worktree; the Bool also deletes its branch. Asks before
     /// forcing a dirty worktree.
     public var removeWorktree: (SupermuxRemoteWorktree, Bool) -> Void
+    /// "Delete All Worktrees" of that Mac's copy (the project name titles the
+    /// confirmation): ``SupermuxDeleteAllWorktreesFlow`` over the device link.
+    public var removeAllWorktrees: (SupermuxProjectLocation, String) -> Void
     /// Runs a project action on that Mac (`action.run`; URL actions open here).
     public var runAction: (SupermuxProjectLocation, SupermuxProjectActionDTO) -> Void
     /// Unregisters the project on that Mac after a confirmation (`project.delete`).
@@ -75,6 +78,7 @@ public struct SupermuxRemoteProjectActions {
         openProject: @escaping (SupermuxProjectLocation) -> Void,
         openWorktree: @escaping (SupermuxRemoteWorktree) -> Void,
         removeWorktree: @escaping (SupermuxRemoteWorktree, Bool) -> Void,
+        removeAllWorktrees: @escaping (SupermuxProjectLocation, String) -> Void = { _, _ in },
         runAction: @escaping (SupermuxProjectLocation, SupermuxProjectActionDTO) -> Void,
         removeProject: @escaping (SupermuxProjectLocation, String) -> Void,
         loadWorktrees: @escaping (SupermuxProjectLocation) -> Void,
@@ -87,6 +91,7 @@ public struct SupermuxRemoteProjectActions {
         self.openProject = openProject
         self.openWorktree = openWorktree
         self.removeWorktree = removeWorktree
+        self.removeAllWorktrees = removeAllWorktrees
         self.runAction = runAction
         self.removeProject = removeProject
         self.loadWorktrees = loadWorktrees

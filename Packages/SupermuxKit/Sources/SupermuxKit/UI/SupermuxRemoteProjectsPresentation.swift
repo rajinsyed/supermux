@@ -15,18 +15,23 @@ public struct SupermuxProjectRemoteExtras: Equatable, Sendable {
     public let setUpTargets: [SupermuxProjectSetupDestination]
     /// The repository URL a clone would use, if known.
     public let remoteURL: String?
+    /// The device copies that have at least one worktree, open or not
+    /// ("Delete All Worktrees on ▸").
+    public let worktreeLocations: [SupermuxProjectLocation]
 
     /// Creates the extras.
     public init(
         project: SupermuxUnifiedProject,
         worktrees: [SupermuxRemoteWorktree],
         setUpTargets: [SupermuxProjectSetupDestination],
-        remoteURL: String?
+        remoteURL: String?,
+        worktreeLocations: [SupermuxProjectLocation] = []
     ) {
         self.project = project
         self.worktrees = worktrees
         self.setUpTargets = setUpTargets
         self.remoteURL = remoteURL
+        self.worktreeLocations = worktreeLocations
     }
 }
 
@@ -50,6 +55,8 @@ public struct SupermuxRemoteProjectRow: Identifiable {
     public let setUpTargets: [SupermuxProjectSetupDestination]
     /// The repository URL a clone would use, if known.
     public let remoteURL: String?
+    /// Whether that copy has any worktree, open or not ("Delete All Worktrees…").
+    public let hasWorktrees: Bool
 
     /// Creates the row value.
     public init(
@@ -61,8 +68,10 @@ public struct SupermuxRemoteProjectRow: Identifiable {
         isRunning: Bool,
         worktrees: [SupermuxRemoteWorktree],
         setUpTargets: [SupermuxProjectSetupDestination],
-        remoteURL: String?
+        remoteURL: String?,
+        hasWorktrees: Bool = false
     ) {
+        self.hasWorktrees = hasWorktrees
         self.project = project
         self.avatar = avatar
         self.icon = icon

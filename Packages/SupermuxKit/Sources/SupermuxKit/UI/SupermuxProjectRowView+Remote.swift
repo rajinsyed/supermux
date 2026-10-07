@@ -3,7 +3,7 @@ import SwiftUI
 /// A local project row's other-Mac parts: device copies' unopened worktrees
 /// (with device chips), "Open on ▸ <Mac>" and "New Worktree on ▸ <Mac>" when
 /// the project lives on more than one Mac, remote worktrees in the Worktrees
-/// menu, and "Set Up on <Mac>…".
+/// menu, "Delete All Worktrees on ▸ <Mac>", and "Set Up on <Mac>…".
 extension SupermuxProjectRowView {
     /// Unopened worktrees of the device copies (loaded on every refresh).
     var remoteWorktrees: [SupermuxRemoteWorktree] { remoteExtras?.worktrees ?? [] }
@@ -65,6 +65,20 @@ extension SupermuxProjectRowView {
         if !remoteWorktrees.isEmpty {
             Divider()
             SupermuxRemoteWorktreeMenuItems(worktrees: remoteWorktrees, actions: remoteActions)
+        }
+    }
+
+    /// "Delete All Worktrees…" on This Mac, or "Delete All Worktrees on ▸"
+    /// when another Mac's copy has worktrees too.
+    var deleteAllWorktreesMenuItems: some View {
+        SupermuxDeleteAllWorktreesMenuItems(
+            menu: SupermuxDeleteAllWorktreesMenu(worktrees: worktrees, extras: remoteExtras),
+            rowTarget: .thisMac
+        ) { target in
+            switch target {
+            case .thisMac: actions.deleteAllWorktrees()
+            case .device(let location): remoteActions.removeAllWorktrees(location, project.name)
+            }
         }
     }
 

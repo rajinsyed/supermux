@@ -24,13 +24,15 @@ enum SupermuxRemoteProjectsPresenter {
             let worktrees = remoteWorktrees(of: project, remote: remote, mirroredRefs: mirroredRefs)
             var targets = project.devicesLacking(among: setUpDevices).map(SupermuxProjectSetupDestination.device)
             let remoteURL = repositoryURL(of: project, remote: remote)
+            let worktreeLocations = project.remoteLocations.filter { hasWorktrees($0, remote: remote) }
             if let localID = project.localProjectID {
                 guard !project.remoteLocations.isEmpty || !targets.isEmpty else { continue }
                 extras[localID] = SupermuxProjectRemoteExtras(
                     project: project,
                     worktrees: worktrees,
                     setUpTargets: targets,
-                    remoteURL: remoteURL
+                    remoteURL: remoteURL,
+                    worktreeLocations: worktreeLocations
                 )
             } else if let location = project.locations.first, let machineID = location.machineID {
                 targets.insert(.thisMac, at: 0)
@@ -52,7 +54,8 @@ enum SupermuxRemoteProjectsPresenter {
                     isRunning: state?.isRunning(projectID: location.projectID) ?? false,
                     worktrees: worktrees,
                     setUpTargets: targets,
-                    remoteURL: remoteURL
+                    remoteURL: remoteURL,
+                    hasWorktrees: worktreeLocations.contains(location)
                 ))
             }
         }
@@ -108,6 +111,14 @@ enum SupermuxRemoteProjectsPresenter {
             }
         }
         return result
+    }
+
+    /// Whether a device copy has any worktree, open or not, in the last list
+    /// its Mac gave.
+    private static func hasWorktrees(_ location: SupermuxProjectLocation, remote: SupermuxRemoteProjectsModel) -> Bool {
+        guard let machineID = location.machineID else { return false }
+        let listed = remote.device(SurfaceMachineID(rawValue: machineID))?.worktreesByProjectID[location.projectID]
+        return !(listed ?? []).isEmpty
     }
 
     /// The repository a clone would use: a device copy's origin, else this

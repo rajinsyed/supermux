@@ -186,19 +186,30 @@ final class SupermuxRemoteProjectsModel {
     /// failure, a dropped link) keeps the previous one: it is not a failure of
     /// that Mac's refresh, so its `lastError` is left alone.
     func refreshWorktrees(on machine: SurfaceMachineID, projectID: UUID) async {
+        wantedWorktrees.insert(Self.projectKey(machine: machine, projectID: projectID))
+        guard device(machine)?.isOnline == true else { return }
+        _ = try? await loadWorktrees(on: machine, projectID: projectID)
+    }
+
+    /// Like ``refreshWorktrees(on:projectID:)``, but returns the fresh list and
+    /// throws when that Mac cannot give it, so "Delete All Worktrees" never
+    /// acts on a stale list.
+    @discardableResult
+    func loadWorktrees(on machine: SurfaceMachineID, projectID: UUID) async throws -> [SupermuxWorktreeDTO] {
         let key = Self.projectKey(machine: machine, projectID: projectID)
         wantedWorktrees.insert(key)
-        guard device(machine)?.isOnline == true,
-              let worktrees = try? await facade.request(
-                  SupermuxMobileMethod.worktreesList.rawValue,
-                  params: ["project_id": projectID.uuidString, "include_branches": false],
-                  on: machine,
-                  resultKey: "worktrees",
-                  as: [SupermuxWorktreeDTO].self
-              ),
-              wantedWorktrees.contains(key) // the Mac may have stopped listing it meanwhile
-        else { return }
-        update(machine) { $0.worktreesByProjectID[projectID] = worktrees }
+        let worktrees = try await facade.request(
+            SupermuxMobileMethod.worktreesList.rawValue,
+            params: ["project_id": projectID.uuidString, "include_branches": false],
+            on: machine,
+            resultKey: "worktrees",
+            as: [SupermuxWorktreeDTO].self
+        )
+        // The Mac may have stopped listing the project meanwhile.
+        if wantedWorktrees.contains(key) {
+            update(machine) { $0.worktreesByProjectID[projectID] = worktrees }
+        }
+        return worktrees
     }
 
     /// Refetches only one Mac's `run.state` (after a mirror's Run / Stop, and

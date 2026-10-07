@@ -154,6 +154,44 @@ struct SupermuxRemoteProjectCommands {
         await remoteProjects.refreshWorktrees(on: machine, projectID: worktree.location.projectID)
     }
 
+    /// `worktrees.list` there, fresh: every worktree of that copy, the set
+    /// "Delete All Worktrees" confirms and deletes. Throws when that Mac
+    /// cannot list them.
+    func worktreesForRemoval(_ location: SupermuxProjectLocation) async throws -> [SupermuxRemoteWorktree] {
+        let machine = try Self.machine(of: location)
+        return try await remoteProjects.loadWorktrees(on: machine, projectID: location.projectID).map { worktree in
+            SupermuxRemoteWorktree(
+                location: location,
+                path: worktree.path,
+                branch: worktree.branch,
+                isDirty: worktree.isDirty ?? false
+            )
+        }
+    }
+
+    /// Removes each worktree in turn through ``removeWorktree(_:deleteBranch:force:)``,
+    /// keeping dirty ones and failures apart instead of stopping at the first.
+    func removeWorktrees(
+        _ worktrees: [SupermuxRemoteWorktree],
+        deleteBranch: Bool,
+        force: Bool
+    ) async -> SupermuxWorktreeBulkRemovalResult<SupermuxRemoteWorktree> {
+        await .removing(worktrees, isDirty: Self.isDirtyWorktree) { worktree in
+            try await removeWorktree(worktree, deleteBranch: deleteBranch, force: force)
+        }
+    }
+
+    /// "Delete All Worktrees" of that Mac's copy: the shared flow over the
+    /// two calls above.
+    func deleteAllWorktreesFlow(_ location: SupermuxProjectLocation) -> SupermuxDeleteAllWorktreesFlow<SupermuxRemoteWorktree> {
+        SupermuxDeleteAllWorktreesFlow(
+            list: { try await worktreesForRemoval(location) },
+            remove: { batch, force, deleteBranches in
+                await removeWorktrees(batch, deleteBranch: deleteBranches, force: force)
+            }
+        )
+    }
+
     /// `action.run` there. Returns the URL of an `open_url` action, which the
     /// caller opens on this Mac. A command runs where the user is looking,
     /// like a local project action: in the workspace whose mirror this window

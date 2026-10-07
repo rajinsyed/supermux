@@ -94,7 +94,10 @@ public actor SupermuxGitWorktreeService {
         return stdout.split(separator: "\n").map(String.init)
     }
 
-    /// Lists the project's linked worktrees (the primary checkout is omitted).
+    /// Lists the project's linked worktrees. The primary checkout is omitted:
+    /// the project root, and the repository's main checkout (git lists it
+    /// first), which differ when the project is registered at a linked
+    /// worktree. Every listed worktree is therefore safe to remove.
     /// - Parameter project: The project whose repository is inspected.
     /// - Returns: Worktrees in `git worktree list` order.
     /// - Throws: ``SupermuxGitError/gitFailed(command:message:)`` when git errors.
@@ -120,40 +123,30 @@ public actor SupermuxGitWorktreeService {
         // nothing so no sibling worktree is ever reported as supermux-owned.
         let lexicalWorktreesDir = SupermuxWorktreePath.lexicalWorktreesDir(canonicalRoot: rootPath, project: project)
         let managedPrefix = lexicalWorktreesDir.hasPrefix(rootPath + "/") ? worktreesDir + "/" : "\u{0}"
-        var worktrees: [SupermuxProjectWorktree] = []
-        var path: String?
-        var branch: String?
-        for rawLine in stdout.split(separator: "\n", omittingEmptySubsequences: false) {
-            let line = String(rawLine)
+        // `dropFirst`: git always lists the main checkout first.
+        return Self.porcelainEntries(stdout).dropFirst().compactMap { entry in
+            let normalized = SupermuxWorktreePath.canonical(entry.path)
+            guard normalized != rootPath else { return nil }
+            return SupermuxProjectWorktree(
+                path: normalized,
+                branch: entry.branch,
+                isSupermuxManaged: normalized.hasPrefix(managedPrefix)
+            )
+        }
+    }
+
+    /// The `(path, branch)` of each entry of `git worktree list --porcelain`,
+    /// in git's order.
+    private static func porcelainEntries(_ stdout: String) -> [(path: String, branch: String?)] {
+        var entries: [(path: String, branch: String?)] = []
+        for line in stdout.split(separator: "\n") {
             if line.hasPrefix("worktree ") {
-                path = String(line.dropFirst("worktree ".count))
-                branch = nil
-            } else if line.hasPrefix("branch refs/heads/") {
-                branch = String(line.dropFirst("branch refs/heads/".count))
-            } else if line.isEmpty, let entryPath = path {
-                let normalized = SupermuxWorktreePath.canonical(entryPath)
-                if normalized != rootPath {
-                    worktrees.append(SupermuxProjectWorktree(
-                        path: normalized,
-                        branch: branch,
-                        isSupermuxManaged: normalized.hasPrefix(managedPrefix)
-                    ))
-                }
-                path = nil
-                branch = nil
+                entries.append((String(line.dropFirst("worktree ".count)), nil))
+            } else if line.hasPrefix("branch refs/heads/"), !entries.isEmpty {
+                entries[entries.count - 1].branch = String(line.dropFirst("branch refs/heads/".count))
             }
         }
-        if let entryPath = path {
-            let normalized = SupermuxWorktreePath.canonical(entryPath)
-            if normalized != rootPath {
-                worktrees.append(SupermuxProjectWorktree(
-                    path: normalized,
-                    branch: branch,
-                    isSupermuxManaged: normalized.hasPrefix(managedPrefix)
-                ))
-            }
-        }
-        return worktrees
+        return entries
     }
 
     /// Creates a new worktree with a fresh branch.
