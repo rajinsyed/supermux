@@ -4,8 +4,8 @@ import Testing
 
 /// Behavior tests for the project-level "Delete All Worktrees" path
 /// (``SupermuxProjectsModel/removeAllWorktrees(projectId:deleteBranch:)``):
-/// every clean managed worktree goes, dirty ones are kept and reported for a
-/// forced retry, and worktrees supermux does not manage are never touched.
+/// every clean worktree goes wherever it lives, dirty ones are kept and
+/// reported for a forced retry, and the main checkout is never touched.
 // Serialized: shells out to real `git` (see SupermuxGitWorktreeServiceTests
 // for the concurrency rationale).
 @Suite(.serialized)
@@ -95,7 +95,9 @@ struct SupermuxProjectsModelBulkWorktreeRemovalTests {
         #expect(model.worktreesByProjectId[project.id]?.isEmpty == true)
     }
 
-    @Test func removeAllLeavesUnmanagedWorktreesAlone() async throws {
+    /// Worktrees made by another tool (outside `<root>/.worktrees`) are the
+    /// project's worktrees too: Delete All removes them like supermux's own.
+    @Test func removeAllAlsoRemovesWorktreesOutsideTheWorktreesFolder() async throws {
         let root = try GitFixture.makeFixtureRepo(prefix: "supermux-bulk-worktree-removal")
         defer { GitFixture.cleanUp(root) }
         let sibling = try GitFixture.makeTempDirectory(prefix: "supermux-bulk-worktree-removal")
@@ -108,13 +110,38 @@ struct SupermuxProjectsModelBulkWorktreeRemovalTests {
 
         let result = try await model.removeAllWorktrees(projectId: project.id, deleteBranch: false)
 
-        #expect(result.removed.map(\.path) == [managed.path])
+        #expect(Set(result.removed.map(\.branch)) == ["manual-branch", "managed"])
         #expect(result.dirty.isEmpty)
         #expect(result.failures.isEmpty)
-        #expect(FileManager.default.fileExists(atPath: manualPath))
-        let remaining = model.worktreesByProjectId[project.id] ?? []
-        #expect(remaining.contains { $0.branch == "manual-branch" && !$0.isSupermuxManaged })
-        #expect(!remaining.contains { $0.isSupermuxManaged })
+        #expect(!FileManager.default.fileExists(atPath: manualPath))
+        #expect(!FileManager.default.fileExists(atPath: managed.path))
+        #expect(FileManager.default.fileExists(atPath: root))
+        #expect(model.worktreesByProjectId[project.id]?.isEmpty == true)
+    }
+
+    /// A project registered at a linked worktree sees the repository's main
+    /// checkout in `git worktree list`. It is never offered for deletion: no
+    /// teardown script may run there and git would refuse to remove it anyway.
+    @Test func removeAllNeverTouchesTheMainCheckout() async throws {
+        let main = try GitFixture.makeFixtureRepo(prefix: "supermux-bulk-worktree-removal")
+        defer { GitFixture.cleanUp(main) }
+        let sibling = try GitFixture.makeTempDirectory(prefix: "supermux-bulk-worktree-removal")
+        defer { GitFixture.cleanUp(sibling) }
+        let linkedRoot = (sibling as NSString).appendingPathComponent("linked-root")
+        let other = (sibling as NSString).appendingPathComponent("other")
+        try GitFixture.runGit(["worktree", "add", "-b", "linked-root", linkedRoot], in: main)
+        try GitFixture.runGit(["worktree", "add", "-b", "other", other], in: main)
+        try GitFixture.write("wip\n", to: "untracked.txt", in: main)
+        let project = SupermuxProject(name: "Linked", rootPath: linkedRoot)
+        let model = try await makeLoadedModel(project: project, in: linkedRoot)
+
+        let result = try await model.removeAllWorktrees(projectId: project.id, deleteBranch: false)
+
+        #expect(result.removed.map(\.branch) == ["other"])
+        #expect(result.dirty.isEmpty)
+        #expect(result.failures.isEmpty)
+        #expect(FileManager.default.fileExists(atPath: (main as NSString).appendingPathComponent("untracked.txt")))
+        #expect(FileManager.default.fileExists(atPath: linkedRoot))
     }
 
     /// A failed `git worktree list` must surface as an error, not as a silent
