@@ -660943,6 +660943,23 @@
           }
         }
       }
+    },
+    "supermux.worktree.deleteAll.nestedKept" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A worktree inside it couldn’t be deleted, so it was kept."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "内部のワークツリーを削除できなかったため、このワークツリーは残されました。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

@@ -220,13 +220,15 @@ most every 10 min otherwise), for each connected, non-loopback device serving pr
 - Local project rows: device worktrees (each with its Mac icon) in the disclosure, "Open on ▸" when
   several Macs have it, remote worktrees in "Worktrees ▸", "Set Up on <Mac>…". Edit/Reveal/Move stay
   local-only.
-- "Delete All Worktrees" (`SupermuxDeleteAllWorktreesMenu`) offers every Mac whose copy has a
-  worktree, open or not, wherever it lives on disk (the main checkout is never listed): a plain
-  "Delete All Worktrees…" when only the row's own Mac has one, else "Delete All Worktrees on ▸
-  <Mac>" (offline Macs disabled). Each runs `SupermuxDeleteAllWorktreesFlow`: a fresh list (this
-  Mac's git, or that Mac's `worktrees.list`; a failure deletes nothing), a confirmation listing it
-  (with "Also delete their local branches"), one removal per worktree (`worktree.remove` for
-  another Mac), then "Delete Anyway" for the ones kept for uncommitted changes.
+- "Delete All Worktrees" (`SupermuxDeleteAllWorktreesMenu`) offers every Mac with a copy of the
+  project, whatever its last worktree list said: a plain "Delete All Worktrees…" when the row's own
+  Mac is the only one, else "Delete All Worktrees on ▸ <Mac>" (offline Macs disabled). Each runs
+  `SupermuxDeleteAllWorktreesFlow`: a fresh list of every linked worktree, open or not, wherever it
+  lives (this Mac's git, or that Mac's `worktrees.list`; a failure deletes nothing; the main
+  checkout is never listed; an empty list says so), a confirmation listing each with its folder
+  (and "Also delete their local branches"), one removal per worktree, nested ones first
+  (`worktree.remove` for another Mac; a worktree holding a kept one is kept too), then "Delete
+  Anyway" for the ones kept for uncommitted changes.
 - The worktree pill ("⑂ N ›", `SupermuxWorktreeDisclosure`) shows only when the project has an
   unopened worktree, always with its number: this Mac's worktrees with no open workspace here plus
   the other Macs' worktrees that are not open there and mirrored here. The main checkout never

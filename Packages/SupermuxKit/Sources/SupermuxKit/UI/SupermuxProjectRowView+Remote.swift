@@ -69,10 +69,10 @@ extension SupermuxProjectRowView {
     }
 
     /// "Delete All Worktrees…" on This Mac, or "Delete All Worktrees on ▸"
-    /// when another Mac's copy has worktrees too.
+    /// when the project is on other Macs too.
     var deleteAllWorktreesMenuItems: some View {
         SupermuxDeleteAllWorktreesMenuItems(
-            menu: SupermuxDeleteAllWorktreesMenu(worktrees: worktrees, extras: remoteExtras),
+            menu: SupermuxDeleteAllWorktreesMenu(extras: remoteExtras),
             rowTarget: .thisMac
         ) { target in
             switch target {

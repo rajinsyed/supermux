@@ -9,13 +9,23 @@ extension SupermuxDeleteAllWorktreesFlow {
     /// - Parameters:
     ///   - projectName: The project, for the confirmation title.
     ///   - macName: The other Mac the worktrees are on; `nil` for this Mac.
-    ///   - displayName: A worktree's line in the alerts (its branch).
-    public func runWithAlerts(projectName: String, macName: String?, displayName: (Worktree) -> String) async {
+    ///   - name: A worktree's name in the alerts (its branch).
+    ///   - path: A worktree's folder, shown beside its name: a worktree may
+    ///     live anywhere, and the user should see what goes.
+    public func runWithAlerts(
+        projectName: String,
+        macName: String?,
+        name: (Worktree) -> String,
+        path: (Worktree) -> String
+    ) async {
+        func describe(_ worktree: Worktree) -> String {
+            "\(name(worktree)) — \((path(worktree) as NSString).abbreviatingWithTildeInPath)"
+        }
         let outcome: Outcome?
         do {
             outcome = try await run(
-                confirm: { Self.confirmDeleteAll($0, projectName: projectName, macName: macName, displayName: displayName) },
-                confirmForce: { Self.confirmForceDeleteAll($0, displayName: displayName) }
+                confirm: { Self.confirmDeleteAll($0, projectName: projectName, macName: macName, describe: describe) },
+                confirmForce: { Self.confirmForceDeleteAll($0, describe: describe) }
             )
         } catch {
             Self.present(title: String(localized: "supermux.common.errorTitle", defaultValue: "Supermux"),
@@ -32,7 +42,7 @@ extension SupermuxDeleteAllWorktreesFlow {
             Self.present(
                 title: String(localized: "supermux.worktree.deleteAll.failed.title", defaultValue: "Some worktrees couldn’t be deleted"),
                 message: outcome.result.failures
-                    .map { "• \(displayName($0.worktree)): \($0.error.localizedDescription)" }
+                    .map { "• \(name($0.worktree)): \($0.error.localizedDescription)" }
                     .joined(separator: "\n")
             )
         }
@@ -44,7 +54,7 @@ extension SupermuxDeleteAllWorktreesFlow {
         _ worktrees: [Worktree],
         projectName: String,
         macName: String?,
-        displayName: (Worktree) -> String
+        describe: (Worktree) -> String
     ) -> Bool? {
         let alert = NSAlert()
         alert.messageText = if let macName {
@@ -60,7 +70,7 @@ extension SupermuxDeleteAllWorktreesFlow {
         }
         alert.informativeText = String(
             localized: "supermux.worktree.deleteAll.message",
-            defaultValue: "These worktrees and their files will be removed from disk:\n\n\(bulletList(worktrees, displayName))"
+            defaultValue: "These worktrees and their files will be removed from disk:\n\n\(bulletList(worktrees, describe))"
         )
         alert.alertStyle = .warning
         let deleteBranches = NSButton(
@@ -81,7 +91,7 @@ extension SupermuxDeleteAllWorktreesFlow {
 
     /// Second confirmation for the worktrees the first pass kept back because
     /// they have uncommitted changes.
-    private static func confirmForceDeleteAll(_ dirty: [Worktree], displayName: (Worktree) -> String) -> Bool {
+    private static func confirmForceDeleteAll(_ dirty: [Worktree], describe: (Worktree) -> String) -> Bool {
         let alert = NSAlert()
         alert.messageText = String(
             localized: "supermux.worktree.deleteAll.dirty.title",
@@ -89,7 +99,7 @@ extension SupermuxDeleteAllWorktreesFlow {
         )
         alert.informativeText = String(
             localized: "supermux.worktree.deleteAll.dirty.message",
-            defaultValue: "These worktrees were kept because their uncommitted changes would be lost:\n\n\(bulletList(dirty, displayName))\n\nDelete them anyway?"
+            defaultValue: "These worktrees were kept because their uncommitted changes would be lost:\n\n\(bulletList(dirty, describe))\n\nDelete them anyway?"
         )
         alert.alertStyle = .warning
         alert.addButton(withTitle: String(localized: "supermux.worktree.dirtyDelete.confirm", defaultValue: "Delete Anyway"))
@@ -105,7 +115,7 @@ extension SupermuxDeleteAllWorktreesFlow {
         alert.runModal()
     }
 
-    private static func bulletList(_ worktrees: [Worktree], _ displayName: (Worktree) -> String) -> String {
-        worktrees.map { "• \(displayName($0))" }.joined(separator: "\n")
+    private static func bulletList(_ worktrees: [Worktree], _ describe: (Worktree) -> String) -> String {
+        worktrees.map { "• \(describe($0))" }.joined(separator: "\n")
     }
 }

@@ -169,7 +169,7 @@ private struct SupermuxProjectReorderDrop: ViewModifier {
 public struct SupermuxProjectRowView: View, Equatable {
     let project: SupermuxProject
     private let detectedIcon: NSImage?
-    let worktrees: [SupermuxProjectWorktree]
+    private let worktrees: [SupermuxProjectWorktree]
     /// Resolved pull requests for this project's unopened worktrees, keyed by
     /// worktree path. An immutable value snapshot (the row holds no PR store), so
     /// a PR change in one project never invalidates another project's row.

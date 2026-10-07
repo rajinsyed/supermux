@@ -35,34 +35,67 @@ public struct SupermuxWorktreeBulkRemovalResult<Worktree: Sendable>: Sendable {
     /// An empty result.
     public init() {}
 
-    /// Removes `worktrees` one after another with `remove`, bucketing each
-    /// outcome instead of throwing on the first problem.
+    /// Removes `worktrees` one after another with `remove`, deepest folder
+    /// first, bucketing each outcome instead of throwing on the first problem.
     ///
-    /// Sequential on purpose: teardown scripts and `git worktree remove` both
-    /// take repository locks, and a user reading a failure list expects it to
-    /// be in the order the worktrees were shown.
+    /// Removing a worktree deletes its whole folder, worktrees nested inside it
+    /// included, and its dirty check never sees a nested one in a git-ignored
+    /// folder (`.worktrees`, `.claude/worktrees`). So nested worktrees go
+    /// first, and a worktree holding one that was kept is kept too: as dirty
+    /// when the nested one is (Delete Anyway removes both, deepest first), as
+    /// failed when the nested one failed. Sequential on purpose: teardown
+    /// scripts and `git worktree remove` both take repository locks.
     /// - Parameters:
     ///   - worktrees: Worktrees to remove.
+    ///   - path: A worktree's absolute folder.
     ///   - isDirty: Whether an error `remove` threw means "has uncommitted changes".
     ///   - remove: Removes one worktree (the single per-worktree path).
     @MainActor
     public static func removing(
         _ worktrees: [Worktree],
+        path: (Worktree) -> String,
         isDirty: (any Error) -> Bool,
         remove: (Worktree) async throws -> Void
     ) async -> Self {
         var result = Self()
-        for worktree in worktrees {
+        var keptDirty: [String] = []
+        var keptFailed: [String] = []
+        for worktree in worktrees.sorted(by: { path($0).count > path($1).count }) {
+            let folder = path(worktree)
+            let holds = { (kept: [String]) in kept.contains { $0.hasPrefix(folder + "/") } }
+            if holds(keptFailed) {
+                result.failures.append(Failure(worktree: worktree, error: SupermuxNestedWorktreeKeptError()))
+                keptFailed.append(folder)
+                continue
+            }
+            if holds(keptDirty) {
+                result.dirty.append(worktree)
+                keptDirty.append(folder)
+                continue
+            }
             do {
                 try await remove(worktree)
                 result.removed.append(worktree)
             } catch where isDirty(error) {
                 result.dirty.append(worktree)
+                keptDirty.append(folder)
             } catch {
                 result.failures.append(Failure(worktree: worktree, error: error))
+                keptFailed.append(folder)
             }
         }
         return result
+    }
+}
+
+/// A worktree kept because a worktree inside its folder could not be removed
+/// (removing the outer one would delete the inner one's files).
+public struct SupermuxNestedWorktreeKeptError: LocalizedError {
+    public var errorDescription: String? {
+        String(
+            localized: "supermux.worktree.deleteAll.nestedKept",
+            defaultValue: "A worktree inside it couldn’t be deleted, so it was kept."
+        )
     }
 }
 
@@ -127,7 +160,8 @@ extension SupermuxProjectsModel {
         return worktreesByProjectId[projectId] ?? []
     }
 
-    /// Removes the given worktrees one after another through the single
+    /// Removes the given worktrees one after another (nested ones first, see
+    /// ``SupermuxWorktreeBulkRemovalResult/removing(_:path:isDirty:remove:)``) through the single
     /// ``removeWorktree(_:projectId:force:deleteBranch:)`` path (dirty guard,
     /// teardown script, git-native removal, list refresh), bucketing each
     /// outcome instead of throwing on the first problem.
@@ -143,7 +177,7 @@ extension SupermuxProjectsModel {
         force: Bool,
         deleteBranch: Bool
     ) async -> SupermuxWorktreeBulkRemovalResult<SupermuxProjectWorktree> {
-        await .removing(worktrees, isDirty: SupermuxGitError.isDirtyWorktree) { worktree in
+        await .removing(worktrees, path: \.path, isDirty: SupermuxGitError.isDirtyWorktree) { worktree in
             try await removeWorktree(worktree, projectId: projectId, force: force, deleteBranch: deleteBranch)
         }
     }

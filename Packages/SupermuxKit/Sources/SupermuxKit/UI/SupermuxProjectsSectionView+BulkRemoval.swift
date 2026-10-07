@@ -10,7 +10,7 @@ extension SupermuxProjectsSectionView {
     func deleteAllWorktrees(project: SupermuxProject) {
         let flow = model.deleteAllWorktreesFlow(projectId: project.id)
         Task {
-            await flow.runWithAlerts(projectName: project.name, macName: nil, displayName: \.displayName)
+            await flow.runWithAlerts(projectName: project.name, macName: nil, name: \.displayName, path: \.path)
         }
     }
 }

@@ -260,10 +260,7 @@ enum SupermuxProjectsSocketPayloads {
                         openWorkspaces: nested[id] ?? [],
                         extras: extras
                     )),
-                    "delete_all_worktrees": deleteAllMenu(SupermuxDeleteAllWorktreesMenu(
-                        worktrees: localWorktrees[id] ?? [],
-                        extras: extras
-                    )),
+                    "delete_all_worktrees": deleteAllMenu(SupermuxDeleteAllWorktreesMenu(extras: extras)),
                 ]
             },
         ]

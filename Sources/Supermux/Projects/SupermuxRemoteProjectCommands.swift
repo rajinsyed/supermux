@@ -176,7 +176,7 @@ struct SupermuxRemoteProjectCommands {
         deleteBranch: Bool,
         force: Bool
     ) async -> SupermuxWorktreeBulkRemovalResult<SupermuxRemoteWorktree> {
-        await .removing(worktrees, isDirty: Self.isDirtyWorktree) { worktree in
+        await .removing(worktrees, path: \.path, isDirty: Self.isDirtyWorktree) { worktree in
             try await removeWorktree(worktree, deleteBranch: deleteBranch, force: force)
         }
     }

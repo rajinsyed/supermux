@@ -1,10 +1,12 @@
 import SwiftUI
 
-/// Which Macs a project row's "Delete All Worktrees" offers: every Mac whose
-/// copy of the project has a worktree, wherever on disk it lives (open
-/// worktrees included: they are deleted too). An offline Mac stays listed and
-/// is drawn disabled. The rows and the DEBUG `projects_presentation` socket
-/// payload both build it here, so a test reads exactly what the menu offers.
+/// Which Macs a project row's "Delete All Worktrees" offers: every Mac with
+/// a copy of the project, This Mac first, whether or not its last worktree
+/// list had any (a worktree made by another tool after that list still
+/// counts: the flow lists afresh, and says so when there is nothing to
+/// delete). An offline Mac stays listed and is drawn disabled. The rows and
+/// the DEBUG `projects_presentation` socket payload both build it here, so a
+/// test reads exactly what the menu offers.
 public struct SupermuxDeleteAllWorktreesMenu: Equatable, Sendable {
     /// One Mac the menu offers.
     public enum Target: Hashable, Sendable {
@@ -23,27 +25,22 @@ public struct SupermuxDeleteAllWorktreesMenu: Equatable, Sendable {
     /// The Macs offered, This Mac first.
     public let targets: [Target]
 
-    /// A local project's row: this Mac when it has a worktree of the project,
-    /// then each other Mac's copy that has one.
-    /// - Parameters:
-    ///   - worktrees: This Mac's worktrees of the project (main checkout excluded).
-    ///   - extras: The project's other-Mac parts, if it has any.
-    public init(worktrees: [SupermuxProjectWorktree], extras: SupermuxProjectRemoteExtras?) {
-        let devices = (extras?.worktreeLocations ?? []).map(Target.device)
-        targets = (worktrees.isEmpty ? [] : [.thisMac]) + devices
+    /// A local project's row: This Mac, then each other Mac's copy.
+    /// - Parameter extras: The project's other-Mac parts, if it has any.
+    public init(extras: SupermuxProjectRemoteExtras?) {
+        targets = [.thisMac] + (extras?.project.remoteLocations ?? []).map(Target.device)
     }
 
-    /// A project that exists only on another Mac: that Mac, when it has a
-    /// worktree of the project.
+    /// A project that exists only on other Macs: each of their copies.
     public init(remoteOnly row: SupermuxRemoteProjectRow) {
-        targets = row.hasWorktrees ? [.device(row.location)] : []
+        targets = row.project.locations.filter { !$0.isThisMac }.map(Target.device)
     }
 }
 
 /// A project row's "Delete All Worktrees" context-menu item: one item when
-/// only one Mac has worktrees and it is the one the row stands for (This Mac
-/// for a local row, the row's Mac for a remote-only one), otherwise
-/// "Delete All Worktrees on ▸" listing each Mac. Nothing when no Mac has one.
+/// the only Mac offered is the one the row stands for (This Mac for a local
+/// row, the row's Mac for a remote-only one), otherwise "Delete All Worktrees
+/// on ▸" listing each Mac.
 struct SupermuxDeleteAllWorktreesMenuItems: View {
     let menu: SupermuxDeleteAllWorktreesMenu
     /// The Mac a plain item stands for without naming it.

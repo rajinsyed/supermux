@@ -39,7 +39,12 @@ enum SupermuxRemoteProjectActionsFactory {
             removeAllWorktrees: { location, projectName in
                 let flow = commands.deleteAllWorktreesFlow(location)
                 Task { @MainActor in
-                    await flow.runWithAlerts(projectName: projectName, macName: location.device?.name, displayName: \.displayName)
+                    await flow.runWithAlerts(
+                        projectName: projectName,
+                        macName: location.device?.name,
+                        name: \.displayName,
+                        path: \.path
+                    )
                 }
             },
             runAction: { location, action in

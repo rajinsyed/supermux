@@ -152,8 +152,10 @@ struct SupermuxRemoteProjectRowView: View {
         SupermuxDeleteAllWorktreesMenuItems(
             menu: SupermuxDeleteAllWorktreesMenu(remoteOnly: row),
             rowTarget: .device(row.location)
-        ) { _ in
-            actions.removeAllWorktrees(row.location, row.project.name)
+        ) { target in
+            if case .device(let location) = target {
+                actions.removeAllWorktrees(location, row.project.name)
+            }
         }
         if !row.actions.isEmpty {
             Menu(String(localized: "supermux.project.actionsMenu", defaultValue: "Actions")) {
