@@ -25,9 +25,12 @@ public struct SupermuxProjectEditorSheet: View {
     /// set, the run/setup/teardown/actions fields are config-owned: Save writes
     /// changes to them into `.supermux/config.json`.
     @State private var configRelativePath: String?
-    /// The run/setup/teardown/actions as loaded from `config.json`, so Save
-    /// writes the file only when one of them actually changed.
-    @State private var configBaseline: ScriptFields?
+    /// The config as loaded when one manages the project; Save writes only the
+    /// fields that differ from it.
+    @State private var loadedConfig: SupermuxProjectConfig?
+    /// Whether the config check has finished. Save waits for it: until then a
+    /// config-managed project would save as an unmanaged one.
+    @State private var hasLoadedConfig = false
     @State private var isSaving = false
     @State private var saveError: String?
 
@@ -48,7 +51,7 @@ public struct SupermuxProjectEditorSheet: View {
 
     /// Whether a repo-shipped `config.json` owns the run/setup/teardown/actions
     /// fields, so Save writes them to `.supermux/config.json`.
-    private var isConfigManaged: Bool { configRelativePath != nil }
+    private var isConfigManaged: Bool { loadedConfig != nil }
 
     /// The sheet content.
     public var body: some View {
@@ -296,7 +299,7 @@ public struct SupermuxProjectEditorSheet: View {
                 Task { await save() }
             }
             .keyboardShortcut(.defaultAction)
-            .disabled(trimmedName.isEmpty || isSaving)
+            .disabled(trimmedName.isEmpty || isSaving || !hasLoadedConfig)
         }
         .padding(12)
     }
@@ -339,22 +342,40 @@ public struct SupermuxProjectEditorSheet: View {
         edited.name.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// The editor's current run/setup/teardown/actions, compared against
-    /// ``configBaseline`` to tell whether Save must rewrite `config.json`.
-    private struct ScriptFields: Equatable {
-        var run: String
-        var setup: String
-        var teardown: String
-        var actions: [SupermuxProjectAction]
+    /// The run editor's text as one command per non-empty line.
+    private var editedRunCommands: [String] { Self.runEntries(runCommandsInput) }
+
+    /// The action rows with names and commands trimmed and blank rows dropped.
+    private var editedActions: [SupermuxProjectAction] {
+        edited.actions.map { a in
+            var t = a
+            t.name = a.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            t.command = a.command.trimmingCharacters(in: .whitespacesAndNewlines)
+            return t
+        }.filter { $0.isLaunchable }
     }
 
-    private var scriptFields: ScriptFields {
-        ScriptFields(
-            run: runCommandsInput,
-            setup: setupCommandsInput,
-            teardown: teardownCommandsInput,
-            actions: edited.actions
-        )
+    /// `config` with each field the user changed replaced by the editor's
+    /// value. Untouched fields keep the file's own entries (multi-line run
+    /// commands, icon keywords, action ids), and an edit that cleans up to the
+    /// same value (whitespace, a blank action row) counts as untouched.
+    private func editedConfig(from config: SupermuxProjectConfig) -> SupermuxProjectConfig {
+        var result = config
+        if editedRunCommands != Self.runEntries(config.run.joined(separator: "\n")) {
+            result.run = editedRunCommands
+        }
+        let setup = Self.scriptEntries(setupCommandsInput)
+        if setup != Self.scriptEntries(config.setup.joined(separator: "\n")) {
+            result.setup = setup
+        }
+        let teardown = Self.scriptEntries(teardownCommandsInput)
+        if teardown != Self.scriptEntries(config.teardown.joined(separator: "\n")) {
+            result.teardown = teardown
+        }
+        if editedActions != edited.applying(config).actions {
+            result.actions = editedActions.map(SupermuxProjectConfig.Action.init(action:))
+        }
+        return result
     }
 
     // MARK: - Actions
@@ -364,6 +385,7 @@ public struct SupermuxProjectEditorSheet: View {
     /// editor always starts from the file's current contents. File I/O runs off
     /// the main actor.
     private func loadConfigState() async {
+        defer { hasLoadedConfig = true }
         let rootPath = edited.rootPath
         let loader = SupermuxProjectConfigLoader()
         let resolved = await Task.detached {
@@ -372,27 +394,24 @@ public struct SupermuxProjectEditorSheet: View {
             let pathParses = loader.load(projectRoot: rootPath, relativePath: path) != nil
             return (path, loader.load(projectRoot: rootPath), pathParses)
         }.value
-        // Only a config that actually parses manages the project: a malformed
-        // file is treated as no config (fields stay editable), matching the
-        // model — which also ignores an unparsable config — so the editor and
-        // model never disagree about whether the project is config-managed.
-        guard let resolved, let config = resolved.config else {
-            configRelativePath = nil
-            configBaseline = nil
-            return
-        }
-        configRelativePath = resolved.path
-        // A broken `.supermux/config.json` is skipped in favor of superset's
-        // file, so the fields show superset's values; say so now rather than
-        // only when Save refuses to replace it.
+        guard let resolved else { return }
+        // The loader skips a config file it can't read and falls back to the
+        // next one (superset's), if any. Say so now rather than only when Save
+        // refuses to replace it.
         if !resolved.pathParses {
-            saveError = Self.invalidConfigMessage
+            saveError = Self.unreadableConfigMessage(resolved.path)
         }
+        // Only a config that actually parses manages the project: a malformed
+        // file is treated as no config, matching the model — which also
+        // ignores an unparsable config — so the editor and model never
+        // disagree about whether the project is config-managed.
+        guard let config = resolved.config else { return }
+        configRelativePath = resolved.path
+        loadedConfig = config
         setupCommandsInput = config.setup.joined(separator: "\n")
         teardownCommandsInput = config.teardown.joined(separator: "\n")
         runCommandsInput = config.run.joined(separator: "\n")
         edited.actions = edited.applying(config).actions
-        configBaseline = scriptFields
     }
 
     private func save() async {
@@ -410,71 +429,38 @@ public struct SupermuxProjectEditorSheet: View {
             .replacingOccurrences(of: "\\", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         project.worktreesDirName = (folder.isEmpty || folder == "." || folder == "..") ? ".worktrees" : folder
-        // When config.json owns run/setup/teardown/actions and none of them
-        // changed, keep the config-derived values (already on `edited`) so the
-        // record matches the next re-import and nothing is written.
-        let writesConfig = isConfigManaged && scriptFields != configBaseline
-        if !isConfigManaged || writesConfig {
-            project.runCommands = runCommandsInput
-                .components(separatedBy: .newlines)
-                .map { $0.trimmingCharacters(in: .whitespaces) }
-                .filter { !$0.isEmpty }
+        if let loadedConfig {
+            // config.json owns run/setup/teardown/actions: write the fields the
+            // user changed to `.supermux/config.json`, and give the record what
+            // the next re-import of that file produces.
+            let config = editedConfig(from: loadedConfig)
+            if config != loadedConfig {
+                guard await writeConfig(config, projectRoot: project.rootPath) else { return }
+            }
+            project = project.applying(config)
+        } else {
+            project.runCommands = editedRunCommands
             project.setupCommands = Self.scriptEntries(setupCommandsInput)
             project.teardownCommands = Self.scriptEntries(teardownCommandsInput)
-            project.actions = edited.actions.map { a in
-                var t = a
-                t.name = a.name.trimmingCharacters(in: .whitespacesAndNewlines)
-                t.command = a.command.trimmingCharacters(in: .whitespacesAndNewlines)
-                return t
-            }.filter { $0.isLaunchable }
-        }
-        if writesConfig {
-            saveError = nil
-            isSaving = true
-            defer { isSaving = false }
-            let config = SupermuxProjectConfig(project: project)
-            let rootPath = project.rootPath
-            do {
-                try await Task.detached {
-                    try SupermuxProjectConfigWriter().write(config, projectRoot: rootPath)
-                }.value
-            } catch {
-                saveError = Self.configSaveMessage(for: error)
-                return
-            }
+            project.actions = editedActions
         }
         model.updateProject(project)
         dismiss()
     }
 
-    private static var invalidConfigMessage: String {
-        String(
-            localized: "supermux.projectEditor.configSaveFailed.invalidJSON",
-            defaultValue: ".supermux/config.json isn't valid JSON. Fix or delete it, then save again."
-        )
-    }
-
-    private static func configSaveMessage(for error: any Error) -> String {
-        switch error as? SupermuxProjectConfigWriter.WriteError {
-        case .existingFileUnreadable:
-            return invalidConfigMessage
-        case .projectRootMissing:
-            return String(
-                localized: "supermux.projectEditor.configSaveFailed.rootMissing",
-                defaultValue: "The project folder no longer exists."
-            )
-        case nil:
-            return String(
-                localized: "supermux.projectEditor.configSaveFailed",
-                defaultValue: "Couldn't save .supermux/config.json: \(error.localizedDescription)"
-            )
+    /// Writes `config` off the main actor. On failure shows why and returns `false`.
+    private func writeConfig(_ config: SupermuxProjectConfig, projectRoot: String) async -> Bool {
+        saveError = nil
+        isSaving = true
+        defer { isSaving = false }
+        do {
+            try await Task.detached {
+                try SupermuxProjectConfigWriter().write(config, projectRoot: projectRoot)
+            }.value
+            return true
+        } catch {
+            saveError = Self.configSaveMessage(for: error)
+            return false
         }
-    }
-
-    /// Stores a setup/teardown editor's text as a single multi-line script entry
-    /// (internal newlines preserved), unlike run commands which split per line.
-    private static func scriptEntries(_ text: String) -> [String] {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? [] : [trimmed]
     }
 }

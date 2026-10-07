@@ -10,7 +10,7 @@ internal import SupermuxMobileCore
 /// `default_branch`) are cleared by an explicit `null`. Immutable and
 /// unknown keys are rejected at parse time, and config-managed fields are
 /// rejected at apply time when a repo-shipped `config.json` owns them —
-/// the same fields the desktop editor renders read-only.
+/// the phone editor renders those fields read-only.
 public struct SupermuxMobileProjectPatch: Sendable {
     /// New display name (present ⇒ non-empty).
     public var name: String?
@@ -71,9 +71,10 @@ public struct SupermuxMobileProjectPatch: Sendable {
     ///   - isConfigManaged: Whether a repo-shipped `config.json` owns the
     ///     run/setup/teardown/actions fields (see
     ///     ``SupermuxMobileProjectConfigMarker``). Patching them then throws
-    ///     ``SupermuxMobilePatchError/configManagedKey(_:)`` — the desktop
-    ///     editor disables those fields for the same reason, and any accepted
-    ///     edit would be silently overwritten by the next config re-import.
+    ///     ``SupermuxMobilePatchError/configManagedKey(_:)``: an edit stored
+    ///     only on the record would be silently overwritten by the next config
+    ///     re-import (the desktop editor writes such edits to
+    ///     `.supermux/config.json` instead).
     /// - Returns: The patched record (same `id`, `rootPath`, timestamps).
     public func applied(to project: SupermuxProject, isConfigManaged: Bool) throws -> SupermuxProject {
         if isConfigManaged {

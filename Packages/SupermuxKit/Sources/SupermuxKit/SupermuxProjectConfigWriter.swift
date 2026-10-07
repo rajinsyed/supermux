@@ -19,8 +19,9 @@ public struct SupermuxProjectConfigWriter: Sendable {
     public enum WriteError: Error, Equatable {
         /// The project root does not exist (moved or deleted).
         case projectRootMissing(String)
-        /// The existing `.supermux/config.json` is not a JSON object; it is
-        /// left as is rather than replaced.
+        /// The existing `.supermux/config.json` is not a config the loader
+        /// can read (bad JSON, or the wrong shape); it is left as is rather
+        /// than replaced.
         case existingFileUnreadable(String)
     }
 
@@ -57,10 +58,13 @@ public struct SupermuxProjectConfigWriter: Sendable {
     }
 
     /// The file's current top-level object, or an empty one when the file
-    /// does not exist yet.
+    /// does not exist yet. A file the loader skips is refused: the editor
+    /// then shows another file's values, and saving them here would replace
+    /// what the user wrote.
     private func existingObject(at url: URL) throws -> [String: Any] {
         guard let data = FileManager.default.contents(atPath: url.path) else { return [:] }
-        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        guard (try? JSONDecoder().decode(SupermuxProjectConfig.self, from: data)) != nil,
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw WriteError.existingFileUnreadable(url.path)
         }
         return object
@@ -83,14 +87,20 @@ public extension SupermuxProjectConfig {
             setup: project.setupCommands,
             teardown: project.teardownCommands,
             run: project.runCommands,
-            actions: project.actions.map { action in
-                Action(
-                    id: action.id.uuidString,
-                    name: action.name,
-                    command: action.command,
-                    icon: action.iconSymbol
-                )
-            }
+            actions: project.actions.map(Action.init(action:))
+        )
+    }
+}
+
+public extension SupermuxProjectConfig.Action {
+    /// The config form of a project action, keeping its id and icon.
+    /// - Parameter action: The project action to copy.
+    init(action: SupermuxProjectAction) {
+        self.init(
+            id: action.id.uuidString,
+            name: action.name,
+            command: action.command,
+            icon: action.iconSymbol
         )
     }
 }

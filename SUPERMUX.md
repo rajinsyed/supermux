@@ -260,10 +260,12 @@ This is what makes `cp "$SUPERSET_ROOT_PATH/.env" .env` work inside a fresh work
 `actions` (config is the source of truth) — on add, on load, and before each worktree
 create/remove. When a config is present those four fields stay **editable in the Mac editor**: a
 note names the file they came from, and Save writes any change to them into the project's own
-`.supermux/config.json` (`SupermuxProjectConfigWriter`; all four keys, other keys kept). Superset's
-`.superset/config.json` is never written; the new file shadows it because the loader reads
-`.supermux/` first. Saving only Name/color/branch writes nothing. The phone editor still renders
-config-managed fields read-only. Config shape:
+`.supermux/config.json` (`SupermuxProjectConfigWriter`). It always writes all four keys, so the file
+fully shadows superset's (the loader reads `.supermux/` first); fields the user did not change keep
+the loaded file's entries, and other top-level keys are kept. Superset's `.superset/config.json` is
+never written. A save that changes none of the four writes nothing, and an existing
+`.supermux/config.json` the loader can't read is never replaced (the sheet says so on open). The
+phone editor still renders config-managed fields read-only. Config shape:
 
 ```json
 {

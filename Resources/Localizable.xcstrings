@@ -660876,23 +660876,6 @@
         }
       }
     },
-    "supermux.projectEditor.configSaveFailed.invalidJSON" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : ".supermux/config.json isn't valid JSON. Fix or delete it, then save again."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : ".supermux/config.json が有効な JSON ではありません。修正または削除してから、もう一度保存してください。"
-          }
-        }
-      }
-    },
     "supermux.projectEditor.configSaveFailed.rootMissing" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -660923,6 +660906,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "実行・セットアップ・ティアダウン・アクションはこのプロジェクトの .supermux/config.json に保存されます。"
+          }
+        }
+      }
+    },
+    "supermux.projectEditor.configUnreadable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ couldn't be read. Fix or delete it."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ を読み込めませんでした。修正するか削除してください。"
           }
         }
       }
