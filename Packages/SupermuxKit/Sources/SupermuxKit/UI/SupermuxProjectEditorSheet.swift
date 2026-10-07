@@ -373,7 +373,7 @@ public struct SupermuxProjectEditorSheet: View {
             result.teardown = teardown
         }
         if editedActions != edited.applying(config).actions {
-            result.actions = editedActions.map(SupermuxProjectConfig.Action.init(action:))
+            result.actions = config.actionEntries(for: editedActions)
         }
         return result
     }

@@ -62,8 +62,9 @@ public struct SupermuxProjectConfigWriter: Sendable {
     /// then shows another file's values, and saving them here would replace
     /// what the user wrote.
     private func existingObject(at url: URL) throws -> [String: Any] {
-        guard let data = FileManager.default.contents(atPath: url.path) else { return [:] }
-        guard (try? JSONDecoder().decode(SupermuxProjectConfig.self, from: data)) != nil,
+        guard FileManager.default.fileExists(atPath: url.path) else { return [:] }
+        guard let data = FileManager.default.contents(atPath: url.path),
+              (try? JSONDecoder().decode(SupermuxProjectConfig.self, from: data)) != nil,
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw WriteError.existingFileUnreadable(url.path)
         }
@@ -106,8 +107,19 @@ public extension SupermuxProjectConfig.Action {
 }
 
 public extension SupermuxProjectConfig {
-    /// `actions` in config form.
+    /// `actions` in config form, reusing this config's own entry for each
+    /// action that is unchanged, so editing one action keeps the others' slug
+    /// ids and icon keywords.
+    /// - Parameter actions: The edited project actions, in order.
     func actionEntries(for actions: [SupermuxProjectAction]) -> [Action] {
-        actions.map(Action.init(action:))
+        var loaded: [UUID: (entry: Action, action: SupermuxProjectAction)] = [:]
+        for entry in self.actions {
+            guard let action = entry.toProjectAction(), loaded[action.id] == nil else { continue }
+            loaded[action.id] = (entry, action)
+        }
+        return actions.map { action in
+            if let match = loaded[action.id], match.action == action { return match.entry }
+            return Action(action: action)
+        }
     }
 }
