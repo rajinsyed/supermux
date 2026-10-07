@@ -50,6 +50,10 @@ struct SupermuxProjectActionEditorRow: View {
             .buttonStyle(.plain)
             .help(String(localized: "supermux.projectEditor.action.delete", defaultValue: "Remove Action"))
         }
+        // Inside the editor's grouped Form a titled TextField also draws its
+        // title beside the field, squeezing the fixed-width fields; the
+        // prompts already name each one.
+        .labelsHidden()
     }
 
     private var iconBinding: Binding<String> {

@@ -97,20 +97,29 @@ public struct SupermuxProjectConfigLoader: Sendable {
     /// - Parameter projectRoot: Absolute project root path.
     /// - Returns: The decoded config, or `nil` when none is present/valid.
     public func load(projectRoot: String) -> SupermuxProjectConfig? {
-        let root = (projectRoot as NSString).expandingTildeInPath
-        let decoder = JSONDecoder()
         for relative in Self.candidateRelativePaths {
-            let path = (root as NSString).appendingPathComponent(relative)
-            guard let data = FileManager.default.contents(atPath: path) else { continue }
-            do {
-                return try decoder.decode(SupermuxProjectConfig.self, from: data)
-            } catch {
-                Self.logger.warning(
-                    "ignoring malformed \(relative, privacy: .public): \(String(describing: error), privacy: .public)"
-                )
-            }
+            if let config = load(projectRoot: projectRoot, relativePath: relative) { return config }
         }
         return nil
+    }
+
+    /// Loads one candidate config file, without falling back to the others.
+    /// - Parameters:
+    ///   - projectRoot: Absolute project root path.
+    ///   - relativePath: One of ``candidateRelativePaths``.
+    /// - Returns: The decoded config, or `nil` when the file is absent or malformed.
+    public func load(projectRoot: String, relativePath: String) -> SupermuxProjectConfig? {
+        let root = (projectRoot as NSString).expandingTildeInPath
+        let path = (root as NSString).appendingPathComponent(relativePath)
+        guard let data = FileManager.default.contents(atPath: path) else { return nil }
+        do {
+            return try JSONDecoder().decode(SupermuxProjectConfig.self, from: data)
+        } catch {
+            Self.logger.warning(
+                "ignoring malformed \(relativePath, privacy: .public): \(String(describing: error), privacy: .public)"
+            )
+            return nil
+        }
     }
 
     /// The relative path of the first config file that exists under

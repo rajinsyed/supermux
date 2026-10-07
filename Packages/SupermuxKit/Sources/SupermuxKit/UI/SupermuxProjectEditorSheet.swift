@@ -113,7 +113,9 @@ public struct SupermuxProjectEditorSheet: View {
             Divider()
             buttonBar
         }
-        .frame(width: 420, height: 720)
+        // Short enough for a sheet on a 700pt window to keep Save on screen;
+        // the form scrolls.
+        .frame(width: 420, height: 640)
         .task { await loadConfigState() }
     }
 
@@ -364,9 +366,11 @@ public struct SupermuxProjectEditorSheet: View {
     private func loadConfigState() async {
         let rootPath = edited.rootPath
         let loader = SupermuxProjectConfigLoader()
-        let resolved = await Task.detached { () -> (path: String, config: SupermuxProjectConfig?)? in
+        let resolved = await Task.detached {
+            () -> (path: String, config: SupermuxProjectConfig?, pathParses: Bool)? in
             guard let path = loader.resolvedRelativePath(projectRoot: rootPath) else { return nil }
-            return (path, loader.load(projectRoot: rootPath))
+            let pathParses = loader.load(projectRoot: rootPath, relativePath: path) != nil
+            return (path, loader.load(projectRoot: rootPath), pathParses)
         }.value
         // Only a config that actually parses manages the project: a malformed
         // file is treated as no config (fields stay editable), matching the
@@ -378,6 +382,12 @@ public struct SupermuxProjectEditorSheet: View {
             return
         }
         configRelativePath = resolved.path
+        // A broken `.supermux/config.json` is skipped in favor of superset's
+        // file, so the fields show superset's values; say so now rather than
+        // only when Save refuses to replace it.
+        if !resolved.pathParses {
+            saveError = Self.invalidConfigMessage
+        }
         setupCommandsInput = config.setup.joined(separator: "\n")
         teardownCommandsInput = config.teardown.joined(separator: "\n")
         runCommandsInput = config.run.joined(separator: "\n")
@@ -437,13 +447,17 @@ public struct SupermuxProjectEditorSheet: View {
         dismiss()
     }
 
+    private static var invalidConfigMessage: String {
+        String(
+            localized: "supermux.projectEditor.configSaveFailed.invalidJSON",
+            defaultValue: ".supermux/config.json isn't valid JSON. Fix or delete it, then save again."
+        )
+    }
+
     private static func configSaveMessage(for error: any Error) -> String {
         switch error as? SupermuxProjectConfigWriter.WriteError {
         case .existingFileUnreadable:
-            return String(
-                localized: "supermux.projectEditor.configSaveFailed.invalidJSON",
-                defaultValue: ".supermux/config.json isn't valid JSON. Fix or delete it, then save again."
-            )
+            return invalidConfigMessage
         case .projectRootMissing:
             return String(
                 localized: "supermux.projectEditor.configSaveFailed.rootMissing",
