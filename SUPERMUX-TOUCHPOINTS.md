@@ -8210,7 +8210,7 @@ resume. The replay rebuilt the mirror's terminal at the live bottom, so a user r
 was thrown to the bottom at random. `SupermuxMirrorScrollbackKeeper` (`Sources/Supermux/Devices/`, a whole fork
 file) notes, right before a full replay is applied, how many rows sat below the view of a pane reviewing its
 scrollback, and once the replay and the output held behind it are parsed (`supermuxRemoteOutputParsed`) scrolls
-back to as many rows above the new bottom, unless the view returned to the bottom meanwhile. A resumed replay
+back to as many rows above the new bottom, unless its user scrolled away from the bottom or typed (following output again) meanwhile. A resumed replay
 continues the screen as it is and needs nothing.
 
 Re-apply after an upstream merge: keep the two fences in `DeviceTerminalMirrorSession.attach()` around the

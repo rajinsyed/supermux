@@ -50,14 +50,17 @@ extension GhosttySurfaceScrollView {
         guard scrollbackViewportIntent.isReviewingScrollback,
               let geometry = surfaceView.authoritativeScrollbarGeometry(),
               geometry.scrollbar.isAtBottom else { return }
-        let totalRows = Int(clamping: geometry.scrollbar.total)
-        let lastTopRow = totalRows - min(totalRows, Int(clamping: geometry.scrollbar.len))
-        guard lastTopRow > 0 else {
+        let scrollbar = geometry.scrollbar
+        let totalRows = Int(clamping: scrollbar.total)
+        guard totalRows > Int(clamping: scrollbar.len) else {
             prepareExplicitViewportRestore(isAtBottom: true)
             synchronizeScrollView(forceViewportSync: true)
             return
         }
-        let topRow = max(0, lastTopRow - rowsBelowViewport)
+        guard let topRow = TerminalScrollbackViewportAnchor(
+            rowsBelowViewport: rowsBelowViewport,
+            capturedTotalRows: totalRows
+        ).topRow(in: scrollbar) else { return }
         let previousIntent = prepareExplicitViewportRestore(isAtBottom: false)
         guard let restored = surfaceView.scrollToRow(
             topRow,

@@ -309,8 +309,12 @@ class MirrorScrollbackE2E:
                 raise Failure(f"the view left {before!r} after the replay: now {self.top_line()!r}")
             return {"top_line_before": before, "top_line_after": self.top_line(), "full_replays": self.full_replays() - replays}
         finally:
-            self.reconnect(old_host=False)
-            wait_for("the loopback link to reconnect", self.link_connected, self.timeout)
+            # A failed reconnect here is recorded, not raised: it would replace the step's own failure.
+            try:
+                self.reconnect(old_host=False)
+                wait_for("the loopback link to reconnect", self.link_connected, self.timeout)
+            except Failure as error:
+                self.facts.setdefault("cleanup_errors", []).append(str(error))
 
     def link_connected(self) -> bool:
         for device in (self.sock.call("supermux.devices.list", {}) or {}).get("devices") or []:
