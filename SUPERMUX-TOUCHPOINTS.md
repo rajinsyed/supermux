@@ -6622,6 +6622,13 @@ Re-apply after an upstream merge:
   and `workspaces` on `WorkspaceListView`.
 - **#1132/#1133** the test-only dependency and the whole-file test.
 
+E2E (Mac side of the phone's drag, and the Mac's drag reaching the phone):
+`CMUX_E2E_SUITES="loopback_nested_reorder_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh` sends the
+phone's exact `workspace.move` through the loopback device to this Mac's mobile host and checks the Mac sidebar
+(`supermux.devices.sidebar_rows`) and the phone's list (`mobile.workspace.list`) read the same order after a drop at
+the top, at the project's end (anchored before the next tab outside the project, which keeps its place) and between
+rows, and after a Mac-side reorder.
+
 Verify: `swift test --package-path Packages/iOS/SupermuxMobileUI --filter SupermuxNestedReorderTests`
 (macOS host) and, on an isolated simulator, `xcodebuild test -scheme CmuxMobileShellUI` from
 `Packages/iOS/CmuxMobileShellUI` with
