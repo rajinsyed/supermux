@@ -110,6 +110,22 @@ struct SupermuxProjectConfigWriterTests {
         #expect(read(".supermux/config.json", under: root) == "[]")
     }
 
+    /// Valid JSON the loader still skips (here `run` is a string, not an
+    /// array) — the editor then shows superset's values, so a save would
+    /// replace the file's own setup and actions with them.
+    @Test func refusesToReplaceFileTheLoaderSkips() throws {
+        let root = try makeTempDirectory()
+        defer { cleanUp(root) }
+        try write(supersetJSON, to: ".superset/config.json", under: root)
+        let handEdited = #"{ "run": "bun dev", "setup": ["my setup"] }"#
+        try write(handEdited, to: ".supermux/config.json", under: root)
+
+        #expect(throws: (any Error).self) {
+            try SupermuxProjectConfigWriter().write(SupermuxProjectConfig(run: ["new"]), projectRoot: root)
+        }
+        #expect(read(".supermux/config.json", under: root) == handEdited)
+    }
+
     // MARK: - Project root
 
     @Test func throwsWhenProjectRootIsMissing() throws {
