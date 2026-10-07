@@ -1,0 +1,180 @@
+public import CmuxMobileShellModel
+import Foundation
+public import Observation
+
+/// One drag of a workspace nested under a project on the iPhone, as the
+/// owning Mac will apply it.
+///
+/// A nested row moves only inside its segment: the rows of one project on one
+/// Mac, in one of that Mac's windows, on one side of the pinned line. That is
+/// the run the Mac sidebar shows in the Mac's own tab order, so the new order
+/// is exactly one `workspace.move` on that Mac.
+public struct SupermuxNestedMove: Equatable, Sendable {
+    /// The dragged workspace's row id.
+    public let workspaceID: MobileWorkspacePreview.ID
+    /// The segment the row moves in (``SupermuxProjectsListLayout/nestedSegments``).
+    public let segment: String
+    /// The segment's rows, top to bottom, after the drop.
+    public let order: [MobileWorkspacePreview.ID]
+    /// Whether the drop changes the order (a row dropped on its own place does not).
+    public let changesOrder: Bool
+
+    /// Memberwise initializer.
+    public init(
+        workspaceID: MobileWorkspacePreview.ID,
+        segment: String,
+        order: [MobileWorkspacePreview.ID],
+        changesOrder: Bool
+    ) {
+        self.workspaceID = workspaceID
+        self.segment = segment
+        self.order = order
+        self.changesOrder = changesOrder
+    }
+}
+
+/// Pure rules for dragging a nested workspace row.
+public struct SupermuxNestedReorderPolicy: Sendable {
+    /// Creates the rules.
+    public init() {}
+
+    /// The move a drop makes, or `nil` when the row may not land there.
+    /// - Parameters:
+    ///   - leadingRun: The table's leading run top to bottom: a nested
+    ///     workspace's id, or `nil` for any other row (chrome, project rows).
+    ///   - source: The dragged row's index in `leadingRun`.
+    ///   - destination: The row's index after the drop (UIKit's insertion index).
+    ///   - segments: Each nested workspace's segment.
+    public func move(
+        leadingRun: [MobileWorkspacePreview.ID?],
+        from source: Int,
+        to destination: Int,
+        segments: [MobileWorkspacePreview.ID: String]
+    ) -> SupermuxNestedMove? {
+        guard leadingRun.indices.contains(source), leadingRun.indices.contains(destination),
+              let moved = leadingRun[source], let segment = segments[moved] else { return nil }
+        func slots(_ run: [MobileWorkspacePreview.ID?]) -> [Int] {
+            run.indices.filter { index in run[index].flatMap { segments[$0] } == segment }
+        }
+        var run = leadingRun
+        run.remove(at: source)
+        run.insert(moved, at: destination)
+        // A move inside the segment only swaps rows between the slots the
+        // segment already holds; landing anywhere else changes those slots.
+        let held = slots(leadingRun)
+        guard slots(run) == held else { return nil }
+        let order = held.compactMap { run[$0] }
+        let previous = held.compactMap { leadingRun[$0] }
+        return SupermuxNestedMove(workspaceID: moved, segment: segment, order: order, changesOrder: order != previous)
+    }
+
+    /// The workspace the Mac puts the moved one right before, or `nil` for
+    /// the end of its window.
+    /// - Parameters:
+    ///   - move: The drop.
+    ///   - workspaces: The shell's rows in the Macs' own order.
+    public func beforeWorkspaceID(
+        for move: SupermuxNestedMove,
+        in workspaces: [MobileWorkspacePreview]
+    ) -> MobileWorkspacePreview.ID? {
+        guard let position = move.order.firstIndex(of: move.workspaceID) else { return nil }
+        if position + 1 < move.order.count {
+            return move.order[position + 1]
+        }
+        // Dropped last: right after the row it now follows, which in the
+        // Mac's tabs is before the next tab of that window outside the
+        // segment (rows of the segment there are placed by this order).
+        guard position > 0, let moved = workspaces.first(where: { $0.id == move.workspaceID }) else { return nil }
+        let window = workspaces.filter { workspace in
+            workspace.macDeviceID == moved.macDeviceID
+                && workspace.macInstanceTag == moved.macInstanceTag
+                && workspace.windowID == moved.windowID
+        }
+        let members = Set(move.order)
+        // The nearest row above it that is still open: a closed predecessor
+        // must not send the row to the window's end, outside its project.
+        let after = move.order[..<position].reversed().lazy.compactMap { id in
+            window.firstIndex { $0.id == id }
+        }.first
+        guard let after else { return nil }
+        return window[(after + 1)...].first { !members.contains($0.id) }?.id
+    }
+}
+
+extension SupermuxNestedReorderPolicy {
+    /// Whether `workspaces` lists the move's rows in its order (a row closed
+    /// since the drop is not waited for).
+    public func listHolds(_ move: SupermuxNestedMove, _ workspaces: [MobileWorkspacePreview]) -> Bool {
+        let members = Set(move.order)
+        let listed = workspaces.map(\.id).filter(members.contains)
+        let open = Set(listed)
+        return listed == move.order.filter(open.contains)
+    }
+}
+
+/// The nested rows the phone shows moved before their Mac has answered.
+@MainActor
+@Observable
+public final class SupermuxNestedReorderModel {
+    /// The order each segment shows while its move is on the way, by segment.
+    public private(set) var orders: [String: [MobileWorkspacePreview.ID]] = [:]
+
+    /// The latest move per segment: only its answer ends the segment's order.
+    @ObservationIgnored private var latest: [String: Int] = [:]
+    @ObservationIgnored private var moveCount = 0
+    /// Each segment's last move, which its next move waits for. A segment is
+    /// one project on one Mac, so a slow Mac holds up only its own moves.
+    @ObservationIgnored private var tails: [String: Task<Void, Never>] = [:]
+    /// Bumped when a segment's move does not land: the moves queued on it
+    /// were worked out from the order it showed, so they are dropped.
+    @ObservationIgnored private var generations: [String: Int] = [:]
+
+    /// Creates an empty model.
+    public init() {}
+
+    /// Waits until `isDone()` or `timeout` passes, checking every 50 ms.
+    /// - Returns: Whether `isDone()` came true.
+    @discardableResult
+    public static func wait(upTo timeout: Duration, until isDone: @MainActor () -> Bool) async -> Bool {
+        let deadline = ContinuousClock.now + timeout
+        while ContinuousClock.now < deadline {
+            if isDone() { return true }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        return isDone()
+    }
+
+    /// Shows `move` at once and sends it after its segment's earlier moves.
+    /// - Parameters:
+    ///   - move: The drop.
+    ///   - send: Sends the move and returns whether it landed: the Mac took it
+    ///     and the list shows it.
+    /// - Returns: The task that sends it.
+    @discardableResult
+    public func perform(
+        _ move: SupermuxNestedMove,
+        send: @escaping @MainActor () async -> Bool
+    ) -> Task<Void, Never> {
+        let segment = move.segment
+        moveCount += 1
+        let token = moveCount
+        latest[segment] = token
+        orders[segment] = move.order
+        let generation = generations[segment, default: 0]
+        let previous = tails[segment]
+        let task = Task { @MainActor [weak self] in
+            await previous?.value
+            guard let self, self.generations[segment, default: 0] == generation else { return }
+            if await send() {
+                guard self.latest[segment] == token else { return }
+            } else {
+                // The list holds the Mac's order; drop what was queued on this.
+                self.generations[segment, default: 0] += 1
+            }
+            self.latest[segment] = nil
+            self.orders[segment] = nil
+        }
+        tails[segment] = task
+        return task
+    }
+}

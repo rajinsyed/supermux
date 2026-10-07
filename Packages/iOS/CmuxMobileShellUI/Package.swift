@@ -110,6 +110,11 @@ let package = Package(
                 // project coverage constructs fixtures from.
                 "SupermuxMobileCore",
                 // SUPERMUX:end notification-feed-project-row
+                // SUPERMUX:begin supermux-mobile-nested-reorder
+                // Test-only: the nested-row drag tests build the fork's
+                // Projects layout and read the move it sends.
+                "SupermuxMobileUI",
+                // SUPERMUX:end supermux-mobile-nested-reorder
                 .product(name: "StackAuth", package: "stack-auth-swift-sdk-prerelease"),
             ],
             swiftSettings: [

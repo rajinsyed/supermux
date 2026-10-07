@@ -99,6 +99,9 @@ public final class SupermuxProjectsSectionModel {
     /// fresh workspace's row arrives.
     @ObservationIgnored let navigator: SupermuxWorkspaceNavigator
 
+    /// Nested rows the user dragged, shown moved until their Mac answers.
+    public let nestedReorder = SupermuxNestedReorderModel()
+
     /// The open workspaces the shell last reported (project-associated only).
     private var workspaceRows: [SupermuxProjectWorkspaceRowSnapshot] = []
 
