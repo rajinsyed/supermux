@@ -24,6 +24,9 @@ import UIKit
 /// 5. A drop on the row's own place sends a move.
 /// 6. Loose rows regress: one can drop into the nested rows, or its own
 ///    reorder stops reaching upstream's handler with the right indices.
+/// 7. The table's drag interaction follows only the loose list's gate, so on a
+///    Mac whose workspaces are all in projects no drag ever starts, although
+///    the delegate would lift the row.
 @MainActor
 @Suite struct SupermuxNestedReorderDropTests {
     private static var fixtureWindows: [UIWindow] = []
@@ -190,6 +193,20 @@ import UIKit
             destinationIndexPath: IndexPath(row: destination, section: 0))
         fixture.coordinator.tableView(fixture.tableView, performDropWith: dropCoordinator)
         return dropCoordinator
+    }
+
+    // MARK: The table takes drags (7)
+
+    @Test func theTableTakesDragsWhenOnlyNestedRowsCanMove() {
+        let fixture = makeFixture(recorder: Recorder(), looseListReorders: false)
+        #expect(fixture.tableView.dragInteractionEnabled)
+        fixture.coordinator.update(configuration: fixture.coordinator.configuration, in: fixture.tableView)
+        #expect(fixture.tableView.dragInteractionEnabled, "a list update turned the drag interaction off")
+    }
+
+    @Test func theTableTakesNoDragsWhenNothingCanMove() {
+        let fixture = makeFixture(recorder: Recorder(), sendsNestedMoves: false, looseListReorders: false)
+        #expect(!fixture.tableView.dragInteractionEnabled)
     }
 
     // MARK: Lifting (1, 2)
