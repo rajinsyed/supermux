@@ -131,11 +131,21 @@ final class SidebarCompactAgentStatusUITests: XCTestCase {
             // Glyph accessibility labels carry the tooltip text.
             // "Finished" is the unseen workspace's notification, which leads its tooltip.
             // "grouped input: " is the collapsed group header's roll-up.
-            for label in ["Needs input", "PR #12: open", "PR #13: merged", "main", "Idle", "Finished", "grouped input: "] {
+            // SUPERMUX:begin sidebar-hide-pull-requests (upstream also expects "PR #12: open" and
+            // "PR #13: merged" glyphs; supermux shows no pull request status on workspace rows)
+            for label in ["Needs input", "main", "Idle", "Finished", "grouped input: "] {
+            // SUPERMUX:end sidebar-hide-pull-requests
                 let glyph = sidebar.descendants(matching: .any)
                     .matching(NSPredicate(format: "label CONTAINS %@", label)).firstMatch
                 XCTAssertTrue(glyph.waitForExistence(timeout: 5.0), "Expected a compact status glyph labelled \(label)")
             }
+            // SUPERMUX:begin sidebar-hide-pull-requests
+            for label in ["PR #12", "PR #13"] {
+                let glyph = sidebar.descendants(matching: .any)
+                    .matching(NSPredicate(format: "label CONTAINS %@", label)).firstMatch
+                XCTAssertFalse(glyph.exists, "Expected no pull request status labelled \(label)")
+            }
+            // SUPERMUX:end sidebar-hide-pull-requests
             // One line per row: branch and PR details live in the tooltip only.
             for detail in ["feat/sidebar", "feat/done"] {
                 let line = sidebar.staticTexts.matching(NSPredicate(format: "value CONTAINS %@", detail)).firstMatch

@@ -15,8 +15,6 @@ public struct SupermuxWorktreeDTO: Codable, Sendable, Equatable {
     public var workspaceId: String?
     /// Whether the worktree has uncommitted changes.
     public var isDirty: Bool?
-    /// The associated pull request, when one is known.
-    public var pullRequest: SupermuxPullRequestDTO?
 
     /// Creates a worktree DTO.
     /// - Parameters:
@@ -26,15 +24,13 @@ public struct SupermuxWorktreeDTO: Codable, Sendable, Equatable {
     ///   - isOpen: Optional open-workspace flag.
     ///   - workspaceId: Optional open workspace id.
     ///   - isDirty: Optional dirty flag.
-    ///   - pullRequest: Optional associated pull request.
     public init(
         path: String,
         branch: String? = nil,
         baseBranch: String? = nil,
         isOpen: Bool? = nil,
         workspaceId: String? = nil,
-        isDirty: Bool? = nil,
-        pullRequest: SupermuxPullRequestDTO? = nil
+        isDirty: Bool? = nil
     ) {
         self.path = path
         self.branch = branch
@@ -42,7 +38,6 @@ public struct SupermuxWorktreeDTO: Codable, Sendable, Equatable {
         self.isOpen = isOpen
         self.workspaceId = workspaceId
         self.isDirty = isDirty
-        self.pullRequest = pullRequest
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -52,6 +47,5 @@ public struct SupermuxWorktreeDTO: Codable, Sendable, Equatable {
         case isOpen = "is_open"
         case workspaceId = "workspace_id"
         case isDirty = "is_dirty"
-        case pullRequest = "pull_request"
     }
 }

@@ -19,7 +19,7 @@ import SupermuxKit
 /// in as well (the same pair of legs the sidebar row model listens to).
 @MainActor
 final class SupermuxChangesPullRequestObserver: ObservableObject {
-    /// The selected workspace's PR badge, or `nil`.
+    /// The selected workspace's pull request, or `nil`.
     @Published private(set) var knownPullRequest: SupermuxPullRequest?
 
     private static let coalesceInterval: DispatchQueue.SchedulerTimeType.Stride = .milliseconds(40)

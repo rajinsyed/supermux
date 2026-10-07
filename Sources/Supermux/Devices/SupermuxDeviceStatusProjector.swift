@@ -7,10 +7,9 @@ import SupermuxKit
 /// `Workspace`, so a mirror row shows what the owning Mac's row shows.
 ///
 /// - **Overlays** (read, never written into the workspace): agent activity
-///   (the row's, and each tab's via `workingPanelIDs`), branch and PR.
-///   ``SupermuxWorkspaceActivityResolver/activity(for:)``,
-///   `Workspace.supermuxSidebarBranch` and ``SupermuxWorkspaceRow`` consult
-///   ``status(forLocal:)`` first. Activity is deliberately NOT written as an
+///   (the row's, and each tab's via `workingPanelIDs`) and branch.
+///   ``SupermuxWorkspaceActivityResolver/activity(for:)`` and
+///   `Workspace.supermuxSidebarBranch` consult ``status(forLocal:)`` first. Activity is deliberately NOT written as an
 ///   agent lifecycle into the mirror panes: an `.idle` lifecycle would make the
 ///   mirror eligible for agent hibernation.
 /// - **Written into the mirror**: the remote `cmux set-status` pills (under
@@ -20,7 +19,7 @@ import SupermuxKit
 ///   the remote value changes).
 ///
 /// Every consumer refreshes: pills/progress/log/color/description/pin ride the
-/// workspace's own sidebar publishers; activity/branch/PR changes fire
+/// workspace's own sidebar publishers; activity/branch changes fire
 /// ``SupermuxWorkspaceLifecycleRelay`` (nested project rows observe it, the flat
 /// list via the `device-mirror-flatrow-refresh` touchpoint).
 ///
@@ -140,6 +139,5 @@ final class SupermuxDeviceStatusProjector {
         previous?.activity != status.activity
             || previous?.workingPanelIDs != status.workingPanelIDs
             || previous?.branch != status.branch
-            || previous?.pullRequest != status.pullRequest
     }
 }

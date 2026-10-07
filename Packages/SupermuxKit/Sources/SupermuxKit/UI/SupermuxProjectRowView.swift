@@ -36,11 +36,6 @@ public struct SupermuxProjectRowActions {
     public var moveDown: () -> Void
     /// Reorders a nested workspace `(draggedId, targetId)` within this project.
     public var reorderWorkspace: (UUID, UUID) -> Void
-    /// Opens a pull request's URL. The second argument is the open workspace
-    /// the badge belongs to (`nil` for an unopened worktree's badge), so the
-    /// host can open the PR *in that workspace* rather than whichever one is
-    /// currently selected.
-    public var openPullRequest: (URL, UUID?) -> Void
 
     /// Memberwise initializer (all callbacks required).
     public init(
@@ -59,8 +54,7 @@ public struct SupermuxProjectRowActions {
         renameWorkspace: @escaping (UUID) -> Void = { _ in },
         moveUp: @escaping () -> Void = {},
         moveDown: @escaping () -> Void = {},
-        reorderWorkspace: @escaping (UUID, UUID) -> Void = { _, _ in },
-        openPullRequest: @escaping (URL, UUID?) -> Void = { _, _ in }
+        reorderWorkspace: @escaping (UUID, UUID) -> Void = { _, _ in }
     ) {
         self.openLocal = openLocal
         self.newWorktree = newWorktree
@@ -78,7 +72,6 @@ public struct SupermuxProjectRowActions {
         self.moveUp = moveUp
         self.moveDown = moveDown
         self.reorderWorkspace = reorderWorkspace
-        self.openPullRequest = openPullRequest
     }
 }
 
@@ -170,10 +163,6 @@ public struct SupermuxProjectRowView: View, Equatable {
     let project: SupermuxProject
     private let detectedIcon: NSImage?
     private let worktrees: [SupermuxProjectWorktree]
-    /// Resolved pull requests for this project's unopened worktrees, keyed by
-    /// worktree path. An immutable value snapshot (the row holds no PR store), so
-    /// a PR change in one project never invalidates another project's row.
-    private let worktreePullRequests: [String: SupermuxPullRequest]
     private let openWorkspaces: [SupermuxOpenWorkspace]
     private let isExpanded: Bool
     let actions: SupermuxProjectRowActions
@@ -241,7 +230,6 @@ public struct SupermuxProjectRowView: View, Equatable {
         project: SupermuxProject,
         detectedIcon: NSImage? = nil,
         worktrees: [SupermuxProjectWorktree],
-        worktreePullRequests: [String: SupermuxPullRequest] = [:],
         openWorkspaces: [SupermuxOpenWorkspace] = [],
         isExpanded: Bool,
         actions: SupermuxProjectRowActions,
@@ -268,13 +256,10 @@ public struct SupermuxProjectRowView: View, Equatable {
         self.project = project
         self.detectedIcon = detectedIcon
         self.worktrees = worktrees
-        self.worktreePullRequests = worktreePullRequests
         self.openWorkspaces = openWorkspaces
         // Computed once per row value (both inputs are immutable): body reads
         // this three times per pass, and hover/drag re-renders re-run body but
-        // not init, so the path standardization never repeats. Shares the
-        // open-vs-unopened rule with the PR-probe target computation via
-        // SupermuxUnopenedWorktrees.
+        // not init, so the path standardization never repeats.
         let openDirs = SupermuxUnopenedWorktrees.openDirectories(openWorkspaces)
         self.unopenedWorktrees = SupermuxUnopenedWorktrees.filter(worktrees, openDirectories: openDirs)
         self.isExpanded = isExpanded
@@ -292,7 +277,6 @@ public struct SupermuxProjectRowView: View, Equatable {
         lhs.project == rhs.project
             && lhs.detectedIcon === rhs.detectedIcon
             && lhs.worktrees == rhs.worktrees
-            && lhs.worktreePullRequests == rhs.worktreePullRequests
             && lhs.openWorkspaces == rhs.openWorkspaces
             && lhs.isExpanded == rhs.isExpanded
             && lhs.canMoveUp == rhs.canMoveUp
@@ -325,7 +309,6 @@ public struct SupermuxProjectRowView: View, Equatable {
                     siblingWorkspaceIds: siblingIdsByMac[workspace.device?.machineID ?? ""] ?? [],
                     reorder: actions.reorderWorkspace,
                     draggingWorkspaceId: $draggingWorkspaceId,
-                    openPullRequest: { url in actions.openPullRequest(url, workspace.id) },
                     mirrorMenu: { remoteActions.mirrorMenu(workspace.id) }
                 )
                 .equatable()
@@ -466,10 +449,8 @@ public struct SupermuxProjectRowView: View, Equatable {
     private func worktreeRow(_ worktree: SupermuxProjectWorktree) -> some View {
         SupermuxWorktreeRowView(
             worktree: worktree,
-            pullRequest: worktreePullRequests[worktree.path],
             open: { actions.openWorktree(worktree) },
-            delete: { deleteBranch in actions.deleteWorktree(worktree, deleteBranch) },
-            openPullRequest: { url in actions.openPullRequest(url, nil) }
+            delete: { deleteBranch in actions.deleteWorktree(worktree, deleteBranch) }
         )
     }
 }
@@ -477,12 +458,8 @@ public struct SupermuxProjectRowView: View, Equatable {
 /// An indented worktree row under an expanded project.
 struct SupermuxWorktreeRowView: View {
     let worktree: SupermuxProjectWorktree
-    /// The worktree branch's pull request, if one was probed; renders a badge.
-    var pullRequest: SupermuxPullRequest?
     let open: () -> Void
     let delete: (Bool) -> Void
-    /// Opens the PR badge's URL.
-    var openPullRequest: (URL) -> Void = { _ in }
 
     @Environment(\.supermuxSidebarFontScale) private var fontScale
     @State private var isHovered = false
@@ -501,14 +478,7 @@ struct SupermuxWorktreeRowView: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: 2)
-            if let pullRequest {
-                SupermuxPullRequestBadge(
-                    pullRequest: pullRequest,
-                    fontScale: fontScale,
-                    onOpen: openPullRequest
-                )
-            }
-            // Hover-only "open" hint; laid out always so the PR badge stays put.
+            // Hover-only "open" hint; laid out always so the row's width stays put.
             Image(systemName: "arrow.right")
                 .font(.system(size: 8.5 * fontScale, weight: .semibold))
                 .foregroundStyle(.tertiary)

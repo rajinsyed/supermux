@@ -7,7 +7,7 @@ import Testing
 /// fixture project with a known activity state yields `supermux_project_id`
 /// equal to the project id and `supermux_activity` in
 /// `{working, needs_input, ready}`. Active global workspaces carry activity too,
-/// while project-specific branch/PR fields remain association-gated.
+/// while the project-specific branch field remains association-gated.
 @MainActor
 struct SupermuxMobileWorkspaceFieldsTests {
     private func fields(
@@ -15,7 +15,6 @@ struct SupermuxMobileWorkspaceFieldsTests {
         directory: String? = nil,
         activity: SupermuxWorkspaceActivity,
         branch: String? = nil,
-        pullRequest: SupermuxPullRequest? = nil,
         projects: [SupermuxProject],
         associations: SupermuxWorkspaceAssociationStore
     ) -> [String: Any] {
@@ -24,7 +23,6 @@ struct SupermuxMobileWorkspaceFieldsTests {
             directory: directory,
             activity: activity,
             branch: branch,
-            pullRequest: pullRequest,
             projects: projects,
             associations: associations
         )
@@ -144,7 +142,7 @@ struct SupermuxMobileWorkspaceFieldsTests {
         #expect(SupermuxWorkspaceActivity.idle.mobileWireDTO == nil)
     }
 
-    // MARK: - m6-f2 sidebar-row parity fields (supermux_branch / supermux_pull_request)
+    // MARK: - m6-f2 sidebar-row parity field (supermux_branch)
 
     @Test func associatedWorkspaceCarriesItsBranch() {
         let store = SupermuxWorkspaceAssociationStore()
@@ -180,75 +178,7 @@ struct SupermuxMobileWorkspaceFieldsTests {
         }
     }
 
-    @Test func associatedWorkspaceCarriesItsPullRequestAsTheSharedDTOShape() throws {
-        let store = SupermuxWorkspaceAssociationStore()
-        let project = SupermuxProject(name: "Alpha", rootPath: "/repos/alpha")
-        let workspaceID = UUID()
-        store.associate(workspaceId: workspaceID, projectId: project.id)
-
-        let payload = fields(
-            workspaceID: workspaceID,
-            activity: .working,
-            pullRequest: SupermuxPullRequest(
-                number: 4321,
-                status: .merged,
-                url: try #require(URL(string: "https://github.com/acme/alpha/pull/4321"))
-            ),
-            projects: [project],
-            associations: store
-        )
-
-        // Same wire shape as the worktree DTO's pull_request (SupermuxPullRequestDTO),
-        // so the phone's badge mapping is shared, not duplicated. A fresh
-        // badge omits is_stale entirely.
-        let pullRequest = try #require(payload[SupermuxMobileWorkspaceFields.pullRequestKey] as? [String: Any])
-        #expect(pullRequest["number"] as? Int == 4321)
-        #expect(pullRequest["state"] as? String == "merged")
-        #expect(pullRequest["url"] as? String == "https://github.com/acme/alpha/pull/4321")
-        #expect(pullRequest["is_stale"] == nil)
-    }
-
-    @Test func stalePullRequestCarriesIsStale() throws {
-        let store = SupermuxWorkspaceAssociationStore()
-        let project = SupermuxProject(name: "Alpha", rootPath: "/repos/alpha")
-        let workspaceID = UUID()
-        store.associate(workspaceId: workspaceID, projectId: project.id)
-
-        let payload = fields(
-            workspaceID: workspaceID,
-            activity: .idle,
-            pullRequest: SupermuxPullRequest(
-                number: 9,
-                status: .open,
-                url: try #require(URL(string: "https://github.com/acme/alpha/pull/9")),
-                isStale: true
-            ),
-            projects: [project],
-            associations: store
-        )
-
-        let pullRequest = try #require(payload[SupermuxMobileWorkspaceFields.pullRequestKey] as? [String: Any])
-        #expect(pullRequest["is_stale"] as? Bool == true)
-    }
-
-    @Test func nilPullRequestIsOmitted() {
-        let store = SupermuxWorkspaceAssociationStore()
-        let project = SupermuxProject(name: "Alpha", rootPath: "/repos/alpha")
-        let workspaceID = UUID()
-        store.associate(workspaceId: workspaceID, projectId: project.id)
-
-        let payload = fields(
-            workspaceID: workspaceID,
-            activity: .ready,
-            pullRequest: nil,
-            projects: [project],
-            associations: store
-        )
-
-        #expect(payload[SupermuxMobileWorkspaceFields.pullRequestKey] == nil)
-    }
-
-    @Test func unassociatedWorkspaceOmitsProjectParityFieldsButKeepsActivity() throws {
+    @Test func unassociatedWorkspaceOmitsProjectParityFieldsButKeepsActivity() {
         let store = SupermuxWorkspaceAssociationStore()
         let project = SupermuxProject(name: "Alpha", rootPath: "/repos/alpha")
 
@@ -257,11 +187,6 @@ struct SupermuxMobileWorkspaceFieldsTests {
             directory: "/elsewhere",
             activity: .working,
             branch: "main",
-            pullRequest: SupermuxPullRequest(
-                number: 7,
-                status: .open,
-                url: try #require(URL(string: "https://github.com/acme/alpha/pull/7"))
-            ),
             projects: [project],
             associations: store
         )
@@ -269,7 +194,6 @@ struct SupermuxMobileWorkspaceFieldsTests {
         #expect(payload[SupermuxMobileWorkspaceFields.projectIDKey] == nil)
         #expect(payload[SupermuxMobileWorkspaceFields.activityKey] as? String == "working")
         #expect(payload[SupermuxMobileWorkspaceFields.branchKey] == nil)
-        #expect(payload[SupermuxMobileWorkspaceFields.pullRequestKey] == nil)
         #expect(payload.count == 1)
     }
 }

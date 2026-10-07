@@ -30,11 +30,6 @@ public struct SupermuxOpenWorkspace: Identifiable, Hashable, Sendable {
     /// Whether this workspace's project run command is currently running,
     /// for the piggycode-style run indicator on the row.
     public let isRunning: Bool
-    /// The pull request for this workspace's branch, when cmux has probed one.
-    /// Reused directly from cmux's own per-workspace PR state (the host maps
-    /// `Workspace.sidebarPullRequestsInDisplayOrder().first`), so no separate
-    /// probe runs for opened worktrees.
-    public let pullRequest: SupermuxPullRequest?
     /// The workspace's displayed unread count — the same per-workspace value
     /// cmux's flat sidebar rows badge (notification unread plus the
     /// manual/panel-derived/restored indicator), so a workspace shows one
@@ -55,7 +50,6 @@ public struct SupermuxOpenWorkspace: Identifiable, Hashable, Sendable {
     ///   - projectId: Owning project for nesting, or `nil` if standalone.
     ///   - activity: Agent activity state for the indicator.
     ///   - isRunning: Whether the project run command is active for this workspace.
-    ///   - pullRequest: The workspace branch's pull request, if cmux probed one.
     ///   - unreadCount: The row's displayed unread count (0 hides the badge).
     ///   - device: The Mac a device mirror shows, or `nil` for a local workspace.
     public init(
@@ -67,7 +61,6 @@ public struct SupermuxOpenWorkspace: Identifiable, Hashable, Sendable {
         projectId: UUID? = nil,
         activity: SupermuxWorkspaceActivity = .idle,
         isRunning: Bool = false,
-        pullRequest: SupermuxPullRequest? = nil,
         unreadCount: Int = 0,
         device: SupermuxProjectDevice? = nil
     ) {
@@ -79,7 +72,6 @@ public struct SupermuxOpenWorkspace: Identifiable, Hashable, Sendable {
         self.projectId = projectId
         self.activity = activity
         self.isRunning = isRunning
-        self.pullRequest = pullRequest
         self.unreadCount = unreadCount
         self.device = device
     }

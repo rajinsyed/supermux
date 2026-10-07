@@ -17,12 +17,7 @@ import Testing
         SupermuxWorktreeDTO(
             path: "/Users/dev/alpha/.worktrees/fix-login",
             branch: "fix-login",
-            isOpen: false,
-            pullRequest: SupermuxPullRequestDTO(
-                number: 41,
-                state: "open",
-                url: "https://github.com/acme/app/pull/41"
-            )
+            isOpen: false
         ),
     ]
 

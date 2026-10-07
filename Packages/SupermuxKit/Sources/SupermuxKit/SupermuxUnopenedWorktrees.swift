@@ -1,10 +1,10 @@
 import Foundation
 
 /// The single definition of "does this worktree already have an open
-/// workspace?" — shared by the sidebar's PR-probe target computation
-/// (`SupermuxProjectsSectionView+PullRequests.swift`) and the project row's
-/// unopened-worktree disclosure (`SupermuxProjectRowView`), so the two can
-/// never drift apart.
+/// workspace?" — shared by the project row's unopened-worktree rows
+/// (`SupermuxProjectRowView`), its worktree disclosure
+/// (`SupermuxWorktreeDisclosure`) and the phone's worktree list payload, so
+/// they can never drift apart.
 ///
 /// Today's rule compares `(path as NSString).standardizingPath` on both sides
 /// (workspace directory and worktree path). This is intentionally the one

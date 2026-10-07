@@ -16,7 +16,6 @@ struct SupermuxRemoteProjectRowView: View {
     let selectWorkspace: (UUID) -> Void
     let closeWorkspace: (UUID) -> Void
     let renameWorkspace: (UUID) -> Void
-    let openPullRequest: (URL, UUID?) -> Void
     /// Worktrees being created here in the background.
     var pendingWorktrees: [SupermuxPendingWorktreeRow] = []
     var pendingActions: SupermuxPendingWorktreeActions = .inert
@@ -38,7 +37,6 @@ struct SupermuxRemoteProjectRowView: View {
                     hide: { actions.hideMirror(workspace.id) },
                     rename: { renameWorkspace(workspace.id) },
                     draggingWorkspaceId: .constant(nil),
-                    openPullRequest: { url in openPullRequest(url, workspace.id) },
                     mirrorMenu: { actions.mirrorMenu(workspace.id) }
                 )
                 .equatable()
@@ -52,8 +50,7 @@ struct SupermuxRemoteProjectRowView: View {
                     SupermuxRemoteWorktreeRowView(
                         worktree: worktree,
                         open: { actions.openWorktree(worktree) },
-                        delete: { deleteBranch in actions.removeWorktree(worktree, deleteBranch) },
-                        openPullRequest: { url in openPullRequest(url, nil) }
+                        delete: { deleteBranch in actions.removeWorktree(worktree, deleteBranch) }
                     )
                 }
                 .transition(.opacity.combined(with: .move(edge: .top)))

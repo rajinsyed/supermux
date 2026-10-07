@@ -362,7 +362,6 @@ public struct SupermuxProjectsListLayout: Sendable {
                     workspaceID: workspace.id.rawValue,
                     remoteMac: remoteMac(location?.mac),
                     branch: workspace.supermuxDisplayedBranch,
-                    pullRequest: snapshot?.pullRequest,
                     isRunning: snapshot?.isRunning ?? false
                 )
             }

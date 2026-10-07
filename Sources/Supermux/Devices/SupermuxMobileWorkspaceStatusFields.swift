@@ -7,7 +7,7 @@ import SupermuxKit
 /// let another Mac's mirror row show what this Mac's own sidebar row shows —
 /// `supermux_status_entries` (the `cmux set-status` pills), `supermux_progress`
 /// (`cmux set-progress`), `supermux_log` (latest `cmux log` line), plus
-/// branch/PR for workspaces no project owns (the association-gated augmenter
+/// the branch for workspaces no project owns (the association-gated augmenter
 /// omits them; mirrors of global workspaces still need them).
 ///
 /// Filled from the `supermux-mobile-workspace-fields` fence in
@@ -60,18 +60,5 @@ enum SupermuxMobileWorkspaceStatusFields {
     static func branch(for workspace: Workspace) -> String? {
         let branch = workspace.supermuxSidebarBranch?.trimmingCharacters(in: .whitespacesAndNewlines)
         return branch?.isEmpty == false ? branch : nil
-    }
-
-    /// The PR badge for a workspace the augmenter left without one, under the
-    /// same "PR badge visible" gate the augmenter uses.
-    static func pullRequest(for workspace: Workspace) -> WorkspaceSyncRecord.SupermuxPullRequest? {
-        guard SidebarWorkspaceDetailDefaults.pullRequestActivity(defaults: .standard).performsActivePolling,
-              let state = workspace.sidebarPullRequestsInDisplayOrder().first else { return nil }
-        return WorkspaceSyncRecord.SupermuxPullRequest(
-            number: state.number,
-            state: state.status.rawValue,
-            url: state.url.absoluteString,
-            isStale: state.isStale
-        )
     }
 }

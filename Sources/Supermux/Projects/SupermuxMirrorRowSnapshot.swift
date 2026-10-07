@@ -1,15 +1,14 @@
-import CMUXMobileCore
 import Foundation
 import SupermuxKit
 
 /// Builds the nested Projects-section row for a device mirror: the local
 /// workspace's own snapshot, plus what only the other Mac knows — its device
-/// chip, run state, and branch / PR from the remote record when the mirror has
+/// chip, run state, and branch from the remote record when the mirror has
 /// none of its own. Activity comes only from the snapshot, whose resolver reads
 /// the status projection: it shows no live activity for an offline Mac, while
 /// the record still holds the last synced value.
 ///
-/// The record's branch and PR come from ``SupermuxUnifiedProjectsModel/mirrorRemoteFields``
+/// The record's branch comes from ``SupermuxUnifiedProjectsModel/mirrorRemoteFields``
 /// (observable, reassigned only on a real change), not from the device's
 /// records, so the sidebar body never follows ``SupermuxDevices/revision``.
 @MainActor
@@ -18,7 +17,6 @@ enum SupermuxMirrorRowSnapshot {
         for workspace: Workspace,
         isSelected: Bool,
         projectId: UUID,
-        includePullRequest: Bool,
         unreadCount: Int
     ) -> SupermuxOpenWorkspace {
         let base = SupermuxWorkspaceRow.snapshot(
@@ -26,7 +24,6 @@ enum SupermuxMirrorRowSnapshot {
             isSelected: isSelected,
             projectId: projectId,
             isRunning: false,
-            includePullRequest: includePullRequest,
             unreadCount: unreadCount
         )
         guard let ref = SupermuxComposition.deviceWorkspaceIndex.ref(forLocal: workspace) else { return base }
@@ -44,7 +41,6 @@ enum SupermuxMirrorRowSnapshot {
             projectId: projectId,
             activity: base.activity,
             isRunning: remote?.isRunning(remoteWorkspaceID: ref.workspaceID) ?? false,
-            pullRequest: base.pullRequest ?? (includePullRequest ? pullRequest(remoteFields?.pullRequest) : nil),
             unreadCount: base.unreadCount,
             device: SupermuxProjectDevice(
                 machineID: ref.machineID,
@@ -52,15 +48,5 @@ enum SupermuxMirrorRowSnapshot {
                 isOnline: device?.isConnected ?? false
             )
         )
-    }
-
-    private static func pullRequest(_ wire: WorkspaceSyncRecord.SupermuxPullRequest?) -> SupermuxPullRequest? {
-        guard let wire,
-              let number = wire.number,
-              let state = wire.state,
-              let status = SupermuxPullRequest.Status(rawValue: state),
-              let raw = wire.url,
-              let url = URL(string: raw) else { return nil }
-        return SupermuxPullRequest(number: number, status: status, url: url, isStale: wire.isStale ?? false)
     }
 }

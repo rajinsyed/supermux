@@ -8,13 +8,9 @@ internal import SupermuxMobileCore
 /// `branches: [String]`; ordinary list/count refreshes omit it.
 ///
 /// Lives in SupermuxKit (not the app target) so the wire shape — including
-/// the pull-request fold and open-workspace matching — is package-unit-testable;
-/// the app handler stays a thin pass-through reading `SupermuxComposition`.
+/// open-workspace matching — is package-unit-testable; the app handler stays
+/// a thin pass-through reading `SupermuxComposition`.
 ///
-/// Pull-request precedence mirrors the desktop sidebar exactly: a worktree
-/// with an open workspace uses that workspace's own PR (cmux's per-workspace
-/// probe, carried on ``SupermuxOpenWorkspace/pullRequest``); unopened
-/// worktrees fall back to ``SupermuxWorktreePullRequestModel``'s badge map.
 /// Open matching uses the same standardized-path rule as
 /// ``SupermuxUnopenedWorktrees`` so the two surfaces can never drift apart.
 public struct SupermuxMobileWorktreesPayloadBuilder: Sendable {
@@ -28,15 +24,12 @@ public struct SupermuxMobileWorktreesPayloadBuilder: Sendable {
     ///     omit branch discovery from this response.
     ///   - openWorkspaces: Snapshots of every open workspace (all windows);
     ///     matched to worktrees by standardized directory.
-    ///   - pullRequestsByWorktreePath: The unopened-worktree PR badge map
-    ///     (``SupermuxWorktreePullRequestModel/pullRequestsByWorktreePath``).
     /// - Returns: The RPC result object (`worktrees`, plus `branches` when requested).
     /// - Throws: Any encoding failure from the shared wire bridge.
     public func worktreesList(
         worktrees: [SupermuxProjectWorktree],
         branches: [String]? = nil,
-        openWorkspaces: [SupermuxOpenWorkspace],
-        pullRequestsByWorktreePath: [String: SupermuxPullRequest]
+        openWorkspaces: [SupermuxOpenWorkspace]
     ) throws -> [String: Any] {
         let wire = SupermuxWireJSON()
         // First workspace per standardized directory wins, matching
@@ -50,12 +43,10 @@ public struct SupermuxMobileWorktreesPayloadBuilder: Sendable {
         }
         let encoded = try worktrees.map { worktree -> [String: Any] in
             let openWorkspace = workspacesByDirectory[(worktree.path as NSString).standardizingPath]
-            let pullRequest = openWorkspace?.pullRequest ?? pullRequestsByWorktreePath[worktree.path]
             return try wire.dictionary(from: SupermuxWorktreeDTO(
                 worktree: worktree,
                 isOpen: openWorkspace != nil,
-                workspaceId: openWorkspace?.id.uuidString,
-                pullRequest: pullRequest
+                workspaceId: openWorkspace?.id.uuidString
             ))
         }
         var payload: [String: Any] = ["worktrees": encoded]

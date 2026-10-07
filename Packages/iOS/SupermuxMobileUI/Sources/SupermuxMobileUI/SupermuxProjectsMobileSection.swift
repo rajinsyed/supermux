@@ -13,9 +13,9 @@ import AppKit
 ///
 /// Mirrors the mac sidebar's Projects section (m6-f1/m6-f2): a project's
 /// open workspaces are ALWAYS nested under it (branch subtitles, trailing
-/// activity/PR/run status — exactly like the mac), each project row is an
+/// activity/run status — exactly like the mac), each project row is an
 /// INLINE disclosure — tapping it expands/collapses the project's unopened
-/// worktrees (PR badges) directly in the list — and the project DETAIL
+/// worktrees directly in the list — and the project DETAIL
 /// screen stays reachable through the row's info accessory and long-press
 /// menu.
 ///

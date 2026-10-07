@@ -77,7 +77,7 @@ anything.** It is the contract that keeps the fork mergeable with upstream cmux.
    Worktree sheet has a **device picker**; "New Workspace on ▸ <Mac>" (the `+` menu, the sidebar's
    empty-area menu) creates project-less workspaces remotely, while a plain New Workspace always stays
    on this Mac. Activity
-   spinners, status pills, progress, logs, branch/PR, unread and notification banners mirror the
+   spinners, status pills, progress, logs, branch, unread and notification banners mirror the
    owning Mac; closing a mirror closes it on its Mac like a local workspace (row menus also offer
    "Hide Here"). The phone gets pushes from the
    Mac that runs the agent, so the main Mac can be closed. Details: "Remote Macs (devices)" below and
@@ -111,7 +111,7 @@ building a parallel system.
 | Sticky Projects (sidebar section, icons, colors, persisted) | ✅ | `SupermuxProjectsModel`, `SupermuxProjectStore`, `SupermuxProjectsSectionView`; mounted via the `sidebar-projects-section` touchpoint |
 | Open local / create worktree from a project | ✅ | `SupermuxGitWorktreeService` (selectable starting branch; piggycode semantics: `--no-track -b`, `push.autoSetupRemote`, `branch.<n>.base`, dedup, exclude) |
 | List / open / delete worktrees (dirty-checked), plus project-level Delete All Worktrees on any Mac with the project (every linked worktree wherever it lives, never the main checkout; clean ones go, dirty ones get a second confirm) | ✅ loopback-E2E | `SupermuxGitWorktreeService.listWorktrees/removeWorktree`, `SupermuxProjectsModel+BulkWorktreeRemoval`, `SupermuxDeleteAllWorktreesFlow` (+`Alerts`), `SupermuxDeleteAllWorktreesMenu`, project row disclosure / context menu; other Macs via `SupermuxRemoteProjectCommands`, `tests/supermux/loopback_delete_all_worktrees_e2e.py` |
-| Worktree PR badges (clickable, state-colored) | ✅ | opened worktrees reuse cmux's per-workspace `SidebarPullRequestState` (carried on `SupermuxOpenWorkspace.pullRequest`); unopened ones via `SupermuxWorktreePullRequestModel` + `SupermuxPullRequestProbe` (wrapping `CmuxGit.PullRequestProbeService`); both render `SupermuxPullRequestBadge`. SupermuxKit now depends on `CmuxGit`. |
+| Worktree PR badges | ❌ removed | Removed on user request: the badge showed stale state (a merged PR still drew green). No workspace or worktree row on the Mac or the phone shows PR status; cmux's own flat rows hide theirs too (touchpoint #1123). The Changes panel's PR header and viewer (below) stay. SupermuxKit still depends on `CmuxGit` for that viewer. |
 | Changes (git) panel | ✅ | right-sidebar `changes` mode (`right-sidebar-changes-mode-*` touchpoints) → `SupermuxChangesPanelView` / `SupermuxChangesModel` / `SupermuxGitChangesService`; a file-row click captures `SupermuxChangesModel.fileDiffPatch` and `SupermuxFileDiffOpener` pipes it to the bundled `cmux diff -` CLI (upstream's viewer, one tab per workspace) |
 | PR viewer in the Changes panel (header `#N` buttons per open PR, load-on-click detail: state, mergeability, reviews, checks, labels, description, files; refresh inside) | ✅ | `Packages/SupermuxKit/Sources/SupermuxKit/PullRequests/` (`SupermuxPullRequestDetail`, `SupermuxGitHubClient`, `SupermuxPullRequestDetailService`, `SupermuxPullRequestViewerModel`) + `SupermuxPullRequestViewerView` / `SupermuxPullRequestHeaderButton`; mounted by `SupermuxChangesMount` with `SupermuxChangesPullRequestObserver` (mirrors cmux's already-probed workspace PR into the header — no polling of its own). Auth: `GH_TOKEN`/`GITHUB_TOKEN` else `gh auth token`, same as cmux's probe |
 | Run actions (⌘G start/stop) | ✅ | `supermuxToggleRun` shortcut (shares ⌘G with Find Next) → `SupermuxRunCoordinator` |
@@ -121,7 +121,7 @@ building a parallel system.
 | Start Claude in a new worktree (prompt-first, per-command model catalog) | ✅ | `Packages/SupermuxKit/Sources/SupermuxKit/Agent/` (`SupermuxAgentLauncherSettings`, `SupermuxAgentModelCatalog` + `SupermuxAgentCommandProbePlan`, `SupermuxPromptNaming`, `SupermuxAgentLaunchCommand`, `SupermuxAgentWorktreeLauncher` — the one shared path), `AI/SupermuxAIWorktreeNamer`; Mac UI: the prompt path lives inside `UI/SupermuxNewWorktreeSheet(+Chips)` (shown when the selected Mac's target offers it), whose state and flow are `UI/SupermuxNewWorktreeSheetModel` over one `SupermuxWorktreeCreationTarget` per Mac (device picker: create on This Mac or another Mac with the project — `plans/supermux-remote-workspaces/PROJECTS-API.md`); wired in `SupermuxComposition.agentLaunch`. Catalogs cache in the harness `SupermuxHarnessModelCatalogStore` under `/supermux-agent-command/<cmd>` pseudo-paths |
 | Localization (en + ja) | ✅ | macOS/app-target `supermux.*` keys in `Resources/Localizable.xcstrings`; the iOS screens package owns a SECOND catalog, `Packages/iOS/SupermuxMobileUI/Sources/SupermuxMobileUI/Resources/Localizable.xcstrings` (~207 keys). Regenerate with the scripts under "Localization" below |
 | Remote Macs in the left sidebar (auto-mirror, close/hide, restart-stable bindings) | ✅ loopback-E2E | `Sources/Supermux/Devices/` (`SupermuxDevices` facade, `SupermuxDeviceWorkspaceIndex`, `SupermuxDeviceWorkspaceOpener`, `SupermuxDeviceMirrorCoordinator` + `SupermuxMirrorReconciler`), loop guard #518/#519, close hook #530 |
-| Status parity on mirrors (activity, pills, progress, log, branch/PR, color/description/pin) | ✅ loopback-E2E | `SupermuxDeviceStatusProjector`, additive `supermux_status_entries/progress/log` record fields (#535/#536), flat-row fences #532/#533 |
+| Status parity on mirrors (activity, pills, progress, log, branch, color/description/pin) | ✅ loopback-E2E | `SupermuxDeviceStatusProjector`, additive `supermux_status_entries/progress/log` record fields (#535/#536), flat-row fences #532/#533 |
 | Projects across Macs (merge by git origin, remote-only rows, project sync, Set Up on <Mac>) | ✅ loopback-E2E | `Sources/Supermux/Projects/`, `SupermuxUnifiedProjects`, host RPCs `project.probe`/`project.clone`, `plans/supermux-remote-workspaces/PROJECTS-API.md` |
 | New Worktree device picker + New Workspace on ▸ <Mac> | ✅ loopback-E2E | `SupermuxNewWorktreeSheetModel` over `SupermuxWorktreeCreationTarget` (local / remote), #570/#571, #620–#622 (plain New Workspace stays local; the empty area's menu; another Mac's home folder) |
 | New Worktree runs in the background (Create / Start Claude closes the sheet at once; a loading row under the project until the workspace opens, never selected, so focus stays where the user moved on; a failed create's row reopens the sheet with the error and everything typed, or is dismissed; a create still AI-naming can be cancelled from its row) | ✅ loopback-E2E | `UI/SupermuxPendingWorktreeStore` (app-wide `SupermuxComposition.pendingWorktrees`; each window's sidebar draws only the creates it started), `UI/SupermuxPendingWorktreeRowView`, the targets' `selectsWorkspace` (`SupermuxOpenWorkspaceRequest.inBackground` here, an unfocused mirror open on another Mac); `tests/supermux/loopback_background_worktree_e2e.py` |
@@ -176,7 +176,7 @@ Status per fork feature area:
 | 1 | Projects (sticky, full CRUD) | ✅ on iOS | `SupermuxProjectsListLayout` + `SupermuxProjectsTableRowView` (iPhone: one row per project in the workspace table, #148–#151) / `SupermuxProjectsMobileSection` (macOS `List`) + `SupermuxProjectDetailScreen` + `SupermuxProjectEditorSheet` over `projects.list` / `project.create/update/delete/open` |
 | 2 | Project icons & colors | ✅ on iOS | custom icon via `project.icon` (base64 PNG, etag-cached `SupermuxProjectIconCache`) → SF Symbol → letter avatar tinted by `color_hex` |
 | 3 | Worktrees (create/open/remove, starting branch, AI branch suggest) | ✅ on iOS | `SupermuxNewWorktreeSheet` + project-detail worktree rows over lazy `worktrees.list` branch snapshots (`include_branches`) / `worktree.suggest_branch/create/open/remove` (dirty removals require `force` after a phone-side confirm) |
-| 4 | Worktree PR badges | ✅ on iOS | `SupermuxPullRequestDTO` (number/state/url; title optional-nil, matching the desktop probe) on `worktrees.list` rows |
+| 4 | Worktree PR badges | ❌ removed | removed with the Mac's badge; `worktrees.list` no longer sends `pull_request` (the phone ignores it from older Macs) |
 | 5 | Changes (git) panel | ✅ on iOS | `SupermuxChangesScreen` / `SupermuxDiffScreen`: status, diffs, stage/unstage/discard, commit, AI commit message, push/pull, stash/pop, history over `changes.*` |
 | 6 | Run actions | ✅ on iOS | project-row run menu + running indicator over `run.state/start/stop` |
 | 7 | Terminal presets | ✅ on iOS | preset manager + editors (m2) and launcher (m4) over `preset.create/update/delete/launch` |
@@ -1325,7 +1325,7 @@ silently decide them. None of them is a bug to fix in-place; each needs a produc
    SUPERMUX-TOUCHPOINTS.md #3.
 
 6. **Under state sync v2, fork-field freshness depends on the fork's own observer poke.** The
-   phone no longer refetches `mobile.workspace.list`; it consumes `mobile.sync.delta`. So the four
+   phone no longer refetches `mobile.workspace.list`; it consumes `mobile.sync.delta`. So the
    additive §6 fields are only as fresh as whatever ticks the v2 host.
    `Sources/Supermux/SupermuxMobileActivityObserver.swift` (supermux-owned, no fence needed) now
    ticks the v2 host alongside its `workspace.updated` emit, via an injectable `pokeStateSync`
@@ -1333,14 +1333,12 @@ silently decide them. None of them is a bug to fix in-place; each needs a produc
    lifecycle-derived fields or the association actually changed (not on every agent hook), and
    ticks through `SupermuxStateSyncTicker`, which it shares with
    `SupermuxMobileSidebarStatusObserver`: sidebar status changes wait in one trailing 150 ms tick,
-   and an activity change ticks at once, absorbing it. Unopened **worktree** PR badges are covered too, by
-   `SupermuxMobileWorktreesObserver` (`Sources/Supermux/SupermuxMobileObservers.swift`), which
-   hashes `pullRequestsByWorktreePath`. **Remaining gap — narrower than it first looks:** there is
-   no fork observer for branch-only or PR-only mutations on an **open `Workspace`**, so those
-   values refresh only when some other tracked field trips upstream's
+   and an activity change ticks at once, absorbing it. **Remaining gap — narrower than it first looks:** there is
+   no fork observer for branch-only mutations on an **open `Workspace`**, so that
+   value refreshes only when some other tracked field trips upstream's
    `Sources/Mobile/MobileWorkspaceListObserver.swift`. Pre-existing (already true of the legacy
    path) but **more visible under v2**, because the phone no longer papers over it with periodic
-   refetches. Fix would be a fork observer on open-workspace branch/PR state; not done.
+   refetches. Fix would be a fork observer on open-workspace branch state; not done.
 
 ### Fork-owned files that track upstream API churn
 

@@ -31,7 +31,6 @@ final class SupermuxUnifiedProjectsModel {
     /// A nested mirror row's fields that only its remote record carries.
     struct MirrorRemoteFields: Equatable {
         let branch: String?
-        let pullRequest: WorkspaceSyncRecord.SupermuxPullRequest?
     }
 
     /// Every project on every Mac, in sidebar order.
@@ -44,7 +43,7 @@ final class SupermuxUnifiedProjectsModel {
     private(set) var mirrorWorkspaceIDs: Set<UUID> = []
     /// Every remote workspace that has a local mirror.
     private(set) var mirroredRefs: Set<SupermuxRemoteWorkspaceRef> = []
-    /// Local mirror workspace id → its remote record's branch and PR.
+    /// Local mirror workspace id → its remote record's branch.
     private(set) var mirrorRemoteFields: [UUID: MirrorRemoteFields] = [:]
 
     @ObservationIgnored private let projectsModel: SupermuxProjectsModel
@@ -151,7 +150,7 @@ final class SupermuxUnifiedProjectsModel {
                 recordsByMachine[machine] = recordsByWorkspaceID(on: machine)
             }
             guard let record = recordsByMachine[machine]?[mirror.ref.workspaceID] else { continue }
-            remoteFields[id] = MirrorRemoteFields(branch: record.supermuxBranch, pullRequest: record.supermuxPullRequest)
+            remoteFields[id] = MirrorRemoteFields(branch: record.supermuxBranch)
             if let owner = owner(of: record, on: mirror.ref, in: list) { owners[id] = owner }
         }
         if ids != mirrorWorkspaceIDs { mirrorWorkspaceIDs = ids }

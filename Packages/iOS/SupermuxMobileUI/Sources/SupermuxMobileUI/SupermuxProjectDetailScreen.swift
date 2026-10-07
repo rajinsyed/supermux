@@ -4,7 +4,7 @@ public import SupermuxMobileKit
 public import SwiftUI
 
 /// Project detail: header (avatar, name, root path, default branch), the
-/// project's worktrees (state-colored PR badges, open/create/remove flows —
+/// project's worktrees (open/create/remove flows —
 /// capability-gated on `supermux.worktrees.v1`), and the open workspaces
 /// nested under this project (§6 join — tapping one opens it through the same
 /// navigation as the flat list's rows).

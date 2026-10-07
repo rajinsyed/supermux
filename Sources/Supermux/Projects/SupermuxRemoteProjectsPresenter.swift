@@ -102,8 +102,7 @@ enum SupermuxRemoteProjectsPresenter {
                     location: location,
                     path: worktree.path,
                     branch: worktree.branch,
-                    isDirty: worktree.isDirty ?? false,
-                    pullRequest: pullRequest(worktree.pullRequest)
+                    isDirty: worktree.isDirty ?? false
                 ))
             }
         }
@@ -123,11 +122,5 @@ enum SupermuxRemoteProjectsPresenter {
             return url
         }
         return project.localProjectID.flatMap { SupermuxComposition.projectGitRemotes.url(for: $0) }
-    }
-
-    private static func pullRequest(_ dto: SupermuxPullRequestDTO?) -> SupermuxPullRequest? {
-        guard let dto, let raw = dto.url, let url = URL(string: raw),
-              let state = dto.state, let status = SupermuxPullRequest.Status(rawValue: state) else { return nil }
-        return SupermuxPullRequest(number: dto.number, status: status, url: url, title: dto.title, isStale: dto.isStale ?? false)
     }
 }

@@ -245,21 +245,11 @@ final class MobileStateSyncHost {
         // SUPERMUX:begin supermux-mobile-workspace-fields (v2 parity with the legacy list payload:
         // the SAME `SupermuxMobileWorkspaceListAugmenter` the `mobile.workspace.list` path calls
         // from `Sources/TerminalController+MobileWorkspaceList.swift`, so the two transports can
-        // never disagree on project nesting, activity, branch, or PR badge —
+        // never disagree on project nesting, activity, or branch —
         // see SUPERMUX-TOUCHPOINTS.md. Augmenting an EMPTY payload yields just the additive
         // fields; unassociated workspaces yield an empty dictionary and every field stays nil,
         // exactly as an upstream Mac's record looks.)
         let supermuxFields = SupermuxMobileWorkspaceListAugmenter.augment([:], workspace: workspace)
-        let supermuxPullRequest = (
-            supermuxFields[SupermuxMobileWorkspaceFields.pullRequestKey] as? [String: Any]
-        ).map { object in
-            WorkspaceSyncRecord.SupermuxPullRequest(
-                number: object["number"] as? Int,
-                state: object["state"] as? String,
-                url: object["url"] as? String,
-                isStale: object["is_stale"] as? Bool
-            )
-        }
         // SUPERMUX:end supermux-mobile-workspace-fields
         return WorkspaceSyncRecord(
             id: workspace.id.uuidString,
@@ -287,12 +277,11 @@ final class MobileStateSyncHost {
             // SUPERMUX:begin supermux-mobile-workspace-fields
             supermuxProjectID: supermuxFields[SupermuxMobileWorkspaceFields.projectIDKey] as? String,
             supermuxActivity: supermuxFields[SupermuxMobileWorkspaceFields.activityKey] as? String,
-            // Global (project-less) workspaces get branch/PR too, so another
-            // Mac's mirror row shows them (the phone reads these only on
-            // project rows, so its UI is unchanged).
+            // Global (project-less) workspaces get a branch too, so another
+            // Mac's mirror row shows it (the phone reads it only on project
+            // rows, so its UI is unchanged).
             supermuxBranch: supermuxFields[SupermuxMobileWorkspaceFields.branchKey] as? String
                 ?? SupermuxMobileWorkspaceStatusFields.branch(for: workspace),
-            supermuxPullRequest: supermuxPullRequest ?? SupermuxMobileWorkspaceStatusFields.pullRequest(for: workspace),
             // The unread COUNT behind `has_unread`, so the phone's badge can
             // show the same numeral the Mac sidebar does. Not part of
             // `supermuxFields` on purpose: those are gated on the workspace

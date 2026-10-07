@@ -127065,91 +127065,6 @@
         }
       }
     },
-    "supermux.pullRequest.accessibility": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pull request #%lld, %@"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "プルリクエスト #%lld、%@"
-          }
-        }
-      }
-    },
-    "supermux.pullRequest.open.help": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Open pull request #%lld"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "プルリクエスト #%lld を開く"
-          }
-        }
-      }
-    },
-    "supermux.pullRequest.status.closed": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "closed"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "クローズ"
-          }
-        }
-      }
-    },
-    "supermux.pullRequest.status.merged": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "merged"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "マージ済み"
-          }
-        }
-      }
-    },
-    "supermux.pullRequest.status.open": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "open"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "オープン"
-          }
-        }
-      }
-    },
     "supermux.rightSidebar.mode.changes": {
       "extractionState": "manual",
       "localizations": {
@@ -603223,23 +603138,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "他のMac"
-          }
-        }
-      }
-    },
-    "supermux.devices.mirror.pullRequestLabel" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "PR"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "PR"
           }
         }
       }

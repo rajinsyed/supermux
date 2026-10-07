@@ -1,15 +1,36 @@
 import SwiftUI
 
-/// Draws the GitHub-style git-pull-request glyph with the same path geometry
-/// as the Mac's `SupermuxPullRequestGlyph`, scaled from its native 13-unit
-/// canvas to `size` — so the phone's PR badge and the sidebar's are
-/// pixel-twins. Strokes with `.foreground`; the badge's state tint colors it.
+/// The status icon the Changes panel's PR header buttons draw: a real
+/// git-pull-request glyph for open/merged (matching cmux's own PR icons) and a
+/// bare `xmark` for closed. Inherits the surrounding `foregroundStyle`, so the
+/// caller's state tint colors it. Every case is drawn into the same `size`
+/// footprint so all three center identically.
+struct SupermuxPullRequestStatusIcon: View {
+    let status: SupermuxPullRequest.Status
+    let size: CGFloat
+
+    var body: some View {
+        switch status {
+        case .open:
+            SupermuxPullRequestGlyph(kind: .open, size: size)
+        case .merged:
+            SupermuxPullRequestGlyph(kind: .merged, size: size)
+        case .closed:
+            Image(systemName: "xmark")
+                .font(.system(size: size * 0.78, weight: .semibold))
+                .frame(width: size, height: size)
+        }
+    }
+}
+
+/// Draws the GitHub-style git-pull-request glyph using the same path geometry
+/// as cmux's sidebar PR icons, scaled from its native 13-unit canvas to `size`.
+/// Strokes with `.foreground`, so the caller's `foregroundStyle` tint colors it.
 ///
 /// The open glyph carries a left-pointing **arrowhead**: two branches with a
 /// bare connector is the `git-branch` icon, not `git-pull-request`, and the
-/// arrow is the difference. Keep this geometry in step with the Mac's — the
-/// two are deliberate copies so the platforms cannot drift visually.
-struct SupermuxMobilePullRequestGlyph: View {
+/// arrow is the difference.
+struct SupermuxPullRequestGlyph: View {
     /// Which PR glyph to draw.
     enum Kind { case open, merged }
 
@@ -19,7 +40,9 @@ struct SupermuxMobilePullRequestGlyph: View {
     private static let canvas: CGFloat = 13
     private static let nodeDiameter: CGFloat = 3
     private static let stroke = StrokeStyle(lineWidth: 1.2, lineCap: .round, lineJoin: .round)
-    /// Where the open glyph's arrow tip lands (matches the Mac's).
+    /// Where the open glyph's arrow tip lands. Far enough left to read as
+    /// aimed at the left branch, not so far it collides with that branch's
+    /// node at 12pt.
     private static let arrowTipX: CGFloat = 6.6
     /// How far each barb trails behind the tip, on both axes (45° barbs).
     private static let arrowBarb: CGFloat = 1.4
@@ -42,9 +65,11 @@ struct SupermuxMobilePullRequestGlyph: View {
                 path.move(to: CGPoint(x: 3.0, y: 4.8))
                 path.addLine(to: CGPoint(x: 3.0, y: 9.2))
                 // Right branch: up from its node, round the corner, then run
-                // LEFT into an arrowhead aimed at the left branch. Separate
-                // strokes, as in GitHub's octicon, so the arrow reads as
-                // flying between the two branches.
+                // LEFT and end in an arrowhead aimed at the left branch. The
+                // arrow is the whole point of the glyph — it is what says
+                // "merge this into that" rather than "here are two branches" —
+                // and the two branches stay separate strokes, as in GitHub's
+                // own octicon, so the arrow reads as flying between them.
                 path.move(to: CGPoint(x: 11.0, y: 9.2))
                 path.addLine(to: CGPoint(x: 11.0, y: 4.6))
                 path.addArc(
@@ -82,5 +107,17 @@ struct SupermuxMobilePullRequestGlyph: View {
             }
         }
         .frame(width: Self.canvas, height: Self.canvas)
+    }
+}
+
+extension SupermuxPullRequest.Status {
+    /// State tint (GitHub-style): green open, purple merged, red closed. Bright
+    /// enough to read on both light and dark backgrounds.
+    var supermuxTint: Color {
+        switch self {
+        case .open: return Color(red: 0.247, green: 0.722, blue: 0.314)
+        case .merged: return Color(red: 0.639, green: 0.443, blue: 0.969)
+        case .closed: return Color(red: 0.973, green: 0.318, blue: 0.286)
+        }
     }
 }

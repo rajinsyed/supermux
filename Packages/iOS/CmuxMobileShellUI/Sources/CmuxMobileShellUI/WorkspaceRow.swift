@@ -226,8 +226,8 @@ struct WorkspaceRow: View {
     }
 
     // SUPERMUX:begin supermux-mobile-nested-branch-line
-    /// A nested row's trailing edge, beside both its lines: the PR badge and
-    /// run indicator, clear of the activity dot. No changes chip, as on the
+    /// A nested row's trailing edge, beside both its lines: the run
+    /// indicator, clear of the activity dot. No changes chip, as on the
     /// Mac sidebar.
     private func supermuxNestedTrailing(_ accessory: SupermuxNestedWorkspaceAccessory) -> some View {
         SupermuxNestedStatusSlot(accessory: accessory)

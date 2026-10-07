@@ -337,7 +337,7 @@ extension TerminalController {
             "surfaces": surfaces,
             "simulators": simulators
         ]
-        // SUPERMUX:begin mobile-supermux-workspace-fields (additive supermux_project_id / supermux_activity / supermux_branch / supermux_pull_request, §6 — see SUPERMUX-TOUCHPOINTS.md)
+        // SUPERMUX:begin mobile-supermux-workspace-fields (additive supermux_project_id / supermux_activity / supermux_branch, §6 — see SUPERMUX-TOUCHPOINTS.md)
         var forkPayload = SupermuxMobileWorkspaceListAugmenter.augment(payload, workspace: workspace)
         // The COUNT behind `has_unread`, so the phone draws the Mac's numbered
         // badge instead of a countless dot. Merged here rather than inside the
