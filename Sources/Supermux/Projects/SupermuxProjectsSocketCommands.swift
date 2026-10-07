@@ -14,6 +14,8 @@ import SupermuxMobileCore
 /// `remote_worktree_create {machine, project_id, workspace_name?, branch_name?, base_branch?, focus?, window_id?}`,
 /// `remote_action_run {machine, project_id, action_id, window_id?}` (the row's Actions menu),
 /// `project_action_run {project_id, action_id, focus?, window_id?}` (a local row's Actions menu),
+/// `delete_all_worktrees {project_id, machine?, delete_branches?, force_dirty?}`
+/// (DEBUG only: a row's Delete All Worktrees, its alerts answered by the params),
 /// `project_sync {}`, `projects_presentation {window_id?}`,
 /// `sidebar_rows {window_id?}` (the nested rows per project in display order,
 /// and each flat-list row's directory line, as the sidebar draws them).
@@ -21,7 +23,7 @@ import SupermuxMobileCore
 enum SupermuxProjectsSocketCommands {
     private static let methods: Set<String> = [
         "unified_projects", "remote_projects", "remote_worktrees",
-        "remote_worktree_create", "remote_action_run", "project_action_run", "project_sync",
+        "remote_worktree_create", "remote_action_run", "project_action_run", "delete_all_worktrees", "project_sync",
         "projects_presentation", "sidebar_rows",
     ]
 
@@ -68,6 +70,13 @@ enum SupermuxProjectsSocketCommands {
             return try await remoteActionRun(params)
         case "project_action_run":
             return try await projectActionRun(params)
+        case "delete_all_worktrees":
+            // A destructive test driver with no confirmation: DEBUG builds only.
+            #if DEBUG
+            return try await deleteAllWorktrees(params)
+            #else
+            throw invalid("unknown method \(name)")
+            #endif
         case "project_sync":
             let report = await SupermuxComposition.projectSync.syncNow()
             return SupermuxProjectsSocketPayloads.syncReport(report)
@@ -139,6 +148,32 @@ enum SupermuxProjectsSocketCommands {
         )
         return [:]
     }
+
+    #if DEBUG
+    /// A project row's Delete All Worktrees: the same flow as the menu item,
+    /// on This Mac or (with `machine`) on that Mac's copy, with `delete_branches`
+    /// answering the confirmation's checkbox and `force_dirty` the Delete
+    /// Anyway question. Reports the listed, removed and kept (dirty) paths.
+    private static func deleteAllWorktrees(_ params: [String: Any]) async throws -> [String: Any] {
+        let deleteBranches = params["delete_branches"] as? Bool ?? false
+        let forceDirty = params["force_dirty"] as? Bool ?? false
+        if params["machine"] != nil {
+            let (location, _) = try remoteProject(params)
+            let flow = SupermuxRemoteProjectCommands.shared.deleteAllWorktreesFlow(location)
+            let outcome = try await flow.run(confirm: { _ in deleteBranches }, confirmForce: { _ in forceDirty })
+            return SupermuxProjectsSocketPayloads.deleteAllOutcome(outcome, path: \.path)
+        }
+        let projectID = try uuid(params, "project_id")
+        let model = SupermuxComposition.projectsModel
+        await model.loadIfNeeded()
+        guard model.projects.contains(where: { $0.id == projectID }) else {
+            throw invalid("project_id does not name a project on this Mac")
+        }
+        let flow = model.deleteAllWorktreesFlow(projectId: projectID)
+        let outcome = try await flow.run(confirm: { _ in deleteBranches }, confirmForce: { _ in forceDirty })
+        return SupermuxProjectsSocketPayloads.deleteAllOutcome(outcome, path: \.path)
+    }
+    #endif
 
     /// The device project named by `machine` + `project_id`, as a row's location.
     private static func remoteProject(_ params: [String: Any]) throws -> (SupermuxProjectLocation, SupermuxProjectDTO?) {

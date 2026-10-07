@@ -49,4 +49,11 @@ public enum SupermuxGitError: Error, LocalizedError, Equatable, Sendable {
             )
         }
     }
+
+    /// Whether `error` is ``dirtyWorktree(path:)``: the worktree was kept
+    /// because removing it would lose uncommitted changes.
+    public static func isDirtyWorktree(_ error: any Error) -> Bool {
+        if case .dirtyWorktree = error as? SupermuxGitError { return true }
+        return false
+    }
 }

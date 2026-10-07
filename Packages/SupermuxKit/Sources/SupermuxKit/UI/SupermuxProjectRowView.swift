@@ -436,15 +436,7 @@ public struct SupermuxProjectRowView: View, Equatable {
                 remoteWorktreeMenuItems
             }
         }
-        // Only supermux-managed worktrees are ever bulk-deleted, so hide the
-        // item when there is nothing it would act on.
-        if worktrees.contains(where: \.isSupermuxManaged) {
-            Button(
-                String(localized: "supermux.project.deleteAllWorktrees", defaultValue: "Delete All Worktrees…"),
-                role: .destructive,
-                action: actions.deleteAllWorktrees
-            )
-        }
+        deleteAllWorktreesMenuItems
         if !project.actions.isEmpty {
             Menu(String(localized: "supermux.project.actionsMenu", defaultValue: "Actions")) {
                 ForEach(project.actions) { action in

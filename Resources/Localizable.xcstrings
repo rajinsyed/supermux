@@ -660892,6 +660892,74 @@
           }
         }
       }
+    },
+    "supermux.project.deleteAllWorktreesOnMenu" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete All Worktrees on"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すべてのワークツリーを削除する Mac"
+          }
+        }
+      }
+    },
+    "supermux.worktree.deleteAll.none" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "There are no worktrees to delete."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "削除するワークツリーはありません。"
+          }
+        }
+      }
+    },
+    "supermux.worktree.deleteAll.titleOnMac" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete all worktrees of “%1$@” on %2$@?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$@ 上の「%1$@」のすべてのワークツリーを削除しますか？"
+          }
+        }
+      }
+    },
+    "supermux.worktree.deleteAll.nestedKept" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A worktree inside it couldn’t be deleted, so it was kept."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "内部のワークツリーを削除できなかったため、このワークツリーは残されました。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

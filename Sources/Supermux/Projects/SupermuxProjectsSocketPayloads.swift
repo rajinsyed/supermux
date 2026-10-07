@@ -245,6 +245,7 @@ enum SupermuxProjectsSocketPayloads {
                     "worktrees": row.worktrees.map(remoteWorktree),
                     "set_up_targets": row.setUpTargets.map(\.name),
                     "worktree_disclosure": worktreeDisclosure(SupermuxWorktreeDisclosure(remoteOnly: row)),
+                    "delete_all_worktrees": deleteAllMenu(SupermuxDeleteAllWorktreesMenu(remoteOnly: row)),
                 ]
             },
             "local_rows": presentation.extrasByLocalProjectID.map { id, extras -> [String: Any] in
@@ -259,6 +260,7 @@ enum SupermuxProjectsSocketPayloads {
                         openWorkspaces: nested[id] ?? [],
                         extras: extras
                     )),
+                    "delete_all_worktrees": deleteAllMenu(SupermuxDeleteAllWorktreesMenu(extras: extras)),
                 ]
             },
         ]
@@ -276,6 +278,38 @@ enum SupermuxProjectsSocketPayloads {
 
     private static func worktreeDisclosure(_ disclosure: SupermuxWorktreeDisclosure) -> [String: Any] {
         ["shown": disclosure.isShown, "count": disclosure.count]
+    }
+
+    /// The Macs a row's Delete All Worktrees offers, in menu order.
+    private static func deleteAllMenu(_ menu: SupermuxDeleteAllWorktreesMenu) -> [[String: Any]] {
+        menu.targets.map { target -> [String: Any] in
+            switch target {
+            case .thisMac:
+                return ["place": "this_mac", "machine": NSNull(), "device_name": NSNull(), "is_online": true]
+            case .device(let location):
+                return [
+                    "place": "device",
+                    "machine": location.machineID ?? NSNull(),
+                    "device_name": location.device?.name ?? NSNull(),
+                    "is_online": location.isOnline,
+                ]
+            }
+        }
+    }
+
+    /// What a Delete All Worktrees run did, by worktree path (`listed` is
+    /// empty when there was nothing to delete).
+    static func deleteAllOutcome<Worktree: Sendable>(
+        _ outcome: SupermuxDeleteAllWorktreesFlow<Worktree>.Outcome?,
+        path: (Worktree) -> String
+    ) -> [String: Any] {
+        guard let outcome else { return ["cancelled": true] }
+        return [
+            "listed": outcome.listed.map(path),
+            "removed": outcome.result.removed.map(path),
+            "dirty": outcome.result.dirty.map(path),
+            "failures": outcome.result.failures.map { ["path": path($0.worktree), "error": $0.error.localizedDescription] },
+        ]
     }
 
     static func remoteWorktree(_ worktree: SupermuxRemoteWorktree) -> [String: Any] {
