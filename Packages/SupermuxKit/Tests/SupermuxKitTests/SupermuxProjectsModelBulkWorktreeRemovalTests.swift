@@ -152,6 +152,29 @@ struct SupermuxProjectsModelBulkWorktreeRemovalTests {
         #expect(model.worktreesByProjectId[project.id]?.isEmpty == true)
     }
 
+    /// A project registered at a worktree nested inside another one: deleting
+    /// the outer one would delete the project's own checkout, so it is never
+    /// listed.
+    @Test func removeAllNeverDeletesAWorktreeHoldingTheProject() async throws {
+        let main = try GitFixture.makeFixtureRepo(prefix: "supermux-bulk-worktree-removal")
+        defer { GitFixture.cleanUp(main) }
+        let sibling = try GitFixture.makeTempDirectory(prefix: "supermux-bulk-worktree-removal")
+        defer { GitFixture.cleanUp(sibling) }
+        let outer = (sibling as NSString).appendingPathComponent("outer")
+        let projectRoot = (outer as NSString).appendingPathComponent("nested/agent")
+        try GitFixture.runGit(["worktree", "add", "-b", "outer", outer], in: main)
+        try GitFixture.write("nested/\n", to: ".git/info/exclude", in: main)
+        try GitFixture.runGit(["worktree", "add", "-b", "agent", projectRoot], in: main)
+        let project = SupermuxProject(name: "Agent", rootPath: projectRoot)
+        let model = try await makeLoadedModel(project: project, in: projectRoot)
+
+        let result = try await model.removeAllWorktrees(projectId: project.id, deleteBranch: false)
+
+        #expect(result.removed.isEmpty)
+        #expect(result.failures.isEmpty)
+        #expect(FileManager.default.fileExists(atPath: projectRoot))
+    }
+
     /// A project registered at a linked worktree sees the repository's main
     /// checkout in `git worktree list`. It is never offered for deletion: no
     /// teardown script may run there and git would refuse to remove it anyway.
