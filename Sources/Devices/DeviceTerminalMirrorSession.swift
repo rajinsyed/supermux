@@ -833,6 +833,9 @@ final class DeviceTerminalMirrorSession {
                 }
             }
             // SUPERMUX:end terminal-stream-grid-viewer
+            // SUPERMUX:begin mirror-replay-keeps-scrollback (a full replay rebuilds the screen at the live bottom: note where its reader was)
+            let supermuxScrollback = replay.supermuxResumed ? nil : SupermuxMirrorScrollbackKeeper(surface: surface)
+            // SUPERMUX:end mirror-replay-keeps-scrollback
             // SUPERMUX:begin terminal-stream-viewer (resumed bytes continue the screen as they are; a full replay first drops this Mac's history)
             if replay.supermuxResumed {
                 surface?.processRemoteOutput(replay.bytes)
@@ -842,6 +845,9 @@ final class DeviceTerminalMirrorSession {
             // SUPERMUX:begin device-mirror-viewer-colors (the replay, then every color settled to this Mac's theme plus the authored ones)
             surface?.processRemoteOutput(supermuxColors.bytes(applying: replay.bytes, colors: replay.colors))
             // SUPERMUX:end device-mirror-viewer-colors
+            // SUPERMUX:begin mirror-replay-keeps-scrollback (back there once the replay and the output held behind it are parsed)
+            if let supermuxScrollback { Task { [surface] in await supermuxScrollback.restore(on: surface) } }
+            // SUPERMUX:end mirror-replay-keeps-scrollback
             // SUPERMUX:begin terminal-stream-viewer
             }
             // SUPERMUX:end terminal-stream-viewer
