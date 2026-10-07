@@ -27,7 +27,6 @@ extension SupermuxProjectsSectionView {
                 selectWorkspace: onSelectWorkspace,
                 closeWorkspace: onCloseWorkspace,
                 renameWorkspace: { promptRenameWorkspace(id: $0) },
-                openPullRequest: onOpenPullRequest,
                 pendingWorktrees: pendingRows(for: row.id),
                 pendingActions: pendingActions
             )

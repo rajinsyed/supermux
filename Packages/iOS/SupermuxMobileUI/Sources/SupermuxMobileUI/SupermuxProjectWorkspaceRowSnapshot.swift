@@ -5,8 +5,7 @@ import SupermuxMobileKit
 
 /// Immutable value snapshot of one open workspace nested under a project —
 /// the phone-side projection of the §6 `supermux_project_id` /
-/// `supermux_activity` / `supermux_branch` / `supermux_pull_request`
-/// workspace-list fields. Rendered by the inline nested rows and the project
+/// `supermux_activity` / `supermux_branch` workspace-list fields. Rendered by the inline nested rows and the project
 /// detail screen's Workspaces section, and counted by the project row badge;
 /// passed across the shell's `List` boundary as pure values per the repo's
 /// snapshot-boundary rule.
@@ -39,9 +38,6 @@ public struct SupermuxProjectWorkspaceRowSnapshot: Equatable, Identifiable, Send
     /// The workspace's git branch (the mac row's monospaced subtitle), when
     /// the Mac reported one.
     public let branch: String?
-    /// The workspace branch's PR badge, when the Mac reported one (cmux's own
-    /// per-workspace probe — the same badge the mac row shows).
-    public let pullRequest: SupermuxPullRequestBadgeSnapshot?
     /// Whether this workspace hosts its project's active run command (the mac
     /// row's green play indicator). Stamped by the section model from the
     /// run store's `run.state` rows; `false` when unknown.
@@ -58,7 +54,6 @@ public struct SupermuxProjectWorkspaceRowSnapshot: Equatable, Identifiable, Send
     ///   - hasUnread: Whether the workspace has unread activity.
     ///   - unreadCount: The unread count, when the Mac reports one.
     ///   - branch: The workspace's git branch, if known.
-    ///   - pullRequest: The branch's PR badge, if known.
     ///   - isRunning: Whether the project's run command runs here.
     public init(
         id: String,
@@ -70,7 +65,6 @@ public struct SupermuxProjectWorkspaceRowSnapshot: Equatable, Identifiable, Send
         hasUnread: Bool,
         unreadCount: Int? = nil,
         branch: String? = nil,
-        pullRequest: SupermuxPullRequestBadgeSnapshot? = nil,
         isRunning: Bool = false
     ) {
         self.id = id
@@ -82,7 +76,6 @@ public struct SupermuxProjectWorkspaceRowSnapshot: Equatable, Identifiable, Send
         self.hasUnread = hasUnread
         self.unreadCount = unreadCount
         self.branch = branch
-        self.pullRequest = pullRequest
         self.isRunning = isRunning
     }
 
@@ -107,13 +100,7 @@ public struct SupermuxProjectWorkspaceRowSnapshot: Equatable, Identifiable, Send
                 activity: preview.supermuxActivity.flatMap(SupermuxWorkspaceActivityDTO.init(rawValue:)),
                 hasUnread: preview.hasUnread,
                 unreadCount: preview.supermuxUnreadCount,
-                branch: preview.supermuxDisplayedBranch,
-                pullRequest: SupermuxPullRequestBadgeSnapshot(
-                    number: preview.supermuxPullRequestNumber,
-                    state: preview.supermuxPullRequestState,
-                    urlString: preview.supermuxPullRequestURL,
-                    isStale: preview.supermuxPullRequestIsStale
-                )
+                branch: preview.supermuxDisplayedBranch
             )
         }
     }
@@ -131,7 +118,6 @@ public struct SupermuxProjectWorkspaceRowSnapshot: Equatable, Identifiable, Send
             hasUnread: hasUnread,
             unreadCount: unreadCount,
             branch: branch,
-            pullRequest: pullRequest,
             isRunning: isRunning
         )
     }

@@ -102,37 +102,8 @@ final class SupermuxTabManagerOpener: SupermuxWorkspaceOpening {
             workspace.customColor = colorHex
         }
         associate(workspaceId: workspace.id, directory: directory, with: request)
-        seedPullRequestIfNeeded(in: workspace, request: request)
         runSetupScriptIfNeeded(in: workspace, directory: directory, request: request)
         return workspace.id
-    }
-
-    /// Seeds cmux's per-panel PR state for the new workspace's terminal from the
-    /// badge the worktree row was showing, so the nested row renders it from
-    /// the first frame instead of waiting on the shell → git probe → PR poll →
-    /// GitHub chain. One in-memory write; cmux's probe stays authoritative and
-    /// confirms, updates, or clears it on its first pass for the panel.
-    ///
-    /// The seed carries no branch on purpose: the sidebar only displays a
-    /// branch-tagged PR once the panel's probed git branch matches it, and the
-    /// panel has no branch yet. cmux's first resolved result re-tags it with
-    /// the real branch (the existing PR-for-panel is replaced, never
-    /// duplicated), and a branch probe never evicts a branchless seed
-    /// (`updatePanelGitBranch` drops a panel's PR only when a *known* branch
-    /// changes).
-    private func seedPullRequestIfNeeded(in workspace: Workspace, request: SupermuxOpenWorkspaceRequest) {
-        guard let pullRequest = request.pullRequest,
-              let panelId = workspace.focusedPanelId,
-              let status = SidebarPullRequestStatus(rawValue: pullRequest.status.rawValue) else { return }
-        workspace.updatePanelPullRequest(
-            panelId: panelId,
-            number: pullRequest.number,
-            label: "PR",
-            url: pullRequest.url,
-            status: status,
-            branch: nil,
-            isStale: pullRequest.isStale
-        )
     }
 
     /// Spawns a dedicated, focused setup terminal in `workspace` that runs the
@@ -258,24 +229,14 @@ extension Workspace {
 /// depend on app-wide composition the caller already holds.
 @MainActor
 enum SupermuxWorkspaceRow {
-    /// - Parameter includePullRequest: Pass `false` when cmux's PR polling /
-    ///   visibility settings are off, so the row hides any briefly-lingering
-    ///   badge just like cmux's own rows do (cmux clears the underlying state
-    ///   when polling is disabled; this closes the stale window). Defaulted so
-    ///   existing call sites and tests keep compiling.
     static func snapshot(
         for workspace: Workspace,
         isSelected: Bool,
         projectId: UUID?,
         isRunning: Bool,
-        includePullRequest: Bool = true,
         unreadCount: Int = 0
     ) -> SupermuxOpenWorkspace {
-        // Reuse cmux's own per-workspace PR probe for opened worktrees: the first
-        // display-ordered PR is the representative one (cmux prioritizes
-        // open > merged > closed and freshness). No supermux probe runs here.
-        let pullRequest = includePullRequest ? workspace.supermuxSidebarPullRequest : nil
-        return SupermuxOpenWorkspace(
+        SupermuxOpenWorkspace(
             id: workspace.id,
             title: workspace.customTitle ?? workspace.title,
             directory: workspace.currentDirectory,
@@ -284,7 +245,6 @@ enum SupermuxWorkspaceRow {
             projectId: projectId,
             activity: SupermuxWorkspaceActivityResolver.activity(for: workspace),
             isRunning: isRunning,
-            pullRequest: pullRequest,
             unreadCount: unreadCount
         )
     }
@@ -292,8 +252,8 @@ enum SupermuxWorkspaceRow {
     /// The cheap snapshot for a workspace no project owns. Standalone
     /// workspaces never render in the Projects section —
     /// `SupermuxProjectsSectionView` consumes only their `directory` (to
-    /// exclude already-open worktrees from the unopened-worktree PR probe) —
-    /// so this skips the branch/PR/activity resolution ``snapshot(for:isSelected:projectId:isRunning:)``
+    /// exclude already-open worktrees from the unopened worktree rows) —
+    /// so this skips the branch/activity resolution ``snapshot(for:isSelected:projectId:isRunning:)``
     /// pays, each leg of which walks the bonsplit pane tree. A device mirror's
     /// directory is the other Mac's path, so it reports none (as
     /// ``SupermuxMirrorRowSnapshot`` does) and never excludes a same-path
@@ -322,11 +282,11 @@ enum SupermuxWorkspaceRow {
 
 extension SupermuxPullRequest {
     /// Bridges cmux's per-workspace ``SidebarPullRequestState`` into the supermux
-    /// badge value, so opened worktrees reuse cmux's own PR probe. Returns `nil`
-    /// only if the status string is unrecognized.
+    /// value the Changes panel's PR header reads, so it reuses cmux's own PR
+    /// probe. Returns `nil` only if the status string is unrecognized.
     init?(sidebarState state: SidebarPullRequestState) {
         guard let status = Status(rawValue: state.status.rawValue) else { return nil }
-        self.init(number: state.number, status: status, url: state.url, isStale: state.isStale)
+        self.init(number: state.number, status: status, url: state.url)
     }
 }
 
@@ -349,15 +309,5 @@ extension Workspace {
             return mirror.branch
         }
         return sidebarGitBranchesInDisplayOrder().first?.branch
-    }
-
-    /// The pull request shown on a supermux project-nested workspace row: the
-    /// first display-ordered PR from cmux's own per-workspace probe, or, for a
-    /// device mirror, the remote record's `supermux_pull_request`.
-    var supermuxSidebarPullRequest: SupermuxPullRequest? {
-        if let mirror = SupermuxComposition.deviceStatusProjector.status(forLocal: id) {
-            return mirror.pullRequest
-        }
-        return sidebarPullRequestsInDisplayOrder().first.flatMap(SupermuxPullRequest.init(sidebarState:))
     }
 }

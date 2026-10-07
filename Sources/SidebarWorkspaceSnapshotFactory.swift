@@ -110,10 +110,11 @@ struct SidebarWorkspaceSnapshotFactory {
         }()
         let pullRequestRows: [SidebarWorkspaceSnapshotBuilder.PullRequestDisplay] = {
             guard showsPullRequestRows else { return [] }
-            // SUPERMUX:begin device-mirror-flatrow-status
-            return pullRequestDisplays(orderedPanelIds: orderedPanelIds)
-                + SupermuxDeviceMirrorSidebar.pullRequestDisplays(for: workspace)
-            // SUPERMUX:end device-mirror-flatrow-status
+            // SUPERMUX:begin sidebar-hide-pull-requests
+            // (upstream: `return pullRequestDisplays(orderedPanelIds: orderedPanelIds)` —
+            // supermux shows no pull request status on any workspace row)
+            return []
+            // SUPERMUX:end sidebar-hide-pull-requests
         }()
         let todoControlsEnabled = WorkspaceTodoFeature.isEnabled
         let workspaceStatusVisible = todoControlsEnabled && !workspace.todoState.statusHidden
@@ -482,11 +483,10 @@ struct SidebarWorkspaceSnapshotFactory {
             hasActiveAgent: hasActiveAgent,
             // Honor the user's branch and PR toggles themselves (not detail
             // visibility), so the glyph still works under Hide All Details.
-            pullRequests: settings.details.showPullRequests
-                ? workspace.sidebarPullRequestsInDisplayOrder(orderedPanelIds: orderedPanelIds).map {
-                    .init(label: $0.label, number: $0.number, status: $0.status, isStale: $0.isStale)
-                }
-                : [],
+            // SUPERMUX:begin sidebar-hide-pull-requests
+            // (upstream: the workspace's display-ordered PRs when `settings.details.showPullRequests`)
+            pullRequests: [],
+            // SUPERMUX:end sidebar-hide-pull-requests
             branch: settings.showsGitBranch
                 ? workspace.sidebarGitBranchesInDisplayOrder(orderedPanelIds: orderedPanelIds).first?.branch
                 : nil,

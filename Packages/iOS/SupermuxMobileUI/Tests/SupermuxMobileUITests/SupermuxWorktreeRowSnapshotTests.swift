@@ -4,22 +4,15 @@ import SupermuxMobileCore
 import Testing
 
 /// Pure-value projection of wire worktrees onto phone rows: branch/path
-/// display fallback, dirty/open state, and PR badge mapping (state-colored
-/// number badge — number + state only, no title, matching the desktop badge).
+/// display fallback and dirty/open state.
 @Suite struct SupermuxWorktreeRowSnapshotTests {
-    @Test func projectsBranchDirtyOpenAndPullRequest() {
+    @Test func projectsBranchDirtyAndOpen() {
         let dto = SupermuxWorktreeDTO(
             path: "/Users/dev/alpha/.worktrees/fix-login",
             branch: "fix-login",
             isOpen: true,
             workspaceId: "5D2C9A44-71B3-4F0E-8E0A-6C4D1F2B3A55",
-            isDirty: true,
-            pullRequest: SupermuxPullRequestDTO(
-                number: 41,
-                state: "open",
-                url: "https://github.com/acme/app/pull/41",
-                isStale: true
-            )
+            isDirty: true
         )
         let row = SupermuxWorktreeRowSnapshot(worktree: dto)
         #expect(row.id == dto.path)
@@ -27,11 +20,6 @@ import Testing
         #expect(row.isDirty)
         #expect(row.isOpen)
         #expect(row.workspaceID == "5D2C9A44-71B3-4F0E-8E0A-6C4D1F2B3A55")
-        #expect(row.pullRequest?.number == 41)
-        #expect(row.pullRequest?.state == .open)
-        #expect(row.pullRequest?.url == URL(string: "https://github.com/acme/app/pull/41"))
-        // is_stale rides the same DTO and dims the badge like the mac's.
-        #expect(row.pullRequest?.isStale == true)
     }
 
     @Test func optionalFieldsDegradeToSafeDefaults() {
@@ -44,44 +32,6 @@ import Testing
         #expect(!row.isDirty)
         #expect(!row.isOpen)
         #expect(row.workspaceID == nil)
-        #expect(row.pullRequest == nil)
-    }
-
-    @Test func pullRequestStateMapsToTheDesktopBadgeStates() {
-        func state(_ raw: String?) -> SupermuxPullRequestBadgeState {
-            SupermuxPullRequestBadgeState(state: raw)
-        }
-        #expect(state("open") == .open)
-        #expect(state("merged") == .merged)
-        #expect(state("closed") == .closed)
-        // Unknown future spellings degrade to a neutral badge, never a crash.
-        #expect(state("draft") == .unknown)
-        #expect(state(nil) == .unknown)
-    }
-
-    @Test func pullRequestBadgeToleratesAMissingOrGarbageURL() {
-        let missing = SupermuxPullRequestBadgeSnapshot(
-            dto: SupermuxPullRequestDTO(number: 7, state: "merged")
-        )
-        #expect(missing?.number == 7)
-        #expect(missing?.state == .merged)
-        #expect(missing?.url == nil)
-    }
-
-    /// The badge draws the glyph alone — no `#115` — so its accessibility
-    /// label is the only place the PR number is still spoken. A visual
-    /// tightening must not take it from VoiceOver as well.
-    @Test func theIconOnlyBadgeStillSpeaksItsNumberAndState() throws {
-        let badge = try #require(SupermuxPullRequestBadgeSnapshot(
-            dto: SupermuxPullRequestDTO(
-                number: 115,
-                state: "open",
-                url: "https://github.com/acme/app/pull/115"
-            )
-        ))
-        let label = SupermuxMobilePullRequestBadge.accessibilityLabel(for: badge)
-        #expect(label.contains("115"))
-        #expect(label.contains(SupermuxMobilePullRequestBadge.stateWord(.open)))
     }
 
     @Test func rowsPreserveTheMacsOrder() {

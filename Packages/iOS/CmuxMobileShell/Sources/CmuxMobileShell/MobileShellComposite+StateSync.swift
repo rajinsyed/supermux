@@ -407,20 +407,12 @@ extension MobileShellComposite {
                 },
                 simulators: record.simulators,
                 // SUPERMUX:begin supermux-mobile-workspace-fields (carry the additive §6 fields
-                // through the v2 projection; without them project nesting, activity dots, the
-                // branch subtitle, and PR badges vanish the moment v2 negotiates —
+                // through the v2 projection; without them project nesting, activity dots, and the
+                // branch subtitle vanish the moment v2 negotiates —
                 // see SUPERMUX-TOUCHPOINTS.md)
                 supermuxProjectID: record.supermuxProjectID,
                 supermuxActivity: record.supermuxActivity,
                 supermuxBranch: record.supermuxBranch,
-                supermuxPullRequest: record.supermuxPullRequest.map { pullRequest in
-                    MobileSyncWorkspaceListResponse.Workspace.SupermuxPullRequest(
-                        number: pullRequest.number,
-                        state: pullRequest.state,
-                        url: pullRequest.url,
-                        isStale: pullRequest.isStale
-                    )
-                },
                 supermuxUnreadCount: record.supermuxUnreadCount,
                 supermuxUnreadPanelIDs: record.supermuxUnreadPanelIDs
                 // SUPERMUX:end supermux-mobile-workspace-fields

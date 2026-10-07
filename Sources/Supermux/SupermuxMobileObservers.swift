@@ -99,17 +99,14 @@ final class SupermuxMobileProjectsObserver {
 }
 
 /// Watches the worktree lists (``SupermuxProjectsModel/worktreesByProjectId``)
-/// and the unopened-worktree PR badges
-/// (``SupermuxWorktreePullRequestModel/pullRequestsByWorktreePath``) and emits
-/// `supermux.worktrees.updated` when either materially changes — covering
-/// create/remove from ANY entrypoint (mobile handler, desktop sidebar; both
-/// mutate the map via `refreshWorktrees`) plus PR-poll deltas. Same
+/// and emits `supermux.worktrees.updated` when they materially change —
+/// covering create/remove from ANY entrypoint (mobile handler, desktop
+/// sidebar; both mutate the map via `refreshWorktrees`). Same
 /// re-arming `withObservationTracking` + 80 ms trailing throttle as
 /// ``SupermuxMobileProjectsObserver``.
 @MainActor
 final class SupermuxMobileWorktreesObserver {
     private let projectsModel: SupermuxProjectsModel
-    private let pullRequestModel: SupermuxWorktreePullRequestModel
     private let emit: @MainActor (_ topic: String, _ payload: [String: Any]) -> Void
     private var lastSummaryHash: Int = 0
     /// The scheduled trailing pass; `nil` when idle. Its presence is the
@@ -123,17 +120,14 @@ final class SupermuxMobileWorktreesObserver {
     ///
     /// - Parameters:
     ///   - projectsModel: The app-wide projects model (worktree lists).
-    ///   - pullRequestModel: The app-wide unopened-worktree PR model.
     ///   - emit: The event sink; defaults to `MobileHostService.emitEvent`.
     init(
         projectsModel: SupermuxProjectsModel,
-        pullRequestModel: SupermuxWorktreePullRequestModel,
         emit: @escaping @MainActor (_ topic: String, _ payload: [String: Any]) -> Void = { topic, payload in
             MobileHostService.shared.emitEvent(topic: topic, payload: payload)
         }
     ) {
         self.projectsModel = projectsModel
-        self.pullRequestModel = pullRequestModel
         self.emit = emit
         emitIfNeededAndRearm(force: true)
     }
@@ -157,10 +151,7 @@ final class SupermuxMobileWorktreesObserver {
     /// read), emits when it changed, and stores the new value.
     private func emitIfNeededAndRearm(force: Bool) {
         let hash = withObservationTracking {
-            Self.summaryHash(
-                worktreesByProjectId: projectsModel.worktreesByProjectId,
-                pullRequestsByWorktreePath: pullRequestModel.pullRequestsByWorktreePath
-            )
+            Self.summaryHash(worktreesByProjectId: projectsModel.worktreesByProjectId)
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 self?.modelDidChange()
@@ -173,15 +164,10 @@ final class SupermuxMobileWorktreesObserver {
         emit(SupermuxMobileTopic.worktreesUpdated.rawValue, [:])
     }
 
-    /// Stable hash of the iOS-facing projection: every project's worktree list
-    /// plus the PR badge map the list payload folds in.
-    private static func summaryHash(
-        worktreesByProjectId: [UUID: [SupermuxProjectWorktree]],
-        pullRequestsByWorktreePath: [String: SupermuxPullRequest]
-    ) -> Int {
+    /// Stable hash of the iOS-facing projection: every project's worktree list.
+    private static func summaryHash(worktreesByProjectId: [UUID: [SupermuxProjectWorktree]]) -> Int {
         var hasher = Hasher()
         hasher.combine(worktreesByProjectId)
-        hasher.combine(pullRequestsByWorktreePath)
         return hasher.finalize()
     }
 }
@@ -229,8 +215,7 @@ enum SupermuxMobileHostGlue {
             associations: SupermuxComposition.workspaceAssociations
         )
         worktreesObserver = SupermuxMobileWorktreesObserver(
-            projectsModel: SupermuxComposition.projectsModel,
-            pullRequestModel: SupermuxComposition.worktreePullRequestModel
+            projectsModel: SupermuxComposition.projectsModel
         )
         runObserver = SupermuxMobileRunObserver(
             readSnapshots: { SupermuxComposition.runCoordinator.mobileRunSnapshots }

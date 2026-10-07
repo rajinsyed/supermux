@@ -637,14 +637,14 @@ struct SidebarCompactAgentStatusTests {
             showsAgentActivity: false
         )
 
+        // SUPERMUX:begin sidebar-hide-pull-requests (upstream: an open PR draws a gray
+        // `.pullRequest(.open)` glyph whose tooltip names "cmux #42", a stale merged one falls
+        // back to `.terminal` keeping the tooltip, and with the setting off the row keeps its PR
+        // line. Supermux shows no pull request status on any workspace row.)
         workspace.updatePanelPullRequest(panelId: panelId, number: 42, label: "cmux", url: url, status: .open)
         let open = try #require(factory.makeSnapshot().compactStatusGlyph)
-        #expect(open.kind == .pullRequest(.open))
-        // No checks or mergeability data reaches the sidebar, so an open pull
-        // request draws secondary gray whatever its CI says.
-        #expect(open.color(isActive: false, selected: .white, secondary: .gray) == .gray)
-        #expect(open.badgeSymbolName == nil)
-        #expect(open.tooltip.contains("cmux #42"))
+        #expect(open.kind == .terminal)
+        #expect(!open.tooltip.contains("cmux #42"))
 
         workspace.updatePanelPullRequest(
             panelId: panelId,
@@ -656,16 +656,17 @@ struct SidebarCompactAgentStatusTests {
         )
         let stale = try #require(factory.makeSnapshot().compactStatusGlyph)
         #expect(stale.kind == .terminal)
-        #expect(stale.tooltip.contains("cmux #42"))
+        #expect(!stale.tooltip.contains("cmux #42"))
 
-        // With the setting off the row keeps its pull request line and no glyph.
+        // With the setting off the row draws no glyph and no pull request line.
         let plain = SidebarWorkspaceSnapshotFactory(
             workspace: workspace,
             settings: SidebarTabItemSettingsSnapshot(defaults: Self.makeDefaults()),
             showsAgentActivity: false
         ).makeSnapshot()
         #expect(plain.compactStatusGlyph == nil)
-        #expect(!plain.pullRequestRows.isEmpty)
+        #expect(plain.pullRequestRows.isEmpty)
+        // SUPERMUX:end sidebar-hide-pull-requests
     }
 
     /// The setting-to-snapshot path. `partition` is covered directly above and

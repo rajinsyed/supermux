@@ -25,12 +25,10 @@ import Testing
             "path": "/tmp/wt",
             "branch": "main",
             "is_open": true,
-            "pull_request": ["number": 5, "state": "open"],
         ]
         let worktree = try wire.decode(SupermuxWorktreeDTO.self, from: dictionary)
         #expect(worktree.path == "/tmp/wt")
         #expect(worktree.isOpen == true)
-        #expect(worktree.pullRequest?.number == 5)
     }
 
     @Test func roundTripsThroughDictionary() throws {

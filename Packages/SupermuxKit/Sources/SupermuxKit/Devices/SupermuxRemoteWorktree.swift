@@ -1,4 +1,4 @@
-public import Foundation
+import Foundation
 
 /// A git worktree of a project copy on another Mac (from that Mac's
 /// `worktrees.list`), shown as an unopened worktree row with a device chip.
@@ -11,22 +11,18 @@ public struct SupermuxRemoteWorktree: Identifiable, Hashable, Sendable {
     public let branch: String?
     /// Whether the worktree has uncommitted changes (known at list time).
     public let isDirty: Bool
-    /// The branch's pull request, when that Mac probed one.
-    public let pullRequest: SupermuxPullRequest?
 
     /// Creates a remote worktree row value.
     public init(
         location: SupermuxProjectLocation,
         path: String,
         branch: String?,
-        isDirty: Bool = false,
-        pullRequest: SupermuxPullRequest? = nil
+        isDirty: Bool = false
     ) {
         self.location = location
         self.path = path
         self.branch = branch
         self.isDirty = isDirty
-        self.pullRequest = pullRequest
     }
 
     /// Unique per Mac, project and path.

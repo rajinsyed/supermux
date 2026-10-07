@@ -54,18 +54,6 @@ public struct SupermuxOpenWorkspaceRequest: Sendable, Hashable {
     /// under whoever is using it (its terminals still start).
     public var selectsWorkspace: Bool
 
-    /// The pull request badge the worktree row was showing when the user opened
-    /// it, or `nil` when it had none (or the open is not a worktree open).
-    ///
-    /// The host seeds it into its own per-workspace PR state so the nested
-    /// workspace row keeps the badge from the first frame. Without it the
-    /// unopened-worktree probe drops the path the moment it becomes an open
-    /// workspace, and the row stays blank until cmux's own chain — shell
-    /// directory report, git branch probe, PR poll, GitHub fetch — completes.
-    /// cmux's probe remains authoritative: it confirms, updates, or clears the
-    /// seeded badge on its first pass. No probe of any kind runs for the seed.
-    public var pullRequest: SupermuxPullRequest?
-
     /// Creates a request.
     /// - Parameters:
     ///   - title: Workspace title.
@@ -77,7 +65,6 @@ public struct SupermuxOpenWorkspaceRequest: Sendable, Hashable {
     ///   - setupEnvironment: Variables exported into the setup terminal.
     ///   - preservesUserFocus: Suppress the keyboard-focus grab (remote opens).
     ///   - selectsWorkspace: Select the workspace (`false` when another Mac asks).
-    ///   - pullRequest: The worktree row's current PR badge to hand off, if any.
     public init(
         title: String,
         directory: String,
@@ -87,8 +74,7 @@ public struct SupermuxOpenWorkspaceRequest: Sendable, Hashable {
         setupScript: String? = nil,
         setupEnvironment: [String: String] = [:],
         preservesUserFocus: Bool = false,
-        selectsWorkspace: Bool = true,
-        pullRequest: SupermuxPullRequest? = nil
+        selectsWorkspace: Bool = true
     ) {
         self.title = title
         self.directory = directory
@@ -99,7 +85,6 @@ public struct SupermuxOpenWorkspaceRequest: Sendable, Hashable {
         self.setupEnvironment = setupEnvironment
         self.preservesUserFocus = preservesUserFocus
         self.selectsWorkspace = selectsWorkspace
-        self.pullRequest = pullRequest
     }
 
     /// The same request opened in the background: the window keeps its

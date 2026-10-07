@@ -264,9 +264,7 @@ public enum SupermuxProjectsPreviewFixture {
             workspace.actionCapabilities.supportsGroupActions = true
             return workspace
         }
-        var featX = row("ws-feat-x", "feat-x", on: laptop, project: "proj-a-cmux", branch: "feature/x", pinned: true, minutesAgo: 3)
-        featX.supermuxPullRequestNumber = 123
-        featX.supermuxPullRequestState = "open"
+        let featX = row("ws-feat-x", "feat-x", on: laptop, project: "proj-a-cmux", branch: "feature/x", pinned: true, minutesAgo: 3)
         // Long on purpose: the nested row truncates it in the middle. A shell
         // at its prompt, as in a fresh worktree: no notification, so the shell
         // row's preview line is the terminal's title, a path.

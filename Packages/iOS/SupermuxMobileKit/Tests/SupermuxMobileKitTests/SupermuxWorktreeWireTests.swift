@@ -105,9 +105,9 @@ import Testing
         let response = try JSONDecoder().decode(SupermuxWorktreesListResponse.self, from: json)
         #expect(response.worktrees.count == 1)
         #expect(response.branches == ["main", "experiment"])
+        // An older Mac's `pull_request` decodes and is ignored.
         #expect(response.worktrees.first?.branch == "fix-login")
-        #expect(response.worktrees.first?.pullRequest?.number == 41)
-        #expect(response.worktrees.first?.pullRequest?.state == "open")
+        #expect(response.worktrees.first?.isOpen == false)
     }
 
     @Test func worktreesListResponseToleratesMissingAndUnknownFields() throws {

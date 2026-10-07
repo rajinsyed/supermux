@@ -12,13 +12,7 @@ import Testing
             baseBranch: "main",
             isOpen: true,
             workspaceId: "workspace:7",
-            isDirty: false,
-            pullRequest: SupermuxPullRequestDTO(
-                number: 42,
-                state: "open",
-                title: "Fix the bug",
-                url: "https://github.com/example/repo/pull/42"
-            )
+            isDirty: false
         )
     }
 
@@ -30,7 +24,7 @@ import Testing
         let keys = try coding.encodedKeys(of: fullWorktree)
         #expect(keys == [
             "path", "branch", "base_branch", "is_open",
-            "workspace_id", "is_dirty", "pull_request",
+            "workspace_id", "is_dirty",
         ])
     }
 
@@ -39,7 +33,6 @@ import Testing
         #expect(worktree.path == "/tmp/wt")
         #expect(worktree.branch == nil)
         #expect(worktree.isOpen == nil)
-        #expect(worktree.pullRequest == nil)
     }
 
     @Test func worktreeUnknownFieldTolerance() throws {
@@ -52,28 +45,9 @@ import Testing
           "pull_request": {"number": 7, "state": "merged", "confetti": true}
         }
         """
+        // An older Mac still sends `pull_request`; it decodes and is ignored.
         let worktree = try coding.decode(SupermuxWorktreeDTO.self, from: json)
         #expect(worktree.branch == "main")
-        #expect(worktree.pullRequest?.number == 7)
-        #expect(worktree.pullRequest?.state == "merged")
-    }
-
-    @Test func pullRequestRoundTrips() throws {
-        let pullRequest = SupermuxPullRequestDTO(
-            number: 9,
-            state: "closed",
-            title: "Old change",
-            url: "https://example.com/pull/9"
-        )
-        #expect(try coding.roundTrip(pullRequest) == pullRequest)
-        let keys = try coding.encodedKeys(of: pullRequest)
-        #expect(keys == ["number", "state", "title", "url"])
-    }
-
-    @Test func pullRequestUnknownFieldTolerance() throws {
-        let json = #"{"number": 3, "review_bots": ["a", "b"]}"#
-        let pullRequest = try coding.decode(SupermuxPullRequestDTO.self, from: json)
-        #expect(pullRequest.number == 3)
-        #expect(pullRequest.state == nil)
+        #expect(worktree.isOpen == false)
     }
 }

@@ -472,24 +472,22 @@ final class cmuxUITests: XCTestCase {
         let cmuxFixAccessory = accessory("ws-cmux-fix")
         XCTAssertTrue(cmuxFixAccessory.waitForExistence(timeout: 5), "cmux-fix shows its branch")
         assertOnStudio(cmuxFixAccessory.label, branch: "fix/studio-sidebar-sync", "cmux-fix (the Studio clone's workspace)")
-        XCTAssertFalse(accessory("ws-docs-notes").exists, "docs-notes has no branch, PR or run to show")
+        XCTAssertFalse(accessory("ws-docs-notes").exists, "docs-notes has no branch or run to show")
         // feat-x has uncommitted changes, but like the Mac sidebar a nested
-        // row shows no changes chip: its status (the PR badge) ends at the
-        // row's end, like cmux-main's (the run indicator).
+        // row shows no changes chip, and no pull request status either; only
+        // cmux-main's run indicator shows, at the row's end.
         let cmuxMainAccessory = accessory("ws-cmux-main")
         XCTAssertTrue(cmuxMainAccessory.waitForExistence(timeout: 5), "cmux-main shows its branch")
         XCTAssertTrue(cmuxMainAccessory.label.hasPrefix("main"),
                       "cmux-main (on the home Mac) shows its branch with no Mac icon: \(cmuxMainAccessory.label)")
         let featXStatus = element("SupermuxNestedWorkspaceStatus-ws-feat-x")
         let cmuxMainStatus = element("SupermuxNestedWorkspaceStatus-ws-cmux-main")
-        XCTAssertTrue(featXStatus.waitForExistence(timeout: 5), "feat-x shows its PR badge")
         XCTAssertTrue(cmuxMainStatus.waitForExistence(timeout: 5), "cmux-main shows its run indicator")
-        XCTAssertFalse(element("SupermuxNestedWorkspaceStatus-ws-cmux-fix").exists, "cmux-fix has no PR or run to show")
-        let featXInset = try frame(featX, "feat-x").maxX - frame(featXStatus, "feat-x status").maxX
+        XCTAssertFalse(featXStatus.exists, "feat-x shows no pull request status")
+        XCTAssertFalse(element("SupermuxNestedWorkspaceStatus-ws-cmux-fix").exists, "cmux-fix has no run to show")
         let cmuxMainInset = try frame(cmuxMain, "cmux-main").maxX - frame(cmuxMainStatus, "cmux-main status").maxX
         XCTAssertFalse(element("MobileChangesChip-ws-feat-x").exists, "A nested row shows no changes chip")
-        // Only the activity dot's clearance follows either status.
-        XCTAssertLessThan(featXInset, 30, "feat-x's status ends at the row's end (\(featXInset))")
+        // Only the activity dot's clearance follows the status.
         XCTAssertLessThan(cmuxMainInset, 30, "cmux-main's status ends at the row's end (\(cmuxMainInset))")
         // As on the Mac sidebar, the status sits centered on the row's
         // trailing edge, beside both lines, where the time used to be.

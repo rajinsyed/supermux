@@ -23,10 +23,16 @@ final class SidebarPullRequestInteractivityUITests: XCTestCase {
     }
 
     func testSidebarPullRequestClickFallsThroughByDefault() throws {
+        // SUPERMUX:begin sidebar-hide-pull-requests
+        try XCTSkipIf(true, "Supermux draws no pull request line on workspace rows (SUPERMUX-TOUCHPOINTS.md #1123)")
+        // SUPERMUX:end sidebar-hide-pull-requests
         try assertSidebarPullRequestClickFallsThrough(clickabilityOverride: nil, expectsPlainText: true)
     }
 
     func testSidebarPullRequestClickFallsThroughWhenClickabilityDisabled() throws {
+        // SUPERMUX:begin sidebar-hide-pull-requests
+        try XCTSkipIf(true, "Supermux draws no pull request line on workspace rows (SUPERMUX-TOUCHPOINTS.md #1123)")
+        // SUPERMUX:end sidebar-hide-pull-requests
         try assertSidebarPullRequestClickFallsThrough(clickabilityOverride: false, expectsPlainText: true)
     }
 

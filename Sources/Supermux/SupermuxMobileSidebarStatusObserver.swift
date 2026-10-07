@@ -2,14 +2,14 @@ import Combine
 import Foundation
 
 /// Ticks mobile state sync v2 when a workspace's sidebar metadata changes:
-/// `cmux set-status` pills, `set-progress`, `log`, and the git branch / PR.
+/// `cmux set-status` pills, `set-progress`, `log`, and the git branch.
 ///
 /// Upstream's `MobileWorkspaceListObserver` hashes only the fields it knows,
 /// and ``SupermuxMobileActivityObserver`` pokes only on agent lifecycle and
 /// project association, so these changes would otherwise reach the phone and
 /// other Macs (whose mirror rows render `supermux_status_entries`,
-/// `supermux_progress`, `supermux_log`, `supermux_branch`,
-/// `supermux_pull_request`) only on some unrelated tick.
+/// `supermux_progress`, `supermux_log`, `supermux_branch`) only on some
+/// unrelated tick.
 ///
 /// Watches every main window's workspaces' `sidebarObservationPublisher` — the
 /// same publisher the sidebar rows refresh from — and only while someone

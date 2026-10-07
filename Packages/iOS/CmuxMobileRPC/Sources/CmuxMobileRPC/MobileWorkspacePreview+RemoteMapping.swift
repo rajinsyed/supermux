@@ -33,10 +33,6 @@ extension MobileWorkspacePreview {
         self.supermuxProjectID = remote.supermuxProjectID
         self.supermuxActivity = remote.supermuxActivity
         self.supermuxBranch = remote.supermuxBranch
-        self.supermuxPullRequestNumber = remote.supermuxPullRequest?.number ?? nil
-        self.supermuxPullRequestState = remote.supermuxPullRequest?.state
-        self.supermuxPullRequestURL = remote.supermuxPullRequest?.url
-        self.supermuxPullRequestIsStale = remote.supermuxPullRequest?.isStale ?? nil
         self.supermuxUnreadCount = remote.supermuxUnreadCount
         self.supermuxUnreadPanelIDs = remote.supermuxUnreadPanelIDs
         // SUPERMUX:end supermux-mobile-workspace-fields
