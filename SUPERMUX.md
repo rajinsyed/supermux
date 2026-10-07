@@ -110,7 +110,7 @@ building a parallel system.
 |------|--------|-------|
 | Sticky Projects (sidebar section, icons, colors, persisted) | ✅ | `SupermuxProjectsModel`, `SupermuxProjectStore`, `SupermuxProjectsSectionView`; mounted via the `sidebar-projects-section` touchpoint |
 | Open local / create worktree from a project | ✅ | `SupermuxGitWorktreeService` (selectable starting branch; piggycode semantics: `--no-track -b`, `push.autoSetupRemote`, `branch.<n>.base`, dedup, exclude) |
-| List / open / delete worktrees (dirty-checked), plus project-level Delete All Worktrees (clean ones go, dirty ones get a second confirm) | ✅ | `SupermuxGitWorktreeService.listWorktrees/removeWorktree`, `SupermuxProjectsModel+BulkWorktreeRemoval`, project row disclosure / context menu |
+| List / open / delete worktrees (dirty-checked), plus project-level Delete All Worktrees on any Mac with the project (every linked worktree wherever it lives, never the main checkout; clean ones go, dirty ones get a second confirm) | ✅ loopback-E2E | `SupermuxGitWorktreeService.listWorktrees/removeWorktree`, `SupermuxProjectsModel+BulkWorktreeRemoval`, `SupermuxDeleteAllWorktreesFlow` (+`Alerts`), `SupermuxDeleteAllWorktreesMenu`, project row disclosure / context menu; other Macs via `SupermuxRemoteProjectCommands`, `tests/supermux/loopback_delete_all_worktrees_e2e.py` |
 | Worktree PR badges (clickable, state-colored) | ✅ | opened worktrees reuse cmux's per-workspace `SidebarPullRequestState` (carried on `SupermuxOpenWorkspace.pullRequest`); unopened ones via `SupermuxWorktreePullRequestModel` + `SupermuxPullRequestProbe` (wrapping `CmuxGit.PullRequestProbeService`); both render `SupermuxPullRequestBadge`. SupermuxKit now depends on `CmuxGit`. |
 | Changes (git) panel | ✅ | right-sidebar `changes` mode (`right-sidebar-changes-mode-*` touchpoints) → `SupermuxChangesPanelView` / `SupermuxChangesModel` / `SupermuxGitChangesService`; a file-row click captures `SupermuxChangesModel.fileDiffPatch` and `SupermuxFileDiffOpener` pipes it to the bundled `cmux diff -` CLI (upstream's viewer, one tab per workspace) |
 | PR viewer in the Changes panel (header `#N` buttons per open PR, load-on-click detail: state, mergeability, reviews, checks, labels, description, files; refresh inside) | ✅ | `Packages/SupermuxKit/Sources/SupermuxKit/PullRequests/` (`SupermuxPullRequestDetail`, `SupermuxGitHubClient`, `SupermuxPullRequestDetailService`, `SupermuxPullRequestViewerModel`) + `SupermuxPullRequestViewerView` / `SupermuxPullRequestHeaderButton`; mounted by `SupermuxChangesMount` with `SupermuxChangesPullRequestObserver` (mirrors cmux's already-probed workspace PR into the header — no polling of its own). Auth: `GH_TOKEN`/`GITHUB_TOKEN` else `gh auth token`, same as cmux's probe |
@@ -341,8 +341,11 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   every key press travels to the owning Mac as a key event and is encoded there by that Mac's own
   Ghostty (kitty keyboard flags, cursor-key mode), in order with the mirror's paste, mouse and
   binding bytes, which reach the PTY exactly; the mirror's own answers to terminal queries are
-  dropped. A pending Ghostty key sequence stays local. An older Mac on either side keeps upstream's
-  text path.
+  dropped. A pending Ghostty key sequence stays local, and so does a modifier pressed alone (Cmd,
+  Shift, Option, Control): forwarded, it scrolled the mirror to the bottom like a keystroke, so a
+  lone Cmd lost the scrollback being read (`tests/supermux/loopback_mirror_scrollback_e2e.py`). A
+  full replay of the other Mac's screen (a re-capture, a grid change, a reconnect that cannot resume)
+  scrolls back to where its reader was (#1122). An older Mac on either side keeps upstream's text path.
 - **A busy Mac is asked again** (#721): after a reconnect every mirrored terminal re-attaches (those
   on screen at once, hidden ones three at a time, #975), and a Mac with many of them answers further
   requests `server_busy` (its per-connection request quota is full; the request never ran). Every
