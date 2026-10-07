@@ -26,10 +26,14 @@ import Testing
 /// 6. Under the Recent Activity sort the rows have no spatial place to send.
 /// 7. The dropped row jumps back until the Mac answers, stays moved after the
 ///    Mac refused, or an earlier move's answer undoes a later move's order.
-/// 8. Moves reach the Mac out of order.
+/// 8. Moves in one project reach the Mac out of order, or a move to a slow
+///    Mac holds up moves in other projects (and other Macs).
 /// 9. A row on a Mac other than the foreground one jumps back for a moment:
 ///    that Mac's list is fetched again after the move answered, so the order
 ///    the drop showed must stay until the list holds it (or a short wait ends).
+/// 10. A move the Mac refused, or that never showed up in the list, still
+///     sends the moves queued on top of it, which were worked out from the
+///     order it showed: the Mac ends in an order the user never made.
 @MainActor
 @Suite struct SupermuxNestedReorderTests {
     private let macBook = SupermuxMacInfo(
@@ -253,10 +257,12 @@ import Testing
 
     @Test func waitingForTheListEndsWhenItHoldsTheMoveOrTimeIsUp() async {
         var checks = 0
-        await SupermuxNestedReorderModel.wait(upTo: .seconds(5)) { checks += 1; return checks == 3 }
+        let held = await SupermuxNestedReorderModel.wait(upTo: .seconds(5)) { checks += 1; return checks == 3 }
+        #expect(held)
         #expect(checks == 3)
         let started = ContinuousClock.now
-        await SupermuxNestedReorderModel.wait(upTo: .milliseconds(200)) { false }
+        let neverHeld = await SupermuxNestedReorderModel.wait(upTo: .milliseconds(200)) { false }
+        #expect(!neverHeld)
         #expect(ContinuousClock.now - started < .seconds(2))
     }
 
@@ -296,12 +302,12 @@ import Testing
         #expect(model.orders["cmux"] == nil)
     }
 
-    @Test func movesReachTheMacInOrder() async {
+    @Test func movesInOneProjectReachTheMacInOrder() async {
         let model = SupermuxNestedReorderModel()
         let first = AsyncGate()
         var sent: [String] = []
         let one = model.perform(move(["c", "a", "b"])) { sent.append("one"); await first.wait(); return true }
-        let two = model.perform(move(["x", "y"], segment: "infra")) { sent.append("two"); return true }
+        let two = model.perform(move(["b", "c", "a"])) { sent.append("two"); return true }
         await Task.yield()
         await Task.yield()
         #expect(sent == ["one"], "the second move left before the first was answered")
@@ -309,6 +315,36 @@ import Testing
         await one.value
         await two.value
         #expect(sent == ["one", "two"])
+    }
+
+    @Test func aMoveInAnotherProjectDoesNotWait() async {
+        let model = SupermuxNestedReorderModel()
+        let slowMac = AsyncGate()
+        var sent: [String] = []
+        let one = model.perform(move(["c", "a", "b"])) { sent.append("one"); await slowMac.wait(); return true }
+        let two = model.perform(move(["x", "y"], segment: "infra")) { sent.append("two"); return true }
+        for _ in 0..<20 where sent.count < 2 {
+            await Task.yield()
+        }
+        #expect(sent == ["one", "two"], "the other project's move waited for the slow one")
+        await slowMac.open()
+        await one.value
+        await two.value
+    }
+
+    @Test func aMoveThatDidNotLandDropsTheMovesBuiltOnIt() async {
+        let model = SupermuxNestedReorderModel()
+        let first = AsyncGate()
+        var sent: [String] = []
+        let one = model.perform(move(["c", "a", "b"])) { sent.append("one"); await first.wait(); return false }
+        let two = model.perform(move(["b", "c", "a"])) { sent.append("two"); return true }
+        await first.open()
+        await one.value
+        await two.value
+        #expect(sent == ["one"], "a move built on a refused one was sent")
+        #expect(model.orders["cmux"] == nil, "the refused move's order stayed")
+        await model.perform(move(["a", "c", "b"])) { sent.append("three"); return true }.value
+        #expect(sent == ["one", "three"], "a drag after the refusal was dropped too")
     }
 }
 

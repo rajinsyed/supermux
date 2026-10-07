@@ -123,11 +123,13 @@ public final class SupermuxNestedReorderModel {
     ///     again; `false` when the Mac refused it.
     /// - Returns: The task that sends it.
     /// Waits until `isDone()` or `timeout` passes, checking every 50 ms.
-    public static func wait(upTo timeout: Duration, until isDone: @MainActor () -> Bool) async {
+    @discardableResult
+    public static func wait(upTo timeout: Duration, until isDone: @MainActor () -> Bool) async -> Bool {
         let deadline = ContinuousClock.now + timeout
         while !isDone(), ContinuousClock.now < deadline {
             try? await Task.sleep(for: .milliseconds(50))
         }
+        return false
     }
 
     @discardableResult

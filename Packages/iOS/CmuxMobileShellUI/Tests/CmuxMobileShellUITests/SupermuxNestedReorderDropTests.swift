@@ -27,6 +27,8 @@ import UIKit
 /// 7. The table's drag interaction follows only the loose list's gate, so on a
 ///    Mac whose workspaces are all in projects no drag ever starts, although
 ///    the delegate would lift the row.
+/// 8. Lifting a nested row lights up the loose groups' drop boundaries,
+///    although it can never drop there.
 @MainActor
 @Suite struct SupermuxNestedReorderDropTests {
     private static var fixtureWindows: [UIWindow] = []
@@ -52,7 +54,8 @@ import UIKit
         recorder: Recorder,
         sendsNestedMoves: Bool = true,
         looseListReorders: Bool = false,
-        bCanMove: Bool = true
+        bCanMove: Bool = true,
+        looseGroup: Bool = false
     ) -> (coordinator: WorkspaceListTableCoordinator, tableView: WorkspaceListUITableView) {
         let workspaces = [
             workspace("a", project: "cmux"),
@@ -90,10 +93,17 @@ import UIKit
             case .workspace(let id): .workspace(id, indented: true)
             }
         }
+        // Rows 9–11 with `looseGroup`: a loose cmux group after the loose rows.
+        let groupID = MobileWorkspaceGroupPreview.ID(rawValue: "group-g")
+        var member = workspace("g1", project: nil)
+        member.groupID = groupID
+        let groupRows: [WorkspaceListTableItem] = looseGroup
+            ? [.groupHeader(groupID), .workspace("g1", indented: true), .groupFooter(groupID)]
+            : []
         let configuration = WorkspaceListTable(
-            items: leadingRun + [.workspace("l1", indented: false), .workspace("l2", indented: false)],
-            workspacesByID: Dictionary(uniqueKeysWithValues: workspaces.map { ($0.id, $0) }),
-            groupsByID: [:],
+            items: leadingRun + [.workspace("l1", indented: false), .workspace("l2", indented: false)] + groupRows,
+            workspacesByID: Dictionary(uniqueKeysWithValues: (workspaces + [member]).map { ($0.id, $0) }),
+            groupsByID: looseGroup ? [groupID: MobileWorkspaceGroupPreview(id: groupID, name: "G", anchorWorkspaceID: "g1")] : [:],
             groupUnreadByID: [:],
             filter: .all,
             selectedWorkspaceID: nil,
@@ -207,6 +217,28 @@ import UIKit
     @Test func theTableTakesNoDragsWhenNothingCanMove() {
         let fixture = makeFixture(recorder: Recorder(), sendsNestedMoves: false, looseListReorders: false)
         #expect(!fixture.tableView.dragInteractionEnabled)
+    }
+
+    // MARK: Group boundaries (8)
+
+    @Test func aNestedDragLeavesTheLooseGroupBoundariesAlone() {
+        let fixture = makeFixture(recorder: Recorder(), looseListReorders: true, looseGroup: true)
+        let footer = IndexPath(row: 11, section: 0)
+        let idle = "MobileWorkspaceGroupFooterBoundary-group-g-inactive"
+        fixture.tableView.scrollToRow(at: footer, at: .bottom, animated: false)
+        fixture.tableView.layoutIfNeeded()
+        #expect(fixture.tableView.cellForRow(at: footer)?.accessibilityIdentifier == idle)
+        let nested = SupermuxFakeDragSession(dragItems: [dragItem("b")])
+        fixture.coordinator.tableView(fixture.tableView, dragSessionWillBegin: nested)
+        #expect(fixture.tableView.cellForRow(at: footer)?.accessibilityIdentifier == idle)
+        fixture.coordinator.tableView(fixture.tableView, dragSessionDidEnd: nested)
+        let loose = SupermuxFakeDragSession(dragItems: [dragItem("l1", indented: false)])
+        fixture.coordinator.tableView(fixture.tableView, dragSessionWillBegin: loose)
+        #expect(
+            fixture.tableView.cellForRow(at: footer)?.accessibilityIdentifier
+                == "MobileWorkspaceGroupFooterBoundary-group-g-active",
+            "a loose row's drag no longer shows the group boundaries"
+        )
     }
 
     // MARK: Lifting (1, 2)
