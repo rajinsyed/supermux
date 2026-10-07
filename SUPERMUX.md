@@ -343,8 +343,9 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   binding bytes, which reach the PTY exactly; the mirror's own answers to terminal queries are
   dropped. A pending Ghostty key sequence stays local, and so does a modifier pressed alone (Cmd,
   Shift, Option, Control): forwarded, it scrolled the mirror to the bottom like a keystroke, so a
-  lone Cmd lost the scrollback being read (`tests/supermux/loopback_mirror_scrollback_e2e.py`). An
-  older Mac on either side keeps upstream's text path.
+  lone Cmd lost the scrollback being read (`tests/supermux/loopback_mirror_scrollback_e2e.py`). A
+  full replay of the other Mac's screen (a re-capture, a grid change, a reconnect that cannot resume)
+  scrolls back to where its reader was (#1122). An older Mac on either side keeps upstream's text path.
 - **A busy Mac is asked again** (#721): after a reconnect every mirrored terminal re-attaches (those
   on screen at once, hidden ones three at a time, #975), and a Mac with many of them answers further
   requests `server_busy` (its per-connection request quota is full; the request never ran). Every

@@ -65,9 +65,10 @@ from loopback_auto_mirror_e2e import (  # noqa: E402
 SIZING = "supermux.devices.terminal_sizing."
 STREAM = "supermux.devices.terminal_stream."
 OUTPUT_LINES = 1500
-SCROLL_LINES = 40
-# How long a key gets to move the view before the view counts as kept.
+SCROLL_LINES = 20
+# How long a key gets to move the view before the view counts as kept, and how often it is read.
 SETTLE_S = 1.5
+POLL_S = 0.25
 
 # Virtual key code and the press's modifier flags (device-independent mask plus the
 # left-side device bit a real keyboard sets, and NX_NONCOALESCEDMASK).
@@ -149,9 +150,18 @@ class MirrorScrollbackE2E:
         return str(mirrors[0]["workspace_id"]) if len(mirrors) == 1 else ""
 
     def visible_lines(self) -> List[str]:
-        """The mirror's visible rows (its viewport, not its scrollback), blank rows dropped."""
-        result = self.sock.call("surface.read_text", {"workspace_id": self.mirror_id, "surface_id": self.mirror_surface}) or {}
-        return [line.strip() for line in str(result.get("text") or "").splitlines() if line.strip()]
+        """The mirror's visible rows (its viewport, not its scrollback), blank rows dropped.
+        The socket rate-limits screen polling per connection: a refused read waits and asks again."""
+        params = {"workspace_id": self.mirror_id, "surface_id": self.mirror_surface}
+        for _ in range(10):
+            try:
+                result = self.sock.call("surface.read_text", params) or {}
+                return [line.strip() for line in str(result.get("text") or "").splitlines() if line.strip()]
+            except Failure as error:
+                if "rate_limited" not in str(error):
+                    raise
+                time.sleep(POLL_S)
+        raise Failure("surface.read_text stayed rate limited")
 
     def top_line(self) -> str:
         lines = self.visible_lines()
@@ -222,13 +232,10 @@ class MirrorScrollbackE2E:
         return {"top_line": self.top_line()}
 
     def scroll_up(self) -> None:
-        def scrolled() -> bool:
-            if self.at_bottom():
-                self.sock.call(SIZING + "local_scroll", {"surface_id": self.mirror_surface, "lines": SCROLL_LINES})
-                return False
-            return True
-
-        wait_for("the mirror to show older lines", scrolled, self.timeout, interval_s=0.6)
+        """One wheel scroll up: the view ends a known distance above the bottom, well within
+        the history a replay carries (a legacy host's replay brings ~240 rows)."""
+        self.sock.call(SIZING + "local_scroll", {"surface_id": self.mirror_surface, "lines": SCROLL_LINES})
+        wait_for("the mirror to show older lines", lambda: not self.at_bottom(), self.timeout, interval_s=POLL_S)
 
     def modifier_keeps_scrollback(self, name: str) -> Dict[str, Any]:
         if self.at_bottom():
@@ -241,7 +248,7 @@ class MirrorScrollbackE2E:
             if after != before:
                 raise Failure(f"{name} alone moved the mirror's view: top line {before!r} -> {after!r}"
                               f"{' (the live bottom)' if self.at_bottom() else ''}")
-            time.sleep(0.1)
+            time.sleep(POLL_S)
         return {"top_line_before": before, "top_line_after": self.top_line()}
 
     def full_replays(self) -> int:
@@ -267,7 +274,7 @@ class MirrorScrollbackE2E:
             self.reconnect(old_host=True)
             wait_for("a full replay of the mirror", lambda: self.full_replays() > replays, self.timeout)
             try:
-                wait_for(f"the view back on {before!r}", lambda: self.top_line() == before, 5.0, interval_s=0.1)
+                wait_for(f"the view back on {before!r}", lambda: self.top_line() == before, 5.0, interval_s=POLL_S)
             except Failure:
                 raise Failure(f"a full replay moved the mirror's view: top line {before!r} -> {self.top_line()!r}"
                               f"{' (the live bottom)' if self.at_bottom() else ''}")
