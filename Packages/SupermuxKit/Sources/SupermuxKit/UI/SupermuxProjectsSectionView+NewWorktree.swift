@@ -103,7 +103,7 @@ extension SupermuxProjectsSectionView {
     }
 
     /// This Mac's target: the projects model and the agent environment, then
-    /// the section's own openers (setup script, PR badge hand-off).
+    /// the section's own openers (setup script).
     private func localWorktreeTarget(for project: SupermuxProject) -> any SupermuxWorktreeCreationTarget {
         SupermuxLocalWorktreeCreationTarget(
             model: model,

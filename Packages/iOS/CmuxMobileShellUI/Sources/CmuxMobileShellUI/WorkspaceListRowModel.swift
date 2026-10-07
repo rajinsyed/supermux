@@ -37,7 +37,7 @@ struct WorkspaceListWorkspaceRowModel: Equatable {
     // SUPERMUX:begin supermux-mobile-row-activity (the activity dot is part of what the row draws, so a status-only change must re-render it)
     var supermuxActivity: String? = nil
     // SUPERMUX:end supermux-mobile-row-activity
-    // SUPERMUX:begin supermux-mobile-nested-accessory (a nested row's Mac marker, PR badge and run indicator are part of what it draws)
+    // SUPERMUX:begin supermux-mobile-nested-accessory (a nested row's Mac marker and run indicator are part of what it draws)
     var supermuxAccessory: SupermuxNestedWorkspaceAccessory? = nil
     // SUPERMUX:end supermux-mobile-nested-accessory
 }

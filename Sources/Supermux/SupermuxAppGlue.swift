@@ -308,7 +308,7 @@ final class SupermuxWorkspaceObservation: ObservableObject {
     /// Every leg below schedules on `DispatchQueue.main`, never `RunLoop.main`:
     /// Combine's RunLoop scheduler delivers only in the DEFAULT run-loop mode,
     /// so with a context menu open, a sidebar drag or window resize tracking,
-    /// or a sheet/modal alert up, a PR badge written by cmux's poll sat
+    /// or a sheet/modal alert up, a branch written by cmux's git probe sat
     /// undelivered until the mode unwound — the nested rows looked "delayed"
     /// while the flat rows (which already deliver on the main queue; see
     /// `sidebarWorkspaceObservations`) repainted. Main-queue delivery is
