@@ -137,7 +137,9 @@ final class WorkspaceListTableCoordinator: NSObject, UITableViewDataSource,
         tableView.delegate = self
         tableView.dragDelegate = self
         tableView.dropDelegate = self
-        tableView.dragInteractionEnabled = configuration.enablesReorder
+        // SUPERMUX:begin supermux-mobile-nested-reorder (nested project rows drag even while the loose list cannot; upstream: `configuration.enablesReorder`)
+        tableView.dragInteractionEnabled = supermuxTakesDrags(configuration)
+        // SUPERMUX:end supermux-mobile-nested-reorder
         tableView.register(
             WorkspaceListTableCell.self,
             forCellReuseIdentifier: Self.cellReuseIdentifier
@@ -170,7 +172,9 @@ final class WorkspaceListTableCoordinator: NSObject, UITableViewDataSource,
 
     func update(configuration next: WorkspaceListTable, in tableView: UITableView) {
         configuration = next
-        tableView.dragInteractionEnabled = next.enablesReorder
+        // SUPERMUX:begin supermux-mobile-nested-reorder (upstream: `next.enablesReorder`)
+        tableView.dragInteractionEnabled = supermuxTakesDrags(next)
+        // SUPERMUX:end supermux-mobile-nested-reorder
         updateRefreshControl(in: tableView)
         reconcile(in: tableView)
         #if DEBUG
@@ -1575,6 +1579,14 @@ extension WorkspaceListTableCoordinator {
             guard case .workspace(let id, indented: true) = item else { return nil }
             return id
         }
+    }
+
+    /// Whether the table takes drags: the loose list's rows can reorder, or
+    /// some row nested under a project can be sent to its Mac.
+    private func supermuxTakesDrags(_ configuration: WorkspaceListTable) -> Bool {
+        guard !configuration.enablesReorder else { return true }
+        guard let payload = configuration.supermuxProjects else { return false }
+        return payload.moveNestedWorkspace != nil && !payload.layout.nestedSegments.isEmpty
     }
 
     /// Whether `item` is a workspace nested under a project.
