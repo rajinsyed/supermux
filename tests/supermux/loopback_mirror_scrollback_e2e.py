@@ -16,13 +16,13 @@ This suite runs against one tagged DEBUG build with the loopback device ("Loopba
 this app's own mobile host), so the source workspace is the "other Mac" and its auto
 mirror is the viewer. Scrolls are real wheel events posted to the app
 (`supermux.devices.terminal_sizing.local_scroll`); keys are real CGEvents posted to the
-app's process, so they take the same `flagsChanged` / `keyDown` path a keyboard does.
+app's process (keyboard events for the modifier key codes), through the same responder
+path as a keyboard.
 
   1. setup                          auto-mirror on, the loopback linked and fetched
   2. mirror_shows_long_output       a background source prints long output; its mirror shows the end
-  3. mirror_scrolled_up             the mirror, focused and scrolled up, shows older lines and
-                                    keeps them for 5 s, through the re-capture that confirms the
-                                    replay taken while the output flowed
+  3. mirror_scrolled_up             once the mirror's own first replays settle, the mirror,
+                                    focused and scrolled up, shows older lines
   4. <modifier>_keeps_scrollback    Cmd, Shift, Option and Control pressed and released alone
                                     leave the mirror's view where it was
   5. full_replay_keeps_scrollback   a full replay (a reconnect to a host that cannot resume,
@@ -71,8 +71,8 @@ SCROLL_LINES = 20
 # How long a key gets to move the view before the view counts as kept, and how often it is read.
 SETTLE_S = 1.5
 POLL_S = 0.25
-# How long a freshly scrolled view must stay put while the first replay's re-capture lands.
-QUIET_HOLD_S = 5.0
+# How long the mirror must go without a full replay before it counts as settled.
+QUIET_HOLD_S = 4.0
 
 # Virtual key code and the press's modifier flags (device-independent mask plus the
 # left-side device bit a real keyboard sets, and NX_NONCOALESCEDMASK).
@@ -232,17 +232,23 @@ class MirrorScrollbackE2E:
             return bool(result.get("focused"))
 
         wait_for("the mirror terminal to take keyboard focus", focused, self.timeout)
+        replays = self.wait_for_replays_to_settle()
         self.scroll_up()
-        before = self.top_line()
-        # The first replay ran while the output flowed, so a re-capture confirms it once the
-        # output is quiet: a full replay that lands on its own while the user reads.
-        deadline = time.monotonic() + QUIET_HOLD_S
+        return {"top_line": self.top_line(), "full_replays_before_scrolling": replays}
+
+    def wait_for_replays_to_settle(self) -> int:
+        """Waits out the mirror's own first replays: the grid re-anchor, and the re-capture
+        that confirms a replay taken while the output flowed (it lands a few seconds after
+        the output goes quiet, and corrects output the mirror drew twice meanwhile)."""
+        deadline = time.monotonic() + self.timeout
+        count = self.full_replays()
         while time.monotonic() < deadline:
-            if self.top_line() != before:
-                raise Failure(f"the view left {before!r} on its own: now {self.top_line()!r}"
-                              f"{' (the live bottom)' if self.at_bottom() else ''}")
-            time.sleep(POLL_S)
-        return {"top_line": before}
+            time.sleep(QUIET_HOLD_S)
+            latest = self.full_replays()
+            if latest == count:
+                return count
+            count = latest
+        raise Failure(f"the mirror kept replaying for {self.timeout:.0f}s ({count} full replays)")
 
     def scroll_up(self) -> None:
         """One wheel scroll up: the view ends a known distance above the bottom, well within

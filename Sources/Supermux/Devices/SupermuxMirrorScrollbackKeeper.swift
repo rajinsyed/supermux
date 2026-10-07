@@ -11,6 +11,11 @@ import CmuxTerminalCore
 /// output therefore jumped to the bottom at random. When its user was reading
 /// scrollback, the keeper notes how many rows sat below the view and, once the
 /// replay is parsed, scrolls back to as many rows above the new bottom.
+///
+/// The distance is exact when the replay holds what the mirror held. A mirror
+/// that attached while output flowed can hold some of it twice until the
+/// re-capture that confirms its first replay; a view below those rows lands
+/// that many rows off.
 @MainActor
 struct SupermuxMirrorScrollbackKeeper {
     private let rowsBelowViewport: Int
@@ -26,7 +31,7 @@ struct SupermuxMirrorScrollbackKeeper {
     }
 
     /// Once the output handed to `surface` so far is parsed, scrolls back to
-    /// the noted view, unless its user went back to the bottom meanwhile.
+    /// the noted view, unless its user scrolled or typed since the replay.
     func restore(on surface: TerminalSurface?) async {
         guard let surface else { return }
         await surface.supermuxRemoteOutputParsed()
@@ -35,14 +40,24 @@ struct SupermuxMirrorScrollbackKeeper {
 }
 
 extension GhosttySurfaceScrollView {
-    /// Shows the rows that end `rowsBelowViewport` rows above the live bottom,
-    /// while the view still reviews scrollback.
+    /// Shows the rows that end `rowsBelowViewport` rows above the live bottom.
+    ///
+    /// Only while the view is where the replay left it: still reviewing (a
+    /// keystroke after the replay follows the output again) and at the live
+    /// bottom (a scroll after the replay is the user's own). A replay with no
+    /// history leaves nothing to read back: the view follows the output.
     fileprivate func supermuxScrollBack(rowsBelowViewport: Int) {
         guard scrollbackViewportIntent.isReviewingScrollback,
-              let geometry = surfaceView.authoritativeScrollbarGeometry() else { return }
+              let geometry = surfaceView.authoritativeScrollbarGeometry(),
+              geometry.scrollbar.isAtBottom else { return }
         let totalRows = Int(clamping: geometry.scrollbar.total)
-        let visibleRows = min(totalRows, Int(clamping: geometry.scrollbar.len))
-        let topRow = max(0, totalRows - visibleRows - rowsBelowViewport)
+        let lastTopRow = totalRows - min(totalRows, Int(clamping: geometry.scrollbar.len))
+        guard lastTopRow > 0 else {
+            prepareExplicitViewportRestore(isAtBottom: true)
+            synchronizeScrollView(forceViewportSync: true)
+            return
+        }
+        let topRow = max(0, lastTopRow - rowsBelowViewport)
         let previousIntent = prepareExplicitViewportRestore(isAtBottom: false)
         guard let restored = surfaceView.scrollToRow(
             topRow,

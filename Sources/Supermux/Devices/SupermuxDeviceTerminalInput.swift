@@ -54,7 +54,9 @@ enum SupermuxDeviceTerminalInput {
     /// scrolls to the live bottom for every key it sees, so a lone Cmd threw
     /// the view out of the scrollback being read. Ghostty's key path skips
     /// modifiers there, and encodes one only for a program that asked for
-    /// every key (kitty flag 8); those bytes still reach the other Mac.
+    /// every key (kitty flag 8), with the mirror's own keyboard flags; those
+    /// bytes still reach the other Mac. A full replay resets those flags, so
+    /// such a program sees lone modifiers again only once it sets them anew.
     static func isModifierKey(_ keycode: UInt32) -> Bool {
         modifierKeycodes.contains(keycode)
     }
