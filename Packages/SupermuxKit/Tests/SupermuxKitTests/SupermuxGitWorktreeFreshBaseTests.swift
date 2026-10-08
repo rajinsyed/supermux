@@ -22,6 +22,9 @@ import SupermuxKit
 ///    worktree's base, or makes the new branch track `origin/main`.
 /// 7. Refreshing the base moves the user's local `main`, which can be checked
 ///    out in the main checkout.
+/// 8. The start point is passed to git as a short name, so a local branch
+///    named `origin/main` or a tag named `main` makes it ambiguous and git
+///    refuses to create the worktree.
 @Suite(.serialized) struct SupermuxGitWorktreeFreshBaseTests {
     private let service = SupermuxGitWorktreeService()
 
@@ -165,5 +168,35 @@ import SupermuxKit
         )
 
         #expect(try head(of: "HEAD", in: worktree.path) == localMain)
+    }
+
+    @Test func startsFromOriginWhenALocalBranchShadowsItsName() async throws {
+        let fixture = try makeOriginFixture()
+        defer { fixture.cleanUp() }
+        try GitFixture.runGit(["branch", "origin/main"], in: fixture.root)
+        let pushed = try pushFromAnotherClone(to: fixture.origin, branch: "main", file: "PUSHED.md")
+
+        let worktree = try await service.createWorktree(
+            project: fixture.project,
+            requestedBranch: "feature",
+            baseBranch: "main"
+        )
+
+        #expect(try head(of: "HEAD", in: worktree.path) == pushed)
+    }
+
+    @Test func startsFromTheBranchWhenATagSharesItsName() async throws {
+        let fixture = try makeOriginFixture()
+        defer { fixture.cleanUp() }
+        try GitFixture.runGit(["tag", "main"], in: fixture.root)
+        let unpushed = try commitLocally("UNPUSHED.md", in: fixture.root)
+
+        let worktree = try await service.createWorktree(
+            project: fixture.project,
+            requestedBranch: "feature",
+            baseBranch: "main"
+        )
+
+        #expect(try head(of: "HEAD", in: worktree.path) == unpushed)
     }
 }
