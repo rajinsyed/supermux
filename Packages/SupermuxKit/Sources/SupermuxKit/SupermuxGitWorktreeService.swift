@@ -20,12 +20,20 @@ public actor SupermuxGitWorktreeService {
     /// Deadline for checkout-weight commands (`worktree add`/`worktree remove`):
     /// they populate or delete a full working tree — LFS smudge filters included —
     /// so the blanket 30s would kill them mid-flight on large repositories.
-    /// Internal: `SupermuxDeviceReplyDeadline` derives another Mac's reply
-    /// deadline for worktree calls from it and ``teardownTimeout``.
+    /// Internal so reply-deadline tests can check the shared Mac/iPhone
+    /// worktree budget against the host's bounds.
     static let checkoutTimeout: TimeInterval = 600
     /// Upper bound for a worktree teardown script; cleanup that runs longer is
     /// terminated so a hung script can never wedge worktree deletion.
     static let teardownTimeout: TimeInterval = 120
+    /// Deadline for refreshing the base branch from `origin` before a
+    /// worktree is created. Short on purpose: a slow or failed fetch only
+    /// means starting from the local branch, as before.
+    static let fetchTimeout: TimeInterval = 30
+    /// Deadline for checking out a new worktree's submodules. Each one is
+    /// cloned from its remote (a linked worktree shares no submodule
+    /// repositories with the main checkout), so it is checkout-weight.
+    static let submoduleTimeout: TimeInterval = 600
     /// `PATH` for the one `env`-launched git call (the `worktree add`):
     /// `/usr/bin/env` bypasses ``CommandRunner``'s own executable resolution,
     /// so `git` is re-resolved against the inherited `PATH` plus the runner's
@@ -36,6 +44,17 @@ public actor SupermuxGitWorktreeService {
             + ["/usr/bin", "/bin", "/usr/sbin", "/sbin"]
         return ([inherited].compactMap { $0 } + fallbacks).filter { !$0.isEmpty }.joined(separator: ":")
     }()
+    /// Environment for the git calls that reach a remote (the base fetch and
+    /// the submodule clones): no credential or SSH prompt, so a missing
+    /// credential fails fast while stored ones (e.g. the keychain helper)
+    /// still work. Mirrors `SupermuxGitChangesService.fetch`.
+    private static let nonInteractiveGitEnvironment = [
+        "PATH=\(gitSearchPath)",
+        "GIT_TERMINAL_PROMPT=0",
+        "GIT_ASKPASS=/usr/bin/false",
+        "SSH_ASKPASS=/usr/bin/false",
+        "GCM_INTERACTIVE=never",
+    ]
     private static let logger = Logger(subsystem: "com.cmuxterm.app", category: "supermux.worktree")
 
     /// Creates a service.
@@ -152,9 +171,10 @@ public actor SupermuxGitWorktreeService {
     /// Creates a new worktree with a fresh branch.
     ///
     /// The branch name is sanitized and deduplicated; the worktree is created
-    /// at `<root>/<worktreesDir>/<branch>` from `baseBranch` (local first,
-    /// then `origin/<baseBranch>`). Without an explicit or configured base it
-    /// prefers local `main`, then falls back to repository `HEAD`.
+    /// at `<root>/<worktreesDir>/<branch>` from `baseBranch`, refreshed from
+    /// `origin` first (see ``resolveBase``). Without an explicit or configured
+    /// base it prefers `main`, then falls back to repository `HEAD`. The new
+    /// worktree's submodules are checked out too.
     /// - Parameters:
     ///   - project: Target project; must be a git repository.
     ///   - requestedBranch: Raw branch name input from the user.
@@ -247,6 +267,7 @@ public actor SupermuxGitWorktreeService {
                         commandLabel: "config branch base"
                     )
                 }
+                await checkOutSubmodules(worktreePath: worktreePath)
                 return SupermuxProjectWorktree(path: worktreePath, branch: branch, isSupermuxManaged: true)
             }
             if add.timedOut {
@@ -421,34 +442,109 @@ public actor SupermuxGitWorktreeService {
     }
 
     private struct ResolvedBase {
-        /// What `git worktree add` checks out from (e.g. `main`, `origin/main`, `HEAD`).
+        /// What `git worktree add` checks out from: a full ref (e.g.
+        /// `refs/heads/main`, `refs/remotes/origin/main`, so a tag or branch
+        /// sharing the short name cannot make it ambiguous) or `HEAD`.
         var startPoint: String
         /// The plain branch name recorded in `branch.<new>.base`, or `nil` for `HEAD`.
         var recordedName: String?
     }
 
+    /// Picks the commit a new worktree starts from. A named base branch is
+    /// refreshed from `origin` first, and the worktree starts from
+    /// `origin/<base>` when that only adds commits to the local branch: a
+    /// local branch that is ahead or has diverged keeps its unpushed commits.
+    /// A branch that exists only on `origin` starts from there.
     private func resolveBase(
         repoRoot: String,
         requested: String?,
         prefersMainWhenUnspecified: Bool
     ) async throws -> ResolvedBase {
-        guard let requested, !requested.isEmpty else {
-            if prefersMainWhenUnspecified,
-               try await refExists(repoRoot: repoRoot, ref: "refs/heads/main") {
-                return ResolvedBase(startPoint: "main", recordedName: "main")
+        let branch: String
+        if let requested, !requested.isEmpty {
+            guard requested != "HEAD" else {
+                return ResolvedBase(startPoint: "HEAD", recordedName: nil)
             }
+            branch = requested
+        } else if prefersMainWhenUnspecified,
+                  try await refExists(repoRoot: repoRoot, ref: "refs/heads/main") {
+            branch = "main"
+        } else {
             return ResolvedBase(startPoint: "HEAD", recordedName: nil)
         }
-        guard requested != "HEAD" else {
-            return ResolvedBase(startPoint: "HEAD", recordedName: nil)
+        await fetchFromOrigin(branch: branch, repoRoot: repoRoot)
+        let localRef = "refs/heads/\(branch)"
+        let remoteRef = "refs/remotes/origin/\(branch)"
+        let hasLocal = try await refExists(repoRoot: repoRoot, ref: localRef)
+        let hasRemote = try await refExists(repoRoot: repoRoot, ref: remoteRef)
+        switch (hasLocal, hasRemote) {
+        case (true, true):
+            let remoteIsNewer = await isAncestor(localRef, of: remoteRef, repoRoot: repoRoot)
+            return ResolvedBase(startPoint: remoteIsNewer ? remoteRef : localRef, recordedName: branch)
+        case (true, false):
+            return ResolvedBase(startPoint: localRef, recordedName: branch)
+        case (false, true):
+            return ResolvedBase(startPoint: remoteRef, recordedName: branch)
+        case (false, false):
+            throw SupermuxGitError.unknownBaseBranch(name: branch)
         }
-        if try await refExists(repoRoot: repoRoot, ref: "refs/heads/\(requested)") {
-            return ResolvedBase(startPoint: requested, recordedName: requested)
+    }
+
+    /// Updates `origin/<branch>` so a new worktree does not start from a stale
+    /// copy. Best-effort: with no `origin`, no such branch there, or no
+    /// network, the base resolves from the refs already present.
+    private func fetchFromOrigin(branch: String, repoRoot: String) async {
+        let result = await runNetworkGit(
+            in: repoRoot,
+            ["fetch", "--quiet", "--no-tags", "origin", "+refs/heads/\(branch):refs/remotes/origin/\(branch)"],
+            timeout: Self.fetchTimeout
+        )
+        if result.exitStatus != 0 {
+            Self.logger.info(
+                "base fetch skipped for \(branch, privacy: .public): \(Self.failureMessage(result), privacy: .public)"
+            )
         }
-        if try await refExists(repoRoot: repoRoot, ref: "refs/remotes/origin/\(requested)") {
-            return ResolvedBase(startPoint: "origin/\(requested)", recordedName: requested)
+    }
+
+    /// Whether `ancestor` is reachable from `descendant`; `false` when git
+    /// cannot tell, which keeps the local branch.
+    private func isAncestor(_ ancestor: String, of descendant: String, repoRoot: String) async -> Bool {
+        let result = await runner.run(
+            directory: repoRoot,
+            executable: "git",
+            arguments: ["merge-base", "--is-ancestor", ancestor, descendant],
+            timeout: Self.gitTimeout
+        )
+        return result.exitStatus == 0
+    }
+
+    /// Checks out a new worktree's submodules, which `git worktree add` leaves
+    /// empty. Best-effort: a submodule that cannot be cloned (offline, moved,
+    /// auth) is logged and keeps its folder empty rather than failing a
+    /// worktree that is otherwise usable.
+    private func checkOutSubmodules(worktreePath: String) async {
+        let gitmodules = (worktreePath as NSString).appendingPathComponent(".gitmodules")
+        guard FileManager.default.fileExists(atPath: gitmodules) else { return }
+        let result = await runNetworkGit(
+            in: worktreePath,
+            ["submodule", "update", "--init", "--recursive"],
+            timeout: Self.submoduleTimeout
+        )
+        if result.exitStatus != 0 {
+            Self.logger.warning(
+                "submodule checkout failed for \(worktreePath, privacy: .public): \(Self.failureMessage(result), privacy: .public)"
+            )
         }
-        throw SupermuxGitError.unknownBaseBranch(name: requested)
+    }
+
+    /// Runs a git command that reaches a remote, with prompts disabled.
+    private func runNetworkGit(in directory: String, _ arguments: [String], timeout: TimeInterval) async -> CommandResult {
+        await runner.run(
+            directory: directory,
+            executable: "/usr/bin/env",
+            arguments: Self.nonInteractiveGitEnvironment + ["git"] + arguments,
+            timeout: timeout
+        )
     }
 
     private func refExists(repoRoot: String, ref: String) async throws -> Bool {
