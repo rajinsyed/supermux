@@ -442,7 +442,9 @@ public actor SupermuxGitWorktreeService {
     }
 
     private struct ResolvedBase {
-        /// What `git worktree add` checks out from (e.g. `main`, `origin/main`, `HEAD`).
+        /// What `git worktree add` checks out from: a full ref (e.g.
+        /// `refs/heads/main`, `refs/remotes/origin/main`, so a tag or branch
+        /// sharing the short name cannot make it ambiguous) or `HEAD`.
         var startPoint: String
         /// The plain branch name recorded in `branch.<new>.base`, or `nil` for `HEAD`.
         var recordedName: String?
@@ -478,11 +480,11 @@ public actor SupermuxGitWorktreeService {
         switch (hasLocal, hasRemote) {
         case (true, true):
             let remoteIsNewer = await isAncestor(localRef, of: remoteRef, repoRoot: repoRoot)
-            return ResolvedBase(startPoint: remoteIsNewer ? "origin/\(branch)" : branch, recordedName: branch)
+            return ResolvedBase(startPoint: remoteIsNewer ? remoteRef : localRef, recordedName: branch)
         case (true, false):
-            return ResolvedBase(startPoint: branch, recordedName: branch)
+            return ResolvedBase(startPoint: localRef, recordedName: branch)
         case (false, true):
-            return ResolvedBase(startPoint: "origin/\(branch)", recordedName: branch)
+            return ResolvedBase(startPoint: remoteRef, recordedName: branch)
         case (false, false):
             throw SupermuxGitError.unknownBaseBranch(name: branch)
         }
