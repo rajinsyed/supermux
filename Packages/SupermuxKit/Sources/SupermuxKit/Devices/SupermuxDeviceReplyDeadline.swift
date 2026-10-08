@@ -13,7 +13,8 @@ internal import SupermuxMobileCore
 /// method's deadline must outlast everything the owning Mac may legitimately
 /// do for it. The host bounds each step itself (30 s per local git command,
 /// 30 s for a background `git fetch`, 120 s for push and pull, 30 s for an AI
-/// request, 600 s for a worktree checkout, 900 s for a clone, 30 s for a
+/// request, 30 s to refresh a new worktree's base, 600 s for a worktree
+/// checkout and 600 s for its submodules, 900 s for a clone, 30 s for a
 /// `files.*` call and 300 s for a file duplicate or trash), and the
 /// deadlines below are derived from those bounds. `nil` keeps the link's own
 /// 20 s default, which suits calls the host answers from memory or within a
@@ -32,10 +33,12 @@ public enum SupermuxDeviceReplyDeadline {
     public static let localWork: Duration = seconds(4 * git)
     /// A host `git fetch`, push or pull, plus the git reads around it.
     public static let network: Duration = seconds(SupermuxGitChangesService.networkTimeout + 2 * git)
-    /// Creating or removing a worktree: its teardown script, the
-    /// `git worktree add/remove` checkout, and the git commands around them.
+    /// Creating or removing a worktree: refreshing its base from `origin`,
+    /// the `git worktree add/remove` checkout, the new worktree's submodules,
+    /// its teardown script, and the git commands around them.
     public static let checkout: Duration = seconds(
-        SupermuxGitWorktreeService.checkoutTimeout + SupermuxGitWorktreeService.teardownTimeout + 3 * git
+        SupermuxGitWorktreeService.fetchTimeout + SupermuxGitWorktreeService.checkoutTimeout
+            + SupermuxGitWorktreeService.submoduleTimeout + SupermuxGitWorktreeService.teardownTimeout + 3 * git
     )
     /// `git clone`, then registering the project.
     public static let clone: Duration = seconds(SupermuxProjectSetupService.cloneTimeout + 4 * git)

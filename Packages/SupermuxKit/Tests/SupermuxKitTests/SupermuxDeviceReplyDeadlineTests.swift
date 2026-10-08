@@ -13,8 +13,8 @@ import Testing
 ///    request after the diff capture) gets the 20 s default.
 /// 3. Push or pull lose the long deadline they had.
 /// 4. A worktree removal (teardown script plus `git worktree remove`) or a
-///    worktree creation (`git worktree add`) gets a deadline shorter than the
-///    host's own bounds for that work.
+///    worktree creation (base fetch, `git worktree add`, then the submodule
+///    clones) gets a deadline shorter than the host's own bounds for that work.
 /// 5. A clone gets less than the host's clone timeout.
 /// 6. A call the host answers from memory gets a long deadline, so a dead link
 ///    is noticed late.
@@ -69,8 +69,9 @@ struct SupermuxDeviceReplyDeadlineTests {
 
     @Test func worktreeCheckoutsAndRemovalsOutlastTheHostBounds() {
         let checkout = SupermuxGitWorktreeService.checkoutTimeout
-        #expect(outlasts("worktree.create", hostSeconds: checkout + Self.aiRequest))
-        #expect(outlasts("agent.start", hostSeconds: checkout + Self.aiRequest))
+        let create = SupermuxGitWorktreeService.fetchTimeout + checkout + SupermuxGitWorktreeService.submoduleTimeout
+        #expect(outlasts("worktree.create", hostSeconds: create + Self.aiRequest))
+        #expect(outlasts("agent.start", hostSeconds: create + Self.aiRequest))
         #expect(outlasts("worktree.remove", hostSeconds: Self.git + SupermuxGitWorktreeService.teardownTimeout + checkout))
     }
 
