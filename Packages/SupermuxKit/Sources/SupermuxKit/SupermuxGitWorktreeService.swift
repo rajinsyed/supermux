@@ -20,8 +20,8 @@ public actor SupermuxGitWorktreeService {
     /// Deadline for checkout-weight commands (`worktree add`/`worktree remove`):
     /// they populate or delete a full working tree — LFS smudge filters included —
     /// so the blanket 30s would kill them mid-flight on large repositories.
-    /// Internal: `SupermuxDeviceReplyDeadline` derives another Mac's reply
-    /// deadline for worktree calls from it and ``teardownTimeout``.
+    /// Internal so reply-deadline tests can check the shared Mac/iPhone
+    /// worktree budget against the host's bounds.
     static let checkoutTimeout: TimeInterval = 600
     /// Upper bound for a worktree teardown script; cleanup that runs longer is
     /// terminated so a hung script can never wedge worktree deletion.

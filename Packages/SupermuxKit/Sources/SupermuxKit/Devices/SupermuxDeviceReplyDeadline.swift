@@ -36,10 +36,7 @@ public enum SupermuxDeviceReplyDeadline {
     /// Creating or removing a worktree: refreshing its base from `origin`,
     /// the `git worktree add/remove` checkout, the new worktree's submodules,
     /// its teardown script, and the git commands around them.
-    public static let checkout: Duration = seconds(
-        SupermuxGitWorktreeService.fetchTimeout + SupermuxGitWorktreeService.checkoutTimeout
-            + SupermuxGitWorktreeService.submoduleTimeout + SupermuxGitWorktreeService.teardownTimeout + 3 * git
-    )
+    public static let checkout: Duration = .seconds(SupermuxWorktreeReplyDeadline.seconds)
     /// `git clone`, then registering the project.
     public static let clone: Duration = seconds(SupermuxProjectSetupService.cloneTimeout + 4 * git)
     /// A `files.duplicate` or `files.trash`: the host's bound on copying or
