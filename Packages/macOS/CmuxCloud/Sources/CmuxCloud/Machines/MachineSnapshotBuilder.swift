@@ -4,6 +4,25 @@ import Foundation
 
 /// lint:allow namespace-type: moved unchanged from the app target, where it was an internal static namespace; reshaping it is a separate change from this package move.
 public enum MachineSnapshotBuilder: Sendable {
+    // SUPERMUX:begin runtime-cloud-route-catalog-placeholder-seam
+    /// The tree's catalog-only row while the fleet readout is unavailable.
+    /// - Parameters:
+    ///   - id: The catalog machine's cloud identifier.
+    ///   - info: The catalog's status and display metadata.
+    /// - Returns: A placeholder without an invented resource shape.
+    public static func catalogPlaceholder(id: String, info: SurfaceMachineInfo) -> MachineSnapshot {
+        MachineSnapshot(
+            id: id,
+            provider: "",
+            image: info.image ?? "",
+            isDesktop: info.hasDesktop,
+            activity: activity(fromStatus: info.status),
+            createdAt: nil,
+            label: info.name == id ? nil : info.name
+        )
+    }
+    // SUPERMUX:end runtime-cloud-route-catalog-placeholder-seam
+
     /// The fleet plus machines the catalog discovered before the list endpoint
     /// returned them (or returned them under another name): the complete set of
     /// machine rows the tree shows, in fleet order with discoveries appended.

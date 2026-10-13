@@ -335,40 +335,34 @@ public actor CloudMachineLinkManager {
             guard isCloudEnabled() else { throw VMClientError.cloudMachinesDisabled }
             let claim = try await CloudOperationContext.phase(.tunnel) { try await hub.acquire() }
             let releaseLease: @Sendable () async -> Void = { await hub.release(claim.lease) }
-            // One deadline covers address selection and the link connect.
-            let connectDeadline = ContinuousClock.now + connectTimeout
-            let reachableRoute: String
-            do {
-                try Task.checkCancellation()
-                reachableRoute = try await CloudOperationContext.phase(.route) {
-                    try await self.resolvedPrivateRoute(machineID: machineID, through: claim.ready, timeout: connectTimeout)
-                }
-            } catch {
-                await releaseLease()
-                throw error
-            }
+            // SUPERMUX:begin runtime-cloud-route-startup-owner
             #if DEBUG
             CMUXDebugLog.logDebugEvent("cloud.link.wireguardHub machine=\(machineID) socket=\(claim.ready.socketPath)")
             #endif
-            do {
-                try Task.checkCancellation()
-                let connected = try await link.connect(
-                    route: reachableRoute,
-                    session: session,
-                    carrier: carrier,
-                    timeout: Self.remaining(until: connectDeadline),
-                    wireguardHubSocket: claim.ready.socketPath,
-                    releaseHubLease: releaseLease
-                )
-                try Task.checkCancellation()
-                if carrier, knownFingerprint == nil {
-                    paths.saveDeviceFingerprint(CloudTuiClientPaths.carrierDeviceMarker, for: machineID)
+            return try await self.startPrivateRoute(
+                machineID: machineID, through: claim.ready, timeout: connectTimeout,
+                releaseLease: releaseLease
+            ) { [session] reachableRoute, timeout in
+                do {
+                    let connected = try await link.connect(
+                        route: reachableRoute,
+                        session: session,
+                        carrier: carrier,
+                        timeout: timeout,
+                        wireguardHubSocket: claim.ready.socketPath,
+                        releaseHubLease: releaseLease
+                    )
+                    try Task.checkCancellation()
+                    if carrier, knownFingerprint == nil {
+                        paths.saveDeviceFingerprint(CloudTuiClientPaths.carrierDeviceMarker, for: machineID)
+                    }
+                    return connected
+                } catch {
+                    await link.disconnect()
+                    throw error
                 }
-                return connected
-            } catch {
-                await link.disconnect()
-                throw error
             }
+            // SUPERMUX:end runtime-cloud-route-startup-owner
         }
         connecting[machineID] = task
         defer { if connecting[machineID] == task { connecting[machineID] = nil } }
