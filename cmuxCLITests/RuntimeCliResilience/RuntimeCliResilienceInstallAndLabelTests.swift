@@ -161,16 +161,12 @@ import Testing
         try #require(Darwin.mkfifo(release.path, 0o600) == 0)
         let interpose = try #require(ProcessInfo.processInfo.environment["CMUX_MUSE_REVIEW_INTERPOSE"])
         // The OS read gate pauses the real CLI after preflight and before the final hook builder.
-        // Both FIFO ends are held read-write so no open blocks; the readiness wait is bounded and
-        // the release byte is written on every exit path, so a failed check cannot strand the CLI.
+        // Both FIFO ends are held read-write so no open blocks; the readiness wait is bounded.
+        // On failure, release and join the CLI before closing the writer so it cannot miss the byte.
         let reader = Darwin.open(ready.path, O_RDWR)
         let writer = Darwin.open(release.path, O_RDWR)
         defer {
-            if writer >= 0 {
-                var releaseByte = UInt8(ascii: "g")
-                _ = Darwin.write(writer, &releaseByte, 1)
-                Darwin.close(writer)
-            }
+            if writer >= 0 { Darwin.close(writer) }
             if reader >= 0 { Darwin.close(reader) }
         }
         try #require(reader >= 0 && writer >= 0)
@@ -191,7 +187,7 @@ import Testing
                 "CMUX_MUSE_REVIEW_BLOCK_REPEAT": failure == "repeat-write" ? "1" : "0"
             ])
         }
-        try await Task.detached {
+        let finishGate = Task.detached {
             var descriptor = pollfd(fd: reader, events: Int16(POLLIN), revents: 0)
             try #require(Darwin.poll(&descriptor, 1, 10_000) == 1, "CLI never reached the settings read gate")
             var byte: UInt8 = 0
@@ -214,7 +210,15 @@ import Testing
             }
             try #require(Darwin.write(writer, &byte, 1) == 1)
             _ = try await installation.value
-        }.value
+        }
+        do {
+            try await finishGate.value
+        } catch {
+            var releaseByte = UInt8(ascii: "g")
+            _ = Darwin.write(writer, &releaseByte, 1)
+            _ = try? await installation.value
+            throw error
+        }
         let (status, output) = try await installation.value
         if failure == "repeat-write" {
             #expect(!FileManager.default.fileExists(atPath: attempts.path), "Install must not rematerialize while pruning user-owned hook entries")
