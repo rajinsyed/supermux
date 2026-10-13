@@ -389,6 +389,12 @@ def verify_launch_capture(bun: str, extension_path: Path, root: Path) -> None:
                     'const launch = Object.fromEntries(Object.entries(process.env).filter(([key]) => key.startsWith("CMUX_AGENT_LAUNCH_")));\n'
                     'require("node:fs").writeFileSync(process.env.CAPTURE_OUTPUT, JSON.stringify(launch));\n')
     options = ["--model", "sonnet"]
+    # SUPERMUX:begin runtime-cli-resilience-omp-capture-regressions
+    nonexecutable_script = root / "nonexecutable" / "oh-my-pi" / "cli.js"
+    nonexecutable_script.parent.mkdir(parents=True)
+    nonexecutable_script.write_text("// launched through a JavaScript runtime\n")
+    nonexecutable_script.chmod(0o644)
+    # SUPERMUX:end runtime-cli-resilience-omp-capture-regressions
     cases = [
         ("absolute binary", [str(shim), *options], "", [str(shim), *options]),
         ("absolute shebang without PATH", [bun, str(shim), *options], "", [str(shim), *options]),
@@ -400,6 +406,11 @@ def verify_launch_capture(bun: str, extension_path: Path, root: Path) -> None:
         ("relative PATH entry", ["omp", *options], "alternate", [str(alternate), *options]),
         ("unresolved launch", ["omp", *options], "", None),
         ("unresolved runtime", [bun, "unknown.js", *options], "", None),
+        # SUPERMUX:begin runtime-cli-resilience-omp-capture-regressions
+        ("non-executable script", [bun, str(nonexecutable_script), *options], "", [bun, str(nonexecutable_script), *options]),
+        ("relative non-executable script", [bun, "./nonexecutable/oh-my-pi/cli.js", *options], str(alternate.parent), [bun, str(nonexecutable_script), *options]),
+        ("PATH runtime with non-executable script", [Path(bun).name, str(nonexecutable_script), *options], str(Path(bun).parent), [bun, str(nonexecutable_script), *options]),
+        # SUPERMUX:end runtime-cli-resilience-omp-capture-regressions
     ]
     runner = """
 const mod = await import(process.env.CAPTURE_EXTENSION);
@@ -439,18 +450,24 @@ await handlers.get("session_shutdown")({}, ctx);
 
 def main() -> int:
     bun = shutil.which("bun")
-    if bun is None:
-        print("SKIP: bun not found")
-        return 0
-
+    # SUPERMUX:begin runtime-cli-resilience-omp-capture-runtime
     if "--launch-capture-only" in sys.argv:
+        runtime = bun or shutil.which("node")
+        if runtime is None:
+            print("FAIL: launch capture requires Bun or Node with native TypeScript support")
+            return 1
         with tempfile.TemporaryDirectory(prefix="cmux-omp-capture-") as td:
             root = Path(td).resolve()
             # Execute the embedded artifact, without asserting its source shape.
             source = (Path(__file__).resolve().parents[1] / "CLI/CMUXCLI+OmpExtension.swift").read_text()
             extension = root / "extension.ts"
             extension.write_text(source.split('private static let ompExtensionSource = #"""', 1)[1].split('"""#', 1)[0])
-            verify_launch_capture(bun, extension, root)
+            verify_launch_capture(runtime, extension, root)
+        return 0
+    # SUPERMUX:end runtime-cli-resilience-omp-capture-runtime
+
+    if bun is None:
+        print("SKIP: bun not found")
         return 0
 
     try:
