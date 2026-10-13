@@ -18,6 +18,9 @@ public actor CloudTuiPersistentResourceConnection {
         let deadline: Task<Void, Never>
         let isExpired: @Sendable () -> Bool
         var sendTask: Task<Void, Never>?
+        // SUPERMUX:begin runtime-cloud-mutations-pending-ownership
+        let receiptOwnership: CloudCommittedMutationOwnership?
+        // SUPERMUX:end runtime-cloud-mutations-pending-ownership
     }
     private struct Subscription {
         let continuation: AsyncStream<Data>.Continuation
@@ -131,7 +134,10 @@ public actor CloudTuiPersistentResourceConnection {
                 }
                 pending[id] = Pending(
                     continuation: continuation, request: request, deadline: deadline,
-                    isExpired: { clock.now >= expiresAt }, sendTask: nil
+                    // SUPERMUX:begin runtime-cloud-mutations-capture-ownership
+                    isExpired: { clock.now >= expiresAt }, sendTask: nil,
+                    receiptOwnership: request.idempotencyKey == nil ? nil : CloudCommittedMutationOwnership.current
+                    // SUPERMUX:end runtime-cloud-mutations-capture-ownership
                 )
                 let token = UUID()
                 let previous = sendTail
@@ -186,7 +192,16 @@ public actor CloudTuiPersistentResourceConnection {
         // SUPERMUX:begin runtime-cloud-mutations-pre-admission-gate
         await beforeSend?()
         // SUPERMUX:end runtime-cloud-mutations-pre-admission-gate
-        guard pending[id] != nil else { return }
+        // SUPERMUX:begin runtime-cloud-mutations-transport-admission
+        guard let entry = pending[id] else { return }
+        // This actor is about to hand bytes to the checked transport. Cancellation
+        // before this boundary rejects the send; afterwards the bounded pending
+        // request and its queue operation own parsing/adoption/compensation.
+        if let ownership = entry.receiptOwnership, !ownership.admit() {
+            retire(id, error: CancellationError())
+            return
+        }
+        // SUPERMUX:end runtime-cloud-mutations-transport-admission
         do {
             try await connection.sendChecked(line: line)
         } catch {
