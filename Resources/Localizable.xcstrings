@@ -672211,6 +672211,183 @@
           }
         }
       }
+    },
+    "cli.hooks.error.museScriptDirectory": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cannot create Muse hook script directory at %@: %@. Check the path and permissions, then retry."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تعذّر إنشاء مجلد برامج ربط Muse النصية في %@: %@. تحقّق من المسار والأذونات ثم أعد المحاولة."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Verzeichnis für Muse-Hook-Skripte unter %@ konnte nicht erstellt werden: %@. Prüfen Sie den Pfad und die Zugriffsrechte und versuchen Sie es erneut."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se puede crear el directorio de scripts de enlace de Muse en %@: %@. Comprueba la ruta y los permisos e inténtalo de nuevo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de créer le dossier des scripts de hook Muse dans %@ : %@. Vérifiez le chemin et les autorisations, puis réessayez."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ に Muse フックスクリプトのディレクトリを作成できません: %@。パスとアクセス権を確認して再試行してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@에 Muse 훅 스크립트 디렉터리를 만들 수 없습니다. 오류: %@. 경로와 권한을 확인한 후 다시 시도하세요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法在 %@ 创建 Muse 钩子脚本目录：%@。请检查路径和权限后重试。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無法在 %@ 建立 Muse 鉤子指令碼目錄：%@。請檢查路徑及權限，然後重試。"
+          }
+        }
+      }
+    },
+    "cli.hooks.error.museScriptWrite": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cannot write Muse hook script at %@ for %@. Check the directory permissions and available disk space, then retry."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تعذّر كتابة برنامج ربط Muse النصي في %@ للحدث %@. تحقّق من أذونات المجلد والمساحة المتاحة على القرص ثم أعد المحاولة."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Muse-Hook-Skript konnte unter %@ für %@ nicht geschrieben werden. Prüfen Sie die Zugriffsrechte für das Verzeichnis und den verfügbaren Speicherplatz und versuchen Sie es erneut."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se puede escribir el script de enlace de Muse en %@ para %@. Comprueba los permisos del directorio y el espacio disponible en disco e inténtalo de nuevo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible d’écrire le script de hook Muse dans %@ pour %@. Vérifiez les autorisations du dossier et l’espace disque disponible, puis réessayez."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ に %@ 用の Muse フックスクリプトを書き込めません。ディレクトリのアクセス権と空きディスク容量を確認して再試行してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@에 %@용 Muse 훅 스크립트를 쓸 수 없습니다. 디렉터리 권한과 사용 가능한 디스크 공간을 확인한 후 다시 시도하세요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法在 %@ 写入 %@ 的 Muse 钩子脚本。请检查目录权限和可用磁盘空间后重试。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無法在 %@ 寫入 %@ 的 Muse 鉤子指令碼。請檢查目錄權限和可用磁碟空間，然後重試。"
+          }
+        }
+      }
+    },
+    "cli.hooks.error.museUnsafeScriptPath": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cannot install Muse hook scripts at %@: the path contains a quote or backslash. Use a home directory without these characters and retry."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تعذّر تثبيت برامج ربط Muse النصية في %@: يحتوي المسار على علامة اقتباس أو شرطة مائلة عكسية. استخدم مجلدًا رئيسيًا لا يحتوي على هذه المحارف ثم أعد المحاولة."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Muse-Hook-Skripte können unter %@ nicht installiert werden: Der Pfad enthält ein Anführungszeichen oder einen umgekehrten Schrägstrich. Verwenden Sie ein Home-Verzeichnis ohne diese Zeichen und versuchen Sie es erneut."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pueden instalar los scripts de enlace de Muse en %@: la ruta contiene una comilla o una barra invertida. Usa un directorio de inicio sin esos caracteres e inténtalo de nuevo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible d’installer les scripts de hook Muse dans %@ : le chemin contient une apostrophe ou une barre oblique inverse. Utilisez un dossier personnel sans ces caractères et réessayez."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ に Muse フックスクリプトをインストールできません。パスに引用符またはバックスラッシュが含まれています。これらの文字を含まないホームディレクトリを使用して再試行してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@에 Muse 훅 스크립트를 설치할 수 없습니다. 경로에 따옴표 또는 역슬래시가 포함되어 있습니다. 이 문자가 없는 홈 디렉터리를 사용하여 다시 시도하세요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法在 %@ 安装 Muse 钩子脚本：路径包含引号或反斜杠。请使用不含这些字符的主目录后重试。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無法在 %@ 安裝 Muse 鉤子指令碼：路徑包含引號或反斜線。請使用不含這些字元的主目錄並重試。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
