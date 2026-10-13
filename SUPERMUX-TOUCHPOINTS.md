@@ -970,7 +970,9 @@ Rules for adding a touchpoint:
 | 1135 | `scripts/reload.sh` | `reload-profileless-release-iroh-storage` | Tagged Release builds define SUPERMUX_LOCAL_RELEASE for isolated Iroh storage; profile seeding follows the configuration-specific executable. |
 | 1136 | `tests/test_ci_change_areas.py` | `simulator-stream-ci-routing` | The desktop graph test includes Supermux's simulator-stream package dependency; upstream's dynamic CI closure must still route its changes to the Mac lane. |
 | 1137 | `skills/cmux-settings/references/shortcut-actions.md` | `settings-shortcut-reference` | Lists all six Supermux shortcut action IDs accepted by the schema so upstream's settings-contract checks and shortcut-rebinding guidance stay complete. |
-| 1138 | `tests/test_swift_package_execution.py` | `ci-package-execution-fork-fixture` | Isolates selected-package diagnostics from the four required fork suites and verifies that a failure in any fork suite still fails the package lane. |
+| 1138 | `tests/test_swift_package_execution.py` | `ci-package-execution-fork-fixture`, `ci-package-execution-fork-process` | Isolates selected-package diagnostics from the four required fork suites and verifies that a failure in any fork suite still fails the package lane. |
+| 1139 | `tests/test_ci_select_package_tests.py` | `ci-package-selection-fork-fixture` | Counts retry attempts only for the selected upstream suite while providing independent successful fixture results for mandatory fork suites; production CI coverage is unchanged. |
+| 1140 | `ios/tests/test_testflight_prepare_only.py` | `ios-prepare-candidate-extension-identity` | Validates the fork's derived notification extension identity under beta, official, and fixed dogfood host IDs instead of asserting upstream's literal extension ID. |
 
 ## How to re-apply
 

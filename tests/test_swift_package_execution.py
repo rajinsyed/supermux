@@ -39,6 +39,17 @@ class SwiftPackageExecutionTests(unittest.TestCase):
             swift = binaries / "swift"
             swift.write_text(textwrap.dedent("""\
                 #!/usr/bin/env bash
+                # SUPERMUX:begin ci-package-execution-fork-process
+                case "$*" in
+                    *"--package-path Packages/SupermuxKit"*|*"--package-path Packages/Shared/SupermuxMobileCore"*|*"--package-path Packages/iOS/SupermuxMobileKit"*|*"--package-path Packages/iOS/SupermuxMobileUI"*)
+                        echo '✔ Test run with 1 test passed after 0.001 seconds.'
+                        if [[ -n "$FAKE_SWIFT_FORK_PACKAGE" && "$*" == *"/$FAKE_SWIFT_FORK_PACKAGE"* ]]; then
+                            exit "$FAKE_SWIFT_FORK_STATUS"
+                        fi
+                        exit 0
+                        ;;
+                esac
+                # SUPERMUX:end ci-package-execution-fork-process
                 cat "$FAKE_SWIFT_OUTPUT"
                 exit "$FAKE_SWIFT_STATUS"
                 """))
