@@ -367,15 +367,17 @@ extension CMUXCLI {
                 builder: builder,
                 runner: runner
             ) ?? ""
-            if var record = records.first(where: { $0.tmuxBinding == observed.binding }) {
+            // SUPERMUX:begin runtime-ssh-tmux-discovery-location
+            if let record = records.first(where: { $0.tmuxBinding == observed.binding }) {
                 let liveSession = try identityResolver.bind(record, to: observed)
-                record = liveSession.record
-                record.socketPath = builder.socketPath
-                if !sessionCwd.isEmpty { record.cwd = sessionCwd }
-                record.updatedAt = Date.now.timeIntervalSince1970
-                try registry.upsert(record)
-                return record
+                return try persistLocalTmuxLocation(
+                    record: liveSession.record,
+                    registry: registry,
+                    socketPath: builder.socketPath,
+                    cwd: sessionCwd.isEmpty ? nil : sessionCwd
+                )
             }
+            // SUPERMUX:end runtime-ssh-tmux-discovery-location
             let record = LocalTmuxSessionRecord(
                 name: validatedName,
                 tmuxBinding: observed.binding,
@@ -390,6 +392,22 @@ extension CMUXCLI {
             invocation.id?.uuidString ?? "unknown"
         ))
     }
+
+    // SUPERMUX:begin runtime-ssh-tmux-location-consumer
+    func persistLocalTmuxLocation(
+        record: LocalTmuxSessionRecord,
+        registry: LocalTmuxSessionRegistry,
+        socketPath: String,
+        cwd: String?
+    ) throws -> LocalTmuxSessionRecord {
+        var updated = record
+        updated.socketPath = socketPath
+        if let cwd { updated.cwd = cwd }
+        updated.updatedAt = Date.now.timeIntervalSince1970
+        try registry.upsert(updated)
+        return updated
+    }
+    // SUPERMUX:end runtime-ssh-tmux-location-consumer
 
     private func requireOrDiscoverLocalTmuxSession(
         _ invocation: LocalTmuxInvocation,

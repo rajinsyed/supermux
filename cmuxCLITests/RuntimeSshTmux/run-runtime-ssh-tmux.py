@@ -29,7 +29,10 @@ elif suite == "progress":
     SOURCES = ["CLI/CLIError.swift", "CLI/CMUXCLI+SSHAuthentication.swift"]
     TEST_FILES = ["RuntimeSshTmuxProgressSupport.swift", "RuntimeSshTmuxProgressTests.swift"]
 else:
-    TEST_FILES = ["RuntimeSshTmuxTests.swift"]
+    SOURCES += ["CLI/CMUXCLI+LocalTmux.swift", "CLI/CMUXCLI+LocalTmuxAttachment.swift",
+                "CLI/LocalTmuxInvocation.swift", "CLI/LocalSessionAttachProfile.swift"]
+    TEST_FILES = ["RuntimeSshTmuxTests.swift", "RuntimeSshTmuxWriteCASSupport.swift",
+                  "RuntimeSshTmuxWriteCASTests.swift"]
 DEVELOPER = pathlib.Path(subprocess.check_output(["xcode-select", "-p"], text=True).strip())
 FRAMEWORKS = DEVELOPER / "Platforms/MacOSX.platform/Developer/Library/Frameworks"
 PLUGINS = DEVELOPER / "Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing"
