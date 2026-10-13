@@ -970,6 +970,7 @@ Rules for adding a touchpoint:
 | 1135 | `scripts/reload.sh` | `reload-profileless-release-iroh-storage` | Tagged Release builds define SUPERMUX_LOCAL_RELEASE for isolated Iroh storage; profile seeding follows the configuration-specific executable. |
 | 1136 | `tests/test_ci_change_areas.py` | `simulator-stream-ci-routing` | The desktop graph test includes Supermux's simulator-stream package dependency; upstream's dynamic CI closure must still route its changes to the Mac lane. |
 | 1137 | `skills/cmux-settings/references/shortcut-actions.md` | `settings-shortcut-reference` | Lists all six Supermux shortcut action IDs accepted by the schema so upstream's settings-contract checks and shortcut-rebinding guidance stay complete. |
+| 1138 | `tests/test_swift_package_execution.py` | `ci-package-execution-fork-fixture` | Isolates selected-package diagnostics from the four required fork suites and verifies that a failure in any fork suite still fails the package lane. |
 
 ## How to re-apply
 
