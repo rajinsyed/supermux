@@ -73,18 +73,27 @@ extension AuthCoordinator {
         teamScopeRateLimit = nil
     }
 
+    // SUPERMUX:begin runtime-auth-retain-rate-limit-state
     /// Records why a user fetch or team load failed: a 429 starts or extends
     /// the rate-limit backoff, any other classified failure ends it. A
-    /// timeout or token-probe failure leaves it unchanged, so a 429 followed
-    /// by a timeout keeps the longer wait.
+    /// timeout, cancellation or token-probe failure leaves it unchanged, so
+    /// a 429 followed by a timeout keeps the longer wait.
     func noteTeamScopeFailure(_ error: any Error) {
         if let rateLimit = AuthRateLimit(error: error) {
             let streak = (teamScopeRateLimit?.streak ?? 0) + 1
             teamScopeRateLimit = (streak, rateLimit.retryAfter)
         } else {
+            let authError = error as? AuthError
+            let nsError = error as NSError
+            let isTransportTimeoutOrCancellation = nsError.domain == NSURLErrorDomain
+                && (nsError.code == URLError.timedOut.rawValue || nsError.code == URLError.cancelled.rawValue)
+            guard !(error is CancellationError),
+                  authError != .timedOut, authError != .cancelled,
+                  !isTransportTimeoutOrCancellation else { return }
             teamScopeRateLimit = nil
         }
     }
+    // SUPERMUX:end runtime-auth-retain-rate-limit-state
 
     /// The wait before the next recovery check: the normal backoff, or,
     /// after a 429, `Retry-After` (clamped to 1 s-15 min, then stretched by
