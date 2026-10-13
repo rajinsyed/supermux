@@ -400,20 +400,21 @@ private actor RuntimeCloudMutationsAppSocket {
             Darwin.close(listener)
             throw error
         }
-        // Blocking fixture I/O stays off the cooperative executor; only fds cross tasks.
-        accepted = Task.detached {
-            let result = Darwin.accept(descriptor, nil, nil)
-            guard result >= 0 else { throw NSError(domain: "fixture.accept", code: Int(errno)) }
-            var noSignal: Int32 = 1
-            setsockopt(result, SOL_SOCKET, SO_NOSIGPIPE, &noSignal, socklen_t(MemoryLayout<Int32>.size))
-            return result
+        accepted = Task {
+            try await Self.performBlockingIO {
+                let result = Darwin.accept(descriptor, nil, nil)
+                guard result >= 0 else { throw NSError(domain: "fixture.accept", code: Int(errno)) }
+                var noSignal: Int32 = 1
+                setsockopt(result, SOL_SOCKET, SO_NOSIGPIPE, &noSignal, socklen_t(MemoryLayout<Int32>.size))
+                return result
+            }
         }
     }
 
     func next() async throws -> Data {
         let descriptor = try await accepted.value
         peer = descriptor
-        return try await Task.detached {
+        return try await Self.performBlockingIO {
             var result = Data()
             var byte: UInt8 = 0
             while true {
@@ -425,7 +426,7 @@ private actor RuntimeCloudMutationsAppSocket {
                 if byte == 0x0A { return result }
                 result.append(byte)
             }
-        }.value
+        }
     }
 
     func reply(to request: Data, result: [String: String]) async throws {
@@ -436,7 +437,7 @@ private actor RuntimeCloudMutationsAppSocket {
         ]) + Data([0x0A])
         let descriptor = try await accepted.value
         peer = descriptor
-        try await Task.detached {
+        try await Self.performBlockingIO {
             try response.withUnsafeBytes { raw in
                 var offset = 0
                 while offset < raw.count {
@@ -446,7 +447,7 @@ private actor RuntimeCloudMutationsAppSocket {
                     offset += written
                 }
             }
-        }.value
+        }
     }
 
     func close() {
@@ -454,6 +455,21 @@ private actor RuntimeCloudMutationsAppSocket {
         Darwin.shutdown(listener, SHUT_RDWR)
         Darwin.close(listener)
         unlink(path)
+    }
+
+    private static func performBlockingIO<Value: Sendable>(
+        _ operation: @escaping @Sendable () throws -> Value
+    ) async throws -> Value {
+        try await withCheckedThrowingContinuation { continuation in
+            // POSIX calls must not block Swift's cooperative executor.
+            DispatchQueue.global(qos: .utility).async {
+                do {
+                    continuation.resume(returning: try operation())
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
     }
 }
 // SUPERMUX:end runtime-cloud-mutations-provider-socket-fixture
