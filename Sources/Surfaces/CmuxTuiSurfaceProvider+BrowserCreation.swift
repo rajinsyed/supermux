@@ -103,6 +103,9 @@ extension CmuxTuiSurfaceProvider {
               activeProvider.isRegisteredInCatalog(), !activeProvider.hasLostAccess,
               !activeProvider.isFeatureSuspended,
               activeProvider.ownerTeamID == ownerTeamID,
+              // SUPERMUX:begin runtime-cloud-mutations-cancelled-owner-adoption
+              activeProvider !== self || !CloudTerminalMutationQueue.isCurrentTurnCancelled,
+              // SUPERMUX:end runtime-cloud-mutations-cancelled-owner-adoption
               activeProvider !== self || expectedLifecycle == nil || activeProvider.lifecycleGeneration == expectedLifecycle else {
             throw ProviderError.stateUnavailable(machineID)
         }
