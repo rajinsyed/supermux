@@ -11,11 +11,18 @@ extension CMUXCLI {
             )
     }
 
-    func resolvedCmuxControlPathOptions(for options: SSHCommandOptions) -> [String] {
+    // SUPERMUX:begin runtime-ssh-tmux-config-resolution-seam
+    func resolvedCmuxControlPathOptions(
+        for options: SSHCommandOptions,
+        configurationOutput: String? = nil
+    ) -> [String] {
+    // SUPERMUX:end runtime-ssh-tmux-config-resolution-seam
         let sharingOptions = SSHConnectionSharingOptions()
         guard let configuredPath = sharingOptions.cmuxOwnedControlPath(in: options.sshOptions),
               configuredPath.contains("%"),
-              let output = resolvedSSHConfigurationOutput(for: options),
+              // SUPERMUX:begin runtime-ssh-tmux-injected-config-output
+              let output = configurationOutput ?? resolvedSSHConfigurationOutput(for: options),
+              // SUPERMUX:end runtime-ssh-tmux-injected-config-output
               let resolvedPath = sshConfigurationValue(named: "controlpath", in: output) else {
             return options.sshOptions
         }
