@@ -1,13 +1,15 @@
 // SUPERMUX:begin runtime-browser-delivery-download-admission
 import Foundation
 
+/// Admits and delivers messages using an immutable snapshot of the page's download policy.
 @MainActor
-enum BrowserScriptedDownloadDelivery {
-    static func receive(
+struct BrowserScriptedDownloadDelivery {
+    let expectedToken: String?
+    let maximumDataURLCharacters: Int
+
+    func receive(
         body: Any,
-        expectedToken: String?,
         isMainFrame: Bool,
-        maximumDataURLCharacters: Int,
         onDownload: @MainActor (URL, String?) -> Void,
         onSubframeIntent: @MainActor (URL) -> Void,
         onRejection: @MainActor (String) -> Void

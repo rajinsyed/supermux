@@ -311,11 +311,12 @@ extension CmuxWebView {
             configuration.userContentController,
             &Self.scriptedDownloadTokenKey
         ) as? String
-        BrowserScriptedDownloadDelivery.receive(
-            body: body,
+        BrowserScriptedDownloadDelivery(
             expectedToken: expectedToken,
+            maximumDataURLCharacters: Self.maxScriptedDownloadDataURLCharacters
+        ).receive(
+            body: body,
             isMainFrame: isMainFrame,
-            maximumDataURLCharacters: Self.maxScriptedDownloadDataURLCharacters,
             onDownload: { [self] url, filename in
                 startScriptedDownload(url, suggestedFilename: filename)
             },

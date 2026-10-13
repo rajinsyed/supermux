@@ -66,11 +66,12 @@ struct RuntimeBrowserDeliveryDownloadTests {
     }
 
     private func receive(_ body: Any, expectedToken: String? = "expected", isMainFrame: Bool = true, received: Received) {
-        BrowserScriptedDownloadDelivery.receive(
-            body: body,
+        BrowserScriptedDownloadDelivery(
             expectedToken: expectedToken,
+            maximumDataURLCharacters: 100
+        ).receive(
+            body: body,
             isMainFrame: isMainFrame,
-            maximumDataURLCharacters: 100,
             onDownload: { received.downloads.append(($0.absoluteString, $1)) },
             onSubframeIntent: { received.subframeIntents.append($0.absoluteString) },
             onRejection: { received.rejections.append($0) }
