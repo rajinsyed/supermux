@@ -2,7 +2,7 @@ import Foundation
 import Network
 
 extension CloudMachineLinkManager {
-    // SUPERMUX:begin runtime-cloud-route-startup-seam
+    // SUPERMUX:begin runtime-cloud-route-recovery-budget
     struct ResolvedPrivateRoute: Sendable {
         let route: String
         let deadline: ContinuousClock.Instant?
@@ -51,9 +51,10 @@ extension CloudMachineLinkManager {
             await releaseLease()
             throw error
         }
-        return try await start(resolved.route, max(deadline - (await operations.now()), .zero))
+        let startupDeadline = resolved.deadline ?? deadline
+        return try await start(resolved.route, max(startupDeadline - (await operations.now()), .zero))
     }
-    // SUPERMUX:end runtime-cloud-route-startup-seam
+    // SUPERMUX:end runtime-cloud-route-recovery-budget
 
     /// The probe budget after a dead tunnel was re-enrolled and its hub restarted.
     static let unansweredRouteRetryBudget: Duration = .seconds(10)

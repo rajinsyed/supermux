@@ -4,7 +4,7 @@ import Foundation
 
 /// lint:allow namespace-type: moved unchanged from the app target, where it was an internal static namespace; reshaping it is a separate change from this package move.
 public enum MachineSnapshotBuilder: Sendable {
-    // SUPERMUX:begin runtime-cloud-route-catalog-placeholder-seam
+    // SUPERMUX:begin runtime-cloud-route-catalog-pool-admission
     /// The tree's catalog-only row while the fleet readout is unavailable.
     /// - Parameters:
     ///   - id: The catalog machine's cloud identifier.
@@ -18,10 +18,11 @@ public enum MachineSnapshotBuilder: Sendable {
             isDesktop: info.hasDesktop,
             activity: activity(fromStatus: info.status),
             createdAt: nil,
-            label: info.name == id ? nil : info.name
+            label: info.name == id ? nil : info.name,
+            usesResourcePool: CloudVMResourcePool.usesResourcePool(forStatus: info.status)
         )
     }
-    // SUPERMUX:end runtime-cloud-route-catalog-placeholder-seam
+    // SUPERMUX:end runtime-cloud-route-catalog-pool-admission
 
     /// The fleet plus machines the catalog discovered before the list endpoint
     /// returned them (or returned them under another name): the complete set of
