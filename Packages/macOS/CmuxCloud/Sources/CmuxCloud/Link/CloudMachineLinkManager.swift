@@ -636,30 +636,62 @@ public actor CloudMachineLinkManager {
     /// costs at most one extra command and always lands on the latest theme.
     private func pushHostTheme(machineID: String, socketPath: String) {
         guard links[machineID] != nil else { return }
+        // SUPERMUX:begin runtime-cloud-mutations-theme-transport-seam
+        scheduleHostThemePush(machineID: machineID, socketPath: socketPath) { arguments in
+            guard let link = await self.link(machineID: machineID) else { return false }
+            _ = try await link.run(arguments: arguments)
+            return true
+        }
+    }
+
+    /// Schedules the real theme builder/coalescer with an injectable request transport.
+    func scheduleHostThemePush(
+        machineID: String,
+        socketPath: String,
+        send: @escaping @Sendable (CloudTuiRequest) async throws -> Bool
+    ) {
+        // SUPERMUX:end runtime-cloud-mutations-theme-transport-seam
         guard !themePushInFlight.contains(machineID) else {
             themePushQueued.insert(machineID)
             return
         }
         themePushInFlight.insert(machineID)
-        Task { await self.drainThemePushes(machineID: machineID, socketPath: socketPath) }
+        // SUPERMUX:begin runtime-cloud-mutations-theme-drain-transport
+        Task { await self.drainThemePushes(machineID: machineID, socketPath: socketPath, send: send) }
+        // SUPERMUX:end runtime-cloud-mutations-theme-drain-transport
     }
 
-    private func drainThemePushes(machineID: String, socketPath: String) async {
+    // SUPERMUX:begin runtime-cloud-mutations-theme-drain-seam
+    private func drainThemePushes(
+        machineID: String,
+        socketPath: String,
+        send: @escaping @Sendable (CloudTuiRequest) async throws -> Bool
+    ) async {
+        // SUPERMUX:end runtime-cloud-mutations-theme-drain-seam
         repeat {
             themePushQueued.remove(machineID)
-            await runThemePush(machineID: machineID, socketPath: socketPath)
+            // SUPERMUX:begin runtime-cloud-mutations-theme-rerun-transport
+            await runThemePush(machineID: machineID, socketPath: socketPath, send: send)
+            // SUPERMUX:end runtime-cloud-mutations-theme-rerun-transport
         } while themePushQueued.contains(machineID)
         themePushInFlight.remove(machineID)
     }
 
-    private func runThemePush(machineID: String, socketPath: String) async {
-        guard let link = links[machineID] else { return }
+    // SUPERMUX:begin runtime-cloud-mutations-theme-request-seam
+    private func runThemePush(
+        machineID: String,
+        socketPath: String,
+        send: @Sendable (CloudTuiRequest) async throws -> Bool
+    ) async {
+        // SUPERMUX:end runtime-cloud-mutations-theme-request-seam
         guard let colors = await hostThemeColors(),
               let arguments = CloudTuiRequests.setDefaultColorsArguments(
                   socketPath: socketPath, foreground: colors.foreground, background: colors.background
               ) else { return }
         do {
-            _ = try await link.run(arguments: arguments)
+            // SUPERMUX:begin runtime-cloud-mutations-theme-send-transport
+            guard try await send(arguments) else { return }
+            // SUPERMUX:end runtime-cloud-mutations-theme-send-transport
             #if DEBUG
             CMUXDebugLog.logDebugEvent("cloud.link.theme machine=\(machineID) fg=\(colors.foreground) bg=\(colors.background)")
             #endif
