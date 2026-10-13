@@ -65,12 +65,18 @@ Supermux's Projects/Changes/Run/Claude-harness product layer.
 - Cloud startup shares the bounded recovered-route deadline, paused/stopped catalog rows use the
   right resource-pool admission, and cancelled browser creation retains admitted receipts for
   adoption or cleanup without reviving cancelled intent.
+- Automatic host-theme updates cannot commit a queued browser operation's cancellation boundary;
+  browser receipt adoption and cleanup still run after its own request has been admitted.
 - Browser design messages retain receive order; scripted download admission no longer queues
   native tasks holding every incoming payload. Active-download policy is unchanged.
 - Local tmux recovery checks the whole session incarnation and current locked owner; stopped SSH
   progress cannot print after the result, and TUI handoff preserves SSH sharing-option provenance.
-- Muse hook installation fails before settings changes if scripts cannot be written. OMP restore
-  retains required JavaScript runtimes, and implicit OAuth labels obey the server's UTF-16 limit.
+- Delayed tmux discovery and attachment results cannot restore metadata from an older incarnation
+  after removal or rebind.
+- Muse hook installation validates executable scripts once and reuses those commands; write or
+  chmod failures leave settings unchanged instead of silently installing an inline fallback.
+- OMP restore retains required JavaScript runtimes, and implicit OAuth labels obey the server's
+  UTF-16 limit.
 
 ### Important behavior and architecture changes
 

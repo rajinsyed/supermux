@@ -6,7 +6,7 @@ clobbers one, re-apply it from the "How to re-apply" instructions below, then ru
 `scripts/supermux-check-touchpoints.sh` to verify the registry and the code agree.
 
 Rules for adding a touchpoint:
-- Current allocation ceiling: **1218** (#1142–#1217 register the six runtime-hardening groups; #1218 keeps the standalone command fixture linked to their ownership state).
+- Current allocation ceiling: **1244** (#1142–#1217 register the six runtime-hardening groups; #1218–#1244 cover command-fixture closure and residual ownership/materialization repairs).
 - Keep it as small as possible — a call into `Packages/SupermuxKit` or `Sources/Supermux` code.
 - Fence it: `// SUPERMUX:begin <id>` / `// SUPERMUX:end <id>` (use `<!-- -->` in Markdown/XML).
 - Register it in the table AND add a "How to re-apply" entry.
@@ -1006,7 +1006,7 @@ Rules for adding a touchpoint:
 | 1170 | `Packages/macOS/CmuxCloud/Sources/CmuxCloud/Link/CloudTuiPersistentResourceConnection.swift` | `runtime-cloud-mutations-transport-admission` | Reject cancellation before transport admission; admitted bounded requests retain receipt parsing/adoption/compensation ownership. |
 | 1171 | `Packages/macOS/CmuxCloud/Sources/CmuxCloud/Surfaces/CloudTerminalMutationQueue.swift` | `runtime-cloud-mutations-committed-turn` | End cancelled caller waits promptly while retaining the ordered admitted operation until its bounded receipt work completes. |
 | 1172 | `Packages/macOS/CmuxCloud/Sources/CmuxCloud/Surfaces/CloudTerminalMutationQueue.swift` | `runtime-cloud-mutations-intent-cancellation` | Expose the current turn's caller/queue cancellation intent without cancelling an already admitted receipt operation. |
-| 1173 | `Packages/macOS/CmuxCloud/Sources/CmuxCloud/Surfaces/CloudTerminalMutationQueue.swift` | `runtime-cloud-mutations-receipt-ownership` | Keep synchronous lock-protected cancellation/admission CAS and single continuation result arbitration, not general asynchronous locking. |
+| 1173 | `Packages/macOS/CmuxCloud/Sources/CmuxCloud/Surfaces/CloudCommittedMutationOwnership.swift` | `runtime-cloud-mutations-receipt-ownership` | Keep synchronous lock-protected cancellation/admission CAS, not general asynchronous locking. |
 | 1174 | `Packages/macOS/CmuxCloud/Tests/CmuxCloudTests/RuntimeCloudMutationsSocket.swift` | `runtime-cloud-mutations-socket-fixture` | Keep the disposable Unix channel fixture for real committed request/cancel behavior. |
 | 1175 | `Packages/macOS/CmuxCloud/Tests/CmuxCloudTests/RuntimeCloudMutationsTests.swift` | `runtime-cloud-mutations-channel-regressions` | Retain committed receipt, cancelled intent and pending-registration/pre-send cancellation regressions against actual production code. |
 | 1176 | `Sources/Surfaces/CmuxTuiSurfaceProvider+BrowserCreation.swift` | `runtime-cloud-mutations-cancelled-owner-adoption` | Do not adopt a cancelled intent into the same provider; eligible same-team replacements remain supported. |
@@ -1051,11 +1051,63 @@ Rules for adding a touchpoint:
 | 1215 | `Packages/macOS/CMUXAgentLaunch/Tests/CMUXAgentLaunchTests/RuntimeCliResilienceOmpTests.swift` | `runtime-cli-resilience-omp-regressions` | Retain real non-executable Node script restore, unsafe-mode/sensitive-input rejection and other-provider controls. |
 | 1216 | `tests/test_omp_extension_install.py` | `runtime-cli-resilience-omp-capture-regressions` | Retain embedded production TypeScript launch-capture cases for absolute/relative/PATH runtimes and executable controls. |
 | 1217 | `tests/test_omp_extension_install.py` | `runtime-cli-resilience-omp-capture-runtime` | Allow capture-only execution with Node native TypeScript support; do not claim the Bun lifecycle suite executed. |
-| 1218 | `tests/run_cloud_command_deadline_tests.sh` | `runtime-cloud-command-fixture-ownership` | Compile the persistent command fixture with the real committed-mutation ownership and queue implementation. |
+| 1218 | `tests/run_cloud_command_deadline_tests.sh` | `runtime-cloud-command-fixture-ownership` | Compile the persistent command fixture with the real committed-mutation ownership implementation. |
+| 1219 | `CLI/CMUXCLI+CodexFireAndForgetHooks.swift` | `runtime-cli-resilience-muse-executable-permissions` | Reject failed chmod or non-executable cached Muse scripts during installation; retain non-install fallback. |
+| 1220 | `CLI/CMUXCLI+LocalTmux.swift` | `runtime-ssh-tmux-id-location-cas` | Refresh an ID-selected record through its captured binding, never through a stale full-record upsert. |
+| 1221 | `CLI/CMUXCLI+LocalTmux.swift` | `runtime-ssh-tmux-name-location-cas` | Refresh a name-selected record without restoring removed or rebound metadata. |
+| 1222 | `CLI/CMUXCLI+LocalTmux.swift` | `runtime-ssh-tmux-discovery-location` | Persist discovered-session location only while the freshly rebound incarnation still owns the record. |
+| 1223 | `CLI/CMUXCLI+LocalTmux.swift` | `runtime-ssh-tmux-location-consumer` | Share the actual CLI location consumer with binding-CAS regressions. |
+| 1224 | `CLI/CMUXCLI+LocalTmuxAttachment.swift` | `runtime-ssh-tmux-attachment-consumer-cas` | Bind delayed surface replies to the incarnation that requested the attachment. |
+| 1225 | `CLI/LocalTmuxSessionRegistry.swift` | `runtime-ssh-tmux-pending-location-cas` | Require the captured optional binding even for an as-yet-unbound record. |
+| 1226 | `CLI/LocalTmuxSessionRegistry.swift` | `runtime-ssh-tmux-attachment-binding-cas` | Reject delayed attachment writes after removal or a different incarnation has rebound the record. |
+| 1227 | `CLI/cmux.swift` | `runtime-cli-resilience-muse-install-command-map` | Build Muse settings from the validated immutable command map without rematerialization. |
+| 1228 | `CLI/cmux.swift` | `runtime-cli-resilience-muse-install-validated-builder` | Check every validated script is executable before building settings entries. |
+| 1229 | `CLI/cmux.swift` | `runtime-cli-resilience-muse-install-ownership` | Prune owned Muse hooks without side-effecting script materialization. |
+| 1230 | `CLI/cmux.swift` | `runtime-cli-resilience-muse-install-prewrite-check` | Recheck validated script executability immediately before the atomic settings write. |
+| 1231 | `Packages/macOS/CmuxCloud/Sources/CmuxCloud/Link/CloudMachineLinkManager.swift` | `runtime-cloud-mutations-theme-transport-seam` | Route production and socket regressions through the same host-theme builder and coalescer. |
+| 1232 | `Packages/macOS/CmuxCloud/Sources/CmuxCloud/Link/CloudMachineLinkManager.swift` | `runtime-cloud-mutations-theme-task-ownership` | Clear inherited committed-mutation ownership before spawning autonomous theme work. |
+| 1233 | `Packages/macOS/CmuxCloud/Sources/CmuxCloud/Link/CloudMachineLinkManager.swift` | `runtime-cloud-mutations-theme-drain-seam` | Keep the same request transport through a coalesced theme drain. |
+| 1234 | `Packages/macOS/CmuxCloud/Sources/CmuxCloud/Link/CloudMachineLinkManager.swift` | `runtime-cloud-mutations-theme-rerun-transport` | Retain theme reruns while isolating them from queued browser intent. |
+| 1235 | `Packages/macOS/CmuxCloud/Sources/CmuxCloud/Link/CloudMachineLinkManager.swift` | `runtime-cloud-mutations-theme-request-seam` | Exercise actual theme color/request construction through the injected transport. |
+| 1236 | `Packages/macOS/CmuxCloud/Sources/CmuxCloud/Link/CloudMachineLinkManager.swift` | `runtime-cloud-mutations-theme-send-transport` | Log theme delivery only after a live transport accepted the real request. |
+| 1237 | `Packages/macOS/CmuxCloud/Tests/CmuxCloudTests/RuntimeCloudMutationsThemeHarness.swift` | `runtime-cloud-mutations-theme-harness` | Retain socket-backed host-theme transport using the production manager scheduler. |
+| 1238 | `Packages/macOS/CmuxCloud/Tests/CmuxCloudTests/RuntimeCloudMutationsThemeOwnershipTests.swift` | `runtime-cloud-mutations-theme-ownership-regressions` | Distinguish theme admission from browser admission under caller/queue cancellation and post-send receipt handling. |
+| 1239 | `cmuxCLITests/RuntimeCliResilience/RuntimeCliResilienceInstallAndLabelTests.swift` | `runtime-cli-resilience-muse-review-regressions` | Retain actual CLI executable-mode, chmod-denial, late failure, and command-map reuse cases. |
+| 1240 | `cmuxCLITests/RuntimeCliResilience/RuntimeCliResilienceMuseReadGate.c` | `runtime-cli-resilience-muse-read-gate` | Gate reads in isolated CLI subprocesses to expose rematerialization without timing races. |
+| 1241 | `cmuxCLITests/RuntimeCliResilience/run-runtime-cli-resilience.sh` | `runtime-cli-resilience-muse-read-gate-build` | Build the process-local filesystem gate only for the explicitly supplied isolated CLI harness. |
+| 1242 | `cmuxCLITests/RuntimeSshTmux/RuntimeSshTmuxWriteCASSupport.swift` | `runtime-ssh-tmux-write-cas-fixture` | Compile actual CLI discovery and attachment consumers with deterministic socket seams. |
+| 1243 | `cmuxCLITests/RuntimeSshTmux/RuntimeSshTmuxWriteCASTests.swift` | `runtime-ssh-tmux-write-cas-regressions` | Retain rebind/removal and delayed incarnation-A-after-B write regressions. |
+| 1244 | `Packages/macOS/CmuxCloud/Sources/CmuxCloud/Surfaces/CloudCommittedMutationWaiter.swift` | `runtime-cloud-mutations-waiter-arbitration` | Resolve one cancelled caller promptly without prematurely releasing admitted ordered receipt work. |
 
 ## How to re-apply
 
-- **#1218 `runtime-cloud-command-fixture-ownership`**, in `tests/run_cloud_command_deadline_tests.sh`: Copy `CloudTerminalMutationQueue.swift` beside the persistent transport so the standalone deadline fixture typechecks against the production ownership state instead of introducing a divergent stub.
+- **#1218 `runtime-cloud-command-fixture-ownership`**, in `tests/run_cloud_command_deadline_tests.sh`: Copy `CloudCommittedMutationOwnership.swift` beside the persistent transport so the standalone deadline fixture typechecks against the production ownership state instead of introducing a divergent stub.
+- **#1219 `runtime-cli-resilience-muse-executable-permissions`**, in `CLI/CMUXCLI+CodexFireAndForgetHooks.swift`: Reject failed chmod or non-executable cached Muse scripts during installation; retain non-install fallback.
+- **#1220 `runtime-ssh-tmux-id-location-cas`**, in `CLI/CMUXCLI+LocalTmux.swift`: Refresh an ID-selected record through its captured binding, never through a stale full-record upsert.
+- **#1221 `runtime-ssh-tmux-name-location-cas`**, in `CLI/CMUXCLI+LocalTmux.swift`: Refresh a name-selected record without restoring removed or rebound metadata.
+- **#1222 `runtime-ssh-tmux-discovery-location`**, in `CLI/CMUXCLI+LocalTmux.swift`: Persist discovered-session location only while the freshly rebound incarnation still owns the record.
+- **#1223 `runtime-ssh-tmux-location-consumer`**, in `CLI/CMUXCLI+LocalTmux.swift`: Share the actual CLI location consumer with binding-CAS regressions.
+- **#1224 `runtime-ssh-tmux-attachment-consumer-cas`**, in `CLI/CMUXCLI+LocalTmuxAttachment.swift`: Bind delayed surface replies to the incarnation that requested the attachment.
+- **#1225 `runtime-ssh-tmux-pending-location-cas`**, in `CLI/LocalTmuxSessionRegistry.swift`: Require the captured optional binding even for an as-yet-unbound record.
+- **#1226 `runtime-ssh-tmux-attachment-binding-cas`**, in `CLI/LocalTmuxSessionRegistry.swift`: Reject delayed attachment writes after removal or a different incarnation has rebound the record.
+- **#1227 `runtime-cli-resilience-muse-install-command-map`**, in `CLI/cmux.swift`: Build Muse settings from the validated immutable command map without rematerialization.
+- **#1228 `runtime-cli-resilience-muse-install-validated-builder`**, in `CLI/cmux.swift`: Check every validated script is executable before building settings entries.
+- **#1229 `runtime-cli-resilience-muse-install-ownership`**, in `CLI/cmux.swift`: Prune owned Muse hooks without side-effecting script materialization.
+- **#1230 `runtime-cli-resilience-muse-install-prewrite-check`**, in `CLI/cmux.swift`: Recheck validated script executability immediately before the atomic settings write.
+- **#1231 `runtime-cloud-mutations-theme-transport-seam`**, in `Packages/macOS/CmuxCloud/Sources/CmuxCloud/Link/CloudMachineLinkManager.swift`: Route production and socket regressions through the same host-theme builder and coalescer.
+- **#1232 `runtime-cloud-mutations-theme-task-ownership`**, in `Packages/macOS/CmuxCloud/Sources/CmuxCloud/Link/CloudMachineLinkManager.swift`: Clear inherited committed-mutation ownership before spawning autonomous theme work.
+- **#1233 `runtime-cloud-mutations-theme-drain-seam`**, in `Packages/macOS/CmuxCloud/Sources/CmuxCloud/Link/CloudMachineLinkManager.swift`: Keep the same request transport through a coalesced theme drain.
+- **#1234 `runtime-cloud-mutations-theme-rerun-transport`**, in `Packages/macOS/CmuxCloud/Sources/CmuxCloud/Link/CloudMachineLinkManager.swift`: Retain theme reruns while isolating them from queued browser intent.
+- **#1235 `runtime-cloud-mutations-theme-request-seam`**, in `Packages/macOS/CmuxCloud/Sources/CmuxCloud/Link/CloudMachineLinkManager.swift`: Exercise actual theme color/request construction through the injected transport.
+- **#1236 `runtime-cloud-mutations-theme-send-transport`**, in `Packages/macOS/CmuxCloud/Sources/CmuxCloud/Link/CloudMachineLinkManager.swift`: Log theme delivery only after a live transport accepted the real request.
+- **#1237 `runtime-cloud-mutations-theme-harness`**, in `Packages/macOS/CmuxCloud/Tests/CmuxCloudTests/RuntimeCloudMutationsThemeHarness.swift`: Retain socket-backed host-theme transport using the production manager scheduler.
+- **#1238 `runtime-cloud-mutations-theme-ownership-regressions`**, in `Packages/macOS/CmuxCloud/Tests/CmuxCloudTests/RuntimeCloudMutationsThemeOwnershipTests.swift`: Distinguish theme admission from browser admission under caller/queue cancellation and post-send receipt handling.
+- **#1239 `runtime-cli-resilience-muse-review-regressions`**, in `cmuxCLITests/RuntimeCliResilience/RuntimeCliResilienceInstallAndLabelTests.swift`: Retain actual CLI executable-mode, chmod-denial, late failure, and command-map reuse cases.
+- **#1240 `runtime-cli-resilience-muse-read-gate`**, in `cmuxCLITests/RuntimeCliResilience/RuntimeCliResilienceMuseReadGate.c`: Gate reads in isolated CLI subprocesses to expose rematerialization without timing races.
+- **#1241 `runtime-cli-resilience-muse-read-gate-build`**, in `cmuxCLITests/RuntimeCliResilience/run-runtime-cli-resilience.sh`: Build the process-local filesystem gate only for the explicitly supplied isolated CLI harness.
+- **#1242 `runtime-ssh-tmux-write-cas-fixture`**, in `cmuxCLITests/RuntimeSshTmux/RuntimeSshTmuxWriteCASSupport.swift`: Compile actual CLI discovery and attachment consumers with deterministic socket seams.
+- **#1243 `runtime-ssh-tmux-write-cas-regressions`**, in `cmuxCLITests/RuntimeSshTmux/RuntimeSshTmuxWriteCASTests.swift`: Retain rebind/removal and delayed incarnation-A-after-B write regressions.
+- **#1244 `runtime-cloud-mutations-waiter-arbitration`**, in `Packages/macOS/CmuxCloud/Sources/CmuxCloud/Surfaces/CloudCommittedMutationWaiter.swift`: Resolve one cancelled caller promptly without prematurely releasing admitted ordered receipt work.
 
 ### 1142–1145. Runtime hardening — auth
 
@@ -1102,7 +1154,7 @@ Re-apply each fence at its original caller/ownership boundary; keep its separate
 - **#1170 `runtime-cloud-mutations-transport-admission`**, in `Packages/macOS/CmuxCloud/Sources/CmuxCloud/Link/CloudTuiPersistentResourceConnection.swift`: Reject cancellation before transport admission; admitted bounded requests retain receipt parsing/adoption/compensation ownership.
 - **#1171 `runtime-cloud-mutations-committed-turn`**, in `Packages/macOS/CmuxCloud/Sources/CmuxCloud/Surfaces/CloudTerminalMutationQueue.swift`: End cancelled caller waits promptly while retaining the ordered admitted operation until its bounded receipt work completes.
 - **#1172 `runtime-cloud-mutations-intent-cancellation`**, in `Packages/macOS/CmuxCloud/Sources/CmuxCloud/Surfaces/CloudTerminalMutationQueue.swift`: Expose the current turn's caller/queue cancellation intent without cancelling an already admitted receipt operation.
-- **#1173 `runtime-cloud-mutations-receipt-ownership`**, in `Packages/macOS/CmuxCloud/Sources/CmuxCloud/Surfaces/CloudTerminalMutationQueue.swift`: Keep synchronous lock-protected cancellation/admission CAS and single continuation result arbitration, not general asynchronous locking.
+- **#1173 `runtime-cloud-mutations-receipt-ownership`**, in `Packages/macOS/CmuxCloud/Sources/CmuxCloud/Surfaces/CloudCommittedMutationOwnership.swift`: Keep synchronous lock-protected cancellation/admission CAS, not general asynchronous locking.
 - **#1174 `runtime-cloud-mutations-socket-fixture`**, in `Packages/macOS/CmuxCloud/Tests/CmuxCloudTests/RuntimeCloudMutationsSocket.swift`: Keep the disposable Unix channel fixture for real committed request/cancel behavior.
 - **#1175 `runtime-cloud-mutations-channel-regressions`**, in `Packages/macOS/CmuxCloud/Tests/CmuxCloudTests/RuntimeCloudMutationsTests.swift`: Retain committed receipt, cancelled intent and pending-registration/pre-send cancellation regressions against actual production code.
 - **#1176 `runtime-cloud-mutations-cancelled-owner-adoption`**, in `Sources/Surfaces/CmuxTuiSurfaceProvider+BrowserCreation.swift`: Do not adopt a cancelled intent into the same provider; eligible same-team replacements remain supported.

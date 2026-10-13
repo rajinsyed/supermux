@@ -28,7 +28,9 @@ cp "$ROOT/Packages/macOS/CmuxSurfaceCatalogModel/Sources/CmuxSurfaceCatalogModel
     "$DEST/Sources/CloudCommandFixture/"
 cp "$ROOT/Packages/macOS/CmuxCloud/Sources/CmuxCloud/Link/CloudTuiPersistentResourceConnection.swift" "$DEST/Sources/CloudCommandFixture/"
 # SUPERMUX:begin runtime-cloud-command-fixture-ownership
-cp "$ROOT/Packages/macOS/CmuxCloud/Sources/CmuxCloud/Surfaces/CloudTerminalMutationQueue.swift" "$DEST/Sources/CloudCommandFixture/"
+# Discard the queue previously copied into a reused disposable fixture.
+rm -f "$DEST/Sources/CloudCommandFixture/CloudTerminalMutationQueue.swift"
+cp "$ROOT/Packages/macOS/CmuxCloud/Sources/CmuxCloud/Surfaces/CloudCommittedMutationOwnership.swift" "$DEST/Sources/CloudCommandFixture/"
 # SUPERMUX:end runtime-cloud-command-fixture-ownership
 # The rest of the transport lives in the CmuxCloudTui package.
 for name in CloudTuiPersistentRequestBuilder \
