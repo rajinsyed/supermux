@@ -116,5 +116,41 @@ struct RuntimeCloudMutationsTests {
         await channel.close()
         await server.close()
     }
+
+    @Test("Cancelling a registered pending mutation before admission never sends it", arguments: [false, true])
+    func pendingBeforeSendIsCancelled(cancelCaller: Bool) async throws {
+        let server = try RuntimeCloudMutationsSocket()
+        let entered = CloudLinkFirstValue<Bool>()
+        let release = CloudLinkFirstValue<Bool>()
+        let channel = CloudTuiPersistentResourceConnection(socketPath: server.path) {
+            entered.resolve(true)
+            _ = await release.result
+        }
+        let queue = CloudTerminalMutationQueue()
+        let caller = Task {
+            try await queue.runCommitted {
+                try await channel.request(CloudTuiRequest("tab.create_browser", mutation: true))
+            }
+        }
+        try #require(await entered.result == true)
+        if cancelCaller { caller.cancel() } else { queue.cancelAll() }
+        await #expect(throws: CancellationError.self) { try await caller.value }
+        release.resolve(true)
+        await queue.waitForIdle()
+        let probe = Task { try await channel.request(CloudTuiRequest("session.snapshot")) }
+        var methods: [String] = []
+        while true {
+            let line = try await server.next()
+            let object = try #require(JSONSerialization.jsonObject(with: line) as? [String: Any])
+            let method = try #require(object["operation"] as? String)
+            methods.append(method)
+            try await server.reply(to: line, result: ["done": "true"])
+            if method == "session.snapshot" { break }
+        }
+        _ = try await probe.value
+        #expect(!methods.contains("tab.create_browser"))
+        await channel.close()
+        await server.close()
+    }
 }
 // SUPERMUX:end runtime-cloud-mutations-channel-regressions

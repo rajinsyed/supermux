@@ -25,6 +25,9 @@ public actor CloudTuiPersistentResourceConnection {
     }
     private let connection: CloudTuiManualIOConnection
     private let clock: any Clock<Duration>
+    // SUPERMUX:begin runtime-cloud-mutations-send-admission-seam
+    private let beforeSend: (@Sendable () async -> Void)?
+    // SUPERMUX:end runtime-cloud-mutations-send-admission-seam
     private let namespace = UUID().uuidString.lowercased()
     private var sequence: UInt64 = 0
     private var pending: [String: Pending] = [:]
@@ -40,7 +43,19 @@ public actor CloudTuiPersistentResourceConnection {
     public init(socketPath: String, clock: any Clock<Duration> = ContinuousClock()) {
         connection = CloudTuiManualIOConnection(socketPath: socketPath, deliversJSONMessages: true)
         self.clock = clock
+        // SUPERMUX:begin runtime-cloud-mutations-production-admission-seam
+        beforeSend = nil
+        // SUPERMUX:end runtime-cloud-mutations-production-admission-seam
     }
+
+    // SUPERMUX:begin runtime-cloud-mutations-injected-admission-seam
+    /// Keeps the real socket and pending request path while controlling admission ordering.
+    init(socketPath: String, beforeSend: @escaping @Sendable () async -> Void) {
+        connection = CloudTuiManualIOConnection(socketPath: socketPath, deliversJSONMessages: true)
+        clock = ContinuousClock()
+        self.beforeSend = beforeSend
+    }
+    // SUPERMUX:end runtime-cloud-mutations-injected-admission-seam
 
     deinit { pumpTask?.cancel(); startTask?.cancel(); connection.close() }
 
@@ -168,6 +183,9 @@ public actor CloudTuiPersistentResourceConnection {
         connection: CloudTuiManualIOConnection,
         line: Data
     ) async {
+        // SUPERMUX:begin runtime-cloud-mutations-pre-admission-gate
+        await beforeSend?()
+        // SUPERMUX:end runtime-cloud-mutations-pre-admission-gate
         guard pending[id] != nil else { return }
         do {
             try await connection.sendChecked(line: line)
