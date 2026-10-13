@@ -11,6 +11,7 @@ import Testing
     }
 
     private func run(_ arguments: [String], home: URL, terminalInput: String? = nil,
+                     timeout: TimeInterval? = nil,
                      environment additions: [String: String] = [:]) async throws -> (Int32, String) {
         let binary = try #require(ProcessInfo.processInfo.environment["CMUX_CLI_PATH"])
         let output = home.appendingPathComponent("test-output")
@@ -37,7 +38,14 @@ import Testing
         process.standardInput = FileHandle.nullDevice
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             process.terminationHandler = { _ in continuation.resume() }
-            do { try process.run() } catch { continuation.resume(throwing: error) }
+            do {
+                try process.run()
+                if let timeout {
+                    DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
+                        if process.isRunning { process.terminate() }
+                    }
+                }
+            } catch { continuation.resume(throwing: error) }
         }
         return (process.terminationStatus, try String(contentsOf: output, encoding: .utf8))
     }
@@ -152,8 +160,30 @@ import Testing
         try #require(Darwin.mkfifo(ready.path, 0o600) == 0)
         try #require(Darwin.mkfifo(release.path, 0o600) == 0)
         let interpose = try #require(ProcessInfo.processInfo.environment["CMUX_MUSE_REVIEW_INTERPOSE"])
+        // The OS read gate pauses the real CLI after preflight and before the final hook builder.
+        // Both FIFO ends are held read-write so no open blocks; the readiness wait is bounded and
+        // the release byte is written on every exit path, so a failed check cannot strand the CLI.
+        let reader = Darwin.open(ready.path, O_RDWR)
+        let writer = Darwin.open(release.path, O_RDWR)
+        defer {
+            if writer >= 0 {
+                var releaseByte = UInt8(ascii: "g")
+                _ = Darwin.write(writer, &releaseByte, 1)
+                Darwin.close(writer)
+            }
+            if reader >= 0 { Darwin.close(reader) }
+        }
+        try #require(reader >= 0 && writer >= 0)
         let installation = Task {
-            try await run(["hooks", "muse", "install", "--yes"], home: home, environment: [
+            defer {
+                var marker = UInt8(ascii: "x")
+                let sentinel = Darwin.open(ready.path, O_WRONLY | O_NONBLOCK)
+                if sentinel >= 0 {
+                    _ = Darwin.write(sentinel, &marker, 1)
+                    Darwin.close(sentinel)
+                }
+            }
+            return try await run(["hooks", "muse", "install", "--yes"], home: home, timeout: 20, environment: [
                 "DYLD_INSERT_LIBRARIES": interpose,
                 "CMUX_MUSE_REVIEW_READY": ready.path,
                 "CMUX_MUSE_REVIEW_RELEASE": release.path,
@@ -161,13 +191,11 @@ import Testing
                 "CMUX_MUSE_REVIEW_BLOCK_REPEAT": failure == "repeat-write" ? "1" : "0"
             ])
         }
-        // The OS read gate pauses the real CLI after preflight and before the final hook builder.
         try await Task.detached {
-            let reader = Darwin.open(ready.path, O_RDONLY)
-            try #require(reader >= 0)
+            var descriptor = pollfd(fd: reader, events: Int16(POLLIN), revents: 0)
+            try #require(Darwin.poll(&descriptor, 1, 10_000) == 1, "CLI never reached the settings read gate")
             var byte: UInt8 = 0
             try #require(Darwin.read(reader, &byte, 1) == 1 && byte == UInt8(ascii: "g"))
-            Darwin.close(reader)
             let paths = try FileManager.default.contentsOfDirectory(at: scripts, includingPropertiesForKeys: nil)
             try #require(paths.count == 5, "All six events materialized (two share notification)")
             for path in paths {
@@ -184,10 +212,7 @@ import Testing
                 try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: locked.path)
                 try #require(Darwin.chflags(locked.path, UInt32(UF_IMMUTABLE)) == 0)
             }
-            let writer = Darwin.open(release.path, O_WRONLY)
-            try #require(writer >= 0)
             try #require(Darwin.write(writer, &byte, 1) == 1)
-            Darwin.close(writer)
             _ = try await installation.value
         }.value
         let (status, output) = try await installation.value
