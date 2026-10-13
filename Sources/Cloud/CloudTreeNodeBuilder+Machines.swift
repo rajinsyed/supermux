@@ -80,15 +80,9 @@ extension CloudTreeNodeBuilder {
         for info in snapshot.machines where !info.id.isLocal {
             guard let id = info.id.cloudMachineID, !seen.contains(id) else { continue }
             let catalogOnlyConnecting = machines.isEmpty && info.linkState == .connecting
-            let placeholderSnapshot = MachineSnapshot(
-                id: id,
-                provider: "",
-                image: info.image ?? "",
-                isDesktop: info.hasDesktop,
-                activity: MachineSnapshotBuilder.activity(fromStatus: info.status),
-                createdAt: nil,
-                label: info.name == id ? nil : info.name
-            )
+            // SUPERMUX:begin runtime-cloud-route-catalog-placeholder
+            let placeholderSnapshot = MachineSnapshotBuilder.catalogPlaceholder(id: id, info: info)
+            // SUPERMUX:end runtime-cloud-route-catalog-placeholder
             let section = resourceNodeBuilder.section(placeholderSnapshot, now)
             nodes.append(CloudTreeNode(
                 id: identities[id].map { nodeID(pendingCreate: $0) }
