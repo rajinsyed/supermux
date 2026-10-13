@@ -331,21 +331,21 @@ extension CMUXCLI {
         let records = try registry.load()
         if let id = invocation.id, let record = records.first(where: { $0.id == id }) {
             if record.socketPath == builder.socketPath { return record }
-            var refreshed = record
-            refreshed.socketPath = builder.socketPath
-            refreshed.updatedAt = Date.now.timeIntervalSince1970
-            try registry.upsert(refreshed)
-            return refreshed
+            // SUPERMUX:begin runtime-ssh-tmux-id-location-cas
+            return try persistLocalTmuxLocation(
+                record: record, registry: registry, socketPath: builder.socketPath, cwd: nil
+            )
+            // SUPERMUX:end runtime-ssh-tmux-id-location-cas
         }
         if let name = invocation.name,
            let validatedName = try? LocalTmuxSessionNameValidator().validate(name),
            let record = records.first(where: { $0.name == validatedName }) {
             if record.socketPath == builder.socketPath { return record }
-            var refreshed = record
-            refreshed.socketPath = builder.socketPath
-            refreshed.updatedAt = Date.now.timeIntervalSince1970
-            try registry.upsert(refreshed)
-            return refreshed
+            // SUPERMUX:begin runtime-ssh-tmux-name-location-cas
+            return try persistLocalTmuxLocation(
+                record: record, registry: registry, socketPath: builder.socketPath, cwd: nil
+            )
+            // SUPERMUX:end runtime-ssh-tmux-name-location-cas
         }
         if let name = invocation.name {
             let validatedName = try LocalTmuxSessionNameValidator().validate(name)
@@ -400,12 +400,12 @@ extension CMUXCLI {
         socketPath: String,
         cwd: String?
     ) throws -> LocalTmuxSessionRecord {
-        var updated = record
-        updated.socketPath = socketPath
-        if let cwd { updated.cwd = cwd }
-        updated.updatedAt = Date.now.timeIntervalSince1970
-        try registry.upsert(updated)
-        return updated
+        try registry.recordLocation(
+            id: record.id,
+            expectedBinding: record.tmuxBinding,
+            socketPath: socketPath,
+            cwd: cwd
+        )
     }
     // SUPERMUX:end runtime-ssh-tmux-location-consumer
 
