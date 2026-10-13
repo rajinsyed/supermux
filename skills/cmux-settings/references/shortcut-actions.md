@@ -24,6 +24,17 @@ Values for `shortcuts.bindings.<action>`:
 - `shortcuts.bindings.showHideAllWindows`
 - `shortcuts.bindings.toggleFullScreen`
 
+<!-- SUPERMUX:begin settings-shortcut-reference -->
+## Supermux
+
+- `shortcuts.bindings.supermuxCommit`
+- `shortcuts.bindings.supermuxCommitAccelerator`
+- `shortcuts.bindings.supermuxNewClaudeHarness`
+- `shortcuts.bindings.supermuxToggleRun`
+- `shortcuts.bindings.supermuxWorkspaceSwitcherNext`
+- `shortcuts.bindings.supermuxWorkspaceSwitcherPrevious`
+<!-- SUPERMUX:end settings-shortcut-reference -->
+
 ## Tabs
 
 - `shortcuts.bindings.closeOtherTabsInPane`

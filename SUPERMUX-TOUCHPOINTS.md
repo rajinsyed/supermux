@@ -969,6 +969,7 @@ Rules for adding a touchpoint:
 | 1134 | `Resources/bin/cmux-claude-wrapper` | `claude-durable-generated-hooks`, `claude-sensitive-settings-lifecycle` | Cache only credential-free generated hook settings durably. Keep sensitive user/inline/Subrouter settings launch-scoped with private permissions and cleanup. |
 | 1135 | `scripts/reload.sh` | `reload-profileless-release-iroh-storage` | Tagged Release builds define SUPERMUX_LOCAL_RELEASE for isolated Iroh storage; profile seeding follows the configuration-specific executable. |
 | 1136 | `tests/test_ci_change_areas.py` | `simulator-stream-ci-routing` | The desktop graph test includes Supermux's simulator-stream package dependency; upstream's dynamic CI closure must still route its changes to the Mac lane. |
+| 1137 | `skills/cmux-settings/references/shortcut-actions.md` | `settings-shortcut-reference` | Lists all six Supermux shortcut action IDs accepted by the schema so upstream's settings-contract checks and shortcut-rebinding guidance stay complete. |
 
 ## How to re-apply
 
