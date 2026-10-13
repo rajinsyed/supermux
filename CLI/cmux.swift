@@ -37331,9 +37331,11 @@ export default {
         // always preserved, even when the user mixed them into the
         // same group as a cmux hook, we only prune our own entries
         // within that group so the user's stays put.
+        // SUPERMUX:begin runtime-cli-resilience-muse-install-ownership
         let isCmuxOwnedCommand: (String) -> Bool = { cmd in
-            Self.isCmuxOwnedHookCommand(cmd, for: def)
+            Self.isCmuxOwnedHookCommand(cmd, for: def, materializeCodexScripts: def.name != "muse")
         }
+        // SUPERMUX:end runtime-cli-resilience-muse-install-ownership
         var cmuxInsertionIndexes: [String: [Int]] = [:]
         for (event, value) in hooks {
             switch def.format {
