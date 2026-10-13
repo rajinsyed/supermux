@@ -656,9 +656,12 @@ public actor CloudMachineLinkManager {
             return
         }
         themePushInFlight.insert(machineID)
-        // SUPERMUX:begin runtime-cloud-mutations-theme-drain-transport
-        Task { await self.drainThemePushes(machineID: machineID, socketPath: socketPath, send: send) }
-        // SUPERMUX:end runtime-cloud-mutations-theme-drain-transport
+        // SUPERMUX:begin runtime-cloud-mutations-theme-task-ownership
+        // Autonomous theme updates must not admit the caller's committed mutation.
+        _ = CloudCommittedMutationOwnership.$current.withValue(nil) {
+            Task { await self.drainThemePushes(machineID: machineID, socketPath: socketPath, send: send) }
+        }
+        // SUPERMUX:end runtime-cloud-mutations-theme-task-ownership
     }
 
     // SUPERMUX:begin runtime-cloud-mutations-theme-drain-seam
