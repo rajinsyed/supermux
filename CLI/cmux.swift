@@ -13888,6 +13888,8 @@ struct CMUXCLI {
             // sets them gets a master keyed by its whole resolved route.
             routeIdentifier: resolvedRouteIdentifier
         )
+        // SUPERMUX:begin runtime-ssh-tmux-handoff-options
+        let preResolutionSSHOptions = sshOptions.sshOptions
         if resolvedUserSSHConfiguration != nil {
             sshOptions.sshOptions = resolvedCmuxControlPathOptions(for: sshOptions)
         }
@@ -13905,9 +13907,11 @@ struct CMUXCLI {
                hostRequestTTY: resolvedUserSSHConfiguration.flatMap { sshConfigurationValue(named: "requesttty", in: $0) }) {
             try runSSHTui(options: sshOptions, configuredRemoteCommand: configuredInteractiveRemoteCommand,
                           client: client, jsonOutput: jsonOutput, idFormat: idFormat,
-                          routeIdentifier: resolvedRouteIdentifier)
+                          routeIdentifier: resolvedRouteIdentifier,
+                          preResolutionSSHOptions: preResolutionSSHOptions)
             return
         }
+        // SUPERMUX:end runtime-ssh-tmux-handoff-options
         let sshStartedAt = Date()
         func logSSHTiming(_ stage: String, extra: String = "") {
             let elapsedMs = Int(Date().timeIntervalSince(sshStartedAt) * 1000)
