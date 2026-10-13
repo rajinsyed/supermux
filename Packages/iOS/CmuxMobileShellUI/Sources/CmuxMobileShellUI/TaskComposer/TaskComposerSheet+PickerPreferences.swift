@@ -30,7 +30,7 @@ extension TaskComposerSheet {
 
     /// Called after changing the Mac identity, before the next model refresh.
     func restorePickerPreferences(templates: [MobileTaskTemplate]) {
-        let fallbackTemplateID = selectedTemplateID
+        let previousTemplateID = selectedTemplateID
         let pairingID = MobilePairedMac.pairingID(
             macDeviceID: selectedMacDeviceID, instanceTag: selectedMacInstanceTag
         )
@@ -41,7 +41,7 @@ extension TaskComposerSheet {
             return id
         }
         let rememberedTemplateID = knownTemplateID(preferences?.templateID)
-        let currentTemplateID = knownTemplateID(fallbackTemplateID)
+        let currentTemplateID = knownTemplateID(previousTemplateID)
         let lastTemplateID = knownTemplateID(store.taskTemplateStore?.lastTemplateID())
         selectedTemplateID = rememberedTemplateID ?? currentTemplateID ?? lastTemplateID ?? templates.first?.id
         // SUPERMUX:end task-composer-typecheck
@@ -62,6 +62,14 @@ extension TaskComposerSheet {
         } else {
             syncSuggestedDirectory()
         }
+    }
+
+    private func matchingTemplateID(
+        _ id: MobileTaskTemplate.ID?,
+        in templates: [MobileTaskTemplate]
+    ) -> MobileTaskTemplate.ID? {
+        guard let id, templates.contains(where: { $0.id == id }) else { return nil }
+        return id
     }
 }
 #endif

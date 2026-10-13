@@ -259,7 +259,11 @@ extension TerminalController {
         applyLocalSizing(surfaceID: surfaceID, previous: previous, reason: "mac.activity")
     }
 
-    // SUPERMUX:begin sizing-lane-input (internal: a keystroke on the phone's IRX input lane is its activity too; upstream: `private`)
+    /// Records accepted input from one phone for the shared-sizing policy.
+    ///
+    /// RPC input and the independent Iroh input lane both call this seam so
+    /// `latest` ownership cannot depend on which transport delivered the key.
+    // SUPERMUX:begin sizing-lane-input (also used by the fork's accepted lane-input adapter)
     func noteMobileSizingActivity(surfaceID: UUID, clientID: String) {
     // SUPERMUX:end sizing-lane-input
         if let relay = cloudSizingRelaysBySurfaceID[surfaceID]?.value, relay.relaysPhones {

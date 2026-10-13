@@ -209,6 +209,8 @@ extension CMUXCLI {
             builder: builder,
             runner: runner
         )
+        let records = try registry.load()
+        let recordForName = records.first(where: { $0.name == name })
         let existing = try runner.run(arguments: builder.hasSessionArguments(name))
         if existing.succeeded {
             let observed = try identityResolver.observedSession(named: name)
@@ -226,17 +228,21 @@ extension CMUXCLI {
                !command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 throw CLIError(message: String(localized: "cli.localTmux.error.existingSessionCommand", defaultValue: "local-tmux session already exists; use attach or close it before supplying a new command"))
             }
-            let records = try registry.load()
             if var record = records.first(where: { $0.tmuxBinding == observed.binding })
-                ?? records.first(where: { $0.name == name }) {
-                let liveSession = try identityResolver.bind(record, to: observed)
-                record = liveSession.record
-                if let sessionPath = existingPath {
-                    record.cwd = sessionPath
+                ?? recordForName {
+                let liveSession = if record.tmuxBinding == observed.binding {
+                    try identityResolver.bind(record, to: observed)
+                } else {
+                    try identityResolver.rebindStopped(record, to: observed)
                 }
-                record.socketPath = builder.socketPath
-                record.updatedAt = Date.now.timeIntervalSince1970
-                try registry.upsert(record)
+                // SUPERMUX:begin runtime-ssh-tmux-existing-start-location
+                record = try registry.recordLocation(
+                    id: liveSession.record.id,
+                    expectedBinding: observed.binding,
+                    socketPath: builder.socketPath,
+                    cwd: existingPath
+                )
+                // SUPERMUX:end runtime-ssh-tmux-existing-start-location
                 return .init(record: record, binding: observed.binding)
             }
             let sessionCwd = existingPath ?? ""
@@ -251,6 +257,12 @@ extension CMUXCLI {
         }
 
         let cwd = try requestedCwd ?? localTmuxWorkingDirectory(nil)
+        if let recordForName {
+            // A same-name record may be reused only when its old binding is
+            // gone. A renamed or otherwise live session remains protected by
+            // the identity guard.
+            try identityResolver.ensureStopped(recordForName)
+        }
         _ = try runner.requireSuccess(
             builder.newSessionArguments(sessionName: name, workingDirectory: cwd, command: invocation.command),
             context: "start"
@@ -263,6 +275,18 @@ extension CMUXCLI {
             context: "configure history"
         )
         try registry.validateServerSocketIfPresent()
+        if let recordForName {
+            let liveSession = try identityResolver.rebindStopped(recordForName, to: observed)
+            // SUPERMUX:begin runtime-ssh-tmux-recovery-start-location
+            let record = try registry.recordLocation(
+                id: liveSession.record.id,
+                expectedBinding: observed.binding,
+                socketPath: builder.socketPath,
+                cwd: cwd
+            )
+            // SUPERMUX:end runtime-ssh-tmux-recovery-start-location
+            return .init(record: record, binding: observed.binding)
+        }
         let record = LocalTmuxSessionRecord(
             name: name,
             tmuxBinding: observed.binding,
@@ -307,21 +331,21 @@ extension CMUXCLI {
         let records = try registry.load()
         if let id = invocation.id, let record = records.first(where: { $0.id == id }) {
             if record.socketPath == builder.socketPath { return record }
-            var refreshed = record
-            refreshed.socketPath = builder.socketPath
-            refreshed.updatedAt = Date.now.timeIntervalSince1970
-            try registry.upsert(refreshed)
-            return refreshed
+            // SUPERMUX:begin runtime-ssh-tmux-id-location-cas
+            return try persistLocalTmuxLocation(
+                record: record, registry: registry, socketPath: builder.socketPath, cwd: nil
+            )
+            // SUPERMUX:end runtime-ssh-tmux-id-location-cas
         }
         if let name = invocation.name,
            let validatedName = try? LocalTmuxSessionNameValidator().validate(name),
            let record = records.first(where: { $0.name == validatedName }) {
             if record.socketPath == builder.socketPath { return record }
-            var refreshed = record
-            refreshed.socketPath = builder.socketPath
-            refreshed.updatedAt = Date.now.timeIntervalSince1970
-            try registry.upsert(refreshed)
-            return refreshed
+            // SUPERMUX:begin runtime-ssh-tmux-name-location-cas
+            return try persistLocalTmuxLocation(
+                record: record, registry: registry, socketPath: builder.socketPath, cwd: nil
+            )
+            // SUPERMUX:end runtime-ssh-tmux-name-location-cas
         }
         if let name = invocation.name {
             let validatedName = try LocalTmuxSessionNameValidator().validate(name)
@@ -343,15 +367,17 @@ extension CMUXCLI {
                 builder: builder,
                 runner: runner
             ) ?? ""
-            if var record = records.first(where: { $0.tmuxBinding == observed.binding }) {
+            // SUPERMUX:begin runtime-ssh-tmux-discovery-location
+            if let record = records.first(where: { $0.tmuxBinding == observed.binding }) {
                 let liveSession = try identityResolver.bind(record, to: observed)
-                record = liveSession.record
-                record.socketPath = builder.socketPath
-                if !sessionCwd.isEmpty { record.cwd = sessionCwd }
-                record.updatedAt = Date.now.timeIntervalSince1970
-                try registry.upsert(record)
-                return record
+                return try persistLocalTmuxLocation(
+                    record: liveSession.record,
+                    registry: registry,
+                    socketPath: builder.socketPath,
+                    cwd: sessionCwd.isEmpty ? nil : sessionCwd
+                )
             }
+            // SUPERMUX:end runtime-ssh-tmux-discovery-location
             let record = LocalTmuxSessionRecord(
                 name: validatedName,
                 tmuxBinding: observed.binding,
@@ -366,6 +392,22 @@ extension CMUXCLI {
             invocation.id?.uuidString ?? "unknown"
         ))
     }
+
+    // SUPERMUX:begin runtime-ssh-tmux-location-consumer
+    func persistLocalTmuxLocation(
+        record: LocalTmuxSessionRecord,
+        registry: LocalTmuxSessionRegistry,
+        socketPath: String,
+        cwd: String?
+    ) throws -> LocalTmuxSessionRecord {
+        try registry.recordLocation(
+            id: record.id,
+            expectedBinding: record.tmuxBinding,
+            socketPath: socketPath,
+            cwd: cwd
+        )
+    }
+    // SUPERMUX:end runtime-ssh-tmux-location-consumer
 
     private func requireOrDiscoverLocalTmuxSession(
         _ invocation: LocalTmuxInvocation,

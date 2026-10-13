@@ -12,6 +12,8 @@ import CmuxSidebarGit
 import CmuxSidebar
 import CmuxTerminal
 import CmuxSettings
+import CMUXAgentLaunch
+import Testing
 
 #if canImport(cmux_DEV)
 @testable import cmux_DEV
@@ -566,10 +568,6 @@ final class TabManagerChildExitCloseTests: XCTestCase {
     }
 
     func testDefaultFreestyleCloudReconnectRepairsRawSSHStartupCommand() throws {
-        let cloudFlag = CmuxFeatureFlags.cloudMachinesFlag
-        let previousCloudOverride = CmuxFeatureFlags.shared.overrideValue(for: cloudFlag)
-        CmuxFeatureFlags.shared.setOverride(true, for: cloudFlag)
-        defer { CmuxFeatureFlags.shared.setOverride(previousCloudOverride, for: cloudFlag) }
         TerminalController.shared.stop(cleanupDiscoveryState: true)
         let reservedSocket = TerminalController.shared.reserveStartupSocketPath(
             "/tmp/cmux-cloud-reconnect-\(UUID().uuidString).sock"
@@ -2285,6 +2283,64 @@ final class TabManagerCloseCurrentPanelTests: XCTestCase {
             expectedPromptCount: 1,
             expectedPanelClosed: false
         )
+    }
+
+    func testRejectedConfirmedCloseDoesNotLeaveWarningBypass() throws {
+        try withCloseTabUserDefaults(warnBeforeClosingTab: true, hideTabCloseButton: false) {
+            let manager = TabManager()
+            guard let workspace = manager.selectedWorkspace,
+                  let paneId = workspace.bonsplitController.focusedPaneId,
+                  let initialPanelId = workspace.focusedPanelId,
+                  let initialTerminalPanel = workspace.terminalPanel(for: initialPanelId),
+                  workspace.newTerminalSurface(inPane: paneId, focus: false) != nil,
+                  let initialSurfaceId = workspace.surfaceIdFromPanelId(initialPanelId) else {
+                XCTFail("Expected workspace with two terminal surfaces")
+                return
+            }
+            workspace.focusPanel(initialPanelId)
+            initialTerminalPanel.surface.setNeedsConfirmCloseOverrideForTesting(true)
+
+            // The first confirmation is accepted, but Bonsplit rejects the
+            // confirmed retry, so the tab stays open.
+            let retryRejected = expectation(description: "confirmed retry rejected")
+            let vetoingDelegate = VetoingCloseBonsplitDelegate { retryRejected.fulfill() }
+            var promptCount = 0
+            manager.confirmCloseHandler = { _, _, _ in
+                promptCount += 1
+                workspace.bonsplitController.delegate = vetoingDelegate
+                return true
+            }
+
+            workspace.markExplicitClose(surfaceId: initialSurfaceId)
+            _ = workspace.bonsplitController.closeTab(initialSurfaceId)
+            wait(for: [retryRejected], timeout: 5)
+            // The confirmation session ends on a later main-queue turn; a close
+            // issued before then is dropped as "confirmation in flight".
+            let sessionEnded = expectation(
+                for: NSPredicate { _, _ in !manager.isCloseConfirmationInFlight },
+                evaluatedWith: nil
+            )
+            wait(for: [sessionEnded], timeout: 5)
+
+            XCTAssertEqual(promptCount, 1)
+            XCTAssertNotNil(workspace.panels[initialPanelId])
+
+            // A later close of the still-open tab must ask again instead of
+            // reusing the stale force-close entry.
+            workspace.bonsplitController.delegate = workspace
+            let secondPrompt = expectation(description: "second close prompts again")
+            manager.confirmCloseHandler = { _, _, _ in
+                promptCount += 1
+                secondPrompt.fulfill()
+                return false
+            }
+            workspace.markExplicitClose(surfaceId: initialSurfaceId)
+            _ = workspace.bonsplitController.closeTab(initialSurfaceId)
+            wait(for: [secondPrompt], timeout: 5)
+
+            XCTAssertEqual(promptCount, 2)
+            XCTAssertNotNil(workspace.panels[initialPanelId])
+        }
     }
 
     func testMiddleClickCloseDoesNotUseXButtonWarning() throws {
@@ -4890,3 +4946,77 @@ final class WorkspaceGeometrySnapshotDedupTests: XCTestCase {
     }
 }
 // SUPERMUX:end workspace-geometry-snapshot-dedup
+
+// SUPERMUX:begin ccx-background-attach-tests
+@Suite("Supermux ccx background restore")
+struct SupermuxCCXBackgroundRestoreTests {
+    @Test("Completed ccx sessions attach once to a live daemon, never through the writer launcher",
+          arguments: [false, true])
+    func completedSessionAttachOnly(hasLiveDaemon: Bool) throws {
+        let sessionID = "ccx-background-restore-test"
+        let executable = "/test/bin/claude"
+        let ccx = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".local/bin/ccx").path
+        let launch = AgentLaunchCommandSnapshot(
+            launcher: "claude",
+            executablePath: executable,
+            arguments: [ccx, executable, "--resume", sessionID],
+            environment: ["CMUX_CLAUDE_RESUME_LAUNCHER": ccx]
+        )
+        let agent = SessionRestorableAgentSnapshot(
+            kind: .claude, sessionId: sessionID, launchCommand: launch,
+            hadActivePromptTurn: false
+        )
+        let binding = SurfaceResumeBindingSnapshot(
+            name: "Claude Code", kind: "claude", command: "claude --resume \(sessionID)",
+            checkpointId: sessionID, source: "agent-hook", launchCommand: launch,
+            autoResume: true, approvalPolicy: .auto
+        )
+        func panel() -> SessionPanelSnapshot {
+            SessionPanelSnapshot(
+                id: UUID(), type: .terminal, title: nil, customTitle: nil,
+                directory: nil, isPinned: false, isManuallyUnread: false,
+                gitBranch: nil, listeningPorts: [], ttyName: nil,
+                terminal: SessionTerminalPanelSnapshot(
+                    agent: agent, resumeBinding: binding, wasAgentRunning: false
+                ),
+                browser: nil, markdown: nil, filePreview: nil,
+                rightSidebarTool: nil, project: nil
+            )
+        }
+        let panels = [panel(), panel()]
+        let registration = ClaudeBackgroundSessionRegistration(
+            processID: 123, sessionID: sessionID, jobID: "ccx-job", name: nil
+        )
+        let restores = Workspace.claudeBackgroundAttachRestores(
+            panels: panels, skipsRemoteTerminals: false,
+            attach: ClaudeBackgroundSessionAttach(lookup: { _, reference in
+                hasLiveDaemon && reference == sessionID ? registration : nil
+            })
+        )
+        if hasLiveDaemon {
+            let winner = try #require(restores[panels[0].id]?.attach)
+            #expect(winner.plan.arguments == [executable, "attach", "ccx-job"])
+            #expect(!winner.startupInput.contains("--resume"))
+            #expect(!winner.startupInput.contains(ccx))
+            #expect(restores[panels[1].id]?.attach == nil)
+            #expect(restores[panels[1].id]?.registration == registration)
+        } else {
+            #expect(restores.isEmpty)
+        }
+    }
+}
+// SUPERMUX:end ccx-background-attach-tests
+
+private final class VetoingCloseBonsplitDelegate: BonsplitDelegate {
+    private let onVeto: () -> Void
+
+    init(onVeto: @escaping () -> Void) {
+        self.onVeto = onVeto
+    }
+
+    func splitTabBar(_ controller: BonsplitController, shouldCloseTab tab: Bonsplit.Tab, inPane pane: PaneID) -> Bool {
+        onVeto()
+        return false
+    }
+}

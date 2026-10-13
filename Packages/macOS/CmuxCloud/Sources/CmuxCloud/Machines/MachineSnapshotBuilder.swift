@@ -1,8 +1,29 @@
+import CmuxCloudResizeCore
 import CmuxSurfaceCatalogModel
 import Foundation
 
 /// lint:allow namespace-type: moved unchanged from the app target, where it was an internal static namespace; reshaping it is a separate change from this package move.
 public enum MachineSnapshotBuilder: Sendable {
+    // SUPERMUX:begin runtime-cloud-route-catalog-pool-admission
+    /// The tree's catalog-only row while the fleet readout is unavailable.
+    /// - Parameters:
+    ///   - id: The catalog machine's cloud identifier.
+    ///   - info: The catalog's status and display metadata.
+    /// - Returns: A placeholder without an invented resource shape.
+    public static func catalogPlaceholder(id: String, info: SurfaceMachineInfo) -> MachineSnapshot {
+        MachineSnapshot(
+            id: id,
+            provider: "",
+            image: info.image ?? "",
+            isDesktop: info.hasDesktop,
+            activity: activity(fromStatus: info.status),
+            createdAt: nil,
+            label: info.name == id ? nil : info.name,
+            usesResourcePool: CloudVMResourcePool.usesResourcePool(forStatus: info.status)
+        )
+    }
+    // SUPERMUX:end runtime-cloud-route-catalog-pool-admission
+
     /// The fleet plus machines the catalog discovered before the list endpoint
     /// returned them (or returned them under another name): the complete set of
     /// machine rows the tree shows, in fleet order with discoveries appended.
@@ -18,6 +39,7 @@ public enum MachineSnapshotBuilder: Sendable {
                 activity: activity(fromStatus: info.status),
                 createdAt: nil,
                 label: info.name == id ? nil : info.name,
+                usesResourcePool: CloudVMResourcePool.usesResourcePool(forStatus: info.status),
                 privateAddress: info.privateAddress
             )
         }
@@ -50,6 +72,9 @@ public enum MachineSnapshotBuilder: Sendable {
             slug: summary.slug,
             freeAccess: freeAccess,
             stats: summary.capabilities.stats ? previousStats : nil,
+            resourceReservation: summary.resourceReservation,
+            resourcePoolClaim: summary.resourcePoolClaim,
+            usesResourcePool: CloudVMResourcePool.usesResourcePool(forStatus: summary.status),
             privateAddress: summary.preferredPrivateAddress
         )
         snapshot.agentUpdates = summary.agentUpdates
@@ -202,6 +227,12 @@ public enum MachineSnapshotBuilder: Sendable {
         default:
             return .attention(status)
         }
+    }
+
+    /// Machines that hold one of the plan's active slots. The server counts
+    /// running and provisioning machines; paused ones are listed but do not count.
+    public static func activeCount(of machines: [MachineSnapshot]) -> Int {
+        machines.count(where: \.usesResourcePool)
     }
 
     public static func planSnapshot(
