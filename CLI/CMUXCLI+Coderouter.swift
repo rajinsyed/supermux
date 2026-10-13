@@ -281,8 +281,10 @@ extension CMUXCLI {
             // A setup token cannot read its account's email, so offer the Claude
             // Code login's email as the label and let the user confirm it: the
             // browser step may have signed in to a different account.
+            // SUPERMUX:begin runtime-cli-resilience-oauth-label-boundary
             if params["label"] == nil, !forceStdin, isatty(STDIN_FILENO) == 1,
-               let email = Self.claudeCodeLoginEmail() {
+               let email = Self.claudeCodeLoginEmail(), email.utf16.count <= 64 {
+            // SUPERMUX:end runtime-cli-resilience-oauth-label-boundary
                 cliWriteStderr("Label (Enter for \(Self.sanitizeForTerminal(email))): ")
                 if let line = readLine(strippingNewline: true) {
                     params["label"] = Self.nonEmpty(line.trimmingCharacters(in: .whitespaces)) ?? email

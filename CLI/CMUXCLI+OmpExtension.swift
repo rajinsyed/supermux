@@ -71,6 +71,25 @@ function normalizedLaunchArgv(): string[] | null {
     const executable = resolveExecutable(
       looksLikeOmpExecutable(raw[1]) || looksLikeOmpScript(raw[1]) ? raw[1] : "omp"
     );
+    // SUPERMUX:begin runtime-cli-resilience-omp-runtime-capture
+    if (executable && looksLikeOmpScript(raw[1])) {
+      let scriptIsExecutable = false;
+      try {
+        fs.accessSync(executable, fs.constants.X_OK);
+        scriptIsExecutable = fs.statSync(executable).isFile();
+      } catch (_) {}
+      if (!scriptIsExecutable) {
+        const runtime = looksLikeJavaScriptRuntime(raw[0]) ? resolveExecutable(raw[0]) : null;
+        if (!runtime) return null;
+        try {
+          fs.accessSync(runtime, fs.constants.X_OK);
+          fs.accessSync(executable, fs.constants.R_OK);
+          if (!fs.statSync(runtime).isFile() || !fs.statSync(executable).isFile()) return null;
+        } catch (_) { return null; }
+        return [runtime, executable, ...raw.slice(2)];
+      }
+    }
+    // SUPERMUX:end runtime-cli-resilience-omp-runtime-capture
     return executable ? [executable, ...raw.slice(2)] : null;
   }
   const executable = resolveExecutable("omp");

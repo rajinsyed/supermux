@@ -504,7 +504,13 @@ public struct AgentResumeArgv: Sendable, Equatable {
         case "pi":
             return withOption("pi", executable: "pi", option: "--session", sessionId: sessionId, executablePath: executablePath, arguments: arguments)
         case "omp":
-            return withOption("omp", executable: "omp", option: "--session", sessionId: sessionId, executablePath: executablePath, arguments: arguments)
+            // SUPERMUX:begin runtime-cli-resilience-omp-resume-prefix
+            let parts = commandParts(executablePath: executablePath, arguments: arguments, fallbackExecutable: "omp")
+            let script = AgentLaunchSanitizer.ompRuntimeScript(executable: parts.executable, arguments: parts.tail)
+            let tail = script == nil ? parts.tail : Array(parts.tail.dropFirst())
+            guard let preserved = AgentLaunchSanitizer.preservedArguments(kind: "omp", args: tail) else { return nil }
+            return [parts.executable] + (script.map { [$0] } ?? []) + ["--session", sessionId] + preserved
+            // SUPERMUX:end runtime-cli-resilience-omp-resume-prefix
         case "campfire":
             return withOption("campfire", executable: "campfire", option: "--session", sessionId: sessionId, executablePath: executablePath, arguments: arguments)
         case "amp":

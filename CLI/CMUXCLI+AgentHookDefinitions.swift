@@ -237,6 +237,37 @@ extension CMUXCLI {
         return inline
     }
 
+    // SUPERMUX:begin runtime-cli-resilience-muse-materialization
+    static func validateMuseHookMaterialization(for def: AgentHookDef) throws {
+        guard def.name == "muse" else { return }
+        let dir = codexHookScriptsURL().appendingPathComponent("muse", isDirectory: true)
+        let target = sanitizeForTerminal(dir.path)
+        guard !dir.path.contains("'"), !dir.path.contains("\\") else {
+            throw CLIError(message: String(
+                localized: "cli.hooks.error.museUnsafeScriptPath",
+                defaultValue: "Cannot install Muse hook scripts at \(target): the path contains a quote or backslash. Use a home directory without these characters and retry."
+            ))
+        }
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        } catch {
+            throw CLIError(message: String(
+                localized: "cli.hooks.error.museScriptDirectory",
+                defaultValue: "Cannot create Muse hook script directory at \(target): \(sanitizeForTerminal(error.localizedDescription)). Check the path and permissions, then retry."
+            ))
+        }
+        for event in def.events {
+            let inline = hookCommandString(for: def, event: event, materializeCodexScripts: false)
+            guard hookCommandString(for: def, event: event) != inline else {
+                throw CLIError(message: String(
+                    localized: "cli.hooks.error.museScriptWrite",
+                    defaultValue: "Cannot write Muse hook script at \(target) for \(event.cmuxSubcommand). Check the directory permissions and available disk space, then retry."
+                ))
+            }
+        }
+    }
+    // SUPERMUX:end runtime-cli-resilience-muse-materialization
+
     /// Muse runs a hook command with the user's login shell (`$SHELL -c`), so
     /// fish and nushell users cannot parse the POSIX dispatch inline. The
     /// dispatch is written to a cmux-owned `#!/bin/sh` script, and the installed

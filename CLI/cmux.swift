@@ -37248,6 +37248,9 @@ export default {
 
     private func installAgentHooks(_ def: AgentHookDef) throws {
         try Self.validateHookInstallDispatch(for: def)
+        // SUPERMUX:begin runtime-cli-resilience-muse-install
+        try Self.validateMuseHookMaterialization(for: def)
+        // SUPERMUX:end runtime-cli-resilience-muse-install
         if def.name == "opencode" { try installOpenCodePluginHooks(def); return }
         if def.name == "pi" { try installPiExtensionHooks(def); return }
         if def.name == "omp" { try installOmpExtensionHooks(def); return }
