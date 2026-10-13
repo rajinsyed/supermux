@@ -8,6 +8,10 @@ tests="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 harness="$(mktemp -d "${TMPDIR:-/tmp}/runtime-cli-resilience.XXXXXX")"
 trap 'rm -rf "$harness"' EXIT HUP INT TERM
 mkdir -p "$harness/Tests/RuntimeCliResilienceTests"
+# SUPERMUX:begin runtime-cli-resilience-muse-read-gate-build
+xcrun clang -std=c11 -Wall -Wextra -Werror -dynamiclib "$tests/RuntimeCliResilienceMuseReadGate.c" -o "$harness/muse-read-gate.dylib"
+export CMUX_MUSE_REVIEW_INTERPOSE="$harness/muse-read-gate.dylib"
+# SUPERMUX:end runtime-cli-resilience-muse-read-gate-build
 cat > "$harness/Package.swift" <<'SWIFT'
 // swift-tools-version: 6.0
 import PackageDescription
