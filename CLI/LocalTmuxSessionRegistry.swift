@@ -158,7 +158,9 @@ struct LocalTmuxSessionRegistry {
 
     func recordLocation(
         id: UUID,
-        expectedBinding: LocalTmuxSessionBinding,
+        // SUPERMUX:begin runtime-ssh-tmux-pending-location-cas
+        expectedBinding: LocalTmuxSessionBinding?,
+        // SUPERMUX:end runtime-ssh-tmux-pending-location-cas
         socketPath: String,
         cwd: String?
     ) throws -> LocalTmuxSessionRecord {
@@ -176,21 +178,21 @@ struct LocalTmuxSessionRegistry {
     }
     // SUPERMUX:end runtime-ssh-tmux-atomic-rebind
 
-    /// Records where a session was last attached, on the record as it is
-    /// now. Only attachment fields change, so a delayed attach cannot restore
-    /// a name or binding the record has since moved away from. Returns
-    /// `false` without writing when the record was removed meanwhile, for
-    /// example by a close that ran while the attach waited on the app.
+    // SUPERMUX:begin runtime-ssh-tmux-attachment-binding-cas
+    /// Records an attachment only while the owner still has the expected
+    /// binding. Returns false if it was removed or rebound while awaiting the app.
     @discardableResult
     func recordAttachment(
         id: UUID,
+        expectedBinding: LocalTmuxSessionBinding?,
         workspaceID: String?,
         workspaceTitle: String?,
         surfaceID: String?
     ) throws -> Bool {
         try ensureSecureStorage()
         return try withLockedState { state in
-            guard let index = state.sessions.firstIndex(where: { $0.id == id }) else {
+            guard let index = state.sessions.firstIndex(where: { $0.id == id }),
+                  state.sessions[index].tmuxBinding == expectedBinding else {
                 return false
             }
             state.sessions[index].workspaceID = workspaceID
@@ -200,6 +202,7 @@ struct LocalTmuxSessionRegistry {
             return true
         }
     }
+    // SUPERMUX:end runtime-ssh-tmux-attachment-binding-cas
 
     @discardableResult
     func remove(id: UUID? = nil, name: String? = nil) throws -> [LocalTmuxSessionRecord] {

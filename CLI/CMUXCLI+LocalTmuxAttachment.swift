@@ -171,14 +171,16 @@ extension CMUXCLI {
             ?? "\(profile.workspaceTitlePrefix)\(originalRecord.name)"
         updated.surfaceID = surfaceID ?? originalRecord.surfaceID
         updated.updatedAt = Date.now.timeIntervalSince1970
-        // The surface call can take a while. Update the record as it is now:
-        // a close may have removed it, or a rename may have changed it.
+        // SUPERMUX:begin runtime-ssh-tmux-attachment-consumer-cas
+        // The surface reply belongs to the incarnation that requested it.
         try registry.recordAttachment(
             id: updated.id,
+            expectedBinding: originalRecord.tmuxBinding,
             workspaceID: updated.workspaceID,
             workspaceTitle: updated.workspaceTitle,
             surfaceID: updated.surfaceID
         )
+        // SUPERMUX:end runtime-ssh-tmux-attachment-consumer-cas
 
         payload["session_id"] = updated.id.uuidString
         payload["session_name"] = updated.name

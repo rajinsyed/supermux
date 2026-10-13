@@ -85,7 +85,8 @@ struct RuntimeSshTmuxTests {
             let initial = try #require(registry.load().first)
             // Deterministic interleaving after initial load, not a scheduling delay.
             let beforeRebind = {
-                try registry.recordAttachment(id: record.id, workspaceID: "W2", workspaceTitle: "T2", surfaceID: "S2")
+                try registry.recordAttachment(id: record.id, expectedBinding: record.tmuxBinding,
+                                              workspaceID: "W2", workspaceTitle: "T2", surfaceID: "S2")
             }
             #expect(try beforeRebind())
             let replacement = binding()
@@ -143,7 +144,8 @@ struct RuntimeSshTmuxTests {
         try withFixture { registry, resolver, _ in
             let record = LocalTmuxSessionRecord(name: "work", tmuxBinding: binding(), socketPath: "socket", cwd: "/tmp")
             try registry.upsert(record)
-            #expect(try registry.recordAttachment(id: record.id, workspaceID: "W2", workspaceTitle: "T2", surfaceID: "S2"))
+            #expect(try registry.recordAttachment(id: record.id, expectedBinding: record.tmuxBinding,
+                                                  workspaceID: "W2", workspaceTitle: "T2", surfaceID: "S2"))
             let live = try resolver.bind(record, to: .init(name: "work", binding: record.tmuxBinding!))
             #expect(live.record.surfaceID == "S2")
             #expect(live.record.workspaceID == "W2")
