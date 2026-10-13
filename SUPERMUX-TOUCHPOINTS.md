@@ -6,7 +6,7 @@ clobbers one, re-apply it from the "How to re-apply" instructions below, then ru
 `scripts/supermux-check-touchpoints.sh` to verify the registry and the code agree.
 
 Rules for adding a touchpoint:
-- Current allocation ceiling: **1217** (#1142–#1217 register the six runtime-hardening groups).
+- Current allocation ceiling: **1218** (#1142–#1217 register the six runtime-hardening groups; #1218 keeps the standalone command fixture linked to their ownership state).
 - Keep it as small as possible — a call into `Packages/SupermuxKit` or `Sources/Supermux` code.
 - Fence it: `// SUPERMUX:begin <id>` / `// SUPERMUX:end <id>` (use `<!-- -->` in Markdown/XML).
 - Register it in the table AND add a "How to re-apply" entry.
@@ -1051,8 +1051,11 @@ Rules for adding a touchpoint:
 | 1215 | `Packages/macOS/CMUXAgentLaunch/Tests/CMUXAgentLaunchTests/RuntimeCliResilienceOmpTests.swift` | `runtime-cli-resilience-omp-regressions` | Retain real non-executable Node script restore, unsafe-mode/sensitive-input rejection and other-provider controls. |
 | 1216 | `tests/test_omp_extension_install.py` | `runtime-cli-resilience-omp-capture-regressions` | Retain embedded production TypeScript launch-capture cases for absolute/relative/PATH runtimes and executable controls. |
 | 1217 | `tests/test_omp_extension_install.py` | `runtime-cli-resilience-omp-capture-runtime` | Allow capture-only execution with Node native TypeScript support; do not claim the Bun lifecycle suite executed. |
+| 1218 | `tests/run_cloud_command_deadline_tests.sh` | `runtime-cloud-command-fixture-ownership` | Compile the persistent command fixture with the real committed-mutation ownership and queue implementation. |
 
 ## How to re-apply
+
+- **#1218 `runtime-cloud-command-fixture-ownership`**, in `tests/run_cloud_command_deadline_tests.sh`: Copy `CloudTerminalMutationQueue.swift` beside the persistent transport so the standalone deadline fixture typechecks against the production ownership state instead of introducing a divergent stub.
 
 ### 1142–1145. Runtime hardening — auth
 
