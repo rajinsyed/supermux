@@ -19,12 +19,18 @@ struct AccessTokenLifetime: Sendable, Equatable {
         guard let data = Data(base64Encoded: base64),
               let claims = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let exp = (claims["exp"] as? NSNumber)?.doubleValue else { return nil }
-        expiresInSeconds = Int(exp - now.timeIntervalSince1970)
-        if let iat = (claims["iat"] as? NSNumber)?.doubleValue {
-            lifetimeSeconds = Int(exp - iat)
+        // SUPERMUX:begin runtime-auth-safe-token-lifetime-diagnostics
+        let expiresIn = exp - now.timeIntervalSince1970
+        guard exp.isFinite, expiresIn.isFinite,
+              let expiresInSeconds = Int(exactly: expiresIn.rounded(.towardZero)) else { return nil }
+        self.expiresInSeconds = expiresInSeconds
+        if let iat = (claims["iat"] as? NSNumber)?.doubleValue, iat.isFinite {
+            let lifetime = exp - iat
+            lifetimeSeconds = lifetime.isFinite ? Int(exactly: lifetime.rounded(.towardZero)) : nil
         } else {
             lifetimeSeconds = nil
         }
+        // SUPERMUX:end runtime-auth-safe-token-lifetime-diagnostics
     }
 
     /// `accessExpiresInSec=N accessLifetimeSec=M` for a debug log line.
