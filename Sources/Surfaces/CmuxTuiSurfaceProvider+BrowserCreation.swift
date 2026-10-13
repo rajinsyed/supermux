@@ -57,21 +57,37 @@ extension CmuxTuiSurfaceProvider {
             guard let created = try await Self.performRemoteBrowserCreation(link: link, request: request) else {
                 throw ProviderError.browserNotCreated
             }
-            do {
-                return try self.recordCommittedBrowser(
-                    created, url: url, name: name, expectedLifecycle: lifecycle
-                )
-            } catch {
-                // A committed daemon tab must not be orphaned when this
-                // provider has no eligible replacement to adopt it.
-                let cleanup = Task { @MainActor in
-                    try? await self.closeRemoteTab(id: created.tabID, inRemoteWorkspace: created.workspaceID)
-                }
-                _ = await cleanup.result
-                throw error
+            // SUPERMUX:begin runtime-cloud-mutations-shared-receipt-completion
+            return try await self.completeCommittedBrowserCreation(
+                created, url: url, name: name, expectedLifecycle: lifecycle
+            ) {
+                try? await self.closeRemoteTab(id: created.tabID, inRemoteWorkspace: created.workspaceID)
             }
+            // SUPERMUX:end runtime-cloud-mutations-shared-receipt-completion
         }
     }
+
+    // SUPERMUX:begin runtime-cloud-mutations-receipt-completion
+    /// Completes the real receipt lifecycle with an injectable compensating transport.
+    func completeCommittedBrowserCreation(
+        _ created: CmuxTuiSnapshotParser.CreatedBrowserPath,
+        url: URL,
+        name: String?,
+        expectedLifecycle: UInt64,
+        close: @escaping @MainActor @Sendable () async -> Void
+    ) async throws -> SurfaceResource {
+        do {
+            return try recordCommittedBrowser(
+                created, url: url, name: name, expectedLifecycle: expectedLifecycle
+            )
+        } catch {
+            // Receipt cleanup is not a new caller intent and must survive its cancellation.
+            let cleanup = Task { @MainActor in await close() }
+            await cleanup.value
+            throw error
+        }
+    }
+    // SUPERMUX:end runtime-cloud-mutations-receipt-completion
 
     /// Keeps a committed receipt across replacement in the same ownership scope.
     func recordCommittedBrowser(

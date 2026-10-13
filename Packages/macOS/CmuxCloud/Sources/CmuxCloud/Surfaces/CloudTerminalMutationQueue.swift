@@ -8,6 +8,11 @@ import Foundation
 public final class CloudTerminalMutationQueue {
     public nonisolated init() {}
 
+    // SUPERMUX:begin runtime-cloud-mutations-intent-cancellation
+    /// Whether the current mutation's caller or queue has cancelled its intent.
+    public static var isCurrentTurnCancelled: Bool { Task.isCancelled }
+    // SUPERMUX:end runtime-cloud-mutations-intent-cancellation
+
     private var tail: Task<Void, Never>?
     private var tailID: UUID?
     private var cancellations: [UUID: @Sendable () -> Void] = [:]

@@ -1,33 +1,55 @@
 // SUPERMUX:begin runtime-cloud-mutations-channel-regressions
 @testable import CmuxCloud
 import CmuxCloudTui
+import CmuxSurfaceCatalogModel
 import Foundation
 import Testing
 
 @MainActor
 @Suite("Runtime Cloud mutation receipts", .timeLimit(.minutes(1)))
 struct RuntimeCloudMutationsTests {
-    @Test("A sent mutation keeps its real channel receipt when its caller or queue cancels",
-          arguments: [false, true])
-    func committedReceiptSurvives(cancelCaller: Bool) async throws {
+    @Test("A sent mutation keeps its receipt for adoption or compensating close",
+          arguments: [false, true], [false, true])
+    func committedReceiptSurvives(cancelCaller: Bool, eligible: Bool) async throws {
         let server = try RuntimeCloudMutationsSocket()
         let channel = CloudTuiPersistentResourceConnection(socketPath: server.path)
         let queue = CloudTerminalMutationQueue()
         var handled: String?
+        var compensated: String?
         let caller = Task {
             try await queue.runCommitted {
                 let bytes = try await channel.request(CloudTuiRequest("tab.create_browser", mutation: true))
-                let receipt = try #require(JSONSerialization.jsonObject(with: bytes) as? [String: String])
-                handled = receipt["tab_id"]
-                return handled
+                let receipt = try #require(JSONSerialization.jsonObject(with: bytes) as? [String: Any])
+                let created = try #require(CmuxTuiSnapshotParser.createdBrowser(fromCreateResult: receipt))
+                if eligible {
+                    handled = created.tabID
+                } else {
+                    // The app's recordCommittedBrowser checks the real catalog,
+                    // machine and team. This branch exercises the receipt's
+                    // compensating transport after an ownership rejection.
+                    _ = try await channel.request(CloudTuiRequest("tab.close", ["tab": created.tabID], mutation: true))
+                    compensated = created.tabID
+                }
+                return created.tabID
             }
         }
         let sent = try await server.next()
         if cancelCaller { caller.cancel() } else { queue.cancelAll() }
-        try await server.reply(to: sent, result: ["tab_id": "committed-tab"])
-        _ = await caller.result
+        await #expect(throws: CancellationError.self) { try await caller.value }
+        try await server.reply(to: sent, result: [
+            "browser_id": "browser-1", "workspace_id": "workspace-1", "screen_id": "screen-1",
+            "pane_id": "pane-1", "tab_id": "committed-tab"
+        ])
+        if !eligible {
+            let close = try await server.next()
+            let object = try #require(JSONSerialization.jsonObject(with: close) as? [String: Any])
+            #expect(object["operation"] as? String == "tab.close")
+            #expect((object["params"] as? [String: Any])?["tab"] as? String == "committed-tab")
+            try await server.reply(to: close, result: ["done": "true"])
+        }
         await queue.waitForIdle()
-        #expect(handled == "committed-tab", "Cancellation must not discard a remotely committed receipt")
+        #expect(handled == (eligible ? "committed-tab" : nil))
+        #expect(compensated == (eligible ? nil : "committed-tab"))
 
         // An ordered read proves cancellation didn't retire the create request or replay it.
         let probe = Task { try await channel.request(CloudTuiRequest("session.snapshot")) }
@@ -42,6 +64,28 @@ struct RuntimeCloudMutationsTests {
         }
         _ = try await probe.value
         #expect(methods == ["session.snapshot"], "Committed receipt ownership must not send request.cancel or replay")
+        await channel.close()
+        await server.close()
+    }
+
+    @Test("A receipt-owned operation still observes its cancelled caller intent", arguments: [false, true])
+    func committedIntentRemainsCancelled(cancelCaller: Bool) async throws {
+        let server = try RuntimeCloudMutationsSocket()
+        let channel = CloudTuiPersistentResourceConnection(socketPath: server.path)
+        let queue = CloudTerminalMutationQueue()
+        var intentWasCancelled: Bool?
+        let caller = Task {
+            try await queue.runCommitted {
+                _ = try await channel.request(CloudTuiRequest("tab.create_browser", mutation: true))
+                intentWasCancelled = CloudTerminalMutationQueue.isCurrentTurnCancelled
+            }
+        }
+        let sent = try await server.next()
+        if cancelCaller { caller.cancel() } else { queue.cancelAll() }
+        await #expect(throws: CancellationError.self) { try await caller.value }
+        try await server.reply(to: sent, result: ["tab_id": "committed-tab"])
+        await queue.waitForIdle()
+        #expect(intentWasCancelled == true, "Receipt ownership must not revive a cancelled creation intent")
         await channel.close()
         await server.close()
     }
