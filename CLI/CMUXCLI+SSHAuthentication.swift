@@ -124,6 +124,10 @@ final class RemoteTmuxAttachProgressReporter: @unchecked Sendable {
     private let params: [String: Any]
     private let stopRequested = DispatchSemaphore(value: 0)
     private let finished = DispatchSemaphore(value: 0)
+    // SUPERMUX:begin runtime-ssh-tmux-progress-stop-gate
+    private let outputLock = NSLock()
+    private var stopped = false
+    // SUPERMUX:end runtime-ssh-tmux-progress-stop-gate
 
     init(socketPath: String, params: [String: Any]) {
         self.socketPath = socketPath
@@ -146,6 +150,11 @@ final class RemoteTmuxAttachProgressReporter: @unchecked Sendable {
                     let phase = result["phase"] as? String
                 else { continue }
                 guard phase != lastPhase || Date().timeIntervalSince(lastPrintedAt) >= 15 else { continue }
+                // SUPERMUX:begin runtime-ssh-tmux-progress-output-gate
+                outputLock.lock()
+                defer { outputLock.unlock() }
+                guard !stopped else { break }
+                // SUPERMUX:end runtime-ssh-tmux-progress-output-gate
                 lastPhase = phase
                 lastPrintedAt = Date()
                 print(Self.line(
@@ -157,11 +166,16 @@ final class RemoteTmuxAttachProgressReporter: @unchecked Sendable {
         }
     }
 
-    /// Ends the reporting. Waits briefly for a line in flight so it cannot land after the result.
+    // SUPERMUX:begin runtime-ssh-tmux-progress-stop-ordering
+    /// Ends output synchronously, then waits briefly for the polling thread.
     func stop() {
+        outputLock.lock()
+        stopped = true
+        outputLock.unlock()
         stopRequested.signal()
         _ = finished.wait(timeout: .now() + 1)
     }
+    // SUPERMUX:end runtime-ssh-tmux-progress-stop-ordering
 
     static func line(phase: String, quietSeconds: Int, quietLimitSeconds: Int) -> String {
         if phase == "in_tmux" {
