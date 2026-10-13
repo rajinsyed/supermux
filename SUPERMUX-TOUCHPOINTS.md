@@ -973,6 +973,7 @@ Rules for adding a touchpoint:
 | 1138 | `tests/test_swift_package_execution.py` | `ci-package-execution-fork-fixture`, `ci-package-execution-fork-process` | Isolates selected-package diagnostics from the four required fork suites and verifies that a failure in any fork suite still fails the package lane. |
 | 1139 | `tests/test_ci_select_package_tests.py` | `ci-package-selection-fork-fixture` | Counts retry attempts only for the selected upstream suite while providing independent successful fixture results for mandatory fork suites; production CI coverage is unchanged. |
 | 1140 | `ios/tests/test_testflight_prepare_only.py` | `ios-prepare-candidate-extension-identity` | Validates the fork's derived notification extension identity under beta, official, and fixed dogfood host IDs instead of asserting upstream's literal extension ID. |
+| 1141 | `ios/tests/tagged-device-entitlements.test.mjs` | `ios-tagged-device-entitlements-fixture`, `ios-tagged-device-personal-team-guard`, `ios-tagged-device-fork-source` | Exercises upstream's App Group-only fallback with isolated full-capability fixtures and proves the fork's personal-team source is rejected without rewriting or broadening its entitlements. Shipping signing behavior is unchanged. |
 
 ## How to re-apply
 
