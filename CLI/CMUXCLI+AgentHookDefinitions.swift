@@ -238,8 +238,32 @@ extension CMUXCLI {
     }
 
     // SUPERMUX:begin runtime-cli-resilience-muse-materialization
-    static func validateMuseHookMaterialization(for def: AgentHookDef) throws {
-        guard def.name == "muse" else { return }
+    struct MuseHookInstallCommands {
+        let entries: [String: (command: String, path: String)]
+
+        func validatedCommands(for def: AgentHookDef) throws -> [String: String] {
+            for event in def.events {
+                guard let entry = entries[event.agentEvent],
+                      FileManager.default.isExecutableFile(atPath: entry.path) else {
+                    let target = CMUXCLI.sanitizeForTerminal(
+                        CMUXCLI.codexHookScriptsURL().appendingPathComponent("muse", isDirectory: true).path
+                    )
+                    throw CMUXCLI.museHookScriptWriteError(target: target, event: event)
+                }
+            }
+            return entries.mapValues { $0.command }
+        }
+    }
+
+    private static func museHookScriptWriteError(target: String, event: AgentHookDef.HookEvent) -> CLIError {
+        CLIError(message: String(format: String(
+            localized: "cli.hooks.error.museScriptWrite",
+            defaultValue: "Cannot write Muse hook script at %@ for %@. Check the directory permissions and available disk space, then retry."
+        ), target, event.cmuxSubcommand))
+    }
+
+    static func validateMuseHookMaterialization(for def: AgentHookDef) throws -> MuseHookInstallCommands? {
+        guard def.name == "muse" else { return nil }
         let dir = codexHookScriptsURL().appendingPathComponent("muse", isDirectory: true)
         let target = sanitizeForTerminal(dir.path)
         guard !dir.path.contains("'"), !dir.path.contains("\\") else {
@@ -256,15 +280,18 @@ extension CMUXCLI {
                 defaultValue: "Cannot create Muse hook script directory at %@: %@. Check the path and permissions, then retry."
             ), target, sanitizeForTerminal(error.localizedDescription)))
         }
+        var entries: [String: (command: String, path: String)] = [:]
         for event in def.events {
             let inline = hookCommandString(for: def, event: event, materializeCodexScripts: false)
-            guard hookCommandString(for: def, event: event) != inline else {
-                throw CLIError(message: String(format: String(
-                    localized: "cli.hooks.error.museScriptWrite",
-                    defaultValue: "Cannot write Muse hook script at %@ for %@. Check the directory permissions and available disk space, then retry."
-                ), target, event.cmuxSubcommand))
+            guard let path = writeCodexHookScript(
+                subcommand: "muse-\(event.cmuxSubcommand)", body: inline, in: dir,
+                requireExecutable: true
+            ) else {
+                throw museHookScriptWriteError(target: target, event: event)
             }
+            entries[event.agentEvent] = ("'\(path)' \(musePinnedHookMarker) \(event.cmuxSubcommand)", path)
         }
+        return MuseHookInstallCommands(entries: entries)
     }
     // SUPERMUX:end runtime-cli-resilience-muse-materialization
 
