@@ -42,42 +42,43 @@ public final class BrowserDesignModeMessageHandler: NSObject, WKScriptMessageHan
 
     @MainActor
     func receive(name: String, isMainFrame: Bool, body: Any) {
+        // WKScriptMessageHandler delivers on MainActor; keep causal messages in this turn.
         guard name == Self.name,
               isMainFrame,
               let body = body as? [String: Any],
               let type = body["type"] as? String else { return }
         if type == "exit_requested" {
-            Task { @MainActor [onExitRequested] in onExitRequested() }
+            onExitRequested()
             return
         }
         if type == "prompt_reset" {
-            Task { @MainActor [onPromptReset] in onPromptReset() }
+            onPromptReset()
             return
         }
         if type == "interaction_mode_changed", let mode = body["mode"] as? String {
-            Task { @MainActor [onInteractionModeChanged] in onInteractionModeChanged(mode) }
+            onInteractionModeChanged(mode)
             return
         }
         if type == "annotation_drawing", let id = body["id"] as? String {
-            Task { @MainActor [onAnnotationDrawing] in onAnnotationDrawing(id) }
+            onAnnotationDrawing(id)
             return
         }
         if type == "annotation_cancelled", let id = body["id"] as? String {
-            Task { @MainActor [onAnnotationCancelled] in onAnnotationCancelled(id) }
+            onAnnotationCancelled(id)
             return
         }
         if type == "annotation_capture_requested",
            let request = body["request"],
            JSONSerialization.isValidJSONObject(request),
            let data = try? JSONSerialization.data(withJSONObject: request) {
-            Task { @MainActor [onAnnotationCaptureRequested] in onAnnotationCaptureRequested(data) }
+            onAnnotationCaptureRequested(data)
             return
         }
         guard type == "snapshot",
               let snapshot = body["snapshot"],
               JSONSerialization.isValidJSONObject(snapshot),
               let data = try? JSONSerialization.data(withJSONObject: snapshot) else { return }
-        Task { @MainActor [onSnapshot] in onSnapshot(data) }
+        onSnapshot(data)
     }
     // SUPERMUX:end runtime-browser-delivery-design-receive
 }
