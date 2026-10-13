@@ -20,16 +20,18 @@ struct RuntimeCloudMutationsThemeOwnershipTests {
         let queue = CloudTerminalMutationQueue()
         let beginBrowser = CloudLinkFirstValue<Bool>()
         // A liveness deadline only; the assertions synchronize through gates and wire replies.
-        let deadline = Task {
-            do { try await Task.sleep(for: .seconds(30)) } catch { return }
-            #expect(Bool(false), "Theme/browser regression exceeded its liveness deadline")
-            beginBrowser.resolve(false)
-            harness.entered.resolve(false)
-            harness.release.resolve(false)
-            queue.cancelAll()
-            await channel.close()
-            await server.close()
+        let deadline = DispatchWorkItem {
+            Task { @MainActor in
+                #expect(Bool(false), "Theme/browser regression exceeded its liveness deadline")
+                beginBrowser.resolve(false)
+                harness.entered.resolve(false)
+                harness.release.resolve(false)
+                queue.cancelAll()
+                await channel.close()
+                await server.close()
+            }
         }
+        DispatchQueue.global().asyncAfter(deadline: .now() + .seconds(30), execute: deadline)
         defer { deadline.cancel() }
         var browserReceipt: Data?
         let caller = Task {
@@ -78,16 +80,18 @@ struct RuntimeCloudMutationsThemeOwnershipTests {
         let rerunsQueued = CloudLinkFirstValue<Bool>()
         let secondFinished = CloudLinkFirstValue<Bool>()
         // Bound every socket read and continuation if a future scheduler regression stalls.
-        let deadline = Task {
-            do { try await Task.sleep(for: .seconds(30)) } catch { return }
-            #expect(Bool(false), "Coalesced-theme regression exceeded its liveness deadline")
-            firstStarted.resolve(false)
-            rerunsQueued.resolve(false)
-            secondFinished.resolve(false)
-            queue.cancelAll()
-            await channel.close()
-            await server.close()
+        let deadline = DispatchWorkItem {
+            Task { @MainActor in
+                #expect(Bool(false), "Coalesced-theme regression exceeded its liveness deadline")
+                firstStarted.resolve(false)
+                rerunsQueued.resolve(false)
+                secondFinished.resolve(false)
+                queue.cancelAll()
+                await channel.close()
+                await server.close()
+            }
         }
+        DispatchQueue.global().asyncAfter(deadline: .now() + .seconds(30), execute: deadline)
         defer { deadline.cancel() }
         let send: @Sendable (CloudTuiRequest) async throws -> Bool = { request in
             await harness.record(ownsTurn: CloudCommittedMutationOwnership.current != nil)
