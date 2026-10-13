@@ -88,6 +88,123 @@ import Testing
         }
     }
 
+    // SUPERMUX:begin runtime-cli-resilience-muse-review-regressions
+    private var museOriginalSettings: Data {
+        Data(#"{"hooks":{"Stop":[{"hooks":[{"command":"echo user-owned"}]}]},"existing":"keep"}"#.utf8)
+    }
+
+    private func museCommands(in settings: URL) throws -> [String] {
+        let json = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: settings)) as? [String: Any])
+        let hooks = try #require(json["hooks"] as? [String: [[String: Any]]])
+        return hooks.values.flatMap { $0 }.flatMap { entry in
+            (entry["hooks"] as? [[String: Any]] ?? []).compactMap { $0["command"] as? String }
+        }
+    }
+
+    @Test(arguments: [false, true])
+    func museMatchingNonExecutableScriptRequiresSuccessfulChmod(immutable: Bool) async throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let settings = home.appendingPathComponent(".config/muse/settings.json")
+        let environment = ["CMUX_SOCKET_PATH": "/tmp/runtime-muse-review.sock"]
+        let seeded = try await run(["hooks", "muse", "install", "--yes"], home: home, environment: environment)
+        try #require(seeded.0 == 0, "\(seeded.1)")
+        let command = try #require(museCommands(in: settings).first)
+        let path = try #require(command.split(separator: "'").first).description
+        let contents = try Data(contentsOf: URL(fileURLWithPath: path))
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: path)
+        if immutable {
+            try #require(Darwin.chflags(path, UInt32(UF_IMMUTABLE)) == 0)
+        }
+        defer { _ = Darwin.chflags(path, 0) }
+        #expect(!FileManager.default.isExecutableFile(atPath: path))
+        if immutable {
+            errno = 0
+            #expect(Darwin.chmod(path, 0o755) == -1 && errno == EPERM, "Immutable fixture must actually reject chmod")
+        }
+        try museOriginalSettings.write(to: settings)
+        let (status, output) = try await run(["hooks", "muse", "install", "--yes"], home: home, environment: environment)
+        #expect(try Data(contentsOf: URL(fileURLWithPath: path)) == contents, "Reuse identical content-addressed script")
+        if immutable {
+            #expect(status != 0, "Install accepted an unexecutable immutable script: \(output)")
+            #expect(output.contains("Cannot write Muse hook script"), "\(output)")
+            #expect(try Data(contentsOf: settings) == museOriginalSettings)
+        } else {
+            #expect(status == 0, "\(output)")
+            #expect(FileManager.default.isExecutableFile(atPath: path))
+            #expect(try museCommands(in: settings).contains("echo user-owned"))
+        }
+    }
+
+    @Test(arguments: ["none", "repeat-write", "unwritable", "unexecutable"])
+    func museLateMaterializationFailureKeepsSettings(failure: String) async throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let settings = home.appendingPathComponent(".config/muse/settings.json")
+        let scripts = home.appendingPathComponent(".cmux/hooks/muse")
+        try FileManager.default.createDirectory(at: settings.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try museOriginalSettings.write(to: settings)
+        let ready = home.appendingPathComponent("read-ready")
+        let release = home.appendingPathComponent("read-release")
+        try #require(Darwin.mkfifo(ready.path, 0o600) == 0)
+        try #require(Darwin.mkfifo(release.path, 0o600) == 0)
+        let interpose = try #require(ProcessInfo.processInfo.environment["CMUX_MUSE_REVIEW_INTERPOSE"])
+        let installation = Task {
+            try await run(["hooks", "muse", "install", "--yes"], home: home, environment: [
+                "DYLD_INSERT_LIBRARIES": interpose,
+                "CMUX_MUSE_REVIEW_READY": ready.path,
+                "CMUX_MUSE_REVIEW_RELEASE": release.path,
+                "CMUX_MUSE_REVIEW_BLOCK_REPEAT": failure == "repeat-write" ? "1" : "0"
+            ])
+        }
+        // The OS read gate pauses the real CLI after preflight and before the final hook builder.
+        try await Task.detached {
+            let reader = Darwin.open(ready.path, O_RDONLY)
+            try #require(reader >= 0)
+            var byte: UInt8 = 0
+            try #require(Darwin.read(reader, &byte, 1) == 1 && byte == UInt8(ascii: "g"))
+            Darwin.close(reader)
+            let paths = try FileManager.default.contentsOfDirectory(at: scripts, includingPropertiesForKeys: nil)
+            try #require(paths.count == 5, "All six events materialized (two share notification)")
+            for path in paths {
+                #expect(FileManager.default.isExecutableFile(atPath: path.path))
+                #expect(try String(contentsOf: path, encoding: .utf8).hasPrefix("#!/bin/sh\n"))
+            }
+            let locked = try #require(paths.first)
+            defer { _ = Darwin.chflags(locked.path, 0) }
+            defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scripts.path) }
+            if failure == "unwritable" {
+                for path in paths { try FileManager.default.removeItem(at: path) }
+                try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: scripts.path)
+            } else if failure == "unexecutable" {
+                try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: locked.path)
+                try #require(Darwin.chflags(locked.path, UInt32(UF_IMMUTABLE)) == 0)
+            }
+            let writer = Darwin.open(release.path, O_WRONLY)
+            try #require(writer >= 0)
+            try #require(Darwin.write(writer, &byte, 1) == 1)
+            Darwin.close(writer)
+            _ = try await installation.value
+        }.value
+        let (status, output) = try await installation.value
+        if failure == "none" || failure == "repeat-write" {
+            #expect(status == 0, "\(output)")
+            let commands = try museCommands(in: settings)
+            #expect(commands.count == 7)
+            #expect(commands.contains("echo user-owned"))
+            #expect(commands.filter { $0.contains("cmux-muse-hook-v1") }.allSatisfy { $0.hasPrefix("'\(scripts.path)/") })
+            for command in commands where command.hasPrefix("'\(scripts.path)/") {
+                let path = try #require(command.split(separator: "'").first).description
+                #expect(FileManager.default.isExecutableFile(atPath: path))
+            }
+        } else {
+            #expect(status != 0, "Late failure accepted: \(output)")
+            #expect(output.contains("Cannot write Muse hook script"), "\(output)")
+            #expect(try Data(contentsOf: settings) == museOriginalSettings, "Failed install must not persist inline or unexecutable commands")
+        }
+    }
+    // SUPERMUX:end runtime-cli-resilience-muse-review-regressions
+
     @Test(arguments: ["short", "ascii64", "ascii65", "emoji64", "emoji65", "explicit", "typed"])
     func oauthDefaultLabelMatchesServerUTF16Boundary(shape: String) async throws {
         let email: String
