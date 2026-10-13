@@ -36255,10 +36255,12 @@ struct CMUXCLI {
         Self.feedHookCommandString(for: def, agentEvent: agentEvent)
     }
 
-    private func buildHooksDict(for def: AgentHookDef) -> [String: Any] {
+    // SUPERMUX:begin runtime-cli-resilience-muse-install-command-map
+    private func buildHooksDict(for def: AgentHookDef, museCommands: [String: String]? = nil) -> [String: Any] {
         var result: [String: Any] = [:]
         for event in def.events {
-            let cmd = hookCommand(for: def, event: event)
+            let cmd = museCommands?[event.agentEvent] ?? hookCommand(for: def, event: event)
+            // SUPERMUX:end runtime-cli-resilience-muse-install-command-map
             switch def.format {
             case .flat:
                 var entries = result[event.agentEvent] as? [[String: Any]] ?? []
@@ -37249,7 +37251,7 @@ export default {
     private func installAgentHooks(_ def: AgentHookDef) throws {
         try Self.validateHookInstallDispatch(for: def)
         // SUPERMUX:begin runtime-cli-resilience-muse-install
-        try Self.validateMuseHookMaterialization(for: def)
+        let museInstallCommands = try Self.validateMuseHookMaterialization(for: def)
         // SUPERMUX:end runtime-cli-resilience-muse-install
         if def.name == "opencode" { try installOpenCodePluginHooks(def); return }
         if def.name == "pi" { try installPiExtensionHooks(def); return }
@@ -37320,7 +37322,9 @@ export default {
         }
 
         var hooks = existing["hooks"] as? [String: Any] ?? [:]
-        let newHooks = buildHooksDict(for: def)
+        // SUPERMUX:begin runtime-cli-resilience-muse-install-validated-builder
+        let newHooks = buildHooksDict(for: def, museCommands: try museInstallCommands?.validatedCommands(for: def))
+        // SUPERMUX:end runtime-cli-resilience-muse-install-validated-builder
 
         // Remove existing cmux-owned entries (both the per-agent hook
         // dispatcher and the Feed bridge). Non-cmux entries are
@@ -37479,6 +37483,9 @@ export default {
                     return
                 }
             }
+            // SUPERMUX:begin runtime-cli-resilience-muse-install-prewrite-check
+            _ = try museInstallCommands?.validatedCommands(for: def)
+            // SUPERMUX:end runtime-cli-resilience-muse-install-prewrite-check
             try newData.write(to: URL(fileURLWithPath: filePath), options: .atomic)
             print("\(def.displayName) hooks installed at \(filePath)")
         }
