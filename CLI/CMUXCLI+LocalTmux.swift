@@ -235,13 +235,14 @@ extension CMUXCLI {
                 } else {
                     try identityResolver.rebindStopped(record, to: observed)
                 }
-                record = liveSession.record
-                if let sessionPath = existingPath {
-                    record.cwd = sessionPath
-                }
-                record.socketPath = builder.socketPath
-                record.updatedAt = Date.now.timeIntervalSince1970
-                try registry.upsert(record)
+                // SUPERMUX:begin runtime-ssh-tmux-existing-start-location
+                record = try registry.recordLocation(
+                    id: liveSession.record.id,
+                    expectedBinding: observed.binding,
+                    socketPath: builder.socketPath,
+                    cwd: existingPath
+                )
+                // SUPERMUX:end runtime-ssh-tmux-existing-start-location
                 return .init(record: record, binding: observed.binding)
             }
             let sessionCwd = existingPath ?? ""
@@ -276,11 +277,14 @@ extension CMUXCLI {
         try registry.validateServerSocketIfPresent()
         if let recordForName {
             let liveSession = try identityResolver.rebindStopped(recordForName, to: observed)
-            var record = liveSession.record
-            record.cwd = cwd
-            record.socketPath = builder.socketPath
-            record.updatedAt = Date.now.timeIntervalSince1970
-            try registry.upsert(record)
+            // SUPERMUX:begin runtime-ssh-tmux-recovery-start-location
+            let record = try registry.recordLocation(
+                id: liveSession.record.id,
+                expectedBinding: observed.binding,
+                socketPath: builder.socketPath,
+                cwd: cwd
+            )
+            // SUPERMUX:end runtime-ssh-tmux-recovery-start-location
             return .init(record: record, binding: observed.binding)
         }
         let record = LocalTmuxSessionRecord(
