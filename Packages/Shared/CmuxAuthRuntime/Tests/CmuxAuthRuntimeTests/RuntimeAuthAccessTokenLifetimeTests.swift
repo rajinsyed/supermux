@@ -10,7 +10,6 @@ import Testing
     private static let extremeClaims = [
         #"{"exp":1e300}"#,
         #"{"exp":-1e300}"#,
-        #"{"exp":9223372036854775808}"#,
         #"{"exp":-9223372036854777856}"#,
     ]
     private static let invalidIssuedAtClaims = [
@@ -45,6 +44,12 @@ import Testing
         let upper = try #require(AccessTokenLifetime(Self.token(#"{"exp":9223372036854774784}"#), now: Date(timeIntervalSince1970: 0)))
         #expect(lower.expiresInSeconds == Int.min)
         #expect(upper.expiresInSeconds == Int.max - 1023)
+    }
+
+    @Test func roundedIntMaxBoundaryRejectsOnlyUnrepresentableDelta() {
+        let token = Self.token(#"{"exp":9223372036854775808}"#)
+        #expect(AccessTokenLifetime(token, now: Date(timeIntervalSince1970: 0)) == nil)
+        #expect(AccessTokenLifetime(token, now: Date(timeIntervalSince1970: 1024))?.expiresInSeconds == Int.max - 1023)
     }
 
     @Test(arguments: [Double.infinity, -Double.infinity, Double.nan, -Double.greatestFiniteMagnitude])
@@ -98,7 +103,10 @@ import Testing
     }
 
     #if canImport(Security)
-    @Test(arguments: extremeClaims + invalidIssuedAtClaims)
+    @Test(
+        .enabled(if: ProcessInfo.processInfo.environment["SUPERMUX_TEST_KEYCHAIN_PERSISTENCE"] == "1"),
+        arguments: extremeClaims + invalidIssuedAtClaims
+    )
     func keychainCompareAndSetPersistsTokensDespiteInvalidDiagnostics(claims: String) async throws {
         let service = "com.supermux.tests.RuntimeAuthLifetime.\(UUID().uuidString)"
         defer {
@@ -109,8 +117,8 @@ import Testing
             ] as CFDictionary)
         }
         let store = KeychainStackTokenStore(service: service)
-        await store.setTokens(accessToken: "old-access", refreshToken: "old-refresh")
-        try #require(await store.getStoredRefreshToken() == "old-refresh")
+        let seeded = await store.trySetTokens(accessToken: "old-access", refreshToken: "old-refresh")
+        try #require(seeded, "Requires a signed runner with data-protection Keychain access")
         let token = Self.token(claims)
 
         await store.compareAndSet(
@@ -124,6 +132,40 @@ import Testing
         await store.clearTokens()
         #expect(await store.getStoredAccessToken() == nil)
         #expect(await store.getStoredRefreshToken() == nil)
+    }
+
+    @Test(arguments: extremeClaims + invalidIssuedAtClaims)
+    func keychainStaleCompareAndSetStillEvaluatesSafeDiagnostics(claims: String) async {
+        let store = KeychainStackTokenStore(service: "com.supermux.tests.RuntimeAuthLifetime.\(UUID().uuidString)")
+        await store.compareAndSet(
+            compareRefreshToken: "not-stored",
+            newRefreshToken: "new-refresh",
+            newAccessToken: Self.token(claims)
+        )
+        #expect(await store.getStoredAccessToken() == nil)
+        #expect(await store.getStoredRefreshToken() == nil)
+    }
+
+    @Test(arguments: extremeClaims + invalidIssuedAtClaims)
+    func fallbackCompareAndSetPersistsTokensDespiteInvalidDiagnostics(claims: String) async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("RuntimeAuthLifetimeFallback-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = FileStackTokenStore(directory: directory)
+        let keychain = KeychainStackTokenStore(service: "com.supermux.tests.RuntimeAuthLifetime.\(UUID().uuidString)")
+        let store = FallbackTokenStore(primary: keychain, fallback: file)
+        await store.setTokens(accessToken: "old-access", refreshToken: "old-refresh")
+        let token = Self.token(claims)
+        await store.compareAndSet(
+            compareRefreshToken: "old-refresh",
+            newRefreshToken: "new-refresh",
+            newAccessToken: token
+        )
+        let persistedAccessMatches = await store.getStoredAccessToken() == token
+        #expect(persistedAccessMatches)
+        #expect(await store.getStoredRefreshToken() == "new-refresh")
+        await store.clearTokens()
     }
     #endif
 
