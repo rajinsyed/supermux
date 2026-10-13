@@ -247,6 +247,7 @@ struct BrowserPanelView: View {
     private enum TaskKey: Hashable, Sendable {
         case emptyStateImportBrowserRefresh
         case omnibarSuggestionRefreshConsumer
+        case historySuggestionRefresh
         case suggestion
     }
 
@@ -2548,6 +2549,7 @@ struct BrowserPanelView: View {
 
     private func cancelPendingOmnibarSuggestionWork() {
         omnibarSuggestionRefreshScheduler.cancelPendingRefresh()
+        tasks.cancel(.historySuggestionRefresh)
         tasks.cancel(.suggestion)
         isLoadingRemoteSuggestions = false
     }
@@ -2754,6 +2756,13 @@ struct BrowserPanelView: View {
     }
 
     private func refreshSuggestions() {
+        tasks.cancel(.historySuggestionRefresh)
+        tasks.replaceOnMainActor(.historySuggestionRefresh) {
+            await self.refreshSuggestionsNow()
+        }
+    }
+
+    private func refreshSuggestionsNow() async {
 #if DEBUG
         let typingTimingStart = CmuxTypingTiming.start()
         defer {
@@ -2783,12 +2792,18 @@ struct BrowserPanelView: View {
         }
 
         let query = omnibarState.buffer.trimmingCharacters(in: .whitespacesAndNewlines)
-        let historyEntries: [BrowserHistoryStore.Entry] = {
-            if query.isEmpty {
-                return panel.historyStore.recentSuggestions(limit: 12)
+        let historyEntries: [BrowserHistoryStore.Entry]
+        if query.isEmpty {
+            historyEntries = panel.historyStore.recentSuggestions(limit: 12)
+        } else {
+            historyEntries = await panel.historyStore.suggestionsAsync(for: query, limit: 12)
+            guard !Task.isCancelled,
+                  addressBarFocused,
+                  !omnibarHasMarkedText,
+                  omnibarState.buffer.trimmingCharacters(in: .whitespacesAndNewlines) == query else {
+                return
             }
-            return panel.historyStore.suggestions(for: query, limit: 12)
-        }()
+        }
         let openTabMatches = query.isEmpty ? [] : matchingOpenTabSuggestions(for: query, limit: 12)
         let isSingleCharacterQuery = omnibarSingleCharacterQuery(for: query) != nil
         let remoteSuggestionsEngine = searchConfiguration.remoteSuggestionsEngine
@@ -2876,7 +2891,7 @@ struct BrowserPanelView: View {
                 let merged = buildOmnibarSuggestions(
                     query: query,
                     engineName: searchConfiguration.displayName,
-                    historyEntries: panel.historyStore.suggestions(for: query, limit: 12),
+                    historyEntries: historyEntries,
                     openTabMatches: matchingOpenTabSuggestions(for: query, limit: 12),
                     remoteQueries: remote,
                     resolvedURL: panel.resolveNavigableURL(from: query),
@@ -4143,6 +4158,10 @@ func browserOmnibarFocusGainingClickShouldSelectAll(
     gainedFocusOnThisClick && !isShiftClick && !didDrag
 }
 
+// AppKit delivers first-responder and key routing directly to this field. The
+// Swift 6 SDK inherits MainActor isolation from NSResponder, so these
+// framework overrides are explicitly nonisolated; the field is still owned by
+// its main-thread SwiftUI representable.
 final class OmnibarNativeTextField: NSTextField {
     var panelId: UUID?
     var onPointerDown: (() -> Void)?
@@ -4165,7 +4184,7 @@ final class OmnibarNativeTextField: NSTextField {
         let isShift: Bool
     }
 
-    override init(frame frameRect: NSRect) {
+    nonisolated override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         cell = BrowserOmnibarPasteTextFieldCell(textCell: "")
         isBordered = false
@@ -4179,12 +4198,12 @@ final class OmnibarNativeTextField: NSTextField {
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
-    override func resetCursorRects() {
+    nonisolated override func resetCursorRects() {
         super.resetCursorRects()
         addCursorRect(bounds, cursor: .iBeam)
     }
 
-    override func mouseDown(with event: NSEvent) {
+    nonisolated override func mouseDown(with event: NSEvent) {
         let hadEditor = currentEditor() != nil
         onPointerDown?()
 
@@ -4230,7 +4249,7 @@ final class OmnibarNativeTextField: NSTextField {
         )
     }
 
-    override func mouseDragged(with event: NSEvent) {
+    nonisolated override func mouseDragged(with event: NSEvent) {
         guard var state = mouseSelectionState,
               let editor = currentEditor() as? NSTextView else {
             super.mouseDragged(with: event)
@@ -4247,7 +4266,7 @@ final class OmnibarNativeTextField: NSTextField {
         }
     }
 
-    override func mouseUp(with event: NSEvent) {
+    nonisolated override func mouseUp(with event: NSEvent) {
         guard let state = mouseSelectionState else {
             super.mouseUp(with: event)
             return
@@ -4288,7 +4307,7 @@ final class OmnibarNativeTextField: NSTextField {
         }
     }
 
-    override func keyDown(with event: NSEvent) {
+    nonisolated override func keyDown(with event: NSEvent) {
 #if DEBUG
         let typingTimingStart = CmuxTypingTiming.start()
         var route = "super"
@@ -4319,7 +4338,7 @@ final class OmnibarNativeTextField: NSTextField {
         super.keyDown(with: event)
     }
 
-    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+    nonisolated override func performKeyEquivalent(with event: NSEvent) -> Bool {
 #if DEBUG
         let typingTimingStart = CmuxTypingTiming.start()
         var handled = false
@@ -4719,7 +4738,7 @@ struct OmnibarTextFieldRepresentable: NSViewRepresentable {
                 object: editor,
                 queue: .main
             ) { [weak self] _ in
-                MainActor.assumeIsolated {
+                Task { @MainActor [weak self] in
                     self?.publishSelectionState()
                 }
             }
@@ -5520,9 +5539,12 @@ struct WebViewRepresentable: NSViewRepresentable {
         var lastSynchronizedHostGeometryRevision: UInt64 = 0
     }
 
+    // WebKit layer commits and hit testing can enter this host outside a
+    // Swift MainActor task. Keep every NSView override nonisolated while the
+    // representable owns the hierarchy on AppKit's main thread.
     final class HostContainerView: NSView {
         private final class HostedInspectorSideDockContainerView: NSView {
-            override init(frame frameRect: NSRect) {
+            nonisolated override init(frame frameRect: NSRect) {
                 super.init(frame: frameRect)
                 wantsLayer = true
                 layer?.masksToBounds = true
@@ -5533,9 +5555,9 @@ struct WebViewRepresentable: NSViewRepresentable {
                 nil
             }
 
-            override var isOpaque: Bool { false }
+            nonisolated override var isOpaque: Bool { false }
 
-            override func resizeSubviews(withOldSize oldSize: NSSize) {
+            nonisolated override func resizeSubviews(withOldSize oldSize: NSSize) {
                 // Managed side-docked DevTools use explicit frame updates from the host.
                 // Letting AppKit autoresize the WK siblings here makes them snap back to
                 // stale widths while the divider drag or pane resize is in flight.
@@ -5606,6 +5628,8 @@ struct WebViewRepresentable: NSViewRepresentable {
         private let hostedInspectorDockConfigurationSyncScheduler = MainActorDeferredActionScheduler()
         private var hostedInspectorSideDockPromotionTask: Task<Void, Never>?
         private var hostedInspectorSideDockPromotionTaskID: UUID?
+        private var pendingHostedInspectorDockConfiguration: (configuration: String?, reason: String)?
+        private var hostedInspectorDockConfiguration: String?
         private var adaptiveBottomDockRequestCooldownDeadline: Date?
         private var recordedHostedInspectorSideDockWidth: CGFloat?
         private var lastHostedInspectorManualSideDockAllowed: Bool?
@@ -5617,7 +5641,8 @@ struct WebViewRepresentable: NSViewRepresentable {
 #endif
 
         deinit {
-            hostedInspectorSideDockPromotionTask?.cancel()
+            cancelHostedInspectorSideDockPromotion()
+            pendingHostedInspectorDockConfiguration = nil
             if let trackingArea {
                 removeTrackingArea(trackingArea)
             }
@@ -5733,6 +5758,10 @@ struct WebViewRepresentable: NSViewRepresentable {
         }
 
         func setHostedInspectorFrontendWebView(_ webView: WKWebView?) {
+            if hostedInspectorFrontendWebView !== webView {
+                pendingHostedInspectorDockConfiguration = nil
+                hostedInspectorDockConfiguration = nil
+            }
             hostedInspectorFrontendWebView = webView
             lastHostedInspectorManualSideDockAllowed = nil
             lastHostedInspectorDetachedFromHostWindow = nil
@@ -6061,6 +6090,8 @@ struct WebViewRepresentable: NSViewRepresentable {
             isWindowPortalHosting = true
             cancelHostedWebKitPresentationRefresh()
             hostedInspectorDockConfigurationSyncScheduler.cancel()
+            pendingHostedInspectorDockConfiguration = nil
+            hostedInspectorDockConfiguration = nil
             notifyHostedWebKitHidden(reason: "prepareForWindowPortalHosting")
             deactivateHostedInspectorSideDockIfNeeded(reparentTo: localInlineSlotView)
             hostedInspectorFrontendWebView = nil
@@ -6074,6 +6105,8 @@ struct WebViewRepresentable: NSViewRepresentable {
 
         func clearStaleHostedInspectorOwnershipState() {
             hostedInspectorDockConfigurationSyncScheduler.cancel()
+            pendingHostedInspectorDockConfiguration = nil
+            hostedInspectorDockConfiguration = nil
             hostedInspectorFrontendWebView = nil
             lastHostedInspectorManualSideDockAllowed = nil
             lastHostedInspectorDetachedFromHostWindow = nil
@@ -6178,7 +6211,9 @@ struct WebViewRepresentable: NSViewRepresentable {
 
         @discardableResult
         func promoteHostedInspectorSideDockFromCurrentLayoutIfNeeded() -> Bool {
-            guard !isHostedInspectorSideDockActive(),
+            guard hostedInspectorDockConfiguration != "bottom",
+                  !isHostedInspectorDividerDragActive,
+                  !isHostedInspectorSideDockActive(),
                   let slotView = localInlineSlotView,
                   let hit = hostedInspectorDividerCandidateUsingKnownWebViews(in: slotView) else {
                 return false
@@ -6201,7 +6236,9 @@ struct WebViewRepresentable: NSViewRepresentable {
         /// before mutating, so it is safe even if the layout changes in between.
         private func scheduleHostedInspectorSideDockPromotionIfNeeded() {
             guard hostedInspectorSideDockPromotionTask == nil else { return }
-            guard !isHostedInspectorSideDockActive(),
+            guard hostedInspectorDockConfiguration != "bottom",
+                  !isHostedInspectorDividerDragActive,
+                  !isHostedInspectorSideDockActive(),
                   let slotView = localInlineSlotView,
                   hostedInspectorDividerCandidateUsingKnownWebViews(in: slotView) != nil else {
                 return
@@ -6218,6 +6255,12 @@ struct WebViewRepresentable: NSViewRepresentable {
                 _ = self.promoteHostedInspectorSideDockFromCurrentLayoutIfNeeded()
             }
             hostedInspectorSideDockPromotionTask = task
+        }
+
+        private func cancelHostedInspectorSideDockPromotion() {
+            hostedInspectorSideDockPromotionTask?.cancel()
+            hostedInspectorSideDockPromotionTask = nil
+            hostedInspectorSideDockPromotionTaskID = nil
         }
 
         private func deactivateHostedInspectorSideDockIfNeeded(reparentTo slotView: WindowBrowserSlotView?) {
@@ -6330,14 +6373,33 @@ struct WebViewRepresentable: NSViewRepresentable {
 
         private func syncHostedInspectorDockConfiguration(reason: String) {
             guard let hostedInspectorFrontendWebView else { return }
+            let queriedFrontendID = ObjectIdentifier(hostedInspectorFrontendWebView)
             hostedInspectorFrontendWebView.evaluateJavaScript(
                 "typeof WI === 'undefined' ? null : WI.dockConfiguration"
             ) { [weak self] result, _ in
-                self?.applyHostedInspectorDockConfiguration(result as? String, reason: reason)
+                guard let self,
+                      let currentFrontend = self.hostedInspectorFrontendWebView,
+                      ObjectIdentifier(currentFrontend) == queriedFrontendID else {
+                    return
+                }
+                self.applyHostedInspectorDockConfiguration(result as? String, reason: reason)
             }
         }
 
         private func applyHostedInspectorDockConfiguration(_ dockConfiguration: String?, reason: String) {
+            guard !isHostedInspectorDividerDragActive else {
+                pendingHostedInspectorDockConfiguration = (dockConfiguration, reason)
+                return
+            }
+
+            hostedInspectorDockConfiguration = dockConfiguration
+            if dockConfiguration == "bottom" {
+                // A bottom-docked inspector must stay inline after a drag. Cancel
+                // any promotion that was scheduled by the preceding layout pass;
+                // subsequent passes are also blocked by the recorded configuration.
+                cancelHostedInspectorSideDockPromotion()
+            }
+
             switch dockConfiguration {
             case "left":
                 hostedInspectorSideDockDockSide = .leading
@@ -6386,7 +6448,7 @@ struct WebViewRepresentable: NSViewRepresentable {
             updateHostedInspectorDockControlAvailabilityIfNeeded(reason: "\(reason).dockConfiguration")
         }
 
-        override func viewDidMoveToWindow() {
+        nonisolated override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             if window == nil {
                 cancelHostedWebKitPresentationRefresh()
@@ -6408,7 +6470,7 @@ struct WebViewRepresentable: NSViewRepresentable {
 #endif
         }
 
-        override func viewDidMoveToSuperview() {
+        nonisolated override func viewDidMoveToSuperview() {
             super.viewDidMoveToSuperview()
             scheduleHostedInspectorDividerReapply(reason: "viewDidMoveToSuperview")
             scheduleHostedInspectorDockConfigurationSync(reason: "viewDidMoveToSuperview")
@@ -6418,7 +6480,7 @@ struct WebViewRepresentable: NSViewRepresentable {
 #endif
         }
 
-        override func layout() {
+        nonisolated override func layout() {
             super.layout()
             if enforceAdaptiveBottomDockIfNeeded(reason: "host.layout") {
                 updateHostedInspectorDockControlAvailabilityIfNeeded(reason: "host.layout")
@@ -6465,7 +6527,7 @@ struct WebViewRepresentable: NSViewRepresentable {
 #endif
         }
 
-        override func setFrameOrigin(_ newOrigin: NSPoint) {
+        nonisolated override func setFrameOrigin(_ newOrigin: NSPoint) {
             super.setFrameOrigin(newOrigin)
             window?.invalidateCursorRects(for: self)
             // Mark dirty; the callback fires from layout() with the settled geometry.
@@ -6475,7 +6537,7 @@ struct WebViewRepresentable: NSViewRepresentable {
 #endif
         }
 
-        override func setFrameSize(_ newSize: NSSize) {
+        nonisolated override func setFrameSize(_ newSize: NSSize) {
             super.setFrameSize(newSize)
             window?.invalidateCursorRects(for: self)
             // Mark dirty; the callback fires from layout() with the settled geometry.
@@ -6485,7 +6547,7 @@ struct WebViewRepresentable: NSViewRepresentable {
 #endif
         }
 
-        override func resetCursorRects() {
+        nonisolated override func resetCursorRects() {
             super.resetCursorRects()
             guard let hostedInspectorHit = hostedInspectorDividerCandidate() else { return }
             let clipped = hostedInspectorDividerHitRect(for: hostedInspectorHit).intersection(bounds)
@@ -6493,7 +6555,7 @@ struct WebViewRepresentable: NSViewRepresentable {
             addCursorRect(clipped, cursor: NSCursor.resizeLeftRight)
         }
 
-        override func updateTrackingAreas() {
+        nonisolated override func updateTrackingAreas() {
             if let trackingArea {
                 removeTrackingArea(trackingArea)
             }
@@ -6511,15 +6573,15 @@ struct WebViewRepresentable: NSViewRepresentable {
             super.updateTrackingAreas()
         }
 
-        override func cursorUpdate(with event: NSEvent) {
+        nonisolated override func cursorUpdate(with event: NSEvent) {
             updateDividerCursor(at: convert(event.locationInWindow, from: nil))
         }
 
-        override func mouseMoved(with event: NSEvent) {
+        nonisolated override func mouseMoved(with event: NSEvent) {
             updateDividerCursor(at: convert(event.locationInWindow, from: nil))
         }
 
-        override func mouseExited(with event: NSEvent) {
+        nonisolated override func mouseExited(with event: NSEvent) {
             clearActiveDividerCursor(restoreArrow: true)
         }
 
@@ -6544,6 +6606,7 @@ struct WebViewRepresentable: NSViewRepresentable {
         /// `NSApp.currentEvent` unless a test injects a hover context here.
         var portalHoverRoutingContextOverride: WindowInputRoutingContext?
 
+        @MainActor
         func portalHoverDelegationTarget(
             at point: NSPoint,
             routingContext: WindowInputRoutingContext,
@@ -6591,7 +6654,23 @@ struct WebViewRepresentable: NSViewRepresentable {
         }
         // SUPERMUX:end browser-hover-webkit-topmost-gate
 
-        override func hitTest(_ point: NSPoint) -> NSView? {
+        nonisolated override func hitTest(_ point: NSPoint) -> NSView? {
+            // SUPERMUX:begin browser-hover-webkit-topmost-gate
+            // WebKit's main-thread hover gate must run before the portal anchor's
+            // normal pass-through. Non-main framework hit tests never consult
+            // the actor-owned drag registry.
+            if Thread.isMainThread {
+                let routingContext = portalHoverRoutingContextOverride
+                    ?? WindowInputRoutingContext(event: NSApp.currentEvent)
+                if routingContext.eventKind == .pointerHover {
+                    var delegated: NSView?
+                    MainActor.assumeIsolated {
+                        delegated = portalHoverDelegationTarget(at: point, routingContext: routingContext)
+                    }
+                    if let delegated { return delegated }
+                }
+            }
+            // SUPERMUX:end browser-hover-webkit-topmost-gate
             // WindowBrowserHostView owns the live web view while portal mode is
             // active. Returning nil here prevents a retained, transparent
             // SwiftUI anchor from stealing the sidebar divider underneath it.
@@ -6631,15 +6710,6 @@ struct WebViewRepresentable: NSViewRepresentable {
 #endif
                 return self
             }
-            // SUPERMUX:begin browser-hover-webkit-topmost-gate
-            if let delegated = portalHoverDelegationTarget(
-                at: point,
-                routingContext: portalHoverRoutingContextOverride
-                    ?? WindowInputRoutingContext(event: NSApp.currentEvent)
-            ) {
-                return delegated
-            }
-            // SUPERMUX:end browser-hover-webkit-topmost-gate
             let hit = super.hitTest(point)
 #if DEBUG
             debugLogHitTest(stage: "hitTest.result", point: point, passThrough: false, hitView: hit)
@@ -6647,14 +6717,19 @@ struct WebViewRepresentable: NSViewRepresentable {
             return hit
         }
 
-        override func mouseDown(with event: NSEvent) {
+        nonisolated override func mouseDown(with event: NSEvent) {
             let point = convert(event.locationInWindow, from: nil)
             guard let hostedInspectorHit = hostedInspectorDividerHit(at: point) else {
                 super.mouseDown(with: event)
                 return
             }
 
-            hostedInspectorReapplyScheduler.cancel()
+            // AppKit can call this override without Swift's MainActor token.
+            // Keep scheduler mutation on its owning actor while the responder
+            // path remains synchronously available to the framework.
+            Task { @MainActor [weak self] in
+                self?.hostedInspectorReapplyScheduler.cancel()
+            }
             isHostedInspectorDividerDragActive = true
             hostedInspectorDividerDrag = HostedInspectorDividerDragState(
                 containerView: hostedInspectorHit.containerView,
@@ -6670,7 +6745,7 @@ struct WebViewRepresentable: NSViewRepresentable {
 #endif
         }
 
-        override func mouseDragged(with event: NSEvent) {
+        nonisolated override func mouseDragged(with event: NSEvent) {
             guard let dragState = hostedInspectorDividerDrag else {
                 super.mouseDragged(with: event)
                 return
@@ -6728,7 +6803,7 @@ struct WebViewRepresentable: NSViewRepresentable {
             )
         }
 
-        override func mouseUp(with event: NSEvent) {
+        nonisolated override func mouseUp(with event: NSEvent) {
             let finalDragState = hostedInspectorDividerDrag
             hostedInspectorDividerDrag = nil
             isHostedInspectorDividerDragActive = false
@@ -6747,6 +6822,13 @@ struct WebViewRepresentable: NSViewRepresentable {
                 )
 #endif
                 reapplyHostedInspectorDividerToStoredWidthIfNeeded(reason: "drag.end")
+            }
+            if let pending = pendingHostedInspectorDockConfiguration {
+                self.pendingHostedInspectorDockConfiguration = nil
+                applyHostedInspectorDockConfiguration(
+                    pending.configuration,
+                    reason: "\(pending.reason).dragEnd"
+                )
             }
             super.mouseUp(with: event)
         }
@@ -7047,7 +7129,7 @@ struct WebViewRepresentable: NSViewRepresentable {
 
         fileprivate func scheduleHostedInspectorDividerReapply(reason: String) {
             hostedInspectorReapplyScheduler.schedule { [weak self] in
-                guard let self else { return }
+                guard let self, !self.isHostedInspectorDividerDragActive else { return }
                 _ = self.promoteHostedInspectorSideDockFromCurrentLayoutIfNeeded()
                 if self.hasStoredHostedInspectorWidthPreference {
                     self.reapplyHostedInspectorDividerToStoredWidthIfNeeded(reason: reason)
@@ -7108,7 +7190,7 @@ struct WebViewRepresentable: NSViewRepresentable {
         }
 
         private func reapplyHostedInspectorDividerToStoredWidthIfNeeded(reason: String) {
-            guard !isApplyingHostedInspectorLayout else { return }
+            guard !isApplyingHostedInspectorLayout, !isHostedInspectorDividerDragActive else { return }
             guard let hit = hostedInspectorDividerCandidate() else { return }
             guard let preferredWidth = resolvedPreferredHostedInspectorWidth(in: hit.containerView.bounds) else {
                 return
