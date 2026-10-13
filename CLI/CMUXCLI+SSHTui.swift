@@ -16,9 +16,11 @@ extension CMUXCLI {
     ) throws {
         var params: [String: Any] = [
             "destination": options.destination,
+            // SUPERMUX:begin runtime-ssh-tmux-tui-template-provenance
             "ssh_options": SSHConnectionSharingOptions().optionsForTUIHandoff(
-                options.sshOptions, routeIdentifier: routeIdentifier
+                preResolutionSSHOptions ?? options.sshOptions, routeIdentifier: routeIdentifier
             ),
+            // SUPERMUX:end runtime-ssh-tmux-tui-template-provenance
             "focus": !options.noFocus,
             "operation_id": UUID().uuidString.lowercased(),
         ]
