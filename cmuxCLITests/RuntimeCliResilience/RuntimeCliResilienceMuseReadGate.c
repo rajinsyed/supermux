@@ -11,8 +11,15 @@ static atomic_bool gated;
 
 static int blocks_repeat_materialization(const char *path) {
     const char *enabled = getenv("CMUX_MUSE_REVIEW_BLOCK_REPEAT");
-    return enabled && strcmp(enabled, "1") == 0 && atomic_load(&gated) &&
-        path && strstr(path, "/.cmux/hooks/muse/");
+    if (!(enabled && strcmp(enabled, "1") == 0 && atomic_load(&gated) &&
+          path && strstr(path, "/.cmux/hooks/muse/"))) { return 0; }
+    const char *attempts = getenv("CMUX_MUSE_REVIEW_ATTEMPTS");
+    if (attempts) {
+        int fd = open(attempts, O_WRONLY | O_CREAT | O_APPEND, 0600);
+        if (fd < 0 || write(fd, "r", 1) != 1) { _exit(125); }
+        close(fd);
+    }
+    return 1;
 }
 
 // Test-only OS gate: pause the real settings read after script preflight, without replacing CLI logic.

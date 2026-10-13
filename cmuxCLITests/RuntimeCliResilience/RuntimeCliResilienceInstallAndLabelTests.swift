@@ -146,6 +146,7 @@ import Testing
         try museOriginalSettings.write(to: settings)
         let ready = home.appendingPathComponent("read-ready")
         let release = home.appendingPathComponent("read-release")
+        let attempts = home.appendingPathComponent("repeat-materialization-attempts")
         try #require(Darwin.mkfifo(ready.path, 0o600) == 0)
         try #require(Darwin.mkfifo(release.path, 0o600) == 0)
         let interpose = try #require(ProcessInfo.processInfo.environment["CMUX_MUSE_REVIEW_INTERPOSE"])
@@ -154,6 +155,7 @@ import Testing
                 "DYLD_INSERT_LIBRARIES": interpose,
                 "CMUX_MUSE_REVIEW_READY": ready.path,
                 "CMUX_MUSE_REVIEW_RELEASE": release.path,
+                "CMUX_MUSE_REVIEW_ATTEMPTS": attempts.path,
                 "CMUX_MUSE_REVIEW_BLOCK_REPEAT": failure == "repeat-write" ? "1" : "0"
             ])
         }
@@ -187,6 +189,9 @@ import Testing
             _ = try await installation.value
         }.value
         let (status, output) = try await installation.value
+        if failure == "repeat-write" {
+            #expect(!FileManager.default.fileExists(atPath: attempts.path), "Install must not rematerialize while pruning user-owned hook entries")
+        }
         if failure == "none" || failure == "repeat-write" {
             #expect(status == 0, "\(output)")
             let commands = try museCommands(in: settings)
