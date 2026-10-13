@@ -120,7 +120,9 @@ import Testing
         #expect(!FileManager.default.isExecutableFile(atPath: path))
         if immutable {
             errno = 0
-            #expect(Darwin.chmod(path, 0o755) == -1 && errno == EPERM, "Immutable fixture must actually reject chmod")
+            let chmodResult = Darwin.chmod(path, 0o755)
+            let chmodErrno = errno
+            #expect(chmodResult == -1 && chmodErrno == EPERM, "Immutable fixture must actually reject chmod")
         }
         try museOriginalSettings.write(to: settings)
         let (status, output) = try await run(["hooks", "muse", "install", "--yes"], home: home, environment: environment)
