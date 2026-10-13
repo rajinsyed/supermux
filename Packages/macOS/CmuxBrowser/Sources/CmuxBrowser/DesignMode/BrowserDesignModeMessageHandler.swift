@@ -31,13 +31,20 @@ public final class BrowserDesignModeMessageHandler: NSObject, WKScriptMessageHan
         self.onAnnotationCaptureRequested = onAnnotationCaptureRequested
     }
 
+    // SUPERMUX:begin runtime-browser-delivery-design-receive
+    @MainActor
     public func userContentController(
         _ userContentController: WKUserContentController,
         didReceive message: WKScriptMessage
     ) {
-        guard message.name == Self.name,
-              message.frameInfo.isMainFrame,
-              let body = message.body as? [String: Any],
+        receive(name: message.name, isMainFrame: message.frameInfo.isMainFrame, body: message.body)
+    }
+
+    @MainActor
+    func receive(name: String, isMainFrame: Bool, body: Any) {
+        guard name == Self.name,
+              isMainFrame,
+              let body = body as? [String: Any],
               let type = body["type"] as? String else { return }
         if type == "exit_requested" {
             Task { @MainActor [onExitRequested] in onExitRequested() }
@@ -72,4 +79,5 @@ public final class BrowserDesignModeMessageHandler: NSObject, WKScriptMessageHan
               let data = try? JSONSerialization.data(withJSONObject: snapshot) else { return }
         Task { @MainActor [onSnapshot] in onSnapshot(data) }
     }
+    // SUPERMUX:end runtime-browser-delivery-design-receive
 }
