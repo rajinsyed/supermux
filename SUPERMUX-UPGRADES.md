@@ -58,6 +58,20 @@ Supermux's Projects/Changes/Run/Claude-harness product layer.
   feed backoff/ownership, detached-phone input admission, selected-team Remote Mac routing
   and Cloud input-activity throttling.
 
+### Runtime hardening in this sync
+
+- Malformed token expiry metadata no longer traps credential-refresh diagnostics; timeouts and
+  cancellation preserve sign-in rate-limit backoff rather than causing extra activation retries.
+- Cloud startup shares the bounded recovered-route deadline, paused/stopped catalog rows use the
+  right resource-pool admission, and cancelled browser creation retains admitted receipts for
+  adoption or cleanup without reviving cancelled intent.
+- Browser design messages retain receive order; scripted download admission no longer queues
+  native tasks holding every incoming payload. Active-download policy is unchanged.
+- Local tmux recovery checks the whole session incarnation and current locked owner; stopped SSH
+  progress cannot print after the result, and TUI handoff preserves SSH sharing-option provenance.
+- Muse hook installation fails before settings changes if scripts cannot be written. OMP restore
+  retains required JavaScript runtimes, and implicit OAuth labels obey the server's UTF-16 limit.
+
 ### Important behavior and architecture changes
 
 - Upstream now discovers account-owned Macs across teams. **Supermux intentionally keeps
