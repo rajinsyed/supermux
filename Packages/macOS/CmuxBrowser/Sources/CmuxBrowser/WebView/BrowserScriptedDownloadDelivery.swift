@@ -8,33 +8,12 @@ enum BrowserScriptedDownloadDelivery {
         expectedToken: String?,
         isMainFrame: Bool,
         maximumDataURLCharacters: Int,
-        onDownload: @escaping @MainActor (URL, String?) -> Void,
-        onSubframeIntent: @escaping @MainActor (URL) -> Void,
-        onRejection: @escaping @MainActor (String) -> Void
+        onDownload: @MainActor (URL, String?) -> Void,
+        onSubframeIntent: @MainActor (URL) -> Void,
+        onRejection: @MainActor (String) -> Void
     ) {
         guard let body = body as? [String: Any] else { return }
-        Task { @MainActor in
-            deliver(
-                body: body,
-                expectedToken: expectedToken,
-                isMainFrame: isMainFrame,
-                maximumDataURLCharacters: maximumDataURLCharacters,
-                onDownload: onDownload,
-                onSubframeIntent: onSubframeIntent,
-                onRejection: onRejection
-            )
-        }
-    }
-
-    private static func deliver(
-        body: [String: Any],
-        expectedToken: String?,
-        isMainFrame: Bool,
-        maximumDataURLCharacters: Int,
-        onDownload: (URL, String?) -> Void,
-        onSubframeIntent: (URL) -> Void,
-        onRejection: (String) -> Void
-    ) {
+        // Admission and delivery finish in WebKit's actor turn: no pending payload queue.
         guard let token = body["token"] as? String,
               let expectedToken,
               token == expectedToken else {
