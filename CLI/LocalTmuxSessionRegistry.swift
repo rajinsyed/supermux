@@ -130,6 +130,52 @@ struct LocalTmuxSessionRegistry {
         }
     }
 
+    // SUPERMUX:begin runtime-ssh-tmux-atomic-rebind
+    func compareAndRebind(
+        id: UUID,
+        expectedBinding: LocalTmuxSessionBinding?,
+        name: String,
+        binding: LocalTmuxSessionBinding
+    ) throws -> LocalTmuxSessionRecord {
+        try ensureSecureStorage()
+        return try withLockedState { state in
+            guard let index = state.sessions.firstIndex(where: { $0.id == id }),
+                  state.sessions[index].tmuxBinding == expectedBinding,
+                  !state.sessions.contains(where: {
+                      $0.id != id && ($0.name == name || $0.tmuxBinding == binding)
+                  }) else {
+                throw LocalTmuxRegistryError.invalidState(sessionsURL.path)
+            }
+            if state.sessions[index].tmuxBinding != binding {
+                state.sessions[index].surfaceID = nil
+            }
+            state.sessions[index].name = name
+            state.sessions[index].tmuxBinding = binding
+            state.sessions[index].updatedAt = Date.now.timeIntervalSince1970
+            return state.sessions[index]
+        }
+    }
+
+    func recordLocation(
+        id: UUID,
+        expectedBinding: LocalTmuxSessionBinding,
+        socketPath: String,
+        cwd: String?
+    ) throws -> LocalTmuxSessionRecord {
+        try ensureSecureStorage()
+        return try withLockedState { state in
+            guard let index = state.sessions.firstIndex(where: { $0.id == id }),
+                  state.sessions[index].tmuxBinding == expectedBinding else {
+                throw LocalTmuxRegistryError.invalidState(sessionsURL.path)
+            }
+            state.sessions[index].socketPath = socketPath
+            if let cwd { state.sessions[index].cwd = cwd }
+            state.sessions[index].updatedAt = Date.now.timeIntervalSince1970
+            return state.sessions[index]
+        }
+    }
+    // SUPERMUX:end runtime-ssh-tmux-atomic-rebind
+
     /// Records where a session was last attached, on the record as it is
     /// now. Only attachment fields change, so a delayed attach cannot restore
     /// a name or binding the record has since moved away from. Returns

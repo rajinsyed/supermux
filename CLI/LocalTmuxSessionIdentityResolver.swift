@@ -57,13 +57,14 @@ struct LocalTmuxSessionIdentityResolver {
             throw identityChangedError(sessionName: record.name)
         }
 
-        var updated = record
-        updated.name = observed.name
-        updated.tmuxBinding = observed.binding
-        if updated != record {
-            updated.updatedAt = Date.now.timeIntervalSince1970
-            try registry.upsert(updated)
-        }
+        // SUPERMUX:begin runtime-ssh-tmux-bind-current-record
+        let updated = try registry.compareAndRebind(
+            id: record.id,
+            expectedBinding: record.tmuxBinding,
+            name: observed.name,
+            binding: observed.binding
+        )
+        // SUPERMUX:end runtime-ssh-tmux-bind-current-record
         return LiveSession(record: updated, binding: observed.binding)
     }
 
@@ -77,14 +78,14 @@ struct LocalTmuxSessionIdentityResolver {
     ) throws -> LiveSession {
         try ensureStopped(record)
 
-        var updated = record
-        updated.name = observed.name
-        updated.tmuxBinding = observed.binding
-        // A surface contains the old guarded attach command. Let the next
-        // attach discover or create a client for the new tmux binding.
-        updated.surfaceID = nil
-        updated.updatedAt = Date.now.timeIntervalSince1970
-        try registry.upsert(updated)
+        // SUPERMUX:begin runtime-ssh-tmux-rebind-current-record
+        let updated = try registry.compareAndRebind(
+            id: record.id,
+            expectedBinding: record.tmuxBinding,
+            name: observed.name,
+            binding: observed.binding
+        )
+        // SUPERMUX:end runtime-ssh-tmux-rebind-current-record
         return LiveSession(record: updated, binding: observed.binding)
     }
 
@@ -92,12 +93,16 @@ struct LocalTmuxSessionIdentityResolver {
     /// allowed to adopt a same-name replacement.
     func ensureStopped(_ record: LocalTmuxSessionRecord) throws {
         guard let storedBinding = record.tmuxBinding else { return }
-        guard try !hasSession(
+        // SUPERMUX:begin runtime-ssh-tmux-full-incarnation
+        guard try hasSession(
             arguments: builder.hasSessionArguments(sessionID: storedBinding.sessionID),
             sessionName: record.name
-        ) else {
+        ) else { return }
+        let observed = try observedSession(sessionID: storedBinding.sessionID, nameHint: record.name)
+        if observed.binding == storedBinding {
             throw identityChangedError(sessionName: record.name)
         }
+        // SUPERMUX:end runtime-ssh-tmux-full-incarnation
     }
 
     /// Returns the managed record for a listed session. A same-name session
