@@ -9,7 +9,10 @@ extension CMUXCLI {
         client: SocketClient,
         jsonOutput: Bool,
         idFormat: CLIIDFormat,
-        routeIdentifier: String? = nil
+        routeIdentifier: String? = nil,
+        // SUPERMUX:begin runtime-ssh-tmux-tui-pre-resolution-seam
+        preResolutionSSHOptions: [String]? = nil
+        // SUPERMUX:end runtime-ssh-tmux-tui-pre-resolution-seam
     ) throws {
         var params: [String: Any] = [
             "destination": options.destination,

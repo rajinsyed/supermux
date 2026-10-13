@@ -14,9 +14,11 @@ struct CMUXCLI {
     }
 }
 
+#if !RUNTIME_SSH_TMUX_TUI_HARNESS
 func cliRunProcess(_ process: Process) throws {
     throw CLIError(message: "Authentication is not exercised by this harness")
 }
+#endif
 
 func withRuntimeUnixAddress<T>(_ path: String, _ body: (UnsafePointer<sockaddr>, socklen_t) -> T) -> T {
     var address = sockaddr_un()
@@ -91,6 +93,7 @@ final class RuntimeSshTmuxProgressSocket: @unchecked Sendable {
     private let fd: Int32
     private let lock = NSLock()
     private var requestMethod: String?
+    private var requestParams: [String: Any] = [:]
     private var failure: String?
 
     init() throws {
@@ -114,6 +117,7 @@ final class RuntimeSshTmuxProgressSocket: @unchecked Sendable {
                 let request = try JSONSerialization.jsonObject(with: runtimeReadLine(connection)) as! [String: Any]
                 lock.lock()
                 requestMethod = request["method"] as? String
+                requestParams = request["params"] as? [String: Any] ?? [:]
                 lock.unlock()
                 Task { await requestReceived.signal() }
                 guard releaseReply.wait(timeout: .now() + 10) == .success else {
@@ -140,6 +144,12 @@ final class RuntimeSshTmuxProgressSocket: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return (requestMethod, failure)
+    }
+
+    func parameters() -> [String: Any] {
+        lock.lock()
+        defer { lock.unlock() }
+        return requestParams
     }
 
     func cleanup() {
