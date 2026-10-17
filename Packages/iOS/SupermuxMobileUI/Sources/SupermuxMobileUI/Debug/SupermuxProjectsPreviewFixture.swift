@@ -386,6 +386,8 @@ struct SupermuxPreviewMacClient: SupermuxMacCalling {
     func filesDuplicate(_ request: SupermuxFilesDuplicateRequest) async throws -> SupermuxFilesMutationResponse { try unavailable() }
     func filesTrash(_ request: SupermuxFilesTrashRequest) async throws -> SupermuxFilesMutationResponse { try unavailable() }
     func usageState(_ request: SupermuxUsageStateRequest) async throws -> SupermuxUsageStateDTO { try unavailable() }
+    func workspaceSetOrder(_ request: SupermuxWorkspaceSetOrderRequest) async throws -> SupermuxWorkspaceSetOrderResponse { try unavailable() }
+    func projectsSetOrder(_ request: SupermuxProjectsSetOrderRequest) async throws -> SupermuxProjectsSetOrderResponse { try unavailable() }
 }
 
 private struct SupermuxProjectsPreviewMacsKey: EnvironmentKey {

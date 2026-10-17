@@ -87,6 +87,18 @@ public protocol SupermuxMacCalling: Sendable {
         _ request: SupermuxProjectsSetSectionCollapsedRequest
     ) async throws -> SupermuxSectionCollapsedResponse
 
+    /// `mobile.supermux.workspace.set_order`: asks the Mac that owns a
+    /// workspace to give it a new shared order key and move it there
+    /// (``SupermuxMobileCapability/orderSyncV1``).
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func workspaceSetOrder(_ request: SupermuxWorkspaceSetOrderRequest) async throws -> SupermuxWorkspaceSetOrderResponse
+
+    /// `mobile.supermux.projects.set_order`: gives this Mac's copies of
+    /// projects new order stamps; each one is kept only when it is newer
+    /// (``SupermuxMobileCapability/orderSyncV1``).
+    /// - Parameter request: The typed request (owns the exact wire shape).
+    func projectsSetOrder(_ request: SupermuxProjectsSetOrderRequest) async throws -> SupermuxProjectsSetOrderResponse
+
     /// `mobile.supermux.preset.create`: appends a launchable terminal preset
     /// (the Mac assigns the identity).
     /// - Parameter request: The typed request (owns the exact wire shape).
