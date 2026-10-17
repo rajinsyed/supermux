@@ -50,6 +50,12 @@ public struct SupermuxProjectDTO: Codable, Sendable, Equatable {
     /// the project is not a git repo or has no origin. Other Macs match their
     /// own copy of the repo by ``gitRemoteIdentity``, never by path.
     public var gitRemoteURL: String?
+    /// This copy's order stamp (``SupermuxMobileCapability/orderSyncV1``):
+    /// every device shows projects by the newest stamp among a project's
+    /// copies. `nil` when the copy was never moved, or from a Mac that
+    /// predates shared order, and also when the stamp on the wire is
+    /// malformed: one bad stamp never fails the projects list.
+    public var order: SupermuxOrderStamp?
 
     /// Device-independent repository key derived from ``gitRemoteURL``.
     public var gitRemoteIdentity: String? { SupermuxGitRemoteIdentity.normalized(gitRemoteURL) }
@@ -73,6 +79,7 @@ public struct SupermuxProjectDTO: Codable, Sendable, Equatable {
     ///   - configPath: Optional relative path of the managing `config.json`
     ///     (the read-only marker for the config-owned fields).
     ///   - gitRemoteURL: Optional `origin` URL of the project's repo.
+    ///   - order: Optional order stamp of this copy.
     public init(
         id: String,
         name: String,
@@ -90,7 +97,8 @@ public struct SupermuxProjectDTO: Codable, Sendable, Equatable {
         createdAt: Double? = nil,
         lastOpenedAt: Double? = nil,
         configPath: String? = nil,
-        gitRemoteURL: String? = nil
+        gitRemoteURL: String? = nil,
+        order: SupermuxOrderStamp? = nil
     ) {
         self.id = id
         self.name = name
@@ -109,6 +117,32 @@ public struct SupermuxProjectDTO: Codable, Sendable, Equatable {
         self.lastOpenedAt = lastOpenedAt
         self.configPath = configPath
         self.gitRemoteURL = gitRemoteURL
+        self.order = order
+    }
+
+    /// Decodes a project row. Every field decodes as the synthesized decoder
+    /// would, except ``order``, which degrades to `nil` when malformed.
+    /// A field added to this type must be decoded here too.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        rootPath = try container.decode(String.self, forKey: .rootPath)
+        colorHex = try container.decodeIfPresent(String.self, forKey: .colorHex)
+        iconSymbol = try container.decodeIfPresent(String.self, forKey: .iconSymbol)
+        hasCustomIcon = try container.decodeIfPresent(Bool.self, forKey: .hasCustomIcon)
+        iconETag = try container.decodeIfPresent(String.self, forKey: .iconETag)
+        defaultBranch = try container.decodeIfPresent(String.self, forKey: .defaultBranch)
+        worktreesDirName = try container.decodeIfPresent(String.self, forKey: .worktreesDirName)
+        runCommands = try container.decodeIfPresent([String].self, forKey: .runCommands)
+        setupCommands = try container.decodeIfPresent([String].self, forKey: .setupCommands)
+        teardownCommands = try container.decodeIfPresent([String].self, forKey: .teardownCommands)
+        actions = try container.decodeIfPresent([SupermuxProjectActionDTO].self, forKey: .actions)
+        createdAt = try container.decodeIfPresent(Double.self, forKey: .createdAt)
+        lastOpenedAt = try container.decodeIfPresent(Double.self, forKey: .lastOpenedAt)
+        configPath = try container.decodeIfPresent(String.self, forKey: .configPath)
+        gitRemoteURL = try container.decodeIfPresent(String.self, forKey: .gitRemoteURL)
+        order = (try? container.decodeIfPresent(SupermuxOrderStamp.self, forKey: .order)) ?? nil
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -129,5 +163,6 @@ public struct SupermuxProjectDTO: Codable, Sendable, Equatable {
         case lastOpenedAt = "last_opened_at"
         case configPath = "config_path"
         case gitRemoteURL = "git_remote_url"
+        case order
     }
 }

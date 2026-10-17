@@ -107,6 +107,14 @@ public enum SupermuxMobileCapability: String, CaseIterable, Codable, Sendable, E
     /// directories.
     case agentAttachmentsV1 = "supermux.agent_attachments.v1"
 
+    /// Workspace and project order is shared across the user's Macs and the
+    /// phone: this Mac's workspace rows carry `supermux_order_key`, its
+    /// `projects.list` rows carry `order` stamps, it serves
+    /// ``SupermuxMobileMethod/workspaceSetOrder`` and
+    /// ``SupermuxMobileMethod/projectsSetOrder``, and it places other Macs'
+    /// mirrors by their keys.
+    case orderSyncV1 = "supermux.order_sync.v1"
+
     /// Every capability, in declaration order (derived from `CaseIterable`).
     public static let all: [SupermuxMobileCapability] = SupermuxMobileCapability.allCases
 }

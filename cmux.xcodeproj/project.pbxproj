@@ -3806,6 +3806,7 @@
 		50BE000100000000000000FE /* SupermuxUsageMenuButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000FD /* SupermuxUsageMenuButton.swift */; };
 		50BE0019050000000000001E /* SupermuxWorkerQuitForwarding.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE0019050000000000001D /* SupermuxWorkerQuitForwarding.swift */; };
 		50BE000100000000000000B7 /* SupermuxWorkspaceActivityResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000B6 /* SupermuxWorkspaceActivityResolver.swift */; };
+		A481E7BC0C38A9C261EE8542 /* SupermuxWorkspaceOrderExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CF81F66F7A3311629F4767F /* SupermuxWorkspaceOrderExport.swift */; };
 		50BE000100000000000000FC /* SupermuxWorkspaceReorderStepping.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000FB /* SupermuxWorkspaceReorderStepping.swift */; };
 		50BE000100000000000000E5 /* SupermuxWorkspaceSwitcherCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000D5 /* SupermuxWorkspaceSwitcherCard.swift */; };
 		50BE000100000000000000E9 /* SupermuxWorkspaceSwitcherController+Items.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50BE000100000000000000D9 /* SupermuxWorkspaceSwitcherController+Items.swift */; };
@@ -8493,6 +8494,7 @@
 		50BE000100000000000000FD /* SupermuxUsageMenuButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxUsageMenuButton.swift; sourceTree = "<group>"; };
 		50BE0019050000000000001D /* SupermuxWorkerQuitForwarding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxWorkerQuitForwarding.swift; sourceTree = "<group>"; };
 		50BE000100000000000000B6 /* SupermuxWorkspaceActivityResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxWorkspaceActivityResolver.swift; sourceTree = "<group>"; };
+		6CF81F66F7A3311629F4767F /* SupermuxWorkspaceOrderExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Order/SupermuxWorkspaceOrderExport.swift; sourceTree = "<group>"; };
 		50BE000100000000000000FB /* SupermuxWorkspaceReorderStepping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxWorkspaceReorderStepping.swift; sourceTree = "<group>"; };
 		50BE000100000000000000D5 /* SupermuxWorkspaceSwitcherCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupermuxWorkspaceSwitcherCard.swift; sourceTree = "<group>"; };
 		50BE000100000000000000D9 /* SupermuxWorkspaceSwitcherController+Items.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SupermuxWorkspaceSwitcherController+Items.swift"; sourceTree = "<group>"; };
@@ -10035,6 +10037,7 @@
 				7C0AA9E2F81A1C9AE0C73ACB /* SupermuxDevicePowerSocketCommands.swift */,
 				E0A08551142253F11ED7948B /* SupermuxLinkDiagnosticsReport.swift */,
 				C1AE2C7CC8597CA35A453FFB /* SupermuxMirrorInputHold.swift */,
+				6CF81F66F7A3311629F4767F /* SupermuxWorkspaceOrderExport.swift */,
 			);
 			name = Supermux;
 			path = Supermux;
@@ -17339,6 +17342,7 @@
 				50BE000100000000000000FE /* SupermuxUsageMenuButton.swift in Sources */,
 				50BE0019050000000000001E /* SupermuxWorkerQuitForwarding.swift in Sources */,
 				50BE000100000000000000B7 /* SupermuxWorkspaceActivityResolver.swift in Sources */,
+				A481E7BC0C38A9C261EE8542 /* SupermuxWorkspaceOrderExport.swift in Sources */,
 				50BE000100000000000000FC /* SupermuxWorkspaceReorderStepping.swift in Sources */,
 				50BE000100000000000000E5 /* SupermuxWorkspaceSwitcherCard.swift in Sources */,
 				50BE000100000000000000E9 /* SupermuxWorkspaceSwitcherController+Items.swift in Sources */,

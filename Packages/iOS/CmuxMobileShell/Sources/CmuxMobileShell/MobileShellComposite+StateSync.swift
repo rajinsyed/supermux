@@ -414,7 +414,8 @@ extension MobileShellComposite {
                 supermuxActivity: record.supermuxActivity,
                 supermuxBranch: record.supermuxBranch,
                 supermuxUnreadCount: record.supermuxUnreadCount,
-                supermuxUnreadPanelIDs: record.supermuxUnreadPanelIDs
+                supermuxUnreadPanelIDs: record.supermuxUnreadPanelIDs,
+                supermuxOrderKey: record.supermuxOrderKey
                 // SUPERMUX:end supermux-mobile-workspace-fields
             )
         }

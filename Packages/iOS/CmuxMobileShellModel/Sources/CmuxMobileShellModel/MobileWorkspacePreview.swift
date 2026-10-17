@@ -149,6 +149,9 @@ public struct MobileWorkspacePreview: Identifiable, Equatable, Sendable {
     public var supermuxShouldUseLegacyWorkspaceReadReceiptOnOpen: Bool {
         hasUnread && supermuxUnreadPanelIDs == nil
     }
+    /// The workspace's shared order key, written only by the Mac that owns it;
+    /// `nil` from a Mac that predates shared order. The phone sorts by it.
+    public var supermuxOrderKey: String? = nil
     // SUPERMUX:end supermux-mobile-workspace-fields
 
     /// The workspace id to use in RPC params.
