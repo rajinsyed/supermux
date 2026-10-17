@@ -50,11 +50,14 @@ import Testing
         #expect(SupermuxMobileCapability.terminalStreamV2.rawValue == "supermux.terminal_stream.v2")
         #expect(SupermuxMobileCapability.routeCandidatesV1.rawValue == "supermux.route_candidates.v1")
         #expect(SupermuxMobileCapability.agentAttachmentsV1.rawValue == "supermux.agent_attachments.v1")
+        // A typo would make every device treat a capable Mac as an old one:
+        // no keys read, no set_order sent.
+        #expect(SupermuxMobileCapability.orderSyncV1.rawValue == "supermux.order_sync.v1")
     }
 
     @Test func allExposesEveryCapabilityExactlyOnce() {
         #expect(SupermuxMobileCapability.all == SupermuxMobileCapability.allCases)
-        #expect(SupermuxMobileCapability.all.count == 29)
-        #expect(Set(SupermuxMobileCapability.all).count == 29)
+        #expect(SupermuxMobileCapability.all.count == 30)
+        #expect(Set(SupermuxMobileCapability.all).count == 30)
     }
 }

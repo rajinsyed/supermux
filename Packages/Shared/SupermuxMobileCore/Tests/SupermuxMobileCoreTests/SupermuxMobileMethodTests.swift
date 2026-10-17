@@ -80,11 +80,15 @@ import Testing
         "mobile.supermux.terminal.action",
         // Routes
         "mobile.supermux.route.candidates",
+        // Shared order: a typo here would make the owner Mac answer
+        // method_not_found, and every mirror drag or phone drag would snap back.
+        "mobile.supermux.workspace.set_order",
+        "mobile.supermux.projects.set_order",
     ]
 
     @Test func allExposesEveryMethodExactlyOnce() {
         #expect(SupermuxMobileMethod.all.map(\.rawValue) == Self.expectedRawValues)
-        #expect(SupermuxMobileMethod.all.count == 62)
+        #expect(SupermuxMobileMethod.all.count == 64)
         #expect(Set(SupermuxMobileMethod.all).count == SupermuxMobileMethod.all.count)
     }
 
