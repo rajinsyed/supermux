@@ -21,6 +21,14 @@ extension SupermuxComposition {
         index: deviceWorkspaceIndex
     )
 
+    /// Shared project order: the sidebar's project mover and stamp adoption.
+    static let projectOrderSync = SupermuxProjectOrderSync(
+        projectsModel: projectsModel,
+        unifiedProjects: unifiedProjects,
+        devices: devices,
+        origin: orderOrigin
+    )
+
     /// Folder probe and `git clone` for cross-Mac project setup.
     static let projectSetupService = SupermuxProjectSetupService()
 
@@ -48,11 +56,12 @@ extension SupermuxComposition {
 enum SupermuxProjectsGlue {
     private static var isActive = false
 
-    /// Starts the remote-projects model, the unified list and project sync.
-    /// Later calls are no-ops.
+    /// Starts the remote-projects model, shared project order, the unified
+    /// list and project sync. Later calls are no-ops.
     static func activateIfNeeded() {
         guard !isActive else { return }
         isActive = true
+        SupermuxComposition.projectOrderSync.install()
         SupermuxComposition.remoteProjects.start()
         SupermuxComposition.unifiedProjects.start()
         SupermuxComposition.projectSync.start()

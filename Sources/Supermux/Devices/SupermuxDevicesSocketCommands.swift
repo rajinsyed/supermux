@@ -38,7 +38,7 @@ import SupermuxKit
 /// impairment (``SupermuxDeviceLinkImpairmentSocketCommands``), the `route.*` link route and
 /// direct-address drivers (``SupermuxDeviceRouteSocketCommands``), the `power.*` sleep / wake drivers
 /// (``SupermuxDevicePowerSocketCommands``), the `order_state` / `order_key_between` /
-/// `order_debug` shared-order drivers (``SupermuxOrderSocketCommands``), and the `new_worktree.*` New Worktree
+/// `order_debug` / `project_move` shared-order drivers (``SupermuxOrderSocketCommands``), and the `new_worktree.*` New Worktree
 /// sheet drivers (`SupermuxNewWorktreeSocketCommands`). `list` reports each device's `route`.
 @MainActor
 enum SupermuxDevicesSocketCommands {

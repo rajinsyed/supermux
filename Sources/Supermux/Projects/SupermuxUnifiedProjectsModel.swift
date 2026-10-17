@@ -49,6 +49,10 @@ final class SupermuxUnifiedProjectsModel {
     private(set) var mirroredRefs: Set<SupermuxRemoteWorkspaceRef> = []
     /// Local mirror workspace id → its remote record's branch and whether it is keyed.
     private(set) var mirrorRemoteFields: [UUID: MirrorRemoteFields] = [:]
+    /// Called with each freshly merged list, also when it came out unchanged
+    /// (this Mac's copy may have lost a stamp the merged project still has):
+    /// shared project order adopts newer stamps here (``SupermuxProjectOrderSync``).
+    @ObservationIgnored var onMerge: (@MainActor (SupermuxUnifiedProjectList) -> Void)?
 
     @ObservationIgnored private let projectsModel: SupermuxProjectsModel
     @ObservationIgnored private let gitRemotes: SupermuxProjectGitRemotes
@@ -130,10 +134,12 @@ final class SupermuxUnifiedProjectsModel {
         }
         let remotes = input.devices.map { SupermuxUnifiedProjects.DeviceProjects(device: $0.device, projects: $0.projects) }
         let next = SupermuxUnifiedProjects.merge(local: locals, devices: remotes)
-        guard next != list else { return }
-        list = next
-        let remoteOnly = next.projects.contains(where: \.isRemoteOnly)
-        if remoteOnly != hasRemoteOnlyProjects { hasRemoteOnlyProjects = remoteOnly }
+        if next != list {
+            list = next
+            let remoteOnly = next.projects.contains(where: \.isRemoteOnly)
+            if remoteOnly != hasRemoteOnlyProjects { hasRemoteOnlyProjects = remoteOnly }
+        }
+        onMerge?(next)
     }
 
     // MARK: - Mirrors

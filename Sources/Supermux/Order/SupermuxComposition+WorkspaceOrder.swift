@@ -6,6 +6,10 @@ import SupermuxKit
 /// phone, built once, on first use, with their dependencies injected.
 @MainActor
 extension SupermuxComposition {
+    /// This Mac in shared order: the seed of its first workspace keys and the
+    /// origin of its project order stamps, `mac:<device>@<tag>`.
+    static let orderOrigin = "mac:\(MobileHostIdentity.deviceID().lowercased())@\(MobileHostIdentity.instanceTag())"
+
     /// The order key of every workspace this Mac owns (this app's defaults domain).
     static let workspaceOrderStore = SupermuxWorkspaceOrderStore(defaults: .standard)
 
@@ -18,7 +22,7 @@ extension SupermuxComposition {
         devices: devices,
         index: deviceWorkspaceIndex,
         outbox: mirrorOrderOutbox,
-        origin: "mac:\(MobileHostIdentity.deviceID().lowercased())@\(MobileHostIdentity.instanceTag())"
+        origin: orderOrigin
     )
 
     /// The owner's side of `mobile.supermux.workspace.set_order`.

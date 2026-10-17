@@ -158,10 +158,7 @@ extension TerminalController {
             case .failure(let refusal): return .err(code: refusal.code, message: refusal.message, data: nil)
             }
         case .projectsSetOrder:
-            // Project order stamps are not served yet.
-            return .err(code: "unavailable", message: "Shared project order is not served by this Mac yet", data: [
-                "method": method
-            ])
+            return await v2SupermuxProjectsSetOrder(params: params)
         default:
             return .err(code: "method_not_found", message: "Unknown mobile method", data: [
                 "method": method

@@ -15,9 +15,13 @@ import SupermuxMobileCore
 /// - `order_debug {mode: normal | paused | old_host}`: `paused` stops the
 ///   reconciler; `old_host` also withholds the capability, the key export and
 ///   `set_order` (takes effect for peers on the link's next connection).
+/// - `project_move {project_id, over_project_id}`: moves a project the way the
+///   sidebar does (``SupermuxProjectsModel/moveProject(_:over:)``, the shared
+///   order mover); the ids are the sidebar's unified project ids, which are
+///   this Mac's own ids for its projects.
 @MainActor
 enum SupermuxOrderSocketCommands {
-    static let methods: Set<String> = ["order_state", "order_key_between", "order_debug"]
+    static let methods: Set<String> = ["order_state", "order_key_between", "order_debug", "project_move"]
 
     struct HookError: LocalizedError {
         let message: String
@@ -47,9 +51,19 @@ enum SupermuxOrderSocketCommands {
             }
             reconciler.setMode(mode)
             return ["mode": mode.rawValue]
+        case "project_move":
+            guard let dragged = uuid(params["project_id"]), let over = uuid(params["over_project_id"]) else {
+                throw HookError(message: "project_id and over_project_id must be project UUIDs")
+            }
+            SupermuxComposition.projectsModel.moveProject(dragged, over: over)
+            return ["project_id": dragged.uuidString, "over_project_id": over.uuidString]
         default:
             throw HookError(message: "unknown order method \(name)")
         }
+    }
+
+    private static func uuid(_ value: Any?) -> UUID? {
+        (value as? String).flatMap { UUID(uuidString: $0.trimmingCharacters(in: .whitespacesAndNewlines)) }
     }
 
     private static func state(_ reconciler: SupermuxWorkspaceOrderReconciler) -> [String: Any] {
