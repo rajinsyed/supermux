@@ -215,7 +215,11 @@ import Testing
     @Test func anUnhintedMirrorMoveIsNeverSent() {
         let before = [own("A", "a0"), mirror("M", "a1"), own("B", "a2")]
         let after = [before[1], before[0], before[2]]
-        #expect(plan(baseline: before, rows: after).isEmpty)
+        // Without a hint this is ambiguous: A may have moved down past M (a missed
+        // entry point, 1). Keeping the tabs as shown re-keys A, never sends M.
+        let result = plan(baseline: before, rows: after)
+        #expect(result.mirrorKeys.isEmpty)
+        #expect(isAscending(applying(result, to: after)))
     }
 
     @Test func aProgrammaticMirrorMoveIsNeverSentEvenWhenHinted() {
