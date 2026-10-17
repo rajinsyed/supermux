@@ -1,4 +1,5 @@
 public import Foundation
+public import SupermuxMobileCore
 
 /// The merged project list plus the lookups nesting needs: which unified
 /// project owns a remote workspace record's `supermux_project_id` on a given
@@ -33,6 +34,13 @@ public struct SupermuxUnifiedProjectList: Hashable, Sendable {
 
     /// Whether no Mac has any project.
     public var isEmpty: Bool { projects.isEmpty }
+
+    /// The projects in the shared order every device shows: stamped projects
+    /// by their ``SupermuxUnifiedProject/order``, then the unstamped ones in
+    /// ``projects`` order (local first, then remote-only).
+    public var sharedOrder: [SupermuxUnifiedProject] {
+        SupermuxProjectOrder().sorted(projects, stamp: \.order)
+    }
 
     /// The projects no copy of which is on this Mac, in display order.
     public var remoteOnly: [SupermuxUnifiedProject] { projects.filter(\.isRemoteOnly) }

@@ -1,4 +1,5 @@
 public import Foundation
+public import SupermuxMobileCore
 
 /// One project row in the Mac sidebar, merged across Macs: this Mac's copy
 /// (if any) plus every device's copy of the same repository.
@@ -21,6 +22,11 @@ public struct SupermuxUnifiedProject: Identifiable, Hashable, Sendable {
     public let gitRemoteIdentity: String?
     /// Every copy: this Mac first, then devices in device order.
     public let locations: [SupermuxProjectLocation]
+    /// The project's effective place in the shared order: the stamp that wins
+    /// among its copies' stamps (``SupermuxOrderStamp/wins(over:)``), or
+    /// `nil` while no copy is stamped. Every device sorts by it
+    /// (``SupermuxUnifiedProjectList/sharedOrder``).
+    public let order: SupermuxOrderStamp?
 
     /// Creates a unified project.
     public init(
@@ -29,7 +35,8 @@ public struct SupermuxUnifiedProject: Identifiable, Hashable, Sendable {
         colorHex: String?,
         iconSymbol: String?,
         gitRemoteIdentity: String?,
-        locations: [SupermuxProjectLocation]
+        locations: [SupermuxProjectLocation],
+        order: SupermuxOrderStamp? = nil
     ) {
         self.id = id
         self.name = name
@@ -37,6 +44,7 @@ public struct SupermuxUnifiedProject: Identifiable, Hashable, Sendable {
         self.iconSymbol = iconSymbol
         self.gitRemoteIdentity = gitRemoteIdentity
         self.locations = locations
+        self.order = order
     }
 
     /// This Mac's copy, if any.

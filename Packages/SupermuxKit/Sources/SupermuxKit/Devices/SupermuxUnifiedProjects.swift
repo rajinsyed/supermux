@@ -14,6 +14,9 @@ public import SupermuxMobileCore
 /// A local project takes at most one project per device. Everything left on a
 /// device becomes a remote-only project. Order: local projects in their own
 /// order, then remote-only projects grouped by device (input order), by name.
+/// That is the fallback for projects no device has stamped yet; each merged
+/// project carries the winning stamp of its copies as its shared order
+/// (``SupermuxUnifiedProject/order``, ``SupermuxUnifiedProjectList/sharedOrder``).
 ///
 /// ```swift
 /// let list = SupermuxUnifiedProjects.merge(local: locals, devices: remotes)
@@ -48,6 +51,7 @@ public enum SupermuxUnifiedProjects {
     /// Merges the inputs (see the type docs for the rules).
     public static func merge(local: [LocalProject], devices: [DeviceProjects]) -> SupermuxUnifiedProjectList {
         var remoteLocations = Array(repeating: [SupermuxProjectLocation](), count: local.count)
+        var remoteOrders = Array(repeating: [SupermuxOrderStamp](), count: local.count)
         var remoteOnly: [SupermuxUnifiedProject] = []
         let localIdentityCounts = occurrences(local.compactMap(\.gitRemoteIdentity))
         for entry in devices {
@@ -62,6 +66,7 @@ public enum SupermuxUnifiedProjects {
                 )
                 if let localIndex = matches[index] {
                     remoteLocations[localIndex].append(location)
+                    if let order = remote.dto.order { remoteOrders[localIndex].append(order) }
                 } else {
                     unmatched.append(SupermuxUnifiedProject(
                         id: remoteOnlyID(machineID: entry.device.machineID, projectID: remote.id),
@@ -69,7 +74,8 @@ public enum SupermuxUnifiedProjects {
                         colorHex: remote.dto.colorHex,
                         iconSymbol: remote.dto.iconSymbol,
                         gitRemoteIdentity: remote.dto.gitRemoteIdentity,
-                        locations: [location]
+                        locations: [location],
+                        order: newest([remote.dto.order].compactMap { $0 })
                     ))
                 }
             }
@@ -86,7 +92,8 @@ public enum SupermuxUnifiedProjects {
                     place: .thisMac,
                     projectID: entry.project.id,
                     rootPath: entry.project.rootPath
-                )] + remoteLocations[index]
+                )] + remoteLocations[index],
+                order: newest([entry.project.order].compactMap { $0 } + remoteOrders[index])
             )
         }
         return SupermuxUnifiedProjectList(projects: merged + remoteOnly)
@@ -156,6 +163,12 @@ public enum SupermuxUnifiedProjects {
             claimed.insert(localIndex)
         }
         return result
+    }
+
+    /// The stamp that wins among a project's copies; a stamp that is not
+    /// valid never wins.
+    private static func newest(_ stamps: [SupermuxOrderStamp]) -> SupermuxOrderStamp? {
+        stamps.reduce(nil as SupermuxOrderStamp?) { best, stamp in stamp.wins(over: best) ? stamp : best }
     }
 
     private static func conflicting(_ lhs: String?, _ rhs: String?) -> Bool {
