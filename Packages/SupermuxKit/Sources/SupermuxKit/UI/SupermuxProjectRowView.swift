@@ -290,9 +290,10 @@ public struct SupermuxProjectRowView: View, Equatable {
             projectRow
             // Live workspaces for this project are always nested under it
             // (piggycode-style); selecting one focuses it, and they can be
-            // dragged to reorder within this project — among this Mac's rows,
-            // or among one Mac's mirrors (the host keeps those groups apart).
-            let siblingIdsByMac = Dictionary(grouping: openWorkspaces, by: { $0.device?.machineID ?? "" })
+            // dragged to reorder within this project — within the shared order
+            // (this Mac's rows and keyed mirrors together, so a row can pass
+            // other Macs' rows), or within one older Mac's unkeyed mirrors.
+            let siblingIdsByOrderGroup = Dictionary(grouping: openWorkspaces, by: \.orderGroup)
                 .mapValues { Set($0.map(\.id)) }
             ForEach(openWorkspaces) { workspace in
                 SupermuxOpenWorkspaceRowView(
@@ -306,7 +307,7 @@ public struct SupermuxProjectRowView: View, Equatable {
                         draggingWorkspaceId = workspace.id
                         return NSItemProvider(object: workspace.id.uuidString as NSString)
                     },
-                    siblingWorkspaceIds: siblingIdsByMac[workspace.device?.machineID ?? ""] ?? [],
+                    siblingWorkspaceIds: siblingIdsByOrderGroup[workspace.orderGroup] ?? [],
                     reorder: actions.reorderWorkspace,
                     draggingWorkspaceId: $draggingWorkspaceId,
                     mirrorMenu: { remoteActions.mirrorMenu(workspace.id) }

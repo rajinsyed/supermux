@@ -149,6 +149,9 @@ enum SupermuxProjectsSocketPayloads {
             // The Mac icon `SupermuxOpenWorkspaceRowView` draws, and where.
             "device_icon": row.device.map(deviceIcon(for:)) ?? NSNull(),
             "device_icon_placement": row.deviceIconPlacement.map(placementName) ?? NSNull(),
+            // The block the row sorts and drags within: "ordered" (the shared
+            // order), else the machine id of an older Mac's unkeyed mirror.
+            "order_group": row.orderGroup,
         ]
     }
 
