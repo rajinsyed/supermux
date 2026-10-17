@@ -465,7 +465,7 @@ struct WorkspaceListView: View {
         let actions = supermuxProjects.actions
         return SupermuxProjectsListLayout(
             section: supermuxProjects.snapshot,
-            workspaces: workspaces,
+            workspaces: supermuxOrderedWorkspaces,
             scope: SupermuxProjectsListScope(
                 query: trimmedQuery,
                 filter: filter,
@@ -481,10 +481,18 @@ struct WorkspaceListView: View {
         #endif
     }
 
+    /// The shell's rows in the order every Mac shares (each owner Mac's
+    /// order keys; unchanged without keys or under Recent Activity), which
+    /// upstream's stable pinned-first pass and group items keep.
+    private var supermuxOrderedWorkspaces: [MobileWorkspacePreview] {
+        SupermuxPhoneWorkspaceOrder().loose(workspaces, groups: groupsByID, mode: workspaceSortMode)
+    }
+
     private var supermuxFlatWorkspaces: [MobileWorkspacePreview] {
         #if os(iOS)
         let nested = supermuxProjectsLayout.nestedWorkspaceIDs
-        return nested.isEmpty ? workspaces : workspaces.filter { !nested.contains($0.id) }
+        let ordered = supermuxOrderedWorkspaces
+        return nested.isEmpty ? ordered : ordered.filter { !nested.contains($0.id) }
         #else
         return workspaces.supermuxFlatRows(hidingProjectIDs: supermuxShownProjectIDs)
         #endif

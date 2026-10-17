@@ -102,6 +102,10 @@ public final class SupermuxProjectsSectionModel {
     /// Nested rows the user dragged, shown moved until their Mac answers.
     public let nestedReorder = SupermuxNestedReorderModel()
 
+    /// Who this phone is when it mints an order key (`phone:<id>`); used only
+    /// when no key is known at all.
+    @ObservationIgnored let orderOrigin = "phone:\(UUID().uuidString)"
+
     /// The open workspaces the shell last reported (project-associated only).
     private var workspaceRows: [SupermuxProjectWorkspaceRowSnapshot] = []
 
