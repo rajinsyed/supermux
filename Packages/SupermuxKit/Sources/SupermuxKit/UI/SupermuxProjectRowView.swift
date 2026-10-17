@@ -135,8 +135,9 @@ public struct SupermuxProjectDropDelegate: DropDelegate {
 }
 
 /// Applies the reorder drop target only when a delegate is supplied, so rows
-/// rendered without drag wiring (previews, tests) stay inert.
-private struct SupermuxProjectReorderDrop: ViewModifier {
+/// rendered without drag wiring (previews, tests) stay inert. Shared by local
+/// and remote-only project rows.
+struct SupermuxProjectReorderDrop: ViewModifier {
     let delegate: SupermuxProjectDropDelegate?
 
     func body(content: Content) -> some View {

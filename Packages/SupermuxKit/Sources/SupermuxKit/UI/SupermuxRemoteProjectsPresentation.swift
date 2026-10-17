@@ -80,7 +80,9 @@ public struct SupermuxRemoteProjectRow: Identifiable {
 /// Everything the Projects section renders about other Macs, built by the
 /// host each render from its remote-projects model.
 public struct SupermuxRemoteProjectsPresentation {
-    /// Remote-only project rows, after the local projects.
+    /// Remote-only project rows in their fallback order (by device, then by
+    /// name). The section interleaves them with the local projects in the
+    /// shared order (``SupermuxProjectsSectionOrder``).
     public var rows: [SupermuxRemoteProjectRow]
     /// Device extras for local projects that also exist on other Macs.
     public var extrasByLocalProjectID: [UUID: SupermuxProjectRemoteExtras]
@@ -112,5 +114,23 @@ public struct SupermuxRemoteProjectsPresentation {
     /// No other Macs.
     public static var empty: SupermuxRemoteProjectsPresentation {
         SupermuxRemoteProjectsPresentation(rows: [], extrasByLocalProjectID: [:], actions: .inert)
+    }
+
+    /// A Projects section row's place in the shared order: the stamp that
+    /// wins among its project's copies, or `nil` while none is stamped.
+    ///
+    /// A local project weighs its own copy's stamp against the merged one, so
+    /// a move this Mac just made counts before the merge catches up, and a
+    /// newer stamp from another Mac counts before this Mac adopts it.
+    /// - Parameter item: The row.
+    /// - Returns: The row's effective stamp.
+    public func effectiveOrder(of item: SupermuxProjectsSectionOrder.Item) -> SupermuxOrderStamp? {
+        switch item {
+        case .local(let project):
+            let merged = extrasByLocalProjectID[project.id]?.project.order
+            return merged?.wins(over: project.order) == true ? merged : project.order
+        case .remote(let row):
+            return row.project.order
+        }
     }
 }

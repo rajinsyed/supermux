@@ -105,22 +105,28 @@ enum SupermuxProjectsSocketPayloads {
         ]
     }
 
-    /// The window's sidebar rows as drawn: the Projects section's nested rows
-    /// per project in display order (the mount's own builder), and the
-    /// directory line of every flat-list row (the flat rows' own snapshot).
+    /// The window's sidebar rows as drawn: every Projects section row in the
+    /// order the section draws it (local and remote-only projects in the
+    /// shared order, ``SupermuxProjectsSectionOrder``) with its nested rows
+    /// (the mount's own builder), and the directory line of every flat-list
+    /// row (the flat rows' own snapshot).
     static func sidebarRows(for tabManager: TabManager) -> [String: Any] {
         let unread = TerminalNotificationStore.shared.sidebarUnread
         let rows = SupermuxNestedWorkspaceRows.rows(
             for: tabManager,
             unreadCount: { unread.unreadCount(forWorkspaceId: $0) }
         )
-        var projectOrder: [UUID] = []
         var rowsByProject: [UUID: [SupermuxOpenWorkspace]] = [:]
         for row in rows {
             guard let projectId = row.projectId else { continue }
-            if rowsByProject[projectId] == nil { projectOrder.append(projectId) }
             rowsByProject[projectId, default: []].append(row)
         }
+        let remote = SupermuxRemoteProjectsPresenter.presentation(for: tabManager)
+        let drawn = SupermuxProjectsSectionOrder().items(
+            locals: SupermuxComposition.projectsModel.projects,
+            remotes: remote.rows,
+            stamp: remote.effectiveOrder(of:)
+        )
         let settings = SidebarTabItemSettingsSnapshot()
         let flat = SupermuxMainListFilter.tabsForMainList(tabManager.tabs, tabManager: tabManager)
         return [
@@ -129,8 +135,12 @@ enum SupermuxProjectsSocketPayloads {
             "font_scale": SidebarTabItemFontScale.scale(for: SupermuxSidebarFontScaleStore.currentSidebarFontSize()),
             // What each window's mounted Projects section draws at right now.
             "drawn_font_scales": SupermuxSidebarFontScaleStore.mountedFontScales.map(Double.init),
-            "projects": projectOrder.map { id -> [String: Any] in
-                ["project_id": id.uuidString, "rows": (rowsByProject[id] ?? []).map(nestedRow)]
+            "projects": drawn.map { item -> [String: Any] in
+                [
+                    "project_id": item.id.uuidString,
+                    "kind": item.isRemoteOnly ? "remote_only" : "local",
+                    "rows": (rowsByProject[item.id] ?? []).map(nestedRow),
+                ]
             },
             "flat": flat.map { flatRow($0, settings: settings) },
         ]

@@ -1,36 +1,47 @@
 import AppKit
 import SwiftUI
 
-/// The Projects section's other-Mac parts: remote-only project rows (after
-/// the local projects), a device worktree load on expansion (a backstop: every
-/// refresh already loads them), and the "Set Up on <Mac>…" sheet.
+/// The Projects section's other-Mac parts: remote-only project rows (drawn
+/// among the local projects in the shared order), a device worktree load on
+/// expansion (a backstop: every refresh already loads them), and the
+/// "Set Up on <Mac>…" sheet.
 extension SupermuxProjectsSectionView {
-    /// Remote-only projects, each with the mirrors it owns nested under it.
-    @ViewBuilder
-    func remoteProjectRows(grouped: [UUID: [SupermuxOpenWorkspace]]) -> some View {
-        ForEach(remote.rows) { row in
-            SupermuxRemoteProjectRowView(
-                row: row,
-                openWorkspaces: grouped[row.id] ?? [],
-                isExpanded: expandedRemoteProjectIds.contains(row.id),
-                actions: remote.actions,
-                toggleExpanded: { toggleRemoteExpanded(row) },
-                newWorktree: { presentNewWorktree(forRemote: row) },
-                setUp: { destination in
-                    projectSetupTarget = SupermuxProjectSetupTarget(
-                        projectName: row.project.name,
-                        destination: destination,
-                        defaultPath: row.location.rootPath,
-                        remoteURL: row.remoteURL
-                    )
-                },
-                selectWorkspace: onSelectWorkspace,
-                closeWorkspace: onCloseWorkspace,
-                renameWorkspace: { promptRenameWorkspace(id: $0) },
-                pendingWorktrees: pendingRows(for: row.id),
-                pendingActions: pendingActions
-            )
-        }
+    /// A remote-only project with the mirrors it owns nested under it. It
+    /// drags and takes drops like a local project row; a drop sends the move
+    /// to the Macs that hold it.
+    /// - Parameters:
+    ///   - row: The remote-only project.
+    ///   - grouped: The nested rows by unified project id.
+    ///   - baseOrder: The drawn order without a drag preview.
+    func remoteProjectRow(
+        _ row: SupermuxRemoteProjectRow,
+        grouped: [UUID: [SupermuxOpenWorkspace]],
+        baseOrder: [UUID]
+    ) -> some View {
+        SupermuxRemoteProjectRowView(
+            row: row,
+            openWorkspaces: grouped[row.id] ?? [],
+            isExpanded: expandedRemoteProjectIds.contains(row.id),
+            actions: remote.actions,
+            toggleExpanded: { toggleRemoteExpanded(row) },
+            newWorktree: { presentNewWorktree(forRemote: row) },
+            setUp: { destination in
+                projectSetupTarget = SupermuxProjectSetupTarget(
+                    projectName: row.project.name,
+                    destination: destination,
+                    defaultPath: row.location.rootPath,
+                    remoteURL: row.remoteURL
+                )
+            },
+            selectWorkspace: onSelectWorkspace,
+            closeWorkspace: onCloseWorkspace,
+            renameWorkspace: { promptRenameWorkspace(id: $0) },
+            beginDrag: { beginProjectDrag(row.id) },
+            dropDelegate: projectDropDelegate(for: row.id, baseOrder: baseOrder),
+            draggingProjectId: draggingProjectId,
+            pendingWorktrees: pendingRows(for: row.id),
+            pendingActions: pendingActions
+        )
     }
 
     /// Toggles a remote-only project's worktree disclosure, loading that
