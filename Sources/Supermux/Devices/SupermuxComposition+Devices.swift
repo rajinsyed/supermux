@@ -56,6 +56,7 @@ enum SupermuxDevicesGlue {
         guard projectRemotesTask == nil else { return }
         _ = SupermuxComposition.devices
         SupermuxDeviceMirrorsGlue.activateIfNeeded()
+        SupermuxComposition.workspaceOrder.start()
         SupermuxDeviceNotificationsGlue.activateIfNeeded()
         SupermuxProjectsGlue.activateIfNeeded()
         SupermuxPortsGlue.activateIfNeeded()

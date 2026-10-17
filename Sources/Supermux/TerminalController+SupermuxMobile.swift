@@ -152,10 +152,14 @@ extension TerminalController {
         case .routeCandidates:
             // Normally answered before this dispatch (SupermuxRouteCandidatesHost).
             return await SupermuxRouteCandidatesHost.callResult(executionContext: executionContext)
-        case .workspaceSetOrder, .projectsSetOrder:
-            // Shared order is not served yet: this host does not advertise
-            // supermux.order_sync.v1, so no capable peer sends these.
-            return .err(code: "unavailable", message: "Shared order is not served by this Mac yet", data: [
+        case .workspaceSetOrder:
+            switch SupermuxComposition.workspaceOrderHost.setOrder(params) {
+            case .success(let payload): return .ok(payload)
+            case .failure(let refusal): return .err(code: refusal.code, message: refusal.message, data: nil)
+            }
+        case .projectsSetOrder:
+            // Project order stamps are not served yet.
+            return .err(code: "unavailable", message: "Shared project order is not served by this Mac yet", data: [
                 "method": method
             ])
         default:
