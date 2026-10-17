@@ -980,7 +980,9 @@ instance tags are unrelated, so each tag keeps its own block; rows from a Mac th
 order keep today's place after the keyed rows of their tier; without any key the list is exactly
 today's. A nested row with a key drags among every Mac's keyed rows of its project (one segment per
 project, instance tag and pin tier), and the drop is sent to the row's owner as
-`mobile.supermux.workspace.set_order` with a key minted between its new neighbours' keys.
+`mobile.supermux.workspace.set_order` with a key minted between its new neighbours' keys. Projects
+follow the newest order stamp among their copies (`SupermuxMergedProject.order`), unstamped ones
+after them in the home Mac's order (`SupermuxProjectsListLayout`, fork code, no touchpoint).
 
 Fork code: `SupermuxPhoneWorkspaceOrder` (`loose`, `nested`, `orderedSegment`, `isOrdered`,
 `mintKey`), `SupermuxProjectsListLayout` (`nested` and `segments` use it),

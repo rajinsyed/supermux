@@ -1,5 +1,6 @@
 public import CmuxMobileShellModel
 import Foundation
+import SupermuxMobileCore
 import SupermuxMobileKit
 
 /// How the shell's list is currently narrowed.
@@ -123,11 +124,16 @@ public struct SupermuxProjectsListLayout: Sendable {
         // holds. Rows on any other Mac carry the cloud-Mac icon; scoped to one
         // Mac, that Mac is home and none do.
         let home = groups.first { $0.isDisplayed && isShown($0.header) }
-        let projects = Self.homeOrder(
-            SupermuxPhoneProjectMerge.merge(groups).compactMap { project in
-                project.keeping { isShown($0.mac) }
-            },
-            home: home)
+        // The order every Mac shares: by each project's newest stamp among
+        // its copies; projects never moved since shared order follow, in the
+        // home Mac's order.
+        let projects = SupermuxProjectOrder().sorted(
+            Self.homeOrder(
+                SupermuxPhoneProjectMerge.merge(groups).compactMap { project in
+                    project.keeping { isShown($0.mac) }
+                },
+                home: home),
+            stamp: \.order)
         // Scoped to one Mac that has no projects: no block at all, rather
         // than a "No projects yet" that is only true of that Mac.
         if !parsedMachines.isEmpty, section.hasLoaded, projects.isEmpty {
