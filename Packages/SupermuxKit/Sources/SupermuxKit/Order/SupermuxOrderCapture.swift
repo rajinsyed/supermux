@@ -14,9 +14,11 @@ internal import SupermuxMobileCore
 ///    of a hinted row's local group, which moves with it, weighs more than
 ///    every hinted row together, and any other row more than every mover
 ///    together. A row whose tier changed counts as new.
-/// 2. A kept, keyed row is an anchor. Every other own row keeps its key when
+/// 2. A kept, keyed row is an anchor, except a kept mirror whose key is out
+///    of order with a kept own row (apply never places a locally grouped
+///    mirror), which is skipped. Every other own row keeps its key when
 ///    it still fits between the nearest anchors (the highest one before it,
-///    the lowest kept one after it), else gets a new key there through
+///    the lowest one after it), else gets a new key there through
 ///    ``SupermuxOrderKey/mint(after:before:known:seed:)``. A mirror is keyed
 ///    only when it was hinted, was present at the baseline, was not moved
 ///    programmatically, and may be sent to its owner; any other mirror is

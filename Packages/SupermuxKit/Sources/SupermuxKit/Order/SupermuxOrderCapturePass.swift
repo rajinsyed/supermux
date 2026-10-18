@@ -41,18 +41,19 @@ struct SupermuxOrderCapturePass<ID: Hashable & Sendable> {
     /// Plans one tier's rows, in tab order.
     mutating func capture(_ rows: [Row]) {
         let kept = keptRows(rows)
-        let upperAnchors = upperAnchors(rows, kept: kept)
+        let anchorRows = anchorRows(rows, kept: kept)
+        let upperAnchors = upperAnchors(rows, anchorRows: anchorRows)
         var anchors = [SupermuxOrderSortKey?](repeating: nil, count: rows.count)
         var lower: SupermuxOrderSortKey?
         var minted: [Int] = []
         for (index, row) in rows.enumerated() {
             let upper = upperAnchors[index]
-            if kept.contains(index), let sortKey = row.sortKey {
+            if anchorRows.contains(index), let sortKey = row.sortKey {
                 anchors[index] = sortKey
                 lower = Self.max(lower, sortKey)
                 continue
             }
-            if row.isMirror, !isSendable(row) { continue }
+            if row.isMirror, kept.contains(index) || !isSendable(row) { continue }
             if let sortKey = row.sortKey, Self.fits(sortKey, after: lower, before: upper) {
                 anchors[index] = sortKey
                 lower = sortKey
@@ -106,13 +107,29 @@ struct SupermuxOrderCapturePass<ID: Hashable & Sendable> {
         }
     }
 
-    /// For each row, the lowest sort key among the kept, keyed rows after it.
-    private func upperAnchors(_ rows: [Row], kept: Set<Int>) -> [SupermuxOrderSortKey?] {
+    /// The kept, keyed rows that bound the others. A kept mirror whose key is
+    /// out of order with a kept own row (a locally grouped mirror its owner
+    /// moved, which apply never places) bounds nothing, so an own row moved
+    /// next to it is keyed between this Mac's own rows.
+    private func anchorRows(_ rows: [Row], kept: Set<Int>) -> Set<Int> {
+        let ownAnchors = kept.compactMap { index in
+            rows[index].isMirror ? nil : rows[index].sortKey.map { (index: index, sortKey: $0) }
+        }
+        return kept.filter { index in
+            guard let sortKey = rows[index].sortKey else { return false }
+            return !rows[index].isMirror || ownAnchors.allSatisfy { own in
+                own.index < index ? own.sortKey < sortKey : sortKey < own.sortKey
+            }
+        }
+    }
+
+    /// For each row, the lowest sort key among the anchor rows after it.
+    private func upperAnchors(_ rows: [Row], anchorRows: Set<Int>) -> [SupermuxOrderSortKey?] {
         var anchors = [SupermuxOrderSortKey?](repeating: nil, count: rows.count)
         var lowest: SupermuxOrderSortKey?
         for index in rows.indices.reversed() {
             anchors[index] = lowest
-            if kept.contains(index), let sortKey = rows[index].sortKey {
+            if anchorRows.contains(index), let sortKey = rows[index].sortKey {
                 lowest = lowest.map { Swift.min($0, sortKey) } ?? sortKey
             }
         }
