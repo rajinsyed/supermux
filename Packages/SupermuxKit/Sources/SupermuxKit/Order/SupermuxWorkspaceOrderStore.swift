@@ -77,6 +77,13 @@ public final class SupermuxWorkspaceOrderStore {
         setKeys([stableID: key])
     }
 
+    /// Drops one workspace's key, so the next capture keys it where it sits.
+    /// - Parameter stableID: The workspace's `stableId`.
+    public func removeKey(forStableID stableID: UUID) {
+        guard keys.removeValue(forKey: stableID) != nil else { return }
+        save()
+    }
+
     /// Whether the store holds more entries than its capacity, so it should
     /// be pruned to the live workspaces.
     public var isOverCapacity: Bool {

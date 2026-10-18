@@ -160,14 +160,25 @@ final class SupermuxWorkspaceOrderReconciler {
     /// - Returns: The key the workspace holds afterwards (re-keyed where a pin
     ///   or group clamped it).
     func moveOwnRow(_ workspace: Workspace, toKey key: String, in manager: TabManager) -> String? {
+        let previousKey = store.key(forStableID: workspace.stableId)
         writeOwnKeys([workspace.id: key], stableIDs: [workspace.id: workspace.stableId])
         let rows = makeRows(manager)
         let items = rows.rows.map { row in
             row.id == workspace.id ? row.applyItem(fixed: false, unit: row.id.uuidString) : row.applyItem(fixed: true)
         }
-        if let target = arrangement.arrange(items).firstIndex(of: workspace.id),
-           target != manager.tabs.firstIndex(where: { $0.id == workspace.id }) {
+        let target = arrangement.arrange(items).firstIndex(of: workspace.id)
+        if let target, target != manager.tabs.firstIndex(where: { $0.id == workspace.id }) {
             manager.reorderWorkspace(tabId: workspace.id, toIndex: target)
+        }
+        // A pin or group clamp kept the row elsewhere, so the requested key
+        // does not say where it sits: it takes its old key back, and capture
+        // re-keys it where it landed when that key no longer fits there.
+        if manager.tabs.firstIndex(where: { $0.id == workspace.id }) != target {
+            if let previousKey {
+                store.setKey(previousKey, forStableID: workspace.stableId)
+            } else {
+                store.removeKey(forStableID: workspace.stableId)
+            }
         }
         if SupermuxOrderDebugMode.current.reconciles {
             reconcile(manager)
