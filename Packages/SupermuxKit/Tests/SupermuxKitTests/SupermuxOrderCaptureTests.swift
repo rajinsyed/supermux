@@ -49,6 +49,14 @@ import Testing
 /// 20. (§3.2.3, review R2) On a first pass (a restart) restored mirrors out of
 ///     key order outvote this Mac's own rows, which are then re-keyed: no
 ///     number of mirrors may outweigh one own row.
+/// 21. (#16, re-review RR1) Inside a hinted row's local group the widened
+///     mates outvote the row the user named, so a move past a mirror mate is
+///     never keyed: a mate always outweighs every hinted row together, and
+///     any other row every mover together.
+/// 22. (#22, re-review RR2) A kept mirror whose key is out of order with the
+///     kept own rows around it (a locally grouped mirror its owner moved,
+///     which apply never places) bounds a moved own row, which then sorts
+///     after the mirror elsewhere: such a mirror is not an anchor.
 ///
 /// Not covered here (not pure): #18 (the pass hops past `willSet`) and the
 /// mouse-button gate of #15 belong to the reconciler and its E2E steps.
@@ -252,12 +260,26 @@ import Testing
 
     @Test func aMoveInsideAGroupNeverSendsAnUnmovedMirrorMember() {
         // G2 dragged above the group's mirror member GM: the group's members all
-        // count as movers, but GM was not moved by the user and is never sent.
+        // count as movers, but GM was not moved by the user and is never sent;
+        // G2, the row the user named, is the one re-keyed into place.
         let before = [own("G1", "a0", group: "G"), mirror("GM", "a1", group: "G"), own("G2", "a2", group: "G")]
         let after = [before[0], before[2], before[1]]
         let result = plan(baseline: before, rows: after, hinted: ["G2"])
         #expect(result.mirrorKeys.isEmpty)
-        #expect(Set(result.ownKeys.keys).isSubset(of: ["G1", "G2"]))
+        #expect(Set(result.ownKeys.keys) == ["G2"])
+        #expect(isBetween(result.ownKeys["G2"], "a0", "a1"))
+        #expect(isAscending(applying(result, to: after)))
+
+        // The same move in a group a mirror anchors, with a row after the group.
+        let anchored = [
+            mirror("MA", "a0", group: "G"), mirror("M2", "a1", group: "G"), own("O", "a2", group: "G"), own("X", "a3"),
+        ]
+        let moved = [anchored[0], anchored[2], anchored[1], anchored[3]]
+        let anchoredResult = plan(baseline: anchored, rows: moved, hinted: ["O"])
+        #expect(anchoredResult.mirrorKeys.isEmpty)
+        #expect(Set(anchoredResult.ownKeys.keys) == ["O"])
+        #expect(isBetween(anchoredResult.ownKeys["O"], "a0", "a1"))
+        #expect(isAscending(applying(anchoredResult, to: moved)))
     }
 
     @Test func captureIsIdempotentOnItsOwnOutput() {
@@ -389,6 +411,24 @@ import Testing
         #expect(Set(result.ownKeys.keys) == ["N"])
         #expect(isBetween(result.ownKeys["N"], "a5", "a7"))
         #expect(result.mirrorKeys.isEmpty)
+    }
+
+    @Test func aKeptMirrorOutOfKeyOrderNeverBoundsOwnRows() {
+        // M sits in a local group at the top, so apply never moves it, but its
+        // owner moved it to the bottom (a5). O3 dragged above O1 must still get
+        // a key before O1's, not one after M's.
+        let before = [mirror("M", "a5", group: "G"), own("O1", "a1"), own("O2", "a2"), own("O3", "a3")]
+        let after = [before[0], before[3], before[1], before[2]]
+        let result = plan(baseline: before, rows: after, hinted: ["O3"])
+        #expect(result.mirrorKeys.isEmpty)
+        #expect(Set(result.ownKeys.keys) == ["O3"])
+        #expect(result.ownKeys["O3"].map { precedes($0, "a1") } == true)
+
+        // O1 moved below O2: its key goes between O2's and O3's.
+        let below = [before[0], before[2], before[1], before[3]]
+        let belowResult = plan(baseline: before, rows: below, hinted: ["O1"])
+        #expect(Set(belowResult.ownKeys.keys) == ["O1"])
+        #expect(isBetween(belowResult.ownKeys["O1"], "a2", "a3"))
     }
 
     // MARK: Rebalance (17)
