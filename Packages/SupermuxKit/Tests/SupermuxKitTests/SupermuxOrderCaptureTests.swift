@@ -39,6 +39,16 @@ import Testing
 ///     other windows, or sends a mirror to its owner.
 /// 17. (#2) A minted key that grows past the rebalance length is left long,
 ///     or the rebalance touches a mirror or breaks the order.
+/// 18. (#16, review R1) A move of several rows at once (a group drag, a
+///     multi-select drag) outvotes the fewer rows it jumped over, so the drop
+///     is undone and the jumped-over rows are re-keyed: no number of hinted
+///     rows may outweigh one unhinted row.
+/// 19. (#16, review R1) A notification bump hints one member of a group but
+///     moves the whole group: every member of a hinted row's local group
+///     counts as a mover, yet only a row the reorder named is ever sent.
+/// 20. (§3.2.3, review R2) On a first pass (a restart) restored mirrors out of
+///     key order outvote this Mac's own rows, which are then re-keyed: no
+///     number of mirrors may outweigh one own row.
 ///
 /// Not covered here (not pure): #18 (the pass hops past `willSet`) and the
 /// mouse-button gate of #15 belong to the reconciler and its E2E steps.
@@ -51,12 +61,12 @@ import Testing
 
     // MARK: Helpers
 
-    private func own(_ id: String, _ key: String?, pinned: Bool = false) -> Row {
-        .own(id: id, tier: pinned ? 0 : 1, key: key, canonicalID: id)
+    private func own(_ id: String, _ key: String?, pinned: Bool = false, group: String? = nil) -> Row {
+        .own(id: id, tier: pinned ? 0 : 1, key: key, canonicalID: id, group: group)
     }
 
-    private func mirror(_ id: String, _ key: String?, pinned: Bool = false, canSend: Bool = true) -> Row {
-        .mirror(id: id, tier: pinned ? 0 : 1, key: key, canonicalID: id, canSendToOwner: canSend)
+    private func mirror(_ id: String, _ key: String?, pinned: Bool = false, canSend: Bool = true, group: String? = nil) -> Row {
+        .mirror(id: id, tier: pinned ? 0 : 1, key: key, canonicalID: id, canSendToOwner: canSend, group: group)
     }
 
     private func plan(
@@ -81,8 +91,9 @@ import Testing
         rows.map { row in
             let key = plan.ownKeys[row.id] ?? plan.mirrorKeys[row.id] ?? row.key
             return row.isMirror
-                ? .mirror(id: row.id, tier: row.tier, key: key, canonicalID: row.canonicalID, canSendToOwner: row.canSendToOwner)
-                : .own(id: row.id, tier: row.tier, key: key, canonicalID: row.canonicalID)
+                ? .mirror(id: row.id, tier: row.tier, key: key, canonicalID: row.canonicalID,
+                          canSendToOwner: row.canSendToOwner, group: row.group)
+                : .own(id: row.id, tier: row.tier, key: key, canonicalID: row.canonicalID, group: row.group)
         }
     }
 
@@ -141,6 +152,19 @@ import Testing
         #expect(isAscending(applying(result, to: rows)))
     }
 
+    @Test func aFirstPassAfterARestartNeverReKeysOwnRowsForStaleMirrors() {
+        // Quit with [M1, M2, M3, O1]; while this Mac was off, the owner moved
+        // M1..M3 below O1 (keys a4..a6). The restored mirrors are now out of
+        // key order, and the own row must keep its key (apply moves the mirrors).
+        let restored = [mirror("M1", "a4"), mirror("M2", "a5"), mirror("M3", "a6"), own("O1", "a3")]
+        #expect(plan(baseline: nil, rows: restored).isEmpty)
+
+        // A mirror kept in a local group is never moved by apply, so it stays
+        // out of key order across restarts; it must not re-key the own row either.
+        let grouped = [own("O1", "a1"), mirror("M1", "a0", group: "G"), mirror("M2", "a0V", group: "G")]
+        #expect(plan(baseline: nil, rows: grouped).isEmpty)
+    }
+
     @Test func aFirstPassNeverSendsAMirror() {
         // Out of key order and hinted, but nothing on this Mac moved it since a pass.
         let rows = [mirror("M", "a2"), own("A", "a0"), own("B", "a1")]
@@ -188,6 +212,52 @@ import Testing
         #expect(result.ownKeys.count <= 2)
         #expect(result.mirrorKeys.isEmpty)
         #expect(isAscending(applying(result, to: after)))
+    }
+
+    @Test func aGroupDraggedAboveAMirrorKeepsItsDrop() {
+        // A group header drag hints every member.
+        let before = [own("X", "a0"), mirror("B", "a1"), own("G1", "a2", group: "G"), own("G2", "a3", group: "G")]
+        let after = [before[0], before[2], before[3], before[1]]
+        let result = plan(baseline: before, rows: after, hinted: ["G1", "G2"])
+        #expect(Set(result.ownKeys.keys) == ["G1", "G2"])
+        #expect(isBetween(result.ownKeys["G1"], "a0", "a1"))
+        #expect(isBetween(result.ownKeys["G2"], "a0", "a1"))
+        #expect(result.mirrorKeys.isEmpty)
+        #expect(isAscending(applying(result, to: after)))
+    }
+
+    @Test func aMultiSelectDragAboveAMirrorKeepsItsDrop() {
+        let before = [mirror("M", "a0"), own("R1", "a1"), own("R2", "a2"), own("R3", "a3")]
+        let after = [before[1], before[2], before[3], before[0]]
+        let result = plan(baseline: before, rows: after, hinted: ["R1", "R2", "R3"])
+        #expect(Set(result.ownKeys.keys) == ["R1", "R2", "R3"])
+        #expect(result.ownKeys.values.allSatisfy { precedes($0, "a0") })
+        #expect(result.mirrorKeys.isEmpty)
+        #expect(isAscending(applying(result, to: after)))
+    }
+
+    @Test func aNotificationBumpOfOneMemberMovesTheWholeGroup() {
+        // The bump moves the group to the top but names only the bumped member.
+        let before = [
+            own("R1", "a0"), mirror("M", "a1"),
+            own("G1", "a2", group: "G"), own("G2", "a3", group: "G"), own("G3", "a4", group: "G"),
+        ]
+        let after = [before[2], before[3], before[4], before[0], before[1]]
+        let result = plan(baseline: before, rows: after, hinted: ["G2"])
+        #expect(Set(result.ownKeys.keys) == ["G1", "G2", "G3"])
+        #expect(result.ownKeys.values.allSatisfy { precedes($0, "a0") })
+        #expect(result.mirrorKeys.isEmpty)
+        #expect(isAscending(applying(result, to: after)))
+    }
+
+    @Test func aMoveInsideAGroupNeverSendsAnUnmovedMirrorMember() {
+        // G2 dragged above the group's mirror member GM: the group's members all
+        // count as movers, but GM was not moved by the user and is never sent.
+        let before = [own("G1", "a0", group: "G"), mirror("GM", "a1", group: "G"), own("G2", "a2", group: "G")]
+        let after = [before[0], before[2], before[1]]
+        let result = plan(baseline: before, rows: after, hinted: ["G2"])
+        #expect(result.mirrorKeys.isEmpty)
+        #expect(Set(result.ownKeys.keys).isSubset(of: ["G1", "G2"]))
     }
 
     @Test func captureIsIdempotentOnItsOwnOutput() {
