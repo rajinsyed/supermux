@@ -274,6 +274,29 @@ step records the before/after orders, the owning pane's selected tab and the lat
 CMUX_E2E_SUITES="loopback_new_tab_order_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
 ```
 
+## Shared workspace order E2E
+
+`tests/supermux/loopback_workspace_order_e2e.py` checks that every workspace sits in one order on the
+Mac's own rows, its mirrors and the phone, and that a reorder anywhere moves it everywhere (SUPERMUX.md,
+Remote Macs, "Shared order"). In the loopback a mirror's remote id is its source's id, so its order key
+equals its source's and own sorts before mirror: **every mirror must sit right after its source** (C1).
+The other invariants: every row's key travels on both transports, the legacy list and the v2 record
+(C2); the phone's order, computed with a Python port of the shared comparator, is the Mac's own order
+(C3); own keys rise in tab order (C4). The steps cover every entry point (`workspace.reorder`, Move to
+Top, the phone's `workspace.move`, a mirror drag, `mobile.supermux.workspace.set_order` and its
+refusals, a new workspace, pin, a notification bump on a row and on a mirror, groups, nested project
+rows, a cross-window move), project stamps (`supermux.devices.project_move`,
+`mobile.supermux.projects.set_order`), an offline owner, an older Mac, quiescence and a relaunch. The
+suite reads the reconciler's state and counters from the DEBUG `supermux.devices.order_state`;
+`supermux.devices.order_debug {mode}` switches it: `normal`, `paused` (nothing runs, so a test can
+leave a row where it put it; `loopback_projects_e2e` uses it), `old_host` (also no capability, no
+keys, no `set_order`: an older Mac) and `old_peer` (an older owner next to an up-to-date viewer).
+The runner passes `--relaunch --app-path` with the scratch projects file and push state.
+
+```bash
+CMUX_E2E_SUITES="loopback_workspace_order_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh
+```
+
 ## Agent activity E2E
 
 `tests/supermux/loopback_agent_activity_e2e.py` checks the agent-working indicator while an agent is
