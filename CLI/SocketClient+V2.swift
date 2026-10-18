@@ -160,7 +160,20 @@ extension SocketClient {
             throw CLIError(message: "Failed to encode v2 request")
         }
 
-        let requestData = try JSONSerialization.data(withJSONObject: request, options: [])
+        // SUPERMUX:begin cli-v2-request-method-first (`method` is always the first key)
+        // The app routes a line by its first 4 KiB and drops a longer line whose
+        // `method` key is not in it (the CodeRouter handoff guard). JSONSerialization
+        // writes keys in per-process hash order, so large params could come first.
+        // `{"method":…}` joined with the other keys, sorted (`id` and `params` are
+        // always there): upstream PR manaflow-ai/cmux#21345.
+        var requestTail = request
+        requestTail.removeValue(forKey: "method")
+        let methodData = try JSONSerialization.data(withJSONObject: ["method": method], options: [])
+        let tailData = try JSONSerialization.data(withJSONObject: requestTail, options: [.sortedKeys])
+        var requestData = Data(methodData.dropLast())
+        requestData.append(UInt8(ascii: ","))
+        requestData.append(contentsOf: tailData.dropFirst())
+        // SUPERMUX:end cli-v2-request-method-first
         guard let requestLine = String(data: requestData, encoding: .utf8) else {
             throw CLIError(message: "Failed to encode v2 request")
         }
