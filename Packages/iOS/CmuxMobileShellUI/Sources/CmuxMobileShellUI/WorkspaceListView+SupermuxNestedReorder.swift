@@ -1,7 +1,12 @@
 // SUPERMUX:begin supermux-mobile-nested-reorder (whole file: sends a nested project row's drag to its Mac — see SUPERMUX-TOUCHPOINTS.md)
 #if os(iOS)
+import CmuxMobileShell
 import CmuxMobileShellModel
 import SupermuxMobileUI
+
+/// The shell store already has the rows and the per-Mac refresh a nested
+/// drag needs.
+extension MobileShellComposite: @retroactive SupermuxWorkspaceShell {}
 
 extension WorkspaceListView {
     /// Sends a drag of a row nested under a project to the Mac that owns it,
@@ -11,10 +16,11 @@ extension WorkspaceListView {
     ///
     /// A row with a shared order key moves among every Mac's keyed rows: the
     /// drop is sent to its owner as a new key
-    /// (`mobile.supermux.workspace.set_order`), and the move holds once the
-    /// key-sorted list shows it. Any other row moves inside its own Mac's
-    /// window as ONE `workspace.move`, through the same `moveWorkspace` path
-    /// the loose rows use.
+    /// (`mobile.supermux.workspace.set_order`, through
+    /// `SupermuxProjectsSectionModel.landOrderedMove`), and the move holds
+    /// once the key-sorted list shows it. Any other row moves inside its own
+    /// Mac's window as ONE `workspace.move`, through the same `moveWorkspace`
+    /// path the loose rows use.
     ///
     /// The key or anchor is worked out when the move is sent, after every
     /// earlier move came back, so it reads the Macs' current order. The shown
@@ -29,14 +35,10 @@ extension WorkspaceListView {
         let listed = workspaces
         return { move in
             reorder.perform(move) {
-                let current = store?.workspaces ?? listed
                 if SupermuxPhoneWorkspaceOrder().isOrdered(segment: move.segment) {
-                    guard await projects.sendOrderedMove(move, in: current) else { return false }
-                    guard let store else { return true }
-                    return await SupermuxNestedReorderModel.wait(upTo: .seconds(3)) {
-                        SupermuxNestedReorderPolicy().listHolds(move, SupermuxPhoneWorkspaceOrder().nested(store.workspaces))
-                    }
+                    return await projects.landOrderedMove(move, shell: store, rows: listed)
                 }
+                let current = store?.workspaces ?? listed
                 let before = SupermuxNestedReorderPolicy().beforeWorkspaceID(for: move, in: current)
                 // The row keeps its group: a `nil` group asks the Mac to ungroup it.
                 let groupID = current.first { $0.id == move.workspaceID }?.groupID

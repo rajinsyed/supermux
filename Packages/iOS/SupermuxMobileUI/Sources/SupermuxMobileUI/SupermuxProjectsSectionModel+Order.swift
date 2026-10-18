@@ -22,6 +22,30 @@ extension SupermuxProjectsSectionModel {
         return await setWorkspaceOrder(row, key: key)
     }
 
+    /// Lands a drop in an ordered segment: sends it to the owner Mac
+    /// (``sendOrderedMove(_:in:)``), then waits until the shell's key-sorted
+    /// rows (``SupermuxPhoneWorkspaceOrder/nested(_:)``) show it.
+    /// - Parameters:
+    ///   - move: The drop.
+    ///   - shell: The shell whose rows the key is minted from and the move
+    ///     is waited for in, or `nil` to count the owner's answer alone.
+    ///   - rows: The rows to mint the key from when there is no shell.
+    ///   - timeout: How long to wait for the shell's rows.
+    /// - Returns: Whether the move landed: the owner took it and the shell's
+    ///   rows show it within `timeout`.
+    public func landOrderedMove(
+        _ move: SupermuxNestedMove,
+        shell: (any SupermuxWorkspaceShell)?,
+        rows: [MobileWorkspacePreview],
+        timeout: Duration = .seconds(3)
+    ) async -> Bool {
+        guard await sendOrderedMove(move, in: shell?.workspaces ?? rows) else { return false }
+        guard let shell else { return true }
+        return await SupermuxNestedReorderModel.wait(upTo: timeout) {
+            SupermuxNestedReorderPolicy().listHolds(move, SupermuxPhoneWorkspaceOrder().nested(shell.workspaces))
+        }
+    }
+
     /// Asks the row's owner Mac to give it `key` and move it there.
     /// - Parameters:
     ///   - row: The workspace row.
