@@ -37,7 +37,8 @@ import SupermuxKit
 /// drivers (``SupermuxTerminalInputSocketCommands``), the `link_impairment` loopback link
 /// impairment (``SupermuxDeviceLinkImpairmentSocketCommands``), the `route.*` link route and
 /// direct-address drivers (``SupermuxDeviceRouteSocketCommands``), the `power.*` sleep / wake drivers
-/// (``SupermuxDevicePowerSocketCommands``), and the `new_worktree.*` New Worktree
+/// (``SupermuxDevicePowerSocketCommands``), the `order_state` / `order_key_between` /
+/// `order_debug` / `project_move` shared-order drivers (``SupermuxOrderSocketCommands``), and the `new_worktree.*` New Worktree
 /// sheet drivers (`SupermuxNewWorktreeSocketCommands`). `list` reports each device's `route`.
 @MainActor
 enum SupermuxDevicesSocketCommands {
@@ -129,6 +130,7 @@ enum SupermuxDevicesSocketCommands {
             case let name where SupermuxDevicePortsSocketCommands.handles(name): result = try await SupermuxDevicePortsSocketCommands.handle(name, params)
             case let name where SupermuxRemoteSimulatorSocketCommands.handles(name): result = try await SupermuxRemoteSimulatorSocketCommands.handle(name, params: params)
             case let name where SupermuxRemoteHostSocketCommands.handles(name): result = try SupermuxRemoteHostSocketCommands.handle(name, params)
+            case let name where SupermuxOrderSocketCommands.handles(name): result = try SupermuxOrderSocketCommands.handle(name, params)
             #endif
             case let name where SupermuxRemoteMacsSocketCommands.methods.contains(name):
                 // Settings "Remote Macs" card and the flat-row device chip.

@@ -39,6 +39,15 @@ public struct SupermuxOpenWorkspace: Identifiable, Hashable, Sendable {
     /// workspace showing another Mac's workspace), for the row's Mac icon;
     /// `nil` for this Mac's own workspaces.
     public let device: SupermuxProjectDevice?
+    /// The block of nested rows this row is ordered and dragged within:
+    /// ``orderedGroup`` for every row that follows the shared order (this
+    /// Mac's own workspaces and the mirrors whose owner keys them), otherwise
+    /// the machine id of the older Mac an unkeyed mirror shows, whose rows
+    /// stay one block per Mac.
+    public let orderGroup: String
+
+    /// The ``orderGroup`` of every row in the shared order.
+    public static let orderedGroup = "ordered"
 
     /// Creates a snapshot.
     /// - Parameters:
@@ -52,6 +61,8 @@ public struct SupermuxOpenWorkspace: Identifiable, Hashable, Sendable {
     ///   - isRunning: Whether the project run command is active for this workspace.
     ///   - unreadCount: The row's displayed unread count (0 hides the badge).
     ///   - device: The Mac a device mirror shows, or `nil` for a local workspace.
+    ///   - orderGroup: The block the row is ordered and dragged within;
+    ///     defaults to ``orderedGroup`` (the shared order).
     public init(
         id: UUID,
         title: String,
@@ -62,7 +73,8 @@ public struct SupermuxOpenWorkspace: Identifiable, Hashable, Sendable {
         activity: SupermuxWorkspaceActivity = .idle,
         isRunning: Bool = false,
         unreadCount: Int = 0,
-        device: SupermuxProjectDevice? = nil
+        device: SupermuxProjectDevice? = nil,
+        orderGroup: String = Self.orderedGroup
     ) {
         self.id = id
         self.title = title
@@ -74,6 +86,7 @@ public struct SupermuxOpenWorkspace: Identifiable, Hashable, Sendable {
         self.isRunning = isRunning
         self.unreadCount = unreadCount
         self.device = device
+        self.orderGroup = orderGroup
     }
 
     /// The row's VoiceOver label: the title, plus the Mac a device mirror

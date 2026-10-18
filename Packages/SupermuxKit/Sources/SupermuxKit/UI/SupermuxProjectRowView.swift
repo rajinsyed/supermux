@@ -135,8 +135,9 @@ public struct SupermuxProjectDropDelegate: DropDelegate {
 }
 
 /// Applies the reorder drop target only when a delegate is supplied, so rows
-/// rendered without drag wiring (previews, tests) stay inert.
-private struct SupermuxProjectReorderDrop: ViewModifier {
+/// rendered without drag wiring (previews, tests) stay inert. Shared by local
+/// and remote-only project rows.
+struct SupermuxProjectReorderDrop: ViewModifier {
     let delegate: SupermuxProjectDropDelegate?
 
     func body(content: Content) -> some View {
@@ -156,7 +157,8 @@ private struct SupermuxProjectReorderDrop: ViewModifier {
 /// project's row. The callbacks are not compared: they reach only the
 /// section's model, opener, `@State` storage and the host's weak-window
 /// callbacks, plus value snapshots of this same project (its record, remote
-/// extras and nested workspaces), which the comparison covers. Font scale,
+/// extras and nested workspaces) and the section's project order, which the
+/// comparison covers. Font scale,
 /// hover and the drag dim are dynamic properties, which re-render the row on
 /// their own.
 public struct SupermuxProjectRowView: View, Equatable {
@@ -174,6 +176,8 @@ public struct SupermuxProjectRowView: View, Equatable {
     /// Whether the project can move further up/down (for menu enablement).
     private let canMoveUp: Bool
     private let canMoveDown: Bool
+    /// The section order captured by this row's reorder actions and drop delegate.
+    private let projectOrder: [UUID]
     /// Starts a drag session, returning the reorder payload.
     private let beginDrag: () -> NSItemProvider
     /// Receives drops from sibling rows to reorder this project.
@@ -217,6 +221,8 @@ public struct SupermuxProjectRowView: View, Equatable {
     ///   - actions: Host callbacks.
     ///   - canMoveUp: Whether a Move Up action applies (not already first).
     ///   - canMoveDown: Whether a Move Down action applies (not already last).
+    ///   - projectOrder: The section order captured by reorder callbacks;
+    ///     defaults to empty for rows without reorder wiring.
     ///   - beginDrag: Starts a drag, returning the reorder payload.
     ///   - dropDelegate: Handles reorder drops from sibling rows.
     ///   - draggingProjectId: Shared marker for the project being dragged (read
@@ -235,6 +241,7 @@ public struct SupermuxProjectRowView: View, Equatable {
         actions: SupermuxProjectRowActions,
         canMoveUp: Bool = false,
         canMoveDown: Bool = false,
+        projectOrder: [UUID] = [],
         beginDrag: @escaping () -> NSItemProvider = { NSItemProvider() },
         dropDelegate: SupermuxProjectDropDelegate? = nil,
         draggingProjectId: Binding<UUID?> = .constant(nil),
@@ -266,6 +273,7 @@ public struct SupermuxProjectRowView: View, Equatable {
         self.actions = actions
         self.canMoveUp = canMoveUp
         self.canMoveDown = canMoveDown
+        self.projectOrder = projectOrder
         self.beginDrag = beginDrag
         self.dropDelegate = dropDelegate
         self._draggingProjectId = draggingProjectId
@@ -281,6 +289,7 @@ public struct SupermuxProjectRowView: View, Equatable {
             && lhs.isExpanded == rhs.isExpanded
             && lhs.canMoveUp == rhs.canMoveUp
             && lhs.canMoveDown == rhs.canMoveDown
+            && lhs.projectOrder == rhs.projectOrder
             && lhs.remoteExtras == rhs.remoteExtras
             && lhs.pendingWorktrees == rhs.pendingWorktrees
     }
@@ -290,9 +299,10 @@ public struct SupermuxProjectRowView: View, Equatable {
             projectRow
             // Live workspaces for this project are always nested under it
             // (piggycode-style); selecting one focuses it, and they can be
-            // dragged to reorder within this project — among this Mac's rows,
-            // or among one Mac's mirrors (the host keeps those groups apart).
-            let siblingIdsByMac = Dictionary(grouping: openWorkspaces, by: { $0.device?.machineID ?? "" })
+            // dragged to reorder within this project — within the shared order
+            // (this Mac's rows and keyed mirrors together, so a row can pass
+            // other Macs' rows), or within one older Mac's unkeyed mirrors.
+            let siblingIdsByOrderGroup = Dictionary(grouping: openWorkspaces, by: \.orderGroup)
                 .mapValues { Set($0.map(\.id)) }
             ForEach(openWorkspaces) { workspace in
                 SupermuxOpenWorkspaceRowView(
@@ -306,7 +316,7 @@ public struct SupermuxProjectRowView: View, Equatable {
                         draggingWorkspaceId = workspace.id
                         return NSItemProvider(object: workspace.id.uuidString as NSString)
                     },
-                    siblingWorkspaceIds: siblingIdsByMac[workspace.device?.machineID ?? ""] ?? [],
+                    siblingWorkspaceIds: siblingIdsByOrderGroup[workspace.orderGroup] ?? [],
                     reorder: actions.reorderWorkspace,
                     draggingWorkspaceId: $draggingWorkspaceId,
                     mirrorMenu: { remoteActions.mirrorMenu(workspace.id) }

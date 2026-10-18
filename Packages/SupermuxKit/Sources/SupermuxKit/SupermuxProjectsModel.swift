@@ -1,5 +1,6 @@
 public import Foundation
 public import Observation
+public import SupermuxMobileCore
 
 /// Main-actor domain model behind the supermux Projects sidebar section.
 ///
@@ -262,7 +263,13 @@ public final class SupermuxProjectsModel: SupermuxDirectoryAssociationPersisting
     private func persistReplacingProject(_ project: SupermuxProject) {
         persist { file in
             guard let i = file.projects.firstIndex(where: { $0.id == project.id }) else { return }
-            file.projects[i] = project
+            var record = project
+            // Another build may have stamped this copy since memory last read
+            // the file: an edit never moves the project back in the shared order.
+            if file.projects[i].order?.wins(over: record.order) == true {
+                record.order = file.projects[i].order
+            }
+            file.projects[i] = record
         }
     }
 
@@ -271,31 +278,103 @@ public final class SupermuxProjectsModel: SupermuxDirectoryAssociationPersisting
     /// before it when moving up). Used by sidebar drag-reorder and the
     /// Move Up / Move Down context-menu actions.
     ///
+    /// With an ``orderMover`` installed the move goes to it instead (the
+    /// shared order across Macs, whose ids are the sidebar's unified project
+    /// ids; a local project's unified id is its own id). Otherwise the array
+    /// itself is reordered and persisted.
+    ///
     /// No-op when either id is unknown or `draggedId == targetId`, so callers
     /// can invoke it freely without bounds checks.
     /// - Parameters:
     ///   - draggedId: Project being moved.
     ///   - targetId: Project the dragged row is hovering over.
     public func moveProject(_ draggedId: UUID, over targetId: UUID) {
+        if let orderMover {
+            orderMover(draggedId, targetId)
+            return
+        }
         guard Self.applyMove(draggedId, over: targetId, in: &projects) else { return }
         // The same relative move re-applies to the freshly-read document, so
         // projects unknown to this instance keep their on-disk positions.
         persist { Self.applyMove(draggedId, over: targetId, in: &$0.projects) }
     }
 
-    /// Applies the relative move in place; returns `false` (untouched array)
-    /// when either id is unknown or `draggedId == targetId`.
+    /// The one relative-move rule every project reorder shares: moves
+    /// `draggedId` next to `targetId` in place, after it when moving down and
+    /// before it when moving up.
+    ///
+    /// - Parameters:
+    ///   - draggedId: The item being moved.
+    ///   - targetId: The item it is dropped over.
+    ///   - items: The list, reordered in place.
+    /// - Returns: `false`, leaving `items` untouched, when either id is
+    ///   unknown or `draggedId == targetId`.
     @discardableResult
-    nonisolated private static func applyMove(_ draggedId: UUID, over targetId: UUID, in projects: inout [SupermuxProject]) -> Bool {
+    nonisolated public static func applyMove<Item: Identifiable>(
+        _ draggedId: Item.ID,
+        over targetId: Item.ID,
+        in items: inout [Item]
+    ) -> Bool {
         guard draggedId != targetId,
-              let from = projects.firstIndex(where: { $0.id == draggedId }),
-              let to = projects.firstIndex(where: { $0.id == targetId }) else { return false }
-        let moved = projects.remove(at: from)
+              let from = items.firstIndex(where: { $0.id == draggedId }),
+              let to = items.firstIndex(where: { $0.id == targetId }) else { return false }
+        let moved = items.remove(at: from)
         // After removal the target may have shifted; locate it again and insert
         // after it when dragging downward, before it when dragging upward.
-        let targetIndex = projects.firstIndex(where: { $0.id == targetId }) ?? projects.endIndex
-        projects.insert(moved, at: to > from ? targetIndex + 1 : targetIndex)
+        let targetIndex = items.firstIndex(where: { $0.id == targetId }) ?? items.endIndex
+        items.insert(moved, at: to > from ? targetIndex + 1 : targetIndex)
         return true
+    }
+
+    /// Moves a project in the shared order across Macs instead of reordering
+    /// the array (`SupermuxProjectOrderSync`, installed by the app). Every
+    /// ``moveProject(_:over:)`` caller goes through it: drag commit,
+    /// Move Up / Move Down and the DEBUG `project_move` driver.
+    @ObservationIgnored public var orderMover: (@MainActor (_ draggedId: UUID, _ targetId: UUID) -> Void)?
+
+    /// Gives this Mac's copies of projects new shared-order stamps.
+    ///
+    /// Each stamp applies only when it wins over the copy's current one
+    /// (``SupermuxOrderStamp/wins(over:)``), so a repeated call changes
+    /// nothing and an older stamp never undoes a newer move. ``projects`` is
+    /// then re-sorted into the shared order (stamped copies by stamp, the rest
+    /// after them in their current order), so readers of the array (an older
+    /// phone shows its home Mac's array; an older build reads the shared
+    /// file) see the shared order too. The same rule re-applies to the freshly
+    /// read file, so another build's concurrent write is kept.
+    ///
+    /// - Parameter stamps: The new stamp per project id.
+    /// - Returns: Whether each stamp was applied, keyed by the ids this Mac
+    ///   has; an unknown id is absent.
+    @discardableResult
+    public func setOrderStamps(_ stamps: [UUID: SupermuxOrderStamp]) -> [UUID: Bool] {
+        let known = Set(projects.map(\.id)).intersection(stamps.keys)
+        var next = projects
+        let applied = Self.applyOrderStamps(stamps, to: &next)
+        if !applied.isEmpty {
+            projects = next
+            persist { Self.applyOrderStamps(stamps, to: &$0.projects) }
+        }
+        return Dictionary(uniqueKeysWithValues: known.map { ($0, applied.contains($0)) })
+    }
+
+    /// Applies each winning stamp in place and, when one applied, re-sorts the
+    /// list into the shared order. Returns the ids whose stamp applied.
+    @discardableResult
+    nonisolated private static func applyOrderStamps(
+        _ stamps: [UUID: SupermuxOrderStamp],
+        to projects: inout [SupermuxProject]
+    ) -> Set<UUID> {
+        var applied: Set<UUID> = []
+        for index in projects.indices {
+            guard let stamp = stamps[projects[index].id], stamp.wins(over: projects[index].order) else { continue }
+            projects[index].order = stamp
+            applied.insert(projects[index].id)
+        }
+        if !applied.isEmpty {
+            projects = SupermuxProjectOrder().sorted(projects, stamp: \.order)
+        }
+        return applied
     }
 
     /// Called with each project a user unregisters (desktop, phone or another

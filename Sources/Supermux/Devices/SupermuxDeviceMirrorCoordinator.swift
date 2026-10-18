@@ -3,6 +3,7 @@ import CmuxSurfaceCatalogModel
 import Foundation
 import Observation
 import SupermuxKit
+import SupermuxMobileCore
 
 /// Keeps exactly one local mirror workspace for every workspace on every
 /// connected device (setting ``SupermuxDevicesSettings/autoMirror``, off
@@ -436,9 +437,12 @@ final class SupermuxDeviceMirrorCoordinator {
 
     /// Moves a new mirror next to its device's other mirrors in the same
     /// window, in the remote's sort order (only relative to those siblings).
+    /// Only for an owner that predates shared order: a keyed record's mirror
+    /// is placed by its key (``SupermuxWorkspaceOrderReconciler``).
     private func placeAmongSiblings(_ workspace: Workspace, ref: SupermuxRemoteWorkspaceRef) {
-        guard let manager = workspace.owningTabManager,
-              let sortIndex = devices.record(for: ref)?.sortIndex else { return }
+        guard let manager = workspace.owningTabManager, let record = devices.record(for: ref) else { return }
+        if let key = record.supermuxOrderKey, SupermuxOrderKey().isValid(key) { return }
+        let sortIndex = record.sortIndex
         let siblings = manager.tabs.compactMap { tab -> (id: UUID, sortIndex: Int)? in
             guard tab.id != workspace.id, index.isDeviceMirror(tab), let siblingRef = index.ref(forLocal: tab),
                   siblingRef.machineID == ref.machineID,
@@ -446,10 +450,13 @@ final class SupermuxDeviceMirrorCoordinator {
             return (tab.id, siblingSort)
         }
         let byRemoteOrder: ((id: UUID, sortIndex: Int), (id: UUID, sortIndex: Int)) -> Bool = { $0.sortIndex < $1.sortIndex }
-        if let next = siblings.filter({ $0.sortIndex > sortIndex }).min(by: byRemoteOrder) {
-            manager.reorderWorkspace(tabId: workspace.id, before: next.id)
-        } else if let previous = siblings.filter({ $0.sortIndex < sortIndex }).max(by: byRemoteOrder) {
-            manager.reorderWorkspace(tabId: workspace.id, after: previous.id)
+        // The fork's placement, not the user's move: never sent to the owner.
+        SupermuxComposition.workspaceOrder.programmatic(moving: workspace.id, in: manager) {
+            if let next = siblings.filter({ $0.sortIndex > sortIndex }).min(by: byRemoteOrder) {
+                manager.reorderWorkspace(tabId: workspace.id, before: next.id)
+            } else if let previous = siblings.filter({ $0.sortIndex < sortIndex }).max(by: byRemoteOrder) {
+                manager.reorderWorkspace(tabId: workspace.id, after: previous.id)
+            }
         }
     }
 

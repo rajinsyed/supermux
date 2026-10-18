@@ -200,6 +200,16 @@ enum SupermuxMobileHostGlue {
         topic: .filesUpdated
     )
 
+    /// Pokes legacy-list viewers (`workspace.updated`, coalesced with the
+    /// activity observer's emits) after a change only a fork field of the
+    /// list shows, such as an own order key. A phone that holds this Mac as a
+    /// secondary refetches the list only on this event. Nothing happens while
+    /// no one subscribes to the topic.
+    static func requestWorkspaceUpdatedEmit() {
+        guard MobileHostService.hasEventSubscribers(topic: "workspace.updated") else { return }
+        activityObserver?.requestWorkspaceUpdatedEmit()
+    }
+
     /// Constructs the fork observers once; later calls only re-check the
     /// DEBUG loopback device harness (`SupermuxDeviceLoopbackHarness`).
     static func activateIfNeeded() {

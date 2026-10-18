@@ -1,5 +1,6 @@
 public import CmuxMobileShellModel
 import Foundation
+import SupermuxMobileCore
 import SupermuxMobileKit
 
 /// How the shell's list is currently narrowed.
@@ -123,11 +124,16 @@ public struct SupermuxProjectsListLayout: Sendable {
         // holds. Rows on any other Mac carry the cloud-Mac icon; scoped to one
         // Mac, that Mac is home and none do.
         let home = groups.first { $0.isDisplayed && isShown($0.header) }
-        let projects = Self.homeOrder(
-            SupermuxPhoneProjectMerge.merge(groups).compactMap { project in
-                project.keeping { isShown($0.mac) }
-            },
-            home: home)
+        // The order every Mac shares: by each project's newest stamp among
+        // its copies; projects never moved since shared order follow, in the
+        // home Mac's order.
+        let projects = SupermuxProjectOrder().sorted(
+            Self.homeOrder(
+                SupermuxPhoneProjectMerge.merge(groups).compactMap { project in
+                    project.keeping { isShown($0.mac) }
+                },
+                home: home),
+            stamp: \.order)
         // Scoped to one Mac that has no projects: no block at all, rather
         // than a "No projects yet" that is only true of that Mac.
         if !parsedMachines.isEmpty, section.hasLoaded, projects.isEmpty {
@@ -236,9 +242,11 @@ public struct SupermuxProjectsListLayout: Sendable {
             .map(\.element)
     }
 
-    /// A project's nested workspaces as each Mac's sidebar shows them: by Mac
-    /// in the stable order, then each Mac window's own order with its pinned
-    /// rows first (or by recent activity when sorting so).
+    /// A project's nested workspaces in the order every Mac shares: rows
+    /// with an order key by that key (``SupermuxPhoneWorkspaceOrder/nested(_:)``),
+    /// then rows from Macs that predate shared order as each Mac's sidebar
+    /// shows them: by Mac in the stable order, then each Mac window's own
+    /// order with its pinned rows first. By recent activity when sorting so.
     private static func nested(
         in project: SupermuxMergedProject,
         owned: [String: [MobileWorkspacePreview]],
@@ -251,7 +259,7 @@ public struct SupermuxProjectsListLayout: Sendable {
         if scope.appliesRecencySort {
             return MobileWorkspaceRecencyOrder().displayOrder(perMac.flatMap { $0 })
         }
-        return perMac.flatMap { rows in
+        let byMac = perMac.flatMap { rows in
             var windows: [String?] = []
             for row in rows where !windows.contains(row.windowID) {
                 windows.append(row.windowID)
@@ -261,15 +269,22 @@ public struct SupermuxProjectsListLayout: Sendable {
                 return inWindow.filter(\.isPinned) + inWindow.filter { !$0.isPinned }
             }
         }
+        return SupermuxPhoneWorkspaceOrder().nested(byMac)
     }
 
-    /// The segment each nested row can be dragged in: one project, one Mac,
-    /// one of its windows, one side of the pinned line. That run is in the
-    /// Mac's own tab order, so a drag inside it is one move on that Mac.
+    /// The segment each nested row can be dragged in. A row with an order
+    /// key moves among the project's keyed rows of its instance tag and pin
+    /// tier, across Macs and windows: the drop becomes a new key that its
+    /// owner applies (``SupermuxPhoneWorkspaceOrder/orderedSegment(project:row:)``).
+    /// Any other row moves in one project, one Mac, one of its windows, one
+    /// side of the pinned line. That run is in the Mac's own tab order, so a
+    /// drag inside it is one move on that Mac. Keyed rows lead ``nested``, so
+    /// every segment is one run.
     private static func segments(
         of nested: [MobileWorkspacePreview],
         in project: SupermuxMergedProject
     ) -> [MobileWorkspacePreview.ID: String] {
+        let order = SupermuxPhoneWorkspaceOrder()
         var segments: [MobileWorkspacePreview.ID: String] = [:]
         for workspace in nested {
             let pairingID = SupermuxMacSeam.pairingID(
@@ -277,8 +292,9 @@ public struct SupermuxProjectsListLayout: Sendable {
                 instanceTag: workspace.macInstanceTag
             )
             let tier = workspace.isPinned ? "pinned" : "unpinned"
-            segments[workspace.id] = [project.id, pairingID, workspace.windowID ?? "", tier]
-                .joined(separator: "\u{1F}")
+            segments[workspace.id] = order.orderedSegment(project: project.id, row: workspace)
+                ?? [project.id, pairingID, workspace.windowID ?? "", tier]
+                .joined(separator: SupermuxPhoneWorkspaceOrder.segmentSeparator)
         }
         return segments
     }

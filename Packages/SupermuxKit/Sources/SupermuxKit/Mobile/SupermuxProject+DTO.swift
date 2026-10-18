@@ -6,7 +6,8 @@ extension SupermuxProjectDTO {
     ///
     /// The custom-icon *path* deliberately never travels (data policy): the
     /// phone only learns whether an icon is fetchable and pulls the bytes via
-    /// `mobile.supermux.project.icon`.
+    /// `mobile.supermux.project.icon`. The copy's shared-order stamp travels as
+    /// `order` (absent while the copy was never moved).
     ///
     /// - Parameters:
     ///   - project: The Mac-side project record.
@@ -46,7 +47,8 @@ extension SupermuxProjectDTO {
             createdAt: project.createdAt.timeIntervalSince1970,
             lastOpenedAt: project.lastOpenedAt?.timeIntervalSince1970,
             configPath: configPath,
-            gitRemoteURL: gitRemoteURL
+            gitRemoteURL: gitRemoteURL,
+            order: project.order
         )
     }
 }

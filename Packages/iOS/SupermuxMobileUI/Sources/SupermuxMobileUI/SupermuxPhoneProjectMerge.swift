@@ -1,4 +1,5 @@
 import Foundation
+public import SupermuxMobileCore
 
 /// One project as the phone lists it: the same repository on every Mac that
 /// has it, merged into one row the way the Mac sidebar merges a project with
@@ -38,6 +39,16 @@ public struct SupermuxMergedProject: Equatable, Sendable, Identifiable {
 
     /// Whether the merged disclosure is open: any location's is.
     public var isExpanded: Bool { locations.contains { $0.row.isExpanded } }
+
+    /// The project's place in the shared order: the newest valid stamp among
+    /// its copies (``SupermuxOrderStamp/wins(over:)``), or `nil` when no copy
+    /// was ever moved.
+    public var order: SupermuxOrderStamp? {
+        locations.reduce(nil) { best, location in
+            guard let stamp = location.row.order, stamp.wins(over: best) else { return best }
+            return stamp
+        }
+    }
 
     /// Unopened worktrees across every Mac, or `nil` before any count exists.
     public var worktreeCount: Int? {

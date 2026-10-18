@@ -94,12 +94,26 @@ class PrepareCandidateTests(unittest.TestCase):
             self.assertEqual(eval(expression, {"__builtins__": {}}, {}), expected,
                              (upload, package, prepare, cancelled))
 
-    def test_manual_beta_release_defaults_to_registered_extension(self):
-        config = (ROOT / 'ios/Config/Release.xcconfig').read_text()
-        values = dict(line.split(' = ', 1) for line in config.splitlines()
-                      if ' = ' in line and not line.startswith('//'))
-        self.assertEqual(values.get('CMUX_NOTIFICATION_SERVICE_BUNDLE_IDENTIFIER'),
-                         'dev.cmux.app.beta.NotificationServiceV2')
+    # SUPERMUX:begin ios-prepare-candidate-extension-identity
+    def test_manual_release_extension_follows_fork_host_identity(self):
+        import re
+
+        values = {}
+        for name in ('Shared.xcconfig', 'Release.xcconfig'):
+            config = (ROOT / 'ios/Config' / name).read_text()
+            values.update(line.split(' = ', 1) for line in config.splitlines()
+                          if ' = ' in line and not line.startswith('//'))
+
+        def resolve(key):
+            return re.sub(r'\$\(([^)]+)\)', lambda match: resolve(match[1]), values[key])
+
+        self.assertEqual(resolve('CMUX_APP_BUNDLE_IDENTIFIER'), 'dev.cmux.app.beta')
+        for host_id in ('dev.cmux.app.beta', 'com.supermux.ios', 'com.supermux.ios.dogfood'):
+            with self.subTest(host_id=host_id):
+                values['SUPERMUX_APP_BUNDLE_ID'] = host_id
+                self.assertEqual(resolve('CMUX_NOTIFICATION_SERVICE_BUNDLE_IDENTIFIER'),
+                                 host_id + '.notification-service')
+    # SUPERMUX:end ios-prepare-candidate-extension-identity
 
     def test_candidate_cannot_claim_uploaded_metadata(self):
         text = WORKFLOW.read_text()

@@ -121,6 +121,7 @@ building a parallel system.
 | Start Claude in a new worktree (prompt-first, per-command model catalog) | ✅ | `Packages/SupermuxKit/Sources/SupermuxKit/Agent/` (`SupermuxAgentLauncherSettings`, `SupermuxAgentModelCatalog` + `SupermuxAgentCommandProbePlan`, `SupermuxPromptNaming`, `SupermuxAgentLaunchCommand`, `SupermuxAgentWorktreeLauncher` — the one shared path), `AI/SupermuxAIWorktreeNamer`; Mac UI: the prompt path lives inside `UI/SupermuxNewWorktreeSheet(+Chips)` (shown when the selected Mac's target offers it), whose state and flow are `UI/SupermuxNewWorktreeSheetModel` over one `SupermuxWorktreeCreationTarget` per Mac (device picker: create on This Mac or another Mac with the project — `plans/supermux-remote-workspaces/PROJECTS-API.md`); wired in `SupermuxComposition.agentLaunch`. Catalogs cache in the harness `SupermuxHarnessModelCatalogStore` under `/supermux-agent-command/<cmd>` pseudo-paths |
 | Localization (en + ja) | ✅ | macOS/app-target `supermux.*` keys in `Resources/Localizable.xcstrings`; the iOS screens package owns a SECOND catalog, `Packages/iOS/SupermuxMobileUI/Sources/SupermuxMobileUI/Resources/Localizable.xcstrings` (~207 keys). Regenerate with the scripts under "Localization" below |
 | Remote Macs in the left sidebar (auto-mirror, close/hide, restart-stable bindings) | ✅ loopback-E2E | `Sources/Supermux/Devices/` (`SupermuxDevices` facade, `SupermuxDeviceWorkspaceIndex`, `SupermuxDeviceWorkspaceOpener`, `SupermuxDeviceMirrorCoordinator` + `SupermuxMirrorReconciler`), loop guard #518/#519, close hook #530 |
+| Shared workspace and project order across Macs and the iPhone (one order everywhere; a reorder on any device, mirror drags included, moves it everywhere) | ✅ loopback-E2E (two real Macs not yet run) | Remote Macs "Shared order" bullet; `Sources/Supermux/Order/`, `SupermuxKit/Order/`, `SupermuxMobileCore/Order/`, `SupermuxPhoneWorkspaceOrder`, #1245–#1254, `tests/supermux/loopback_workspace_order_e2e.py` |
 | Status parity on mirrors (activity, pills, progress, log, branch, color/description/pin) | ✅ loopback-E2E | `SupermuxDeviceStatusProjector`, additive `supermux_status_entries/progress/log` record fields (#535/#536), flat-row fences #532/#533 |
 | Projects across Macs (merge by git origin, remote-only rows, project sync, Set Up on <Mac>) | ✅ loopback-E2E | `Sources/Supermux/Projects/`, `SupermuxUnifiedProjects`, host RPCs `project.probe`/`project.clone`, `plans/supermux-remote-workspaces/PROJECTS-API.md` |
 | New Worktree device picker + New Workspace on ▸ <Mac> | ✅ loopback-E2E | `SupermuxNewWorktreeSheetModel` over `SupermuxWorktreeCreationTarget` (local / remote), #570/#571, #620–#622 (plain New Workspace stays local; the empty area's menu; another Mac's home folder) |
@@ -186,7 +187,7 @@ Status per fork feature area:
 | 11 | Workspace switcher | ✅ covered by existing surface — **deliberate decision** | the existing iOS workspace list already is the mobile switcher; no new switcher UI was built. Workspace selection and the focused panel sync bidirectionally with the Mac: v1 preserves terminal-only compatibility, while `supermux.selection_sync.v2` covers terminals, browser tabs, Simulator tabs, and forward-compatible future panel kinds. Phone-created panels request atomic Mac focus before the create reply, and browser/Simulator streams wait for the ordered focus operation before starting, so a newly opened or selected tab is immediately visible and operable on both devices |
 | 12 | Agent activity indicators | ✅ on iOS | additive `supermux_activity` travels for project-associated and global workspaces; the real iPhone `UITableView` row mounts `SupermuxWorkspaceActivityDot` and shows the amber working spinner whenever any tab's agent is running or waiting on its background work (upstream's "Waiting") |
 | 13 | File explorer ops | ✅ on iOS | `SupermuxFileBrowserScreen` (browse, new file/folder, rename, duplicate, trash — never `rm`) over root-confined `files.*`; doubles as the project editor's folder picker |
-| 14 | Project association / nesting | ✅ on iOS | additive `supermux_project_id` field nests loose project-owned workspaces right under their project as the shell's own workspace rows (swipes, menu, unread, preview, selection all upstream's), in each Mac's sidebar order (Mac by Mac, each Mac window's pinned rows first, then its tab order), and the projects in the home Mac's sidebar order (scoped to one Mac, that Mac's); a workspace in a cmux group stays in its group; a search or a filter-menu filter flattens the list. One function (`SupermuxProjectsListLayout.nestedWorkspaceIDs`) decides both the nesting and the flat-list hide, so each workspace shows once. A nested row drags inside its project like the Mac sidebar's (one Mac, one window, one side of the pinned line): the phone shows the new order at once and sends one upstream `workspace.move` (`before_workspace_id`) to its Mac, whose tab order then changes in its sidebar too; a Mac-side reorder reaches the phone's list the same way any reorder does (#700, #1130–#1133). Not draggable under the Recent Activity sort. A project's open workspaces are also listed in its detail screen |
+| 14 | Project association / nesting | ✅ on iOS | additive `supermux_project_id` field nests loose project-owned workspaces right under their project as the shell's own workspace rows (swipes, menu, unread, preview, selection all upstream's), in the shared order every Mac's sidebar shows (pinned rows first, then each row's order key, across Macs; see "Shared order" under Remote Macs), and the projects in the shared project order; a workspace in a cmux group stays in its group; a search or a filter-menu filter flattens the list. One function (`SupermuxProjectsListLayout.nestedWorkspaceIDs`) decides both the nesting and the flat-list hide, so each workspace shows once. A nested row drags anywhere inside its project and its side of the pinned line, past other Macs' rows too: the phone shows the new order at once and sends `mobile.supermux.workspace.set_order` (a key between its new neighbours) to the row's Mac, which moves its tab and keys it, so every Mac's sidebar and the phone follow; a row from a Mac without `supermux.order_sync.v1` keeps the per-Mac drag with upstream's `workspace.move` (`before_workspace_id`). A Mac-side reorder reaches the phone's list the same way any reorder does (#700, #1130–#1133, #1252). Not draggable under the Recent Activity sort. A project's open workspaces are also listed in its detail screen |
 | 15 | Empty-home behavior | mac-side only — **deliberate decision** | pure macOS window behavior; the mobile close path is already handled by touchpoint #71. No iOS surface (recorded mission decision) |
 | 16 | Sidebar polish (font scale, switcher cards, list filter) | mac-side only | pure macOS sidebar cosmetics with no mobile analogue; the phone's Projects section has its own mobile-native styling |
 | 17 | Unread badge (one design, both devices) | ✅ on iOS | additive `supermux_unread_count` field + `SupermuxUnreadBadgeStyle`/`SupermuxUnreadBadgeContent` in `SupermuxMobileCore`, wrapped per platform (`SupermuxUnreadBadgeView` on the Mac, `SupermuxMobileUnreadBadge` on the phone) and mirrored by the AppKit sidebar's Core Graphics renderer. Both apps now draw the same gradient capsule with localized overflow; the phone wrapper follows Dynamic Type, and its old permanently reserved unread gutter is gone. Touchpoints #261–#284, #291, #297–#298 |
@@ -321,10 +322,40 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   approval (ExitPlanMode) shows needs input until the user answers it in the terminal, then the
   spinner comes back at once (#907–#913: the answered tool's PostToolUse resolves the wait); a tool
   permission prompt hands back to the spinner at the agent's next tool.
-- **Sidebar rows:** inside a project, this Mac's workspaces come first, then each Mac's mirrors;
+- **Sidebar rows:** inside a project and in the flat list, this Mac's workspaces and the mirrors sit in the
+  shared order (next bullet); a mirror of a Mac without shared order follows in its Mac's own block;
   every mirror row (nested or flat) marks its Mac with a small Mac + cloud icon right before its
   branch name (the Mac's name in its tooltip); nested rows show no `cmux set-status` pills or
   progress (the working spinner is their status), flat rows do.
+- **Shared order** (`supermux.order_sync.v1`; `Sources/Supermux/Order/`, `SupermuxKit/Order/`,
+  `SupermuxMobileCore/Order/`, touchpoints #1245–#1254,
+  `tests/supermux/loopback_workspace_order_e2e.py`): every workspace, loose or in a project, sits in
+  ONE order on every Mac's sidebar and on the iPhone, and a reorder anywhere moves it everywhere.
+  - Each workspace has an order key (a fractional index, rocicorp's algorithm), written only by the
+    Mac that owns it (per build, by `Workspace.stableId`, in the app's own defaults) and sent as
+    `supermux_order_key` on the rows that Mac already exports (v2 records and the legacy list).
+    Every device sorts the same way: pinned first, then the key, then the owner's workspace id; a
+    cmux group moves as one unit.
+  - On the owner the tab order is the truth: `SupermuxWorkspaceOrderReconciler` diffs each window's
+    tabs after every change and re-keys only the rows that moved (`SupermuxOrderCapture`), so every
+    entry point counts (sidebar drag, Move Up/Down, CLI, the phone's `workspace.move`, notification
+    bumps, new workspaces, cross-window moves) with no upstream hook. On every other Mac a mirror is
+    placed where its key says (apply moves only mirrors and never writes a key, so there is no echo).
+  - Dragging a mirror sends `mobile.supermux.workspace.set_order` to its owner; the owner moves its
+    own tab (clamped by its pins and groups) and every device then shows that result. While the
+    owner is unreachable the mirror snaps back with a beep. A Mac's notification bump never moves
+    another Mac's workspace (#1254): the owner bumps its own row for its own agent's notification
+    (a local group holding the mirror still rises here, and only its own rows are re-keyed).
+  - Projects carry an order stamp (key, time, origin) in `supermux-projects.json`; the newest stamp
+    of a project's copies wins on every device, a Mac adopts a newer stamp into its own copy, and a
+    move sends it to the other Macs that hold the project (`mobile.supermux.projects.set_order`). The
+    Mac's Projects section is one list, with remote-only projects interleaved; one no Mac can stamp
+    (only on an older Mac) stays after the stamped ones and does not drag.
+  - On upgrade nothing on this Mac moves: its own rows are keyed where they are, and only mirrors
+    move, once. Projects keep their order until the first project move anywhere.
+  - On the iPhone (Automatic sort) every Mac's rows interleave in the shared order, one block per
+    app build (Stable and Nightly never link, so their keys are unrelated); Computer Priority keeps
+    Mac blocks, each in the shared order; Recent Activity is unchanged.
 - **Projects** merge across Macs by normalized git origin (`SupermuxGitRemoteIdentity`), else by
   identical name + path. Project sync (setting) registers a Mac's projects on the other Mac when the
   same repo already exists at the same path; it never clones or deletes. "Set Up on <Mac>…" adds an
@@ -1197,6 +1228,12 @@ Constraints inherited from upstream that supermux code MUST follow:
 
 ## Known limitations / deliberate deviations
 
+- **Shared order limits.** A cmux group stays local to its Mac: its members stay together on every
+  device, but other Macs cannot regroup it. Each Mac's own `app.reorderOnNotification` decides
+  whether its rows bump; a viewer Mac never bumps another Mac's workspace. On the iPhone a loose row
+  still drags only while every visible row is on one Mac (upstream's rule), and projects do not drag
+  there yet; both reorder from any Mac. A Mac or phone without `supermux.order_sync.v1` shows the
+  old per-Mac blocks for that Mac's rows.
 - **`$schema` resolves to upstream.** `web/data/cmux.schema.json` includes `supermuxToggleRun`, but
   a user's `cmux.json` `$schema` points at `raw.githubusercontent.com/manaflow-ai/cmux/main/...`
   (upstream), so editor schema validation only recognizes the new action once supermux publishes

@@ -201,6 +201,68 @@ extension TerminalController {
         return .ok(["section_collapsed": collapsed])
     }
 
+    /// `mobile.supermux.projects.set_order`: gives this Mac's copies of
+    /// projects new shared-order stamps (`{stamps: [{project_id, order: {key,
+    /// updated_at, origin}}]}`), through the same
+    /// ``SupermuxProjectsModel/setOrderStamps(_:)`` path as a move and gossip
+    /// adoption here. A stamp applies only when it wins over the copy's
+    /// current one, so a repeated call changes nothing. Result:
+    /// `{results: [{project_id, applied, order}]}` in request order, `order`
+    /// being the copy's stamp now; an unknown project answers
+    /// `applied: false, error: "not_found"` for its row only, and one
+    /// malformed or invalid stamp refuses the whole call (`invalid_params`).
+    @MainActor
+    func v2SupermuxProjectsSetOrder(params: [String: Any]) async -> V2CallResult {
+        guard SupermuxOrderDebugMode.current.servesOrderSync else {
+            // An older Mac (DEBUG old_host, old_peer) does not know the method.
+            return .err(code: "method_not_found", message: "Unknown mobile method", data: [
+                "method": SupermuxMobileMethod.projectsSetOrder.rawValue
+            ])
+        }
+        guard let requested = Self.supermuxOrderStamps(params) else {
+            return .err(
+                code: "invalid_params",
+                message: "stamps must be a list of {project_id, order: {key, updated_at, origin}} with valid stamps",
+                data: nil
+            )
+        }
+        guard let model = await supermuxLoadedProjectsModel() else { return supermuxProjectsStillLoading() }
+        // Of two stamps for one project, only the one that wins could apply.
+        let stamps = Dictionary(requested, uniquingKeysWith: { first, second in second.wins(over: first) ? second : first })
+        let applied = model.setOrderStamps(stamps)
+        let current = Dictionary(model.projects.map { ($0.id, $0.order) }, uniquingKeysWith: { first, _ in first })
+        let wire = SupermuxWireJSON()
+        let results = requested.map { entry -> [String: Any] in
+            let projectID = entry.0
+            guard let wasApplied = applied[projectID] else {
+                return ["project_id": projectID.uuidString, "applied": false, "error": "not_found"]
+            }
+            var row: [String: Any] = ["project_id": projectID.uuidString, "applied": wasApplied]
+            if let order = current[projectID] ?? nil, let encoded = try? wire.dictionary(from: order) {
+                row["order"] = encoded
+            }
+            return row
+        }
+        return .ok(["results": results])
+    }
+
+    /// The `projects.set_order` stamps in request order, or `nil` when the
+    /// list, a project id or a stamp is malformed or a stamp is not valid.
+    private static func supermuxOrderStamps(_ params: [String: Any]) -> [(UUID, SupermuxOrderStamp)]? {
+        guard let entries = params["stamps"] as? [[String: Any]] else { return nil }
+        let wire = SupermuxWireJSON()
+        var stamps: [(UUID, SupermuxOrderStamp)] = []
+        for entry in entries {
+            guard let rawID = entry["project_id"] as? String,
+                  let projectID = UUID(uuidString: rawID.trimmingCharacters(in: .whitespacesAndNewlines)),
+                  let rawOrder = entry["order"] as? [String: Any],
+                  let stamp = try? wire.decode(SupermuxOrderStamp.self, from: rawOrder),
+                  stamp.isValid else { return nil }
+            stamps.append((projectID, stamp))
+        }
+        return stamps
+    }
+
     /// The `{project: SupermuxProjectDTO}` result for one record (its origin
     /// lookup and its icon and config probes are bounded, as in `projects.list`).
     func supermuxProjectResult(_ project: SupermuxProject) async -> V2CallResult {

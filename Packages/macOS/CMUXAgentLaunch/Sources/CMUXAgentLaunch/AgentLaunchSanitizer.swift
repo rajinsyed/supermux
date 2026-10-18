@@ -101,6 +101,16 @@ public enum AgentLaunchSanitizer {
             ) else { return nil }
             let replayExecutable = codexReplayExecutable(capturedExecutable: executable, launchTail: tail)
             return [replayExecutable] + preserved
+        // SUPERMUX:begin runtime-cli-resilience-omp-capture-sanitizer
+        case "omp":
+            if let script = ompRuntimeScript(executable: executable, arguments: tail) {
+                tail.removeFirst()
+                guard let preserved = preservedArguments(kind: "omp", args: tail) else { return nil }
+                return [executable, script] + preserved
+            }
+            guard let preserved = preservedArguments(kind: "omp", args: tail) else { return nil }
+            return [executable] + preserved
+        // SUPERMUX:end runtime-cli-resilience-omp-capture-sanitizer
         case "rovodev":
             guard let preserved = preservedArguments(kind: fallbackKind, args: tail) else { return nil }
             return [executable, "rovodev", "run"] + preserved
@@ -109,6 +119,25 @@ public enum AgentLaunchSanitizer {
             return [executable] + preserved
         }
     }
+
+    // SUPERMUX:begin runtime-cli-resilience-omp-runtime-prefix
+    static func ompRuntimeScript(executable: String, arguments: [String]) -> String? {
+        let runtime = URL(fileURLWithPath: executable).lastPathComponent.lowercased()
+        guard ["node", "bun", "deno", "tsx", "ts-node"].contains(runtime),
+              let script = arguments.first, script.hasPrefix("/"),
+              !script.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else {
+            return nil
+        }
+        let normalized = script.replacingOccurrences(of: "\\", with: "/").lowercased()
+        let basename = URL(fileURLWithPath: normalized).lastPathComponent
+        guard normalized.contains("/@oh-my-pi/pi-coding-agent/")
+            || normalized.contains("/oh-my-pi/")
+            || (["cli.js", "cli.ts"].contains(basename) && normalized.contains("pi-coding-agent")) else {
+            return nil
+        }
+        return script
+    }
+    // SUPERMUX:end runtime-cli-resilience-omp-runtime-prefix
 
     public static func preservedArguments(kind: String, args: [String]) -> [String]? {
         switch kind {
@@ -202,6 +231,8 @@ public enum AgentLaunchSanitizer {
             return preserveOptions(args, policy: qoderPolicy)
         case "kimi":
             return preserveOptions(args, policy: kimiPolicy)
+        case "muse":
+            return preserveOptions(args, policy: musePolicy)
         case "ollama":
             return OllamaLaunchArgumentsPreserver().preservedArguments(args)
         default:

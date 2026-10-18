@@ -102,4 +102,8 @@ public struct SupermuxMobileCapabilities: Sendable, Equatable {
     /// The Mac hands over its direct addresses (`route.candidates`), so this
     /// device can dial it directly instead of starting on a relay.
     public var supportsRouteCandidates: Bool { contains(.routeCandidatesV1) }
+    /// `supermux.order_sync.v1`: the Mac's rows carry shared order keys and
+    /// project stamps, and it moves its own rows on `workspace.set_order` /
+    /// `projects.set_order`.
+    public var supportsOrderSync: Bool { contains(.orderSyncV1) }
 }

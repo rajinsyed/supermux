@@ -8,7 +8,12 @@ import SupermuxKit
 /// the status projection: it shows no live activity for an offline Mac, while
 /// the record still holds the last synced value.
 ///
-/// The record's branch comes from ``SupermuxUnifiedProjectsModel/mirrorRemoteFields``
+/// A mirror whose record carries an order key joins the shared order (its
+/// `orderGroup` is ``SupermuxOpenWorkspace/orderedGroup``), so it is shown and
+/// dragged among this Mac's rows; a mirror of an older Mac stays in that
+/// Mac's block (`orderGroup` is its machine id).
+///
+/// The record's branch and key presence come from ``SupermuxUnifiedProjectsModel/mirrorRemoteFields``
 /// (observable, reassigned only on a real change), not from the device's
 /// records, so the sidebar body never follows ``SupermuxDevices/revision``.
 @MainActor
@@ -46,7 +51,8 @@ enum SupermuxMirrorRowSnapshot {
                 machineID: ref.machineID,
                 name: device?.displayName ?? remote?.name ?? ref.machineID,
                 isOnline: device?.isConnected ?? false
-            )
+            ),
+            orderGroup: remoteFields?.isOrdered == true ? SupermuxOpenWorkspace.orderedGroup : ref.machineID
         )
     }
 }

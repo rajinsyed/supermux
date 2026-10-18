@@ -449,6 +449,14 @@ struct TaskComposerSheet: View {
         )
     }
 
+    private static func validTemplateID(
+        _ id: MobileTaskTemplate.ID?,
+        in templates: [MobileTaskTemplate]
+    ) -> MobileTaskTemplate.ID? {
+        guard let id, templates.contains(where: { $0.id == id }) else { return nil }
+        return id
+    }
+
     var body: some View {
         NavigationStack {
             composerLayout

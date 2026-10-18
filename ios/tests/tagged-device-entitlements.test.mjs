@@ -104,8 +104,21 @@ function detectsAppGroupProfileMismatch(logBody) {
   }
 }
 
-function renderFallbackEntitlements() {
+// SUPERMUX:begin ios-tagged-device-entitlements-fixture
+function renderFallbackEntitlements(sourceDirectory) {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "cmux-ios-entitlements-"));
+  const inputDirectory = sourceDirectory ?? path.join(tempRoot, "input");
+  if (!sourceDirectory) {
+    const configDirectory = path.join(inputDirectory, "Config");
+    fs.mkdirSync(configDirectory, { recursive: true });
+    const fullApp = releaseEntitlements
+      .replace("<string>production</string>", "<string>development</string>")
+      .replace("<dict>", "<dict>\n<key>com.apple.security.application-groups</key>\n" +
+        "<array><string>group.dev.cmux.ios</string></array>");
+    fs.writeFileSync(path.join(configDirectory, "cmux.entitlements"), fullApp);
+    fs.writeFileSync(path.join(configDirectory, "NotificationService.entitlements"),
+      extensionEntitlements);
+  }
   const helper = extractShellFunction(
     reload,
     "cmux_ios_render_tagged_device_no_app_group_entitlements",
@@ -116,13 +129,29 @@ function renderFallbackEntitlements() {
       "-c",
       `IOS_DIR="$1"; ${helper}; cmux_ios_render_tagged_device_no_app_group_entitlements "$2"`,
       "ios-entitlement-render-test",
-      path.join(repoRoot, "ios"),
+      inputDirectory,
       tempRoot,
     ],
     { cwd: repoRoot, encoding: "utf8" },
   );
   return { result, tempRoot };
 }
+// SUPERMUX:end ios-tagged-device-entitlements-fixture
+
+// SUPERMUX:begin ios-tagged-device-personal-team-guard
+test("personal-team source is not broadened or admitted to the upstream App Group fallback", () => {
+  const { result, tempRoot } = renderFallbackEntitlements(path.join(repoRoot, "ios"));
+  try {
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /expected App Group.*got None/u);
+    assert.equal(read("ios/Config/cmux.entitlements"), appEntitlements);
+    assert.equal(read("ios/Config/NotificationService.entitlements"), extensionEntitlements);
+    assert.equal(fs.existsSync(path.join(tempRoot, "cmux.entitlements")), false);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+// SUPERMUX:end ios-tagged-device-personal-team-guard
 
 function simulatorBuildBlock() {
   const start = reload.indexOf("reload_simulator() {");
@@ -239,10 +268,14 @@ test("App Group fallback is narrow and preserves capable signing paths", () => {
     assert.notEqual(unrelated.status, 0);
   }
 
-  for (const entitlements of [appEntitlements, extensionEntitlements]) {
+  // SUPERMUX:begin ios-tagged-device-fork-source
+  assert.doesNotMatch(appEntitlements, /<key>com\.apple\.security\.application-groups<\/key>/u);
+  assert.match(appEntitlements, /keychain-access-groups/u);
+  for (const entitlements of [extensionEntitlements]) {
     assert.match(entitlements, /com\.apple\.security\.application-groups/u);
     assert.match(entitlements, /group\.dev\.cmux\.ios/u);
   }
+  // SUPERMUX:end ios-tagged-device-fork-source
 
   const renderer = extractShellFunction(
     reload,

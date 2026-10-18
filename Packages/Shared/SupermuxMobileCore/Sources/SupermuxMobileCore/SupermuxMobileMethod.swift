@@ -205,6 +205,22 @@ public enum SupermuxMobileMethod: String, CaseIterable, Codable, Sendable, Equat
     /// (``SupermuxMobileCapability/routeCandidatesV1``).
     case routeCandidates = "mobile.supermux.route.candidates"
 
+    // MARK: Shared order (``SupermuxMobileCapability/orderSyncV1``)
+
+    /// Moves one of this Mac's own workspaces to where an order key puts it,
+    /// sent by another device when its user drags this Mac's row there:
+    /// `{workspace_id, order_key, is_pinned}`. Answers
+    /// `{workspace_id, order_key}` with the key the workspace holds after the
+    /// move, which differs from the request when this Mac's pins or groups
+    /// clamp it. Errors: `invalid_params`, `not_found`, `not_owned` (the id
+    /// is a mirror here) and `conflict` (the pin changed meanwhile).
+    case workspaceSetOrder = "mobile.supermux.workspace.set_order"
+    /// Applies project order stamps to this Mac's copies:
+    /// `{stamps: [{project_id, order}]}`. Each stamp is applied only when it
+    /// wins over the copy's current one, so a repeat changes nothing. Answers
+    /// `{results: [{project_id, applied, order?, error?}]}`.
+    case projectsSetOrder = "mobile.supermux.projects.set_order"
+
     /// The shared method-name prefix; the Mac router dispatches on it.
     public static let namespacePrefix = "mobile.supermux."
 

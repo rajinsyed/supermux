@@ -76,6 +76,10 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
         /// the host does not support exact pane unread state; an empty array means
         /// it supports the field and no pane currently needs acknowledgment.
         public let supermuxUnreadPanelIDs: [String]?
+        /// The workspace's shared order key, written only by the Mac that owns it.
+        /// `nil` from a Mac that predates shared order; an invalid key is treated
+        /// as `nil` where it is used.
+        public let supermuxOrderKey: String?
         // SUPERMUX:end supermux-mobile-workspace-fields
 
         private enum CodingKeys: String, CodingKey {
@@ -106,6 +110,7 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
             case supermuxBranch = "supermux_branch"
             case supermuxUnreadCount = "supermux_unread_count"
             case supermuxUnreadPanelIDs = "supermux_unread_panel_ids"
+            case supermuxOrderKey = "supermux_order_key"
             // SUPERMUX:end supermux-mobile-workspace-fields
         }
 
@@ -141,7 +146,8 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
             supermuxActivity: String? = nil,
             supermuxBranch: String? = nil,
             supermuxUnreadCount: Int? = nil,
-            supermuxUnreadPanelIDs: [String]? = nil
+            supermuxUnreadPanelIDs: [String]? = nil,
+            supermuxOrderKey: String? = nil
             // SUPERMUX:end supermux-mobile-workspace-fields
         ) {
             self.id = id
@@ -171,6 +177,7 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
             self.supermuxBranch = supermuxBranch
             self.supermuxUnreadCount = supermuxUnreadCount
             self.supermuxUnreadPanelIDs = supermuxUnreadPanelIDs
+            self.supermuxOrderKey = supermuxOrderKey
             // SUPERMUX:end supermux-mobile-workspace-fields
         }
 
@@ -215,6 +222,7 @@ public struct MobileSyncWorkspaceListResponse: Decodable, Sendable {
             supermuxUnreadPanelIDs = (
                 try? container.decodeIfPresent([String].self, forKey: .supermuxUnreadPanelIDs)
             ) ?? nil
+            supermuxOrderKey = (try? container.decodeIfPresent(String.self, forKey: .supermuxOrderKey)) ?? nil
             // SUPERMUX:end supermux-mobile-workspace-fields
         }
     }

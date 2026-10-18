@@ -31,6 +31,10 @@ final class SupermuxUnifiedProjectsModel {
     /// A nested mirror row's fields that only its remote record carries.
     struct MirrorRemoteFields: Equatable {
         let branch: String?
+        /// Whether the record carries a valid shared order key, so the mirror
+        /// follows the shared order; a mirror of an older Mac stays in that
+        /// Mac's block.
+        let isOrdered: Bool
     }
 
     /// Every project on every Mac, in sidebar order.
@@ -43,8 +47,12 @@ final class SupermuxUnifiedProjectsModel {
     private(set) var mirrorWorkspaceIDs: Set<UUID> = []
     /// Every remote workspace that has a local mirror.
     private(set) var mirroredRefs: Set<SupermuxRemoteWorkspaceRef> = []
-    /// Local mirror workspace id → its remote record's branch.
+    /// Local mirror workspace id → its remote record's branch and whether it is keyed.
     private(set) var mirrorRemoteFields: [UUID: MirrorRemoteFields] = [:]
+    /// Called with each freshly merged list, also when it came out unchanged
+    /// (this Mac's copy may have lost a stamp the merged project still has):
+    /// shared project order adopts newer stamps here (``SupermuxProjectOrderSync``).
+    @ObservationIgnored var onMerge: (@MainActor (SupermuxUnifiedProjectList) -> Void)?
 
     @ObservationIgnored private let projectsModel: SupermuxProjectsModel
     @ObservationIgnored private let gitRemotes: SupermuxProjectGitRemotes
@@ -52,6 +60,7 @@ final class SupermuxUnifiedProjectsModel {
     @ObservationIgnored private let devices: SupermuxDevices
     @ObservationIgnored private let index: SupermuxDeviceWorkspaceIndex
     @ObservationIgnored private var task: Task<Void, Never>?
+    @ObservationIgnored private let orderKey = SupermuxOrderKey()
     /// The merge inputs ``list`` was last built from.
     @ObservationIgnored private var mergedInput: MergeInput?
 
@@ -125,10 +134,12 @@ final class SupermuxUnifiedProjectsModel {
         }
         let remotes = input.devices.map { SupermuxUnifiedProjects.DeviceProjects(device: $0.device, projects: $0.projects) }
         let next = SupermuxUnifiedProjects.merge(local: locals, devices: remotes)
-        guard next != list else { return }
-        list = next
-        let remoteOnly = next.projects.contains(where: \.isRemoteOnly)
-        if remoteOnly != hasRemoteOnlyProjects { hasRemoteOnlyProjects = remoteOnly }
+        if next != list {
+            list = next
+            let remoteOnly = next.projects.contains(where: \.isRemoteOnly)
+            if remoteOnly != hasRemoteOnlyProjects { hasRemoteOnlyProjects = remoteOnly }
+        }
+        onMerge?(next)
     }
 
     // MARK: - Mirrors
@@ -150,7 +161,10 @@ final class SupermuxUnifiedProjectsModel {
                 recordsByMachine[machine] = recordsByWorkspaceID(on: machine)
             }
             guard let record = recordsByMachine[machine]?[mirror.ref.workspaceID] else { continue }
-            remoteFields[id] = MirrorRemoteFields(branch: record.supermuxBranch)
+            remoteFields[id] = MirrorRemoteFields(
+                branch: record.supermuxBranch,
+                isOrdered: record.supermuxOrderKey.map(orderKey.isValid) ?? false
+            )
             if let owner = owner(of: record, on: mirror.ref, in: list) { owners[id] = owner }
         }
         if ids != mirrorWorkspaceIDs { mirrorWorkspaceIDs = ids }

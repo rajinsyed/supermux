@@ -65,9 +65,11 @@ enum SupermuxNestedWorkspaceRows {
                 unreadCount: unreadCount(workspace.id)
             )
         }
-        // Inside a project: this Mac's workspaces first (tab order), then each
-        // Mac's mirrors as one group (device order; auto-mirror keeps each
-        // group in that Mac's own order). Rows outside projects keep their place.
+        // Inside a project: the shared order first (this Mac's workspaces and
+        // keyed mirrors, in the tab order apply keeps canonical), then each
+        // older Mac's unkeyed mirrors as one block (device order; auto-mirror
+        // keeps each block in that Mac's own order). Each row's `orderGroup`
+        // names its block. Rows outside projects keep their place.
         return SupermuxNestedWorkspaceOrder.sorted(
             rows,
             deviceOrder: SupermuxComposition.devices.devices.map(\.machine.rawValue)

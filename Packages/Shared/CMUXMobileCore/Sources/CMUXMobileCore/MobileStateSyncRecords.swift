@@ -257,6 +257,10 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
     /// the host predates per-tab activity; an empty array means the host
     /// supports it and no terminal is working.
     public let supermuxWorkingPanelIDs: [String]?
+    /// The workspace's shared order key, written only by the Mac that owns
+    /// it. `nil` from a Mac that predates shared order; an invalid key is
+    /// treated as `nil` where it is used.
+    public let supermuxOrderKey: String?
     // SUPERMUX:end supermux-mobile-workspace-fields
 
     /// ``MobileSyncRecord`` identity: the workspace id.
@@ -298,7 +302,8 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
         supermuxStatusEntries: [SupermuxStatusEntry]? = nil,
         supermuxProgress: SupermuxProgress? = nil,
         supermuxLog: SupermuxLog? = nil,
-        supermuxWorkingPanelIDs: [String]? = nil
+        supermuxWorkingPanelIDs: [String]? = nil,
+        supermuxOrderKey: String? = nil
         // SUPERMUX:end supermux-mobile-workspace-fields
     ) {
         self.id = id
@@ -333,6 +338,7 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
         self.supermuxProgress = supermuxProgress
         self.supermuxLog = supermuxLog
         self.supermuxWorkingPanelIDs = supermuxWorkingPanelIDs
+        self.supermuxOrderKey = supermuxOrderKey
         // SUPERMUX:end supermux-mobile-workspace-fields
     }
 
@@ -390,6 +396,7 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
         supermuxWorkingPanelIDs = (
             try? container.decodeIfPresent([String].self, forKey: .supermuxWorkingPanelIDs)
         ) ?? nil
+        supermuxOrderKey = (try? container.decodeIfPresent(String.self, forKey: .supermuxOrderKey)) ?? nil
         // SUPERMUX:end supermux-mobile-workspace-fields
     }
 
@@ -427,6 +434,7 @@ public struct WorkspaceSyncRecord: MobileSyncRecord {
         case supermuxProgress = "supermux_progress"
         case supermuxLog = "supermux_log"
         case supermuxWorkingPanelIDs = "supermux_working_panel_ids"
+        case supermuxOrderKey = "supermux_order_key"
         // SUPERMUX:end supermux-mobile-workspace-fields
     }
 }

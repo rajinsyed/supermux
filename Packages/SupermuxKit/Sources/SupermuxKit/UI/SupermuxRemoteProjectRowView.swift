@@ -3,7 +3,10 @@ import SwiftUI
 /// A project that exists only on another Mac: the header (avatar, name, the
 /// Mac's chip, run indicator), its mirrored workspaces nested under it, and —
 /// when expanded — that Mac's unopened worktrees. Tapping the header opens the
-/// project on that Mac and focuses the mirror here.
+/// project on that Mac and focuses the mirror here. The header drag-reorders
+/// the project among every project row while a connected Mac that holds it
+/// takes order stamps, and takes other rows' drops while the project has a
+/// place in the keyed order (``SupermuxUnifiedProject/isOrderKeyed``).
 struct SupermuxRemoteProjectRowView: View {
     let row: SupermuxRemoteProjectRow
     /// Local mirrors of that Mac's workspaces owned by this project.
@@ -16,6 +19,13 @@ struct SupermuxRemoteProjectRowView: View {
     let selectWorkspace: (UUID) -> Void
     let closeWorkspace: (UUID) -> Void
     let renameWorkspace: (UUID) -> Void
+    /// Starts a project reorder drag, returning its payload.
+    var beginDrag: () -> NSItemProvider = { NSItemProvider() }
+    /// Receives reorder drops from the other project rows.
+    var dropDelegate: SupermuxProjectDropDelegate?
+    /// Shared marker for the project being dragged, read here for the dim
+    /// (never in the section's `ForEach`, which would cancel the drag).
+    @Binding var draggingProjectId: UUID?
     /// Worktrees being created here in the background.
     var pendingWorktrees: [SupermuxPendingWorktreeRow] = []
     var pendingActions: SupermuxPendingWorktreeActions = .inert
@@ -24,6 +34,9 @@ struct SupermuxRemoteProjectRowView: View {
     @State private var isHovered = false
 
     private var isOnline: Bool { row.location.isOnline }
+    /// A move reaches the project only through a connected Mac that holds it
+    /// and takes order stamps.
+    private var isReorderable: Bool { row.project.takesOrderStamp }
     private var deviceName: String { row.location.device?.name ?? "" }
 
     var body: some View {
@@ -105,6 +118,10 @@ struct SupermuxRemoteProjectRowView: View {
         .help(isOnline
             ? row.location.rootPath
             : String(localized: "supermux.devices.projectOffline", defaultValue: "\(deviceName) is offline"))
+        .opacity(draggingProjectId == row.id ? 0.4 : 1)
+        .animation(.easeOut(duration: 0.15), value: draggingProjectId == row.id)
+        .modifier(SupermuxRemoteProjectReorderDrag(beginDrag: isReorderable ? beginDrag : nil))
+        .modifier(SupermuxProjectReorderDrop(delegate: dropDelegate))
         .accessibilityElement(children: .combine)
         .accessibilityLabel(row.project.name)
         .accessibilityAddTraits(.isButton)
@@ -180,6 +197,20 @@ struct SupermuxRemoteProjectRowView: View {
             actions.removeProject(row.location, row.project.name)
         }
         .disabled(!isOnline)
+    }
+}
+
+/// Makes a remote-only row a reorder drag source only while a Mac that holds
+/// it is connected (`beginDrag` is `nil` otherwise).
+private struct SupermuxRemoteProjectReorderDrag: ViewModifier {
+    let beginDrag: (() -> NSItemProvider)?
+
+    func body(content: Content) -> some View {
+        if let beginDrag {
+            content.onDrag(beginDrag)
+        } else {
+            content
+        }
     }
 }
 

@@ -8,6 +8,13 @@ import Foundation
 public final class CloudTerminalMutationQueue {
     public nonisolated init() {}
 
+    // SUPERMUX:begin runtime-cloud-mutations-intent-cancellation
+    /// Whether the current mutation's caller or queue has cancelled its intent.
+    public static var isCurrentTurnCancelled: Bool {
+        Task.isCancelled || CloudCommittedMutationOwnership.current?.isCancelled == true
+    }
+    // SUPERMUX:end runtime-cloud-mutations-intent-cancellation
+
     private var tail: Task<Void, Never>?
     private var tailID: UUID?
     private var cancellations: [UUID: @Sendable () -> Void] = [:]
@@ -62,4 +69,63 @@ public final class CloudTerminalMutationQueue {
             task.cancel()
         }
     }
+
+    // SUPERMUX:begin runtime-cloud-mutations-committed-turn
+    /// Cancels unsent work, or only the caller's wait after transport admission.
+    /// The operation must adopt or compensate for its receipt; its ordered turn
+    /// remains occupied until that bounded work completes.
+    public func runCommitted<Value: Sendable>(
+        _ operation: @escaping @MainActor @Sendable () async throws -> Value
+    ) async throws -> Value {
+        try Task.checkCancellation()
+        let ownership = CloudCommittedMutationOwnership()
+        let waiter = CloudCommittedMutationWaiter<Value>()
+        _ = enqueueCommitted(operation, ownership: ownership, waiter: waiter)
+        return try await withTaskCancellationHandler {
+            try await waiter.value()
+        } onCancel: {
+            waiter.resolve(.failure(CancellationError()))
+            ownership.cancel()
+        }
+    }
+
+    private func enqueueCommitted<Value: Sendable>(
+        _ operation: @escaping @MainActor @Sendable () async throws -> Value,
+        ownership: CloudCommittedMutationOwnership,
+        waiter: CloudCommittedMutationWaiter<Value>
+    ) -> Task<Value, Error> {
+        let previous = tail
+        let id = UUID()
+        let task = Task { @MainActor in
+            defer { ownership.finish() }
+            do {
+                if let previous { await previous.value }
+                try Task.checkCancellation()
+                let value = try await CloudCommittedMutationOwnership.$current.withValue(ownership) {
+                    try await operation()
+                }
+                waiter.resolve(.success(value))
+                return value
+            } catch {
+                waiter.resolve(.failure(error))
+                throw error
+            }
+        }
+        ownership.setCancellation { task.cancel() }
+        cancellations[id] = {
+            waiter.resolve(.failure(CancellationError()))
+            ownership.cancel()
+        }
+        tailID = id
+        tail = Task { @MainActor [weak self] in
+            _ = try? await task.value
+            self?.cancellations[id] = nil
+            if self?.tailID == id {
+                self?.tail = nil
+                self?.tailID = nil
+            }
+        }
+        return task
+    }
+    // SUPERMUX:end runtime-cloud-mutations-committed-turn
 }

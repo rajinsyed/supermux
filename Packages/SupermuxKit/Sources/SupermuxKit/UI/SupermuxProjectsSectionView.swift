@@ -113,7 +113,11 @@ public struct SupermuxProjectsSectionView: View {
 
     public var body: some View {
         let grouped = workspacesByProject()
-        let projects = displayProjects
+        // Local and remote-only projects as one list in the shared order; the
+        // drag preview reorders only what is drawn.
+        let items = sectionItems
+        let baseOrder = items.map(\.id)
+        let drawn = SupermuxProjectsSectionOrder().previewed(items, by: dragState.projectOrderPreview?.order)
         VStack(alignment: .leading, spacing: 2) {
             header
             // Persistence problems are otherwise invisible: a sticky "projects
@@ -129,51 +133,14 @@ public struct SupermuxProjectsSectionView: View {
                 storageNotice(error)
             }
             if !model.isSectionCollapsed {
-                ForEach(Array(projects.enumerated()), id: \.element.id) { index, project in
-                    SupermuxProjectRowView(
-                        project: project,
-                        detectedIcon: iconStore.image(for: project.id),
-                        worktrees: model.worktreesByProjectId[project.id] ?? [],
-                        openWorkspaces: grouped[project.id] ?? [],
-                        isExpanded: model.expandedProjectIds.contains(project.id),
-                        actions: rowActions(for: project),
-                        canMoveUp: index > 0,
-                        canMoveDown: index < projects.count - 1,
-                        beginDrag: {
-                            dragFailsafe.start(clearing: dragState)
-                            dragState.draggingProjectId = project.id
-                            return NSItemProvider(object: project.id.uuidString as NSString)
-                        },
-                        dropDelegate: SupermuxProjectDropDelegate(
-                            targetProjectId: project.id,
-                            draggingProjectId: $dragState.draggingProjectId,
-                            // Hover-moves only update the in-memory preview; the
-                            // model is reordered (and the projects file written)
-                            // once, when the drag ends.
-                            move: { dragged, target in
-                                withAnimation(.easeInOut(duration: 0.18)) {
-                                    dragState.previewProjectMove(
-                                        dragged: dragged,
-                                        over: target,
-                                        baseOrder: model.projects.map(\.id)
-                                    )
-                                }
-                            },
-                            end: { dragState.clear() }
-                        ),
-                        draggingProjectId: $dragState.draggingProjectId,
-                        draggingWorkspaceId: $dragState.draggingWorkspaceId,
-                        onWorkspaceDragStart: { dragFailsafe.start(clearing: dragState) },
-                        remoteExtras: remote.extrasByLocalProjectID[project.id],
-                        remoteActions: remote.actions,
-                        setUp: { destination in presentSetUp(project: project, destination: destination) },
-                        newWorktreeOn: { deviceKey in presentNewWorktree(forLocal: project, preferredDeviceKey: deviceKey) },
-                        pendingWorktrees: pendingRows(for: project.id),
-                        pendingActions: pendingActions
-                    )
-                    .equatable()
+                ForEach(Array(drawn.enumerated()), id: \.element.id) { index, item in
+                    switch item {
+                    case .local(let project):
+                        localProjectRow(project, index: index, in: drawn, grouped: grouped, baseOrder: baseOrder)
+                    case .remote(let row):
+                        remoteProjectRow(row, grouped: grouped, baseOrder: baseOrder)
+                    }
                 }
-                remoteProjectRows(grouped: grouped)
                 if model.projects.isEmpty && remote.rows.isEmpty {
                     emptyHint
                 }
@@ -189,22 +156,12 @@ public struct SupermuxProjectsSectionView: View {
         // The deferred end lets a real drop's `performDrop` run first. A
         // release commits the previewed project order — even off-row, the
         // order the user last saw persists (once per drag, not per hovered
-        // row) — while Escape cancels and discards it.
-        .onAppear {
-            // Commits a finished drag's previewed order to the model as a
-            // single `moveProject` (one reorder + one persist per drag).
-            // Captures ONLY the class-reference model, never the view struct:
-            // a closure holding the view would also hold its `_dragState`
-            // State location, closing a dragState → closure → view → dragState
-            // retain cycle that leaks the section's snapshots on teardown.
-            dragState.commitProjectOrder = { [model] preview in
-                guard let target = SupermuxSidebarDragState.commitTarget(
-                    dragged: preview.draggedProjectId,
-                    previewOrder: preview.order,
-                    currentOrder: model.projects.map(\.id)
-                ) else { return }
-                model.moveProject(preview.draggedProjectId, over: target)
-            }
+        // row) — while Escape cancels and discards it. The commit compares
+        // the preview with the order drawn without it, so it is re-installed
+        // whenever that order changes (a stamp arriving from another Mac).
+        .onAppear { dragState.commitProjectOrder = Self.projectOrderCommit(model: model, currentOrder: baseOrder) }
+        .onChange(of: baseOrder) { _, order in
+            dragState.commitProjectOrder = Self.projectOrderCommit(model: model, currentOrder: order)
         }
         .onDisappear {
             // Backstop for a drag still in flight when the section goes away.
@@ -253,6 +210,40 @@ public struct SupermuxProjectsSectionView: View {
             .joined(separator: "|")
     }
 
+    /// A project with a copy on this Mac, at `index` of the drawn rows. It
+    /// never moves down past a row that has no place in the keyed order.
+    private func localProjectRow(
+        _ project: SupermuxProject,
+        index: Int,
+        in drawn: [SupermuxProjectsSectionOrder.Item],
+        grouped: [UUID: [SupermuxOpenWorkspace]],
+        baseOrder: [UUID]
+    ) -> some View {
+        SupermuxProjectRowView(
+            project: project,
+            detectedIcon: iconStore.image(for: project.id),
+            worktrees: model.worktreesByProjectId[project.id] ?? [],
+            openWorkspaces: grouped[project.id] ?? [],
+            isExpanded: model.expandedProjectIds.contains(project.id),
+            actions: rowActions(for: project),
+            canMoveUp: index > 0,
+            canMoveDown: index + 1 < drawn.count && drawn[index + 1].isOrderKeyed,
+            projectOrder: baseOrder,
+            beginDrag: { beginProjectDrag(project.id) },
+            dropDelegate: projectDropDelegate(for: project.id, baseOrder: baseOrder),
+            draggingProjectId: draggingProjectId,
+            draggingWorkspaceId: $dragState.draggingWorkspaceId,
+            onWorkspaceDragStart: { dragFailsafe.start(clearing: dragState) },
+            remoteExtras: remote.extrasByLocalProjectID[project.id],
+            remoteActions: remote.actions,
+            setUp: { destination in presentSetUp(project: project, destination: destination) },
+            newWorktreeOn: { deviceKey in presentNewWorktree(forLocal: project, preferredDeviceKey: deviceKey) },
+            pendingWorktrees: pendingRows(for: project.id),
+            pendingActions: pendingActions
+        )
+        .equatable()
+    }
+
     // MARK: - Actions
 
     private func rowActions(for project: SupermuxProject) -> SupermuxProjectRowActions {
@@ -288,37 +279,82 @@ public struct SupermuxProjectsSectionView: View {
         )
     }
 
-    /// The projects in display order: the model's order, or the transient
-    /// drag-preview order while a reorder drag is in flight (the model is
-    /// reordered and persisted only once, at drag end). Nothing here reads the
-    /// dragged-id markers, so a drag *start* still never invalidates this body.
-    private var displayProjects: [SupermuxProject] {
-        guard let preview = dragState.projectOrderPreview else { return model.projects }
-        // `uniquingKeysWith`, not `uniqueKeysWithValues`: the projects file is
-        // user-editable JSON and nothing dedupes ids on load, so a hand-edited
-        // duplicate must degrade to ForEach identity warnings — as it does
-        // outside a drag — never to a fatalError mid-drag.
-        let byId = Dictionary(model.projects.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        var ordered = preview.order.compactMap { byId[$0] }
-        if ordered.count != model.projects.count {
-            // Projects added mid-drag still render (appended); removed ids
-            // simply drop out of the preview.
-            let placed = Set(preview.order)
-            ordered.append(contentsOf: model.projects.filter { !placed.contains($0.id) })
-        }
-        return ordered
+    /// The section's rows in the shared order, without any drag preview:
+    /// this Mac's projects and the remote-only projects interleaved by their
+    /// effective stamps (see ``SupermuxProjectsSectionOrder``). Nothing here
+    /// reads the dragged-id markers, so a drag *start* never invalidates this
+    /// body.
+    private var sectionItems: [SupermuxProjectsSectionOrder.Item] {
+        SupermuxProjectsSectionOrder().items(
+            locals: model.projects,
+            remotes: remote.rows,
+            stamp: remote.effectiveOrder(of:)
+        )
     }
 
-    /// Moves a project one slot up (`delta == -1`) or down (`delta == 1`) by
-    /// reordering it over its immediate neighbor. Shared with drag-reorder via
+    /// Moves a project one slot up (`delta == -1`) or down (`delta == 1`) in
+    /// the drawn order by reordering it over its immediate neighbor, which
+    /// may be a remote-only project. Shared with drag-reorder via
     /// ``SupermuxProjectsModel/moveProject(_:over:)``.
     private func moveProject(_ project: SupermuxProject, by delta: Int) {
-        guard let index = model.projects.firstIndex(where: { $0.id == project.id }) else { return }
+        let order = sectionItems.map(\.id)
+        guard let index = order.firstIndex(of: project.id) else { return }
         let neighborIndex = index + delta
-        guard model.projects.indices.contains(neighborIndex) else { return }
-        let neighborId = model.projects[neighborIndex].id
+        guard order.indices.contains(neighborIndex) else { return }
         withAnimation(.easeInOut(duration: 0.18)) {
-            model.moveProject(project.id, over: neighborId)
+            model.moveProject(project.id, over: order[neighborIndex])
+        }
+    }
+
+    // MARK: - Drag reorder (local and remote-only rows alike)
+
+    /// Starts a project drag: arms the drag-end failsafe, marks the row
+    /// dimmed and returns the reorder payload.
+    /// - Parameter id: The dragged row's unified project id.
+    func beginProjectDrag(_ id: UUID) -> NSItemProvider {
+        dragFailsafe.start(clearing: dragState)
+        dragState.draggingProjectId = id
+        return NSItemProvider(object: id.uuidString as NSString)
+    }
+
+    /// The reorder drop target of one row. Hover-moves only update the
+    /// in-memory preview; the order is committed once, when the drag ends.
+    /// - Parameters:
+    ///   - id: The row's unified project id.
+    ///   - baseOrder: The drawn order without a preview, seeding the first one.
+    func projectDropDelegate(for id: UUID, baseOrder: [UUID]) -> SupermuxProjectDropDelegate {
+        SupermuxProjectDropDelegate(
+            targetProjectId: id,
+            draggingProjectId: $dragState.draggingProjectId,
+            move: { dragged, target in
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    dragState.previewProjectMove(dragged: dragged, over: target, baseOrder: baseOrder)
+                }
+            },
+            end: { dragState.clear() }
+        )
+    }
+
+    /// The marker of the project being dragged, read by each row for its dim.
+    var draggingProjectId: Binding<UUID?> { $dragState.draggingProjectId }
+
+    /// Commits a finished drag's previewed order as a single
+    /// ``SupermuxProjectsModel/moveProject(_:over:)`` (one move, one persist
+    /// per drag). Static, so it captures ONLY the class-reference model and
+    /// the order, never the view struct: a closure holding the view would also
+    /// hold its `_dragState` State location, closing a dragState → closure →
+    /// view → dragState retain cycle that leaks the section on teardown.
+    private static func projectOrderCommit(
+        model: SupermuxProjectsModel,
+        currentOrder: [UUID]
+    ) -> (SupermuxProjectOrderPreview) -> Void {
+        { [model] preview in
+            guard let target = SupermuxSidebarDragState.commitTarget(
+                dragged: preview.draggedProjectId,
+                previewOrder: preview.order,
+                currentOrder: currentOrder
+            ) else { return }
+            model.moveProject(preview.draggedProjectId, over: target)
         }
     }
 

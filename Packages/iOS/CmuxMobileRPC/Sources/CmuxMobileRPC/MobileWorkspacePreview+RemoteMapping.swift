@@ -35,6 +35,7 @@ extension MobileWorkspacePreview {
         self.supermuxBranch = remote.supermuxBranch
         self.supermuxUnreadCount = remote.supermuxUnreadCount
         self.supermuxUnreadPanelIDs = remote.supermuxUnreadPanelIDs
+        self.supermuxOrderKey = remote.supermuxOrderKey
         // SUPERMUX:end supermux-mobile-workspace-fields
     }
 }

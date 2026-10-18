@@ -298,7 +298,10 @@ final class MobileStateSyncHost {
             supermuxLog: SupermuxMobileWorkspaceStatusFields.log(for: workspace),
             // Which terminals' own agents are working, so another Mac's mirror
             // spins exactly those tabs (SupermuxTabActivitySync).
-            supermuxWorkingPanelIDs: workspace.supermuxWorkingPanelIDs()
+            supermuxWorkingPanelIDs: workspace.supermuxWorkingPanelIDs(),
+            // The shared order key, from the same export the legacy list uses
+            // (nil for mirrors and while order sync is not served).
+            supermuxOrderKey: SupermuxWorkspaceOrderExport.key(for: workspace)
             // SUPERMUX:end supermux-mobile-workspace-fields
         )
     }

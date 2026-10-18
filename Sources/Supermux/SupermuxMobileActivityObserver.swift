@@ -55,6 +55,8 @@ final class SupermuxMobileActivityObserver {
     static let tolerance: Duration = .milliseconds(40)
     /// The shortest gap between two `workspace.updated` emits.
     static let emitInterval: Duration = .seconds(1)
+    /// The fork's `workspace.updated` emits since launch (DEBUG `order_state`).
+    private(set) static var workspaceUpdatedEmitCount = 0
 
     private let projectsModel: SupermuxProjectsModel
     private let associations: SupermuxWorkspaceAssociationStore
@@ -254,8 +256,9 @@ final class SupermuxMobileActivityObserver {
 
     /// Emits `workspace.updated` now when the last emit is at least
     /// ``emitInterval`` old, otherwise once when it will be. A request made
-    /// while that emit waits joins it.
-    private func requestWorkspaceUpdatedEmit() {
+    /// while that emit waits joins it. Also the emit of other fork changes
+    /// the legacy list carries (``SupermuxMobileHostGlue/requestWorkspaceUpdatedEmit()``).
+    func requestWorkspaceUpdatedEmit() {
         guard pendingEmit == nil else { return }
         let wait = lastEmitAt.map { ContinuousClock.now.duration(to: $0 + Self.emitInterval) } ?? .zero
         guard wait > .zero else {
@@ -272,6 +275,7 @@ final class SupermuxMobileActivityObserver {
 
     private func emitWorkspaceUpdated() {
         lastEmitAt = .now
+        Self.workspaceUpdatedEmitCount += 1
         emit("workspace.updated", [:])
     }
 

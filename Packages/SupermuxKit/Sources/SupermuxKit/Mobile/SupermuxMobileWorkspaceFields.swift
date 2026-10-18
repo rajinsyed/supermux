@@ -58,6 +58,16 @@ public enum SupermuxMobileWorkspaceFields {
     /// so the phone can distinguish exact pane state from an older host that only
     /// supports workspace-wide unread state.
     public static let unreadPanelIDsKey = "supermux_unread_panel_ids"
+    /// Wire key of the workspace's shared order key (a `SupermuxOrderKey`
+    /// string), on both the legacy `mobile.workspace.list` rows and the v2
+    /// record's `supermux_order_key`.
+    ///
+    /// Like the unread fields, this one is NOT produced by ``fields(_:)``: it
+    /// travels for every own workspace, not only project-associated ones, so
+    /// each transport sets it next to its `augment` call from the one export
+    /// (`SupermuxWorkspaceOrderExport.key(for:)`). Absent from a Mac that
+    /// predates shared order, and for mirrors, which are never exported.
+    public static let orderKeyKey = "supermux_order_key"
 
     /// Computes the additive fields for one workspace.
     ///

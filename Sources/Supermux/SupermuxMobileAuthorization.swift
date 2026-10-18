@@ -69,7 +69,10 @@ enum SupermuxMobileAuthorization {
              .runState, .runStart, .runStop,
              .presetCreate, .presetUpdate, .presetDelete, .presetLaunch,
              .actionRun, .phonePushRegister, .phonePushStatus, .phonePushShare,
-             .usageState, .portsList, .terminalWatch, .routeCandidates:
+             .usageState, .portsList, .terminalWatch, .routeCandidates,
+             // A set_order moves a row relative to every other workspace (or
+             // project) on this Mac, so no workspace-pinned ticket may send it.
+             .workspaceSetOrder, .projectsSetOrder:
             return .macWide
         }
     }

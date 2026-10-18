@@ -10,9 +10,11 @@ nested rows in display order, and the flat list's row snapshots). Checks:
   1. setup                               the loopback linked and fetched, auto-mirror on
   2. project_with_local_and_mirror_rows  a scratch project with two local worktree
                                          workspaces, each with its mirror nested under it
-  3. nested_rows_local_first             inside the project, this Mac's rows come first
-                                         (in their own order), then each Mac's mirrors
-                                         grouped, even when a mirror is moved to the top
+  3. nested_rows_follow_shared_order     inside the project, the rows follow the one
+                                         shared order: a mirror moved to the top of the
+                                         window moves its source there (its owning Mac
+                                         moves it), and every local row is followed by its
+                                         mirror, the local rows in tab order
   4. nested_mirror_label_names_mac       a nested mirror's accessibility label says which
                                          Mac it is on; a local row's label is its title
   5. nested_mirror_icon_before_branch    a nested mirror marks its Mac with the small Mac +
@@ -266,10 +268,12 @@ class SidebarRowsE2E:
         rows = wait_for("all four rows to nest under the project", nested, self.timeout)
         return {"project_id": self.project_id, "locals": self.locals, "mirrors": self.mirrors, "rows": len(rows)}
 
-    def nested_rows_local_first(self) -> Dict[str, Any]:
-        # Put a mirror first in the window's tab order: the nested rows must
-        # still list this Mac's workspaces first.
-        first_mirror = self.mirrors[self.locals[0]]
+    def nested_rows_follow_shared_order(self) -> Dict[str, Any]:
+        # Drag a mirror to the top of the window. The mirror asks its owning
+        # Mac to move, so its source moves to the top too, and the nested rows
+        # read each local row followed by its mirror.
+        source = self.locals[0]
+        first_mirror = self.mirrors[source]
         self.sock.call("workspace.reorder", {"workspace_id": first_mirror, "index": 0})
 
         def ordered() -> Optional[List[str]]:
@@ -277,16 +281,24 @@ class SidebarRowsE2E:
             ours = [r for r in rows if up(r.get("workspace_id")) in set(self.locals) | set(self.mirrors.values())]
             if len(ours) != 4:
                 return None
+            shown = [(r.get("title"), r.get("device_name")) for r in ours]
             kinds = ["mirror" if r.get("device_name") else "local" for r in ours]
-            if kinds != ["local", "local", "mirror", "mirror"]:
-                raise Failure(f"row order {[(r.get('title'), r.get('device_name')) for r in ours]}")
-            return [up(r.get("workspace_id")) for r in ours]
+            ids = [up(r.get("workspace_id")) for r in ours]
+            if kinds != ["local", "mirror", "local", "mirror"]:
+                raise Failure(f"row order {shown}")
+            if any(self.mirrors[ids[i]] != ids[i + 1] for i in (0, 2)):
+                raise Failure(f"a mirror is not right after its own source: {shown}")
+            if ids[0] != source:
+                raise Failure(f"the dragged mirror's source is not first: {shown}")
+            return ids
 
-        order = wait_for("local rows before the mirrors", ordered, self.timeout)
+        order = wait_for("each local row followed by its mirror, the dragged mirror's source first", ordered, self.timeout)
         tabs = [up(w.get("id") or w.get("workspace_id")) for w in (self.sock.call("workspace.list", {}) or {}).get("workspaces") or []]
         locals_in_tab_order = [w for w in tabs if w in self.locals]
-        if order[:2] != locals_in_tab_order:
-            raise Failure(f"local rows {order[:2]} are not in tab order {locals_in_tab_order}")
+        if [order[0], order[2]] != locals_in_tab_order:
+            raise Failure(f"local rows {[order[0], order[2]]} are not in tab order {locals_in_tab_order}")
+        if tabs[:1] != [source]:
+            raise Failure(f"the dragged mirror's source {source} is not at the top of the window: {tabs}")
         return {"order": order}
 
     def nested_mirror_label_names_mac(self) -> Dict[str, Any]:
@@ -447,7 +459,7 @@ class SidebarRowsE2E:
         ok = self.step("setup", self.setup) and self.step("project_with_local_and_mirror_rows", self.project_with_rows)
         if ok:
             for name, check in [
-                ("nested_rows_local_first", self.nested_rows_local_first),
+                ("nested_rows_follow_shared_order", self.nested_rows_follow_shared_order),
                 ("nested_mirror_label_names_mac", self.nested_mirror_label_names_mac),
                 ("nested_mirror_icon_before_branch", self.nested_mirror_icon_before_branch),
                 ("nested_rows_show_no_status", self.nested_rows_show_no_status),

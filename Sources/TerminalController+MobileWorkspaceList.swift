@@ -355,6 +355,11 @@ extension TerminalController {
         // phone from falling back to its legacy workspace-wide read receipt.
         forkPayload[SupermuxMobileWorkspaceFields.unreadPanelIDsKey] =
             workspace.supermuxMobileUnreadPanelIDs(notificationStore: store)
+        // The shared order key travels for every own row, like unread, from
+        // the same export the v2 record uses; absent when there is none.
+        if let orderKey = SupermuxWorkspaceOrderExport.key(for: workspace) {
+            forkPayload[SupermuxMobileWorkspaceFields.orderKeyKey] = orderKey
+        }
         return forkPayload
         // SUPERMUX:end mobile-supermux-workspace-fields
     }

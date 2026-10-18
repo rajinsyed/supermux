@@ -1,4 +1,5 @@
 public import Foundation
+public import SupermuxMobileCore
 
 /// A sticky, registered repository or folder shown in the supermux "Projects"
 /// sidebar section.
@@ -45,6 +46,12 @@ public struct SupermuxProject: Codable, Identifiable, Hashable, Sendable {
     public var createdAt: Date
     /// When a workspace was last opened from this project, for recency sorting.
     public var lastOpenedAt: Date?
+    /// This copy's place in the shared project order across Macs and the
+    /// phone, or `nil` while no device has moved a project since this copy
+    /// existed. Moves and adoption set it through
+    /// ``SupermuxProjectsModel/setOrderStamps(_:)``, only ever to a stamp that
+    /// wins over it (``SupermuxOrderStamp/wins(over:)``).
+    public var order: SupermuxOrderStamp?
 
     /// Creates a project record.
     /// - Parameters:
@@ -62,6 +69,7 @@ public struct SupermuxProject: Codable, Identifiable, Hashable, Sendable {
     ///   - actions: Named custom actions / terminal presets; defaults to none.
     ///   - createdAt: Registration date; defaults to now.
     ///   - lastOpenedAt: Last-opened date; defaults to `nil`.
+    ///   - order: Shared order stamp; defaults to `nil` (never moved).
     public init(
         id: UUID = UUID(),
         name: String,
@@ -76,7 +84,8 @@ public struct SupermuxProject: Codable, Identifiable, Hashable, Sendable {
         teardownCommands: [String] = [],
         actions: [SupermuxProjectAction] = [],
         createdAt: Date = Date(),
-        lastOpenedAt: Date? = nil
+        lastOpenedAt: Date? = nil,
+        order: SupermuxOrderStamp? = nil
     ) {
         self.id = id
         self.name = name
@@ -92,6 +101,7 @@ public struct SupermuxProject: Codable, Identifiable, Hashable, Sendable {
         self.actions = actions
         self.createdAt = createdAt
         self.lastOpenedAt = lastOpenedAt
+        self.order = order
     }
 
     /// Absolute path of the directory that holds this project's worktrees.
@@ -102,13 +112,14 @@ public struct SupermuxProject: Codable, Identifiable, Hashable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case id, name, rootPath, colorHex, iconSymbol, customIconPath, defaultBranch
         case worktreesDirName, runCommands, setupCommands, teardownCommands
-        case actions, createdAt, lastOpenedAt
+        case actions, createdAt, lastOpenedAt, order
     }
 
     /// Decodes a project, tolerating older records: `worktreesDirName`,
     /// `runCommands`, `setupCommands`, `teardownCommands`, `actions`, and
     /// `createdAt` fall back to sensible defaults when absent so forward/backward
-    /// migrations stay lossless.
+    /// migrations stay lossless. A malformed `order` decodes as `nil`: one bad
+    /// stamp must never make the whole shared projects file unreadable.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)
@@ -125,5 +136,6 @@ public struct SupermuxProject: Codable, Identifiable, Hashable, Sendable {
         actions = try container.decodeIfPresent([SupermuxProjectAction].self, forKey: .actions) ?? []
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
         lastOpenedAt = try container.decodeIfPresent(Date.self, forKey: .lastOpenedAt)
+        order = (try? container.decodeIfPresent(SupermuxOrderStamp.self, forKey: .order)) ?? nil
     }
 }

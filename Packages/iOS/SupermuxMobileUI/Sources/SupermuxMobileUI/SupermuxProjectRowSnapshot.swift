@@ -83,6 +83,9 @@ public struct SupermuxProjectRowSnapshot: Equatable, Identifiable, Sendable {
     /// The normalized git origin (`SupermuxProjectDTO.gitRemoteIdentity`), or
     /// `nil` without one — what merges one repository across Macs.
     public let gitRemoteIdentity: String?
+    /// This copy's order stamp (`SupermuxProjectDTO.order`), or `nil` when
+    /// the copy was never moved or its Mac predates shared order.
+    public let order: SupermuxOrderStamp?
     /// SF Symbol avatar, or `nil` for the letter avatar.
     public let iconSymbol: String?
     /// Parsed accent color, or `nil` for the neutral default.
@@ -167,6 +170,7 @@ public struct SupermuxProjectRowSnapshot: Equatable, Identifiable, Sendable {
         self.name = project.name
         self.rootPath = project.rootPath
         self.gitRemoteIdentity = project.gitRemoteIdentity
+        self.order = project.order
         self.iconSymbol = project.iconSymbol
         self.avatarRGB = project.colorHex.flatMap(SupermuxAvatarRGB.init(hex:))
         self.hasCustomIcon = project.hasCustomIcon ?? false

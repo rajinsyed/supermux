@@ -152,6 +152,13 @@ extension TerminalController {
         case .routeCandidates:
             // Normally answered before this dispatch (SupermuxRouteCandidatesHost).
             return await SupermuxRouteCandidatesHost.callResult(executionContext: executionContext)
+        case .workspaceSetOrder:
+            switch SupermuxComposition.workspaceOrderHost.setOrder(params) {
+            case .success(let payload): return .ok(payload)
+            case .failure(let refusal): return .err(code: refusal.code, message: refusal.message, data: nil)
+            }
+        case .projectsSetOrder:
+            return await v2SupermuxProjectsSetOrder(params: params)
         default:
             return .err(code: "method_not_found", message: "Unknown mobile method", data: [
                 "method": method

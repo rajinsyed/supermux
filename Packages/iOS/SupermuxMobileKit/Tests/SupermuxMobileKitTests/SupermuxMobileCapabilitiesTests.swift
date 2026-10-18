@@ -91,6 +91,7 @@ import Testing
             (.terminalStreamV2, \.supportsTerminalStreamGrid),
             (.routeCandidatesV1, \.supportsRouteCandidates),
             (.agentAttachmentsV1, \.supportsAgentAttachments),
+            (.orderSyncV1, \.supportsOrderSync),
         ]
         #expect(accessors.count == SupermuxMobileCapability.all.count)
         for (capability, accessor) in accessors {

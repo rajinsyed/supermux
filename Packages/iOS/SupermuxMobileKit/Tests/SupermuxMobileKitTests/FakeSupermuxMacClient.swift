@@ -407,6 +407,29 @@ final class FakeSupermuxMacClient: SupermuxMacCalling {
         return usageStateResponse
     }
 
+    // MARK: Order
+
+    /// When set, `workspaceSetOrder` and `projectsSetOrder` throw it.
+    var setOrderError: (any Error)?
+
+    /// Echoes the sent key, as an owner Mac that applied the move unclamped.
+    func workspaceSetOrder(_ request: SupermuxWorkspaceSetOrderRequest) async throws -> SupermuxWorkspaceSetOrderResponse {
+        callLog.append("workspaceSetOrder")
+        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
+        if let setOrderError { throw setOrderError }
+        return SupermuxWorkspaceSetOrderResponse(workspaceID: request.workspaceID, orderKey: request.orderKey)
+    }
+
+    /// Applies every stamp, as a Mac whose copies held older ones.
+    func projectsSetOrder(_ request: SupermuxProjectsSetOrderRequest) async throws -> SupermuxProjectsSetOrderResponse {
+        callLog.append("projectsSetOrder")
+        recordedWireCalls.append((request.wireMethod, request.wireParams as NSDictionary))
+        if let setOrderError { throw setOrderError }
+        return SupermuxProjectsSetOrderResponse(results: request.stamps.map {
+            .init(projectID: $0.projectID, applied: true, order: $0.order)
+        })
+    }
+
     // MARK: Events
 
     func events(topics: Set<SupermuxMobileTopic>) async -> AsyncStream<SupermuxMobileEvent> {

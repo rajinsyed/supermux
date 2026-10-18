@@ -305,61 +305,30 @@ extension CmuxWebView {
         )
     }
 
+    // SUPERMUX:begin runtime-browser-delivery-download-routing
     fileprivate func handleScriptedDownloadMessage(_ body: [String: Any], isMainFrame: Bool) {
         let expectedToken = objc_getAssociatedObject(
             configuration.userContentController,
             &Self.scriptedDownloadTokenKey
         ) as? String
-        guard let token = body["token"] as? String,
-              let expectedToken,
-              token == expectedToken else {
+        BrowserScriptedDownloadDelivery(
+            expectedToken: expectedToken,
+            maximumDataURLCharacters: Self.maxScriptedDownloadDataURLCharacters
+        ).receive(
+            body: body,
+            isMainFrame: isMainFrame,
+            onDownload: { [self] url, filename in
+                startScriptedDownload(url, suggestedFilename: filename)
+            },
+            onSubframeIntent: { [self] url in onSubframeDownloadIntent?(url) },
+            onRejection: { [self] message in
 #if DEBUG
-            debugContextDownload("browser.scriptdl.message stage=rejectToken")
+                debugContextDownload(message)
 #endif
-            return
-        }
-        guard let kind = body["kind"] as? String, isMainFrame || kind == "subframeDownloadIntent" else { return }
-        let suggestedFilename = body["suggestedFilename"] as? String
-        let urlString: String?
-        switch kind {
-        case "subframeDownloadIntent":
-            guard let rawURL = body["url"] as? String,
-                  let url = URL(string: rawURL.trimmingCharacters(in: .whitespacesAndNewlines)) else { return }
-            onSubframeDownloadIntent?(url)
-            return
-        case "url":
-            urlString = body["url"] as? String
-        case "dataURL":
-            urlString = body["dataURL"] as? String
-            if let dataURL = urlString, dataURL.count > Self.maxScriptedDownloadDataURLCharacters {
-#if DEBUG
-                debugContextDownload("browser.scriptdl.message stage=rejectOversizeDataURL chars=\(dataURL.count)")
-#endif
-                return
             }
-        default:
-            urlString = nil
-        }
-
-        guard let rawURL = urlString?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !rawURL.isEmpty,
-              let url = URL(string: rawURL) else {
-#if DEBUG
-            debugContextDownload("browser.scriptdl.message stage=rejectInvalid kind=\(kind)")
-#endif
-            return
-        }
-
-        if url.scheme?.caseInsensitiveCompare("data") == .orderedSame,
-           rawURL.count > Self.maxScriptedDownloadDataURLCharacters {
-#if DEBUG
-            debugContextDownload("browser.scriptdl.message stage=rejectOversizeDataURL chars=\(rawURL.count)")
-#endif
-            return
-        }
-
-        startScriptedDownload(url, suggestedFilename: suggestedFilename)
+        )
     }
+    // SUPERMUX:end runtime-browser-delivery-download-routing
 
     private func startScriptedDownload(
         _ url: URL,
@@ -471,6 +440,8 @@ extension CmuxWebView {
     private static let sharedScriptedDownloadMessageHandler = ScriptedDownloadMessageHandler()
 }
 
+// SUPERMUX:begin runtime-browser-delivery-download-receive
+@MainActor
 private final class ScriptedDownloadMessageHandler: NSObject, WKScriptMessageHandler {
     func userContentController(
         _ userContentController: WKUserContentController,
@@ -480,8 +451,7 @@ private final class ScriptedDownloadMessageHandler: NSObject, WKScriptMessageHan
               let body = message.body as? [String: Any] else {
             return
         }
-        MainActor.assumeIsolated {
-            webView.handleScriptedDownloadMessage(body, isMainFrame: message.frameInfo.isMainFrame)
-        }
+        webView.handleScriptedDownloadMessage(body, isMainFrame: message.frameInfo.isMainFrame)
     }
 }
+// SUPERMUX:end runtime-browser-delivery-download-receive

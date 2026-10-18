@@ -101,7 +101,11 @@ struct SupermuxDeviceMirrorStatusWriter {
             manager.setCustomDescription(tabId: workspace.id, description: remote.description)
         }
         if Self.changed(\.isPinned, in: remote, since: baseline), workspace.isPinned != remote.isPinned {
-            manager.setPinned(workspace, pinned: remote.isPinned)
+            // The owner's pin, not the user's move: shared order must not
+            // re-key the mirror or send it to its owner.
+            SupermuxComposition.workspaceOrder.programmatic(moving: workspace.id, in: manager) {
+                manager.setPinned(workspace, pinned: remote.isPinned)
+            }
         }
     }
 

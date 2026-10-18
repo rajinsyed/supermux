@@ -97,6 +97,18 @@ public struct SupermuxMacClient: SupermuxMacCalling, SupermuxPaneMacCalling, Sup
         try await send(method: request.wireMethod, params: request.wireParams)
     }
 
+    public func workspaceSetOrder(
+        _ request: SupermuxWorkspaceSetOrderRequest
+    ) async throws -> SupermuxWorkspaceSetOrderResponse {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
+    public func projectsSetOrder(
+        _ request: SupermuxProjectsSetOrderRequest
+    ) async throws -> SupermuxProjectsSetOrderResponse {
+        try await send(method: request.wireMethod, params: request.wireParams)
+    }
+
     public func presetCreate(_ request: SupermuxPresetCreateRequest) async throws -> SupermuxPresetWriteResponse {
         try await send(method: request.wireMethod, params: request.wireParams)
     }

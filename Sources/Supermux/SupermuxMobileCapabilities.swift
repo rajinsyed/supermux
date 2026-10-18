@@ -16,6 +16,15 @@ enum SupermuxMobileCapabilities {
             + (servesTerminalAttachments ? [SupermuxMobileCapability.terminalAttachmentsV1.rawValue] : [])
             + (servesTerminalStream ? [SupermuxMobileCapability.terminalStreamV2.rawValue] : [])
             + (servesTerminalInputPipeline ? [SupermuxMobileCapability.terminalInputPipelineV1.rawValue] : [])
+            + (servesOrderSync ? [SupermuxMobileCapability.orderSyncV1.rawValue] : [])
+    }
+
+    /// Own rows carry `supermux_order_key`, `workspace.set_order` is served
+    /// and other Macs' mirrors are placed by key (`Sources/Supermux/Order/`).
+    /// A DEBUG E2E withholds it to play an older host (`order_debug old_host`
+    /// or `old_peer`).
+    nonisolated private static var servesOrderSync: Bool {
+        SupermuxOrderDebugMode.current.servesOrderSync
     }
 
     /// Another Mac's device mirror keeps several input requests in flight:

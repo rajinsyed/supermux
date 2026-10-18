@@ -415,7 +415,18 @@ class ProjectsE2E:
     def check_worktree_open_state_ignores_mirrors(self) -> Dict[str, Any]:
         """The worktree's device mirror (same path on the other Mac) listed first
         and selected, so its cwd is that path: worktrees.list must still report
-        the worktree open in the LOCAL workspace, never in the mirror."""
+        the worktree open in the LOCAL workspace, never in the mirror.
+
+        Shared order would move the dropped mirror back next to its source (or
+        move the source to the top), so the reconciler is paused for this check
+        (`order_debug {mode: paused}`) and resumed after it."""
+        self.client.call("supermux.devices.order_debug", {"mode": "paused"})
+        try:
+            return self._worktree_open_state_with_mirror_first()
+        finally:
+            self.client.call("supermux.devices.order_debug", {"mode": "normal"})
+
+    def _worktree_open_state_with_mirror_first(self) -> Dict[str, Any]:
         mirror_id = self.facts["mirror_workspace_id"]
         source_id = self.facts["worktree_workspace_id"]
         self.client.call("workspace.reorder", {"workspace_id": mirror_id, "index": 0})

@@ -17,8 +17,8 @@ import SupermuxMobileCore
 /// `delete_all_worktrees {project_id, machine?, delete_branches?, force_dirty?}`
 /// (DEBUG only: a row's Delete All Worktrees, its alerts answered by the params),
 /// `project_sync {}`, `projects_presentation {window_id?}`,
-/// `sidebar_rows {window_id?}` (the nested rows per project in display order,
-/// and each flat-list row's directory line, as the sidebar draws them).
+/// `sidebar_rows {window_id?}` (every project row in drawn order with its
+/// nested rows, and each flat-list row's directory line, as the sidebar draws them).
 @MainActor
 enum SupermuxProjectsSocketCommands {
     private static let methods: Set<String> = [
