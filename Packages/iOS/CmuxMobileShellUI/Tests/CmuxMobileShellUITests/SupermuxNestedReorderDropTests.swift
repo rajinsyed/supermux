@@ -1,8 +1,12 @@
 // SUPERMUX:begin supermux-mobile-nested-reorder (whole file: a fork test inside an upstream package — see SUPERMUX-TOUCHPOINTS.md)
 #if os(iOS)
+import CmuxMobilePairedMac
+@testable import CmuxMobileShell
 import CmuxMobileShellModel
+import Foundation
 import SupermuxMobileCore
 import SupermuxMobileUI
+import SwiftUI
 import Testing
 import UIKit
 @testable import CmuxMobileShellUI
@@ -337,6 +341,86 @@ import UIKit
         #expect(call.0 == IndexSet(integer: 1))
         #expect(call.1 == 0)
         #expect(recorder.nestedMoves.isEmpty)
+    }
+}
+
+/// The loose rows beside those nested rows, in a list scoped to one Mac.
+/// Failure modes, listed before the code:
+///
+/// 1. No recency sort applies to one Mac's scope, yet a Recent Activity
+///    choice left over from All Computers (its menu is hidden here) keeps the
+///    loose rows in the Mac's window-by-window order, while the nested rows
+///    and their ordered drags on the same screen follow the shared order keys.
+@MainActor
+@Suite struct SupermuxOneMacListOrderTests {
+    private func row(_ id: String, mac: String, window: String, key: String) -> MobileWorkspacePreview {
+        var row = MobileWorkspacePreview(
+            id: .init(rawValue: id), macDeviceID: mac, windowID: window, name: id, terminals: [])
+        row.supermuxOrderKey = key
+        return row
+    }
+
+    @Test(arguments: MobileWorkspaceSortMode.allCases)
+    func oneMacsLooseRowsFollowTheSharedOrderWhateverTheHiddenSort(mode: MobileWorkspaceSortMode) async {
+        // Mac A's two windows hold keys that interleave: z moved to window 2
+        // and kept its key, which still fit there.
+        let rows = [
+            row("x", mac: "mac-a", window: "w1", key: "a0"),
+            row("y", mac: "mac-a", window: "w1", key: "a2"),
+            row("z", mac: "mac-a", window: "w2", key: "a1"),
+            row("w", mac: "mac-a", window: "w2", key: "a5"),
+            row("b", mac: "mac-b", window: "w1", key: "a3"),
+        ]
+        let view = await listView(rows, scopedTo: "mac-a", sort: mode)
+        #expect(!view.appliesRecencySort)
+        #expect(view.filteredWorkspaces.map(\.id.rawValue) == ["x", "z", "y", "w"])
+    }
+
+    private func listView(
+        _ rows: [MobileWorkspacePreview],
+        scopedTo mac: String,
+        sort: MobileWorkspaceSortMode
+    ) async -> WorkspaceListView {
+        let defaults = UserDefaults(suiteName: "SupermuxOneMacListOrderTests-\(UUID().uuidString)") ?? .standard
+        let pairedMacs = ["mac-a", "mac-b"].map {
+            MobilePairedMac(
+                macDeviceID: $0, displayName: $0, routes: [], createdAt: Date(timeIntervalSince1970: 0),
+                lastSeenAt: Date(timeIntervalSince1970: 10), isActive: false, stackUserID: "user-1", teamID: "team-a")
+        }
+        let store = MobileShellComposite(
+            isSignedIn: true,
+            connectionState: .disconnected,
+            pairedMacStore: WorkspaceMacSelectionPairedMacStore(pairedMacs),
+            clientIDRepository: MobileClientIDRepository(defaults: defaults),
+            identityProvider: WorkspaceMacSelectionIdentityProvider(userID: "user-1"),
+            teamIDProvider: { "team-a" },
+            pairingHintDefaults: defaults,
+            multiMacAggregationDefaults: defaults,
+            groupCollapseStore: MobileWorkspaceGroupCollapseStore(defaults: defaults),
+            workspaceSortStore: MobileWorkspaceSortStore(defaults: defaults)
+        )
+        await store.loadPairedMacs()
+        var selection = WorkspaceMacSelection.machine(mac)
+        return WorkspaceListView(
+            workspaces: rows,
+            groups: [],
+            selectedWorkspaceID: nil,
+            host: "Test Mac",
+            connectionStatus: .unavailable,
+            navigationStyle: .push,
+            wrapWorkspaceTitles: false,
+            selectWorkspace: { _ in },
+            createWorkspace: {},
+            macSelection: Binding(get: { selection }, set: { selection = $0 }),
+            store: store,
+            moveWorkspace: nil,
+            workspaceSortMode: sort,
+            setWorkspaceSortMode: { _ in },
+            workspaceComputerPriority: [],
+            setWorkspaceComputerPriority: { _ in },
+            filterState: WorkspaceListFilterState(),
+            searchText: ""
+        )
     }
 }
 
