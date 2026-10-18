@@ -64,36 +64,41 @@ Steps:
   12. notification_bump           a notification on the last scratch row (W1 selected)
                                   bumps it first among unpinned rows, its mirror right
                                   after; C3 (skipped when the auto-reorder setting is off)
-  13. group_unit                  W1, W2 grouped: the window reads ...W1, W2, M1, M2...;
+  13. mirror_notification_stays_with_owner
+                                  a notification on the last row's mirror leaves the
+                                  owner's rows where they are and sends no set_order
+                                  (the owner bumps its own row for its own agent's
+                                  notification); C1 (skipped when the setting is off)
+  14. group_unit                  W1, W2 grouped: the window reads ...W1, W2, M1, M2...;
                                   the phone's unit-aware arrange is the Mac's own order;
                                   apply stops rising within 3 s; ungrouped: C1-C4
-  14. group_clamped_set_order     the first two own rows grouped; set_order asks the
+  15. group_clamped_set_order     the first two own rows grouped; set_order asks the
                                   group's last (non-anchor) member for a key after every
                                   own row: the group clamp keeps it in place, so the
                                   reply and the stored key are its old key (C4 holds),
                                   and no row moves
-  15. local_group_pin_not_sent    a mirror alone in a local group G, an own row alone in
+  16. local_group_pin_not_sent    a mirror alone in a local group G, an own row alone in
                                   a group H, both groups pinned, then G moved to the
                                   other side of H: the mirror is pinned only by its
                                   local group, so no set_order is sent
-  16. nested_rows_follow_order    a project with three worktree workspaces P1..P3: its
+  17. nested_rows_follow_order    a project with three worktree workspaces P1..P3: its
                                   nested rows read P1, MP1, P2, MP2, P3, MP3; MP3 dragged
                                   above P1: P3, MP3, P1, MP1, P2, MP2, and the phone's
                                   nested order reads P3, P1, P2
-  17. cross_window_move           W2 moved to a new window: it is that window's last row
+  18. cross_window_move           W2 moved to a new window: it is that window's last row
                                   and stays there for 2 s, its key above every key before
                                   it there; C3; moved back, the window closed
-  18. projects_order              two scratch projects P, Q (the app writes the scratch
+  19. projects_order              two scratch projects P, Q (the app writes the scratch
                                   --projects-file, never the user's): unstamped at first;
                                   `project_move` Q over P stamps every project and lists
                                   Q before P (projects.list and the sidebar);
                                   `projects.set_order` P with an older stamp is refused,
                                   a newer one puts P before Q
-  19. owner_offline_drag_beeps    the loopback transport dropped until the link is down:
+  20. owner_offline_drag_beeps    the loopback transport dropped until the link is down:
                                   a mirror dragged first snaps back with one beep (the
                                   owner is unreachable, not an old host); after the
                                   link returns: C1-C4
-  20. old_host_fallback           `order_debug old_host` + link restart: no capability,
+  21. old_host_fallback           `order_debug old_host` + link restart: no capability,
                                   no keys, nested rows in per-device blocks again. Then
                                   `old_peer` (the owner still old, this Mac's reconciler
                                   running again, as an up-to-date viewer next to an old
@@ -102,26 +107,29 @@ Steps:
                                   set_order sent. Back to normal + link restart: C1-C4,
                                   the own order and W2's key unchanged, still no
                                   set_order sent
-  21. quiescence                  5 s idle: tabs, keys and pending keys unchanged; no key
+  22. quiescence                  5 s idle: tabs, keys and pending keys unchanged; no key
                                   writes, applies or set_order sends
-  22. relaunch                    (--relaunch, needs --app-path; the runner passes both)
-                                  every scratch notification read, then quit the tagged
-                                  app, wait for its process to exit and relaunch it:
+  23. relaunch                    (--relaunch, needs --app-path; the runner passes both)
+                                  quit the tagged app (step 12's notification still
+                                  unread, so the reconnect replays it to the mirror),
+                                  wait for its process to exit and relaunch it:
                                   every scratch row keeps its key, the main window's own
                                   scratch order is identical; C1
-  23. sidebar_screenshot          the window, for the report
+  24. sidebar_screenshot          the window, for the report
 
 What it guards against: an upgrade that moves this Mac's own rows (2); a reorder
-entry point that skips the keys (3-5, 10-13, 16, 17); a mirror drag that never
+entry point that skips the keys (3-5, 10-12, 17, 18); a mirror drag that never
 reaches its owner (6); a key-only change a secondary phone never hears of (8);
 apply's own moves or the fork's sibling placement and mirrored pin sent to an
-owner as user moves (10, 11, 21); a group split by apply (13); a clamped
-set_order that stores a key the row does not sit at (14); a local group's pin
-sent to an owner (15); nested rows kept Mac by Mac (16); a cross-window drop
-moved away (17); an older project stamp winning or an upgrade stamping projects
-(18); a silent snap-back while the owner is offline (19); an old host, an
-unkeyed mirror placed or sent by an up-to-date viewer, and a resume that moves
-the owner's rows (20); an echo loop (21); keys lost on restore (22); and leaked scratch state (cleanup).
+owner as user moves (10, 11, 22); a mirror's notification bump sent to its owner,
+also when a reconnect replays an old notification (13, 23); a group split by
+apply (14); a clamped set_order that stores a key the row does not sit at (15);
+a local group's pin sent to an owner (16); nested rows kept Mac by Mac (17); a
+cross-window drop moved away (18); an older project stamp winning or an upgrade
+stamping projects (19); a silent snap-back while the owner is offline (20); an
+old host, an unkeyed mirror placed or sent by an up-to-date viewer, and a resume
+that moves the owner's rows (21); an echo loop (22); keys lost on restore (23);
+and leaked scratch state (cleanup).
 
 A step that needs a command this build does not serve (the DEBUG order
 commands, the set_order RPCs) fails at once with a message naming it, and the
@@ -904,6 +912,35 @@ class WorkspaceOrderE2E:
         phone = wait_for("C3: the phone's order is the Mac's", self.check_phone_order, self.timeout)
         return {"target": self.name(target), "setting": setting or "default", **shown, "c3_phone": phone}
 
+    def mirror_notification_stays_with_owner(self) -> Dict[str, Any]:
+        """A notification on a mirror's terminal (another Mac's agent, seen
+        here) never bumps the mirror: its owner bumps its own row for that
+        notification, so a bump here would reach the owner as a user move."""
+        setting = self.reorder_setting()
+        if setting in ("0", "false", "off"):
+            return {"skipped": f"app.reorderOnNotification is off ({setting})"}
+        own = self.own_order()
+        source = own[-1]
+        mirror = self.mirror_of(source)
+        surfaces = self.call("surface.list", {"workspace_id": mirror}).get("surfaces") or []
+        terminal = next((s["id"] for s in surfaces if s.get("type") == "terminal"), None)
+        if not terminal:
+            raise Failure(f"{self.name(mirror, self.mirror_map())} has no terminal to notify")
+        self.call("workspace.select", {"workspace_id": own[0]})
+        before = self.counters_or_none()
+        self.call("notification.create_for_surface", {
+            "workspace_id": mirror, "surface_id": terminal,
+            "title": f"order-mirror-bump-{self.nonce}", "body": "workspace order e2e",
+        })
+        time.sleep(2.0)
+        after = self.own_order()
+        if after != own:
+            raise Failure(f"the owner's rows moved: {self.named(own)} -> {self.named(after)}")
+        counters = self.expect_counters(before, exact={"set_order_sent": 0})
+        tabs = wait_for("C1: the mirror still right after its source", self.check_adjacency, self.timeout)
+        self.call("workspace.action", {"workspace_id": mirror, "action": "mark_read"})
+        return {"mirror_of": self.name(source), "own_order": self.named(own), "counters": counters, "c1_tabs": tabs}
+
     def applies_settle(self, within_s: float = 3.0, quiet_s: float = 1.0) -> int:
         """Waits for the apply counter to hold still for `quiet_s` within `within_s`."""
         deadline = time.monotonic() + within_s
@@ -1249,7 +1286,9 @@ class WorkspaceOrderE2E:
             return {"skipped": "pass --relaunch (with --app-path) to run"}
         if not self.args.app_path:
             raise Failure("--relaunch needs --app-path")
-        read = self.read_scratch_notifications()
+        mirrors_before = self.mirror_map()
+        unread = [self.name(i, mirrors_before) for i in self.unread_notification_rows(
+            self.sources + [mirrors_before[s] for s in self.sources if s in mirrors_before])]
         titles = {i: (next((w.get("title") for w in self.tab_rows(self.window_of(i)) if up(w.get("id")) == i), ""))
                   for i in self.sources}
         keys = {titles[i]: self.phone_key(i) for i in self.sources}
@@ -1290,21 +1329,7 @@ class WorkspaceOrderE2E:
         if after != order:
             raise Failure(f"own order changed across the relaunch: {order} -> {after}")
         tabs = wait_for("C1 once the mirrors return", self.check_adjacency, self.timeout * 3)
-        return {"keys": len(keys), "own_order": order, "read_before_quit": read, "c1_tabs": tabs}
-
-    def read_scratch_notifications(self) -> List[str]:
-        """Marks every scratch row's notifications read and waits until none is
-        unread. A mirror whose source still has an unread notification (step 12
-        leaves one) gets it again when the link reconnects after a relaunch;
-        the bump that follows is sent to the owner (design D2) and moves the
-        owner's row, which is not what the relaunch step checks."""
-        mirrors = self.mirror_map()
-        rows = self.sources + [mirrors[s] for s in self.sources if s in mirrors]
-        unread = self.unread_notification_rows(rows)
-        for workspace_id in rows:
-            self.call("workspace.action", {"workspace_id": workspace_id, "action": "mark_read"})
-        wait_for("every scratch notification read", lambda: not self.unread_notification_rows(rows), self.timeout)
-        return [self.name(i, mirrors) for i in unread]
+        return {"keys": len(keys), "own_order": order, "unread_before_quit": unread, "c1_tabs": tabs}
 
     def unread_notification_rows(self, rows: Sequence[str]) -> List[str]:
         """The rows among `rows` holding an unread notification record."""
@@ -1374,6 +1399,7 @@ class WorkspaceOrderE2E:
                 ("new_workspace_keyed", self.new_workspace_keyed),
                 ("pin_tier", self.pin_tier),
                 ("notification_bump", self.notification_bump),
+                ("mirror_notification_stays_with_owner", self.mirror_notification_stays_with_owner),
                 ("group_unit", self.group_unit),
                 ("group_clamped_set_order", self.group_clamped_set_order),
                 ("local_group_pin_not_sent", self.local_group_pin_not_sent),
