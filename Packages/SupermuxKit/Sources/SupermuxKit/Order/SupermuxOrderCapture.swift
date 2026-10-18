@@ -9,9 +9,10 @@ internal import SupermuxMobileCore
 /// sends the result. Each tier (pinned, unpinned) is planned on its own:
 ///
 /// 1. The rows that kept their relative order since the baseline are found
-///    with a weighted longest increasing subsequence (a programmatic move
-///    weighs 0, a hinted row 1, any other row 2), so the rows left out are
-///    the movers. A row whose tier changed counts as new.
+///    with a weighted longest increasing subsequence, so the rows left out are
+///    the movers. A programmatic move weighs 0, a hinted row (or a member of a
+///    hinted row's local group, which moves with it) 1, and any other row more
+///    than all of those together. A row whose tier changed counts as new.
 /// 2. A kept, keyed row is an anchor. Every other own row keeps its key when
 ///    it still fits between the nearest anchors (the highest one before it,
 ///    the lowest kept one after it), else gets a new key there through
@@ -66,9 +67,11 @@ public struct SupermuxOrderCapture: Sendable {
             positions.enumerated().map { ($0.element, $0.offset) },
             uniquingKeysWith: { first, _ in first }
         )
+        let hinted = baseline == nil ? [] : hinted
         var pass = SupermuxOrderCapturePass<ID>(
             baseIndex: baseIndex,
-            hinted: baseline == nil ? [] : hinted,
+            hinted: hinted,
+            movers: movers(hinted, in: rows),
             programmatic: programmatic,
             known: Set(known.filter(orderKey.isValid) + rows.compactMap(\.validKey)),
             seed: seed
@@ -77,6 +80,12 @@ public struct SupermuxOrderCapture: Sendable {
             pass.capture(rows.filter { $0.tier == tier })
         }
         return pass.plan
+    }
+
+    /// The hinted rows plus every member of a hinted row's local group.
+    private func movers<ID>(_ hinted: Set<ID>, in rows: [SupermuxOrderCaptureRow<ID>]) -> Set<ID> {
+        let groups = Set(rows.filter { hinted.contains($0.id) }.compactMap(\.group))
+        return hinted.union(rows.filter { $0.group.map(groups.contains) == true }.map(\.id))
     }
 
     /// The first pass's baseline: every keyed row, in sort-key order.

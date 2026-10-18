@@ -3,8 +3,8 @@
 /// rows count more than others.
 ///
 /// The capture planner weighs a programmatic move 0, a hinted (user-moved)
-/// row 1 and any other row 2, so the rows it keeps are the ones that did not
-/// move, and the rows left out are the movers. O(n²), run only when a window's
+/// row 1 and any other row more than all hinted rows together, so the rows
+/// it keeps are the ones that did not move, and the rows left out are the movers. O(n²), run only when a window's
 /// rows changed.
 ///
 /// ```swift

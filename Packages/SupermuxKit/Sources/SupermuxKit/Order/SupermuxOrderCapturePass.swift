@@ -6,7 +6,11 @@ struct SupermuxOrderCapturePass<ID: Hashable & Sendable> {
     typealias Row = SupermuxOrderCaptureRow<ID>
 
     let baseIndex: [SupermuxOrderPosition<ID>: Int]
+    /// Rows a reorder named: the only mirrors that may be sent.
     let hinted: Set<ID>
+    /// The rows that count as movers: the hinted rows and every member of a
+    /// hinted row's local group (a bump of one member moves the whole group).
+    let movers: Set<ID>
     let programmatic: Set<ID>
     var known: Set<String>
     let seed: String
@@ -14,9 +18,17 @@ struct SupermuxOrderCapturePass<ID: Hashable & Sendable> {
 
     private let orderKey = SupermuxOrderKey()
 
-    init(baseIndex: [SupermuxOrderPosition<ID>: Int], hinted: Set<ID>, programmatic: Set<ID>, known: Set<String>, seed: String) {
+    init(
+        baseIndex: [SupermuxOrderPosition<ID>: Int],
+        hinted: Set<ID>,
+        movers: Set<ID>,
+        programmatic: Set<ID>,
+        known: Set<String>,
+        seed: String
+    ) {
         self.baseIndex = baseIndex
         self.hinted = hinted
+        self.movers = movers
         self.programmatic = programmatic
         self.known = known
         self.seed = seed
@@ -59,18 +71,24 @@ struct SupermuxOrderCapturePass<ID: Hashable & Sendable> {
     /// The rows that kept their relative order since the baseline.
     private func keptRows(_ rows: [Row]) -> Set<Int> {
         let present = rows.indices.filter { baseIndex[rows[$0].position] != nil }
+        let presentRows = present.map { rows[$0] }
         let kept = SupermuxWeightedLIS().indices(
-            of: present.map { baseIndex[rows[$0].position] ?? 0 },
-            weights: present.map { weight(rows[$0]) }
+            of: presentRows.map { baseIndex[$0.position] ?? 0 },
+            weights: weights(presentRows)
         )
         return Set(kept.map { present[$0] })
     }
 
-    /// A programmatic move must never look like the mover's neighbours moved;
-    /// a hinted row is the likelier mover than an unhinted one.
-    private func weight(_ row: Row) -> Int {
-        if programmatic.contains(row.id) { return 0 }
-        return hinted.contains(row.id) ? 1 : 2
+    /// A programmatic move must never look like the mover's neighbours moved
+    /// (weight 0), and a mover is always the likelier one: any one other row
+    /// outweighs every mover together, so a block moved at once never
+    /// outvotes the fewer rows it jumped over.
+    private func weights(_ rows: [Row]) -> [Int] {
+        let unmoved = rows.filter { movers.contains($0.id) }.count + 1
+        return rows.map { row in
+            if programmatic.contains(row.id) { return 0 }
+            return movers.contains(row.id) ? 1 : unmoved
+        }
     }
 
     /// For each row, the lowest sort key among the kept, keyed rows after it.
