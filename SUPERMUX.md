@@ -344,7 +344,8 @@ Devices layer (`Sources/Devices/*`, iroh). Supermux turns that into first-class 
   - Dragging a mirror sends `mobile.supermux.workspace.set_order` to its owner; the owner moves its
     own tab (clamped by its pins and groups) and every device then shows that result. While the
     owner is unreachable the mirror snaps back with a beep. A Mac's notification bump never moves
-    another Mac's workspace (#1145): the owner bumps its own row for its own agent's notification.
+    another Mac's workspace (#1145): the owner bumps its own row for its own agent's notification
+    (a local group holding the mirror still rises here, and only its own rows are re-keyed).
   - Projects carry an order stamp (key, time, origin) in `supermux-projects.json`; the newest stamp
     of a project's copies wins on every device, a Mac adopts a newer stamp into its own copy, and a
     move sends it to the other Macs that hold the project (`mobile.supermux.projects.set_order`). The

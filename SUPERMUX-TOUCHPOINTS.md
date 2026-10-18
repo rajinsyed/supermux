@@ -685,7 +685,7 @@ Rules for adding a touchpoint:
 | 1140 | `Packages/iOS/CmuxMobileShell/Sources/CmuxMobileShell/MobileShellComposite+StateSync.swift` | `supermux-mobile-workspace-fields` | Inside the existing projection fence (#141/#277): carries `record.supermuxOrderKey` through the v2 projection, so the key does not vanish when v2 negotiates |
 | 1141 | `Packages/iOS/CmuxMobileShellUI/Sources/CmuxMobileShellUI/WorkspaceListView.swift` | `supermux-mobile-hide-project-workspaces` | Inside #103's first fence block: a new `supermuxOrderedWorkspaces` (`SupermuxPhoneWorkspaceOrder().loose(workspaces, groups: groupsByID, mode:)` with the sort that applies — `.automatic` when Recent Activity is stored but `appliesRecencySort` is false, i.e. a one-Mac scope, so those loose rows sort by key like the nested rows — otherwise `workspaceSortMode`: every Mac's rows by their owners' order keys, one block per instance tag under the automatic sort, each Mac's block under computer priority, untouched under an applied Recent Activity sort or without keys) feeds `supermuxProjectsLayout`'s `workspaces:` and the iOS arm of `supermuxFlatWorkspaces` (upstream read `workspaces`). Upstream's stable pinned-first pass in `filteredWorkspaces` and `MobileWorkspaceListItem.items` then keep that order, groups already contiguous. The macOS arm is unchanged |
 | 1144 | `cmux.xcodeproj/project.pbxproj` | `unfenced` | Wires `Sources/Supermux/Order/SupermuxWorkspaceOrderExport.swift` into the cmux target (ids `6CF81F66F7A3311629F4767F` file ref / `A481E7BC0C38A9C261EE8542` build file from `scripts/wire-app-sources.py`, four entries, `Order/…` path in the Supermux group). Later `Sources/Supermux/Order/` files of the shared-order work are wired the same way and listed here: the reconciler and its parts (`SupermuxWorkspaceOrderReconciler`, `SupermuxWorkspaceOrderRows`, `SupermuxWorkspaceOrderRow`, `SupermuxWorkspaceOrderCounters`, `SupermuxMirrorOrderOutbox`, `SupermuxWorkspaceOrderHost`, `SupermuxOrderDebugMode`, `SupermuxOrderSocketCommands`, `SupermuxComposition+WorkspaceOrder`), four entries each |
-| 1145 | `Sources/TabManager.swift` | `order-sync-mirror-bump` | At the top of `moveTabToTopForNotification(_:)`: `if SupermuxComposition.workspaceOrder.leavesNotificationBumpToOwner(tabId, in: self) { return }`. A notification never bumps a mirror whose owner shares order (`supermux.order_sync.v1`, a valid record key): the owner bumps its own row for that notification and the key moves the mirror on every device. Bumped here too, the reconciler would capture it as a user move and send it to the owner, so an old notification a reconnect replays would move the owner's row. Mirrors of an older Mac, and every own row, keep upstream's bump |
+| 1145 | `Sources/TabManager.swift` | `order-sync-mirror-bump` | At the top of `moveTabToTopForNotification(_:)`: `if SupermuxComposition.workspaceOrder.handlesNotificationBump(tabId, in: self, bump: { workspaceReordering.moveTabToTopForNotification(tabId) }) { return }`. A notification never bumps a loose mirror whose owner shares order (`supermux.order_sync.v1`, a valid record key): the owner bumps its own row for that notification and the key moves the mirror on every device. Bumped here as a user move, the reconciler would send it to the owner, so an old notification a reconnect replays would move the owner's row. Such a mirror in a local group never follows its key, so the helper runs upstream's bump (the group rises) with the group's mirrors moved programmatically (never sent) and its own rows hinted (re-keyed at the top). Mirrors of an older Mac, and every own row, keep upstream's bump |
 | 715 | `Sources/DockSplitStore+RestoredAgentLifecycle.swift` | `dock-tab-agent-working` | At the end of `mutateAgentRuntime(panelId:updatesAgentAttention:mutation:)` (after upstream's needs-input attention sync): `SupermuxTabActivitySync.syncDock(self, panelId: panelId)`. The Dock keeps its own per-panel agent lifecycle and never fires `SupermuxWorkspaceLifecycleRelay`, so this one call sets a Dock terminal tab's Bonsplit working spinner (`isLoading`) from that panel's lifecycle (`Sources/Supermux/SupermuxTabActivitySync.swift`) |
 | 716 | `Packages/Shared/CMUXMobileCore/Sources/CMUXMobileCore/MobileStateSyncRecords.swift` | `supermux-mobile-workspace-fields` | Inside the existing fences (#139/#271/#535): additive `supermux_working_panel_ids` (`supermuxWorkingPanelIDs: [String]?`) on `WorkspaceSyncRecord` — stored property, trailing defaulted init param, lenient decode (malformed → nil), CodingKey. The host's terminal ids (`terminals[].id`) whose own agent is working; `nil` = a host that predates per-tab activity, `[]` = supported and nothing working. Another Mac's mirror spins exactly those tabs; the phone ignores it |
 | 717 | `Sources/Mobile/MobileStateSync.swift` | `supermux-mobile-workspace-fields` | Inside the existing `workspaceRow` fence (#140/#272/#536): the trailing `supermuxWorkingPanelIDs: workspace.supermuxWorkingPanelIDs()` argument (`Sources/Supermux/Workspace+SupermuxPanelActivity.swift`: panels in tab order whose own lifecycle resolves to working). Freshness: every lifecycle change already forces a v2 poke (`SupermuxMobileActivityObserver`) |
@@ -1050,18 +1050,26 @@ Found by the shared-order E2E (2026-10-18): upstream's reorder-on-notification (
 mirror to the top when its terminal notified, the shared-order reconciler took that as the user's move
 and sent it to the owner, so the owner's row jumped on every device. After a relaunch the reconnect
 replays an old unread notification to the mirror and did the same. The owner already bumps its own row
-for its own agent's notification, so the fence returns before upstream's bump for a mirror whose owner
-shares order (`SupermuxWorkspaceOrderReconciler.leavesNotificationBumpToOwner`: the DEBUG mode
-reconciles, the row is a device mirror, its record carries a valid `supermux_order_key`). Own rows and
-mirrors of an older Mac keep upstream's bump.
+for its own agent's notification, so the fence hands the bump to
+`SupermuxWorkspaceOrderReconciler.handlesNotificationBump(_:in:bump:)` for a mirror whose owner shares
+order (the DEBUG mode reconciles, the row is a device mirror, its record carries a valid
+`supermux_order_key`). A loose mirror is not bumped: the owner's new key moves it. A mirror in a local
+group never follows its key (apply leaves the group where it is), so the helper runs upstream's bump,
+which raises the group, inside `programmatic(moving:in:_:)` and marks the group's other mirrors
+programmatic too, so no mirror is ever sent to its owner, and hints the group's own rows, so the next
+capture re-keys them where the group now sits. Own rows and mirrors of an older Mac keep upstream's
+bump.
 
 Re-apply: at the top of `TabManager.moveTabToTopForNotification(_:)`, before the
 `workspaceReordering.moveTabToTopForNotification(tabId)` call:
-`if SupermuxComposition.workspaceOrder.leavesNotificationBumpToOwner(tabId, in: self) { return }`.
+`if SupermuxComposition.workspaceOrder.handlesNotificationBump(tabId, in: self, bump: { workspaceReordering.moveTabToTopForNotification(tabId) }) { return }`.
 
 Verify: `CMUX_E2E_SUITES="loopback_workspace_order_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`
 (`mirror_notification_stays_with_owner`: a notification on a mirror leaves the owner's rows in place and
-sends no `set_order`; `notification_bump` still bumps an own row and its mirror follows).
+sends no `set_order`; `grouped_mirror_notification_raises_group`: a notification on a mirror in a local
+group raises the group, re-keys its own row at the top and sends no `set_order`; `notification_bump`
+still bumps an own row and its mirror follows; `relaunch`: a replayed notification moves no row and the
+relaunched app sends no `set_order` and writes no own key).
 ### 1123. No workspace row shows pull request status — `sidebar-hide-pull-requests`
 
 The user asked for the sidebar's PR status indicator to be removed entirely ("it is completely broken"):

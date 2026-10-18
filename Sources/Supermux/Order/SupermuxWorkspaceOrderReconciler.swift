@@ -153,24 +153,43 @@ final class SupermuxWorkspaceOrderReconciler {
         return body()
     }
 
-    /// Whether a notification's bump of `workspaceID` to the top is left to
-    /// the Mac that owns it: true for a mirror whose owner shares order.
+    /// Handles a notification's bump of `workspaceID` to the top when it is a
+    /// mirror whose owner shares order, and returns whether it did; otherwise
+    /// the caller runs upstream's bump.
     ///
     /// A mirror's terminal notifies here only because the owner's did, and the
     /// owner bumps its own row for that notification; its new key then moves
-    /// the mirror everywhere. Bumped here too, the mirror would be captured as
-    /// the user's move and sent to the owner, so an old notification that a
-    /// reconnect replays would move the owner's row.
+    /// the mirror everywhere. Bumped here as the user's move, the mirror would
+    /// be sent to the owner, so an old notification that a reconnect replays
+    /// would move the owner's row. So a loose mirror is not bumped here. A
+    /// mirror in a local group never follows its key (apply leaves the group
+    /// alone), so `bump` raises the group as upstream does, with the group's
+    /// mirrors moved programmatically (never sent) and its own rows hinted
+    /// (re-keyed where the group now sits).
     /// - Parameters:
     ///   - workspaceID: The workspace a notification would bump.
     ///   - manager: Its window.
-    func leavesNotificationBumpToOwner(_ workspaceID: UUID, in manager: TabManager) -> Bool {
+    ///   - bump: Upstream's bump of `workspaceID`.
+    func handlesNotificationBump(_ workspaceID: UUID, in manager: TabManager, bump: () -> Void) -> Bool {
         guard SupermuxOrderDebugMode.current.reconciles,
               let workspace = manager.tabs.first(where: { $0.id == workspaceID }),
               index.isDeviceMirror(workspace),
               let ref = index.ref(forLocal: workspace),
-              let key = devices.record(for: ref)?.supermuxOrderKey else { return false }
-        return orderKey.isValid(key)
+              let key = devices.record(for: ref)?.supermuxOrderKey,
+              orderKey.isValid(key) else { return false }
+        guard let groupID = workspace.groupId, manager.workspaceGroups.contains(where: { $0.id == groupID }) else {
+            return true
+        }
+        programmatic(moving: workspaceID, in: manager, bump)
+        let windowKey = ObjectIdentifier(manager)
+        for member in manager.tabs where member.groupId == groupID && member.id != workspaceID {
+            if index.isDeviceMirror(member) {
+                windows[windowKey, default: WindowState()].programmatic.insert(member.id)
+            } else {
+                windows[windowKey, default: WindowState()].hints.insert(member.id)
+            }
+        }
+        return true
     }
 
     /// Writes an own row's key and moves the row where it now sorts among the
