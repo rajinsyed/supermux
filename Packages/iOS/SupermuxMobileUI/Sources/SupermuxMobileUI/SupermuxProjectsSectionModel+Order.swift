@@ -23,8 +23,13 @@ extension SupermuxProjectsSectionModel {
     }
 
     /// Lands a drop in an ordered segment: sends it to the owner Mac
-    /// (``sendOrderedMove(_:in:)``), then waits until the shell's key-sorted
-    /// rows (``SupermuxPhoneWorkspaceOrder/nested(_:)``) show it.
+    /// (``sendOrderedMove(_:in:)``), asks the shell to fetch the owner's list
+    /// again, then waits until the shell's key-sorted rows
+    /// (``SupermuxPhoneWorkspaceOrder/nested(_:)``) show it.
+    ///
+    /// The fetch is needed: a new key that leaves the owner's own tabs in
+    /// place changes nothing the owner announces with `workspace.updated`,
+    /// so a background Mac's list would otherwise keep the old key.
     /// - Parameters:
     ///   - move: The drop.
     ///   - shell: The shell whose rows the key is minted from and the move
@@ -41,6 +46,7 @@ extension SupermuxProjectsSectionModel {
     ) async -> Bool {
         guard await sendOrderedMove(move, in: shell?.workspaces ?? rows) else { return false }
         guard let shell else { return true }
+        await shell.refreshAfterWorkspaceMutation(id: move.workspaceID)
         return await SupermuxNestedReorderModel.wait(upTo: timeout) {
             SupermuxNestedReorderPolicy().listHolds(move, SupermuxPhoneWorkspaceOrder().nested(shell.workspaces))
         }
