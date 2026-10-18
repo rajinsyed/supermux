@@ -2039,6 +2039,9 @@ class TabManager: ObservableObject {
     }
 
     func moveTabToTopForNotification(_ tabId: UUID) {
+        // SUPERMUX:begin order-sync-mirror-bump (a mirror's bump belongs to its owner Mac)
+        if SupermuxComposition.workspaceOrder.leavesNotificationBumpToOwner(tabId, in: self) { return }
+        // SUPERMUX:end order-sync-mirror-bump
         workspaceReordering.moveTabToTopForNotification(tabId)
     }
 

@@ -153,6 +153,26 @@ final class SupermuxWorkspaceOrderReconciler {
         return body()
     }
 
+    /// Whether a notification's bump of `workspaceID` to the top is left to
+    /// the Mac that owns it: true for a mirror whose owner shares order.
+    ///
+    /// A mirror's terminal notifies here only because the owner's did, and the
+    /// owner bumps its own row for that notification; its new key then moves
+    /// the mirror everywhere. Bumped here too, the mirror would be captured as
+    /// the user's move and sent to the owner, so an old notification that a
+    /// reconnect replays would move the owner's row.
+    /// - Parameters:
+    ///   - workspaceID: The workspace a notification would bump.
+    ///   - manager: Its window.
+    func leavesNotificationBumpToOwner(_ workspaceID: UUID, in manager: TabManager) -> Bool {
+        guard SupermuxOrderDebugMode.current.reconciles,
+              let workspace = manager.tabs.first(where: { $0.id == workspaceID }),
+              index.isDeviceMirror(workspace),
+              let ref = index.ref(forLocal: workspace),
+              let key = devices.record(for: ref)?.supermuxOrderKey else { return false }
+        return orderKey.isValid(key)
+    }
+
     /// Writes an own row's key and moves the row where it now sorts among the
     /// window's other rows (a normal, clamped reorder), then captures at once,
     /// ignoring the mouse gate: the owner's side of `set_order`.
