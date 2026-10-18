@@ -12,8 +12,10 @@ import SupermuxMobileCore
 /// queued one. The owner's reply key is held until the mirror's record
 /// carries it (or 5 s pass). An error, a host without
 /// `supermux.order_sync.v1` or no reply within 10 s drops the key, so the
-/// mirror snaps back to its record key; a refusal or a lost reply also beeps,
-/// the same signal as a refused mirror close. Every change calls
+/// mirror snaps back to its record key. A refusal, a lost reply or an owner
+/// that cannot be reached (offline, or its capabilities unknown) also beeps,
+/// the same signal as a refused mirror close; only a known older host, which
+/// cannot take the key, snaps back silently. Every change calls
 /// ``onChange`` so the reconciler places the mirror again.
 @MainActor
 final class SupermuxMirrorOrderOutbox {
@@ -107,7 +109,13 @@ final class SupermuxMirrorOrderOutbox {
             "is_pinned": entry.isPinned,
         ]
         Task { @MainActor [weak self, devices] in
-            guard await devices.supports(.orderSyncV1, on: ref.machine) else {
+            guard let capabilities = await devices.hostCapabilities(on: ref.machine) else {
+                // The owner cannot be reached: the drop is lost, so say so.
+                self?.finish(ref, generation: generation, beeping: true)
+                return
+            }
+            guard capabilities.contains(SupermuxMobileCapability.orderSyncV1.rawValue) else {
+                // An older owner: the mirror quietly follows its record.
                 self?.finish(ref, generation: generation, beeping: false)
                 return
             }
