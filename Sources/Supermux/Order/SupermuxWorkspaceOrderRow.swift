@@ -28,6 +28,8 @@ struct SupermuxWorkspaceOrderRow: Equatable {
     let canonicalID: String
     /// Whether a move of this mirror may ask its owner for the new key.
     let canSendToOwner: Bool
+    /// The local group the row is in, if any (`g:<group id>`).
+    let group: String?
     /// The block the row moves with in apply: a local group, a remote group, or itself.
     let unit: String
     /// Whether apply leaves the row where it is: own rows, locally grouped
@@ -37,8 +39,8 @@ struct SupermuxWorkspaceOrderRow: Equatable {
     /// The row for the capture planner.
     var captureRow: SupermuxOrderCaptureRow<UUID> {
         isMirror
-            ? .mirror(id: id, tier: tier, key: key, canonicalID: canonicalID, canSendToOwner: canSendToOwner)
-            : .own(id: id, tier: tier, key: key, canonicalID: canonicalID)
+            ? .mirror(id: id, tier: tier, key: key, canonicalID: canonicalID, canSendToOwner: canSendToOwner, group: group)
+            : .own(id: id, tier: tier, key: key, canonicalID: canonicalID, group: group)
     }
 
     /// The row for the arrangement; `fixed` overrides the row's own rule.

@@ -28,6 +28,7 @@ struct SupermuxWorkspaceOrderRows {
         let groups = Dictionary(manager.workspaceGroups.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         rows = manager.tabs.map { workspace in
             let localGroup = workspace.groupId.flatMap { groups[$0] }
+            let group = localGroup.map { "g:\($0.id.uuidString)" }
             let tier = (localGroup?.isPinned ?? workspace.isPinned) ? 0 : 1
             guard index.isDeviceMirror(workspace) else {
                 return SupermuxWorkspaceOrderRow(
@@ -41,7 +42,8 @@ struct SupermuxWorkspaceOrderRows {
                     pendingKey: nil,
                     canonicalID: workspace.id.uuidString,
                     canSendToOwner: false,
-                    unit: localGroup.map { "g:\($0.id.uuidString)" } ?? workspace.id.uuidString,
+                    group: group,
+                    unit: group ?? workspace.id.uuidString,
                     isFixed: true
                 )
             }
@@ -51,8 +53,8 @@ struct SupermuxWorkspaceOrderRows {
             let pendingKey = ref.flatMap { outbox.pendingKey(for: $0) }
             let key = pendingKey ?? recordKey
             let unit: String
-            if let localGroup {
-                unit = "g:\(localGroup.id.uuidString)"
+            if let group {
+                unit = group
             } else if let ref, let remoteGroup = record?.groupID {
                 unit = "r:\(ref.machineID)/\(remoteGroup)/\(tier)"
             } else {
@@ -69,6 +71,7 @@ struct SupermuxWorkspaceOrderRows {
                 pendingKey: pendingKey,
                 canonicalID: ref?.workspaceID ?? workspace.id.uuidString,
                 canSendToOwner: recordKey != nil && record?.isPinned == workspace.isPinned,
+                group: group,
                 unit: unit,
                 isFixed: localGroup != nil || key == nil
             )

@@ -3,8 +3,8 @@ public import SupermuxMobileCore
 /// One workspace row of a window, in tab order, as the capture planner sees it.
 ///
 /// The Mac reconciler adapts its `TabManager` state into these rows, so the
-/// planner stays a pure function over plain values. Use ``own(id:tier:key:canonicalID:)``
-/// for a workspace this Mac owns and ``mirror(id:tier:key:canonicalID:canSendToOwner:)``
+/// planner stays a pure function over plain values. Use ``own(id:tier:key:canonicalID:group:)``
+/// for a workspace this Mac owns and ``mirror(id:tier:key:canonicalID:canSendToOwner:group:)``
 /// for a local mirror of another Mac's workspace.
 ///
 /// ```swift
@@ -31,6 +31,9 @@ public struct SupermuxOrderCaptureRow<ID: Hashable & Sendable>: Sendable {
     /// carries a valid key (a capable owner) and its pin matches the record's.
     /// Always `false` for an own row.
     public let canSendToOwner: Bool
+    /// The local group the row moves with, or `nil` when it is in none: a
+    /// move of one member moves the whole group.
+    public let group: String?
 
     /// An own row.
     /// - Parameters:
@@ -38,9 +41,10 @@ public struct SupermuxOrderCaptureRow<ID: Hashable & Sendable>: Sendable {
     ///   - tier: `0` pinned, `1` unpinned.
     ///   - key: The row's stored key, if any.
     ///   - canonicalID: This Mac's workspace id for the row.
+    ///   - group: The local group the row is in, if any.
     /// - Returns: The row.
-    public static func own(id: ID, tier: Int, key: String?, canonicalID: String) -> Self {
-        Self(id: id, tier: tier, isMirror: false, key: key, canonicalID: canonicalID, canSendToOwner: false)
+    public static func own(id: ID, tier: Int, key: String?, canonicalID: String, group: String? = nil) -> Self {
+        Self(id: id, tier: tier, isMirror: false, key: key, canonicalID: canonicalID, canSendToOwner: false, group: group)
     }
 
     /// A mirror row.
@@ -50,9 +54,12 @@ public struct SupermuxOrderCaptureRow<ID: Hashable & Sendable>: Sendable {
     ///   - key: The pending key, else the record key, if any.
     ///   - canonicalID: The owner Mac's workspace id.
     ///   - canSendToOwner: Whether a move of this mirror may be sent to its owner.
+    ///   - group: The local group the row is in, if any.
     /// - Returns: The row.
-    public static func mirror(id: ID, tier: Int, key: String?, canonicalID: String, canSendToOwner: Bool) -> Self {
-        Self(id: id, tier: tier, isMirror: true, key: key, canonicalID: canonicalID, canSendToOwner: canSendToOwner)
+    public static func mirror(
+        id: ID, tier: Int, key: String?, canonicalID: String, canSendToOwner: Bool, group: String? = nil
+    ) -> Self {
+        Self(id: id, tier: tier, isMirror: true, key: key, canonicalID: canonicalID, canSendToOwner: canSendToOwner, group: group)
     }
 
     /// The row's place in the previous-pass baseline.
