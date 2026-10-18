@@ -529,6 +529,30 @@ final class MobileHostService {
         clientIDsByConnectionID[connectionID] ?? []
     }
 
+    /// Records accepted input from an Iroh terminal lane for the phone
+    /// connection that owns the admitted binding.
+    ///
+    /// Iroh lane frames do not carry the RPC `client_id`. The control
+    /// connection records that id when the phone's first authorized request
+    /// arrives; the connection registry supplies the binding-to-connection
+    /// association needed to route lane activity to the right participant.
+    func noteIrohTerminalInputActivity(surfaceID: UUID, bindingID: String) {
+        // SUPERMUX:begin sizing-lane-input (prefer the lane's exact control connection, not a superseded session of the same binding)
+        if SupermuxMobileConnectionContext.controlConnectionID != nil {
+            TerminalController.shared.supermuxNoteAcceptedLaneInput(surfaceID: surfaceID)
+            return
+        }
+        // SUPERMUX:end sizing-lane-input
+        let clientIDs = MobileHostConnectionRegistry.shared
+            .snapshot(irohBindingID: bindingID)
+            .reduce(into: Set<String>()) { result, connection in
+                result.formUnion(clientIDsByConnectionID[connection.connectionID] ?? [])
+            }
+        // SUPERMUX:begin sizing-lane-input (the no-task-local fallback uses the same accepted activity path and Cloud throttle)
+        TerminalController.shared.supermuxNoteAcceptedLaneInput(surfaceID: surfaceID, clientIDs: clientIDs)
+        // SUPERMUX:end sizing-lane-input
+    }
+
     /// This Mac's authenticated Stack email, or `nil` when signed out or before
     /// the auth graph is configured.
     ///

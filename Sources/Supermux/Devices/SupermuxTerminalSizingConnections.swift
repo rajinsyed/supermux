@@ -227,13 +227,10 @@ enum SupermuxMobileDetachAnnouncements {
 }
 
 extension TerminalController {
-    /// One input frame on a phone's IRX input lane: refused (false) when
-    /// someone disconnected that phone from the terminal, otherwise the
-    /// phone's sizing activity, as `mobile.terminal.input` is
-    /// (`mobileDetachedGateError`). The lane's control connection names the
-    /// phone. Runs on every keystroke, so it stops at a few emptiness checks
-    /// while no terminal is shared. A Cloud terminal's host hears it at most
-    /// once a second per phone (`SupermuxPhoneActivityThrottle`).
+    /// Admission only: one input frame on a phone's IRX/Iroh lane is refused
+    /// (false) when someone disconnected that phone from the terminal.
+    /// The lane's control connection names the phone. Activity is recorded
+    /// separately, only after PTY delivery returns sent or queued.
     func supermuxAdmitLaneInput(surfaceID: UUID) -> Bool {
         guard let connectionID = SupermuxMobileConnectionContext.controlConnectionID,
               !localSizingHostsBySurfaceID.isEmpty || !cloudSizingRelaysBySurfaceID.isEmpty
@@ -242,12 +239,25 @@ extension TerminalController {
         if clientIDs.contains(where: { isMobileClientDetached(surfaceID: surfaceID, clientID: $0) }) {
             return false
         }
+        return true
+    }
+
+    /// Accepted sent/queued input, shared by both lane dialects and the DEBUG
+    /// driver. Never called for duplicate, refused or input-queue-full frames.
+    /// The exact control connection wins; callers without a task-local may
+    /// supply the client ids resolved from their admitted binding.
+    func supermuxNoteAcceptedLaneInput(surfaceID: UUID, clientIDs: Set<String>? = nil) {
+        guard !localSizingHostsBySurfaceID.isEmpty || !cloudSizingRelaysBySurfaceID.isEmpty
+            || !cloudDetachedPhonesBySurfaceID.isEmpty else { return }
+        let ids = clientIDs ?? SupermuxMobileConnectionContext.controlConnectionID.map {
+            MobileHostService.shared.clientIDs(forConnectionID: $0)
+        } ?? []
         let relayed = cloudSizingRelaysBySurfaceID[surfaceID]?.value?.relaysPhones == true
-        for clientID in clientIDs
-        where !relayed || SupermuxPhoneActivityThrottle.admits(surfaceID: surfaceID, clientID: clientID) {
+        for clientID in ids
+        where !isMobileClientDetached(surfaceID: surfaceID, clientID: clientID)
+            && (!relayed || SupermuxPhoneActivityThrottle.admits(surfaceID: surfaceID, clientID: clientID)) {
             noteMobileSizingActivity(surfaceID: surfaceID, clientID: clientID)
         }
-        return true
     }
 
     /// The `detached` error's data: the detachment (`reason`, `by`, `at`)

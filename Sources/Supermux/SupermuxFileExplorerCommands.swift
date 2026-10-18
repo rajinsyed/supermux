@@ -141,6 +141,7 @@ extension FileExplorerPanelView.Coordinator {
     ) {
         let identity = store.workspaceRootIdentity
         let rootPath = store.rootPath
+        let context = store.resourceContextID
         supermuxPromptForName(
             title: title,
             message: String(format: messageFormat, request.parentDirectory.lastPathComponent),
@@ -154,11 +155,13 @@ extension FileExplorerPanelView.Coordinator {
             self.supermuxRunFileOperation(
                 identity: identity,
                 rootPath: rootPath,
+                context: context,
                 mutatedParentPaths: [parentDirectory.path],
                 onApply: { [weak self] in
                     if let expandNode { self?.store.expand(node: expandNode) }
                 }
             ) {
+                let name = try SupermuxFileSystemOperations.validatedName(name)
                 let created = try await make(name, parentDirectory)
                 return SupermuxFileExplorerSelection.revealForCreatedItem(
                     path: created.path, showHiddenFiles: showHiddenFiles)
@@ -169,8 +172,9 @@ extension FileExplorerPanelView.Coordinator {
     /// Whether the (window-lifetime, reused) store still shows the workspace and
     /// root that an async op was dispatched for. The file explorer can re-root the
     /// SAME workspace (e.g. the terminal cd's), so identity alone is insufficient.
-    private func supermuxStoreStillCurrent(identity: UUID?, rootPath: String) -> Bool {
+    private func supermuxStoreStillCurrent(identity: UUID?, rootPath: String, context: UUID) -> Bool {
         store.workspaceRootIdentity == identity && store.rootPath == rootPath
+            && store.resourceContextID == context
     }
 
     @objc func supermuxRename(_ sender: NSMenuItem) {
@@ -188,6 +192,7 @@ extension FileExplorerPanelView.Coordinator {
         supermuxRunFileOperation(
             identity: store.workspaceRootIdentity,
             rootPath: store.rootPath,
+            context: store.resourceContextID,
             mutatedParentPaths: urls.map { $0.deletingLastPathComponent().path }
         ) {
             var reveal: SupermuxFileExplorerSelection.FileOpReveal = .none
@@ -216,6 +221,7 @@ extension FileExplorerPanelView.Coordinator {
         guard let disk = supermuxFileOpDisk else { return }
         let identity = store.workspaceRootIdentity
         let rootPath = store.rootPath
+        let context = store.resourceContextID
         supermuxPromptForName(
             title: SupermuxFileOpText.renameTitle,
             message: String(format: SupermuxFileOpText.renameMessageFormat, node.name),
@@ -233,6 +239,7 @@ extension FileExplorerPanelView.Coordinator {
             self.supermuxRunFileOperation(
                 identity: identity,
                 rootPath: rootPath,
+                context: context,
                 mutatedParentPaths: [source.deletingLastPathComponent().path]
             ) {
                 let renamed: String
@@ -262,10 +269,12 @@ extension FileExplorerPanelView.Coordinator {
         // could re-root while it is open), matching create/rename.
         let identity = store.workspaceRootIdentity
         let rootPath = store.rootPath
+        let context = store.resourceContextID
         supermuxConfirmTrash(targets) { [weak self] in
             self?.supermuxRunFileOperation(
                 identity: identity,
                 rootPath: rootPath,
+                context: context,
                 mutatedParentPaths: urls.map { $0.deletingLastPathComponent().path }
             ) {
                 switch disk {
@@ -283,7 +292,10 @@ extension FileExplorerPanelView.Coordinator {
     /// (window-lifetime, reused) store against a
     /// possible mid-op workspace/root switch. `identity`/`rootPath` are captured
     /// by the caller BEFORE any confirmation sheet, so the staleness check
-    /// reflects the workspace the user actually acted in. On success `onApply`
+    /// reflects the workspace the user actually acted in. The resource context
+    /// also rejects a provider swap at the same path, before dispatch and after
+    /// completion. The coordinator's shared queue serializes menu/keyboard ops.
+    /// On success `onApply`
     /// runs on the main actor (e.g. expanding the destination folder) before the
     /// reveal `work` returns is applied, and the refresh may be skipped when the
     /// root watcher covers every mutated parent; a failure surfaces the error
@@ -291,18 +303,20 @@ extension FileExplorerPanelView.Coordinator {
     private func supermuxRunFileOperation(
         identity: UUID?,
         rootPath: String,
+        context: UUID,
         mutatedParentPaths: [String],
         onApply: (() -> Void)? = nil,
         _ work: @escaping @Sendable () async throws -> SupermuxFileExplorerSelection.FileOpReveal
     ) {
-        Task { [weak self] in
+        performMutation { [weak self] in
+            guard let self,
+                  self.supermuxStoreStillCurrent(identity: identity, rootPath: rootPath, context: context) else { return }
             let result: Result<SupermuxFileExplorerSelection.FileOpReveal, any Error>
             do {
                 result = .success(try await Task.detached(priority: .userInitiated) { try await work() }.value)
             } catch {
                 result = .failure(error)
             }
-            guard let self else { return }
             let reveal: SupermuxFileExplorerSelection.FileOpReveal
             let failure: (any Error)?
             switch result {
@@ -310,7 +324,7 @@ extension FileExplorerPanelView.Coordinator {
             case .failure(let error): reveal = .none; failure = error
             }
             let action = SupermuxFileExplorerSelection.fileOpAction(
-                isStale: !self.supermuxStoreStillCurrent(identity: identity, rootPath: rootPath),
+                isStale: !self.supermuxStoreStillCurrent(identity: identity, rootPath: rootPath, context: context),
                 didFail: failure != nil,
                 reveal: reveal)
             switch action {

@@ -227,7 +227,106 @@ extension CMUXCLI {
                 materialize: materializeCodexScripts
             )
         }
+        if def.name == "muse" {
+            return museHookScriptCommand(
+                inline,
+                eventTag: event.cmuxSubcommand,
+                materialize: materializeCodexScripts
+            )
+        }
         return inline
+    }
+
+    // SUPERMUX:begin runtime-cli-resilience-muse-materialization
+    struct MuseHookInstallCommands {
+        let entries: [String: (command: String, path: String)]
+
+        func validatedCommands(for def: AgentHookDef) throws -> [String: String] {
+            for event in def.events {
+                guard let entry = entries[event.agentEvent],
+                      FileManager.default.isExecutableFile(atPath: entry.path) else {
+                    let target = CMUXCLI.sanitizeForTerminal(
+                        CMUXCLI.codexHookScriptsURL().appendingPathComponent("muse", isDirectory: true).path
+                    )
+                    throw CMUXCLI.museHookScriptWriteError(target: target, event: event)
+                }
+            }
+            return entries.mapValues { $0.command }
+        }
+    }
+
+    private static func museHookScriptWriteError(target: String, event: AgentHookDef.HookEvent) -> CLIError {
+        CLIError(message: String(format: String(
+            localized: "cli.hooks.error.museScriptWrite",
+            defaultValue: "Cannot write Muse hook script at %@ for %@. Check the directory permissions and available disk space, then retry."
+        ), target, event.cmuxSubcommand))
+    }
+
+    static func validateMuseHookMaterialization(for def: AgentHookDef) throws -> MuseHookInstallCommands? {
+        guard def.name == "muse" else { return nil }
+        let dir = codexHookScriptsURL().appendingPathComponent("muse", isDirectory: true)
+        let target = sanitizeForTerminal(dir.path)
+        guard !dir.path.contains("'"), !dir.path.contains("\\") else {
+            throw CLIError(message: String(format: String(
+                localized: "cli.hooks.error.museUnsafeScriptPath",
+                defaultValue: "Cannot install Muse hook scripts at %@: the path contains a quote or backslash. Use a home directory without these characters and retry."
+            ), target))
+        }
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        } catch {
+            throw CLIError(message: String(format: String(
+                localized: "cli.hooks.error.museScriptDirectory",
+                defaultValue: "Cannot create Muse hook script directory at %@: %@. Check the path and permissions, then retry."
+            ), target, sanitizeForTerminal(error.localizedDescription)))
+        }
+        var entries: [String: (command: String, path: String)] = [:]
+        for event in def.events {
+            let inline = hookCommandString(for: def, event: event, materializeCodexScripts: false)
+            guard let path = writeCodexHookScript(
+                subcommand: "muse-\(event.cmuxSubcommand)", body: inline, in: dir,
+                requireExecutable: true
+            ) else {
+                throw museHookScriptWriteError(target: target, event: event)
+            }
+            entries[event.agentEvent] = ("'\(path)' \(musePinnedHookMarker) \(event.cmuxSubcommand)", path)
+        }
+        return MuseHookInstallCommands(entries: entries)
+    }
+    // SUPERMUX:end runtime-cli-resilience-muse-materialization
+
+    /// Muse runs a hook command with the user's login shell (`$SHELL -c`), so
+    /// fish and nushell users cannot parse the POSIX dispatch inline. The
+    /// dispatch is written to a cmux-owned `#!/bin/sh` script, and the installed
+    /// command is just that path plus the owned-hook marker, which every shell
+    /// runs. Falls back to the inline command if the script cannot be written
+    /// or its path cannot be quoted the same way in every shell.
+    private static func museHookScriptCommand(
+        _ inlineCommand: String,
+        eventTag: String,
+        materialize: Bool
+    ) -> String {
+        guard materialize,
+              let dir = museHookScriptsDirectory(),
+              let path = writeCodexHookScript(
+                  subcommand: "muse-\(eventTag)", body: inlineCommand, in: dir
+              ),
+              !path.contains("'"), !path.contains("\\") else {
+            return inlineCommand
+        }
+        return "'\(path)' \(musePinnedHookMarker) \(eventTag)"
+    }
+
+    /// Muse hook scripts live in their own subdirectory: Codex garbage-collects
+    /// unreferenced content-addressed scripts directly under `~/.cmux/hooks`.
+    private static func museHookScriptsDirectory() -> URL? {
+        let dir = codexHookScriptsURL().appendingPathComponent("muse", isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            return dir
+        } catch {
+            return nil
+        }
     }
 
     /// Wraps a codex persistent hook command as a `#!/bin/sh` script file in the
@@ -332,6 +431,7 @@ extension CMUXCLI {
 
     private static let grokPinnedHookMarker = "cmux-grok-hook-v2"
     private static let antigravityPinnedHookMarker = "cmux-antigravity-hook-v2"
+    static let musePinnedHookMarker = "cmux-muse-hook-v1"
 
     static func agentHookShellCommand(
         _ command: String,
@@ -378,11 +478,15 @@ extension CMUXCLI {
     }
 
     static func usesPinnedHookDispatch(_ def: AgentHookDef) -> Bool {
-        def.name == "grok" || def.name == "antigravity"
+        def.name == "grok" || def.name == "antigravity" || def.name == "muse"
     }
 
     private static func pinnedHookMarker(for def: AgentHookDef) -> String {
-        def.name == "antigravity" ? antigravityPinnedHookMarker : grokPinnedHookMarker
+        switch def.name {
+        case "antigravity": return antigravityPinnedHookMarker
+        case "muse": return musePinnedHookMarker
+        default: return grokPinnedHookMarker
+        }
     }
 
     private static func pinnedAgentHookShellCommand(

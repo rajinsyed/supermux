@@ -1,5 +1,9 @@
 import CmuxCloud
 import CmuxCloudTui
+// SUPERMUX:begin runtime-cloud-mutations-provider-test-imports
+import CmuxSurfaceCatalogModel
+import Darwin
+// SUPERMUX:end runtime-cloud-mutations-provider-test-imports
 import Foundation
 import Testing
 
@@ -42,6 +46,110 @@ struct CloudTerminalMutationLifecycleTests {
         await queue.waitForIdle()
         #expect(!cancelledTurnRan)
     }
+
+    // SUPERMUX:begin runtime-cloud-mutations-caller-waiter-test
+    @Test("A committed turn retires its caller while completing its ordered work")
+    func committedTurnSurvivesCancellation() async throws {
+        let queue = CloudTerminalMutationQueue()
+        let server = try RuntimeCloudMutationsAppSocket()
+        let channel = CloudTuiPersistentResourceConnection(socketPath: server.path)
+        var receipt: Data?
+        let task = Task {
+            try await queue.runCommitted {
+                receipt = try await channel.request(CloudTuiRequest("tab.create_browser", mutation: true))
+            }
+        }
+        let sent = try await server.next()
+        queue.cancelAll()
+        await #expect(throws: CancellationError.self) { try await task.value }
+        try await server.reply(to: sent, result: ["tab_id": "committed"])
+        await queue.waitForIdle()
+        #expect(receipt != nil)
+        await channel.close()
+        await server.close()
+    }
+    // SUPERMUX:end runtime-cloud-mutations-caller-waiter-test
+
+    // SUPERMUX:begin runtime-cloud-mutations-provider-receipt-regressions
+    @Test("A real channel receipt is adopted only by an eligible replacement or compensated",
+          arguments: [false, true], ["current", "replacement", "foreign-team", "different-machine", "suspended", "resumed"])
+    func browserReceiptOwnershipUsesActualProvider(cancelCaller: Bool, outcome: String) async throws {
+        let server = try RuntimeCloudMutationsAppSocket()
+        let channel = CloudTuiPersistentResourceConnection(socketPath: server.path)
+        let catalog = SurfaceCatalog()
+        let summary = machine("receipt-\(UUID())")
+        let links = CloudMachineLinkManager(clientURL: nil, hub: nil, hostThemeColors: { nil })
+        let original = CmuxTuiSurfaceProvider(summary: summary, ownerTeamID: "team", links: links, catalog: catalog)
+        catalog.register(original)
+        var replacement: CmuxTuiSurfaceProvider?
+        defer {
+            original.suspendForFeatureFlag()
+            replacement?.suspendForFeatureFlag()
+            if let replacement { catalog.unregister(machine: replacement.machine) }
+            catalog.unregister(machine: original.machine)
+        }
+        let lifecycle = original.lifecycleGeneration
+        var adopted: SurfaceResource?
+        var compensated = false
+        let caller = Task {
+            try await original.terminalMutationQueue.runCommitted {
+                let data = try await channel.request(CloudTuiRequests.createBrowserArguments(
+                    socketPath: server.path, workspaceID: "workspace", screenID: nil, paneID: nil,
+                    url: "http://localhost:4312", name: nil, idempotencyKey: "receipt-intent", correlationKey: nil
+                ))
+                let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+                let receipt = try #require(CmuxTuiSnapshotParser.createdBrowser(fromCreateResult: object))
+                adopted = try await original.completeCommittedBrowserCreation(
+                    receipt, url: URL(string: "http://localhost:4312")!, name: nil, expectedLifecycle: lifecycle
+                ) {
+                    _ = try? await channel.request(CloudTuiRequests.closeTabArguments(
+                        socketPath: server.path, tabID: receipt.tabID
+                    ))
+                    compensated = true
+                }
+            }
+        }
+        let sent = try await server.next()
+        if outcome != "current" { original.suspendForFeatureFlag() }
+        if ["replacement", "foreign-team", "different-machine"].contains(outcome) {
+            let next = CmuxTuiSurfaceProvider(
+                summary: outcome == "different-machine" ? machine("other-\(UUID())") : summary,
+                ownerTeamID: outcome == "foreign-team" ? "other-team" : "team", links: links, catalog: catalog
+            )
+            replacement = next
+            catalog.register(next)
+        } else if outcome == "resumed" {
+            original.update(summary: summary)
+        }
+        if cancelCaller { caller.cancel() } else { original.terminalMutationQueue.cancelAll() }
+        await #expect(throws: CancellationError.self) { try await caller.value }
+        try await server.reply(to: sent, result: [
+            "browser_id": "browser", "workspace_id": "workspace", "screen_id": "screen",
+            "pane_id": "pane", "tab_id": "committed-tab"
+        ])
+        if outcome != "replacement" {
+            let close = try await server.next()
+            let object = try #require(JSONSerialization.jsonObject(with: close) as? [String: Any])
+            #expect(object["operation"] as? String == "tab.close")
+            #expect((object["params"] as? [String: Any])?["tab"] as? String == "committed-tab")
+            try await server.reply(to: close, result: ["done": "true"])
+        }
+        await original.terminalMutationQueue.waitForIdle()
+        #expect(compensated == (outcome != "replacement"))
+        #expect(original.pendingRemoteCreations.isEmpty)
+        if outcome == "replacement" {
+            let resource = try #require(adopted)
+            #expect(replacement?.pendingRemoteCreations[resource.id]?.tabID == "committed-tab")
+            #expect(catalog.resources[resource.id]?.remoteViews?.first?.tabID == "committed-tab")
+        } else {
+            #expect(adopted == nil)
+            #expect(replacement?.pendingRemoteCreations.isEmpty ?? true)
+            #expect(catalog.resources.isEmpty)
+        }
+        await channel.close()
+        await server.close()
+    }
+    // SUPERMUX:end runtime-cloud-mutations-provider-receipt-regressions
 
     @Test("Provider retirement rejects late command results and subsequent mutations",
           arguments: ["suspend", "replace", "unregister"], ["session.snapshot", "workspace.run", "session.creation.resolve"])
@@ -263,3 +371,105 @@ struct CloudTerminalMutationLifecycleTests {
         VMSummary(id: id, provider: "freestyle", status: "running", image: "fixture", createdAt: 0, base: nil)
     }
 }
+
+// SUPERMUX:begin runtime-cloud-mutations-provider-socket-fixture
+/// A real socket peer for the app-owned receipt completion path.
+private actor RuntimeCloudMutationsAppSocket {
+    nonisolated let path: String
+    private let listener: Int32
+    private let accepted: Task<Int32, Error>
+    private var peer: Int32?
+
+    init() throws {
+        path = NSTemporaryDirectory() + "cm-\(UUID().uuidString.prefix(12)).sock"
+        listener = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
+        guard listener >= 0 else { throw POSIXError(.EIO) }
+        let descriptor = listener
+        var address = sockaddr_un()
+        address.sun_family = sa_family_t(AF_UNIX)
+        let bytes = Array(path.utf8) + [0]
+        address.sun_len = UInt8(2 + bytes.count)
+        withUnsafeMutableBytes(of: &address.sun_path) { $0.copyBytes(from: bytes) }
+        let bound = withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                Darwin.bind(descriptor, $0, socklen_t(2 + bytes.count))
+            }
+        }
+        guard bound == 0, Darwin.listen(listener, 1) == 0 else {
+            let error = NSError(domain: "fixture.bind", code: Int(errno))
+            Darwin.close(listener)
+            throw error
+        }
+        accepted = Task {
+            try await Self.performBlockingIO {
+                let result = Darwin.accept(descriptor, nil, nil)
+                guard result >= 0 else { throw NSError(domain: "fixture.accept", code: Int(errno)) }
+                var noSignal: Int32 = 1
+                setsockopt(result, SOL_SOCKET, SO_NOSIGPIPE, &noSignal, socklen_t(MemoryLayout<Int32>.size))
+                return result
+            }
+        }
+    }
+
+    func next() async throws -> Data {
+        let descriptor = try await accepted.value
+        peer = descriptor
+        return try await Self.performBlockingIO {
+            var result = Data()
+            var byte: UInt8 = 0
+            while true {
+                let count = Darwin.read(descriptor, &byte, 1)
+                if count < 0, errno == EINTR { continue }
+                guard count == 1 else {
+                    throw NSError(domain: "fixture.read", code: count == 0 ? -1 : Int(errno))
+                }
+                if byte == 0x0A { return result }
+                result.append(byte)
+            }
+        }
+    }
+
+    func reply(to request: Data, result: [String: String]) async throws {
+        let object = try #require(JSONSerialization.jsonObject(with: request) as? [String: Any])
+        let id = try #require(object["id"] as? String)
+        let response = try JSONSerialization.data(withJSONObject: [
+            "id": id, "protocol": "cmux.protocol/2", "type": "response", "ok": true, "result": result
+        ]) + Data([0x0A])
+        let descriptor = try await accepted.value
+        peer = descriptor
+        try await Self.performBlockingIO {
+            try response.withUnsafeBytes { raw in
+                var offset = 0
+                while offset < raw.count {
+                    let written = Darwin.write(descriptor, raw.baseAddress!.advanced(by: offset), raw.count - offset)
+                    if written < 0, errno == EINTR { continue }
+                    guard written > 0 else { throw NSError(domain: "fixture.write", code: Int(errno)) }
+                    offset += written
+                }
+            }
+        }
+    }
+
+    func close() {
+        if let peer { Darwin.shutdown(peer, SHUT_RDWR); Darwin.close(peer); self.peer = nil }
+        Darwin.shutdown(listener, SHUT_RDWR)
+        Darwin.close(listener)
+        unlink(path)
+    }
+
+    private static func performBlockingIO<Value: Sendable>(
+        _ operation: @escaping @Sendable () throws -> Value
+    ) async throws -> Value {
+        try await withCheckedThrowingContinuation { continuation in
+            // POSIX calls must not block Swift's cooperative executor.
+            DispatchQueue.global(qos: .utility).async {
+                do {
+                    continuation.resume(returning: try operation())
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+}
+// SUPERMUX:end runtime-cloud-mutations-provider-socket-fixture

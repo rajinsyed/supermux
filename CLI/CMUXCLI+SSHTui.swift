@@ -8,11 +8,19 @@ extension CMUXCLI {
         configuredRemoteCommand: String?,
         client: SocketClient,
         jsonOutput: Bool,
-        idFormat: CLIIDFormat
+        idFormat: CLIIDFormat,
+        routeIdentifier: String? = nil,
+        // SUPERMUX:begin runtime-ssh-tmux-tui-pre-resolution-seam
+        preResolutionSSHOptions: [String]? = nil
+        // SUPERMUX:end runtime-ssh-tmux-tui-pre-resolution-seam
     ) throws {
         var params: [String: Any] = [
             "destination": options.destination,
-            "ssh_options": options.sshOptions,
+            // SUPERMUX:begin runtime-ssh-tmux-tui-template-provenance
+            "ssh_options": SSHConnectionSharingOptions().optionsForTUIHandoff(
+                preResolutionSSHOptions ?? options.sshOptions, routeIdentifier: routeIdentifier
+            ),
+            // SUPERMUX:end runtime-ssh-tmux-tui-template-provenance
             "focus": !options.noFocus,
             "operation_id": UUID().uuidString.lowercased(),
         ]

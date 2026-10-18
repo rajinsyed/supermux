@@ -296,7 +296,10 @@ extension CMUXCLI {
     /// file it runs under any runtime, including ones that exec the hook command
     /// directly rather than through a shell. Content is identical across
     /// invocations, so the file is only rewritten when missing or changed.
-    static func writeCodexHookScript(subcommand: String, body: String, in dir: URL) -> String? {
+    // SUPERMUX:begin runtime-cli-resilience-muse-executable-permissions
+    static func writeCodexHookScript(
+        subcommand: String, body: String, in dir: URL, requireExecutable: Bool = false
+    ) -> String? {
         let contents = "#!/bin/sh\n\(body)\n"
         guard let scriptName = CodexHookScriptName(
             contents: contents,
@@ -313,17 +316,28 @@ extension CMUXCLI {
         let fileManager = FileManager.default
         if let existing = try? String(contentsOf: url, encoding: .utf8), existing == contents {
             // Ensure it stays executable, then reuse.
-            try? fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+            if requireExecutable {
+                do {
+                    try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+                    guard fileManager.isExecutableFile(atPath: url.path) else { return nil }
+                } catch {
+                    return nil
+                }
+            } else {
+                try? fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+            }
             return url.path
         }
         do {
             try contents.data(using: .utf8)?.write(to: url, options: .atomic)
             try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+            guard !requireExecutable || fileManager.isExecutableFile(atPath: url.path) else { return nil }
             return url.path
         } catch {
             return nil
         }
     }
+    // SUPERMUX:end runtime-cli-resilience-muse-executable-permissions
 
     /// Returns the filesystem path represented by a generated Codex hook command.
     ///

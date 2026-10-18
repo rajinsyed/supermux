@@ -70,7 +70,6 @@ extension GhosttySurfaceScrollView {
             return
         }
         surfaceView.scrollbar = restored.scrollbar
-        synchronizeJumpToBottomIndicator()
         synchronizeScrollView(forceViewportSync: true)
     }
 }

@@ -24,11 +24,23 @@ Values for `shortcuts.bindings.<action>`:
 - `shortcuts.bindings.showHideAllWindows`
 - `shortcuts.bindings.toggleFullScreen`
 
+<!-- SUPERMUX:begin settings-shortcut-reference -->
+## Supermux
+
+- `shortcuts.bindings.supermuxCommit`
+- `shortcuts.bindings.supermuxCommitAccelerator`
+- `shortcuts.bindings.supermuxNewClaudeHarness`
+- `shortcuts.bindings.supermuxToggleRun`
+- `shortcuts.bindings.supermuxWorkspaceSwitcherNext`
+- `shortcuts.bindings.supermuxWorkspaceSwitcherPrevious`
+<!-- SUPERMUX:end settings-shortcut-reference -->
+
 ## Tabs
 
 - `shortcuts.bindings.closeOtherTabsInPane`
 - `shortcuts.bindings.closeTab`
 - `shortcuts.bindings.newBrowserWorkspace`
+- `shortcuts.bindings.newLocalWorkspace`
 - `shortcuts.bindings.newTab`
 - `shortcuts.bindings.renameTab`
 - `shortcuts.bindings.reopenPreviousSession`
@@ -66,6 +78,7 @@ Values for `shortcuts.bindings.<action>`:
 - `shortcuts.bindings.focusHistoryLast`
 - `shortcuts.bindings.focusLeft`
 - `shortcuts.bindings.focusNextPane`
+- `shortcuts.bindings.focusPaneByNumber`
 - `shortcuts.bindings.focusPreviousPane`
 - `shortcuts.bindings.focusRight`
 - `shortcuts.bindings.focusTextBoxInput`
@@ -127,6 +140,7 @@ Values for `shortcuts.bindings.<action>`:
 ## Notifications
 
 - `shortcuts.bindings.clearAllNotifications`
+- `shortcuts.bindings.jumpToLastPrompt`
 - `shortcuts.bindings.jumpToUnread`
 - `shortcuts.bindings.markAllNotificationsRead`
 - `shortcuts.bindings.markOldestUnreadAndJumpNext`
@@ -137,6 +151,8 @@ Values for `shortcuts.bindings.<action>`:
 ## Right sidebar
 
 - `shortcuts.bindings.focusRightSidebar`
+- `shortcuts.bindings.focusSidebar`
+- `shortcuts.bindings.showWindowHints`
 - `shortcuts.bindings.nextSidebarTab`
 - `shortcuts.bindings.nextSidebarTabInGroup`
 - `shortcuts.bindings.prevSidebarTab`
