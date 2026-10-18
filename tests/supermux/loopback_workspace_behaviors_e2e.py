@@ -94,8 +94,8 @@ DEBUG `supermux.devices.mirror.*` socket drivers):
      covered by loopback_mirror_files_e2e.py).
  19. file_diff_viewer_opens_for_remote_diff — clicking a file row's diff
      (the panel's path) opens the diff viewer tab in the mirror from the
-     other Mac's patch (screenshot). Last, because the viewer is a local
-     pane in the mirror.
+     other Mac's patch, every time across several opens in a row
+     (screenshot). Last, because the viewer is a local pane in the mirror.
 
 Writes tests/supermux/artifacts/loopback_workspace_behaviors_e2e-<tag>.json
 and exits non-zero on any failed check. Stdlib only.
@@ -125,6 +125,10 @@ PROVISIONAL_TITLE = "Cloud VM"
 # Longer than the device link's 20 s default reply deadline, shorter than the
 # host's own 30 s `git fetch` timeout.
 SLOW_FETCH_SECONDS = 23
+# Diff viewer opens in a row (step 19). A `cmux diff` request whose JSON put its `method` key after the large
+# params was dropped by the app unanswered, which the CLI's per-process key order did for about half of opens, so
+# one open caught it half the time; eight miss it about once in 256 runs.
+DIFF_VIEWER_OPENS = 8
 
 
 class CheckFailure(Exception):
@@ -1003,21 +1007,26 @@ class WorkspaceBehaviorsE2E:
     # -- 18-19: viewers (last: they add a local pane to the mirror) ------------
 
     def file_diff_viewer_opens(self) -> Dict[str, Any]:
-        before = set(self.surface_ids(self.mirror_id))
-        diff = self.changes("diff", path="README.md", staged=False, open_viewer=True)["diff"]
-        if not diff.get("viewer_opened"):
-            raise CheckFailure(f"the diff viewer did not open: {diff}")
+        # Every open is a new `cmux diff` process, whose request bytes differ per process, so one open can pass by
+        # luck: each open must bring its own new viewer tab (a later open replaces the earlier tab).
+        titles = []
+        for attempt in range(1, DIFF_VIEWER_OPENS + 1):
+            before = set(self.surface_ids(self.mirror_id))
+            diff = self.changes("diff", path="README.md", staged=False, open_viewer=True)["diff"]
+            if not diff.get("viewer_opened"):
+                raise CheckFailure(f"open {attempt}: the diff viewer did not open: {diff}")
 
-        def viewer() -> Optional[Dict[str, Any]]:
-            surfaces = (self.rpc("surface.list", {"workspace_id": self.mirror_id}) or {}).get("surfaces") or []
-            added = [s for s in surfaces if norm(s.get("id")) not in before and s.get("type") == "browser"]
-            if not added:
-                raise CheckFailure("no diff viewer tab in the mirror yet")
-            return added[0]
+            def viewer() -> Optional[Dict[str, Any]]:
+                surfaces = (self.rpc("surface.list", {"workspace_id": self.mirror_id}) or {}).get("surfaces") or []
+                added = [s for s in surfaces if norm(s.get("id")) not in before and s.get("type") == "browser"]
+                if not added:
+                    raise CheckFailure("no diff viewer tab in the mirror yet")
+                return added[0]
 
-        tab = wait_for("the diff viewer tab in the mirror", viewer, self.timeout_s)
+            tab = wait_for(f"the diff viewer tab in the mirror (open {attempt} of {DIFF_VIEWER_OPENS})", viewer, self.timeout_s)
+            titles.append(tab.get("title"))
         time.sleep(1.5)
-        return {"viewer_title": tab.get("title"), "screenshot": self.screenshot("remote-file-diff-viewer")}
+        return {"viewer_titles": titles, "screenshot": self.screenshot("remote-file-diff-viewer")}
 
     def files_panel_names_mac(self) -> Dict[str, Any]:
         self.rpc("workspace.select", {"workspace_id": self.mirror_id})
