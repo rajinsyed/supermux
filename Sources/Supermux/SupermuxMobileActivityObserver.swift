@@ -256,8 +256,9 @@ final class SupermuxMobileActivityObserver {
 
     /// Emits `workspace.updated` now when the last emit is at least
     /// ``emitInterval`` old, otherwise once when it will be. A request made
-    /// while that emit waits joins it.
-    private func requestWorkspaceUpdatedEmit() {
+    /// while that emit waits joins it. Also the emit of other fork changes
+    /// the legacy list carries (``SupermuxMobileHostGlue/requestWorkspaceUpdatedEmit()``).
+    func requestWorkspaceUpdatedEmit() {
         guard pendingEmit == nil else { return }
         let wait = lastEmitAt.map { ContinuousClock.now.duration(to: $0 + Self.emitInterval) } ?? .zero
         guard wait > .zero else {

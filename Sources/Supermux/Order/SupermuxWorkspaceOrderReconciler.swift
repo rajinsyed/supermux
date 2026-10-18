@@ -20,7 +20,7 @@ import SupermuxMobileCore
 /// 1. captures: ``SupermuxOrderCapture`` diffs the tabs against the order the
 ///    last pass left, attributing moves to the rows `workspaceOrderDidChange`
 ///    named (hints), and writes new own keys to the store (then ticks state
-///    sync) and sends moved mirrors' keys to their owners (the outbox);
+///    sync and pokes legacy-list viewers with `workspace.updated`) and sends moved mirrors' keys to their owners (the outbox);
 /// 2. applies: ``SupermuxOrderArrangement`` places each keyed, ungrouped
 ///    mirror at a unit boundary and the window is reordered once
 ///    (`isApplying` keeps its own order change from counting as a hint);
@@ -54,6 +54,7 @@ final class SupermuxWorkspaceOrderReconciler {
     private let tabManagers: @MainActor () -> [TabManager]
     private let isReady: @MainActor () -> Bool
     private let requestSyncTick: @MainActor () -> Void
+    private let requestLegacyListUpdate: @MainActor () -> Void
     private let capture = SupermuxOrderCapture()
     private let arrangement = SupermuxOrderArrangement()
     private let orderKey = SupermuxOrderKey()
@@ -75,7 +76,8 @@ final class SupermuxWorkspaceOrderReconciler {
         origin: String,
         tabManagers: @escaping @MainActor () -> [TabManager] = SupermuxMobileSidebarStatusObserver.allTabManagers,
         isReady: @escaping @MainActor () -> Bool = SupermuxDeviceMirrorCoordinator.appIsReady,
-        requestSyncTick: @escaping @MainActor () -> Void = { SupermuxStateSyncTicker.shared.request() }
+        requestSyncTick: @escaping @MainActor () -> Void = { SupermuxStateSyncTicker.shared.request() },
+        requestLegacyListUpdate: @escaping @MainActor () -> Void = { SupermuxMobileHostGlue.requestWorkspaceUpdatedEmit() }
     ) {
         self.store = store
         self.devices = devices
@@ -85,6 +87,7 @@ final class SupermuxWorkspaceOrderReconciler {
         self.tabManagers = tabManagers
         self.isReady = isReady
         self.requestSyncTick = requestSyncTick
+        self.requestLegacyListUpdate = requestLegacyListUpdate
     }
 
     // MARK: - Lifecycle
@@ -129,7 +132,7 @@ final class SupermuxWorkspaceOrderReconciler {
         #endif
         windows.removeAll()
         outbox.reset()
-        requestSyncTick()
+        announceKeys()
         scheduleAll()
     }
 
@@ -183,7 +186,7 @@ final class SupermuxWorkspaceOrderReconciler {
         if SupermuxOrderDebugMode.current.reconciles {
             reconcile(manager)
         }
-        requestSyncTick()
+        announceKeys()
         return store.key(forStableID: workspace.stableId)
     }
 
@@ -291,7 +294,7 @@ final class SupermuxWorkspaceOrderReconciler {
         if !plan.ownKeys.isEmpty {
             let stableIDs = Dictionary(uniqueKeysWithValues: rows.rows.map { ($0.id, $0.stableID) })
             writeOwnKeys(plan.ownKeys, stableIDs: stableIDs)
-            requestSyncTick()
+            announceKeys()
         }
         for (id, key) in plan.mirrorKeys {
             guard let row = rows.row(id), let ref = row.ref else { continue }
@@ -315,6 +318,14 @@ final class SupermuxWorkspaceOrderReconciler {
         state.hints = []
         state.programmatic = []
         windows[windowKey] = state
+    }
+
+    /// Tells every viewer that own keys changed: v2 viewers (a delta tick) and
+    /// legacy-list viewers (`workspace.updated`), whose list upstream's
+    /// observer never re-announces for a key alone. Both coalesce.
+    private func announceKeys() {
+        requestSyncTick()
+        requestLegacyListUpdate()
     }
 
     private func writeOwnKeys(_ keys: [UUID: String], stableIDs: [UUID: UUID]) {
