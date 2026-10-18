@@ -39,6 +39,10 @@ import Testing
 /// 13. (#58, #65) Projects: an older copy's stamp decides the project's
 ///     place, or projects without a stamp jump above stamped ones instead
 ///     of keeping the home Mac's order after them (#61).
+/// 14. After the owner took a cross-Mac move that left its own tabs in place
+///     (no `workspace.updated` follows a key-only change), the shell never
+///     fetches the owner's list again: the wait times out and the row snaps
+///     back while the Macs show the move.
 @MainActor
 @Suite struct SupermuxPhoneWorkspaceOrderTests {
     private let order = SupermuxPhoneWorkspaceOrder()
@@ -341,6 +345,54 @@ import Testing
             workspaceID: "b1", segment: "ordered", order: ["s2", "closed", "b1", "b3"], changesOrder: true)
         let key = order.mintKey(for: move, in: keyedRows, seed: "phone:test")
         #expect(precedes("a2", key) && precedes(key, "a3"), "\(key) is not between a2 and a3")
+    }
+
+    // MARK: Landing a cross-Mac move (14)
+
+    /// The shell as the phone has it: an owner Mac's rows change only when
+    /// the shell fetches that Mac's list again.
+    private final class FakeShell: SupermuxWorkspaceShell {
+        var workspaces: [MobileWorkspacePreview]
+        private let ownerList: @MainActor () -> [MobileWorkspacePreview]
+        private(set) var refreshed: [MobileWorkspacePreview.ID] = []
+
+        init(_ workspaces: [MobileWorkspacePreview], ownerList: @escaping @MainActor () -> [MobileWorkspacePreview]) {
+            self.workspaces = workspaces
+            self.ownerList = ownerList
+        }
+
+        func refreshAfterWorkspaceMutation(id: MobileWorkspacePreview.ID) async {
+            refreshed.append(id)
+            workspaces = ownerList()
+        }
+    }
+
+    @Test func aCrossMacMoveLandsOnceTheShellFetchesTheOwnersListAgain() async throws {
+        let client = FakeSupermuxMacClient()
+        let model = SupermuxProjectsSectionModel()
+        let session = Task {
+            await model.runSession(mac: studio, client: client, hostCapabilities: [
+                SupermuxMobileCapability.projectsV1.rawValue, SupermuxMobileCapability.orderSyncV1.rawValue,
+            ])
+        }
+        defer { session.cancel() }
+        try await TestWait().until { model.session(forPairingID: studio.pairingID)?.capabilities?.supportsOrderSync == true }
+        // Studio's s2 is dropped above MacBook's b1. Studio's own tabs do not
+        // move, so only fetching its list again shows s2's new key.
+        let rows = keyedRows
+        let shell = FakeShell(rows) {
+            let sent = client.recordedWireCalls.compactMap { $0.params["order_key"] as? String }.last
+            return rows.map { row in
+                var row = row
+                if row.id == "s2" { row.supermuxOrderKey = sent }
+                return row
+            }
+        }
+        let move = SupermuxNestedMove(workspaceID: "s2", segment: "ordered", order: ["s2", "b1", "b3"], changesOrder: true)
+        let landed = await model.landOrderedMove(move, shell: shell, rows: rows, timeout: .milliseconds(500))
+        #expect(client.callLog.contains("workspaceSetOrder"))
+        #expect(landed, "the move never showed in the shell's list")
+        #expect(shell.refreshed == ["s2"])
     }
 
     // MARK: Project order (13)
