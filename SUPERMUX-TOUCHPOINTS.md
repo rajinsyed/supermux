@@ -1010,8 +1010,11 @@ row. The contract lives in fork code: `SupermuxMobileCapability.orderSyncV1`
 (`supermux.order_sync.v1`), `SupermuxMobileMethod.workspaceSetOrder` / `.projectsSetOrder`,
 `SupermuxProjectDTO.order` (a `SupermuxOrderStamp`, decoded leniently),
 `SupermuxMobileWorkspaceFields.orderKeyKey`, and `SupermuxWorkspaceOrderExport.key(for:)`
-(`Sources/Supermux/Order/`), the one function both transports read. Until the reconciler lands the
-export returns `nil` and the capability is not served, so the wire is unchanged.
+(`Sources/Supermux/Order/`), the one function both transports read. Once the app is ready it returns
+the key the reconciler stored for each own row (`nil` for mirrors of another Mac's workspaces, and in
+the DEBUG `order_debug` modes `old_host` and `old_peer`), and `supermux.order_sync.v1` is advertised.
+A dropped #1135 or #1136 still compiles, but one transport then carries no key: another Mac or the
+phone reading that transport treats this Mac's rows as unkeyed and falls back to per-Mac blocks.
 
 Re-apply after an upstream merge, every edit inside the fork's existing field fences:
 - **#1134** `WorkspaceSyncRecord`: the `supermuxOrderKey: String?` property after
@@ -1028,9 +1031,10 @@ Re-apply after an upstream merge, every edit inside the fork's existing field fe
 - **#1144** run `./scripts/wire-app-sources.py` (it re-derives the same ids from the path).
 
 Verify: `swift test` in `Packages/Shared/SupermuxMobileCore` (the method and capability wire strings),
-the tagged Mac build, and an iOS simulator compile of `CmuxMobileShellUI`. Once the reconciler serves
-the capability: `CMUX_E2E_SUITES="loopback_workspace_order_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`
-(invariant C2: every row of `mobile.workspace.list` and its v2 record carry the same valid key).
+the tagged Mac build, an iOS simulator compile of `CmuxMobileShellUI`, and
+`CMUX_E2E_SUITES="loopback_workspace_order_e2e" CMUX_TAG=<tag> tests/supermux/run_all_loopback_e2e.sh`
+(invariant C2: every row of `mobile.workspace.list` and its v2 record carry the same valid key, which
+fails when #1135 or #1136 is missing).
 
 ### 1123. No workspace row shows pull request status — `sidebar-hide-pull-requests`
 
