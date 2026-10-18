@@ -344,7 +344,11 @@ final class SupermuxRemoteProjectsModel {
             return
         }
         let supportsProjects = capabilities.contains(SupermuxMobileCapability.projectsV1.rawValue)
-        update(machine) { $0.supportsProjects = supportsProjects }
+        let supportsOrderSync = capabilities.contains(SupermuxMobileCapability.orderSyncV1.rawValue)
+        update(machine) { entry in
+            entry.supportsProjects = supportsProjects
+            entry.supportsOrderSync = supportsOrderSync
+        }
         guard supportsProjects else {
             update(machine) { $0.projects = [] }
             return

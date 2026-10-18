@@ -12,11 +12,8 @@ import SupermuxMobileCore
 ///
 /// - ``move(_:over:)`` is ``SupermuxProjectsModel/orderMover``, so every
 ///   project reorder (drag commit, Move Up / Move Down, DEBUG `project_move`)
-///   moves the project in the shared order. It stamps only the moved project
-///   when every shown project is stamped and a key fits between its new
-///   neighbours; otherwise (the first move anywhere, a project added since,
-///   neighbours with equal keys) it stamps every shown project in the new
-///   order at once. The stamps go to this Mac's copies and, with
+///   moves the project in the shared order. ``SupermuxProjectOrderMove``
+///   plans the stamps; they go to this Mac's copies and, with
 ///   `projects.set_order`, to each connected Mac that holds a copy.
 /// - ``adoptIfNeeded(_:)`` runs after every merge of the unified list and
 ///   copies a project's winning stamp into this Mac's copy when the copy's
@@ -36,7 +33,6 @@ final class SupermuxProjectOrderSync {
     /// This Mac in stamps: `mac:<device>@<tag>`.
     private let origin: String
     private let now: () -> Date
-    private let orderKey = SupermuxOrderKey()
 
     init(
         projectsModel: SupermuxProjectsModel,
@@ -69,38 +65,11 @@ final class SupermuxProjectOrderSync {
     func move(_ draggedID: UUID, over targetID: UUID) {
         // The merge may lag the projects array by a coalescing tick.
         unifiedProjects.recompute()
-        var order = unifiedProjects.list.sharedOrder
-        guard SupermuxProjectsModel.applyMove(draggedID, over: targetID, in: &order),
-              let index = order.firstIndex(where: { $0.id == draggedID }) else { return }
-        write(stamps(movingProjectAt: index, in: order), in: order)
-    }
-
-    /// The new stamps for the project now at `index` of `order`, keyed by
-    /// unified id: the moved project alone when every project is stamped and
-    /// a key fits between its neighbours, else every project in `order`.
-    private func stamps(movingProjectAt index: Int, in order: [SupermuxUnifiedProject]) -> [UUID: SupermuxOrderStamp] {
-        let observed = order.compactMap(\.order)
-        let now = now()
-        if observed.count == order.count, let key = keyBetweenNeighbours(of: index, in: order) {
-            let stamp = SupermuxOrderStamp.next(key: key, observed: observed, origin: origin, now: now)
-            return [order[index].id: stamp]
-        }
-        let keys = orderKey.keys(between: nil, and: nil, count: order.count)
-        return Dictionary(
-            zip(order, keys).map { project, key in
-                (project.id, SupermuxOrderStamp.next(key: key, observed: observed, origin: origin, now: now))
-            },
-            uniquingKeysWith: { first, _ in first }
-        )
-    }
-
-    /// A valid key strictly between the keys of the projects around `index`,
-    /// or `nil` when none fits (equal neighbour keys, or a gap too deep).
-    private func keyBetweenNeighbours(of index: Int, in order: [SupermuxUnifiedProject]) -> String? {
-        let lower = index > order.startIndex ? order[index - 1].order?.key : nil
-        let upper = index + 1 < order.endIndex ? order[index + 1].order?.key : nil
-        guard let key = orderKey.between(lower, upper), orderKey.isValid(key) else { return nil }
-        return key
+        let order = unifiedProjects.list.sharedOrder
+        let stamps = SupermuxProjectOrderMove(origin: origin, now: now())
+            .stamps(moving: draggedID, over: targetID, in: order)
+        guard !stamps.isEmpty else { return }
+        write(stamps, in: order)
     }
 
     /// Writes the stamps to every copy this Mac can reach: its own copies

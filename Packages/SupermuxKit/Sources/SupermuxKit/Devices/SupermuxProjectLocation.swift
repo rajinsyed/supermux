@@ -9,12 +9,16 @@ public struct SupermuxProjectDevice: Hashable, Sendable {
     public let name: String
     /// Whether the link to the Mac is live (RPCs work).
     public let isOnline: Bool
+    /// Whether the Mac serves `supermux.order_sync.v1`, so its copies take
+    /// order stamps over `projects.set_order`. `false` while unknown.
+    public let supportsOrderSync: Bool
 
     /// Creates a device description.
-    public init(machineID: String, name: String, isOnline: Bool) {
+    public init(machineID: String, name: String, isOnline: Bool, supportsOrderSync: Bool = false) {
         self.machineID = machineID
         self.name = name
         self.isOnline = isOnline
+        self.supportsOrderSync = supportsOrderSync
     }
 }
 

@@ -23,6 +23,9 @@ struct SupermuxDeviceProjects: Identifiable, Equatable {
     var isFromCache: Bool
     /// Whether the Mac serves `supermux.projects.v1`; `nil` until asked.
     var supportsProjects: Bool?
+    /// Whether the Mac serves `supermux.order_sync.v1` on this connection
+    /// (its project copies take order stamps); `nil` until asked.
+    var supportsOrderSync: Bool?
     /// The Mac's run states, one per project (`run.state`'s `runs`).
     var runs: [SupermuxRunStateDTO]
     /// The Mac's live runs, one per running workspace (`run.state`'s
@@ -37,7 +40,12 @@ struct SupermuxDeviceProjects: Identifiable, Equatable {
 
     /// The Mac as the project UI describes it.
     var device: SupermuxProjectDevice {
-        SupermuxProjectDevice(machineID: machine.rawValue, name: name, isOnline: isOnline)
+        SupermuxProjectDevice(
+            machineID: machine.rawValue,
+            name: name,
+            isOnline: isOnline,
+            supportsOrderSync: supportsOrderSync == true
+        )
     }
 
     /// An entry with nothing loaded yet.
@@ -51,6 +59,7 @@ struct SupermuxDeviceProjects: Identifiable, Equatable {
             presets: [],
             isFromCache: false,
             supportsProjects: nil,
+            supportsOrderSync: nil,
             runs: [],
             workspaceRuns: nil,
             worktreesByProjectID: [:],
