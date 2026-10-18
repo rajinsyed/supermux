@@ -1070,6 +1070,76 @@ class WorkspaceOrderE2E:
                 self.group_id = ""
         return {"grouped_tabs": tabs, "grouped_phone": phone, "applies": applies, **self.invariants()}
 
+    def mixed_pin_group(self, *, check_mirrors: bool) -> Dict[str, Any]:
+        """An unpinned group can contain a raw-pinned member. Applying mirror
+        order must neither move its fixed own rows nor split its remote unit.
+        Pausing while constructing it makes the before/after oracle exact."""
+        anchor, member = self.own_order()[-2:]
+        self.debug("order_debug", {"mode": "paused"})
+        self.debug_mode_touched = True
+        try:
+            created = self.call("workspace.group.create", {
+                "name": f"order-mixed-pin-{self.nonce}", "child_workspace_ids": [anchor, member],
+            })
+            group = created.get("group") or {}
+            self.group_id = up(group.get("id"))
+            if not self.group_id or group.get("is_pinned"):
+                raise Failure(f"expected an unpinned group: {created}")
+            self.call("workspace.action", {"workspace_id": member, "action": "pin"})
+            mirrors = self.wait_mirrors([anchor, member])
+            wait_for("the raw pin to reach the member's mirror", lambda: self.is_pinned(mirrors[member]), self.timeout)
+            # Force an apply even if the other mirrors already occupy their slots.
+            preceding = next(i for i in self.own_order() if i not in (anchor, member))
+            self.call("workspace.reorder", {"workspace_id": self.mirror_of(preceding), "index": len(self.tab_ids(self.main_window)) - 1})
+            own_before = self.own_order()
+            self.debug("order_debug", {"mode": "normal"})
+            self.debug_mode_touched = False
+            self.applies_settle()
+
+            if check_mirrors:
+                mirrors = self.wait_mirrors([anchor, member])
+
+                def same_tier() -> Dict[str, Any]:
+                    rows = {up(r.get("workspace_id")): r for w in self.order_state().get("windows") or []
+                            for r in w.get("rows") or []}
+                    tiers = {self.name(i, mirrors): rows.get(i, {}).get("tier")
+                             for i in [anchor, member, mirrors[anchor], mirrors[member]]}
+                    if set(tiers.values()) != {1}:
+                        raise Failure(f"an unpinned owner's group must stay in tier 1, including its mirrors: {tiers}")
+                    return tiers
+
+                tiers = wait_for("the mirrors to take their owner's group tier", same_tier, self.timeout)
+                tabs = wait_for("the remote group to stay contiguous", lambda: self.check_adjacency([[anchor, member]]),
+                                self.timeout)
+                # A viewer's deliberate pin still overrides the owner's group.
+                mirror_anchor = mirrors[anchor]
+                before = self.counters()
+                self.call("workspace.action", {"workspace_id": mirror_anchor, "action": "pin"})
+                try:
+                    def local_pin() -> bool:
+                        return any(up(r.get("workspace_id")) == mirror_anchor and r.get("tier") == 0
+                                   for w in self.order_state().get("windows") or [] for r in w.get("rows") or [])
+                    wait_for("a viewer's pin to override the owner's group tier", local_pin, self.timeout)
+                    self.applies_settle()
+                    self.expect_counters(before, exact={"set_order_sent": 0})
+                finally:
+                    self.call("workspace.action", {"workspace_id": mirror_anchor, "action": "unpin"})
+                return {"tiers": tiers, "grouped_tabs": tabs}
+
+            own_after = self.own_order()
+            if own_after != own_before:
+                raise Failure(f"mirror apply moved fixed own rows: {self.named(own_before)} -> {self.named(own_after)}")
+            return {"own_order": self.named(own_after), "c4_owner_keys": self.check_owner_keys()}
+        finally:
+            if self.debug_mode_touched:
+                self.debug("order_debug", {"mode": "normal"})
+                self.debug_mode_touched = False
+            if self.group_id:
+                self.call("workspace.group.ungroup", {"group_id": self.group_id})
+                self.group_id = ""
+            self.call("workspace.action", {"workspace_id": member, "action": "unpin"})
+            self.applies_settle()
+
     def group_clamped_set_order(self) -> Dict[str, Any]:
         unit = self.own_order()[:2]
         created = self.call("workspace.group.create", {"name": f"order-clamp-{self.nonce}", "child_workspace_ids": unit})
@@ -1551,6 +1621,8 @@ class WorkspaceOrderE2E:
                 ("mirror_notification_stays_with_owner", self.mirror_notification_stays_with_owner),
                 ("grouped_mirror_notification_raises_group", self.grouped_mirror_notification_raises_group),
                 ("group_unit", self.group_unit),
+                ("mixed_pin_group_preserves_own_rows", lambda: self.mixed_pin_group(check_mirrors=False)),
+                ("mixed_pin_group_mirrors_keep_owner_tier", lambda: self.mixed_pin_group(check_mirrors=True)),
                 ("group_clamped_set_order", self.group_clamped_set_order),
                 ("local_group_pin_not_sent", self.local_group_pin_not_sent),
                 ("nested_rows_follow_order", self.nested_rows_follow_order),
@@ -1562,6 +1634,8 @@ class WorkspaceOrderE2E:
                 ("relaunch", self.relaunch),
                 ("sidebar_screenshot", self.sidebar_screenshot),
             ]:
+                if self.args.steps and name not in self.args.steps:
+                    continue
                 ok = self.step(name, check) and ok
             return ok
         finally:
@@ -1596,6 +1670,7 @@ def main() -> int:
     parser.add_argument("--push-state-dir", help="SUPERMUX_PHONE_PUSH_STATE_DIR for the relaunch")
     parser.add_argument("--relaunch", action="store_true", help="run the relaunch step (needs --app-path)")
     parser.add_argument("--timeout", type=float, default=15.0, help="seconds per wait")
+    parser.add_argument("--steps", nargs="+", help="run only these steps after setup and scratch_rows")
     parser.add_argument("--keep", action="store_true", help="keep the scratch folder")
     parser.add_argument("--report", help="report path")
     args = parser.parse_args()
