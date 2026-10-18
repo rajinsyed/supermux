@@ -37,6 +37,8 @@ final class SupermuxMirrorOrderOutbox {
     var onChange: (@MainActor () -> Void)?
     /// `set_order` requests sent since launch.
     private(set) var sentCount = 0
+    /// Sends that ended with a beep since launch (DEBUG `order_state`).
+    private(set) var beepCount = 0
 
     private let devices: SupermuxDevices
     private let beep: @MainActor () -> Void
@@ -154,7 +156,10 @@ final class SupermuxMirrorOrderOutbox {
     private func finish(_ ref: SupermuxRemoteWorkspaceRef, generation: Int, beeping: Bool) {
         guard isCurrent(ref, generation) else { return }
         entries[ref] = nil
-        if beeping { beep() }
+        if beeping {
+            beepCount += 1
+            beep()
+        }
         onChange?()
     }
 }

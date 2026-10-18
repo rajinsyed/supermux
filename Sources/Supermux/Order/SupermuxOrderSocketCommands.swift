@@ -10,7 +10,9 @@ import SupermuxMobileCore
 ///   `canonical_id`, `key`, `is_mirror`, `is_pinned`, `tier`, `pending_key`,
 ///   `order_group`) and the counters (`passes`, `own_key_writes`,
 ///   `own_key_writes_by_workspace`, `applies`, `set_order_sent`,
-///   `set_order_received`, `set_order_refused`).
+///   `set_order_received`, `set_order_refused`, `set_order_beeps`: sends that
+///   ended with a beep, `workspace_updated_emits`: the fork's coalesced
+///   `workspace.updated` emits).
 /// - `order_key_between {lower?, upper?}`: `{key}`, minted the way capture does.
 /// - `order_debug {mode: normal | paused | old_host}`: `paused` stops the
 ///   reconciler; `old_host` also withholds the capability, the key export and
@@ -101,6 +103,8 @@ enum SupermuxOrderSocketCommands {
                 "set_order_sent": SupermuxComposition.mirrorOrderOutbox.sentCount,
                 "set_order_received": counters.setOrderReceived,
                 "set_order_refused": counters.setOrderRefused,
+                "set_order_beeps": SupermuxComposition.mirrorOrderOutbox.beepCount,
+                "workspace_updated_emits": SupermuxMobileActivityObserver.workspaceUpdatedEmitCount,
             ] as [String: Any],
         ]
     }

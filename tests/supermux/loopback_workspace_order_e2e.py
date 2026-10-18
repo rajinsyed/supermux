@@ -48,51 +48,72 @@ Steps:
                                   (`order_key_between`), sent for the last own row Wx
                                   with `mobile.supermux.workspace.set_order`: the reply
                                   echoes it and Wx (with Mx) sits between Wa/Ma and Wb
-   8. set_order_rejects           a mirror id, a stale `is_pinned`, a malformed key and
+   8. key_only_set_order          a key minted between the second and third own rows,
+                                  sent for the second: no tab moves, yet the legacy
+                                  list carries the new key within 2 s and the Mac emits
+                                  `workspace.updated` (a phone that holds this Mac as a
+                                  secondary refetches only on that event)
+   9. set_order_rejects           a mirror id, a stale `is_pinned`, a malformed key and
                                   an unknown id answer not_owned, conflict,
                                   invalid_params and not_found; nothing moves
-   9. new_workspace_keyed         a workspace created after W2 (W5) stays where upstream
+  10. new_workspace_keyed         a workspace created after W2 (W5) stays where upstream
                                   put it, M5 right after it; no set_order sent
-  10. pin_tier                    W3 pinned: W3 and its mirrored-pin M3 lead the window,
+  11. pin_tier                    W3 pinned: W3 and its mirrored-pin M3 lead the window,
                                   the phone puts W3 before every unpinned scratch row;
                                   unpinned again: C1-C4; no set_order sent
-  11. notification_bump           a notification on the last scratch row (W1 selected)
+  12. notification_bump           a notification on the last scratch row (W1 selected)
                                   bumps it first among unpinned rows, its mirror right
                                   after; C3 (skipped when the auto-reorder setting is off)
-  12. group_unit                  W1, W2 grouped: the window reads ...W1, W2, M1, M2...;
+  13. group_unit                  W1, W2 grouped: the window reads ...W1, W2, M1, M2...;
                                   the phone's unit-aware arrange is the Mac's own order;
                                   apply stops rising within 3 s; ungrouped: C1-C4
-  13. nested_rows_follow_order    a project with three worktree workspaces P1..P3: its
+  14. group_clamped_set_order     the first two own rows grouped; set_order asks the
+                                  group's last (non-anchor) member for a key after every
+                                  own row: the group clamp keeps it in place, so the
+                                  reply and the stored key are its old key (C4 holds),
+                                  and no row moves
+  15. local_group_pin_not_sent    a mirror alone in a local group G, an own row alone in
+                                  a group H, both groups pinned, then G moved to the
+                                  other side of H: the mirror is pinned only by its
+                                  local group, so no set_order is sent
+  16. nested_rows_follow_order    a project with three worktree workspaces P1..P3: its
                                   nested rows read P1, MP1, P2, MP2, P3, MP3; MP3 dragged
                                   above P1: P3, MP3, P1, MP1, P2, MP2, and the phone's
                                   nested order reads P3, P1, P2
-  14. cross_window_move           W2 moved to a new window: it is that window's last row
+  17. cross_window_move           W2 moved to a new window: it is that window's last row
                                   and stays there for 2 s, its key above every key before
                                   it there; C3; moved back, the window closed
-  15. projects_order              two scratch projects P, Q (the app writes the scratch
+  18. projects_order              two scratch projects P, Q (the app writes the scratch
                                   --projects-file, never the user's): unstamped at first;
                                   `project_move` Q over P stamps every project and lists
                                   Q before P (projects.list and the sidebar);
                                   `projects.set_order` P with an older stamp is refused,
                                   a newer one puts P before Q
-  16. old_host_fallback           `order_debug old_host` + link restart: no capability,
+  19. owner_offline_drag_beeps    the loopback transport dropped until the link is down:
+                                  a mirror dragged first snaps back with one beep (the
+                                  owner is unreachable, not an old host); after the
+                                  link returns: C1-C4
+  20. old_host_fallback           `order_debug old_host` + link restart: no capability,
                                   no keys, nested rows in per-device blocks again, a
                                   mirror dropped first stays there and its source does
                                   not move; back to normal: C1-C4
-  17. quiescence                  5 s idle: tabs, keys and pending keys unchanged; no key
+  21. quiescence                  5 s idle: tabs, keys and pending keys unchanged; no key
                                   writes, applies or set_order sends
-  18. relaunch                    (opt-in --relaunch, needs --app-path) quit and relaunch
+  22. relaunch                    (opt-in --relaunch, needs --app-path) quit and relaunch
                                   the tagged app: every scratch row keeps its key, the
                                   main window's own scratch order is identical; C1
-  19. sidebar_screenshot          the window, for the report
+  23. sidebar_screenshot          the window, for the report
 
 What it guards against: an upgrade that moves this Mac's own rows (2); a reorder
-entry point that skips the keys (3-5, 9-14); a mirror drag that never reaches
-its owner (6); apply's own moves or the fork's sibling placement and mirrored
-pin sent to an owner as user moves (9, 10, 17); a group split by apply (12);
-nested rows kept Mac by Mac (13); a cross-window drop moved away (14); an older
-project stamp winning or an upgrade stamping projects (15); an old host (16);
-an echo loop (17); keys lost on restore (18); and leaked scratch state (cleanup).
+entry point that skips the keys (3-5, 10-13, 16, 17); a mirror drag that never
+reaches its owner (6); a key-only change a secondary phone never hears of (8);
+apply's own moves or the fork's sibling placement and mirrored pin sent to an
+owner as user moves (10, 11, 21); a group split by apply (13); a clamped
+set_order that stores a key the row does not sit at (14); a local group's pin
+sent to an owner (15); nested rows kept Mac by Mac (16); a cross-window drop
+moved away (17); an older project stamp winning or an upgrade stamping projects
+(18); a silent snap-back while the owner is offline (19); an old host (20); an
+echo loop (21); keys lost on restore (22); and leaked scratch state (cleanup).
 
 A step that needs a command this build does not serve (the DEBUG order
 commands, the set_order RPCs) fails at once with a message naming it, and the
@@ -737,6 +758,38 @@ class WorkspaceOrderE2E:
         order = self.wait_order(expected, followed=[wa, wx])
         return {"between": self.named([wa, wb]), "moved": self.name(wx), "key": key, **order, **self.invariants()}
 
+    def key_only_set_order(self) -> Dict[str, Any]:
+        own = self.own_order()
+        if len(own) < 3:
+            raise Failure(f"needs three own rows: {self.named(own)}")
+        wa, wb, wc = own[0], own[1], own[2]
+        key = self.debug("order_key_between", {"lower": self.phone_key(wb), "upper": self.phone_key(wc)}).get("key")
+        if not is_valid_key(key):
+            raise Failure(f"order_key_between returned {key!r}")
+        tabs_before = self.tab_ids(self.main_window)
+        before = self.counters()
+        reply = self.phone(SET_ORDER, {"workspace_id": wb, "order_key": key, "is_pinned": False})
+        if reply.get("order_key") != key:
+            raise Failure(f"set_order answered {reply}, not {self.name(wb)} at {key!r}")
+        started = time.monotonic()
+        wait_for(f"{self.name(wb)}'s new key on mobile.workspace.list",
+                 lambda: self.phone_keys().get(wb) == key, 2.0, interval_s=0.2)
+        listed_after_s = round(time.monotonic() - started, 2)
+
+        def emitted() -> Optional[int]:
+            delta = (self.counters().get("workspace_updated_emits") or 0) - (before.get("workspace_updated_emits") or 0)
+            if delta < 1:
+                raise Failure(f"workspace_updated_emits {delta:+d}")
+            return delta
+
+        emits = wait_for("a workspace.updated emit for the key-only change", emitted, 3.0, interval_s=0.2)
+        if self.tab_ids(self.main_window) != tabs_before:
+            raise Failure(f"a key-only set_order moved tabs: {self.named(tabs_before)} -> "
+                          f"{self.named(self.tab_ids(self.main_window))}")
+        return {"moved": self.name(wb), "between": self.named([wb, wc]), "key": key,
+                "listed_after_s": listed_after_s, "workspace_updated_emits": emits,
+                "own_order": self.named(self.own_order()), **self.invariants()}
+
     def set_order_rejects(self) -> Dict[str, Any]:
         target = self.own_order()[0]
         mirror = self.mirror_of(target)
@@ -870,6 +923,81 @@ class WorkspaceOrderE2E:
             if self.attempt("ungroup", lambda: self.call("workspace.group.ungroup", {"group_id": self.group_id})):
                 self.group_id = ""
         return {"grouped_tabs": tabs, "grouped_phone": phone, "applies": applies, **self.invariants()}
+
+    def group_clamped_set_order(self) -> Dict[str, Any]:
+        unit = self.own_order()[:2]
+        created = self.call("workspace.group.create", {"name": f"order-clamp-{self.nonce}", "child_workspace_ids": unit})
+        group = created.get("group") or {}
+        self.group_id = up(group.get("id"))
+        if not self.group_id:
+            raise Failure(f"workspace.group.create returned no group: {created}")
+        try:
+            wait_for("the group, then its mirror unit", lambda: self.check_adjacency([unit]), self.timeout)
+            anchor = up(group.get("anchor_workspace_id"))
+            members = [i for i in self.own_order() if i in set(unit)]
+            member = members[-1]
+            if member == anchor:
+                raise Failure(f"the group's last member {self.name(member)} is its anchor")
+            held_before = self.phone_key(member)
+            last_key = max(self.phone_key(i) for i in self.own_order())
+            key = self.debug("order_key_between", {"lower": last_key}).get("key")
+            own_before, tabs_before = self.own_order(), self.tab_ids(self.main_window)
+            reply = self.phone(SET_ORDER, {"workspace_id": member, "order_key": key, "is_pinned": False})
+            held = self.phone_key(member)
+            if reply.get("order_key") != held:
+                raise Failure(f"set_order answered {reply.get('order_key')!r}, but {self.name(member)} holds {held!r}")
+            if held == key:
+                raise Failure(f"{self.name(member)} stores the requested key {key!r} though the group clamp kept it in place")
+            keys = wait_for("C4: own keys increase in tab order", self.check_owner_keys, self.timeout)
+            if self.own_order() != own_before:
+                raise Failure(f"own rows moved: {self.named(own_before)} -> {self.named(self.own_order())}")
+            hold("the window's tabs unchanged", lambda: self.tab_ids(self.main_window) == tabs_before, 1.5)
+        finally:
+            if self.attempt("ungroup", lambda: self.call("workspace.group.ungroup", {"group_id": self.group_id})):
+                self.group_id = ""
+        return {"member": self.name(member), "requested": key, "held_before": held_before, "reply": reply.get("order_key"),
+                "c4_owner_keys": keys, **self.invariants()}
+
+    def local_group_pin_not_sent(self) -> Dict[str, Any]:
+        own = self.own_order()
+        low, high = own[0], own[-1]
+        mirror = self.mirror_of(low)
+        groups: Dict[str, str] = {}
+        before = self.counters()
+        try:
+            for name, member in (("G", mirror), ("H", high)):
+                created = self.call("workspace.group.create", {
+                    "name": f"order-{name.lower()}-{self.nonce}", "child_workspace_ids": [member]})
+                groups[name] = up((created.get("group") or {}).get("id"))
+                if not groups[name]:
+                    raise Failure(f"workspace.group.create returned no group: {created}")
+                self.call("workspace.group.pin", {"group_id": groups[name]})
+
+            def pinned_groups() -> Optional[List[str]]:
+                listed = self.call("workspace.group.list", {"window_id": self.main_window}).get("groups") or []
+                order = [up(g.get("id")) for g in listed if up(g.get("id")) in groups.values() and g.get("is_pinned")]
+                if len(order) != 2:
+                    raise Failure(f"pinned groups {order}")
+                return order
+
+            order = wait_for("G and H pinned", pinned_groups, self.timeout)
+            self.applies_settle()
+            mid = self.counters()
+            if order[0] == groups["G"]:
+                self.call("workspace.group.move", {"group_id": groups["G"], "after_group_id": groups["H"]})
+            else:
+                self.call("workspace.group.move", {"group_id": groups["G"], "before_group_id": groups["H"]})
+            wait_for("G moved to the other side of H", lambda: pinned_groups() == list(reversed(order)), self.timeout)
+            time.sleep(1.5)
+            moved = self.expect_counters(mid, exact={"set_order_sent": 0})
+            counters = self.expect_counters(before, exact={"set_order_sent": 0})
+        finally:
+            for name in ("G", "H"):
+                if groups.get(name):
+                    self.attempt(f"unpin {name}", lambda g=groups[name]: self.call("workspace.group.unpin", {"group_id": g}))
+                    self.attempt(f"ungroup {name}", lambda g=groups[name]: self.call("workspace.group.ungroup", {"group_id": g}))
+        return {"mirror": self.name(mirror, self.mirror_map()), "own": self.name(high), "group_order_before": order,
+                "after_move": moved, "counters": counters, **self.invariants()}
 
     def nested_rows_follow_order(self) -> Dict[str, Any]:
         self.nested_project = self.create_project("nested-repo")
@@ -1012,6 +1140,36 @@ class WorkspaceOrderE2E:
             raise Failure(f"a newer stamp was not applied: {newer}")
         after = wait_for("P before Q everywhere", lists(["P", "Q"]), self.timeout)
         return {"after_move": moved, "older": older, "newer": newer, "after_newer": after}
+
+    def owner_offline_drag_beeps(self) -> Dict[str, Any]:
+        source = self.own_order()[-1]
+        mirror = self.mirror_of(source)
+        target = next(i for i in self.scratch_tabs() if i not in (source, mirror))
+        before = self.counters()
+        self.call("supermux.devices.link_impairment", {"drop_now_s": 12, "drop_cuts": True})
+        try:
+            wait_for("the loopback link to drop", lambda: self.loopback_device().get("link_state") != "connected",
+                     self.timeout)
+            self.call("workspace.reorder", {"workspace_id": mirror, "before_workspace_id": target})
+
+            def beeped() -> Optional[Dict[str, Any]]:
+                delta = (self.counters().get("set_order_beeps") or 0) - (before.get("set_order_beeps") or 0)
+                if delta != 1:
+                    raise Failure(f"set_order_beeps {delta:+d}")
+                return {"set_order_beeps": delta}
+
+            beeps = wait_for("one beep for the unreachable owner", beeped, self.timeout)
+
+            def snapped_back() -> bool:
+                ids = self.tab_ids(self.main_window)
+                return source in ids and mirror in ids and ids.index(mirror) == ids.index(source) + 1
+
+            wait_for("the mirror back right after its source", snapped_back, self.timeout)
+        finally:
+            self.attempt("lift the drop", lambda: self.call("supermux.devices.link_impairment", {"reset": True}))
+            self.attempt("the link back", self.wait_connected)
+        return {"dragged": self.name(mirror, self.mirror_map()), "dropped_before": self.name(target),
+                **beeps, **self.invariants()}
 
     def old_host_fallback(self) -> Dict[str, Any]:
         w2 = self.id("W2")
@@ -1172,14 +1330,18 @@ class WorkspaceOrderE2E:
                 ("old_phone_move", self.old_phone_move),
                 ("mirror_drag_moves_source", self.mirror_drag_moves_source),
                 ("phone_set_order", self.phone_set_order),
+                ("key_only_set_order", self.key_only_set_order),
                 ("set_order_rejects", self.set_order_rejects),
                 ("new_workspace_keyed", self.new_workspace_keyed),
                 ("pin_tier", self.pin_tier),
                 ("notification_bump", self.notification_bump),
                 ("group_unit", self.group_unit),
+                ("group_clamped_set_order", self.group_clamped_set_order),
+                ("local_group_pin_not_sent", self.local_group_pin_not_sent),
                 ("nested_rows_follow_order", self.nested_rows_follow_order),
                 ("cross_window_move", self.cross_window_move),
                 ("projects_order", self.projects_order),
+                ("owner_offline_drag_beeps", self.owner_offline_drag_beeps),
                 ("old_host_fallback", self.old_host_fallback),
                 ("quiescence", self.quiescence),
                 ("relaunch", self.relaunch),
