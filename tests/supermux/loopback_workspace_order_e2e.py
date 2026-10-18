@@ -63,42 +63,52 @@ Steps:
                                   unpinned again: C1-C4; no set_order sent
   12. notification_bump           a notification on the last scratch row (W1 selected)
                                   bumps it first among unpinned rows, its mirror right
-                                  after; C3 (skipped when the auto-reorder setting is off)
+                                  after; C3 (skipped when the auto-reorder setting is off).
+                                  Its notification stays unread for the relaunch
   13. mirror_notification_stays_with_owner
-                                  a notification on the last row's mirror leaves the
-                                  owner's rows where they are and sends no set_order
+                                  a notification on the last row's mirror (a row selected
+                                  that is neither step 12's target nor that source) leaves
+                                  the owner's rows where they are and sends no set_order
                                   (the owner bumps its own row for its own agent's
                                   notification); C1 (skipped when the setting is off)
-  14. group_unit                  W1, W2 grouped: the window reads ...W1, W2, M1, M2...;
+  14. grouped_mirror_notification_raises_group
+                                  a local group of the second-last row's mirror and the
+                                  last own row, below an own row: a notification on the
+                                  mirror raises the group first among unpinned rows (as
+                                  upstream does for any grouped row), the group's own row
+                                  leads the own order and the rest keep theirs, C3 and C4
+                                  hold, and no set_order is sent; ungrouped: C1-C4
+                                  (skipped when the setting is off)
+  15. group_unit                  W1, W2 grouped: the window reads ...W1, W2, M1, M2...;
                                   the phone's unit-aware arrange is the Mac's own order;
                                   apply stops rising within 3 s; ungrouped: C1-C4
-  15. group_clamped_set_order     the first two own rows grouped; set_order asks the
+  16. group_clamped_set_order     the first two own rows grouped; set_order asks the
                                   group's last (non-anchor) member for a key after every
                                   own row: the group clamp keeps it in place, so the
                                   reply and the stored key are its old key (C4 holds),
                                   and no row moves
-  16. local_group_pin_not_sent    a mirror alone in a local group G, an own row alone in
+  17. local_group_pin_not_sent    a mirror alone in a local group G, an own row alone in
                                   a group H, both groups pinned, then G moved to the
                                   other side of H: the mirror is pinned only by its
                                   local group, so no set_order is sent
-  17. nested_rows_follow_order    a project with three worktree workspaces P1..P3: its
+  18. nested_rows_follow_order    a project with three worktree workspaces P1..P3: its
                                   nested rows read P1, MP1, P2, MP2, P3, MP3; MP3 dragged
                                   above P1: P3, MP3, P1, MP1, P2, MP2, and the phone's
                                   nested order reads P3, P1, P2
-  18. cross_window_move           W2 moved to a new window: it is that window's last row
+  19. cross_window_move           W2 moved to a new window: it is that window's last row
                                   and stays there for 2 s, its key above every key before
                                   it there; C3; moved back, the window closed
-  19. projects_order              two scratch projects P, Q (the app writes the scratch
+  20. projects_order              two scratch projects P, Q (the app writes the scratch
                                   --projects-file, never the user's): unstamped at first;
                                   `project_move` Q over P stamps every project and lists
                                   Q before P (projects.list and the sidebar);
                                   `projects.set_order` P with an older stamp is refused,
                                   a newer one puts P before Q
-  20. owner_offline_drag_beeps    the loopback transport dropped until the link is down:
+  21. owner_offline_drag_beeps    the loopback transport dropped until the link is down:
                                   a mirror dragged first snaps back with one beep (the
                                   owner is unreachable, not an old host); after the
                                   link returns: C1-C4
-  21. old_host_fallback           `order_debug old_host` + link restart: no capability,
+  22. old_host_fallback           `order_debug old_host` + link restart: no capability,
                                   no keys, nested rows in per-device blocks again. Then
                                   `old_peer` (the owner still old, this Mac's reconciler
                                   running again, as an up-to-date viewer next to an old
@@ -107,28 +117,34 @@ Steps:
                                   set_order sent. Back to normal + link restart: C1-C4,
                                   the own order and W2's key unchanged, still no
                                   set_order sent
-  22. quiescence                  5 s idle: tabs, keys and pending keys unchanged; no key
+  23. quiescence                  5 s idle: tabs, keys and pending keys unchanged; no key
                                   writes, applies or set_order sends
-  23. relaunch                    (--relaunch, needs --app-path; the runner passes both)
-                                  quit the tagged app (step 12's notification still
-                                  unread, so the reconnect replays it to the mirror),
-                                  wait for its process to exit and relaunch it:
-                                  every scratch row keeps its key, the main window's own
-                                  scratch order is identical; C1
-  24. sidebar_screenshot          the window, for the report
+  24. relaunch                    (--relaunch, needs --app-path; the runner passes both)
+                                  an own row and its mirror hold an unread notification
+                                  (step 12's, else one posted here on an own row with
+                                  another row selected, its bump settled; fails when
+                                  none is unread), so the reconnect replays it to the
+                                  mirror. Keys and own order recorded, the tagged app
+                                  quit and relaunched: every scratch row keeps its key
+                                  and the main window's own scratch order is identical
+                                  on connect, C1 once the mirrors return, and again 3 s
+                                  later; the new process has sent no set_order and
+                                  written no own key
+  25. sidebar_screenshot          the window, for the report
 
 What it guards against: an upgrade that moves this Mac's own rows (2); a reorder
-entry point that skips the keys (3-5, 10-12, 17, 18); a mirror drag that never
+entry point that skips the keys (3-5, 10-12, 18, 19); a mirror drag that never
 reaches its owner (6); a key-only change a secondary phone never hears of (8);
 apply's own moves or the fork's sibling placement and mirrored pin sent to an
-owner as user moves (10, 11, 22); a mirror's notification bump sent to its owner,
-also when a reconnect replays an old notification (13, 23); a group split by
-apply (14); a clamped set_order that stores a key the row does not sit at (15);
-a local group's pin sent to an owner (16); nested rows kept Mac by Mac (17); a
-cross-window drop moved away (18); an older project stamp winning or an upgrade
-stamping projects (19); a silent snap-back while the owner is offline (20); an
+owner as user moves (10, 11, 23); a mirror's notification bump sent to its owner,
+also when a reconnect replays an old notification (13, 14, 24); a local group
+that no longer rises for its mirror's notification (14); a group split by
+apply (15); a clamped set_order that stores a key the row does not sit at (16);
+a local group's pin sent to an owner (17); nested rows kept Mac by Mac (18); a
+cross-window drop moved away (19); an older project stamp winning or an upgrade
+stamping projects (20); a silent snap-back while the owner is offline (21); an
 old host, an unkeyed mirror placed or sent by an up-to-date viewer, and a resume
-that moves the owner's rows (21); an echo loop (22); keys lost on restore (23);
+that moves the owner's rows (22); an echo loop (23); keys lost on restore (24);
 and leaked scratch state (cleanup).
 
 A step that needs a command this build does not serve (the DEBUG order
@@ -285,6 +301,7 @@ class WorkspaceOrderE2E:
         self.nested_project = ""
         self.projects: List[str] = []         # scratch project ids to delete
         self.group_id = ""
+        self.bump_target = ""                 # step 12's target, left unread for the relaunch
         self.extra_window = ""
         self.initial_auto_mirror: Optional[bool] = None
         self.debug_mode_touched = False
@@ -909,6 +926,7 @@ class WorkspaceOrderE2E:
             return {"unpinned": self.named(unpinned)}
 
         shown = wait_for(f"{self.name(target)} bumped first, its mirror right after", bumped, self.timeout)
+        self.bump_target = target
         phone = wait_for("C3: the phone's order is the Mac's", self.check_phone_order, self.timeout)
         return {"target": self.name(target), "setting": setting or "default", **shown, "c3_phone": phone}
 
@@ -926,7 +944,9 @@ class WorkspaceOrderE2E:
         terminal = next((s["id"] for s in surfaces if s.get("type") == "terminal"), None)
         if not terminal:
             raise Failure(f"{self.name(mirror, self.mirror_map())} has no terminal to notify")
-        self.call("workspace.select", {"workspace_id": own[0]})
+        # Neither step 12's target (selecting it reads its notification, which
+        # the relaunch replays) nor the notified mirror's source.
+        self.call("workspace.select", {"workspace_id": self.unselected_row(own, [source])})
         before = self.counters_or_none()
         self.call("notification.create_for_surface", {
             "workspace_id": mirror, "surface_id": terminal,
@@ -940,6 +960,87 @@ class WorkspaceOrderE2E:
         tabs = wait_for("C1: the mirror still right after its source", self.check_adjacency, self.timeout)
         self.call("workspace.action", {"workspace_id": mirror, "action": "mark_read"})
         return {"mirror_of": self.name(source), "own_order": self.named(own), "counters": counters, "c1_tabs": tabs}
+
+    def grouped_mirror_notification_raises_group(self) -> Dict[str, Any]:
+        """A notification on a mirror in a local group raises that group here,
+        as upstream does for any grouped row, yet never reaches the mirror's
+        owner: the group's own row is re-keyed at the top, the owner's row
+        stays where it is and no set_order is sent."""
+        setting = self.reorder_setting()
+        if setting in ("0", "false", "off"):
+            return {"skipped": f"app.reorderOnNotification is off ({setting})"}
+        own = self.own_order()
+        source, mate = own[-2], own[-1]
+        mirror = self.mirror_of(source)
+        mirrors = self.mirror_map()
+        terminal = self.terminal_of(mirror)
+        created = self.call("workspace.group.create", {
+            "name": f"order-mirror-group-{self.nonce}", "child_workspace_ids": [mirror, mate]})
+        self.group_id = up((created.get("group") or {}).get("id"))
+        if not self.group_id:
+            raise Failure(f"workspace.group.create returned no group: {created}")
+        try:
+            def below_an_own_row() -> Optional[List[str]]:
+                unpinned = self.unpinned_tabs()
+                members = [i for i in unpinned if i in (mirror, mate)]
+                if len(members) != 2:
+                    raise Failure(f"the group's rows are not both unpinned: {self.named(unpinned)}")
+                start = unpinned.index(members[0])
+                if unpinned[start:start + 2] != members:
+                    raise Failure(f"the group is not contiguous: {self.named(unpinned)}")
+                if not set(unpinned[:start]) & set(self.sources):
+                    raise Failure(f"no own row above the group: {self.named(unpinned)}")
+                return self.named(unpinned)
+
+            placed = wait_for("the group of a mirror and an own row, below an own row", below_an_own_row, self.timeout)
+            self.call("workspace.select", {"workspace_id": self.unselected_row(own, [source, mate])})
+            self.applies_settle()
+            before = self.counters()
+            own_before = self.own_order()
+            self.call("notification.create_for_surface", {
+                "workspace_id": mirror, "surface_id": terminal,
+                "title": f"order-group-bump-{self.nonce}", "body": "workspace order e2e",
+            })
+
+            def raised() -> Optional[List[str]]:
+                unpinned = self.unpinned_tabs()
+                if set(unpinned[:2]) != {mirror, mate}:
+                    raise Failure(f"the group is not first among unpinned rows: {self.named(unpinned)}")
+                return self.named(unpinned)
+
+            shown = wait_for("the group raised to the top", raised, self.timeout)
+            order = self.wait_order([mate] + [i for i in own_before if i != mate])
+            phone = wait_for("C3: the phone's order is the Mac's", self.check_phone_order, self.timeout)
+            keys = wait_for("C4: own keys increase in tab order", self.check_owner_keys, self.timeout)
+            time.sleep(1.5)
+            if self.own_order() != [mate] + [i for i in own_before if i != mate]:
+                raise Failure(f"the owner's rows moved after the raise: {self.named(self.own_order())}")
+            counters = self.expect_counters(before, exact={"set_order_sent": 0})
+        finally:
+            self.attempt("mark the mirror read", lambda: self.call(
+                "workspace.action", {"workspace_id": mirror, "action": "mark_read"}))
+            if self.attempt("ungroup", lambda: self.call("workspace.group.ungroup", {"group_id": self.group_id})):
+                self.group_id = ""
+        return {"mirror": self.name(mirror, mirrors), "mate": self.name(mate), "placed": placed, "raised": shown,
+                **order, "c3_phone": phone, "c4_owner_keys": keys, "counters": counters, **self.invariants()}
+
+    def unselected_row(self, own: Sequence[str], keep: Sequence[str]) -> str:
+        """An own row to select that reads no notification a later step needs:
+        not step 12's target and not one of `keep`."""
+        spare = [i for i in own if i not in set(keep) | {self.bump_target}]
+        if not spare:
+            raise Failure(f"no own row besides {self.named(list(keep) + [self.bump_target])} to select")
+        return spare[0]
+
+    def terminal_of(self, workspace_id: str) -> str:
+        surfaces = self.call("surface.list", {"workspace_id": workspace_id}).get("surfaces") or []
+        terminal = next((s["id"] for s in surfaces if s.get("type") == "terminal"), None)
+        if not terminal:
+            raise Failure(f"{self.name(workspace_id, self.mirror_map())} has no terminal to notify")
+        return str(terminal)
+
+    def unpinned_tabs(self) -> List[str]:
+        return [up(w.get("id")) for w in self.tab_rows(self.main_window) if not w.get("pinned")]
 
     def applies_settle(self, within_s: float = 3.0, quiet_s: float = 1.0) -> int:
         """Waits for the apply counter to hold still for `quiet_s` within `within_s`."""
@@ -1287,8 +1388,7 @@ class WorkspaceOrderE2E:
         if not self.args.app_path:
             raise Failure("--relaunch needs --app-path")
         mirrors_before = self.mirror_map()
-        unread = [self.name(i, mirrors_before) for i in self.unread_notification_rows(
-            self.sources + [mirrors_before[s] for s in self.sources if s in mirrors_before])]
+        unread = self.unread_before_quit(mirrors_before)
         titles = {i: (next((w.get("title") for w in self.tab_rows(self.window_of(i)) if up(w.get("id")) == i), ""))
                   for i in self.sources}
         keys = {titles[i]: self.phone_key(i) for i in self.sources}
@@ -1320,16 +1420,65 @@ class WorkspaceOrderE2E:
         self.labels, self.sources = renamed, list(renamed)
         self.facts["workspaces_after_relaunch"] = {name: i for i, name in renamed.items()}
         self.main_window = self.window_of(self.sources[0])
-        keys_after = {t: self.phone_keys().get(by_title[t]) for t in keys}
-        changed = {t: (k, keys_after[t]) for t, k in keys.items() if keys_after[t] != k}
-        if changed:
-            raise Failure(f"keys changed across the relaunch: {changed}")
         title_of = {i: t for t, i in by_title.items()}
-        after = [title_of[i] for i in self.own_order()]
-        if after != order:
-            raise Failure(f"own order changed across the relaunch: {order} -> {after}")
+
+        def unchanged(when: str) -> None:
+            keys_after = {t: self.phone_keys().get(by_title[t]) for t in keys}
+            changed = {t: (k, keys_after[t]) for t, k in keys.items() if keys_after[t] != k}
+            if changed:
+                raise Failure(f"keys changed across the relaunch ({when}): {changed}")
+            after = [title_of[i] for i in self.own_order()]
+            if after != order:
+                raise Failure(f"own order changed across the relaunch ({when}): {order} -> {after}")
+
+        unchanged("on connect")
         tabs = wait_for("C1 once the mirrors return", self.check_adjacency, self.timeout * 3)
-        return {"keys": len(keys), "own_order": order, "unread_before_quit": unread, "c1_tabs": tabs}
+        # The replayed notification reaches the mirror around now: give it
+        # time to bump (it must not), then look again.
+        time.sleep(3.0)
+        unchanged("3 s after the mirrors returned")
+        counters = self.counters()
+        sent, written = counters.get("set_order_sent") or 0, counters.get("own_key_writes") or 0
+        if sent or written:
+            raise Failure(f"the relaunched app sent {sent} set_order and wrote {written} own keys")
+        mirrors_after = self.mirror_map()
+        unread_after = [self.name(i, mirrors_after) for i in self.unread_notification_rows(list(mirrors_after.values()))]
+        return {"keys": len(keys), "own_order": order, "unread_before_quit": unread, "c1_tabs": tabs,
+                "counters_after": {"set_order_sent": sent, "own_key_writes": written},
+                "unread_mirrors_after": unread_after}
+
+    def unread_before_quit(self, mirrors: Dict[str, str]) -> List[str]:
+        """The own rows and mirrors holding an unread notification, so the
+        reconnect after the relaunch replays one to a mirror. When none is
+        left, posts one on an own row (another row selected) and waits for
+        its bump to settle. Fails when still nothing is unread."""
+        def unread_pairs() -> List[str]:
+            unread = set(self.unread_notification_rows(self.sources + [mirrors[s] for s in self.sources if s in mirrors]))
+            return [s for s in self.sources if s in unread and mirrors.get(s) in unread]
+
+        pairs = unread_pairs()
+        if not pairs:
+            own = self.own_order()
+            target = own[-1]
+            self.call("workspace.select", {"workspace_id": own[0]})
+            self.call("notification.create_for_surface", {
+                "workspace_id": target, "surface_id": self.terminal_of(target),
+                "title": f"order-relaunch-{self.nonce}", "body": "workspace order e2e",
+            })
+
+            def posted() -> Optional[List[str]]:
+                found = unread_pairs()
+                if target not in found:
+                    raise Failure(f"no unread notification on {self.name(target)} and its mirror yet")
+                return found
+
+            pairs = wait_for("the notification on an own row and its mirror", posted, self.timeout)
+            if self.reorder_setting() not in ("0", "false", "off"):
+                self.wait_order([target] + [i for i in own if i != target], followed=[target])
+            self.applies_settle()
+        if not pairs:
+            raise Failure("nothing is unread before the quit, so the reconnect would replay nothing")
+        return [name for s in pairs for name in (self.name(s, mirrors), self.name(mirrors[s], mirrors))]
 
     def unread_notification_rows(self, rows: Sequence[str]) -> List[str]:
         """The rows among `rows` holding an unread notification record."""
@@ -1400,6 +1549,7 @@ class WorkspaceOrderE2E:
                 ("pin_tier", self.pin_tier),
                 ("notification_bump", self.notification_bump),
                 ("mirror_notification_stays_with_owner", self.mirror_notification_stays_with_owner),
+                ("grouped_mirror_notification_raises_group", self.grouped_mirror_notification_raises_group),
                 ("group_unit", self.group_unit),
                 ("group_clamped_set_order", self.group_clamped_set_order),
                 ("local_group_pin_not_sent", self.local_group_pin_not_sent),
