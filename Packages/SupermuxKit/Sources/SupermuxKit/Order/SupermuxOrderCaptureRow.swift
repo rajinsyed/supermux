@@ -28,7 +28,8 @@ public struct SupermuxOrderCaptureRow<ID: Hashable & Sendable>: Sendable {
     /// The owner Mac's workspace id, the comparator's tie-break.
     public let canonicalID: String
     /// Whether a moved mirror may ask its owner to take a new key: its record
-    /// carries a valid key (a capable owner) and its pin matches the record's.
+    /// carries a valid key (a capable owner), and both its pin and its
+    /// rendered tier (a local group's pin) match the record's pin.
     /// Always `false` for an own row.
     public let canSendToOwner: Bool
     /// The local group the row moves with, or `nil` when it is in none: a

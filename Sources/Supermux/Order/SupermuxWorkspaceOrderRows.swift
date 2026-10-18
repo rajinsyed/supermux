@@ -29,7 +29,8 @@ struct SupermuxWorkspaceOrderRows {
         rows = manager.tabs.map { workspace in
             let localGroup = workspace.groupId.flatMap { groups[$0] }
             let group = localGroup.map { "g:\($0.id.uuidString)" }
-            let tier = (localGroup?.isPinned ?? workspace.isPinned) ? 0 : 1
+            let isRenderedPinned = localGroup?.isPinned ?? workspace.isPinned
+            let tier = isRenderedPinned ? 0 : 1
             guard index.isDeviceMirror(workspace) else {
                 return SupermuxWorkspaceOrderRow(
                     id: workspace.id,
@@ -70,7 +71,10 @@ struct SupermuxWorkspaceOrderRows {
                 key: key,
                 pendingKey: pendingKey,
                 canonicalID: ref?.workspaceID ?? workspace.id.uuidString,
-                canSendToOwner: recordKey != nil && record?.isPinned == workspace.isPinned,
+                // The owner places the key in its record's tier: a mirror drawn in
+                // another tier (its own pin, or its local group's, differs) is local.
+                canSendToOwner: recordKey != nil && record?.isPinned == workspace.isPinned
+                    && record?.isPinned == isRenderedPinned,
                 group: group,
                 unit: unit,
                 isFixed: localGroup != nil || key == nil
