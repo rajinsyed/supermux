@@ -47,7 +47,10 @@ public struct SupermuxMacClient: SupermuxMacCalling, SupermuxPaneMacCalling, Sup
     }
 
     public func worktreeCreate(_ request: SupermuxWorktreeCreateRequest) async throws -> SupermuxWorktreeCreateResponse {
-        try await send(method: request.wireMethod, params: request.wireParams)
+        try await send(
+            method: request.wireMethod, params: request.wireParams,
+            timeoutNanoseconds: SupermuxWorktreeReplyDeadline.rpcTimeoutNanoseconds
+        )
     }
 
     public func worktreeOpen(_ request: SupermuxWorktreeOpenRequest) async throws -> SupermuxWorktreeOpenResponse {
@@ -65,8 +68,11 @@ public struct SupermuxMacClient: SupermuxMacCalling, SupermuxPaneMacCalling, Sup
     }
 
     public func agentStart(_ request: SupermuxAgentStartRequest) async throws -> SupermuxAgentStartResponse {
-        // AI naming plus `git worktree add` plus workspace open.
-        try await send(method: request.wireMethod, params: request.wireParams, timeoutNanoseconds: 90_000_000_000)
+        // Naming, base fetch, checkout, submodules, and workspace open.
+        try await send(
+            method: request.wireMethod, params: request.wireParams,
+            timeoutNanoseconds: SupermuxWorktreeReplyDeadline.rpcTimeoutNanoseconds
+        )
     }
 
     public func projectCreate(_ request: SupermuxProjectCreateRequest) async throws -> SupermuxProjectWriteResponse {
