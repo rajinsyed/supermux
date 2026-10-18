@@ -175,6 +175,8 @@ public struct SupermuxProjectRowView: View, Equatable {
     /// Whether the project can move further up/down (for menu enablement).
     private let canMoveUp: Bool
     private let canMoveDown: Bool
+    /// The section order captured by this row's reorder actions and drop delegate.
+    private let projectOrder: [UUID]
     /// Starts a drag session, returning the reorder payload.
     private let beginDrag: () -> NSItemProvider
     /// Receives drops from sibling rows to reorder this project.
@@ -218,6 +220,7 @@ public struct SupermuxProjectRowView: View, Equatable {
     ///   - actions: Host callbacks.
     ///   - canMoveUp: Whether a Move Up action applies (not already first).
     ///   - canMoveDown: Whether a Move Down action applies (not already last).
+    ///   - projectOrder: The section order captured by reorder callbacks.
     ///   - beginDrag: Starts a drag, returning the reorder payload.
     ///   - dropDelegate: Handles reorder drops from sibling rows.
     ///   - draggingProjectId: Shared marker for the project being dragged (read
@@ -236,6 +239,7 @@ public struct SupermuxProjectRowView: View, Equatable {
         actions: SupermuxProjectRowActions,
         canMoveUp: Bool = false,
         canMoveDown: Bool = false,
+        projectOrder: [UUID] = [],
         beginDrag: @escaping () -> NSItemProvider = { NSItemProvider() },
         dropDelegate: SupermuxProjectDropDelegate? = nil,
         draggingProjectId: Binding<UUID?> = .constant(nil),
@@ -267,6 +271,7 @@ public struct SupermuxProjectRowView: View, Equatable {
         self.actions = actions
         self.canMoveUp = canMoveUp
         self.canMoveDown = canMoveDown
+        self.projectOrder = projectOrder
         self.beginDrag = beginDrag
         self.dropDelegate = dropDelegate
         self._draggingProjectId = draggingProjectId
