@@ -43,9 +43,11 @@ public struct SupermuxOrderStamp: Codable, Hashable, Sendable {
     }
 
     /// Whether this stamp replaces `other`: it is valid, and `other` is
-    /// missing, not valid, or older by `(updatedAt, origin)`.
+    /// missing, not valid, or older by `(updatedAt, origin, key)`.
     ///
-    /// A stamp never wins over itself, so applying it again changes nothing.
+    /// The comparison is a total order, so every device picks the same copy
+    /// even when one restamp gave two copies the same time and origin. A
+    /// stamp never wins over itself, so applying it again changes nothing.
     /// - Parameter other: The copy's current stamp.
     /// - Returns: `true` when this stamp should replace it.
     public func wins(over other: Self?) -> Bool {
@@ -54,7 +56,10 @@ public struct SupermuxOrderStamp: Codable, Hashable, Sendable {
         if updatedAt != other.updatedAt {
             return updatedAt > other.updatedAt
         }
-        return other.origin.utf8.lexicographicallyPrecedes(origin.utf8)
+        if origin != other.origin {
+            return other.origin.utf8.lexicographicallyPrecedes(origin.utf8)
+        }
+        return other.key.utf8.lexicographicallyPrecedes(key.utf8)
     }
 
     /// The stamp for a move, which beats every stamp the mover saw even when
