@@ -84,17 +84,24 @@ struct SupermuxOrderCapturePass<ID: Hashable & Sendable> {
     }
 
     /// A programmatic move must never look like the mover's neighbours moved
-    /// (weight 0), and a mover is always the likelier one: any one other row
-    /// outweighs every mover together, so a block moved at once never
-    /// outvotes the fewer rows it jumped over. On a first pass any one own
-    /// row outweighs every mirror together, so restored mirrors out of key
-    /// order (their owner moved them meanwhile) never re-key this Mac's rows.
+    /// (weight 0), and a mover is always the likelier one. A hinted row
+    /// weighs 1 and a mate its local group widened in weighs more than every
+    /// hinted row together, so inside a group the row the user named is the
+    /// mover. Any one other row outweighs every mover together, so a block
+    /// moved at once never outvotes the fewer rows it jumped over. On a first
+    /// pass any one own row outweighs every mirror together, so restored
+    /// mirrors out of key order (their owner moved them meanwhile) never
+    /// re-key this Mac's rows.
     private func weights(_ rows: [Row]) -> [Int] {
-        let unmoved = rows.filter { movers.contains($0.id) }.count + 1
+        let hintedCount = rows.filter { hinted.contains($0.id) }.count
+        let mateCount = rows.filter { movers.contains($0.id) && !hinted.contains($0.id) }.count
+        let mate = hintedCount + 1
+        let unmoved = mate * (mateCount + 1)
         let ownFactor = isFirstPass ? rows.filter(\.isMirror).count + 1 : 1
         return rows.map { row in
             if programmatic.contains(row.id) { return 0 }
-            if movers.contains(row.id) { return 1 }
+            if hinted.contains(row.id) { return 1 }
+            if movers.contains(row.id) { return mate }
             return row.isMirror ? unmoved : unmoved * ownFactor
         }
     }

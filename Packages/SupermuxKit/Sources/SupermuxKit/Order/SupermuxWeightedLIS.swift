@@ -3,9 +3,10 @@
 /// rows count more than others.
 ///
 /// The capture planner weighs a programmatic move 0, a hinted (user-moved)
-/// row 1 and any other row more than all hinted rows together, so the rows
-/// it keeps are the ones that did not move, and the rows left out are the movers. O(n²), run only when a window's
-/// rows changed.
+/// row 1, a mate of a hinted row's local group more than every hinted row
+/// together, and any other row more than every mover together, so the rows
+/// it keeps are the ones that did not move, and the rows left out are the
+/// movers. O(n²), run only when a window's rows changed.
 ///
 /// ```swift
 /// SupermuxWeightedLIS().indices(of: [1, 0], weights: [1, 2])  // [1]: the hinted row 0 moved

@@ -10,9 +10,10 @@ internal import SupermuxMobileCore
 ///
 /// 1. The rows that kept their relative order since the baseline are found
 ///    with a weighted longest increasing subsequence, so the rows left out are
-///    the movers. A programmatic move weighs 0, a hinted row (or a member of a
-///    hinted row's local group, which moves with it) 1, and any other row more
-///    than all of those together. A row whose tier changed counts as new.
+///    the movers. A programmatic move weighs 0 and a hinted row 1. A member
+///    of a hinted row's local group, which moves with it, weighs more than
+///    every hinted row together, and any other row more than every mover
+///    together. A row whose tier changed counts as new.
 /// 2. A kept, keyed row is an anchor. Every other own row keeps its key when
 ///    it still fits between the nearest anchors (the highest one before it,
 ///    the lowest kept one after it), else gets a new key there through
