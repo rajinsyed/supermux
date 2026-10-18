@@ -100,6 +100,11 @@ final class SupermuxDevices {
         recordsSnapshot(on: machine)?.ordered ?? []
     }
 
+    /// The device's synced groups, including the pins that determine its rendered tiers.
+    func groups(on machine: SurfaceMachineID) -> [GroupSyncRecord] {
+        provider(for: machine)?.link.mirror.groups.orderedRecords ?? []
+    }
+
     /// One remote workspace's synced record, matched case-insensitively.
     func record(for ref: SupermuxRemoteWorkspaceRef) -> WorkspaceSyncRecord? {
         recordsSnapshot(on: ref.machine)?.byWorkspaceID[ref.workspaceID]

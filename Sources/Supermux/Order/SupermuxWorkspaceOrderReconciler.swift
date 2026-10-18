@@ -36,7 +36,6 @@ final class SupermuxWorkspaceOrderReconciler {
 
     private struct WindowState {
         var baseline: [SupermuxOrderPosition<UUID>]?
-        var lastAttempted: [UUID]?
         var signature: [SupermuxWorkspaceOrderRow]?
         var hints: Set<UUID> = []
         var programmatic: Set<UUID> = []
@@ -341,14 +340,8 @@ final class SupermuxWorkspaceOrderReconciler {
         }
 
         let desired = arrangement.arrange(makeRows(manager).applyItems)
-        if desired != manager.tabs.map(\.id), desired != state.lastAttempted {
-            isApplying = true
-            if case .success = manager.reorderWorkspaces(orderedWorkspaceIds: desired) {
-                counters.applies += 1
-            }
-            isApplying = false
-            // An order pins or groups would not take is not issued again.
-            state.lastAttempted = manager.tabs.map(\.id) == desired ? nil : desired
+        if desired != manager.tabs.map(\.id) {
+            apply(desired, to: manager)
         }
 
         let final = makeRows(manager)
@@ -357,6 +350,21 @@ final class SupermuxWorkspaceOrderReconciler {
         state.hints = []
         state.programmatic = []
         windows[windowKey] = state
+    }
+
+    /// Applies the arrangement's complete, group-aware order without running
+    /// the batch reorder's raw-pin partition, which can move fixed local groups
+    /// containing an individually pinned member. Local units already retain
+    /// their member and anchor order, so no group normalization is needed.
+    private func apply(_ desired: [UUID], to manager: TabManager) {
+        let current = manager.tabs
+        let byID = Dictionary(uniqueKeysWithValues: current.map { ($0.id, $0) })
+        let moved = desired.enumerated().compactMap { offset, id in current[offset].id != id ? id : nil }
+        isApplying = true
+        defer { isApplying = false }
+        manager.tabs = desired.compactMap { byID[$0] }
+        manager.workspaceOrderDidChange(movedWorkspaceIds: moved)
+        counters.applies += 1
     }
 
     /// Tells every viewer that own keys changed: v2 viewers (a delta tick) and

@@ -17,7 +17,8 @@ struct SupermuxWorkspaceOrderRow: Equatable {
     let isMirror: Bool
     /// The workspace's own pin (what `set_order` checks on the owner).
     let isPinned: Bool
-    /// The rendered tier: `0` pinned (a grouped row takes its group's pin), `1` unpinned.
+    /// The rendered tier: `0` pinned, `1` unpinned. A local group takes
+    /// precedence; otherwise an uncustomized mirror inherits its owner's group tier.
     let tier: Int
     /// The order key: the stored key of an own row; the pending key, else the
     /// record key, of a mirror.

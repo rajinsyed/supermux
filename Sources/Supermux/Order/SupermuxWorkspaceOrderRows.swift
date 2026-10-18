@@ -26,11 +26,13 @@ struct SupermuxWorkspaceOrderRows {
         outbox: SupermuxMirrorOrderOutbox
     ) {
         let groups = Dictionary(manager.workspaceGroups.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let ownerGroupPins = Dictionary(uniqueKeysWithValues: devices.devices.map { device in
+            (device.id, Dictionary(devices.groups(on: device.machine).map { ($0.id.uppercased(), $0.isPinned) },
+                                   uniquingKeysWith: { first, _ in first }))
+        })
         rows = manager.tabs.map { workspace in
             let localGroup = workspace.groupId.flatMap { groups[$0] }
             let group = localGroup.map { "g:\($0.id.uuidString)" }
-            let isRenderedPinned = localGroup?.isPinned ?? workspace.isPinned
-            let tier = isRenderedPinned ? 0 : 1
             guard index.isDeviceMirror(workspace) else {
                 return SupermuxWorkspaceOrderRow(
                     id: workspace.id,
@@ -38,7 +40,7 @@ struct SupermuxWorkspaceOrderRows {
                     ref: nil,
                     isMirror: false,
                     isPinned: workspace.isPinned,
-                    tier: tier,
+                    tier: (localGroup?.isPinned ?? workspace.isPinned) ? 0 : 1,
                     key: store.key(forStableID: workspace.stableId),
                     pendingKey: nil,
                     canonicalID: workspace.id.uuidString,
@@ -50,6 +52,15 @@ struct SupermuxWorkspaceOrderRows {
             }
             let ref = index.ref(forLocal: workspace)
             let record = ref.flatMap { devices.record(for: $0) }
+            let ownerPinned = ref.flatMap { ref in
+                record?.groupID.flatMap { ownerGroupPins[ref.machineID]?[$0.uppercased()] }
+            } ?? record?.isPinned
+            // Matching raw pins mean this mirror still inherits the owner.
+            // A local group or a deliberate local pin takes precedence.
+            let inheritsOwnerPin = record?.isPinned == workspace.isPinned
+            let isRenderedPinned = localGroup?.isPinned
+                ?? (inheritsOwnerPin ? ownerPinned : nil) ?? workspace.isPinned
+            let tier = isRenderedPinned ? 0 : 1
             let recordKey = record?.supermuxOrderKey.flatMap { Self.orderKey.isValid($0) ? $0 : nil }
             let pendingKey = ref.flatMap { outbox.pendingKey(for: $0) }
             let key = pendingKey ?? recordKey
@@ -73,8 +84,7 @@ struct SupermuxWorkspaceOrderRows {
                 canonicalID: ref?.workspaceID ?? workspace.id.uuidString,
                 // The owner places the key in its record's tier: a mirror drawn in
                 // another tier (its own pin, or its local group's, differs) is local.
-                canSendToOwner: recordKey != nil && record?.isPinned == workspace.isPinned
-                    && record?.isPinned == isRenderedPinned,
+                canSendToOwner: recordKey != nil && inheritsOwnerPin && ownerPinned == isRenderedPinned,
                 group: group,
                 unit: unit,
                 isFixed: localGroup != nil || key == nil
