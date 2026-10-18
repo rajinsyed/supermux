@@ -14,7 +14,9 @@ import Testing
 ///    loses to the stamp it just saw.
 /// 4. (#65) Equal stamps break on ids the Mac and the phone do not share, so
 ///    they order projects differently; or two stamps with the same time are
-///    each judged the winner on a different device.
+///    each judged the winner on a different device; or two copies of one
+///    project stamped by one full restamp (same time and origin, different
+///    keys) never beat each other, so each device keeps the copy it saw first.
 /// 5. (#61) Unstamped projects reshuffle: they must follow the stamped ones in
 ///    their incoming (today's) order.
 /// 6. (#3) A stamp with a key that is not valid (an old or buggy peer) wins or
@@ -47,6 +49,13 @@ import Testing
         let phone = stamp("a2", at: 100, from: "phone:0F6E")
         #expect(phone.wins(over: mac) != mac.wins(over: phone))
         #expect(phone.wins(over: mac), "origins compare in byte order: \"p\" > \"m\"")
+    }
+
+    @Test func atTheSameTimeAndOriginTheGreaterKeyWins() {
+        let lower = stamp("a2", at: 100, from: "mac:a")
+        let greater = stamp("a4", at: 100, from: "mac:a")
+        #expect(greater.wins(over: lower), "keys compare in byte order: \"a4\" > \"a2\"")
+        #expect(!lower.wins(over: greater))
     }
 
     @Test func aStampWithABadKeyNeverWins() {
