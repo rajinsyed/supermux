@@ -228,6 +228,7 @@ public struct SupermuxProjectsSectionView: View {
             actions: rowActions(for: project),
             canMoveUp: index > 0,
             canMoveDown: index + 1 < drawn.count && drawn[index + 1].isOrderKeyed,
+            projectOrder: baseOrder,
             beginDrag: { beginProjectDrag(project.id) },
             dropDelegate: projectDropDelegate(for: project.id, baseOrder: baseOrder),
             draggingProjectId: draggingProjectId,

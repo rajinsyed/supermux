@@ -157,7 +157,8 @@ struct SupermuxProjectReorderDrop: ViewModifier {
 /// project's row. The callbacks are not compared: they reach only the
 /// section's model, opener, `@State` storage and the host's weak-window
 /// callbacks, plus value snapshots of this same project (its record, remote
-/// extras and nested workspaces), which the comparison covers. Font scale,
+/// extras and nested workspaces) and the section's project order, which the
+/// comparison covers. Font scale,
 /// hover and the drag dim are dynamic properties, which re-render the row on
 /// their own.
 public struct SupermuxProjectRowView: View, Equatable {
@@ -220,7 +221,8 @@ public struct SupermuxProjectRowView: View, Equatable {
     ///   - actions: Host callbacks.
     ///   - canMoveUp: Whether a Move Up action applies (not already first).
     ///   - canMoveDown: Whether a Move Down action applies (not already last).
-    ///   - projectOrder: The section order captured by reorder callbacks.
+    ///   - projectOrder: The section order captured by reorder callbacks;
+    ///     defaults to empty for rows without reorder wiring.
     ///   - beginDrag: Starts a drag, returning the reorder payload.
     ///   - dropDelegate: Handles reorder drops from sibling rows.
     ///   - draggingProjectId: Shared marker for the project being dragged (read
@@ -287,6 +289,7 @@ public struct SupermuxProjectRowView: View, Equatable {
             && lhs.isExpanded == rhs.isExpanded
             && lhs.canMoveUp == rhs.canMoveUp
             && lhs.canMoveDown == rhs.canMoveDown
+            && lhs.projectOrder == rhs.projectOrder
             && lhs.remoteExtras == rhs.remoteExtras
             && lhs.pendingWorktrees == rhs.pendingWorktrees
     }
