@@ -94,9 +94,14 @@ Steps:
                                   owner is unreachable, not an old host); after the
                                   link returns: C1-C4
   20. old_host_fallback           `order_debug old_host` + link restart: no capability,
-                                  no keys, nested rows in per-device blocks again, a
-                                  mirror dropped first stays there and its source does
-                                  not move; back to normal: C1-C4
+                                  no keys, nested rows in per-device blocks again. Then
+                                  `old_peer` (the owner still old, this Mac's reconciler
+                                  running again, as an up-to-date viewer next to an old
+                                  owner Mac): a mirror dropped first stays there for 2 s
+                                  though passes ran, its source does not move, no
+                                  set_order sent. Back to normal + link restart: C1-C4,
+                                  the own order and W2's key unchanged, still no
+                                  set_order sent
   21. quiescence                  5 s idle: tabs, keys and pending keys unchanged; no key
                                   writes, applies or set_order sends
   22. relaunch                    (opt-in --relaunch, needs --app-path) quit and relaunch
@@ -112,8 +117,9 @@ owner as user moves (10, 11, 21); a group split by apply (13); a clamped
 set_order that stores a key the row does not sit at (14); a local group's pin
 sent to an owner (15); nested rows kept Mac by Mac (16); a cross-window drop
 moved away (17); an older project stamp winning or an upgrade stamping projects
-(18); a silent snap-back while the owner is offline (19); an old host (20); an
-echo loop (21); keys lost on restore (22); and leaked scratch state (cleanup).
+(18); a silent snap-back while the owner is offline (19); an old host, an
+unkeyed mirror placed or sent by an up-to-date viewer, and a resume that moves
+the owner's rows (20); an echo loop (21); keys lost on restore (22); and leaked scratch state (cleanup).
 
 A step that needs a command this build does not serve (the DEBUG order
 commands, the set_order RPCs) fails at once with a message naming it, and the
@@ -1191,6 +1197,11 @@ class WorkspaceOrderE2E:
                         raise Failure(f"nested rows {self.named(rows)}")
                     return self.named(rows)
                 wait_for("nested rows in per-device blocks", blocks, self.timeout)
+            # old_host stops this Mac's reconciler too, so in a loopback it is
+            # also an old viewer: nothing could move a dropped mirror. old_peer
+            # keeps the owner old (no capability, no keys) and runs the viewer.
+            self.debug("order_debug", {"mode": "old_peer"})
+            self.applies_settle()
             own_before = self.own_order()
             before = self.counters()
             self.call("workspace.reorder", {"workspace_id": m2, "index": 0})
@@ -1200,12 +1211,16 @@ class WorkspaceOrderE2E:
 
             wait_for("M2 first", dropped, self.timeout)
             hold("M2 where dropped, W2 unmoved", dropped, 2.0)
-            counters = self.expect_counters(before, exact={"set_order_sent": 0})
+            counters = self.expect_counters(before, exact={"set_order_sent": 0}, at_least={"passes": 1})
         finally:
             if self.attempt("order_debug normal", lambda: self.debug("order_debug", {"mode": "normal"})):
                 self.debug_mode_touched = False
             self.attempt("restart the link", self.link_restart)
-        return {"counters": counters, **self.invariants()}
+        result = self.invariants()
+        if self.own_order() != own_before:
+            raise Failure(f"the resume moved own rows: {self.named(own_before)} -> {self.named(self.own_order())}")
+        resumed = self.expect_counters(before, exact={"set_order_sent": 0}, writes={w2: 0})
+        return {"dropped": counters, "resumed": resumed, **result}
 
     def quiescence(self) -> Dict[str, Any]:
         def picture() -> Dict[str, Any]:
