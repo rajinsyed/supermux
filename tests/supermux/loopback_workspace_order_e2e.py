@@ -104,9 +104,11 @@ Steps:
                                   set_order sent
   21. quiescence                  5 s idle: tabs, keys and pending keys unchanged; no key
                                   writes, applies or set_order sends
-  22. relaunch                    (opt-in --relaunch, needs --app-path) quit and relaunch
-                                  the tagged app: every scratch row keeps its key, the
-                                  main window's own scratch order is identical; C1
+  22. relaunch                    (--relaunch, needs --app-path; the runner passes both)
+                                  every scratch notification read, then quit the tagged
+                                  app, wait for its process to exit and relaunch it:
+                                  every scratch row keeps its key, the main window's own
+                                  scratch order is identical; C1
   23. sidebar_screenshot          the window, for the report
 
 What it guards against: an upgrade that moves this Mac's own rows (2); a reorder
@@ -1247,6 +1249,7 @@ class WorkspaceOrderE2E:
             return {"skipped": "pass --relaunch (with --app-path) to run"}
         if not self.args.app_path:
             raise Failure("--relaunch needs --app-path")
+        read = self.read_scratch_notifications()
         titles = {i: (next((w.get("title") for w in self.tab_rows(self.window_of(i)) if up(w.get("id")) == i), ""))
                   for i in self.sources}
         keys = {titles[i]: self.phone_key(i) for i in self.sources}
@@ -1256,8 +1259,9 @@ class WorkspaceOrderE2E:
         self.sock.close()
         subprocess.run(["osascript", "-e", "ignoring application responses", "-e",
                         f'tell application id "{bundle_id}" to quit', "-e", "end ignoring"], check=False, capture_output=True)
-        wait_for("the app to quit", lambda: not socket_alive(self.sock.path), 60)
-        time.sleep(1.0)
+        # The socket goes before the process (the quit waits for the session
+        # save): `open` would then reuse the dying app without the environment.
+        wait_for("the app to quit", lambda: not app_running(bundle_id), 60)
         env = ["--env", "SUPERMUX_DEBUG_LOOPBACK_DEVICE=1"]
         if self.args.projects_file:
             env += ["--env", f"SUPERMUX_PROJECTS_FILE={self.args.projects_file}"]
@@ -1286,7 +1290,27 @@ class WorkspaceOrderE2E:
         if after != order:
             raise Failure(f"own order changed across the relaunch: {order} -> {after}")
         tabs = wait_for("C1 once the mirrors return", self.check_adjacency, self.timeout * 3)
-        return {"keys": len(keys), "own_order": order, "c1_tabs": tabs}
+        return {"keys": len(keys), "own_order": order, "read_before_quit": read, "c1_tabs": tabs}
+
+    def read_scratch_notifications(self) -> List[str]:
+        """Marks every scratch row's notifications read and waits until none is
+        unread. A mirror whose source still has an unread notification (step 12
+        leaves one) gets it again when the link reconnects after a relaunch;
+        the bump that follows is sent to the owner (design D2) and moves the
+        owner's row, which is not what the relaunch step checks."""
+        mirrors = self.mirror_map()
+        rows = self.sources + [mirrors[s] for s in self.sources if s in mirrors]
+        unread = self.unread_notification_rows(rows)
+        for workspace_id in rows:
+            self.call("workspace.action", {"workspace_id": workspace_id, "action": "mark_read"})
+        wait_for("every scratch notification read", lambda: not self.unread_notification_rows(rows), self.timeout)
+        return [self.name(i, mirrors) for i in unread]
+
+    def unread_notification_rows(self, rows: Sequence[str]) -> List[str]:
+        """The rows among `rows` holding an unread notification record."""
+        records = self.debug("notification_records").get("records") or []
+        unread = {up(r.get("workspace_id")) for r in records if not r.get("is_read")}
+        return [i for i in rows if i in unread]
 
     def sidebar_screenshot(self) -> Dict[str, Any]:
         shot = self.call("debug.window.screenshot", {"label": "workspace-order"})
@@ -1366,6 +1390,12 @@ class WorkspaceOrderE2E:
             return ok
         finally:
             self.cleanup()
+
+
+def app_running(bundle_id: str) -> bool:
+    script = f'application id "{bundle_id}" is running'
+    result = subprocess.run(["osascript", "-e", script], check=False, capture_output=True, text=True, timeout=30)
+    return result.stdout.strip() == "true"
 
 
 def socket_alive(path: str) -> bool:

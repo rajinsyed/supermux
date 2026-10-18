@@ -151,7 +151,7 @@ suite_args() {
     loopback_mirror_appearance_e2e) printf '%s\n' --app-path "$APP" --projects-file "$SCRATCH/projects.json" ;;
     loopback_sidebar_rows_e2e) printf '%s\n' --scratch "$SCRATCH/rows" ;;
     loopback_nested_reorder_e2e) printf '%s\n' --scratch "$SCRATCH/reorder" ;;
-    loopback_workspace_order_e2e) printf '%s\n' --scratch "$SCRATCH/order" --projects-file "$SCRATCH/projects.json" --app-path "$APP" ;;
+    loopback_workspace_order_e2e) printf '%s\n' --scratch "$SCRATCH/order" --projects-file "$SCRATCH/projects.json" --app-path "$APP" --push-state-dir "$SCRATCH/push-state" --relaunch ;;
     loopback_terminal_input_e2e) printf '%s\n' --scratch "$SCRATCH/terminal-input" ;;
     loopback_terminal_input_pipeline_e2e) printf '%s\n' --scratch "$SCRATCH/terminal-input-pipeline" ;;
     loopback_degraded_link_e2e) printf '%s\n' --scratch "$SCRATCH/degraded-link" ;;
