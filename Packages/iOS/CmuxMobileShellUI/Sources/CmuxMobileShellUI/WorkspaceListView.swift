@@ -483,9 +483,15 @@ struct WorkspaceListView: View {
 
     /// The shell's rows in the order every Mac shares (each owner Mac's
     /// order keys; unchanged without keys or under Recent Activity), which
-    /// upstream's stable pinned-first pass and group items keep.
+    /// upstream's stable pinned-first pass and group items keep. The sort is
+    /// the one that applies: a one-Mac scope runs no recency sort even when
+    /// Recent Activity is the stored choice, so its rows sort by key, as the
+    /// nested rows do.
     private var supermuxOrderedWorkspaces: [MobileWorkspacePreview] {
-        SupermuxPhoneWorkspaceOrder().loose(workspaces, groups: groupsByID, mode: workspaceSortMode)
+        let mode: MobileWorkspaceSortMode = workspaceSortMode == .recentActivity && !appliesRecencySort
+            ? .automatic
+            : workspaceSortMode
+        return SupermuxPhoneWorkspaceOrder().loose(workspaces, groups: groupsByID, mode: mode)
     }
 
     private var supermuxFlatWorkspaces: [MobileWorkspacePreview] {
