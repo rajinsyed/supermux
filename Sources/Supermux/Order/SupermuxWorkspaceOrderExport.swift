@@ -12,7 +12,7 @@ enum SupermuxWorkspaceOrderExport {
     /// The workspace's order key, or `nil` when none travels: for a mirror of
     /// another Mac's workspace (only its owner writes its key), before the app
     /// is ready, and while this Mac does not serve `supermux.order_sync.v1`
-    /// (DEBUG `order_debug old_host`). Otherwise the key the
+    /// (DEBUG `order_debug old_host` or `old_peer`). Otherwise the key the
     /// ``SupermuxWorkspaceOrderReconciler`` stored for it, if it has one yet.
     ///
     /// - Parameter workspace: The workspace being serialized.

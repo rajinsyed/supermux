@@ -21,7 +21,8 @@ enum SupermuxMobileCapabilities {
 
     /// Own rows carry `supermux_order_key`, `workspace.set_order` is served
     /// and other Macs' mirrors are placed by key (`Sources/Supermux/Order/`).
-    /// A DEBUG E2E withholds it to play an older host (`order_debug old_host`).
+    /// A DEBUG E2E withholds it to play an older host (`order_debug old_host`
+    /// or `old_peer`).
     nonisolated private static var servesOrderSync: Bool {
         SupermuxOrderDebugMode.current.servesOrderSync
     }

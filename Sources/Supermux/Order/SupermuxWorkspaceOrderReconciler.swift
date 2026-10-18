@@ -14,8 +14,8 @@ import SupermuxMobileCore
 /// groups change (`tabsPublisher` emits during `willSet`), after a device
 /// record changes, and after the outbox's held keys change. It waits while
 /// the app is not ready (session restore, quitting) or a mouse button is
-/// down, re-arming every 300 ms, and does nothing unless the DEBUG mode is
-/// ``SupermuxOrderDebugMode/normal``. A pass:
+/// down, re-arming every 300 ms, and does nothing unless the DEBUG mode
+/// ``SupermuxOrderDebugMode/reconciles`` (`normal`, `old_peer`). A pass:
 ///
 /// 1. captures: ``SupermuxOrderCapture`` diffs the tabs against the order the
 ///    last pass left, attributing moves to the rows `workspaceOrderDidChange`

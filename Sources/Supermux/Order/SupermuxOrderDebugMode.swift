@@ -11,6 +11,10 @@ enum SupermuxOrderDebugMode: String, CaseIterable {
     /// As ``paused``, and this Mac also withholds `supermux.order_sync.v1`,
     /// exports no keys and refuses `set_order`: an older Mac.
     case oldHost = "old_host"
+    /// As ``oldHost`` toward the Macs that view this one, while the
+    /// reconciler keeps running: in a loopback, an up-to-date viewer next to
+    /// an older owner Mac.
+    case oldPeer = "old_peer"
 
     #if DEBUG
     /// The current mode. Read by the nonisolated capability list
@@ -23,8 +27,8 @@ enum SupermuxOrderDebugMode: String, CaseIterable {
     #endif
 
     /// Whether the reconciler runs.
-    var reconciles: Bool { self == .normal }
+    var reconciles: Bool { self == .normal || self == .oldPeer }
 
     /// Whether this Mac serves shared order (capability, key export, `set_order`).
-    var servesOrderSync: Bool { self != .oldHost }
+    var servesOrderSync: Bool { self == .normal || self == .paused }
 }

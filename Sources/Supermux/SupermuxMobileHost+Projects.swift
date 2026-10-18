@@ -214,7 +214,7 @@ extension TerminalController {
     @MainActor
     func v2SupermuxProjectsSetOrder(params: [String: Any]) async -> V2CallResult {
         guard SupermuxOrderDebugMode.current.servesOrderSync else {
-            // An older Mac (DEBUG old_host) does not know the method.
+            // An older Mac (DEBUG old_host, old_peer) does not know the method.
             return .err(code: "method_not_found", message: "Unknown mobile method", data: [
                 "method": SupermuxMobileMethod.projectsSetOrder.rawValue
             ])

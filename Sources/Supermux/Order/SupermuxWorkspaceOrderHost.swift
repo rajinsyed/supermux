@@ -47,7 +47,7 @@ final class SupermuxWorkspaceOrderHost {
     /// - Returns: `{workspace_id, order_key}`, or the refusal.
     func setOrder(_ params: [String: Any]) -> Result<[String: Any], Refusal> {
         guard SupermuxOrderDebugMode.current.servesOrderSync else {
-            // An older Mac (DEBUG old_host) does not know the method.
+            // An older Mac (DEBUG old_host, old_peer) does not know the method.
             return .failure(Refusal(code: "method_not_found", message: "Unknown mobile method"))
         }
         let result = serve(params)

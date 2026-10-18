@@ -14,9 +14,11 @@ import SupermuxMobileCore
 ///   ended with a beep, `workspace_updated_emits`: the fork's coalesced
 ///   `workspace.updated` emits).
 /// - `order_key_between {lower?, upper?}`: `{key}`, minted the way capture does.
-/// - `order_debug {mode: normal | paused | old_host}`: `paused` stops the
-///   reconciler; `old_host` also withholds the capability, the key export and
-///   `set_order` (takes effect for peers on the link's next connection).
+/// - `order_debug {mode: normal | paused | old_host | old_peer}`: `paused`
+///   stops the reconciler; `old_host` also withholds the capability, the key
+///   export and `set_order` (takes effect for peers on the link's next
+///   connection); `old_peer` withholds them as `old_host` does but keeps the
+///   reconciler running.
 /// - `project_move {project_id, over_project_id}`: moves a project the way the
 ///   sidebar does (``SupermuxProjectsModel/moveProject(_:over:)``, the shared
 ///   order mover); the ids are the sidebar's unified project ids, which are
@@ -49,7 +51,7 @@ enum SupermuxOrderSocketCommands {
             return ["key": key]
         case "order_debug":
             guard let raw = params["mode"] as? String, let mode = SupermuxOrderDebugMode(rawValue: raw) else {
-                throw HookError(message: "mode must be normal, paused or old_host")
+                throw HookError(message: "mode must be normal, paused, old_host or old_peer")
             }
             reconciler.setMode(mode)
             return ["mode": mode.rawValue]
