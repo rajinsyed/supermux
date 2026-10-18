@@ -20,6 +20,12 @@ import Testing
 ///    stamped row can never stay (unstamped rows sort after stamped ones).
 /// 5. A remote-only project on a connected Mac that serves order sync, or a
 ///    stamped one whose Mac went offline, is left out of the order too.
+/// 6. (RR3) A move that restamps every project also re-keys a stamped one
+///    whose Mac is offline. That stamp is never written, so its old key lands
+///    among the new ones and two rows nobody moved swap places.
+/// 7. (RR4) A drag committed over a project no Mac can stamp (the preview's
+///    follower) is dropped, though the moved row can keep the slot before it:
+///    the row snaps back.
 @Suite struct SupermuxProjectOrderMoveTests {
     private let now = Date(timeIntervalSince1970: 1_760_000_000)
     private let current = SupermuxProjectDevice(machineID: "device:aaaa@default", name: "Studio", isOnline: true, supportsOrderSync: true)
@@ -78,10 +84,14 @@ import Testing
 
     // MARK: 4
 
-    @Test func aDropOverAProjectNoMacCanStampIsIgnored() {
+    @Test func aDropOverAProjectNoMacCanStampLandsInTheNearestKeyedSlot() throws {
         let a = local("A", key: "a1"), b = local("B", key: "a2"), y = remoteOnly("Y", on: old)
-        #expect(move(b, over: y, in: [a, b, y]).isEmpty, "Move Down onto Y")
-        #expect(move(a, over: y, in: [a, b, y]).isEmpty, "a drag dropped over Y")
+        let stay = move(b, over: y, in: [a, b, y])
+        #expect(Set(stay.keys) == [b.id], "Move Down onto Y")
+        #expect(try #require(stay[b.id]?.key) > "a1")
+        let down = move(a, over: y, in: [a, b, y])
+        #expect(Set(down.keys) == [a.id], "a drag dropped over Y")
+        #expect(try #require(down[a.id]?.key) > "a2")
     }
 
     // MARK: 5
@@ -92,6 +102,28 @@ import Testing
         #expect(Set(stamps.keys) == [b.id])
         let key = try #require(stamps[b.id]?.key)
         #expect("a1" < key && key < "a2")
+    }
+
+    // MARK: 6
+
+    @Test func aFullRestampLeavesAStampedProjectWhoseMacWentOfflineWhereItIs() throws {
+        let p1 = local("P1", key: "a0"), p2 = local("P2", key: "a1"), z = remoteOnly("Z", on: asleep, key: "a2")
+        let p3 = local("P3", key: "a3"), p4 = local("P4")
+        let stamps = move(p4, over: p1, in: [p1, p2, z, p3, p4])
+        #expect(Set(stamps.keys) == [p4.id, p1.id, p2.id, p3.id], "Z's stamp could never be written")
+        let keys = try [p4, p1, p2].map { try #require(stamps[$0.id]?.key) }
+        let keyP3 = try #require(stamps[p3.id]?.key)
+        #expect(keys[0] < keys[1] && keys[1] < keys[2] && keys[2] < "a2" && "a2" < keyP3)
+    }
+
+    // MARK: 7
+
+    @Test func aDragCommittedOverAProjectNoMacCanStampLandsBeforeIt() throws {
+        let l1 = local("L1"), l2 = local("L2"), y = remoteOnly("Y", on: old), z = remoteOnly("Z", on: current)
+        let stamps = move(z, over: y, in: [l1, l2, y, z])
+        #expect(Set(stamps.keys) == [l1.id, l2.id, z.id])
+        let keys = try [l1, l2, z].map { try #require(stamps[$0.id]?.key) }
+        #expect(keys[0] < keys[1] && keys[1] < keys[2])
     }
 
     // MARK: Helpers
