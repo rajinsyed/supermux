@@ -123,11 +123,39 @@ final class SupermuxDeviceFileExplorerProvider: RemoteFileExplorerProvider, @unc
         }
     }
 
+    // MARK: - Upstream mutation compatibility
+
+    // Keep these as adapters to the root-confined device engine, never local I/O.
+    // The Supermux command owner still handles Duplicate: upstream's arbitrary
+    // destination copy contract cannot be satisfied by files.duplicate safely.
+    var supportsTrash: Bool { true }
+
+    nonisolated func createFile(path: String) async throws {
+        _ = try await create(at: path, folder: false)
+    }
+
+    nonisolated func createDirectory(path: String) async throws {
+        _ = try await create(at: path, folder: true)
+    }
+
+    nonisolated func rename(path: String, to destinationPath: String) async throws {
+        _ = try relativePath(destinationPath)
+        let sourceParent = (path as NSString).deletingLastPathComponent
+        guard sourceParent == (destinationPath as NSString).deletingLastPathComponent else {
+            throw SupermuxDeviceFileError.outsideFolder(deviceName: root.deviceName)
+        }
+        _ = try await rename(path, to: (destinationPath as NSString).lastPathComponent)
+    }
+
+    nonisolated func moveToTrash(path: String) async throws {
+        try await trash([path])
+    }
+
     // MARK: - File operations (the panel's New File, Rename, Duplicate, Trash)
 
     /// Creates an empty file or a folder at an absolute path; returns its path.
     nonisolated func create(at path: String, folder: Bool) async throws -> String {
-        let relative = try relativePath(path)
+        let relative = try mutationRelativePath(path)
         let transport = self.transport
         let created = try await limited { try await transport.create(relative, folder: folder) }
         return Self.join(root.rootPath, created)
@@ -135,7 +163,8 @@ final class SupermuxDeviceFileExplorerProvider: RemoteFileExplorerProvider, @unc
 
     /// Renames an entry; returns its new absolute path.
     nonisolated func rename(_ path: String, to name: String) async throws -> String {
-        let relative = try relativePath(path)
+        let relative = try mutationRelativePath(path)
+        let name = try SupermuxFileSystemOperations.validatedName(name)
         let transport = self.transport
         let renamed = try await limited { try await transport.rename(relative, to: name) }
         return Self.join(root.rootPath, renamed)
@@ -143,7 +172,7 @@ final class SupermuxDeviceFileExplorerProvider: RemoteFileExplorerProvider, @unc
 
     /// Duplicates an entry next to itself; returns the copy's absolute path.
     nonisolated func duplicate(_ path: String) async throws -> String {
-        let relative = try relativePath(path)
+        let relative = try mutationRelativePath(path)
         let transport = self.transport
         let copy = try await limited { try await transport.duplicate(relative) }
         return Self.join(root.rootPath, copy)
@@ -151,7 +180,7 @@ final class SupermuxDeviceFileExplorerProvider: RemoteFileExplorerProvider, @unc
 
     /// Moves entries to the Trash on that Mac.
     nonisolated func trash(_ paths: [String]) async throws {
-        let relative = try paths.map(relativePath)
+        let relative = try paths.map(mutationRelativePath)
         let transport = self.transport
         try await limited { try await transport.trash(relative) }
     }
@@ -208,7 +237,20 @@ final class SupermuxDeviceFileExplorerProvider: RemoteFileExplorerProvider, @unc
         guard path.hasPrefix(prefix) else {
             throw SupermuxDeviceFileError.outsideFolder(deviceName: root.deviceName)
         }
-        return String(path.dropFirst(prefix.count))
+        let relative = String(path.dropFirst(prefix.count))
+        guard !relative.contains("\0"),
+              !relative.split(separator: "/").contains(where: { $0 == "." || $0 == ".." }) else {
+            throw SupermuxDeviceFileError.outsideFolder(deviceName: root.deviceName)
+        }
+        return relative
+    }
+
+    private func mutationRelativePath(_ path: String) throws -> String {
+        let relative = try relativePath(path)
+        guard !relative.split(separator: "/").isEmpty else {
+            throw SupermuxDeviceFileError.outsideFolder(deviceName: root.deviceName)
+        }
+        return relative
     }
 
     private func learnHome(_ home: String) {

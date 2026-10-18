@@ -85,6 +85,13 @@ def run_package_step(package: str, attempts: list[tuple[str, int]], bonsplit=Fal
         fixture.write_text(json.dumps(attempts))
         swift = root / "swift"
         swift.write_text("#!/usr/bin/env python3\nimport json, os, pathlib, sys\n"
+                         # SUPERMUX:begin ci-package-selection-fork-fixture
+                         "fork_paths = {'Packages/SupermuxKit', 'Packages/Shared/SupermuxMobileCore', "
+                         "'Packages/iOS/SupermuxMobileKit', 'Packages/iOS/SupermuxMobileUI'}\n"
+                         "if any(path in sys.argv for path in fork_paths):\n"
+                         "    print('✔ Test run with 1 test passed after 0.001 seconds.')\n"
+                         "    sys.exit(0)\n"
+                         # SUPERMUX:end ci-package-selection-fork-fixture
                          "root = pathlib.Path(os.environ['FIXTURE_ROOT'])\n"
                          "counter = root / 'calls'\n"
                          "count = int(counter.read_text()) if counter.exists() else 0\n"

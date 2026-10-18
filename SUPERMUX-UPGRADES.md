@@ -14,6 +14,104 @@ Add a section here as the last step of every upstream merge.
 
 ---
 
+## cmux main @ `58ce7de4fe` → main @ `cdbe99596f` (2026-10-13)
+
+Syncs 435 first-parent upstream commits, including cmux 0.65.1 and subsequent fixes.
+This is a large terminal, agent, browser, remote and build update, not a replacement of
+Supermux's Projects/Changes/Run/Claude-harness product layer.
+
+### New tools and navigation
+
+- **Search agent conversations:** global search can find open Claude Code and Codex sessions
+  by their conversation text ([#18962](https://github.com/manaflow-ai/cmux/pull/18962)).
+- **Prompt navigation:** an agent turn rail previews prompts and jumps to turns; jumping back
+  to the last prompted pane is also supported
+  ([#15398](https://github.com/manaflow-ai/cmux/pull/15398),
+  [#18951](https://github.com/manaflow-ai/cmux/pull/18951)).
+- **Click by Hint (opt-in beta):** keyboard labels for workspace rows, titlebar controls and
+  browser elements ([#19338](https://github.com/manaflow-ai/cmux/pull/19338)).
+- **File management:** upstream's explorer can create, rename, duplicate and trash files.
+  Supermux retains its own local/Remote Mac menus and adds safe adapters for upstream callers;
+  arbitrary-destination remote copies and permanent remote deletion remain unsupported.
+- **Remote tmux (beta):** list and attach existing SSH tmux sessions from the CLI; local and
+  remote session recovery improve ([#18645](https://github.com/manaflow-ai/cmux/pull/18645),
+  [#18654](https://github.com/manaflow-ai/cmux/pull/18654)).
+- **Program status:** programs can publish idle/working/blocked/done/error via OSC 7501,
+  with status events available to integrations
+  ([#18742](https://github.com/manaflow-ai/cmux/pull/18742),
+  [#19091](https://github.com/manaflow-ai/cmux/pull/19091)).
+- More workspace/pane navigation, recent-workspace ordering, sidebar icon settings and
+  live configuration settings. Supermux's existing shortcut ownership remains intact.
+
+### Reliability and performance
+
+- Terminal rendering fixes cover black panes after switching, external-display sharpness,
+  CJK glyphs, light-theme contrast, display-callback teardown and stale terminal modes.
+- Deep splits and repeated layout work no longer stall the main thread as before; browser
+  address-bar typing, TLS challenges, Settings search and CJK startup are less blocking.
+- Copy reaches alternate-screen TUIs; paste ordering, SSH copy-on-select, localhost browser
+  forwarding and browser dialog ownership are repaired.
+- Agent restore uses liveness at quit, preserves executable identity and handles retry
+  admission better. Queued hook messages and SSH/tmux agent status improve. Live Claude
+  background sessions can reattach a viewer without creating a second writer.
+- Mobile feed decoding, cancellation and stale-client checks improve. Supermux keeps its
+  feed backoff/ownership, detached-phone input admission, selected-team Remote Mac routing
+  and Cloud input-activity throttling.
+
+### Runtime hardening in this sync
+
+- Malformed token expiry metadata no longer traps credential-refresh diagnostics; timeouts and
+  cancellation preserve sign-in rate-limit backoff rather than causing extra activation retries.
+- Cloud startup shares the bounded recovered-route deadline, paused/stopped catalog rows use the
+  right resource-pool admission, and cancelled browser creation retains admitted receipts for
+  adoption or cleanup without reviving cancelled intent.
+- Automatic host-theme updates cannot commit a queued browser operation's cancellation boundary;
+  browser receipt adoption and cleanup still run after its own request has been admitted.
+- Browser design messages retain receive order; scripted download admission no longer queues
+  native tasks holding every incoming payload. Active-download policy is unchanged.
+- Local tmux recovery checks the whole session incarnation and current locked owner; stopped SSH
+  progress cannot print after the result, and TUI handoff preserves SSH sharing-option provenance.
+- Delayed tmux discovery and attachment results cannot restore metadata from an older incarnation
+  after removal or rebind.
+- Muse hook installation validates executable scripts once and reuses those commands; write or
+  chmod failures leave settings unchanged instead of silently installing an inline fallback.
+- OMP restore retains required JavaScript runtimes, and implicit OAuth labels obey the server's
+  UTF-16 limit.
+
+### Important behavior and architecture changes
+
+- Upstream now discovers account-owned Macs across teams. **Supermux intentionally keeps
+  selected-team discovery/admission**, as before; this broader upstream behavior is disabled.
+- Upstream can auto-resume normally completed Claude sessions. **Supermux does not adopt
+  that policy**: completed sessions stay available for manual continuation; a still-live
+  daemon may reattach a viewer. Actual resumes retain Supermux's validated ccx routing.
+- Working-directory inheritance still follows Supermux's policy: turning it off starts
+  a new workspace at home. Upstream Ghostty inheritance fixes remain for other terminals.
+- Upstream moves toward thinner release bundles, on-demand SSH helper downloads and a
+  changed aggregate CI gate. Supermux retains branding, reserved project objects, harness-web
+  gating and isolated tagged Release storage/profile seeding. On-demand helpers can require
+  network access on first use; this sync does not publish a Supermux release.
+- Claude hook settings may now be durable for resume. Supermux persists only generated,
+  credential-free hooks; temporary inline/Subrouter credentials remain launch-scoped.
+- Cloud onboarding, CodeRouter guides and backend changes are included as source. Availability
+  still depends on existing feature flags, authentication and deployed services; syncing this
+  repository does not deploy those services.
+- Upstream reverts the experimental terminal **Jump to Bottom** button and its setting
+  ([#20180](https://github.com/manaflow-ai/cmux/pull/20180)). Supermux's Remote Mac replay
+  scrollback preservation still works; its adapter no longer calls the removed indicator API.
+
+### Preserved Supermux features and remaining limits
+
+Sticky Projects/worktrees, Changes and PR views, Run actions, presets and project scripts,
+AI branch/commit integrations, prompt-first Claude harnesses, Remote Host Mode, Remote Mac
+mirrors, mobile synchronization, port forwarding and simulator streaming remain in place.
+No intentional Supermux feature removal is part of this sync.
+
+Validation details and remaining test/localization gaps are recorded in the sync PR. Native
+compilation and headless checks are not a substitute for Mac/phone dogfood before merging.
+The stricter upstream localization validator reports 7,528 parity errors; the same exact
+diagnostic set occurs on the pre-sync fork catalogs, with no new parity errors from this merge.
+
 ## cmux main @ `161e1cce9f` → main @ `58ce7de4fe` (2026-10-06)
 
 Merged 114 first-parent upstream commits (upstream main 2026-10-04 → 2026-10-06). Five files

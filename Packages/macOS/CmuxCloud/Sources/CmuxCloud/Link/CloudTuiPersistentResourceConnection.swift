@@ -18,6 +18,9 @@ public actor CloudTuiPersistentResourceConnection {
         let deadline: Task<Void, Never>
         let isExpired: @Sendable () -> Bool
         var sendTask: Task<Void, Never>?
+        // SUPERMUX:begin runtime-cloud-mutations-pending-ownership
+        let receiptOwnership: CloudCommittedMutationOwnership?
+        // SUPERMUX:end runtime-cloud-mutations-pending-ownership
     }
     private struct Subscription {
         let continuation: AsyncStream<Data>.Continuation
@@ -25,6 +28,9 @@ public actor CloudTuiPersistentResourceConnection {
     }
     private let connection: CloudTuiManualIOConnection
     private let clock: any Clock<Duration>
+    // SUPERMUX:begin runtime-cloud-mutations-send-admission-seam
+    private let beforeSend: (@Sendable () async -> Void)?
+    // SUPERMUX:end runtime-cloud-mutations-send-admission-seam
     private let namespace = UUID().uuidString.lowercased()
     private var sequence: UInt64 = 0
     private var pending: [String: Pending] = [:]
@@ -40,7 +46,19 @@ public actor CloudTuiPersistentResourceConnection {
     public init(socketPath: String, clock: any Clock<Duration> = ContinuousClock()) {
         connection = CloudTuiManualIOConnection(socketPath: socketPath, deliversJSONMessages: true)
         self.clock = clock
+        // SUPERMUX:begin runtime-cloud-mutations-production-admission-seam
+        beforeSend = nil
+        // SUPERMUX:end runtime-cloud-mutations-production-admission-seam
     }
+
+    // SUPERMUX:begin runtime-cloud-mutations-injected-admission-seam
+    /// Keeps the real socket and pending request path while controlling admission ordering.
+    init(socketPath: String, beforeSend: @escaping @Sendable () async -> Void) {
+        connection = CloudTuiManualIOConnection(socketPath: socketPath, deliversJSONMessages: true)
+        clock = ContinuousClock()
+        self.beforeSend = beforeSend
+    }
+    // SUPERMUX:end runtime-cloud-mutations-injected-admission-seam
 
     deinit { pumpTask?.cancel(); startTask?.cancel(); connection.close() }
 
@@ -116,7 +134,10 @@ public actor CloudTuiPersistentResourceConnection {
                 }
                 pending[id] = Pending(
                     continuation: continuation, request: request, deadline: deadline,
-                    isExpired: { clock.now >= expiresAt }, sendTask: nil
+                    // SUPERMUX:begin runtime-cloud-mutations-capture-ownership
+                    isExpired: { clock.now >= expiresAt }, sendTask: nil,
+                    receiptOwnership: request.idempotencyKey == nil ? nil : CloudCommittedMutationOwnership.current
+                    // SUPERMUX:end runtime-cloud-mutations-capture-ownership
                 )
                 let token = UUID()
                 let previous = sendTail
@@ -168,7 +189,19 @@ public actor CloudTuiPersistentResourceConnection {
         connection: CloudTuiManualIOConnection,
         line: Data
     ) async {
-        guard pending[id] != nil else { return }
+        // SUPERMUX:begin runtime-cloud-mutations-pre-admission-gate
+        await beforeSend?()
+        // SUPERMUX:end runtime-cloud-mutations-pre-admission-gate
+        // SUPERMUX:begin runtime-cloud-mutations-transport-admission
+        guard let entry = pending[id] else { return }
+        // This actor is about to hand bytes to the checked transport. Cancellation
+        // before this boundary rejects the send; afterwards the bounded pending
+        // request and its queue operation own parsing/adoption/compensation.
+        if let ownership = entry.receiptOwnership, !ownership.admit() {
+            retire(id, error: CancellationError())
+            return
+        }
+        // SUPERMUX:end runtime-cloud-mutations-transport-admission
         do {
             try await connection.sendChecked(line: line)
         } catch {

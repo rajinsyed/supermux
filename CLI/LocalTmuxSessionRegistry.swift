@@ -130,21 +130,69 @@ struct LocalTmuxSessionRegistry {
         }
     }
 
-    /// Records where a session was last attached, on the record as it is
-    /// now. Only attachment fields change, so a delayed attach cannot restore
-    /// a name or binding the record has since moved away from. Returns
-    /// `false` without writing when the record was removed meanwhile, for
-    /// example by a close that ran while the attach waited on the app.
+    // SUPERMUX:begin runtime-ssh-tmux-atomic-rebind
+    func compareAndRebind(
+        id: UUID,
+        expectedBinding: LocalTmuxSessionBinding?,
+        name: String,
+        binding: LocalTmuxSessionBinding
+    ) throws -> LocalTmuxSessionRecord {
+        try ensureSecureStorage()
+        return try withLockedState { state in
+            guard let index = state.sessions.firstIndex(where: { $0.id == id }),
+                  state.sessions[index].tmuxBinding == expectedBinding,
+                  !state.sessions.contains(where: {
+                      $0.id != id && ($0.name == name || $0.tmuxBinding == binding)
+                  }) else {
+                throw LocalTmuxRegistryError.invalidState(sessionsURL.path)
+            }
+            if state.sessions[index].tmuxBinding != binding {
+                state.sessions[index].surfaceID = nil
+            }
+            state.sessions[index].name = name
+            state.sessions[index].tmuxBinding = binding
+            state.sessions[index].updatedAt = Date.now.timeIntervalSince1970
+            return state.sessions[index]
+        }
+    }
+
+    func recordLocation(
+        id: UUID,
+        // SUPERMUX:begin runtime-ssh-tmux-pending-location-cas
+        expectedBinding: LocalTmuxSessionBinding?,
+        // SUPERMUX:end runtime-ssh-tmux-pending-location-cas
+        socketPath: String,
+        cwd: String?
+    ) throws -> LocalTmuxSessionRecord {
+        try ensureSecureStorage()
+        return try withLockedState { state in
+            guard let index = state.sessions.firstIndex(where: { $0.id == id }),
+                  state.sessions[index].tmuxBinding == expectedBinding else {
+                throw LocalTmuxRegistryError.invalidState(sessionsURL.path)
+            }
+            state.sessions[index].socketPath = socketPath
+            if let cwd { state.sessions[index].cwd = cwd }
+            state.sessions[index].updatedAt = Date.now.timeIntervalSince1970
+            return state.sessions[index]
+        }
+    }
+    // SUPERMUX:end runtime-ssh-tmux-atomic-rebind
+
+    // SUPERMUX:begin runtime-ssh-tmux-attachment-binding-cas
+    /// Records an attachment only while the owner still has the expected
+    /// binding. Returns false if it was removed or rebound while awaiting the app.
     @discardableResult
     func recordAttachment(
         id: UUID,
+        expectedBinding: LocalTmuxSessionBinding?,
         workspaceID: String?,
         workspaceTitle: String?,
         surfaceID: String?
     ) throws -> Bool {
         try ensureSecureStorage()
         return try withLockedState { state in
-            guard let index = state.sessions.firstIndex(where: { $0.id == id }) else {
+            guard let index = state.sessions.firstIndex(where: { $0.id == id }),
+                  state.sessions[index].tmuxBinding == expectedBinding else {
                 return false
             }
             state.sessions[index].workspaceID = workspaceID
@@ -154,6 +202,7 @@ struct LocalTmuxSessionRegistry {
             return true
         }
     }
+    // SUPERMUX:end runtime-ssh-tmux-attachment-binding-cas
 
     @discardableResult
     func remove(id: UUID? = nil, name: String? = nil) throws -> [LocalTmuxSessionRecord] {

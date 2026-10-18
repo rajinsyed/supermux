@@ -27,6 +27,7 @@ class SwiftPackageExecutionTests(unittest.TestCase):
     def run_step(
         self, output: str, status: int = 0, package: str = "CmuxComputerUse",
         step: str = "Run Swift package unit tests",
+        fork_package: str = "", fork_status: int = 0,
     ) -> subprocess.CompletedProcess[str]:
         with tempfile.TemporaryDirectory(prefix="swift-package-execution-") as directory:
             root = Path(directory)
@@ -38,6 +39,17 @@ class SwiftPackageExecutionTests(unittest.TestCase):
             swift = binaries / "swift"
             swift.write_text(textwrap.dedent("""\
                 #!/usr/bin/env bash
+                # SUPERMUX:begin ci-package-execution-fork-process
+                case "$*" in
+                    *"--package-path Packages/SupermuxKit"*|*"--package-path Packages/Shared/SupermuxMobileCore"*|*"--package-path Packages/iOS/SupermuxMobileKit"*|*"--package-path Packages/iOS/SupermuxMobileUI"*)
+                        echo '✔ Test run with 1 test passed after 0.001 seconds.'
+                        if [[ -n "$FAKE_SWIFT_FORK_PACKAGE" && "$*" == *"/$FAKE_SWIFT_FORK_PACKAGE"* ]]; then
+                            exit "$FAKE_SWIFT_FORK_STATUS"
+                        fi
+                        exit 0
+                        ;;
+                esac
+                # SUPERMUX:end ci-package-execution-fork-process
                 cat "$FAKE_SWIFT_OUTPUT"
                 exit "$FAKE_SWIFT_STATUS"
                 """))
@@ -51,6 +63,8 @@ class SwiftPackageExecutionTests(unittest.TestCase):
                 "PATH": str(binaries) + os.pathsep + os.environ["PATH"],
                 "FAKE_SWIFT_OUTPUT": str(log),
                 "FAKE_SWIFT_STATUS": str(status),
+                "FAKE_SWIFT_FORK_PACKAGE": fork_package,
+                "FAKE_SWIFT_FORK_STATUS": str(fork_status),
                 "SELECTED_PACKAGES": str(selected),
                 "SELECTED_COUNT": "1",
                 "RUNNER_TEMP": str(root),
@@ -69,6 +83,17 @@ class SwiftPackageExecutionTests(unittest.TestCase):
             with self.subTest(output=output):
                 result = self.run_step(output)
                 self.assertNotEqual(result.returncode, 0, result.stdout)
+
+    # SUPERMUX:begin ci-package-execution-fork-fixture
+    def test_fork_package_failure_still_fails_the_lane(self) -> None:
+        for package in ("SupermuxKit", "SupermuxMobileCore", "SupermuxMobileKit", "SupermuxMobileUI"):
+            with self.subTest(package=package):
+                result = self.run_step(
+                    "✔ Test run with 1 test passed after 0.001 seconds.\n",
+                    fork_package=package, fork_status=1,
+                )
+                self.assertEqual(result.returncode, 1, result.stdout)
+    # SUPERMUX:end ci-package-execution-fork-fixture
 
     def test_completed_swift_testing_and_xctest_runs_pass(self) -> None:
         for output in (

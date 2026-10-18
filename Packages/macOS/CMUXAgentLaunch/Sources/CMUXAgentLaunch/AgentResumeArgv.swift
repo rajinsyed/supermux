@@ -116,6 +116,31 @@ public struct AgentResumeArgv: Sendable, Equatable {
     /// idempotent, since the codex sanitizer policy preserves `-c key=value` pairs.
     public static let codexUpdateCheckSuppressionOverride = ["-c", "check_for_update_on_startup=false"]
 
+    /// Builds the root Codex argv for a Codex Teams app-server connection.
+    ///
+    /// Codex accepts `--remote` for a fresh launch, but rejects the permission
+    /// override when `resume` or `fork` is also selected. Keep that override on
+    /// fresh launches, where it remains valid, and remove it from the two
+    /// remote session commands.
+    public func codexTeamsRootArguments(appServerURL: String, commandArgs: [String]) -> [String] {
+        guard let first = commandArgs.first, first == "resume" || first == "fork" else {
+            return ["--remote", appServerURL] + commandArgs
+        }
+        var preserved: [String] = []
+        var isAfterArgumentSeparator = false
+        for argument in commandArgs.dropFirst() {
+            if !isAfterArgumentSeparator,
+               argument == "--dangerously-bypass-approvals-and-sandbox" {
+                continue
+            }
+            preserved.append(argument)
+            if argument == "--" {
+                isAfterArgumentSeparator = true
+            }
+        }
+        return [first, "--remote", appServerURL] + preserved
+    }
+
     /// The override tokens to inject between `resume <id>` and the preserved launch
     /// arguments: ``codexUpdateCheckSuppressionOverride`` unless `preserved` already
     /// sets `check_for_update_on_startup` (either value).
@@ -479,7 +504,13 @@ public struct AgentResumeArgv: Sendable, Equatable {
         case "pi":
             return withOption("pi", executable: "pi", option: "--session", sessionId: sessionId, executablePath: executablePath, arguments: arguments)
         case "omp":
-            return withOption("omp", executable: "omp", option: "--session", sessionId: sessionId, executablePath: executablePath, arguments: arguments)
+            // SUPERMUX:begin runtime-cli-resilience-omp-resume-prefix
+            let parts = commandParts(executablePath: executablePath, arguments: arguments, fallbackExecutable: "omp")
+            let script = AgentLaunchSanitizer.ompRuntimeScript(executable: parts.executable, arguments: parts.tail)
+            let tail = script == nil ? parts.tail : Array(parts.tail.dropFirst())
+            guard let preserved = AgentLaunchSanitizer.preservedArguments(kind: "omp", args: tail) else { return nil }
+            return [parts.executable] + (script.map { [$0] } ?? []) + ["--session", sessionId] + preserved
+            // SUPERMUX:end runtime-cli-resilience-omp-resume-prefix
         case "campfire":
             return withOption("campfire", executable: "campfire", option: "--session", sessionId: sessionId, executablePath: executablePath, arguments: arguments)
         case "amp":
@@ -518,6 +549,10 @@ public struct AgentResumeArgv: Sendable, Equatable {
             return withOption("qoder", executable: "qodercli", option: "--resume", sessionId: sessionId, executablePath: executablePath, arguments: arguments)
         case "kimi":
             return withOption("kimi", executable: "kimi", option: "--resume", sessionId: sessionId, executablePath: executablePath, arguments: arguments)
+        case "muse":
+            let parts = commandParts(executablePath: executablePath, arguments: arguments, fallbackExecutable: MuseExecutableName.launcher)
+            guard let preserved = AgentLaunchSanitizer.preservedArguments(kind: "muse", args: parts.tail) else { return nil }
+            return [MuseExecutableName(parts.executable).resumeExecutable, "resume", sessionId] + preserved
         default:
             return nil
         }
