@@ -73,4 +73,11 @@ public struct SupermuxProjectLocation: Identifiable, Hashable, Sendable {
 
     /// Whether the copy is reachable now (this Mac always is).
     public var isOnline: Bool { device?.isOnline ?? true }
+
+    /// Whether an order stamp written now reaches the copy: it is on this
+    /// Mac, or on a connected Mac that serves `supermux.order_sync.v1`.
+    public var takesOrderStamp: Bool {
+        guard let device else { return true }
+        return device.isOnline && device.supportsOrderSync
+    }
 }

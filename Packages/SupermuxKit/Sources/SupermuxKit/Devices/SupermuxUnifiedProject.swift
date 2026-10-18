@@ -59,6 +59,16 @@ public struct SupermuxUnifiedProject: Identifiable, Hashable, Sendable {
     /// Whether only other Macs have a copy.
     public var isRemoteOnly: Bool { localLocation == nil }
 
+    /// Whether a move can stamp the project now: a copy takes an order stamp
+    /// (``SupermuxProjectLocation/takesOrderStamp``). Only such a project drags.
+    public var takesOrderStamp: Bool { locations.contains(where: \.takesOrderStamp) }
+
+    /// Whether the project has a place in the keyed shared order: it is
+    /// stamped, or a move can stamp it. A project that is neither (only an
+    /// older Mac, or an offline one that never stamped it, holds it) sorts
+    /// after the keyed ones, and no move stamps it or places a row after it.
+    public var isOrderKeyed: Bool { order != nil || takesOrderStamp }
+
     /// The copy on one device, if it has one.
     public func location(onMachine machineID: String) -> SupermuxProjectLocation? {
         locations.first { $0.machineID == machineID }

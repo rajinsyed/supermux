@@ -8,7 +8,8 @@ import SwiftUI
 extension SupermuxProjectsSectionView {
     /// A remote-only project with the mirrors it owns nested under it. It
     /// drags and takes drops like a local project row; a drop sends the move
-    /// to the Macs that hold it.
+    /// to the Macs that hold it. A project with no place in the keyed order
+    /// (no Mac can stamp it now) takes no drops.
     /// - Parameters:
     ///   - row: The remote-only project.
     ///   - grouped: The nested rows by unified project id.
@@ -37,7 +38,7 @@ extension SupermuxProjectsSectionView {
             closeWorkspace: onCloseWorkspace,
             renameWorkspace: { promptRenameWorkspace(id: $0) },
             beginDrag: { beginProjectDrag(row.id) },
-            dropDelegate: projectDropDelegate(for: row.id, baseOrder: baseOrder),
+            dropDelegate: row.project.isOrderKeyed ? projectDropDelegate(for: row.id, baseOrder: baseOrder) : nil,
             draggingProjectId: draggingProjectId,
             pendingWorktrees: pendingRows(for: row.id),
             pendingActions: pendingActions

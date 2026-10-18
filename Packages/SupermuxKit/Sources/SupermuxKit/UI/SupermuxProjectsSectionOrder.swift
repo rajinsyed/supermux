@@ -40,6 +40,16 @@ public struct SupermuxProjectsSectionOrder: Sendable {
             case .remote: true
             }
         }
+
+        /// Whether the row has a place in the keyed shared order, so a move
+        /// may land next to it (``SupermuxUnifiedProject/isOrderKeyed``; a
+        /// local project always does).
+        public var isOrderKeyed: Bool {
+            switch self {
+            case .local: true
+            case .remote(let row): row.project.isOrderKeyed
+            }
+        }
     }
 
     /// Creates the order.

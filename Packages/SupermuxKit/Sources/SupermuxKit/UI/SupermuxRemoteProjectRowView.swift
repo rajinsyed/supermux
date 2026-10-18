@@ -4,8 +4,9 @@ import SwiftUI
 /// Mac's chip, run indicator), its mirrored workspaces nested under it, and —
 /// when expanded — that Mac's unopened worktrees. Tapping the header opens the
 /// project on that Mac and focuses the mirror here. The header drag-reorders
-/// the project among every project row while a Mac that holds it is
-/// connected, and takes other rows' drops at any time.
+/// the project among every project row while a connected Mac that holds it
+/// takes order stamps, and takes other rows' drops while the project has a
+/// place in the keyed order (``SupermuxUnifiedProject/isOrderKeyed``).
 struct SupermuxRemoteProjectRowView: View {
     let row: SupermuxRemoteProjectRow
     /// Local mirrors of that Mac's workspaces owned by this project.
@@ -33,8 +34,9 @@ struct SupermuxRemoteProjectRowView: View {
     @State private var isHovered = false
 
     private var isOnline: Bool { row.location.isOnline }
-    /// A move reaches the project only through a connected Mac that holds it.
-    private var isReorderable: Bool { row.project.locations.contains(where: \.isOnline) }
+    /// A move reaches the project only through a connected Mac that holds it
+    /// and takes order stamps.
+    private var isReorderable: Bool { row.project.takesOrderStamp }
     private var deviceName: String { row.location.device?.name ?? "" }
 
     var body: some View {

@@ -4,10 +4,13 @@ public import SupermuxMobileCore
 /// Plans one project move in the shared order (DESIGN §3.4.2): which projects
 /// take a new stamp, keyed by unified id. Pure; the app writes the stamps.
 ///
-/// It stamps only the moved project when every project is stamped and a key
-/// fits between its new neighbours; otherwise (the first move anywhere, a
-/// project added since, neighbours with equal keys) it stamps every project
-/// in the new order at once, with one `updatedAt`.
+/// It plans over the keyed projects only (``SupermuxUnifiedProject/isOrderKeyed``):
+/// a project no copy of which can hold a stamp keeps sorting after them, is
+/// never moved, and never has a row dropped over it. Among the keyed ones it
+/// stamps only the moved project when every one is stamped and a key fits
+/// between its new neighbours; otherwise (the first move anywhere, a project
+/// added since, neighbours with equal keys) it stamps every keyed project in
+/// the new order at once, with one `updatedAt`.
 ///
 /// ```swift
 /// let move = SupermuxProjectOrderMove(origin: "mac:7a1c@default", now: Date())
@@ -36,13 +39,14 @@ public struct SupermuxProjectOrderMove: Sendable {
     ///   - target: The unified id of the project it is dropped over.
     ///   - order: The projects in the shared order
     ///     (``SupermuxUnifiedProjectList/sharedOrder``).
-    /// - Returns: The stamps by unified id; empty when the move does nothing.
+    /// - Returns: The stamps by unified id; empty when the move does nothing
+    ///   or either project is not keyed.
     public func stamps(
         moving dragged: UUID,
         over target: UUID,
         in order: [SupermuxUnifiedProject]
     ) -> [UUID: SupermuxOrderStamp] {
-        var order = order
+        var order = order.filter(\.isOrderKeyed)
         guard SupermuxProjectsModel.applyMove(dragged, over: target, in: &order),
               let index = order.firstIndex(where: { $0.id == dragged }) else { return [:] }
         return stamps(movingProjectAt: index, in: order)

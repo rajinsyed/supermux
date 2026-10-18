@@ -136,7 +136,7 @@ public struct SupermuxProjectsSectionView: View {
                 ForEach(Array(drawn.enumerated()), id: \.element.id) { index, item in
                     switch item {
                     case .local(let project):
-                        localProjectRow(project, index: index, count: drawn.count, grouped: grouped, baseOrder: baseOrder)
+                        localProjectRow(project, index: index, in: drawn, grouped: grouped, baseOrder: baseOrder)
                     case .remote(let row):
                         remoteProjectRow(row, grouped: grouped, baseOrder: baseOrder)
                     }
@@ -210,11 +210,12 @@ public struct SupermuxProjectsSectionView: View {
             .joined(separator: "|")
     }
 
-    /// A project with a copy on this Mac, at `index` of the `count` drawn rows.
+    /// A project with a copy on this Mac, at `index` of the drawn rows. It
+    /// never moves down past a row that has no place in the keyed order.
     private func localProjectRow(
         _ project: SupermuxProject,
         index: Int,
-        count: Int,
+        in drawn: [SupermuxProjectsSectionOrder.Item],
         grouped: [UUID: [SupermuxOpenWorkspace]],
         baseOrder: [UUID]
     ) -> some View {
@@ -226,7 +227,7 @@ public struct SupermuxProjectsSectionView: View {
             isExpanded: model.expandedProjectIds.contains(project.id),
             actions: rowActions(for: project),
             canMoveUp: index > 0,
-            canMoveDown: index < count - 1,
+            canMoveDown: index + 1 < drawn.count && drawn[index + 1].isOrderKeyed,
             beginDrag: { beginProjectDrag(project.id) },
             dropDelegate: projectDropDelegate(for: project.id, baseOrder: baseOrder),
             draggingProjectId: draggingProjectId,
