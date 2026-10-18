@@ -27,6 +27,9 @@ internal import SupermuxMobileCore
 /// On the first pass of a window (no baseline) the baseline is every keyed
 /// row in sort-key order and hints are ignored: the tabs are the truth, only
 /// the minimal set of out-of-order own rows is re-keyed, and no mirror is sent.
+/// Keyed mirrors bound the keys of unkeyed own rows, but any one own row
+/// outweighs every mirror together, so restored mirrors that are out of key
+/// order never re-key an own row.
 ///
 /// ```swift
 /// let plan = SupermuxOrderCapture().plan(
@@ -73,6 +76,7 @@ public struct SupermuxOrderCapture: Sendable {
             hinted: hinted,
             movers: movers(hinted, in: rows),
             programmatic: programmatic,
+            isFirstPass: baseline == nil,
             known: Set(known.filter(orderKey.isValid) + rows.compactMap(\.validKey)),
             seed: seed
         )

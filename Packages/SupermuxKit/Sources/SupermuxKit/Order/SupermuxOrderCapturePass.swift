@@ -12,6 +12,8 @@ struct SupermuxOrderCapturePass<ID: Hashable & Sendable> {
     /// hinted row's local group (a bump of one member moves the whole group).
     let movers: Set<ID>
     let programmatic: Set<ID>
+    /// The window's first pass: the baseline is the keyed rows in key order.
+    let isFirstPass: Bool
     var known: Set<String>
     let seed: String
     var plan = SupermuxOrderCapturePlan<ID>()
@@ -23,6 +25,7 @@ struct SupermuxOrderCapturePass<ID: Hashable & Sendable> {
         hinted: Set<ID>,
         movers: Set<ID>,
         programmatic: Set<ID>,
+        isFirstPass: Bool,
         known: Set<String>,
         seed: String
     ) {
@@ -30,6 +33,7 @@ struct SupermuxOrderCapturePass<ID: Hashable & Sendable> {
         self.hinted = hinted
         self.movers = movers
         self.programmatic = programmatic
+        self.isFirstPass = isFirstPass
         self.known = known
         self.seed = seed
     }
@@ -82,12 +86,16 @@ struct SupermuxOrderCapturePass<ID: Hashable & Sendable> {
     /// A programmatic move must never look like the mover's neighbours moved
     /// (weight 0), and a mover is always the likelier one: any one other row
     /// outweighs every mover together, so a block moved at once never
-    /// outvotes the fewer rows it jumped over.
+    /// outvotes the fewer rows it jumped over. On a first pass any one own
+    /// row outweighs every mirror together, so restored mirrors out of key
+    /// order (their owner moved them meanwhile) never re-key this Mac's rows.
     private func weights(_ rows: [Row]) -> [Int] {
         let unmoved = rows.filter { movers.contains($0.id) }.count + 1
+        let ownFactor = isFirstPass ? rows.filter(\.isMirror).count + 1 : 1
         return rows.map { row in
             if programmatic.contains(row.id) { return 0 }
-            return movers.contains(row.id) ? 1 : unmoved
+            if movers.contains(row.id) { return 1 }
+            return row.isMirror ? unmoved : unmoved * ownFactor
         }
     }
 
